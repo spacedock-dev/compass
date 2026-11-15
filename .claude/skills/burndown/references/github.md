@@ -30,6 +30,26 @@ an exact match among all repository milestones; ask on multiple matches. A child
 milestone is an external dependency/context, not automatic scope expansion. A single leaf issue
 does not expand to its siblings merely because it has a parent or milestone.
 
+**Issue-list entrypoint:** the scope is exactly the issues the caller named, or the issues an
+issues search returns. Resolve each reference to owner, repository and number, deduplicate, and
+refuse a reference whose repository is not this checkout's `origin` (ask for that checkout
+instead). For a search, either an `issues?q=` URL or `--issues "<qualifiers>"`, add
+`repo:OWNER/REPO is:issue` to the caller's qualifiers and page the search API to exhaustion:
+
+```bash
+gh api --method GET --paginate search/issues -f q='repo:OWNER/REPO is:issue is:open label:security' \
+  -f per_page=100 --jq '.items[] | [.number, .state, .title] | @tsv'
+```
+
+The search API caps a query at 1,000 results; a larger result is not a scope, so ask the caller to
+narrow it. Freeze the resolved list in the plan by number: a search re-run later can return a
+different set, so the plan's list, plus what this run files into it, is the scope from then on.
+Print the query beside the list so the caller can see what it matched. A closed issue in the list
+is read for its closure evidence like any other and is not reopened. A listed issue with native
+children is expanded as the issue entrypoint expands a parent, and its tree is shown under it in
+the plan; children of an unlisted parent are not added. A list has no container, so there is no
+container description to reconcile and no parent to close: the finish report is the record.
+
 Use native membership as authority. A Markdown checklist, a body mention and a PR link do not make
 an issue a child. If the native read is denied or unsupported, report that failure and ask for a
 confirmed scope; do not treat it as an empty tree. Page sub-issues, comments, milestones,
@@ -138,6 +158,10 @@ non-owner-gated Verification item when applicable. A pre-existing defect stays o
 tree/milestone and links back as related context. Use existing labels where suitable. These writes
 still obey the shared approval and estimate limits.
 
+For an issue list, a defect this work introduced or a review deferred becomes a new issue in the
+repository, added to the run's frozen list and named in the plan's next report, so the finish
+check counts it. A pre-existing defect is filed outside the list, as for a milestone.
+
 ## Finish
 
 Refetch scope membership, states, dependencies and parent acceptance before declaring completion.
@@ -149,7 +173,9 @@ disposition and required Verification work ran last. Post a concise final commen
 delivered behavior, PRs, checks and any limitations. Close a milestone only when its issue scope
 and acceptance are complete; retain its purpose and replace stale remaining-work text with a short
 completion note. A leaf-issue run closes only that issue and reconciles its parent/milestone's
-progress; it does not close either container. Follow the shared docs-marker closeout for a
+progress; it does not close either container. An issue-list run is burned down when every issue
+on its frozen list, and every discovery added to it, is closed with a receipt; it reconciles each
+listed issue's own parent or milestone progress note but closes no container. Follow the shared docs-marker closeout for a
 multi-issue scope.
 
 ## API references

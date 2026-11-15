@@ -1,4 +1,4 @@
 interface:
   display_name: "Issue and Milestone Burndown"
-  short_description: "Plan and land Compass work from GitHub or Linear"
-  default_prompt: "Use $burndown to plan, build and reconcile the given Compass GitHub or Linear issue or milestone."
+  short_description: "Plan and land GitHub or Linear work, optionally delegated"
+  default_prompt: "Use $burndown to plan, build and reconcile the given Compass GitHub or Linear issue, issue list or milestone."

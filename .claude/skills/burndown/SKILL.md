@@ -1,6 +1,6 @@
 ---
 name: burndown
-description: Use when burning down a Compass GitHub issue with sub-issues, a GitHub or Linear milestone, or a single issue; also when planning how to group and stack that work.
+description: Use when burning down a Compass GitHub issue with sub-issues, a list of GitHub issues, a GitHub or Linear milestone, or a single issue; also when planning how to group and stack that work, or when the session should coordinate and delegate the work to Codex and Antigravity.
 ---
 
 # burndown
@@ -17,12 +17,15 @@ Resolve the target before checking tracker-specific prerequisites:
 |---|---|
 | `https://github.com/OWNER/REPO/issues/N` or `OWNER/REPO#N` | GitHub issue; with native children, a parent-tree scope; otherwise one issue |
 | `https://github.com/OWNER/REPO/milestone/N` | GitHub milestone |
+| Several issue references or URLs (`#12 #15`, `OWNER/REPO#12, OWNER/REPO#15`, one URL per line) | GitHub issue list |
+| `https://github.com/OWNER/REPO/issues?q=...` (an issues search, filter or label view) | GitHub issue list, resolved from that query |
 | `#N` or a bare number | GitHub issue only when `--repo` or an unambiguous repository context identifies the repository |
 | `https://linear.app/.../issue/...` or an issue key such as `DRC-1234` | Linear issue |
 | Linear project/milestone URL | Linear; a project alone still needs a milestone selection |
 | Milestone name | Use an explicit tracker, the tracker already established in this conversation/workflow, or ask which tracker |
 
-`--tracker github|linear` supplies missing tracker context; `--repo OWNER/REPO` selects GitHub;
+`--issues "<query>"` with `--repo` selects a GitHub issue list from search qualifiers
+(`label:security is:open`). `--tracker github|linear` supplies missing tracker context; `--repo OWNER/REPO` selects GitHub;
 `--project "<name>"` selects Linear. A flag conflicting with a URL/key, or `--repo` combined
 with `--project`, needs clarification before tracker calls. A bare number is an issue number,
 not a milestone ID.
@@ -47,6 +50,10 @@ other tracker.
   model questions unless `--models` answers them.
 - `--models recommended`, or `--models plan=<model>:<effort>,build=…,review=…`: answer the
   shared planning stage's model questions. Ask only for stages not answered.
+- `--delegate`: the session coordinates and hands the plan, build and review stages to Codex and
+  Antigravity (AGY), choosing their models and efforts from the live catalogs. A request in the
+  caller's own words ("act as a coordinator and delegate to Codex and agy") means the same. It
+  combines with every flag above; `--models` then names Codex and AGY models.
 - A milestone name uses the selected tracker's project/repository. The Linear adapter retains
   Compass in the Terminal as its default project after Linear has been selected.
 
@@ -56,6 +63,9 @@ Examples:
 burndown https://github.com/spacedock-dev/compass/issues/758 --plan
 burndown spacedock-dev/compass#758 --merge --models recommended
 burndown https://github.com/spacedock-dev/compass/milestone/4 --plan
+burndown spacedock-dev/compass#801 spacedock-dev/compass#802 spacedock-dev/compass#815
+burndown "https://github.com/spacedock-dev/compass/issues?q=is:open+label:security" --plan
+burndown "Credentials milestone" --tracker linear --project "Compass Security Hardening" --delegate
 burndown DRC-1234 --plan
 burndown "Long session coverage" --tracker github --repo spacedock-dev/compass --plan
 ```
@@ -68,12 +78,13 @@ burndown "Long session coverage" --tracker github --repo spacedock-dev/compass -
 | An approved group is ready to build | [Delivery, steps 4–5](references/delivery.md) | TDD, visual walks, reviews, stacks, CI, merges and parallel-work rules |
 | After each landing and at closeout | [Reconciliation, steps 6–7](references/reconciliation.md) | Receipts, discoveries, cleanup, replanning and completion |
 | An issue has `## Design reference` | [Design-reference rules](references/design-reference.md) | Required design reads and markup constraints |
+| `--delegate`, from planning on | [Delegation mode](references/delegation.md) | Who runs each stage, live model choice, Codex and AGY dispatch mechanics |
 
 Read only the selected adapter and the current stage; revisit the next stage when reached. Do not
 preload all references. Here, “milestone” in the shared stages means the selected scope, including
-a GitHub parent tree or one issue. “Container” means its milestone or parent issue, if any.
-`blockedBy`, `blocks`, ready, started and finished are concepts mapped by the adapter, not
-assumed API fields or GitHub states. File discoveries and decision issues in the selected tracker.
+a GitHub parent tree, a GitHub issue list or one issue. “Container” means its milestone or
+parent issue, if any; an issue list has none. `blockedBy`, `blocks`, ready, started and finished
+are concepts mapped by the adapter, not assumed API fields or GitHub states. File discoveries and decision issues in the selected tracker.
 
 ## What "burned down" means
 
