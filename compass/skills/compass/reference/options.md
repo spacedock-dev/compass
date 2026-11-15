@@ -114,11 +114,13 @@ storage and leaves the check setting as it was.
 - **Model and consumption** come only from records a harness writes. Claude, Codex, Pi,
   Antigravity, Copilot, and Cursor can report a model. Copilot alone provides per-session AI Units;
   those units are not converted to dollars or summed across harnesses.
-- **Headless** is reported only from a Claude Code session's own transcript. The session payload's
-  `headless` field is `true` for `entrypoint: sdk-cli`, `false` for `entrypoint: cli`, and `null`
-  when no measured entrypoint was read, including other harnesses. The bounded incremental read can
-  miss an older entrypoint on a cold read. The Sessions filter's Interactive or unknown option keeps
-  both `false` and unknown values; all sessions show until a filter is chosen.
+- **Headless** comes from a session's own records. Claude Code reports `headless: true` for
+  `entrypoint: sdk-cli`, `false` for `entrypoint: cli`, and `null` when no measured entrypoint was
+  read. Its bounded incremental transcript read can miss an older entrypoint on a cold read. Codex
+  reads the first-line rollout metadata: `source: "exec"` means `true`, `source: "cli"` means
+  `false`, and any other or missing source means `null`. Other harnesses remain unknown. The
+  Sessions filter's Interactive or unknown option keeps both `false` and unknown values; all
+  sessions show until a filter is chosen.
 - **Current-turn estimates** compare elapsed generation time with completed turns from the same
   session. They are withheld when there is no defensible sample. A quiet gap longer than five
   minutes re-anchors elapsed time so a permission wait is not counted as generation.
