@@ -196,6 +196,10 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         2,
         "KNOWN GAP: exclusive staging does not validate parent directory ownership or refuse directory links.",
     ),
+    ("compass_runtime/lifecycle.py", "_identity_text"): (
+        1,
+        "_identity_text: Fixed OS identity paths; nonblocking nofollow regular descriptor, root/user owner, 1024-byte cap.",
+    ),
     ("compass_runtime/lifecycle.py", "daemon_redirect_stdio"): (
         1,
         "daemon_redirect_stdio: OS null device for detached process stdin.",

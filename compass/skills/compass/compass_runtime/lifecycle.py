@@ -7,6 +7,7 @@ import contextlib
 import ctypes
 import errno
 import functools
+import hashlib
 import http.client
 import json
 import math
@@ -15,6 +16,7 @@ import queue
 import select
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import threading
@@ -95,6 +97,230 @@ def ensure_compass_home(config: RuntimeConfig) -> str:
     return home
 
 
+class StateOwnershipError(OSError):
+    """A recorded dashboard cannot safely be replaced from this environment."""
+
+
+def origin_path(config: RuntimeConfig, port: int) -> str:
+    return state_path(config, port) + ".origin"
+
+
+def _identity_text(path: str) -> str:
+    # Linux system identity is root-owned, so the user-owned harness/state
+    # openers cannot admit it. Never let these fixed OS paths admit a FIFO or link.
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    with os.fdopen(os.open(path, flags), "rb") as handle:
+        info = os.fstat(handle.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid not in (0, os.getuid()):
+            raise OSError("System identity is not an owned regular file")
+        raw = handle.read(1025)
+    return raw.decode("ascii").strip() if len(raw) <= 1024 else ""
+
+
+def _sysctl_text(name: bytes) -> str:
+    libc = ctypes.CDLL(None)
+    size = ctypes.c_size_t(256)
+    value = ctypes.create_string_buffer(size.value)
+    if libc.sysctlbyname(name, value, ctypes.byref(size), None, 0) != 0:
+        raise OSError("System identity unavailable")
+    return value.value.decode("ascii")
+
+
+def environment_identity() -> dict[str, str] | None:
+    """Machine, boot and visible namespaces; unavailable evidence is never sameness."""
+    try:
+        network = process = ""
+        if sys.platform.startswith("linux"):
+            machine = _identity_text("/etc/machine-id")
+            boot = _identity_text("/proc/sys/kernel/random/boot_id")
+            network = os.readlink("/proc/self/ns/net")
+            process = os.readlink("/proc/self/ns/pid")
+            if not network or not process:
+                return None
+        elif sys.platform == "darwin":
+            machine = _sysctl_text(b"kern.uuid")
+            boot = _sysctl_text(b"kern.bootsessionuuid")
+        elif sys.platform == "win32":
+            import winreg  # noqa: PLC0415 - Windows machine identity, no process launch
+
+            with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography"
+            ) as key:
+                machine = str(winreg.QueryValueEx(key, "MachineGuid")[0])
+            # SystemBootEnvironmentInformation starts with the boot's GUID.
+            value = ctypes.create_string_buffer(32)
+            ntdll = ctypes.WinDLL("ntdll")  # type: ignore[attr-defined]
+            if ntdll.NtQuerySystemInformation(90, value, len(value), None) != 0:
+                return None
+            boot = value.raw[:16].hex()
+        else:
+            return None
+        if not machine or not boot:
+            return None
+        return {
+            "machine": hashlib.sha256((sys.platform + ":" + machine).encode()).hexdigest(),
+            "boot": boot,
+            "network": network,
+            "process": process,
+        }
+    except (OSError, AttributeError, ValueError, UnicodeError):
+        return None
+
+
+def boot_started() -> float | None:
+    """Measured wall-clock boot start; unavailable timing cannot authorize reboot cleanup."""
+    try:
+        if sys.platform.startswith("linux"):
+            started = time.time() - time.clock_gettime(time.CLOCK_BOOTTIME)
+        elif sys.platform == "darwin":
+            # kern.boottime is a timeval, not the textual UUID sysctl returns.
+            value = (ctypes.c_long * 2)()
+            size = ctypes.c_size_t(ctypes.sizeof(value))
+            if (
+                ctypes.CDLL(None).sysctlbyname(b"kern.boottime", value, ctypes.byref(size), None, 0)
+                != 0
+            ):
+                return None
+            started = value[0] + value[1] / 1_000_000
+        elif sys.platform == "win32":
+            kernel = ctypes.WinDLL("kernel32")  # type: ignore[attr-defined]
+            kernel.GetTickCount64.restype = ctypes.c_uint64
+            started = time.time() - kernel.GetTickCount64() / 1000
+        else:
+            return None
+    except (OSError, AttributeError, ValueError, OverflowError):
+        return None
+    return started if math.isfinite(started) and started > 0 else None
+
+
+def _read_record(config: RuntimeConfig, path: str) -> dict[str, Any] | None:
+    try:
+        with os.fdopen(runtime_io.open_regular(path, root=config.state_home), "rb") as handle:
+            raw = handle.read(config.state_read_cap_bytes + 1)
+        data = json.loads(raw) if len(raw) <= config.state_read_cap_bytes else None
+    except (OSError, ValueError, RecursionError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _state_process_exists(pid: int) -> bool | None:
+    if sys.platform == "win32":
+        return _windows_state_process_exists(pid)
+    return _recovery_process_exists(pid)
+
+
+def _windows_state_process_exists(pid: int) -> bool | None:
+    if type(pid) is not int or not 0 < pid <= 0xFFFFFFFF:
+        return None
+    # A Windows crash normally leaves no waitable process handle. Only error 87
+    # proves that pid absent; access denial and resource failure are not death.
+    try:
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+        kernel.OpenProcess.restype = ctypes.c_void_p
+        kernel.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+        kernel.WaitForSingleObject.restype = ctypes.c_uint32
+        kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+        kernel.CloseHandle.restype = ctypes.c_int
+        handle = kernel.OpenProcess(0x00100000, False, pid)
+        if not handle:
+            error = ctypes.get_last_error()  # type: ignore[attr-defined]
+            return False if error == 87 else True if error == 5 else None
+        try:
+            waited = kernel.WaitForSingleObject(handle, 0)
+        finally:
+            closed = kernel.CloseHandle(handle)
+        if not closed:
+            return None
+    except (OSError, AttributeError, TypeError, ValueError, OverflowError):
+        return None
+    else:
+        return False if waited == 0 else True if waited == 0x102 else None
+
+
+def state_gone(config: RuntimeConfig, port: int, state: dict[str, Any] | None) -> bool:
+    """Prove the writer gone before applying local pid absence to shared state."""
+    origin = _read_record(config, origin_path(config, port))
+    if state is None or origin is None:
+        return False
+    pid, started = state.get("pid"), state.get("started")
+    if (
+        type(pid) is not int
+        or pid <= 0
+        or type(state.get("port")) is not int
+        or state.get("port") != port
+        or isinstance(started, bool)
+        or not isinstance(started, int | float)
+        or abs(started) > sys.float_info.max
+        or not math.isfinite(started)
+        or type(origin.get("pid")) is not int
+        or type(origin.get("port")) is not int
+        or isinstance(origin.get("started"), bool)
+        or not isinstance(origin.get("started"), int | float)
+    ):
+        return False
+    if any(origin.get(key) != state.get(key) for key in ("pid", "started", "port")):
+        return False
+    here, there = environment_identity(), origin.get("environment")
+    if (
+        here is None
+        or not isinstance(there, dict)
+        or set(there) != {"machine", "boot", "network", "process"}
+        or any(not isinstance(value, str) for value in there.values())
+        or not there["machine"]
+        or not there["boot"]
+        or here["machine"] != there["machine"]
+    ):
+        return False
+    if here["boot"] != there["boot"]:
+        # Machine IDs are assumed unique. Clones sharing one ID and state folder
+        # are treated as one machine, the stated limit of automatic reboot recovery.
+        boot_start = boot_started()
+        return boot_start is not None and started < boot_start
+    return here == there and _state_process_exists(pid) is False
+
+
+def legacy_state(config: RuntimeConfig, port: int, state: dict[str, Any] | None) -> bool:
+    """Only pre-origin payloads retain the old per-operation cleanup rules."""
+    return (
+        state is not None
+        and "state_format" not in state
+        and not os.path.lexists(origin_path(config, port))
+    )
+
+
+def start_refusal(config: RuntimeConfig, port: int) -> str | None:
+    target = state_path(config, port)
+    if not os.path.lexists(target):
+        return None
+    with runtime_io.held_file_lock(target + ".lock", wait=0) as held:
+        if held != runtime_io.LOCK_HELD:
+            return f"Compass: could not lock {target}; state left alone."
+        return _start_refusal(config, port)
+
+
+def _start_refusal(config: RuntimeConfig, port: int) -> str | None:
+    """Called only with the publication lock held, including the final serving-process check."""
+    if not os.path.lexists(state_path(config, port)):
+        return None
+    state = read_state(config, port)
+    kind, _ = probe_port(port)
+    if kind == "compass":
+        return (
+            f"Compass: port {port} is already in use by Compass at "
+            f"http://127.0.0.1:{port}/; state left alone."
+        )
+    if kind == "blocked":
+        return terminal_client.sentence("loopback_blocked")
+    if kind in ("foreign", "busy"):
+        return render_status({"state": kind, "port": port})
+    if legacy_state(config, port, state) or state_gone(config, port, state):
+        return None
+    return terminal_client.unreachable_dashboard(
+        config.state_home, (port,), state_file=state_path(config, port)
+    )
+
+
 def write_state(
     config: RuntimeConfig,
     port: int,
@@ -102,7 +328,7 @@ def write_state(
     started: float,
     capabilities: dict[str, str] | None = None,
     diagnostic_sink: Callable[[str], None] = print,
-) -> None:
+) -> bool:
     """Record this process as the instance serving `port`.
 
     Written by every instance that binds, daemon or foreground: --status and
@@ -110,7 +336,9 @@ def write_state(
     is a file whose absence tells you nothing.
 
     Written through a temp file and os.replace so a reader mid-write sees the
-    old file or the new one, never half of one.
+    old file or the new one, never half of one. Returns whether this process
+    published the state, even if the separate origin write failed, so its clean
+    exit can still remove its own record.
 
     `capabilities` is how an adapter learns its event-ingress token. This file is
     the only place it is published, and it is chmodded to owner-only for that
@@ -120,6 +348,7 @@ def write_state(
     what that does and does not buy rather than implying isolation.
     """
     payload: dict[str, Any] = {
+        "state_format": 1,
         "pid": os.getpid(),
         "port": port,
         "started": started,
@@ -131,14 +360,32 @@ def write_state(
     if capabilities:
         payload["capabilities"] = capabilities
     target = state_path(config, port)
+    published = False
     try:
         ensure_compass_home(config)
-        runtime_io.atomic_write_owner_only(target, json.dumps(payload), root=str(config.state_home))
+        with runtime_io.held_file_lock(target + ".lock", wait=0) as held:
+            if held != runtime_io.LOCK_HELD:
+                raise StateOwnershipError(f"Compass: could not lock {target}; state left alone.")  # noqa: TRY301 - refusal must escape the recoverable write error path
+            if refusal := _start_refusal(config, port):
+                raise StateOwnershipError(refusal)  # noqa: TRY301 - refusal must escape the recoverable write error path
+            runtime_io.atomic_write_owner_only(target, json.dumps(payload), root=config.state_home)
+            published = True
+            origin = {key: payload[key] for key in ("pid", "started", "port")}
+            origin["environment"] = environment_identity()
+            runtime_io.atomic_write_owner_only(
+                origin_path(config, port), json.dumps(origin), root=config.state_home
+            )
+    except StateOwnershipError:
+        raise
     except OSError as exc:
         runtime_io.diag(
-            f"Compass: could not write {target} ({exc}); --status will not see this instance",
+            f"Compass: could not write complete state for {target} ({exc}); "
+            "recorded ownership may be unavailable after this run",
             diagnostic_sink,
         )
+        return published
+    else:
+        return True
 
 
 def read_state(config: RuntimeConfig, port: int) -> dict[str, Any] | None:
@@ -151,24 +398,48 @@ def read_state(config: RuntimeConfig, port: int) -> dict[str, Any] | None:
     --status and --stop. do_POST already catches RecursionError for the same
     reason on the same parser.
     """
-    cap = config.state_read_cap_bytes
-    try:
-        with runtime_io._open_binary(state_path(config, port)) as handle:  # noqa: SLF001
-            raw = handle.read(cap + 1)
-        if len(raw) > cap:
-            return None
-        data = json.loads(raw or b"null")
-    except (OSError, ValueError, RecursionError):
-        return None
-    return data if isinstance(data, dict) else None
+    return _read_record(config, state_path(config, port))
 
 
-def remove_state(config: RuntimeConfig, port: int) -> None:
-    with contextlib.suppress(OSError):
-        runtime_config.remove_state_file(state_path(config, port))
+def remove_state(
+    config: RuntimeConfig,
+    port: int,
+    *,
+    owner_started: float | None = None,
+    legacy_stop: bool = False,
+) -> bool:
+    """Remove a proven dead writer's record or this process's exact record; report success."""
+    target = state_path(config, port)
+    with runtime_io.held_file_lock(target + ".lock", wait=0) as held:
+        if held != runtime_io.LOCK_HELD:
+            return False
+        state = read_state(config, port)
+        own = (
+            owner_started is not None
+            and state is not None
+            and state.get("pid") == os.getpid()
+            and state.get("started") == owner_started
+        )
+        legacy = legacy_state(config, port, state)
+        pid = (state or {}).get("pid")
+        legacy_dead = legacy and (
+            legacy_stop or not (isinstance(pid, int) and pid > 0 and pid_exists(pid))
+        )
+        if not own and not legacy_dead and not state_gone(config, port, state):
+            return False
+        if not own:
+            kind, _ = probe_port(port, timeout=0.1)
+            if kind != "closed" or not port_released(config, port):
+                return False
+        if not runtime_config.remove_state_file(target):
+            return False
+        runtime_config.remove_state_file(origin_path(config, port))
+        return True
 
 
-def probe_port(port: int, timeout: float = 1.0) -> tuple[str, dict[str, Any] | None]:
+def probe_port(
+    port: int, timeout: float = terminal_client.HEALTH_TIMEOUT_SEC
+) -> tuple[str, dict[str, Any] | None]:
     """What is listening on `port`, or whether permissions blocked the probe.
 
     Returns ("compass", health), or ("foreign" | "closed" | "blocked" | "busy", None).
@@ -410,36 +681,22 @@ def sweep_stale_states(config: RuntimeConfig) -> list[int]:
 
     Returns the list of ports whose stale state files were removed.
     """
-    home = compass_home(config)
-    if not os.path.isdir(home):
-        return []
     removed: list[int] = []
-    suffix = ".json"
-    try:
-        entries = os.listdir(home)
-    except OSError:
-        return []
-    for name in entries:
-        prefix = "compass-"
-        if not (name.startswith(prefix) and name.endswith(suffix)):
-            continue
-        port_str = name[len(prefix) : -len(suffix)]
-        if not port_str.isdigit():
-            continue
-        port = int(port_str)
-        if not 1 <= port <= 65535:
-            continue
+    for port in terminal_client.published_ports(compass_home(config)):
         kind, _ = probe_port(port, timeout=0.1)
         if kind != "closed":
             continue
         if not port_released(config, port):
             continue
-        state = read_state(config, port)
-        pid = (state or {}).get("pid")
-        if isinstance(pid, int) and pid > 0 and pid_exists(pid):
-            continue
-        remove_state(config, port)
-        removed.append(port)
+        if remove_state(config, port):
+            removed.append(port)
+        elif os.path.lexists(state_path(config, port)):
+            runtime_io.diag(
+                terminal_client.unreachable_dashboard(
+                    config.state_home, (port,), state_file=state_path(config, port)
+                ),
+                lambda message: print(message, flush=True),
+            )
     return removed
 
 
@@ -461,7 +718,14 @@ def instance_status(config: RuntimeConfig, port: int) -> dict[str, Any]:
     if kind in ("foreign", "busy"):
         return {"state": kind, "port": port, "pid": (state or {}).get("pid")}
     return {
-        "state": "stale" if state is not None else "absent",
+        "state": (
+            "stale"
+            if legacy_state(config, port, state) or state_gone(config, port, state)
+            else "unreachable"
+            if os.path.lexists(state_path(config, port))
+            else "absent"
+        ),
+        "home": config.state_home,
         "port": port,
         "pid": (state or {}).get("pid"),
         "log": recorded_log,
@@ -497,10 +761,13 @@ def render_status(status: dict[str, Any]) -> str:
             f"Compass: the dashboard on port {port} has every connection in use and asked to "
             f"be tried again shortly. Nothing was stopped or removed."
         )
+    if state == "unreachable":
+        return terminal_client.unreachable_dashboard(status["home"], (port,))
     if state == "stale":
         return (
             f"Compass: not running on port {port}. A stale state file remains "
-            f"(pid {terminal_sessions.printable(status['pid'])}); --stop removes it."
+            f"(pid {terminal_sessions.printable(status['pid'])}); --stop removes it. "
+            f"Start it with `{terminal_client.launch_command('--daemon')}`."
         )
     return f"Compass: not running on port {port}."
 
@@ -515,7 +782,7 @@ def stop_instance(config: RuntimeConfig, port: int) -> tuple[str, int]:
     """
     status = instance_status(config, port)
     state = status["state"]
-    if state in ("foreign", "blocked", "busy"):
+    if state in ("foreign", "blocked", "busy", "unreachable"):
         # The state file is evidence about a port we do not own, or cannot reach. Leave it.
         return (render_status(status), 1)
     if state == "running":
@@ -571,7 +838,8 @@ def stop_instance(config: RuntimeConfig, port: int) -> tuple[str, int]:
             1,
         )
     if state == "stale":
-        remove_state(config, port)
+        if not remove_state(config, port, legacy_stop=True):
+            return (f"Compass: could not remove {state_path(config, port)}; state left alone.", 1)
         return (f"Compass: nothing running on port {port}; removed the stale state file.", 0)
     # Nothing there and nothing recorded. Stopping is idempotent on purpose:
     # a script that calls --stop unconditionally should not fail for it.
@@ -1061,7 +1329,7 @@ def _remove_footer_lines(application: object) -> None:
             footer.remove_all()
 
 
-def serve(  # noqa: PLR0915 - ordered signal, recovery, serving and shutdown lifecycle
+def serve(  # noqa: C901, PLR0915 - ordered signal, recovery, serving and shutdown lifecycle
     config: RuntimeConfig,
     server: http_api.CompassHTTPServer,
     port: int,
@@ -1097,8 +1365,9 @@ def serve(  # noqa: PLR0915 - ordered signal, recovery, serving and shutdown lif
     # and was lost, and the server served on (DRC-4737).
     global _serving_stop  # noqa: PLW0603 - read by the signal handler, which takes no arguments
     orig_term = _register_sigterm_exit()
+    published = False
     try:
-        write_state(
+        published = write_state(
             config,
             port,
             started=started,
@@ -1185,7 +1454,8 @@ def serve(  # noqa: PLR0915 - ordered signal, recovery, serving and shutdown lif
             with contextlib.suppress(Exception):
                 application.state.asks.decline_all()
             _remove_footer_lines(application)
-        remove_state(config, port)
+        if published:
+            remove_state(config, port, owner_started=started)
         with contextlib.suppress(OSError):
             server.server_close()
         _restore_sigterm(orig_term)

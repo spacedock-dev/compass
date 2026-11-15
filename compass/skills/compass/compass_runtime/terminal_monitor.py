@@ -523,7 +523,7 @@ def _stop_holder(dashboard: client.Dashboard, sid: str, generation: str) -> bool
     cap is waited out within each budget; one that never frees a slot is reported as busy, since
     the stop then went undelivered and the dashboard's own check-in expiry ends the monitor.
     """
-    current = client.probe(dashboard.port)
+    current = client.probe(dashboard.port, timeout=0.3)
     # A probe that meets the cap cannot name the dashboard, but the cap's refusal is written before
     # any request is read, so the stop is sent anyway and waits for a slot within its own budget.
     at_cap = isinstance(current, client.Refusal) and current.message == client.sentence(

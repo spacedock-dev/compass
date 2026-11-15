@@ -43,6 +43,12 @@ class CommandManualOptionsTest(unittest.TestCase):
         self.assertIn("can spend", row)
         self.assertIn("SECURITY.md#the-live-monitor", row)
 
+    def test_installed_status_reference_explains_unreachable_records(self) -> None:
+        options = (SERVER_PATH.parent / "reference" / "options.md").read_text(encoding="utf-8")
+        row = next(line for line in options.splitlines() if line.startswith("| `--status` |"))
+        self.assertIn("unreachable", row)
+        self.assertIn("left alone", row)
+
     def test_option_rows_cover_every_parser_spelling(self) -> None:
         manual = (SERVER_PATH.parents[3] / "MANUAL.md").read_text(encoding="utf-8")
         first_cells = re.findall(r"^\| ([^|]+) \|", manual, flags=re.MULTILINE)

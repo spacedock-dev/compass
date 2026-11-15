@@ -4300,9 +4300,11 @@ how hard, to anyone who can read the notification stream. That is stated here ra
 
 ## Process lifecycle: written paths, and `/api/shutdown`
 
-The server writes twelve files, all under `~/.compass` (relocatable with `COMPASS_HOME`,
+The server writes fourteen files, all under `~/.compass` (relocatable with `COMPASS_HOME`,
 authoritative when nonblank): `compass-<port>.json`, recording the running instance (`pid`, `port`,
-`started`, `log`, `python`); `compass-<port>.log`, where a detached (`--daemon`) instance's
+`started`, `log`, `python`, `state_format`); `compass-<port>.json.origin`, a nonsecret record tied to that
+instance's pid, port and start time; `compass-<port>.json.lock`, the persistent OS lock used to
+serialize state publication and removal; `compass-<port>.log`, where a detached (`--daemon`) instance's
 output goes; `compass-dismissals.json`, the sessions the reader marked handled, described in
 Dismissals below; `observer/<harness>_<sid>.json`, the sidecar `GET /api/observe` records when a
 reader opens that panel for a session, named in invariant 2 above; `compass-history.json`, the
@@ -4320,12 +4322,53 @@ prototype below and not reached by `--forget`; and `compass-typed-presses.json`,
 typed `/compass:compass drift` commands a press from inside a session started a reading on, owner-only
 and described in the drift action's row of What can reach into a session above, which `--forget`
 keeps because it guards the spend as the spend timestamps do. One forwarder writes a
-thirteenth, in the same directory and named in invariant 2 above:
+fifteenth, in the same directory and named in invariant 2 above:
 `statusline_hook.py` keeps `statusline-<harness>-<session>.json` per conversation, holding a
 normalized state name and a timestamp, so a status line that fires many times a turn posts once. The directory is created `0o700` because the log can carry local paths: uncaught
-tracebacks land there, not just Python-level prints. Nothing ever removes or rotates the log: a
-`--stop` (or a killed process) deletes the state file but leaves the log behind, since it is the
-record of a detached run, so `~/.compass` accumulates one log file per port indefinitely.
+tracebacks land there, not just Python-level prints. Nothing ever removes or rotates the log. A
+clean shutdown removes that instance's state and origin record but leaves its log and lock
+file behind. A crash can leave the state and origin too. The log records a detached run, so
+`~/.compass` accumulates one log file per port indefinitely.
+
+A failed loopback probe cannot establish that a recorded dashboard is dead: a container can
+share this directory while having its own network and process namespace. The origin record
+contains a hashed machine identity, boot identity and, on Linux, network and pid namespace
+identities. It contains no capability or session content. Linux reads the machine id and boot id
+from local system files; macOS uses native sysctl identifiers; Windows uses MachineGuid and the
+native boot GUID. Missing system identity makes provenance unknown. The state and origin are
+written atomically as individual owner-only files, under the same per-port lock. New state
+payloads carry a `state_format` discriminator: a missing, unreadable, malformed or mismatched
+origin for one of these payloads never turns it into a legacy record and authorizes no cleanup.
+For origin-aware records in the same boot, machine, boot and every measured network and PID
+namespace must match, and a read-only process probe must positively establish that the writer
+is absent. A different boot of the same machine is reclaimable only when the recorded start
+predates this boot's measured start. The local port must be closed and released before removal.
+Unknown or different provenance is preserved. Publication and removal recheck ownership under
+the per-port lock. The serving process can remove its own exact PID/start record on exit,
+including after an incomplete origin publication.
+
+Reboot recovery assumes unique machine IDs. Two machines sharing one machine ID and one state
+folder, such as a cloned VM or image whose machine ID was not regenerated, are treated as one
+machine. A reboot of one can therefore sweep the other's older record even while that dashboard
+still runs elsewhere. Timestamps cannot distinguish these clones. Regenerate machine IDs or use
+separate state folders for those machines.
+
+Legacy records, with neither a format discriminator nor an origin sidecar, keep the older
+per-operation behavior as a compatibility exception: an unanswered parsed record is reported
+stale; stop removes it once the local port is released, even if its PID is locally alive; startup
+sweeping requires the local PID to be absent and the port closed and released. Explicit startup
+can replace a legacy record. These rules cannot protect a legacy dashboard in another network
+or PID namespace sharing this folder. A successful new publication adds provenance protection.
+
+Removal failures are reported by `--stop` with exit `1`. Lock files remain because unlinking a
+lock can let two processes lock different files at the same name. Terminal discovery uses only
+state filenames and health, never the tokens. After discovery fails, a spending action delegates
+startup to lifecycle for the default port or explicit target port. Only that target's unknown
+record vetoes startup, with its exact filename in the refusal; an unrelated unreachable record
+does not veto it. Dead target records are recovered under the same lifecycle rules. A read
+offers a conditional start command without inspecting state or deciding ownership. A refused
+startup asks the operator to verify the dashboard is gone in its original environment before removing
+only its state file and matching origin file. It does not recommend repeating the refused start.
 
 Configured state roots, including `COMPASS_HOME` and the default `~/.compass`, may be links to
 user-owned directories. On POSIX, Compass resolves the root through opened directory descriptors,

@@ -46,7 +46,7 @@ DEFAULT_PORT = 4553
 # file left by a crash costs one refused connection each. Eight is more dashboards than one
 # person runs.
 MAX_CANDIDATES: Final = 8
-HEALTH_TIMEOUT_SEC: Final = 0.3
+HEALTH_TIMEOUT_SEC: Final = 1.0
 REQUEST_TIMEOUT_SEC: Final = 5.0
 # On 2026-11-07, a cold list of 3,700+ sessions took 4.8 s and the first client read
 # hit the five-second limit. Allow collection time while keeping a whole-exchange bound.
@@ -950,8 +950,8 @@ def start_daemon(
     timeout: float = 30.0,
     no_update_check: bool = False,
     server_options: ServerOptions | None = None,
-) -> None:
-    """Start a dashboard the way `--daemon` does, and wait for the parent to return."""
+) -> Refusal | None:
+    """Start through lifecycle and relay its refusal, bounded to one printable message."""
     import subprocess  # noqa: PLC0415 — a read never starts one, so a read never loads this
 
     argv = [*launch_argv(), "--daemon", "--port", str(port)]
@@ -963,11 +963,56 @@ def start_daemon(
         for name in server_options.allowed_hosts:
             argv.extend(["--allow-host", name])
     try:
-        subprocess.run(  # noqa: S603 — our own interpreter and launcher, with an integer port
+        completed = subprocess.run(  # noqa: S603 — our own interpreter and launcher, with an integer port
             argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, check=False
         )
     except (OSError, subprocess.SubprocessError):
-        return
+        return None
+    if isinstance(completed.returncode, int) and completed.returncode != 0:
+        raw = (completed.stdout or b"") + (completed.stderr or b"")
+        message = terminal_sessions.printable(raw[-4096:].decode("utf-8", errors="replace"))
+        return Refusal(message or sentence("start_failed"))
+    return None
+
+
+def unreachable_dashboard(
+    home: str,
+    ports: tuple[int, ...],
+    *,
+    state_file: str | None = None,
+    read_discovery: bool = False,
+) -> str:
+    """Explain unreachable records, distinguishing discovery from a refused lifecycle action."""
+    checked = ", ".join(str(port) for port in ports)
+    port_label = "port" if len(ports) == 1 else "ports"
+    folder = terminal_sessions.printable(home)
+    files = (
+        (state_file,)
+        if state_file is not None
+        else tuple(os.path.join(home, f"compass-{port}.json") for port in published_ports(home))
+    )
+    preserved = (
+        ("State file " if len(files) == 1 else "State files ")
+        + ", ".join(terminal_sessions.printable(path) for path in files)
+        + (" was left alone. " if len(files) == 1 else " were left alone. ")
+        if files
+        else "State files were left alone. "
+    )
+    # Reads have not attempted startup and cannot inspect token-bearing state to
+    # decide ownership. A requested start makes that decision under its own lock.
+    recovery = (
+        f"If Compass is no longer running, start it with `{launch_command('--daemon')}`."
+        if read_discovery
+        else "Verify the recorded dashboard is gone from the machine and terminal "
+        "where it ran before removing only its state file and matching .origin file, then retry."
+    )
+    return (
+        f"Compass: no dashboard answered at 127.0.0.1 on {port_label} {checked}; "
+        f"state folder: {folder}. A dashboard open in a browser may be running where this "
+        "command cannot reach it: another port or state folder, another machine, a VM, "
+        "or a container or sandbox. "
+        f"{preserved}{recovery}"
+    )
 
 
 def ensure_dashboard(  # noqa: PLR0913 — explicit startup policy, never ambient process state
@@ -976,7 +1021,7 @@ def ensure_dashboard(  # noqa: PLR0913 — explicit startup policy, never ambien
     port: int | None,
     spend: bool,
     own_version: str | None,
-    start: Callable[[int], None] | None = None,
+    start: Callable[[int], Refusal | None] | None = None,
     say: Callable[[str], None] | None = None,
     in_session: bool = False,
     no_update_check: bool = False,
@@ -991,17 +1036,24 @@ def ensure_dashboard(  # noqa: PLR0913 — explicit startup policy, never ambien
     found = find_dashboard(home, port=port)
     if found is None:
         if not spend:
-            return Refusal(sentence("not_running"))
-        (say or _say)(sentence("starting"))
-        launch: Callable[[int], None] = start or (
+            return Refusal(
+                unreachable_dashboard(home, candidate_ports(home, port), read_discovery=True)
+                if published_ports(home)
+                else sentence("not_running")
+            )
+        launch: Callable[[int], Refusal | None] = start or (
             lambda chosen: start_daemon(
                 chosen, **server_start_kwargs(server_options, no_update_check=no_update_check)
             )
         )
-        launch(DEFAULT_PORT if port is None else port)
+        refused = launch(DEFAULT_PORT if port is None else port)
+        if isinstance(refused, Refusal):
+            return refused
         found = find_dashboard(home, port=port, timeout=2.0)
         if found is None:
             return Refusal(sentence("start_failed_in_session" if in_session else "start_failed"))
+        if isinstance(found, Dashboard):
+            (say or _say)(sentence("starting"))
     if isinstance(found, Refusal):
         return found
     if spend and (message := version_guard(found, own_version, in_session=in_session)) is not None:

@@ -1067,11 +1067,15 @@ COMPASS_HOME="$HOME/.compass" python3 "$SKILL/launch.py" "$SKILL/server.py" --po
 [SKILL.md](compass/skills/compass/SKILL.md#stop) owns the last-resort per-platform commands for a
 port that stays held.
 
-State files accumulate, but only from runs that never exited cleanly. A dashboard removes its own on
-the way out, so a kill, a crash or a sleeping machine is what leaves one behind. They are inert, since
-a stale record is told from a live instance by probing the port, but each one holds that dead run's
-capability tokens and nothing sweeps them, so they are worth deleting by hand if you have collected a
-pile.
+A dashboard removes its own state and origin record on a clean exit. On the next start, Compass
+recovers a dead target record when its provenance and the free local port allow it. Unknown
+provenance preserves an origin-aware record; its exact filename appears in the refusal. A record
+on another port does not block starting the selected port. If the browser works but a command
+cannot reach the dashboard, run it from the terminal where that dashboard runs. Verify a dashboard
+is gone in the environment where it ran before removing only its named state and origin files.
+Each state file holds capability tokens; do not share its contents. The small `.json.lock` files
+remain to keep state publication and removal serialized. The [security contract](SECURITY.md#process-lifecycle-written-paths-and-apishutdown)
+explains the legacy cleanup exception and the shared-machine-ID limit on reboot recovery.
 
 ## Troubleshooting
 
@@ -1080,7 +1084,7 @@ pile.
 | A harness's sessions are missing | Its store is elsewhere, or unreadable | `--diagnose`, and read the store lines rather than the harness lines |
 | The board is empty and the harness is installed | You are running a different copy than you think | Re-pin `$SKILL` from the first section |
 | A question never appears | The lane is off, or the first call was gated in the terminal | Check `"ask":true` in the payload, then check the grant |
-| The session says no dashboard is running | It is looking at a different `COMPASS_HOME` or port | Export `COMPASS_HOME` in the shell that launches the harness |
+| The session cannot reach the dashboard but the page works | The command sees a different network, machine, `COMPASS_HOME` or port | Run the same `--status --port PORT` command in your own terminal and in the session; use the terminal that can reach it |
 | The session says the lane is switched off | The dashboard was started with `--no-ask` | Restart without the flag |
 | A hook works in one shell and not another | Two Pythons on the PATH | Use one interpreter for everything |
 | Find goal, a summary or the Live monitor says your Claude Code settings stopped it | A managed setting can move the call or run a command | Follow [When Claude Code settings stop a check](#when-claude-code-settings-stop-a-check) |

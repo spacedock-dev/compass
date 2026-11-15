@@ -809,6 +809,15 @@ class MissingDashboardTest(HomeCase):
         self.assertEqual(["--daemon", "--port", "4999"], argv[-3:])
         self.assertTrue(argv[1].endswith("launch.py") and argv[2].endswith("server.py"))
 
+    def test_failed_daemon_output_is_relayed_with_a_bounded_message(self) -> None:
+        completed = subprocess.CompletedProcess([], 1, b"x" * 10000 + b"blocked state.json", b"")
+        with mock.patch.object(subprocess, "run", return_value=completed):
+            result = terminal_client.start_daemon(4999)
+        self.assertIsInstance(result, terminal_client.Refusal)
+        assert isinstance(result, terminal_client.Refusal)
+        self.assertIn("blocked state.json", result.message)
+        self.assertLessEqual(len(result.message), 4096)
+
 
 class SessionTest(unittest.TestCase):
     def test_the_flag_wins_over_the_status_line_and_the_environment(self) -> None:
