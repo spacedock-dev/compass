@@ -257,13 +257,20 @@ after you resume. It is refused while calls are paused, so run it first. Resume 
 
 The Live monitor asks Haiku, through your Claude Code, whether the latest turns drift from your
 saved goal. It checks only after new work, at most about once a minute, and it writes nothing into
-your session. Inside the session, type `/compass:compass monitor on` or `monitor off`. From a
-terminal:
+your session. An agent reply without a new prompt also counts as new work. Inside the session,
+type `/compass:compass monitor on` or `monitor off`. The start uses one turn there; subsequent
+checks run separately. From another terminal, first run `spacedock-compass --sessions` and copy
+the full id from the session's `Resume:` line, then run:
 
 ```bash
 spacedock-compass --monitor --session claude:ID
 spacedock-compass --monitor --off --session claude:ID
 ```
+
+A start from another terminal needs no typed command and adds no turn to the watched session.
+The start prints the exact stop command, including the full id. If it starts a dashboard, it says so.
+A repeat reads only this session's lease. If the board explicitly says it is off, the command stops
+the stale helper and attempts a new start. A timeout or unreadable reply leaves the helper running.
 
 - A monitor started from a terminal keeps running after you close that terminal. It stops when any
   of these happens, and it does not restart by itself:
@@ -370,7 +377,11 @@ board to do these things:
 | `Saving a goal needs an explicit --session and terminal stdout.` | Run it in your own terminal, with `--session` and no pipe. |
 | `Your intent was saved after this session ended.` | Run `--goal --clear` and then `--goal --adopt`, each with `--session`, to read the session against your prompt. |
 | `Compass could not confirm that you typed the command, ...` or `Summary request refused (typed-command-required)` | From a shell, run it in your own terminal with `--session` and no pipe. Inside a session, type the action yourself, as your whole message. |
-| `Compass refused this Live monitor start.` | Type `/compass:compass monitor on` yourself, as your whole message, inside that session. |
+| `Compass refused this Live monitor start.` inside a session | Type `/compass:compass monitor on` yourself, as your whole message, inside that session. |
+| `Compass refused this Live monitor start.` from your own terminal with `--session` | Run `--sessions` and check that this session is live and on the board. Check that the dashboard allows annotations (`--no-annotations` refuses a start), and that any drafted goal could be saved. Then retry from that terminal with the full id. |
+| `Compass could not read the board to find this live Claude Code session.` | The dashboard replied, but its reply could not be read as the requested session or lease. A repeat leaves the running helper alone. Check that your command uses the same Compass copy as the dashboard, then retry. This is different from a missing session or a timeout. |
+| `Compass could not start or stop this terminal's Live monitor.` | The helper could not finish starting or stopping. A start waits up to 35 seconds for readiness, then allows up to 18 seconds to reap its own worker. Check the dashboard and retry. `--monitor --off --session claude:ID` stops a leftover helper without a board read. |
+| `Compass: the dashboard did not answer in time ...` during a monitor command | Each lookup, lease read, start request or check-in has a 30-second whole-exchange bound, including retries while busy. Wait for the dashboard to finish collecting and retry. A timed-out repeat keeps its helper running. |
 | `--project needs a Claude Code caller.` or `Compass summarizes Claude Code sessions only.` | `--project`, `--summary` and `--monitor` take Claude Code sessions only. Summarize a Codex session on the board. |
 | `Compass's connection to the dashboard was blocked by a sandbox or permissions.` | A sandbox, such as Codex's, blocked the local connection. Run the command in a terminal outside it, and add `--session codex:ID` for `--drift`. |
 | `The dashboard has every connection in use, so nothing was sent; try again in a moment.` | The dashboard is running but all of its connections are open at once, often many sessions asking together. Wait a moment and run the command again. |

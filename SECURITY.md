@@ -294,6 +294,11 @@ The posture rests on two invariants:
    checkout locations to a loopback API reader, without publishing a path. The page renders
    neither raw checkout paths nor identity keys. Missing Claude worktree layouts publish
    inferred provenance and no measured checkout key.
+
+   `GET /api/live-monitor?harness=claude&sid=...` reads only one in-memory lease,
+   including its disclosure and end reason. It does not collect a session, renew a holder or call
+   a model. It has the same loopback, same-origin and document-navigation guards as `/api/session`.
+   A missing lease answers with `on: false`; missing or invalid identity answers 400.
    `GET /api/sessions` serves the default board window through an explicit list-field
    projection, with no observation history or unused row fields. It removes server-only message
    words and has the same loopback, same-origin and document-navigation guards as `/api/session`.
@@ -3309,7 +3314,7 @@ Ruled 2026-10-23 by the owner
 With the switch on and the session on screen, or while a terminal holder keeps the lease, a Haiku
 check of new turns runs about once a minute and produces the live drift level. It is a call the reader starts, under
 [DEC-28](docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts),
-with a `monitor` notice shown before the first charged call. A terminal start checks whether its notice is due without recording it. After admission succeeds and the terminal receipt exists, it records the notice without a model call or charge. A refused start leaves the notice due. If recording fails, the receipt still tells the foreground to print it. The terminal disclosure says checks follow new work, at most about once a minute, and names `spacedock-compass --monitor --off` from a shell, `/compass:compass monitor off` in the session, and Pause model calls. The notice follows the same destination and content-tier rules, including the reset on Pause.
+with a `monitor` notice shown before the first charged call. A terminal start checks whether its notice is due without recording it. After admission succeeds and the terminal receipt exists, it records the notice without a model call or charge. A refused start leaves the notice due. If recording fails, the receipt still tells the foreground to print it. The terminal disclosure says checks follow new work, at most about once a minute, and names `spacedock-compass --monitor --off --session claude:ID` from a shell with this session's full id (the published short id when no full id is available), `/compass:compass monitor off` in the session, and Pause model calls. The notice follows the same destination and content-tier rules, including the reset on Pause.
 
 - What is sent. The saved goal, and, redacted and clipped first, the person's own messages, the
   agent's replies, the commands of checks with their result, every other command as its masked line
@@ -3334,8 +3339,14 @@ with a `monitor` notice shown before the first charged call. A terminal start ch
 - Terminal holders. `--monitor` starts one detached holder per Claude Code session; `--monitor
   --off` stops only that holder and leaves the dashboard and browser holders running. The skill's
   `monitor on` starts only when the transcript's latest main-thread prompt is that typed command,
-  once per accepted run. The typed guard and ordinary start refusals precede any goal save, notice record or lease. With no saved goal or outcome lines, a terminal start adopts the page's draft through the same annotation writer as Analyze, before its first tick. A concurrent goal or outcome save wins, and a concurrent discard stays discarded and refuses the start. Failed adoption releases the typed command and starts no lease. With no draft it starts but makes no check until a goal is saved; saved outcome lines still allow checks. Beats, stops and a repeat of an already-running command consume no command. The repeat only reads the board's published notice status. A full session id must match
+  once per accepted run. The typed guard and ordinary start refusals precede any goal save, notice record or lease. With no saved goal or outcome lines, a terminal start adopts the page's draft through the same annotation writer as Analyze, before its first tick. A concurrent goal or outcome save wins, and a concurrent discard stays discarded and refuses the start. Failed adoption releases the typed command and starts no lease. With no draft it starts but makes no check until a goal is saved; saved outcome lines still allow checks. Beats, stops and a repeat whose board lease is still on consume no command. The repeat reads only that session's published lease and notice status, without renewal or session collection. When the board explicitly says the lease is off, the command stops the stale helper, waits for its exit, then attempts normal admission, including the typed-command guard inside a session. A timeout or unreadable reply never counts as off and leaves the helper running. Successful starts and repeats print a separate-terminal stop command with the full session id; they print no separate-terminal start command. A full session id must match
   `resume_id`; a same-prefix different id is refused.
+  Session lookups, lease reads, start requests and check-ins have a 30-second whole-exchange
+  limit and a 16 MiB reply cap, including waits at the connection cap. The foreground allows
+  35 seconds for helper readiness, longer than its start request, and up to 18 seconds for
+  cleanup of its own child after failed readiness. A timeout is named separately from an unreadable
+  reply. An unreachable dashboard uses the shared diagnostic with ports and state folder, preserving
+  state files. A monitor command that starts a dashboard says so.
   The holder exits on a recorded lease end, an absent or ended row, 30 seconds of continuously
   failed dashboard exchanges, or two hours with no new published activity. On POSIX, when the monitored row matches `CLAUDE_CODE_SESSION_ID`, it records the
   nearest ancestor executable named `claude`, its PID and start time, and exits when that process

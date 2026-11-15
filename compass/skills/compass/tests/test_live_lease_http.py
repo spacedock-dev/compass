@@ -30,7 +30,7 @@ from compass_runtime import (
 )
 
 from .support import make_server, serve_until_closed
-from .test_claude_checks import SHORT, START
+from .test_claude_checks import SHORT, SID, START
 from .test_compass_skill_action import CompassSession
 from .test_copied_corrections import STORED
 from .test_live_estimate import GOAL, LINE, _Replay
@@ -312,7 +312,7 @@ class ATerminalReaderStartsWithTheirIntent(LeaseRoute):
     ) -> None:
         with self.serving() as port:
             with mock.patch.object(
-                live_lease.Leases, "_start_refusal", side_effect=["", "unavailable"]
+                live_lease.Leases, "_start_refusal", side_effect=[("", SID), ("unavailable", "")]
             ):
                 _, refused = self.lease(port, "start", holder_kind="terminal")
             self.assertFalse(refused["ok"])
@@ -344,11 +344,11 @@ class ATerminalReaderStartsWithTheirIntent(LeaseRoute):
         self.assertEqual({}, reading_policy.status(self.config, now=NOW)["notices"])
 
     def test_a_person_reads_when_terminal_checks_run_and_how_to_stop_them(self) -> None:
-        with self.serving() as port:
+        with self.serving(self.app(resume_id=SID)) as port:
             _, answer = self.lease(port, "start", holder_kind="terminal")
         text = answer["terminal"]["disclosure"]
         self.assertIn("checks after new work in this session, at most about once a minute", text)
-        self.assertIn("spacedock-compass --monitor --off from a shell", text)
+        self.assertIn("spacedock-compass --monitor --off --session claude:" + SID, text)
         self.assertIn("/compass:compass monitor off in the session", text)
         self.assertIn("Pause model calls stops it.", text)
         self.assertNotIn("terminal holder", text)
@@ -488,6 +488,27 @@ class ATerminalReaderStartsWithTheirIntent(LeaseRoute):
             )
         )
 
+    def test_the_lease_read_does_not_collect_or_renew_the_session(self) -> None:
+        with self.serving(self.app(resume_id=SID)) as port:
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+            self.now += self.config.live_monitor_lapse_sec - 1
+            with mock.patch.object(
+                self.application,
+                "collect_json",
+                side_effect=AssertionError("lease read collected the board"),
+            ):
+                status, published = self.call(
+                    port, "GET", "/api/live-monitor?harness=claude&sid=" + SHORT
+                )
+            self.assertEqual(200, status)
+            self.assertTrue(published["state"]["on"])
+            self.assertEqual(answer["state"]["started_at"], published["state"]["started_at"])
+            self.assertEqual(answer["state"]["disclosure"], published["state"]["disclosure"])
+            self.assertIn("--off --session claude:" + SID, published["state"]["disclosure"])
+            self.now += 2
+            _, expired = self.call(port, "GET", "/api/live-monitor?harness=claude&sid=" + SHORT)
+            self.assertFalse(expired["state"]["on"])
+
 
 class AReaderChoosesTheHolderKind(LeaseRoute):
     def test_a_browser_reader_is_not_given_terminal_notice_metadata(self) -> None:
@@ -594,10 +615,10 @@ class TheRouteIsGuardedLikeAPress(LeaseRoute):
             status, _ = self.call(port, "POST", "/api/live-monitor", b"{" + b" " * 70_000 + b"}")
             self.assertEqual(413, status)
 
-    def test_a_get_is_not_a_route(self) -> None:
+    def test_a_lease_read_needs_a_session_identity(self) -> None:
         with self.serving() as port:
             status, _ = self.call(port, "GET", "/api/live-monitor")
-            self.assertEqual(404, status)
+            self.assertEqual(400, status)
 
 
 class StartIsRefused(LeaseRoute):

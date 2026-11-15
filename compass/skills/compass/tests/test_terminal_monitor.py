@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import types
 import unittest
 import warnings
@@ -339,7 +340,7 @@ class ReadinessTest(unittest.TestCase):
         store.read.return_value = {"generation": "a" * 32, "reason": "unreachable", "answer": {}}
         with mock.patch.object(monitor, "spawn"), mock.patch("sys.stderr", io.StringIO()) as err:
             self.assertEqual(1, monitor._await_start(store, "one", "a" * 32))
-        self.assertIn("could not start or stop", err.getvalue())
+        self.assertIn("no dashboard answered", err.getvalue())
 
     def test_a_person_repeating_the_command_reads_the_board_without_another_start(self) -> None:
         with tempfile.TemporaryDirectory() as home:
@@ -349,19 +350,18 @@ class ReadinessTest(unittest.TestCase):
             )
             for due in (False, True):
                 board = {
-                    "sources": {
-                        "work": {
-                            "live_monitor": {
-                                "notice_due": due,
-                                "disclosure": "Sends to the changed destination.",
-                            }
-                        }
+                    "state": {
+                        "on": True,
+                        "notice_due": due,
+                        "disclosure": "Sends to the changed destination.",
                     }
                 }
                 with (
                     self.subTest(due=due),
                     mock.patch.object(store, "running", return_value=True),
-                    mock.patch.object(client, "get", return_value=client.Reply(200, board)) as get,
+                    mock.patch.object(
+                        client, "request", return_value=client.Reply(200, board)
+                    ) as get,
                     mock.patch.object(client, "post") as post,
                     mock.patch.object(monitor, "spawn") as spawn,
                     mock.patch("sys.stdout", io.StringIO()) as out,
@@ -377,7 +377,7 @@ class ReadinessTest(unittest.TestCase):
                     )
                     self.assertEqual(due, "Sends to the changed destination." in out.getvalue())
                     self.assertIn("already running", out.getvalue())
-                    self.assertIn("/api/project-context?", get.call_args.args[1])
+                    self.assertIn("/api/live-monitor?", get.call_args.args[2])
                     post.assert_not_called()
                     spawn.assert_not_called()
 
@@ -524,7 +524,7 @@ class ReadinessTest(unittest.TestCase):
         worker = mock.Mock()
         with (
             mock.patch.object(monitor, "spawn", return_value=worker),
-            mock.patch("time.monotonic", side_effect=[0, 13]),
+            mock.patch("time.monotonic", side_effect=[0, monitor.READY_SEC + 1]),
             mock.patch("sys.stderr", io.StringIO()),
         ):
             self.assertEqual(1, monitor._await_start(store, "one", "a" * 32))
@@ -586,7 +586,7 @@ class MonitorCorrectionsTest(unittest.TestCase):
                 self.subTest(reply=reply),
                 tempfile.TemporaryDirectory() as home,
                 mock.patch.object(client, "ensure_dashboard", return_value=self.dashboard),
-                mock.patch.object(client, "get", return_value=reply),
+                mock.patch.object(client, "request", return_value=reply),
                 mock.patch.object(monitor, "spawn") as spawn,
                 mock.patch("sys.stderr", io.StringIO()) as err,
             ):
@@ -644,7 +644,7 @@ class MonitorCorrectionsTest(unittest.TestCase):
                 self.subTest(reply=reply),
                 tempfile.TemporaryDirectory() as home,
                 mock.patch.object(client, "ensure_dashboard", return_value=self.dashboard),
-                mock.patch.object(client, "get", return_value=reply),
+                mock.patch.object(client, "request", return_value=reply),
                 mock.patch.object(monitor, "spawn") as spawn,
                 mock.patch("sys.stderr", io.StringIO()) as err,
             ):
@@ -751,7 +751,7 @@ class MonitorCorrectionsTest(unittest.TestCase):
                 mock.patch.object(client, "ensure_dashboard", return_value=self.dashboard),
                 mock.patch.object(
                     client,
-                    "get",
+                    "request",
                     return_value=client.Reply(200, {"session": self.row, "sessions": [self.row]}),
                 ),
                 mock.patch.object(
@@ -825,7 +825,7 @@ class MonitorCorrectionsTest(unittest.TestCase):
         store.read.return_value = {"generation": "a" * 32, "reason": "unreachable"}
         with mock.patch.object(monitor, "spawn"), mock.patch("sys.stderr", io.StringIO()) as err:
             self.assertEqual(1, monitor._await_start(store, "one", "a" * 32))
-        self.assertIn(client.sentence("monitor_failed"), err.getvalue())
+        self.assertIn("no dashboard answered", err.getvalue())
         self.assertNotIn("refused", err.getvalue())
 
     def test_a_person_whose_worker_ignores_terminate_does_not_leave_it_after_a_readiness_timeout(
@@ -841,7 +841,7 @@ class MonitorCorrectionsTest(unittest.TestCase):
         ]
         with (
             mock.patch.object(monitor, "spawn", return_value=worker),
-            mock.patch("time.monotonic", side_effect=[0, 13]),
+            mock.patch("time.monotonic", side_effect=[0, monitor.READY_SEC + 1]),
             mock.patch("sys.stderr", io.StringIO()),
         ):
             self.assertEqual(1, monitor._await_start(store, "one", "a" * 32))
@@ -974,3 +974,160 @@ class MonitorAtTheConnectionCapTest(unittest.TestCase):
             ):
                 self.assertEqual(0, monitor._command(store, named, off=True, in_session=False))
         self.assertIn(client.sentence("monitor_stopped"), out.getvalue())
+
+
+class MonitorRecoveryTest(unittest.TestCase):
+    def test_only_an_explicit_off_reply_replaces_a_stale_helper(self) -> None:
+        for state in ({"on": False}, {"on": False, "last_end": {"reason": "ended"}}):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as home:
+                store = monitor_store.Store(home, "one")
+                store.write(
+                    "run",
+                    {"sid": "one", "generation": "old", "dashboard": [4553, 42, 100.0, "1.0.0"]},
+                )
+                with (
+                    mock.patch.object(store, "running", side_effect=[True, False, False]),
+                    mock.patch.object(
+                        client, "request", return_value=client.Reply(200, {"state": state})
+                    ),
+                    mock.patch.object(monitor, "_start", return_value=7) as start,
+                ):
+                    self.assertEqual(
+                        7,
+                        monitor._command(
+                            store,
+                            client.Session("claude", "one", "environment"),
+                            off=False,
+                            in_session=True,
+                        ),
+                    )
+                self.assertEqual({"generation": "old"}, store.read("stop"))
+                self.assertTrue(start.call_args.kwargs["in_session"])
+
+    def test_an_unknown_lease_never_stops_the_working_helper(self) -> None:
+        for answer in (
+            client.Reply(200, {}),
+            client.Reply(200, {"state": {}}),
+            client.Reply(500, {"state": {"on": False}}),
+            client.DashboardUnreachable(),
+            client.DashboardBusy(),
+        ):
+            with self.subTest(answer=answer), tempfile.TemporaryDirectory() as home:
+                store = monitor_store.Store(home, "one")
+                store.write(
+                    "run",
+                    {"sid": "one", "generation": "old", "dashboard": [4553, 42, 100.0, "1.0.0"]},
+                )
+                with (
+                    mock.patch.object(store, "running", return_value=True),
+                    mock.patch.object(
+                        client,
+                        "request",
+                        side_effect=answer if isinstance(answer, Exception) else None,
+                        return_value=answer,
+                    ),
+                    mock.patch.object(monitor, "_start") as start,
+                    mock.patch("sys.stderr", io.StringIO()),
+                ):
+                    self.assertEqual(
+                        1,
+                        monitor._command(
+                            store,
+                            client.Session("claude", "one", "flag"),
+                            off=False,
+                            in_session=False,
+                        ),
+                    )
+                self.assertEqual({}, store.read("stop"))
+                start.assert_not_called()
+
+    def test_a_never_answering_repeat_names_timeout_and_keeps_the_helper(self) -> None:
+        path = "/api/live-monitor?harness=claude&sid=one"
+        with FakeDashboard(delays={path: None}) as board, tempfile.TemporaryDirectory() as home:
+            store = monitor_store.Store(home, "one")
+            store.write(
+                "run",
+                {"sid": "one", "generation": "old", "dashboard": [board.port, 42, 100.0, "1.0.0"]},
+            )
+            with (
+                mock.patch.object(store, "running", return_value=True),
+                mock.patch.object(monitor, "REQUEST_TIMEOUT_SEC", 0.2, create=True),
+                mock.patch("sys.stderr", io.StringIO()) as err,
+            ):
+                began = time.monotonic()
+                self.assertEqual(
+                    1,
+                    monitor._command(
+                        store, client.Session("claude", "one", "flag"), off=False, in_session=False
+                    ),
+                )
+            self.assertLess(time.monotonic() - began, 2)
+            self.assertIn("dashboard did not answer in time", err.getvalue())
+            self.assertEqual({}, store.read("stop"))
+
+    def test_a_start_announces_the_dashboard_it_started(self) -> None:
+        def ensure(*_args: Any, **kwargs: Any) -> client.Dashboard:
+            (kwargs.get("say") or client._say)(client.sentence("starting"))
+            return client.Dashboard(4553, 42, 100.0, "1.0.0")
+
+        with (
+            tempfile.TemporaryDirectory() as home,
+            mock.patch.object(client, "ensure_dashboard", side_effect=ensure),
+            mock.patch.object(
+                client, "request", return_value=client.Reply(404, {"reason": "not-found"})
+            ),
+            mock.patch("sys.stderr", io.StringIO()) as err,
+        ):
+            monitor.command(
+                client.Session("claude", "one", "flag"), off=False, home=home, in_session=False
+            )
+        self.assertIn(client.sentence("starting"), err.getvalue())
+
+    def test_large_session_and_lease_replies_are_read_without_stopping_the_holder(self) -> None:
+        row = {"harness": "claude", "sid": "one", "resume_id": "one-full"}
+        for repeat in (False, True):
+            path = ("/api/live-monitor" if repeat else "/api/session") + "?harness=claude&sid=one"
+            data: dict[str, Any] = (
+                {"state": {"on": True, "disclosure": "notice"}} if repeat else {"session": row}
+            )
+            data["padding"] = "x" * (client.REPLY_CAP_BYTES + 100)
+            answers = {path: (200, {"Content-Type": "application/json"}, json.dumps(data).encode())}
+            with (
+                self.subTest(repeat=repeat),
+                FakeDashboard(answers=answers) as board,
+                tempfile.TemporaryDirectory() as home,
+            ):
+                dashboard = client.Dashboard(board.port, 42, 100.0, "1.0.0")
+                store = monitor_store.Store(home, "one")
+                store.write("run", {**row, "generation": "old", "dashboard": list(dashboard)})
+                with (
+                    mock.patch.object(store, "running", return_value=repeat),
+                    mock.patch.object(client, "ensure_dashboard", return_value=dashboard),
+                    mock.patch.object(monitor, "_await_start", return_value=0),
+                    mock.patch("sys.stdout", io.StringIO()),
+                ):
+                    self.assertEqual(
+                        0,
+                        monitor._command(
+                            store,
+                            client.Session("claude", "one", "flag"),
+                            off=False,
+                            in_session=False,
+                        ),
+                    )
+                self.assertEqual({}, store.read("stop"))
+                self.assertEqual([("GET", path)], board.requests)
+
+    def test_helper_start_timeouts_use_the_shared_timeout_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            store = monitor_store.Store(home, "one")
+            store.write("run", {"dashboard": [4553, 42, 100.0, "1.0.0"]})
+            store.write("status", {"generation": "a" * 32, "reason": "timeout", "answer": {}})
+            with (
+                mock.patch.object(monitor, "spawn"),
+                mock.patch("sys.stderr", io.StringIO()) as err,
+            ):
+                self.assertEqual(1, monitor._await_start(store, "one", "a" * 32))
+            self.assertIn("dashboard did not answer in time", err.getvalue())
+            self.assertIn(home, err.getvalue())
+            self.assertIn("State files were left alone", err.getvalue())

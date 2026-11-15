@@ -24,6 +24,7 @@ GET = {
     "/assets/xterm.css",
     "/api/data",
     "/api/session",
+    "/api/live-monitor",
     "/api/summary",
     "/api/sessions",
     "/api/observe",

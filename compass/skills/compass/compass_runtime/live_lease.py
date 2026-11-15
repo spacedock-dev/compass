@@ -84,6 +84,8 @@ class _Holder:
 @dataclasses.dataclass
 class _Lease:
     episode: int
+    # Keep stop instructions complete without collecting history on a lease read.
+    resume_id: str = ""
     holders: dict[str, _Holder] = dataclasses.field(default_factory=dict)
     last_attempt: float | None = None
     settings_refused: int = 0
@@ -145,14 +147,18 @@ class Leases:
         """
         now = self._clock()
         key = f"{harness}:{sid}"
-        refusal = "stopping" if self._stop.is_set() else self._start_refusal(harness, sid, now)
+        refusal, resume_id = (
+            ("stopping", "") if self._stop.is_set() else self._start_refusal(harness, sid, now)
+        )
         if not refusal and prepare is not None:
             # Collection and adoption take their own locks. Publish no holder until they finish.
             refusal = prepare()
             if not refusal:
                 now = self._clock()
-                refusal = (
-                    "stopping" if self._stop.is_set() else self._start_refusal(harness, sid, now)
+                refusal, resume_id = (
+                    ("stopping", "")
+                    if self._stop.is_set()
+                    else self._start_refusal(harness, sid, now)
                 )
         if not refusal:
             with self._lock:
@@ -161,7 +167,7 @@ class Leases:
                     self._ended.pop(key, None)
                     # Browser consent times can be null or renewed within a standing lease.
                     self._episode += 1
-                    self._leases[key] = _Lease(self._episode)
+                    self._leases[key] = _Lease(self._episode, resume_id=resume_id)
                 lease = self._leases[key]
                 holder = lease.holders.setdefault(tab_id, _Holder(now, kind=holder_kind))
                 holder.last_beat, holder.hidden = now, not visible
@@ -450,26 +456,26 @@ class Leases:
             del self._ended[next(iter(self._ended))]
         live_monitor.end(self.config, key)
 
-    def _start_refusal(self, harness: str, sid: str, now: float) -> str:
+    def _start_refusal(self, harness: str, sid: str, now: float) -> tuple[str, str]:
         if self.config.model_calls_disabled:
-            return "no-observer-model"
+            return "no-observer-model", ""
         if harness != HARNESS:
-            return "unsupported-harness"
+            return "unsupported-harness", ""
         if sid == SAMPLE_SID:
-            return "sample"
+            return "sample", ""
         if reading_policy.monitor_status(self.config, now=now)["reason"] in {
             "model-calls-paused",
             "run-disabled",
         }:
-            return "paused"
+            return "paused", ""
         row = self._row_for(harness, sid)
         # One answer for a session that ended, one that is not on the board and one the board lists
         # twice, so a start does not tell a caller which session ids exist.
         if row is None or row.get("ambiguous") or row.get("ended_at"):
-            return "unavailable"
+            return "unavailable", ""
         # The check every tick's preparation runs, asked here too so the switch says why at once
         # instead of turning on and checking nothing. It reads files only and charges nothing.
-        return live_monitor.settings_refusal(self.config)
+        return live_monitor.settings_refusal(self.config), str(row.get("resume_id") or sid)
 
     def _answer(self, harness: str, sid: str, refusal: str) -> dict[str, Any]:
         state = self._state(harness, sid, self._clock())
@@ -517,7 +523,9 @@ class Leases:
                 if terminal
                 else {}
             ),
-            "disclosure": live_monitor.disclosure(where, terminal=terminal)
+            "disclosure": live_monitor.disclosure(
+                where, terminal=terminal, sid=lease.resume_id if lease is not None else sid
+            )
             if where is not None
             else None,
             "model": self.config.claude_monitor_model,

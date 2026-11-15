@@ -683,9 +683,13 @@ unless you start the dashboard with `--claude-monitor-model` and another explici
 again after a reload is yours to do: nothing about it is remembered. Its limits are its own, apart from
 Analyze's 100 attempts.
 
-`spacedock-compass --monitor` turns the same monitor on for the Claude Code session you run it in, with
-no page open. It checks only after new work, asks no 20-minute question, and keeps going until
-`--monitor --off` or the session ends. [MANUAL.md](MANUAL.md) lists what else ends it.
+`spacedock-compass --monitor --session claude:ID` turns the same monitor on from another terminal,
+with no page open. Use the full id from the session's `Resume:` line in `--sessions`. It needs no
+typed command and adds no turn to the watched session. Stop it with
+`spacedock-compass --monitor --off --session claude:ID`, or paste the stop command printed after a
+start. It checks only after new work and asks no 20-minute question.
+[The terminal guide](HOW_TO_USE_TERMINAL.md#keep-the-live-monitor-on-without-a-browser-claude-code)
+has the procedure; [MANUAL.md](MANUAL.md) lists what else ends it.
 
 `--forget` also stores model calls as paused and session summaries as off, without resetting
 either rolling spend budget. Readings and goal summaries wait for **Resume model calls**, and
@@ -912,7 +916,8 @@ What the line says, and when it says nothing:
   the page's pill and keeps the last level visible while you work, until the next check replaces it.
   Replacing your saved intent or annotation revision clears the old level at once. It says
   `drift: no level yet` when there is no level to show. Turn the monitor on
-  with `spacedock-compass --monitor` in that session, or from the session page. When the lease ends,
+  from another terminal with `spacedock-compass --monitor --session claude:ID`,
+  by typing `/compass:compass monitor on` inside the session, or from the session page. When the lease ends,
   the level disappears on the next refresh. A short reason such as `monitor off: session ended`
   stays for five minutes after the end. Your own Off is silent. Waiting counts keep refreshing.
 - `N waiting` counts the needs on the board's Attention queue other than the session the line is in: other
