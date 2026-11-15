@@ -2456,7 +2456,9 @@ activity times, with no command, task description or notification output. Those
 fields are held in memory and published on the session row; they do not enter
 session history. Launch facts are excluded from every Analyze ledger, including
 one carrying tool output. Terminal task notifications pair only within the
-originating admitted stream, and their text is never published or stored.
+originating admitted stream. Each notification block in a batched record is read independently,
+so its identity and terminal status cannot come from another block. Their text is never published
+or stored.
 
 Two more kinds join it by the owner's ruling of 2026-10-23
 ([the amendment](docs/design-reading-a-session.md#amended-2026-10-23-owner-pr-and-skill-facts)): a pull

@@ -9423,16 +9423,18 @@ def _notification_completions(
             or not text.lstrip().startswith("<task-notification>")
         ):
             continue
-        call_id = _notification_field(text, "tool-use-id") or task_calls.get(
-            _notification_field(text, "task-id"),
-            "",
-        )
-        status = _notification_field(text, "status")
-        terminal = status in {"completed", "failed", "killed"} or (
-            not status and "<result>" in text and "</result>" in text
-        )
-        if call_id and terminal:
-            found[call_id] = at
+        for match in re.finditer(r"<task-notification>(.*?)</task-notification>", text, re.DOTALL):
+            block = match.group(1)
+            call_id = _notification_field(block, "tool-use-id") or task_calls.get(
+                _notification_field(block, "task-id"),
+                "",
+            )
+            status = _notification_field(block, "status")
+            terminal = status in {"completed", "failed", "killed"} or (
+                not status and "<result>" in block and "</result>" in block
+            )
+            if call_id and terminal:
+                found[call_id] = at
     return found
 
 

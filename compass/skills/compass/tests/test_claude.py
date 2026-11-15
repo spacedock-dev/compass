@@ -4342,6 +4342,63 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
             ),
         }
 
+    def test_batched_task_id_only_completions_settle_all(self) -> None:
+        for text_blocks in (False, True):
+            with self.subTest(text_blocks=text_blocks):
+                notification = self.bash_completion(join="task-id")
+                first = notification["message"]["content"]
+                second = first.replace("task-call", "task-second")
+                notification["message"]["content"] = (
+                    [{"type": "text", "text": first}, {"type": "text", "text": second}]
+                    if text_blocks
+                    else first + "\n" + second
+                )
+                rows = [
+                    *self.background_bash()[:2],
+                    *self.background_bash(0, "second")[:2],
+                    *_turn_records(self.START + 3)[1:],
+                    notification,
+                ]
+                row = self.row(rows)
+                self.assertEqual((0, "idle"), (row["delegated_unpaired"], row["state"]))
+                self.assertIsNone(row["work_in_flight_until"])
+
+    def test_batched_status_and_result_fields_cannot_cross_blocks(self) -> None:
+        for text_blocks in (False, True):
+            for completed_first in (False, True):
+                for legacy_result in (False, True):
+                    with self.subTest(
+                        text_blocks=text_blocks,
+                        completed_first=completed_first,
+                        legacy_result=legacy_result,
+                    ):
+                        notification = self.bash_completion(join="task-id", status="running")
+                        running = notification["message"]["content"]
+                        completed = running.replace("task-call", "task-second").replace(
+                            "<status>running</status>",
+                            "<result>ended</result>"
+                            if legacy_result
+                            else "<status>completed</status>",
+                        )
+                        # A status-less block must not borrow the next block's result.
+                        if legacy_result:
+                            running = running.replace("<status>running</status>", "")
+                        blocks = [completed, running] if completed_first else [running, completed]
+                        notification["message"]["content"] = (
+                            [{"type": "text", "text": block} for block in blocks]
+                            if text_blocks
+                            else "\n".join(blocks)
+                        )
+                        rows = [
+                            *self.background_bash()[:2],
+                            *self.background_bash(100, "second")[:2],
+                            notification,
+                        ]
+                        notification["timestamp"] = self.START + 105
+                        row = self.row(rows)
+                        self.assertEqual((1, "working"), (row["delegated_unpaired"], row["state"]))
+                        self.assertEqual(self.START + 900, row["work_in_flight_until"])
+
     def test_explicit_background_bash_holds_only_headless_rows(self) -> None:
         for entrypoint in ("sdk-cli", "cli", None):
             with self.subTest(entrypoint=entrypoint):
