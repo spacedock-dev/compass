@@ -97,6 +97,27 @@ def canonical_list(agents: str) -> list[str]:
     return commands
 
 
+@unittest.skipIf(sys.platform == "win32", "POSIX executable-script fallback")
+class PnpmWrapperTest(unittest.TestCase):
+    def test_script_denied_pnpm_runs_through_a_path_with_spaces(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pnpm bootstrap ") as directory:
+            root = Path(directory)
+            wrapper = root / "pnpm"
+            wrapper.write_text('printf "%s\\n" "$@" > args\nexit 19\n')
+            wrapper.chmod(0o755)
+            items = plan(
+                {"frontend": "true"},
+                which=lambda name: str(wrapper) if name == "pnpm" else installed(name),
+            )
+            item = next(item for item in items if item.text == "pnpm install --frozen-lockfile")
+            with redirect_stdout(io.StringIO()):
+                code = pre_pr._run(item, root)
+            self.assertEqual(19, code)
+            self.assertEqual(
+                ["install", "--frozen-lockfile"], (root / "args").read_text().splitlines()
+            )
+
+
 class LanePlanTest(unittest.TestCase):
     """What each kind of change runs, read from `--dry-run`'s plan with the lanes injected."""
 

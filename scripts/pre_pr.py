@@ -208,6 +208,9 @@ def classify(base: str, root: Path = ROOT) -> tuple[dict[str, str], list[str], l
 def _argv(text: str, options: Options) -> tuple[str, ...]:
     words = shlex.split(text)
     head = sys.executable if words[0] == "python3" else options.which(words[0]) or words[0]
+    # With install scripts denied, pnpm's shebang-less wrapper needs a shell's ENOEXEC fallback.
+    if words[0] == "pnpm" and sys.platform != "win32":
+        return ("/bin/sh", "-c", 'exec "$@"', "pnpm", head, *words[1:])
     return (head, *words[1:])
 
 

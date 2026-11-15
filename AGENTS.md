@@ -723,9 +723,10 @@ start with no `tools/pnpm-bootstrap/node_modules` and regenerate using
 `npm install --package-lock-only --ignore-scripts --prefix tools/pnpm-bootstrap`, then run the
 bootstrap `npm ci` command above. Review the generated sha512 values and confirm Linux and macOS
 x64/arm64 entries remain present. With the bootstrap bin directory on PATH and the wrapper fallback
-disabled, run `pnpm install --lockfile-only --ignore-scripts` and
-`pnpm install --frozen-lockfile --ignore-scripts`. Regenerate and review both
-`tools/pnpm-bootstrap/package-lock.json` and `pnpm-lock.yaml` in the same change; commit the resulting
+disabled, run `pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile` and
+`pnpm install --frozen-lockfile --ignore-scripts`. The regeneration command overrides the
+workspace's `frozenLockfile: true`; the frozen install then proves the new lock. Regenerate and review
+both `tools/pnpm-bootstrap/package-lock.json` and `pnpm-lock.yaml` in the same change; commit the resulting
 lockfile edits with the manifest pins. The project lock can stay byte-identical if regeneration
 finds no dependency change. Never type hashes by hand. Update the offline proofs' expected binary
 version with the pins. Run the workflow guards, the offline bootstrap proofs
