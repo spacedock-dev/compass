@@ -2,7 +2,7 @@
   "document": {
     "bytes": 2331599,
     "file": "react.html",
-    "sha256": "a61f855ee60b4b909f0ad0398844f0ce3e865d9f4dcf5ff11ef29771a18c9839"
+    "sha256": "03faebea4dcc242ee919c4e15ff3bb9774324738a2f5943cbe6d57920272410e"
   },
   "format": 1,
   "frontend": "react",
@@ -355,7 +355,7 @@
       },
       {
         "file": "frontend/src/attention/Items.tsx",
-        "sha256": "424d1f1666e60fdd37309218601ee20ee72b22c92126bfada789a8213c06f819"
+        "sha256": "f3f7b681046f20309819f4bb33013b70c043b2709781d6f25ab3730830ef20c4"
       },
       {
         "file": "frontend/src/attention/attention.css",
@@ -1019,7 +1019,7 @@
       },
       {
         "file": "frontend/src/observed/location.ts",
-        "sha256": "da01835644bc5f71ce9d240c2de72e125f8cf59f2f2a5bc66e9243cd16f34726"
+        "sha256": "f6250398e393cc0dc226b9d05c8a1e7f981aadf9488eaa36f6b55c8aac838746"
       },
       {
         "file": "frontend/src/observed/model.ts",
