@@ -194,7 +194,7 @@ jobs:
         run: |
           npm ci --ignore-scripts --prefix tools/pnpm-bootstrap
           echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         id: python
         with:
           python-version: "3.12"
@@ -282,7 +282,7 @@ jobs:
           set -euo pipefail
           python3 scripts/release_transition.py assert-head --expected "$TARGET"
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.12"
       - name: Install release validation dependencies
@@ -349,7 +349,7 @@ jobs:
       # The interpreter PyInstaller runs under is the one embedded in the binary, so the
       # version is pinned here and is the whole of "which Python do users get". It also
       # runs the target check below: ubuntu-22.04's own python3 is 3.10, under the floor.
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         id: python
         with:
           python-version: "3.12"
