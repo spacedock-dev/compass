@@ -17,8 +17,9 @@ because nothing is blocked on it, whereas an agent parked in a `tools/call` is
 blocked until this process answers. So there is no silent path here. Every
 failure, including no dashboard running, a refused connection, a 503, a
 cancellation and an unhandled exception in the worker, resolves to an ordinary
-tool result that declines. Never a JSON-RPC error for a call, never a non-zero
-exit, and nothing but JSON-RPC frames on stdout. Diagnostics go to stderr.
+tool result that declines. Admission refusals (busy or a duplicate in-flight id)
+use JSON-RPC errors. Never a non-zero exit, and nothing but JSON-RPC frames on
+stdout. Diagnostics go to stderr.
 
 That promise is kept even for a request the client has cancelled. MCP says a
 receiver SHOULD NOT answer a cancelled request, and this server answers anyway:
@@ -72,9 +73,7 @@ import sys
 import threading
 import time
 import traceback
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
@@ -88,17 +87,10 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
-# Imported rather than copied. `notify_hook` owns the loopback parse and the
-# redirect refusal for every edge script here, and SECURITY.md's claim that they
-# have one implementation is worth more than avoiding one private name: a second
-# copy of a security guard is exactly what that claim exists to prevent.
-# `notify_hook.forward` itself is unusable here because it returns a bool and
-# this server needs the response status and body.
+# The URL admission rule is shared by the edge scripts. MCP can also import the
+# runtime's stdlib-only transport (the hooks-only roots cannot), as it does records.
 import notify_hook  # noqa: E402 — needs the sys.path insert above
-
-# The dashboard's own redaction and cut, imported for the reason `notify_hook`
-# is: a second copy is a second answer to what the card says.
-from compass_runtime import records  # noqa: E402 — needs the sys.path insert above
+from compass_runtime import loopback_transport, records  # noqa: E402
 
 SERVER_NAME: Final = "compass"
 # Not the plugin version. That lives in five manifest fields owned by the
@@ -117,6 +109,9 @@ MAX_CANDIDATE_PORTS: Final = 4
 STATE_READ_CAP_BYTES: Final = 65_536
 RESPONSE_CAP_BYTES: Final = 65_536
 MAX_FRAME_BYTES: Final = 1 << 20
+MAX_QUEUED_FRAMES: Final = 64
+MAX_CALL_WORKERS: Final = 8
+SERVER_BUSY: Final = -32000
 
 # Mirror the dashboard's `ask_*` caps in config.py. The dashboard cuts the card's
 # text from what this process sends uncut; this process cuts its own copy the
@@ -385,50 +380,32 @@ def attribution() -> dict[str, str]:
     return out
 
 
-def _open(request: urllib.request.Request, timeout: float) -> tuple[int, bytes] | None:
-    """(status, body), or None when the request could not be made at all.
-
-    ProxyHandler({}) disables proxying entirely, mirroring `notify_hook.forward`.
-    Without it the default opener honours http_proxy/HTTP_PROXY, which is routine
-    in corporate environments, and a POST to 127.0.0.1 carrying an agent's
-    question is handed to the proxy instead. `_NoRedirects` refuses to follow a
-    307, which preserves method and body and would otherwise bounce that payload
-    off the machine.
-    """
-    opener = urllib.request.build_opener(
-        urllib.request.ProxyHandler({}),
-        notify_hook._NoRedirects,  # noqa: SLF001 — see the import comment: one implementation
-    )
+def _open(url: str, data: bytes | None, timeout: float) -> tuple[int, bytes] | None:
+    """(status, body), or None after a failed, oversized or late exchange."""
     try:
-        with opener.open(request, timeout=timeout) as response:
-            return int(response.status), response.read(RESPONSE_CAP_BYTES)
-    except urllib.error.HTTPError as exc:
-        # A 4xx or 5xx is an answer here, not a failure: the poll route uses 404
-        # for an ask that is gone and 503 for the feature being off, and urllib
-        # raises on both. Caught before URLError, which it subclasses.
-        body = b""
-        with contextlib.suppress(OSError, ValueError, http.client.HTTPException):
-            body = exc.read(RESPONSE_CAP_BYTES)
-        if exc.code == 503 and exc.headers.get("Retry-After") is not None:
-            return BUSY, body
-        return int(exc.code), body
-    except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException):
+        parsed = urllib.parse.urlsplit(url)
+        path = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+        status, body, retry = loopback_transport._exchange(  # noqa: SLF001 — needs Retry-After
+            "POST" if data is not None else "GET",
+            80 if parsed.port is None else parsed.port,
+            path,
+            data,
+            headers={"Content-Type": "application/json"} if data is not None else {},
+            timeout=timeout,
+            cap=RESPONSE_CAP_BYTES,
+        )
+    except (OSError, ValueError, http.client.HTTPException):
         return None
+    if len(body) > RESPONSE_CAP_BYTES:
+        return None
+    return (BUSY if status == 503 and retry is not None else status), body
 
 
 def _request(url: str, *, data: bytes | None, timeout: float) -> tuple[int, bytes] | None:
     if not notify_hook.is_loopback_url(url):
-        # This process carries an agent's question and its session id. It must
-        # not become a way to ship those somewhere else because a port argument
-        # or a state file was edited.
+        # Questions and session ids must never leave literal IPv4 loopback.
         return None
-    request = urllib.request.Request(  # noqa: S310 — scheme and host checked above
-        url,
-        data=data,
-        headers={"Content-Type": "application/json"} if data is not None else {},
-        method="POST" if data is not None else "GET",
-    )
-    return _open(request, timeout)
+    return _open(url, data, timeout)
 
 
 def _json_object(raw: bytes) -> dict[str, Any]:
@@ -455,7 +432,7 @@ class _Ask:
     options: tuple[str, ...]
 
 
-def _arguments(raw: Any) -> _Ask | str:
+def _arguments(raw: Any) -> _Ask | str:  # noqa: PLR0911 — one refusal per shape or size error
     """The validated call, or a sentence saying what is wrong.
 
     Nothing is cut before it is sent: the dashboard is the one place the card's
@@ -475,13 +452,16 @@ def _arguments(raw: Any) -> _Ask | str:
         return "ask_operator needs an arguments object with `question` and `options`."
     question = raw.get("question")
     sent_question = question if isinstance(question, str) else ""
-    shown = records.cut_text(sent_question, QUESTION_CAP_CHARS, BODY_CAP_BYTES)[0]
-    if not shown:
-        return "ask_operator needs a non-empty `question` string."
     raw_options = raw.get("options")
     if not isinstance(raw_options, list):
         return f"ask_operator needs an `options` array of {MIN_OPTIONS} to {MAX_OPTIONS} strings."
     sent_options = tuple(item for item in raw_options if isinstance(item, str) and item.strip())
+    payload = {"question": sent_question, "options": list(sent_options), **attribution()}
+    if _encoded_size(payload) > BODY_CAP_BYTES:
+        return _too_large(payload)
+    shown = records.cut_text(sent_question, QUESTION_CAP_CHARS, BODY_CAP_BYTES)[0]
+    if not shown:
+        return "ask_operator needs a non-empty `question` string."
     options = tuple(
         records.cut_text(item, OPTION_CAP_CHARS, BODY_CAP_BYTES)[0] for item in sent_options
     )
@@ -607,7 +587,7 @@ class AskServer:
         self._stdin = stdin
         self._writer = _Writer(stdout)
         self._ports = tuple(ports)
-        self._frames: queue.Queue[_Frame | None] = queue.Queue()
+        self._frames: queue.Queue[_Frame | None] = queue.Queue(maxsize=MAX_QUEUED_FRAMES)
         self._aborts: dict[str, threading.Event] = {}
         self._aborts_lock = threading.Lock()
         self._workers: list[threading.Thread] = []
@@ -695,6 +675,11 @@ class AskServer:
         # acknowledged by silence: it has no id and JSON-RPC forbids a reply.
 
     def _handle(self, request_id: Any, method: str, message: dict[str, Any]) -> None:
+        with self._aborts_lock:
+            duplicate = _call_key(request_id) in self._aborts
+        if duplicate:
+            self._writer.send(_error(request_id, INVALID_REQUEST, "duplicate in-flight request id"))
+            return
         if method == "initialize":
             announced = _params(message).get("protocolVersion")
             protocol = announced if isinstance(announced, str) and announced else PROTOCOL_FALLBACK
@@ -739,21 +724,38 @@ class AskServer:
         if params.get("name") != TOOL_NAME:
             self._writer.send(_result(request_id, "Unknown tool.", is_error=True))
             return
-        abort = threading.Event()
-        with self._aborts_lock:
-            self._aborts[_call_key(request_id)] = abort
-        # Pruned here rather than never: a long session makes many calls, and the
-        # list exists only to bound shutdown. Touched from the dispatch loop
-        # thread alone, so it needs no lock.
+        # The dispatch thread alone owns this list. Count live threads, including
+        # one finishing its result write before it releases its cancellation entry.
         self._workers = [worker for worker in self._workers if worker.is_alive()]
+        abort = threading.Event()
+        key = _call_key(request_id)
+        with self._aborts_lock:
+            if key in self._aborts:
+                refusal = _error(request_id, INVALID_REQUEST, "duplicate in-flight request id")
+            elif len(self._workers) >= MAX_CALL_WORKERS:
+                refusal = _error(
+                    request_id, SERVER_BUSY, "server busy: too many tools/call workers"
+                )
+            else:
+                refusal = None
+                self._aborts[key] = abort
+        if refusal is not None:
+            self._writer.send(refusal)
+            return
         worker = threading.Thread(
             target=self._run_call,
             args=(request_id, params.get("arguments"), abort),
             name="compass-mcp-ask",
             daemon=True,
         )
+        try:
+            worker.start()
+        except RuntimeError:
+            with self._aborts_lock:
+                self._aborts.pop(key, None)
+            self._writer.send(_error(request_id, SERVER_BUSY, "server busy: worker unavailable"))
+            return
         self._workers.append(worker)
-        worker.start()
 
     def _run_call(self, request_id: Any, arguments: Any, abort: threading.Event) -> None:
         text, is_error = DECLINE_INTERNAL, False
@@ -761,9 +763,11 @@ class AskServer:
             text, is_error = self._ask(arguments, abort)
         except Exception:  # noqa: BLE001 — a raising worker would hang the caller forever
             log(f"ask_operator failed:\n{traceback.format_exc()}")
-        with self._aborts_lock:
-            self._aborts.pop(_call_key(request_id), None)
-        self._writer.send(_result(request_id, text, is_error=is_error))
+        try:
+            self._writer.send(_result(request_id, text, is_error=is_error))
+        finally:
+            with self._aborts_lock:
+                self._aborts.pop(_call_key(request_id), None)
 
     def _ask(self, arguments: Any, abort: threading.Event) -> tuple[str, bool]:
         validated = _arguments(arguments)
