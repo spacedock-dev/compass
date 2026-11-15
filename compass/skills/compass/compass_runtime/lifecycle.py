@@ -210,6 +210,8 @@ def _state_process_exists(pid: int) -> bool | None:
 
 
 def _windows_state_process_exists(pid: int) -> bool | None:
+    if type(pid) is not int or not 0 < pid <= 0xFFFFFFFF:
+        return None
     # A Windows crash normally leaves no waitable process handle. Only error 87
     # proves that pid absent; access denial and resource failure are not death.
     try:

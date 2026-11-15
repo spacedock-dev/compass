@@ -12,8 +12,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest import mock
 
@@ -451,7 +453,110 @@ class SystemIdentityFileTest(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
 
 
+class BootTimeTest(unittest.TestCase):
+    def test_native_boot_measurement_predates_now(self) -> None:
+        started = lifecycle.boot_started()
+        self.assertIsNotNone(started)
+        assert started is not None
+        self.assertLess(started, time.time())
+
+    def test_platform_boot_measurements_and_unavailable_evidence(self) -> None:
+        libc = mock.Mock()
+
+        def sysctl(_name: bytes, value: object, *_args: object) -> int:
+            value[0], value[1] = 1000, 500000
+            return 0
+
+        libc.sysctlbyname.side_effect = sysctl
+        kernel = mock.Mock()
+        kernel.GetTickCount64.return_value = 1000000
+        for platform, expected in (
+            ("linux", 1000),
+            ("darwin", 1000.5),
+            ("win32", 1000),
+            ("unknown", None),
+        ):
+            with (
+                self.subTest(platform=platform),
+                mock.patch.object(sys, "platform", platform),
+                mock.patch.object(time, "time", return_value=2000),
+                mock.patch.object(time, "CLOCK_BOOTTIME", 7, create=True),
+                mock.patch.object(time, "clock_gettime", return_value=1000),
+                mock.patch.object(ctypes, "CDLL", return_value=libc),
+                mock.patch.object(ctypes, "WinDLL", create=True, return_value=kernel),
+            ):
+                self.assertEqual(expected, lifecycle.boot_started())
+        with (
+            mock.patch.object(sys, "platform", "darwin"),
+            mock.patch.object(ctypes, "CDLL", side_effect=OSError("unavailable")),
+        ):
+            self.assertIsNone(lifecycle.boot_started())
+
+
 class WindowsDeathProofTest(unittest.TestCase):
+    def test_pid_outside_dword_range_is_unknown_without_opening_a_process(self) -> None:
+        kernel = mock.Mock()
+        kernel.OpenProcess.return_value = 0
+        for pid in (0, -1, True, 2**32, 2**32 + 123):
+            with (
+                self.subTest(pid=pid),
+                mock.patch.object(sys, "platform", "win32"),
+                mock.patch.object(ctypes, "WinDLL", create=True, return_value=kernel),
+                mock.patch.object(ctypes, "get_last_error", create=True, return_value=87),
+            ):
+                self.assertIsNone(lifecycle._state_process_exists(pid))
+        kernel.OpenProcess.assert_not_called()
+
+    def test_waitable_handles_require_a_known_wait_result_and_successful_close(self) -> None:
+        for waited, closed, expected in (
+            (0, 1, False),
+            (0x102, 1, True),
+            (0xFFFFFFFF, 1, None),
+            (0, 0, None),
+        ):
+            kernel = mock.Mock()
+            kernel.OpenProcess.return_value = 42
+            kernel.WaitForSingleObject.return_value = waited
+            kernel.CloseHandle.return_value = closed
+            with (
+                self.subTest(waited=waited, closed=closed),
+                mock.patch.object(ctypes, "WinDLL", create=True, return_value=kernel),
+            ):
+                self.assertIs(expected, lifecycle._windows_state_process_exists(123))
+            kernel.CloseHandle.assert_called_once_with(42)
+
+    def test_wait_failure_still_closes_the_handle_and_provides_no_death_proof(self) -> None:
+        kernel = mock.Mock()
+        kernel.OpenProcess.return_value = 42
+        kernel.WaitForSingleObject.side_effect = OSError("wait unavailable")
+        with mock.patch.object(ctypes, "WinDLL", create=True, return_value=kernel):
+            self.assertIsNone(lifecycle._windows_state_process_exists(123))
+        kernel.CloseHandle.assert_called_once_with(42)
+
+    def test_windows_identity_reads_the_native_boot_guid(self) -> None:
+        registry = mock.MagicMock()
+        registry.QueryValueEx.return_value = ("machine-guid", 1)
+        ntdll = mock.Mock()
+        guid = bytes(range(16))
+
+        def query(_kind: int, value: object, _size: int, _length: object) -> int:
+            ctypes.memmove(value, guid, len(guid))
+            return 0
+
+        ntdll.NtQuerySystemInformation.side_effect = query
+        with (
+            mock.patch.object(sys, "platform", "win32"),
+            mock.patch.dict(sys.modules, {"winreg": registry}),
+            mock.patch.object(ctypes, "WinDLL", create=True, return_value=ntdll),
+        ):
+            identity = lifecycle.environment_identity()
+        self.assertIsNotNone(identity)
+        assert identity is not None
+        self.assertEqual(guid.hex(), identity["boot"])
+        self.assertEqual(64, len(identity["machine"]))
+        self.assertEqual("", identity["network"])
+        self.assertEqual("", identity["process"])
+
     def test_missing_process_handle_needs_an_absence_error(self) -> None:
         kernel = mock.Mock()
         kernel.OpenProcess.return_value = 0
