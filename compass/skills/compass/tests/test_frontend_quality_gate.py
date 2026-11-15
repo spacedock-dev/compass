@@ -461,7 +461,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
             step for step in steps if step.get("uses", "").startswith("actions/setup-node@")
         )
         self.assertEqual(
-            "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020", node["uses"]
+            "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1", node["uses"]
         )
         self.assertEqual(".node-version", node["with"]["node-version-file"])
         self.assertFalse(node["with"]["check-latest"])

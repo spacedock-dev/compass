@@ -127,7 +127,7 @@ jobs:
         with:
           persist-credentials: false
       # actions/setup-python@v7.0.0 — pinned to immutable SHA.
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Install toolchain
@@ -148,7 +148,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Install toolchain
@@ -183,7 +183,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Install validation requirements
@@ -242,7 +242,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           # 3.14 for `sysmon` below, which coverage refuses with `branch = true`
           # on any earlier Python. The suites still run on 3.12 in runtime-floor.
@@ -274,7 +274,7 @@ jobs:
       # ubuntu-latest checkout lands at the same workspace path.
       - name: Upload this leg's coverage data
         # actions/upload-artifact@v7 — pinned to immutable SHA.
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-data-${{ matrix.suite }}-${{ matrix.shard }}
           path: .coverage.*
@@ -299,7 +299,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
       - name: Install toolchain
@@ -307,7 +307,7 @@ jobs:
           python3 -m pip install --only-binary=:all: --require-hashes -r requirements-dev.txt
       - name: Fetch every leg's coverage data
         # actions/download-artifact@v8.0.1, the same pin as release.yml.
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: coverage-data-*
           path: coverage-data
@@ -379,7 +379,7 @@ jobs:
 
       - name: Upload coverage artifact
         # actions/upload-artifact@v7 — pinned to immutable SHA.
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           # Named for the attempt, as the frontend summary is: a re-run that fails before writing the
@@ -410,7 +410,7 @@ jobs:
         id: fetch
         continue-on-error: true
         # actions/download-artifact@v8.0.1, the same pin as release.yml.
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: coverage-${{ github.run_id }}-${{ github.run_attempt }}
           path: coverage
@@ -466,7 +466,7 @@ jobs:
         with:
           persist-credentials: false
       # actions/setup-python@v7.0.0 — pinned to immutable SHA.
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       # The dashboard server itself is stdlib-only, but the repository
@@ -509,7 +509,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.15"
       # PyYAML 6.0.3 publishes no CPython 3.15 wheel, so this builds its sdist, which
@@ -543,7 +543,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       # actions/setup-node@v7.0.0 — exact verified release commit.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           check-latest: false
@@ -555,7 +555,7 @@ jobs:
         run: |
           npm ci --ignore-scripts --prefix tools/pnpm-bootstrap
           echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         id: python
         with:
           python-version: "3.12"
@@ -607,7 +607,7 @@ jobs:
         with:
           persist-credentials: false
       # actions/setup-node@v7.0.0 — exact verified release commit.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           check-latest: false
@@ -619,7 +619,7 @@ jobs:
         run: |
           npm ci --ignore-scripts --prefix tools/pnpm-bootstrap
           echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         id: python
         with:
           python-version: "3.12"
@@ -665,7 +665,7 @@ jobs:
         with:
           persist-credentials: false
       # actions/setup-node@v7.0.0 — exact verified release commit.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           check-latest: false
@@ -738,7 +738,7 @@ jobs:
       - name: Upload frontend coverage artifact
         if: always()
         # actions/upload-artifact@v7 — pinned to immutable SHA.
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Named for the attempt, not with `overwrite`: an attempt that wrote no summary finds no
           # files, and the action then deletes nothing, so a shared name would leave the earlier
@@ -769,7 +769,7 @@ jobs:
         id: fetch
         continue-on-error: true
         # actions/download-artifact@v8.0.1, the same pin as release.yml.
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: frontend-coverage-${{ github.run_id }}-${{ github.run_attempt }}
           path: frontend-coverage
@@ -811,7 +811,7 @@ jobs:
         with:
           persist-credentials: false
       # actions/setup-node@v7.0.0 — exact verified release commit.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           check-latest: false
@@ -823,7 +823,7 @@ jobs:
         run: |
           npm ci --ignore-scripts --prefix tools/pnpm-bootstrap
           echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         id: python
         with:
           python-version: "3.12"
@@ -850,7 +850,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           check-latest: false
@@ -905,7 +905,7 @@ jobs:
         with:
           persist-credentials: false
       # actions/setup-node@v7.0.0 — exact verified release commit.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           check-latest: false
@@ -917,7 +917,7 @@ jobs:
         run: |
           npm ci --ignore-scripts --prefix tools/pnpm-bootstrap
           echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         id: python
         with:
           python-version: "3.12"
@@ -970,7 +970,7 @@ jobs:
         with:
           persist-credentials: false
       # actions/setup-node@v7.0.0 — exact verified release commit.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           check-latest: false
