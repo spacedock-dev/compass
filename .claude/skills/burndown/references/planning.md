@@ -134,6 +134,10 @@ plan gains later (a discovery, a re-plan) takes its setting from the rule; ask a
 group meets a step-up condition nobody answered. Never recommend `xhigh` or `max` unless the
 caller asks for one. On Claude Code, stay within the three families above unless asked otherwise.
 
+Under `--delegate`, the plan, build and review stages run on Codex and AGY instead: take the
+models, efforts and dispatch rules from [delegation mode](delegation.md), which maps this table
+onto the live catalogs, and ask the same three questions with those names.
+
 Ask the three stage questions together with the plan, so the caller answers once: in Claude Code,
 one structured question per stage, each offering the recommendation first and labelled
 `(Recommended)`, then a uniform step down where the table has one (Review has none) and a uniform
