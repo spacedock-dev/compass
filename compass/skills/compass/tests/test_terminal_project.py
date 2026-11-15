@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from compass_runtime import terminal_client, terminal_project
+from compass_runtime import terminal_client, terminal_project, terminal_sessions
 from compass_runtime.terminal_sessions import _owner
 
 from .support import SERVER_PATH
@@ -60,38 +60,83 @@ class ProjectTest(unittest.TestCase):
             self.assertIn("Location not measured for 1 session with this display label", output)
             self.assertNotIn("2 measured locations", output)
 
-    def test_a_person_reads_location_evidence_instead_of_a_label_collision(self) -> None:
+    def test_project_location_warning_survives_the_real_terminal_projection(self) -> None:
         for source in ("working directory path", "git common directory"):
-            with self.subTest(source=source):
-                rows = [
-                    {
-                        "harness": "claude",
-                        "sid": f"audit-{i}",
-                        "project": "audits",
-                        "project_key": "measured-key",
-                        "project_identity_source": source,
-                        "worktree": str(i) if source == "git common directory" else None,
-                        "state": "idle",
-                    }
-                    for i in range(9)
-                ]
-                payload = {"sessions": rows}
-                brief = terminal_project.derive(payload, {}, label="audits")
-                self.assertEqual("", brief["warning"])
-                self.assertNotIn(
-                    "shared location is not established",
-                    "\n".join(terminal_project.render(brief, caller=("claude", "audit-0"))),
-                )
-                rows[-1]["project_key"] = "audits"
-                rows[-1]["project_identity_source"] = "collector project label"
-                brief = terminal_project.derive(payload, {}, label="audits")
-                self.assertIn("Location not measured for 1 session", brief["warning"])
-                self.assertNotIn("2 measured locations", brief["warning"])
-                rows[-1]["project_key"] = "different-key"
-                rows[-1]["project_identity_source"] = source
-                brief = terminal_project.derive(payload, {}, label="audits")
-                self.assertIn("2 measured locations", brief["warning"])
-                self.assertEqual(9, len(brief["members"]))
+            for case in ("same", "unknown", "different"):
+                with self.subTest(source=source, case=case):
+                    rows = [
+                        {
+                            "harness": "claude",
+                            "sid": f"audit-{i}",
+                            "project": "audits",
+                            "project_key": "measured-key",
+                            "project_identity_source": source,
+                            "state": "idle",
+                        }
+                        for i in range(9)
+                    ]
+                    warning = ""
+                    if case == "unknown":
+                        rows[-1]["project_identity_source"] = "collector project label"
+                        warning = "Location not measured for 1 session with this display label"
+                    if case == "different":
+                        rows[-1]["project_key"] = "different-key"
+                        warning = "9 sessions share this display label across 2 measured locations"
+                    payload = {"sessions": rows}
+                    projected = terminal_sessions.list_payload(payload)
+                    brief = terminal_project.derive(projected, {}, label="audits")
+                    self.assertEqual(warning, brief["warning"])
+                    output = "\n".join(terminal_project.render(brief, caller=("claude", "audit-0")))
+                    raw = terminal_project.derive(payload, {}, label="audits")
+                    self.assertEqual(
+                        output,
+                        "\n".join(terminal_project.render(raw, caller=("claude", "audit-0"))),
+                    )
+                    if warning:
+                        self.assertIn(warning, output.splitlines())
+                    else:
+                        self.assertNotIn("Location not measured", output)
+                        self.assertNotIn("measured locations", output)
+                    self.assertEqual(9, len(brief["members"]))
+
+    def test_singleton_and_absent_keys_keep_exact_rendered_location_disclosures(self) -> None:
+        measured = {
+            "harness": "claude",
+            "sid": "main",
+            "project": "audits",
+            "project_key": "measured",
+            "project_identity_source": "git common directory",
+        }
+        unknown = {**measured, "sid": "peer"}
+        for missing in (True, False):
+            for value in (None, "", "   "):
+                with self.subTest(missing=missing, value=value):
+                    peer = {**unknown, "project_key": value}
+                    if missing:
+                        del peer["project_key"]
+                    for rows, warning in (
+                        ([peer], ""),
+                        (
+                            [measured, peer],
+                            "Location not measured for 1 session with this display label",
+                        ),
+                        (
+                            [peer, {**peer, "sid": "third"}],
+                            "Location not measured for 2 sessions with this display label",
+                        ),
+                    ):
+                        brief = terminal_project.derive(
+                            terminal_sessions.list_payload({"sessions": rows}), {}, label="audits"
+                        )
+                        self.assertEqual(warning, brief["warning"])
+                        output = "\n".join(
+                            terminal_project.render(brief, caller=("claude", "main"))
+                        )
+                        if warning:
+                            self.assertIn(warning, output.splitlines())
+                        else:
+                            self.assertNotIn("Location not measured", output)
+                        self.assertNotIn("measured locations", output)
 
     def test_a_person_reads_the_board_members_counts_order_and_brief(self) -> None:
         for fixture in ("terminal-project", "terminal-project-fo"):

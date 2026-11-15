@@ -246,6 +246,7 @@
           "browser_lane_why": "",
           "cached_deterministic_goal": null,
           "changed": null,
+          "checkout_key": null,
           "command_reports": null,
           "consumption": null,
           "copied_prompts": [],
@@ -398,6 +399,7 @@
           "browser_lane_why": "",
           "cached_deterministic_goal": null,
           "changed": null,
+          "checkout_key": null,
           "command_reports": null,
           "consumption": null,
           "copied_prompts": [],
@@ -550,6 +552,7 @@
           "browser_lane_why": "",
           "cached_deterministic_goal": null,
           "changed": null,
+          "checkout_key": null,
           "command_reports": null,
           "consumption": null,
           "copied_prompts": [],
@@ -735,7 +738,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "31502",
+      "Content-Length": "31568",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.2"

@@ -66,6 +66,17 @@ class ListProjectionTest(unittest.TestCase):
                     headless,
                 )
 
+    def test_project_location_provenance_survives_the_terminal_projection(self) -> None:
+        for source in (
+            "git common directory",
+            "working directory path",
+            "inferred Claude worktree layout",
+            "collector project label",
+        ):
+            with self.subTest(source=source):
+                payload = {"sessions": [{"sid": "s", "project_identity_source": source}]}
+                self.assertEqual(payload, terminal_sessions.list_payload(payload))
+
     def assert_same_lists(self, payload: dict[str, Any]) -> None:
         projected = terminal_sessions.list_payload(payload)
         self.assertEqual(
@@ -173,6 +184,7 @@ class ListProjectionTest(unittest.TestCase):
             "sid",
             "project",
             "project_key",
+            "project_identity_source",
             "project_name",
             "spacedock",
             "subagents",

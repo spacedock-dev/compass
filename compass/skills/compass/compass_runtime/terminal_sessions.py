@@ -44,6 +44,7 @@ _SESSION_FIELDS: Final = (
     "sid",
     "project",
     "project_key",
+    "project_identity_source",
     "project_name",
     "spacedock",
     "subagents",
