@@ -4448,6 +4448,26 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
                     self.assertEqual((0, "idle"), (row["delegated_unpaired"], row["state"]))
                     self.assertIsNone(row["work_in_flight_until"])
 
+    def test_sidechain_user_cannot_mask_parent_stop(self) -> None:
+        sidechain_user = {
+            "type": "user",
+            "isSidechain": True,
+            "sessionId": TURN_SID,
+            "timestamp": self.START + 5,
+            "message": {"role": "user", "content": "Synthetic child prompt"},
+        }
+        row = self.row([*self.background_bash(), sidechain_user, _turn_records(self.START + 6)[-1]])
+        self.assertEqual(1, row["delegated_unpaired"])
+        self.assertIsNone(row["work_in_flight_until"])
+        self.assertEqual("idle", row["state"])
+
+    def test_nonnotification_attachment_cannot_settle(self) -> None:
+        notification = self.bash_completion(form="attachment")
+        notification["attachment"]["commandMode"] = "other"
+        row = self.row([*self.background_bash(), notification])
+        self.assertEqual((1, "working"), (row["delegated_unpaired"], row["state"]))
+        self.assertEqual(self.START + 900, row["work_in_flight_until"])
+
     def test_explicit_background_bash_holds_only_headless_rows(self) -> None:
         for entrypoint in ("sdk-cli", "cli", None):
             with self.subTest(entrypoint=entrypoint):
