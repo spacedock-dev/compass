@@ -214,7 +214,9 @@ jobs:
         run: python scripts/run_tests.py --slowest 10 -s compass/skills/compass/tests -t .
       - name: Run script unit tests on the floor
         if: matrix.suite == 'scripts'
-        run: python scripts/run_tests.py --slowest 10 --shard ${{ matrix.shard }}/3 -s scripts/tests -t scripts/tests
+        env:
+          SCRIPT_SHARD: ${{ matrix.shard }}
+        run: python scripts/run_tests.py --slowest 10 --shard "$SCRIPT_SHARD/3" -s scripts/tests -t scripts/tests
 
   # The coverage run in parallel legs, split as runtime-floor splits the suites. In one job it was the
   # longest in every gate run on 2026-11-06 (574 s on #803: the dashboard suite 166 s, then the script
@@ -263,9 +265,10 @@ jobs:
         if: matrix.suite == 'scripts'
         env:
           COVERAGE_CORE: sysmon
+          SCRIPT_SHARD: ${{ matrix.shard }}
         # Discovery arguments first: test_validate_plugins requires a discovering command in this file
         # with nothing but bare flags before them.
-        run: python3 scripts/run_tests.py --coverage -s scripts/tests -t scripts/tests --slowest 10 --shard ${{ matrix.shard }}/3
+        run: python3 scripts/run_tests.py --coverage -s scripts/tests -t scripts/tests --slowest 10 --shard "$SCRIPT_SHARD/3"
 
       # The data files record absolute source paths, which match in `coverage` because every
       # ubuntu-latest checkout lands at the same workspace path.
@@ -482,7 +485,9 @@ jobs:
         run: python scripts/run_tests.py --slowest 10 -s compass/skills/compass/tests -t .
       - name: Run script unit tests
         if: matrix.suite == 'scripts'
-        run: python scripts/run_tests.py --slowest 10 --shard ${{ matrix.shard }}/3 -s scripts/tests -t scripts/tests
+        env:
+          SCRIPT_SHARD: ${{ matrix.shard }}
+        run: python scripts/run_tests.py --slowest 10 --shard "$SCRIPT_SHARD/3" -s scripts/tests -t scripts/tests
 
   # The dashboard suite on 3.15 (the newest stable minor on 2026-11-02), moved by hand when a new
   # minor ships. supervise.py watches a session's exit with `os.waitid` wherever `os` has it and a

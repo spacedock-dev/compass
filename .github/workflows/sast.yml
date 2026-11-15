@@ -1,9 +1,7 @@
 name: Semgrep SAST
 
-# Weekly static security scan of the repository (server module, scripts, and
-# workflows). Adapted from DataRecce/recce-cloud-infra `sast.yml`; scheduled
-# rather than per-PR so PR latency stays low — the Quality Gate carries the
-# per-PR checks (ruff's flake8-bandit rules cover the common Python CWEs).
+# Weekly security scan; dependency audits also run on dependency pull requests.
+# Python advisories are queried as data without installing an audit tool.
 #
 # Everything the scan runs is pinned. The image is a release tag held to its
 # multi-arch index digest. The rules are the semgrep-rules repository at one
@@ -20,12 +18,27 @@ on:
   schedule:
     - cron: "0 6 * * 1" # Weekly Monday 06:00 UTC
   workflow_dispatch: {}
+  pull_request:
+    paths:
+      - pnpm-lock.yaml
+      - package.json
+      - pnpm-workspace.yaml
+      - tools/pnpm-bootstrap/package-lock.json
+      - tools/pnpm-bootstrap/package.json
+      - requirements-*.txt
+      - requirements-*.in
+      - .github/dependabot.yml
+      - .github/workflows/**
+      - .github/actions/**
+      - scripts/audit_python_dependencies.py
+      - scripts/check_dependency_age.py
 
 permissions:
   contents: read
 
 jobs:
   semgrep:
+    if: github.event_name != 'pull_request'
     name: Semgrep Scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -66,3 +79,51 @@ jobs:
             --error \
             --severity WARNING \
             --severity ERROR
+
+  npm-audit:
+    name: Audit npm dependencies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      COREPACK_ENABLE_NETWORK: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install the locked pnpm binary
+        shell: bash
+        timeout-minutes: 3
+        run: |
+          npm ci --ignore-scripts --prefix tools/pnpm-bootstrap
+          echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Audit the project lockfile without changing it
+        timeout-minutes: 3
+        run: pnpm audit --audit-level=high
+      - name: Audit the bootstrap lockfile without changing it
+        timeout-minutes: 3
+        working-directory: tools/pnpm-bootstrap
+        run: npm audit --audit-level=high
+
+  python-audit:
+    name: Audit Python pins and bot pin age
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      # Ubuntu's system Python suffices: both checks use only the standard library.
+      - name: Refuse bot pins younger than fourteen days, including security updates
+        if: github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]'
+        timeout-minutes: 3
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/check_dependency_age.py
+      - name: Check every Python requirement against OSV
+        timeout-minutes: 3
+        run: python3 scripts/audit_python_dependencies.py

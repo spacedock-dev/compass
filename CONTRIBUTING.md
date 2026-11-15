@@ -351,6 +351,26 @@ and Cython that build PyYAML from source on a Python it ships no wheel for. To b
 pin, edit the source and regenerate with the command in the generated file's header; never edit a
 hash by hand.
 
+The suite also checks the security boundaries a new path could miss. Prefer the transport helpers,
+`rooted_path` executable lookup and `io` file helpers. `test_security_primitives.py` rejects a new
+opener, process launch or raw runtime file operation until its module and function have a reviewed
+entry with a one-line reason. Process entries include argv shapes; file entries include call counts,
+so a twin inside an existing function also needs review. Inspect the actual executable and file
+source before adding an entry. The entries marked `KNOWN GAP` record existing debt, not approved
+patterns to copy. The checker follows imports and simple aliases, not arbitrary dataflow.
+
+A new HTTP route also needs a row in `test_http_admission_matrix.py`, which discovers the dispatch
+inventory and checks navigation, cross-port subresources, duplicate Host headers and LAN access.
+Keep its board-read allowlist consistent with [SECURITY.md](SECURITY.md#known-and-accepted).
+Workflow and local action YAML must pin remote actions to full SHAs and container images to digests,
+pass expressions through `env` instead of shell source, deny npm install scripts and install Python
+requirements by hash. The workflow tests reject examples that violate each boundary.
+
+Dependency audits run separately in `sast.yml`, weekly and on dependency-file pull requests.
+[SECURITY.md](SECURITY.md#dependency-checks) owns their scope and the Dependabot age check. For a bot
+bump, regenerate hashed requirements from their source with the documented two-week cutoff just as
+for a manual bump; a generated bot hash is not a substitute for that procedure.
+
 CI exercises macOS and Linux. Windows is no longer exercised by CI for the dashboard unit suite or
 frontend. The local pre-PR command list remains unchanged.
 

@@ -26,6 +26,8 @@ from .test_workflow_caches import (
     assert_locked_pnpm,
     holds_write_credential,
     restores_a_cache,
+    workflow_documents,
+    workflow_nodes,
 )
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -382,6 +384,22 @@ class HashPinnedInstallTest(unittest.TestCase):
             ("quality-gate.yml", "platform-tests-current"),
         ):
             self.assertIn(job, seen)
+
+    def test_local_actions_cannot_hide_an_unhashed_pip_install(self) -> None:
+        for name, document in workflow_documents().items():
+            job = {
+                "steps": [
+                    node for node in workflow_nodes(document) if isinstance(node.get("run"), str)
+                ]
+            }
+            for line in pip_installs(job):
+                with self.subTest(document=name, line=line):
+                    self.assertIn("--require-hashes", line)
+                    files = REQUIREMENT_FILE.findall(line)
+                    self.assertTrue(files)
+                    for file in files:
+                        self.assertIn(file, set(HASHED_FROM.values()))
+                        self.assert_hashed(ROOT / file)
 
     def test_the_binary_build_installs_exactly_the_hashed_toolchain(self) -> None:
         # `--no-deps`: the file is the whole toolchain, so nothing it does not list is resolved.
