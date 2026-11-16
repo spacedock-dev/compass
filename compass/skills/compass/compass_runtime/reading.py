@@ -7981,7 +7981,7 @@ class CodexReadingModel:
         An unverified `CODEX_HOME`, or no owner-only folder to run in: asked before the charge,
         and said as its own reason, because Codex is installed and "not found" would be false.
         """
-        return observer.SETTINGS_REFUSED if observer.codex_refusal()[0] else ""
+        return observer.SETTINGS_REFUSED if observer.codex_refusal(self.config.state_dir)[0] else ""
 
 
 class ClaudeReadingModel:

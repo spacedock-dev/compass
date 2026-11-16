@@ -11,6 +11,7 @@ import dataclasses
 import inspect
 import json
 import os
+import platform
 import shutil
 import stat
 import subprocess
@@ -286,7 +287,7 @@ class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
         self.assertEqual([], seen["entries"])
         if sys.platform != "win32":
             self.assertEqual(0o700, seen["mode"])
-        root = observer.reading_workdir_root()
+        root = observer.reading_workdir_root(self.config.state_dir)
         self.assertIsNotNone(root)
         self.assertEqual(os.path.realpath(str(root)), os.path.dirname(os.path.realpath(cwd)))
         self.assertNotEqual(os.path.realpath(self.config.state_dir), os.path.realpath(cwd))
@@ -498,6 +499,69 @@ class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
         ):
             with self.subTest(dropped=name):
                 self.assertNotIn(name, child)
+
+
+@POSIX_ONLY
+class AReadingNeverSearchesAnotherAccountsProjectFiles(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(dir=os.environ.get("XDG_RUNTIME_DIR") or Path.home()))
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.runtime = self.root / "runtime"
+        self.runtime.mkdir(mode=0o700)
+        self.state = self.root / "state"
+        self.state.mkdir(mode=0o700)
+        for patcher in (
+            mock.patch.object(platform, "system", return_value="Linux"),
+            mock.patch.object(observer, "_account", return_value=("/absent-home", "accountquux")),
+            mock.patch.object(os.path, "expanduser", return_value="/absent-home"),
+            mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.runtime)}),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_linux_readings_use_the_private_runtime_folder_for_both_clis(self) -> None:
+        config = dataclasses.replace(make_config(), state_dir=self.state)
+        runner = _Spawns()
+        for call in (observer.claude_exec, observer.codex_exec):
+            with self.subTest(cli=call.__name__):
+                self.assertEqual(
+                    "ok",
+                    call(
+                        config,
+                        "p",
+                        output_cap_bytes=64,
+                        runner=runner,
+                        binary_resolver=lambda name: "/usr/bin/" + name,
+                    )[1],
+                )
+                cwd = Path(runner.calls[-1][1]["cwd"])
+                self.assertEqual(self.runtime.resolve(), cwd.parent)
+                for ancestor in (cwd.parent, *cwd.parent.parents):
+                    self.assertFalse(ancestor.stat().st_mode & 0o022, str(ancestor))
+
+    def test_an_open_runtime_folder_uses_a_private_folder_under_state(self) -> None:
+        self.runtime.chmod(0o755)
+        root = observer.reading_workdir_root(self.state)
+        self.assertEqual(str((self.state / "reading-workdirs").resolve()), root)
+        self.assertEqual(0o700, stat.S_IMODE(Path(str(root)).stat().st_mode))
+
+    def test_a_runtime_folder_owned_by_another_account_is_not_used(self) -> None:
+        with mock.patch.object(os, "getuid", return_value=os.getuid() + 1):
+            self.assertIsNone(observer.reading_workdir_root(self.state))
+
+    def test_a_shared_ancestor_refuses_even_when_it_has_the_sticky_bit(self) -> None:
+        self.root.chmod(0o1777)
+        self.assertIsNone(observer.reading_workdir_root(self.state))
+
+    def test_a_private_linux_folder_that_names_the_account_is_refused(self) -> None:
+        with mock.patch.object(observer, "_account", return_value=(str(self.root), "accountquux")):
+            self.assertIsNone(observer.reading_workdir_root(self.state))
+
+    def test_an_existing_open_state_work_folder_is_refused_without_changing_it(self) -> None:
+        (self.state / "reading-workdirs").mkdir(mode=0o755)
+        with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": "relative"}):
+            self.assertIsNone(observer.reading_workdir_root(self.state))
+        self.assertEqual(0o755, stat.S_IMODE((self.state / "reading-workdirs").stat().st_mode))
 
 
 @POSIX_ONLY

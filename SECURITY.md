@@ -1688,7 +1688,7 @@ The bounds, all of which hold together:
   pointed at a closed loopback port, it is `--ignore-user-config` that keeps an MCP server
   configured under `CODEX_HOME` from starting; the override alone did not, because a `--config`
   table merges into the loaded one. Codex runs in a fresh owner-only (0700) empty folder made where
-  a Claude Code reading's is (`observer.reading_workdir_root`), never the state directory, and
+  a Claude Code reading's is (`observer.reading_workdir_root`), empty and private, and
   the folder is removed on every path the call returns by, a timeout included; when no such folder
   can be made, nothing runs. `--ignore-user-config` skips only `CODEX_HOME`'s `config.toml`: the
   system files `/etc/codex/config.toml`, `/etc/codex/managed_config.toml` and
@@ -2491,18 +2491,25 @@ whole row up to 16,384 characters. Redaction can leave a home path or user name 
 or printed, so that information can reach Anthropic.
 
 Because the working directory is sent, the process runs in a fresh owner-only (0700) empty
-directory made outside the state directory, whose path carries the account's home and so the user
-name (`observer.reading_workdir_root`). On macOS and Linux it is made in the system temp directory
-unless that path sits under the account's home, or has a path component containing the user name
-(names under three characters must be a whole component), as a `TMPDIR` set by direnv, a Nix
-shell or a `~/tmp` convention does. Both tests ignore case, and "under home" asks the filesystem
-whether any parent is the home, because on a case-insensitive volume `/Users/ALICE` is the home
-and the CLI names its canonical spelling (review N1). It then falls back to `/tmp`, and when that fails the same test
-the reading is refused before anything runs. A missing password-database entry, a root home of
-`/`, or an unwritable directory also refuses. The qualification prepares both the private cwd and
-output file before charging a call, so these local refusals consume none of its allowance. On
-Windows the system temp directory is inside the user's profile and no fallback is tried, so the
-user name is still sent there.
+directory whose canonical path names neither the account's home nor its user name
+(`observer.reading_workdir_root`). On Linux its parent is `$XDG_RUNTIME_DIR` when that is an
+existing user-owned 0700 folder. Otherwise Compass uses a 0700 `reading-workdirs` folder under
+its state directory, only when that path also passes the account-name rule. A state directory
+under the account's home therefore cannot provide this fallback: without a safe unnamed runtime
+folder the call is refused. Every ancestor must be owned by this account or root and have no
+group or other write bits. A sticky shared directory such as `/tmp` is refused too, because
+Volta, asdf and mise shims can search above the empty working folder for project configuration
+and executable overrides planted by another account.
+
+On macOS the normal private system temporary directory stays in use, under the same ancestor
+and account-name checks; the old shared `/tmp` fallback is refused. Both account-name tests ignore
+case, and "under home" asks the filesystem whether any parent is the home, because on a
+case-insensitive volume `/Users/ALICE` is the home and the CLI names its canonical spelling.
+A component containing the account name refuses (names under three characters must match a whole
+component). A missing password-database entry, a root home of `/`, or an unwritable directory
+also refuses. Qualification prepares the private cwd and output file before charging a call, so
+these local refusals consume none of its allowance. On Windows the system temp directory is
+inside the user's profile and no fallback is tried, so the user name is still sent there.
 
 The reading runs with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, forced even when the operator
 set it to `0`. Measured under a no-egress sandbox on 2.1.283, the CLI otherwise looked up six other
@@ -2525,7 +2532,7 @@ timeout or an OS error, and only once the CLI and anything it started have been 
 A hard kill of Compass (SIGKILL, a power loss) runs no cleanup and can leave both files behind,
 owner-only; the next start removes any such file in `state_dir` older than a day, which no live
 call reaches, so a second instance's call in flight keeps its own. It can leave the empty working
-folders too, of both lanes, in the shared temp directory; the next start removes those
+folders too, of both lanes, under the selected private parent; the next start removes those
 (`observer.sweep_reading_workdirs`): a real directory, never a link, named with the
 `reading-claude-cwd-` or `reading-codex-cwd-` prefix, owned by this account with mode 0700, empty,
 and older than twice the longest call any lane allows (six minutes with the defaults), so a call

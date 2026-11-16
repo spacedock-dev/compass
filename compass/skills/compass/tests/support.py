@@ -39,6 +39,7 @@ from compass_runtime import (
     diagnostics,
     http_api,
     notifications,
+    observer,
     terminal_client,
     update_check,
 )
@@ -139,6 +140,19 @@ for _name in [
 _MANAGED_ROOT = tempfile.TemporaryDirectory(prefix="compass-test-managed-")
 atexit.register(_MANAGED_ROOT.cleanup)
 claude_settings.MANAGED_ROOT = Path(_MANAGED_ROOT.name)
+
+# Linux may have no /run/user directory on a headless runner. Give fake model calls a
+# trusted runtime ancestor and a synthetic account, rather than depending on the host's
+# session manager or relaxing the production shim-search checks for /tmp.
+if sys.platform == "linux":
+    _reading_home, _reading_user = observer._account()
+    _READING_RUNTIME = tempfile.TemporaryDirectory(
+        prefix="compass-test-runtime-", dir=_reading_home
+    )
+    atexit.register(_READING_RUNTIME.cleanup)
+    os.environ["XDG_RUNTIME_DIR"] = _READING_RUNTIME.name
+    observer._account = lambda: (USER_HOME, "compass-test-account")
+
 
 # Store key -> path. Patch with mock.patch.dict; runtime() folds it into config.
 STORE_OVERRIDES: dict[str, Any] = {}  # str, or a tuple/list of candidates
