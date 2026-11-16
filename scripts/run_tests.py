@@ -28,8 +28,9 @@ fixtures and verdict, and spreads the work:
   tests provoke on purpose (2026-10-28), which buried the one line that mattered.
   ``--no-buffer`` prints it as it happens. A subprocess writes to the real
   descriptors and is never held.
-- A module that sets ``REAL_TIME_TESTS = True`` measures something against the
-  real clock, which a loaded machine stretches. Its units run after every
+- A module that sets ``REAL_TIME_TESTS = True``, or a test class that does,
+  measures something against the real clock, which a loaded machine stretches.
+  A class's own declaration wins over its module's. Its units run after every
   parallel worker has exited, one at a time in one more worker, so they share
   the machine with nothing else in the run. Under ``--shard`` each such module
   still belongs to one leg, so it runs in exactly one leg's serial pass.
@@ -142,9 +143,18 @@ def module_of(tests: list[unittest.TestCase]) -> str:
 
 
 def is_real_time(tests: list[unittest.TestCase]) -> bool:
-    """Whether a unit's module declares ``REAL_TIME_TESTS = True``; nothing else counts."""
-    module = sys.modules.get(type(tests[0]).__module__)
-    return getattr(module, REAL_TIME_MARKER, False) is True
+    """Whether a unit declares ``REAL_TIME_TESTS = True``; nothing else counts.
+
+    A test class's own declaration wins over its module's, so a module whose few timing
+    classes measured the real clock no longer holds its other tests in the serial pass.
+    Measured 2026-11-16: the serial pass was 516 s of the macOS dashboard leg's 729 s, and
+    test_terminal_client alone was 88 s of it, most of it tests that time nothing.
+    """
+    kind = type(tests[0])
+    declared = getattr(kind, REAL_TIME_MARKER, None)
+    if declared is None:
+        declared = getattr(sys.modules.get(kind.__module__), REAL_TIME_MARKER, False)
+    return declared is True
 
 
 def iter_tests(suite: unittest.TestSuite) -> Iterator[unittest.TestCase]:

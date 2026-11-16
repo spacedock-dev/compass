@@ -625,6 +625,42 @@ class Serial(unittest.TestCase):
 """
 
 
+# A module with one timed and one untimed class; NAME is replaced per module.
+MIXED_MODULE = """
+import os
+import unittest
+
+{module_flag}
+
+
+class Timed(unittest.TestCase):
+    REAL_TIME_TESTS = {timed}
+
+    def test_timed(self):
+        alive = []
+        with open(os.environ["RUNNER_PID_LOG"]) as log:
+            for line in log:
+                kind, pid = line.split()[:2]
+                if kind != "parallel":
+                    continue
+                try:
+                    os.kill(int(pid), 0)
+                except OSError:
+                    continue
+                alive.append(pid)
+        with open(os.environ["RUNNER_PID_LOG"], "a") as log:
+            log.write(f"serial {{os.getpid()}} NAME_timed {{','.join(sorted(set(alive))) or '-'}}\\n")
+
+
+class Untimed(unittest.TestCase):
+    REAL_TIME_TESTS = {untimed}
+
+    def test_untimed(self):
+        with open(os.environ["RUNNER_PID_LOG"], "a") as log:
+            log.write(f"untimed {{os.getpid()}} NAME_untimed\\n")
+"""
+
+
 def parallel_module(*names: str) -> str:
     methods = "".join(PARALLEL_METHOD.format(name=name) for name in names)
     return PARALLEL_MODULE.format(methods=methods)
@@ -673,6 +709,36 @@ class SerialPassTest(unittest.TestCase):
         undeclared = [line for line in lines if line[2:3] == ["not_declared"]]
         self.assertEqual(1, len(undeclared), lines)
         self.assertNotEqual(last[1], undeclared[0][1], lines)
+
+    def test_a_class_declaration_overrides_its_modules(self) -> None:
+        # A module that is mostly not timed marks only its timing class, and a timed module
+        # can release a class that measures nothing.
+        mixed = MIXED_MODULE.format(module_flag="", timed="True", untimed="False")
+        released = MIXED_MODULE.format(
+            module_flag="REAL_TIME_TESTS = True", timed="True", untimed="False"
+        )
+        write_suite(
+            self.root,
+            {
+                "test_parallel.py": parallel_module("a", "b"),
+                "test_mixed.py": mixed.replace("NAME", "mixed"),
+                "test_released.py": released.replace("NAME", "released"),
+            },
+        )
+
+        code, out = run(self.root)
+
+        self.assertEqual(0, code, out)
+        lines = self.lines()
+        parallel_pids = {line[1] for line in lines if line[0] == "parallel"}
+        serial = sorted(line[2] for line in lines if line[0] == "serial")
+        self.assertEqual(["mixed_timed", "released_timed"], serial, lines)
+        self.assertTrue(all(line[3] == "-" for line in lines if line[0] == "serial"), lines)
+        untimed = [line for line in lines if line[0] == "untimed"]
+        self.assertEqual(2, len(untimed), lines)
+        serial_pids = {line[1] for line in lines if line[0] == "serial"}
+        self.assertTrue(serial_pids.isdisjoint(line[1] for line in untimed), lines)
+        self.assertTrue(serial_pids.isdisjoint(parallel_pids), lines)
 
     def test_each_declared_module_runs_in_exactly_one_shards_serial_pass(self) -> None:
         modules = {f"test_p{index}.py": parallel_module(f"p{index}") for index in range(4)}
