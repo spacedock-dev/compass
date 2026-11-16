@@ -302,6 +302,12 @@ describe('terminal raise', () => {
     rerender(<RaiseControl harness="claude" sid="s-1" focusable />);
     expect(view.getByRole('button').getAttribute('data-raise-state')).toBe('refused');
     expect(view.getByText(message).textContent).not.toContain('restarted');
+    expect(view.getByRole('button').getAttribute('aria-describedby')).toBe(
+      view.getByText(message).id,
+    );
+    act(() => kit.clock.advance(CUE_TTL_MS));
+    expect(view.queryByText(message)).toBeNull();
+    expect(view.getByRole('button').hasAttribute('aria-describedby')).toBe(false);
   });
 
   it('says nothing and leaves no cue when the runtime reports the feature unavailable', async () => {

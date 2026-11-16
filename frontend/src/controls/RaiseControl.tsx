@@ -100,7 +100,14 @@ export function RaiseControl({ harness, sid, focusable, primary = false }: Raise
         <span aria-hidden="true">RAISE</span>
       </Button>
       {state ? (
-        <span id={cueId} className="ctl-visually-hidden">
+        <span
+          id={cueId}
+          className={
+            typeof state === 'object'
+              ? 'max-w-full text-body text-muted-foreground [overflow-wrap:anywhere]'
+              : 'ctl-visually-hidden'
+          }
+        >
           {sentence(state)}
         </span>
       ) : null}

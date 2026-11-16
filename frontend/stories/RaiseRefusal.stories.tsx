@@ -11,7 +11,15 @@ const tunnel = "For an ssh -L tunnel, the local port must match the Compass serv
 const admission =
   'Compass refused this request: board actions require direct loopback access from the same origin.';
 
-function RefusedRaise({ reason, message }: { readonly reason: string; readonly message: string }) {
+function RefusedRaise({
+  reason,
+  message,
+  primary = false,
+}: {
+  readonly reason: string;
+  readonly message: string;
+  readonly primary?: boolean;
+}) {
   const [kit] = useState(() => {
     const client = createApiClient({
       fetch: async () => new Response(JSON.stringify({ reason, message }), { status: 403 }),
@@ -22,7 +30,7 @@ function RefusedRaise({ reason, message }: { readonly reason: string; readonly m
   });
   return (
     <ControlsProvider controls={kit.controls}>
-      <RaiseControl harness="claude" sid="refused" focusable />
+      <RaiseControl harness="claude" sid="refused" focusable primary={primary} />
     </ControlsProvider>
   );
 }
@@ -33,7 +41,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 const check =
-  (sentence: string, stale = false): Story['play'] =>
+  (sentence: string, stale = false): NonNullable<Story['play']> =>
   async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const button = canvas.getByRole('button', {
@@ -42,7 +50,14 @@ const check =
     await userEvent.click(button);
     await expect(button).toHaveAccessibleDescription(sentence);
     await expect(button).toHaveAttribute('data-raise-state', stale ? 'stale' : 'refused');
-    if (!stale) await expect(canvas.queryByText(restart)).toBeNull();
+    if (!stale) {
+      const cue = canvas.getByText(sentence);
+      await expect(cue).toBeVisible();
+      await expect(getComputedStyle(cue).clipPath).toBe('none');
+      await expect(cue.getBoundingClientRect().height).toBeGreaterThan(10);
+      await expect(cue.getBoundingClientRect().width).toBeGreaterThan(100);
+      await expect(canvas.queryByText(restart)).toBeNull();
+    }
   };
 export const TunnelPortRefusal: Story = {
   args: { reason: 'tunnel-port-mismatch', message: tunnel },
@@ -55,4 +70,14 @@ export const AdmissionRefusal: Story = {
 export const RestartedDashboard: Story = {
   args: { reason: 'stale-capability', message: restart },
   play: check(restart, true),
+};
+
+export const PrimaryAdmissionRefusal: Story = {
+  args: { reason: 'admission-refused', message: admission, primary: true },
+  play: async (context) => {
+    await check(admission)(context);
+    const button = within(context.canvasElement).getByRole('button');
+    await expect(getComputedStyle(button).borderColor).toBe('rgb(240, 185, 94)');
+    await expect(getComputedStyle(button).color).toBe('rgb(205, 199, 180)');
+  },
 };
