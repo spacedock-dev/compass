@@ -842,6 +842,16 @@ class RedactSecretsTest(unittest.TestCase):
                         self.assertNotIn(value, shown)
                         self.assertIn("REDACTED", shown)
 
+    def test_key_shaped_assignment_names_preserve_mask_prose_value_masking(self) -> None:
+        value = "Synthetic" + "Session123"
+        for prefix, body in (("AKIA", "Q" * 16), ("ASIA", "R" * 16), ("AIza", "S" * 35)):
+            for suffix in ("_SESSION", "_CONFIG", "_CREDENTIAL", "_prod"):
+                with self.subTest(prefix=prefix, suffix=suffix):
+                    shown = records.mask_prose(prefix + body + suffix + "=" + value)
+                    self.assertNotIn(value, shown)
+                    self.assertNotIn(body, shown)
+                    self.assertIn("REDACTED", shown)
+
     def test_colliding_openers_cannot_hide_the_next_credential_body(self) -> None:
         slack_body = "Synthetic" + "Slack12345"
         google_body = "Synthetic" + "Google" + "Q" * 20

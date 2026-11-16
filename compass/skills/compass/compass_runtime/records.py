@@ -1168,6 +1168,8 @@ _MASK_HEADER_WIDE: Final = (
 )
 _MASK_HEADER_OPENERS: Final = r"(?:--header=|--proxy-header=|-H)"
 _MASK_HEADER_FLAGS: Final = frozenset({"-H", "--header", "--proxy-header"})
+_MASK_ASSIGNMENT_NAME: Final = r"['\"]?[A-Za-z_][A-Za-z0-9_]*="
+_MASK_PROSE_ASSIGNMENT: Final = re.compile(rf"(?<!\S)({_MASK_ASSIGNMENT_NAME})\S+")
 _MASK_WORD_FORMS: Final = (
     # `--password=value` and the other named flags, `=` joined.
     re.compile(
@@ -1183,7 +1185,7 @@ _MASK_WORD_FORMS: Final = (
     # `-pvalue` and `-Pvalue`.
     re.compile(r"^(['\"]?-[pP]).+$", re.DOTALL),
     # `NAME=value`: `PGPASSWORD=...`, `--env TOKEN=...`.
-    re.compile(r"^(['\"]?[A-Za-z_][A-Za-z0-9_]*=).+$", re.DOTALL),
+    re.compile(rf"^({_MASK_ASSIGNMENT_NAME}).+$", re.DOTALL),
     # `Authorization: ...` and `X-Api-Key: ...` header values.
     re.compile(
         rf"^(['\"]?{_MASK_HEADER_NARROW}\s*:\s*)(?=[^\s'\"]|['\"][^'\"]).+$",
@@ -1740,7 +1742,14 @@ def mask_prose(text: str) -> str:
         return unicodedata.category(ch) == "Cc" and ch not in _LINE_BREAKS
 
     text = "".join("" if ch in _MASK_INVISIBLE else ch for ch in text)
-    if any(map(control, text)):
+    has_control = any(map(control, text))
+    assignment_text = "".join(" " if control(ch) else ch for ch in text) if has_control else text
+    # Shape markers can invalidate a NAME=value name. Remember its original admission,
+    # without rewriting values before the quoted and wrapped credential scans read them.
+    assignment_names = {
+        redact_secrets(match.group(1)) for match in _MASK_PROSE_ASSIGNMENT.finditer(assignment_text)
+    }
+    if has_control:
         # Masked while the control is still there for `redact_secrets`' second view to read
         # through. As a space first, it split a key and the tail went out beside the marker.
         text = "".join(" " if control(ch) else ch for ch in redact_secrets(text))
@@ -1825,7 +1834,12 @@ def mask_prose(text: str) -> str:
                 and (named.group(1).strip("'\"").lower() not in _MASK_AUTH_SCHEMES)
             ):
                 header = False
-    return " ".join(mask_words(words, prose=True))
+    masked = mask_words(words, prose=True)
+    for index, word in enumerate(masked):
+        name, equals, _ = word.partition("=")
+        if equals and name + equals in assignment_names:
+            masked[index] = name + equals + _SECRET_MARKER
+    return " ".join(masked)
 
 
 def masked_values(words: list[str]) -> list[str]:
