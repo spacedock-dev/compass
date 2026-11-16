@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
+from compass_runtime import annotations as annotation_store
 from compass_runtime import events, http_api, interaction_prototype, observation
 
 from .support import RuntimeTestCase, build_app, make_server, poll_fast, saturated_server
@@ -275,7 +276,7 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
         self.httpd.server_close()
         self.thread.join(2)
 
-    def request(self, method: str, path: str, kind: str) -> int:
+    def request(self, method: str, path: str, kind: str, payload: Any = None) -> int:
         port = self.httpd.server_port
         headers = [("Host", f"127.0.0.1:{port}")]
         extra = {
@@ -330,6 +331,8 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
             )
 
         body = json.dumps(VALID_DISCARD).encode() if path == "/api/reading-long-discard" else b"[]"
+        if payload is not None:
+            body = json.dumps(payload).encode()
         # Peer injection changes only the address the real socket handler sees; binding stays
         # loopback. Discard must pass validation before it can exercise its admission guard.
         try:
@@ -399,6 +402,36 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
 
     # A duplicate admission header is refused by the admission gate (403, as SECURITY.md says),
     # not by the header parser; only a defective header block is a 400.
+    def test_group_write_uses_the_existing_annotation_admission_matrix(self) -> None:
+        body = {"harness": "claude", "sid": "aaaaaaaa", "group": "Local team"}
+        with mock.patch.object(annotation_store, "annotate", return_value="stored") as save:
+            for kind in ("local", "lan", "navigation", "cross-port", "duplicate"):
+                with self.subTest(kind=kind):
+                    expected = 200 if kind in {"local", "lan"} else 403
+                    self.assertEqual(expected, self.request("POST", "/api/annotate", kind, body))
+                    if expected == 200:
+                        self.assertEqual("Local team", save.call_args.kwargs["group"])
+                    else:
+                        save.assert_not_called()
+                    save.reset_mock()
+
+    def test_a_group_write_cannot_accompany_an_intent_control_action(self) -> None:
+        for control in (
+            {"clear": True},
+            {"adopt": "latest-prompt"},
+            {"add_direction": "f1"},
+            {"not_accurate": True, "read_at": 100.0},
+            {"settle_through": 100.0},
+        ):
+            with (
+                self.subTest(control=control),
+                mock.patch.object(annotation_store, "annotate") as save,
+            ):
+                self.assertFalse(http_api._annotation_body_refused(control))
+                body = {"harness": "claude", "sid": "aaaaaaaa", "group": "Local team", **control}
+                self.assertEqual(400, self.request("POST", "/api/annotate", "local", body))
+                save.assert_not_called()
+
     def test_duplicate_host_is_refused_on_every_route(self) -> None:
         self.check_class("duplicate")
 

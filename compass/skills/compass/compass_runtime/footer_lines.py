@@ -21,8 +21,8 @@ import time
 from collections import Counter
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
+from compass_runtime import declared_sessions, terminal_sessions
 from compass_runtime import io as runtime_io
-from compass_runtime import terminal_sessions
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -160,6 +160,7 @@ def _content(body: Body) -> Body:
 def _projection_inputs(collection: Mapping[str, Any], row: Mapping[str, Any]) -> object:
     # Display ages, counts and neighbours change on a busy board without changing this view.
     # Keep the row inputs of drift_view.derive and the settings it reads from the payload.
+    row = declared_sessions.model_row(row)
     fields = (
         "harness",
         "sid",

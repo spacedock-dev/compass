@@ -116,6 +116,7 @@ class ParseTest(unittest.TestCase):
             "tmux_server",
             "pattern_id",
             "tool_name",
+            "declared_parent",
         }
         self.assertEqual(events.ALLOWED_FIELDS, carried | {"v"})
 

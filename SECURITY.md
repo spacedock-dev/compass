@@ -125,7 +125,7 @@ The posture rests on two invariants:
    poll that delivers an answer, `GET /api/ask/<id>`, drops that question from memory once it has,
    which is the delivery completing rather than a change a caller asked for. Other endpoints write to disk.
    `POST /api/dismiss` writes the sessions you marked handled,
-   `POST /api/annotate` writes the goal you typed or explicitly adopted and the expected outcome lines you typed against a session, including a line you added from a later direction you gave and the settlement of those directions, and
+   `POST /api/annotate` writes a local group label, the goal you typed or explicitly adopted and the expected outcome lines you typed against a session, including a line you added from a later direction you gave and the settlement of those directions, and
    `POST /api/reading` writes a model's reading of that session back into the same annotation
    entry. A press that produces nothing still writes, because the reason and the spend count are
    recorded too. These three routes write Compass's own state under `~/.compass` and never a harness
@@ -324,9 +324,11 @@ The posture rests on two invariants:
    path does not touch it, and `--forget` is what removes that copy. The record's own sentence
    names it, so a reader meets that fact where the act happened rather than only here.
    What stays in the annotation store in their place is a
-   **discard record**, and it holds four things and no fifth: the harness, the session id, the
-   moment of the act, and the number of the last revision that went. No goal, no outcome line,
-   no reading, no withheld reason and no press count -- the parser drops every other field of a
+   **discard record**, and it holds four facts about the discard: the harness, the session id, the
+   moment of the act, and the number of the last revision that went. A later group save may add
+   a local display label without reviving intent; `--forget` removes the discard marker and keeps
+   that label. No goal, no outcome line,
+   no reading, no withheld reason and no press count -- the parser drops every other intent or reading field of a
    record unread, so a file rewritten by any local process to hang text off one reads back with
    none. It is what lets a surface say a discard happened without restating what was discarded,
    and it is the only thing in this file `--forget` removes. The two stores are written one after the other and the
@@ -386,6 +388,63 @@ non-loopback destination. Those three exceptions are a
 whitelist of three scoped clauses and not a general permission to execute: written generally the
 sentence would make documented security bugs of three paths Compass already ships, the native
 notifier's `osascript`, `--daemon`'s respawn of the server, and the quota fetcher's Keychain read.
+
+## Launcher parent declarations and group labels
+
+A launcher may set `COMPASS_PARENT_SESSION=HARNESS:SESSION_ID` on a child. Only SessionStart
+forwards the claim, through the existing capability-protected event route. The standalone
+forwarder accepts only its known harness tokens and a bounded UUID (or Claude's eight-character
+published key). The server validates it again and resolves it only against rows this board
+already publishes. Unknown parents, self-links and cycle members publish `not_linked`. No
+parent is inferred from timing, folders, titles or process ancestry. A resume without the variable
+keeps the earlier declaration.
+
+A declaration carries exactly the trust of the existing per-harness event capability. The
+envelope's session ID selects the session whose parent claim is stored; the capability
+does not independently authenticate that session.
+A holder can already submit lifecycle events naming other sessions of that harness.
+
+Claims persist in `declared-parents/claims.json` under the Compass state home, with an owner-only
+directory and atomic owner-only writes, a stable file lock, a 512-session cap and a 256 KiB byte cap.
+The schema, identities and timestamps are validated on reload. Original retention timestamps
+survive restart; loading cannot renew a working deadline. Once current visibility is known,
+absent claims expire after the configured activity window without an event. Visible claims remain
+until they leave that window and expire. A corrupt, unreadable or unsafe store is refused rather
+than overwritten. Failed writes are diagnosed; received claims remain authoritative in memory
+until expiry, replacement or a later write saves them. Event and collection writes retry them,
+but claims still pending may be lost on restart. `--no-events` neither loads nor saves claims.
+`--forget` removes them while preserving user-authored groups. Persistence cannot recover
+SessionStart events never received, including claims lost before upgrading from the memory-only
+implementation.
+
+A forged or mistaken link can nest one of the user's own rows under another and hold an otherwise
+idle parent Working while a linked child works. The hold ends when the child is idle, finished or
+ended, or its last activity passes the existing tool-in-flight ceiling (900 seconds by default).
+It cannot override a parent's input wait or observed session end. With several working children,
+`waiting_on_child` names the most recently active, breaking ties by ascending harness and session
+id. A chain cannot extend the underlying child's deadline.
+
+The declaration cannot read the parent's transcript, change its goal, inherit its goal or alter
+any drift reading. It grants no model access and makes no outbound network request; the hook
+only forwards the bounded claim to the existing IPv4 loopback listener. It never becomes model
+input or history. All reading, context, drift and Live inputs retain the parent's native state,
+activity and detail;
+a display hold cannot change their facts, observer membership, completion scope or cache inputs.
+UUID hex matching ignores case. A full Claude UUID must also match a row's full resume identity
+when present; ambiguous canonical identities are refused. A prefix alone retains the board's
+existing shorter-identity boundary.
+
+`POST /api/annotate` also accepts a local display `group`, at most 40 characters before masking.
+It uses the existing annotation availability and HTTP admission guards, type checks before masking, applies the annotation
+unsafe-character and credential rules, and stores the label beside intent without changing an
+intent revision, goal or reading window. Group-only entries have lower retention priority than
+entries with intent; a label save that would evict another session's goal or reading is refused
+at either the session or byte cap. An empty string clears the own label. Without one, a
+linked child inherits the nearest labelled ancestor's group. Labels never enter drift, summary,
+Live monitor or other model prompts and cause no outbound request. `--set-group` provides the
+same write to launcher scripts and prints only a save receipt. `--no-annotations` refuses writes
+with 503 and reads no saved labels, so there is no parent group to inherit in that run. These
+local display fields are excluded from observation history.
 
 ## Find goal
 
@@ -5885,8 +5944,8 @@ exceeded its evidence lease), `acquisition`, `finished_at` (the stamp of the tur
 observed stop), `ended_at` (the stamp of the session id's own end), and `dirty` with `changed` (the
 end-of-session git reading). `--no-events` turns the whole path off for a run.
 
-The event envelope is allowlisted at both ends. Each adapter builds the fourteen permitted fields
-one at a time across the ordinary and command-report variants; no variant carries all fourteen.
+The event envelope is allowlisted at both ends. Each adapter builds the fifteen permitted fields
+one at a time across the ordinary and command-report variants; no variant carries all fifteen.
 The prompt, the tool input and the tool output stay dropped in the hook and never reach a socket.
 That is the hook: the bounded tool output a Claude Code transcript recorded is a separate read,
 governed by [Tool output in a Claude Code reading](#tool-output-in-a-claude-code-reading).

@@ -2005,3 +2005,10 @@ class WordingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GroupResolverOutcomeTest(unittest.TestCase):
+    def test_an_unresolved_group_caller_gets_a_complete_refusal(self) -> None:
+        result = terminal_client.resolve_session(None, {}, None, action="group")
+        assert isinstance(result, terminal_client.Unresolved)
+        self.assertIn("no group was changed", result.message)

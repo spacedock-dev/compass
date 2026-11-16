@@ -70,6 +70,9 @@
         "command_reports": null,
         "consumption": null,
         "copied_prompts": [],
+        "declared_native_state": null,
+        "declared_parent": null,
+        "declared_parent_state": null,
         "delegated_last_activity_at": null,
         "delegated_latest_launch_at": null,
         "delegated_launches": null,
@@ -109,6 +112,8 @@
         "first_prompt_at": 1899999370.0,
         "first_prompt_control": false,
         "focusable": false,
+        "group": null,
+        "group_source": null,
         "harness": "claude",
         "headless": null,
         "instruction": null,
@@ -165,6 +170,7 @@
         "turn_end_at": null,
         "turn_output_tokens": null,
         "wait_unconfirmed": false,
+        "waiting_on_child": null,
         "work_activity": null,
         "work_in_flight_until": null,
         "worktree": null
@@ -172,7 +178,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "5212",
+      "Content-Length": "5350",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json"
     },

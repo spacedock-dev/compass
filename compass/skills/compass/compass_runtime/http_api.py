@@ -29,6 +29,7 @@ from compass_runtime import (
     compass_turns,
     copied_corrections,
     correction,
+    declared_sessions,
     departures,
     dismissals,
     drift_view,
@@ -181,7 +182,17 @@ def _annotation_body_refused(payload: dict[str, Any]) -> bool:
     # (`annotations.mark_not_accurate` checks it against the reading it holds).
     marked, read_at = payload.get("not_accurate"), payload.get("read_at")
     return (
-        any(value is not None and not isinstance(value, str) for value in texts)
+        (
+            "group" in payload
+            and (
+                annotation_store.group_text(payload["group"]) is None
+                or any(
+                    key in payload
+                    for key in ("clear", "adopt", "add_direction", "not_accurate", "settle_through")
+                )
+            )
+        )
+        or any(value is not None and not isinstance(value, str) for value in texts)
         or (
             "not_accurate" in payload
             and (
@@ -967,7 +978,7 @@ def _with_drift_view(
         # must not rebuild an unchanged reading, and a new dependency must enter this projection.
         session = {
             key: value
-            for key, value in matching[0].items()
+            for key, value in declared_sessions.model_row(matching[0]).items()
             if key.startswith("annotation_")
             or key
             in {
@@ -3287,6 +3298,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # zero is a discard that found nothing and null is an arm that is not a discard.
             "removed": receipt.get("removed_revisions"),
         }
+        if "group" in payload:
+            answer["saved_group"] = annotation_store.group_text(payload["group"]) or None
         self._send(json.dumps(answer, separators=(",", ":")).encode(), "application/json")
 
     def _annotation_outcome(
@@ -3403,12 +3416,15 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 harness,
                 sid,
                 goal=goal,
+                group=payload.get("group"),
                 output=output,
                 lines=payload.get("lines"),
                 expected_revision=payload.get("expected_revision"),
                 origins=payload.get("origins"),
                 now=now,
-                window_start=self._typed_window_start(harness, sid, now),
+                window_start=self._typed_window_start(harness, sid, now)
+                if any(k in payload for k in ("goal", "output", "lines"))
+                else None,
                 read_from_now=payload.get("read_from_now") is True,
                 receipt=receipt,
                 reason=reason,

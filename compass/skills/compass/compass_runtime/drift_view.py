@@ -36,6 +36,8 @@ import functools
 import math
 from typing import Any, TypeGuard
 
+from compass_runtime import declared_sessions
+
 from . import ci_read, levels, reading, records
 
 # The fields a row publishes under `annotation_`, in the order the page reads them
@@ -1867,6 +1869,7 @@ def derive(
     departure. A drafted intent draws no pill. The Live monitor counts as on exactly while the
     server's lease stands, since a terminal has no tab to hold the switch.
     """
+    session = declared_sessions.model_row(session)
     view, parts = _read(session, payload, context, record)
     lease = lease_state(context)
     live_on = bool(lease and lease["on"])

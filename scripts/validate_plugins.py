@@ -482,6 +482,8 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/sessions.py",
     "skills/compass/compass_runtime/snapshot.py",
     "skills/compass/compass_runtime/events.py",
+    "skills/compass/compass_runtime/declared_sessions.py",
+    "skills/compass/compass_runtime/declared_parent_store.py",
     "skills/compass/compass_runtime/irreversible.py",
     "skills/compass/compass_runtime/focus.py",
     "skills/compass/compass_runtime/git_status.py",

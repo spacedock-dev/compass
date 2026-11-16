@@ -159,3 +159,40 @@ def run(request: GoalRequest, *, named: Session, board: Board, out: TextIO, err:
         )
         return 1
     return 0
+
+
+def set_group(label: str, *, named: Session, board: Board, out: TextIO, err: TextIO) -> int:
+    """Group writes never adopt or change intent and are usable from a launcher pipe."""
+    try:
+        payload = _snapshot(board, named)
+        if payload is None or payload.get("annotate") is not True:
+            print("Group not saved: the session or annotation store is unavailable.", file=err)
+            return 1
+        row = payload["session"]
+        status, answer = board.post(
+            "/api/annotate",
+            {
+                "harness": row["harness"],
+                "sid": row["sid"],
+                "group": label,
+            },
+        )
+        if (
+            status != 200
+            or not isinstance(answer, dict)
+            or answer.get("persisted") is not True
+            or answer.get("outcome") not in ("stored", "unchanged")
+        ):
+            print(
+                "Group not saved: use at most 40 characters and an available annotation store.",
+                file=err,
+            )
+            return 1
+    except terminal_drift.Lost:
+        print("Compass did not confirm the group save. Read the board before retrying.", file=err)
+        return 1
+    if "saved_group" not in answer:
+        print("Group saved; this dashboard did not report the normalized label.", file=out)
+    else:
+        print("Group saved." if answer["saved_group"] else "Group cleared.", file=out)
+    return 0

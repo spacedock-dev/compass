@@ -237,6 +237,7 @@ class Option(NamedTuple):
 
 
 OPERATIONS = (
+    Operation("--set-group", "set a local display group; an empty label clears it"),
     Operation("--summary", "read stored cited phases; start only when none exist"),
     Operation("--summaries", "turn summaries off machine-wide", ("off",)),
     Operation(
@@ -645,10 +646,33 @@ def parse_project_args(argv: list[str]) -> tuple[bool, str | None]:
     return False, None
 
 
+def parse_group_args(argv: list[str]) -> tuple[str, str | None] | None:
+    label: str | None = None
+    named: str | None = None
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg.startswith("--set-group=") and label is None:
+            label = arg.split("=", 1)[1]
+        elif arg == "--set-group" and label is None and index + 1 < len(argv):
+            index += 1
+            label = argv[index]
+        elif arg.startswith("--session=") and named is None:
+            named = arg.split("=", 1)[1]
+        elif arg == "--session" and named is None and index + 1 < len(argv):
+            index += 1
+            named = argv[index]
+        else:
+            return None
+        index += 1
+    return (label, named) if label is not None else None
+
+
 def handles(argv: list[str]) -> bool:
     startup = [arg for arg in argv if arg != "--no-update-check"]
     return (
-        parse_summary_args(startup) is not None
+        parse_group_args(startup) is not None
+        or parse_summary_args(startup) is not None
         or parse_goal_args(startup) is not None
         or parse_monitor_args(startup)[0]
         or parse_footer_args(argv)[0]
@@ -661,6 +685,9 @@ def handles(argv: list[str]) -> bool:
 def run(argv: list[str]) -> int:  # noqa: PLR0911 - one dispatch per short operation
     no_update_check = "--no-update-check" in argv
     argv = [arg for arg in argv if arg != "--no-update-check"]
+    group = parse_group_args(argv)
+    if group is not None:
+        return run_group(*group, no_update_check=no_update_check)
     summary = parse_summary_args(argv)
     if summary is not None:
         return run_summary(summary, no_update_check=no_update_check)
@@ -1178,7 +1205,15 @@ def resolve_session(  # noqa: PLR0911 - one exit per way the caller is named or 
         match = _SESSION_FLAG.fullmatch(flag)
         if match is None:
             return Unresolved(sentence("bad_session_flag"))
-        return Session(match.group(1), match.group(2), "flag")
+        sid = match.group(2)
+        if action == "group" and (
+            re.fullmatch(
+                r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?",
+                sid,
+            )
+        ):
+            sid = sid.lower()
+        return Session(match.group(1), sid, "flag")
     # A caller that already read stdin passes what it read, so stdin is never read twice.
     status_line = payload if payload is not None else read_status_line(stdin)
     value = status_line.get("session_id") if status_line is not None else None
@@ -1208,6 +1243,7 @@ def unresolved_caller(reason: str, action: str | None) -> Unresolved:
         "monitor": "no Live monitor was started or stopped",
         "project": "no project brief was read",
         "goal": "no goal was read or changed",
+        "group": "no group was changed",
         "summary": "no summary was read or requested",
     }
     return Unresolved(sentence(reason + "_for_action", action=action, outcome=outcomes[action]))
@@ -1715,6 +1751,41 @@ class LoopbackBoard:
         except DashboardUnreachable as error:
             raise Lost(path) from error
         return reply.status, reply.data
+
+
+@report_blocked_connection
+def run_group(
+    label: str,
+    session: str | None,
+    *,
+    port: int | None = None,
+    no_update_check: bool = False,
+    server_options: ServerOptions | None = None,
+) -> int:
+    """Launchers supply an explicit identity and use the goal-save admission guards."""
+    from compass_runtime import terminal_goal  # noqa: PLC0415
+
+    if session is None:
+        print("Setting a group needs an explicit --session.", file=sys.stderr)
+        return 1
+    named = resolve_session(session, os.environ, None, payload={}, action="group")
+    if isinstance(named, Unresolved):
+        print(named.message, file=sys.stderr)
+        return 1
+    found = ensure_dashboard(
+        state_home(os.environ),
+        port=port,
+        spend=True,
+        own_version=release_version(),
+        no_update_check=no_update_check,
+        **server_start_kwargs(server_options),
+    )
+    if isinstance(found, Refusal):
+        print(found.message, file=sys.stderr)
+        return found.code
+    return terminal_goal.set_group(
+        label, named=named, board=LoopbackBoard(found.port), out=sys.stdout, err=sys.stderr
+    )
 
 
 @report_blocked_connection

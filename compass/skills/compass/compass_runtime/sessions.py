@@ -660,6 +660,12 @@ def base_session(harness: str, sid: Any, project: str) -> Session:
         # Claude's current-turn background-subagent expiry, never a foreground
         # call's. Lets Stop yield without letting background work clear a prompt.
         "work_in_flight_until": None,
+        "declared_parent": None,
+        "declared_parent_state": None,
+        "waiting_on_child": None,
+        "declared_native_state": None,
+        "group": None,
+        "group_source": None,
         # The first timestamp in the session transcript, but only when this
         # process scanned from byte zero. None means the source is unmeasured;
         # a bounded tail or rebuilt oversized cache entry may not substitute

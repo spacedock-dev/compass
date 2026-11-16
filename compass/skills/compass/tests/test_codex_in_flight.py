@@ -325,6 +325,7 @@ class CodexInFlightTest(RuntimeTestCase):
         source.git_for.return_value = None
         source.focusable.return_value = False
         source.command_reports.return_value = []
+        source.parent_declarations.return_value = {}
         if restored:
             self.assertTrue(
                 ends.record(

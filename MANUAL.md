@@ -20,6 +20,7 @@ python3 compass/skills/compass/server.py --footer [--session HARNESS:SESSION_ID]
 python3 compass/skills/compass/server.py --sessions [waiting] [--port PORT]
 python3 compass/skills/compass/server.py --project [--session claude:SESSION_ID] [--port PORT]
 python3 compass/skills/compass/server.py --goal [TEXT | --clear | --adopt] [--session claude:SESSION_ID] [--port PORT] [--no-update-check]
+python3 compass/skills/compass/server.py --set-group LABEL --session HARNESS:SESSION_ID [--port PORT] [--no-update-check]
 python3 compass/skills/compass/server.py --pause-model-calls [--port PORT]
 python3 compass/skills/compass/server.py --summary [--update | --again] [--session claude:SESSION_ID] [--port PORT] [--no-update-check]
 python3 compass/skills/compass/server.py --summaries off [--port PORT]
@@ -71,7 +72,7 @@ leaving an off switch out on a later start enables that feature again without de
 Pass one operation flag at a time. If combined, the current implementation chooses `--diagnose`,
 then `--forget`, then `--stop`, then `--status`; it does not execute a sequence of operations.
 `--daemon` with any of those four operations is a usage error. Terminal operations run before those
-four. `--summary`, `--summaries`, `--goal` and `--pause-model-calls` reject unrelated options before
+four. `--summary`, `--summaries`, `--goal`, `--set-group` and `--pause-model-calls` reject unrelated options before
 the `--version` check. Otherwise `--version` ignores the other flags, though their values must still parse. `--sessions` is checked
 next and uses only `--port`. A lone `--version` or `--sessions` is answered before the dashboard's
 modules load; beside any other option it goes through the full parser, which is what checks those
@@ -93,6 +94,15 @@ summary notice when it is due; changed content or destination renews it.
 
 `--goal` accepts one mode, its own `--session` and `--no-update-check` before the dashboard modules load.
 With `--port` it uses the full parser, which refuses unrelated options.
+
+`--set-group LABEL` requires an explicit `--session` and accepts `--port` and
+`--no-update-check`. It works in a shell script with piped stdout. It uses the same annotation
+availability and HTTP admission guards as goal saves. A label is at most 40 characters;
+`--set-group ""` clears the session's own label so it can inherit a linked parent's group.
+Send `group` alone or beside plain goal/outcome fields; combining it with adoption, discard or
+reading actions is refused. Saving a group changes no intent revision and starts no model call. With `--no-annotations`, writes are unavailable and saved groups are
+not read. Parent declarations and group inheritance are described in the
+[session state reference](compass/skills/compass/reference/dashboard.md#launcher-declarations).
 
 `--project` is checked after `--sessions` and before `--drift`. Alone or with its own
 `--session`, it answers before the dashboard modules load; beside other options it uses only
@@ -141,6 +151,7 @@ dashboard that supplies no drift-view field gets a separate compatibility refusa
 | `--again` | Only with `--summary`: explicitly summarize from the start. Cannot be combined with `--update`. |
 | `--summaries off` | Turn summaries off machine-wide on the running dashboard; no session needed and no launch or model call. Refused while model calls are paused, preserving the stored answer. There is no terminal on operation. |
 | `--goal [TEXT]` | With no text, read the goal a fresh Intent card offers, its exact source sentence, saved revision, outcome lines, binding caveat and page URL. Reads the running dashboard only; starts no monitor and calls no model. Text saves a new typed goal revision while keeping outcome lines. An identical save says already saved. Writes require an explicit `--session` and terminal stdout; inferred-session and piped writes are refused before any POST. Writes may start the matching dashboard release. Every write checks the revision; a lost response is not retried. Saving supplies intent; a later monitor check must produce a level. Honors an explicit `--port`; rejects unrelated options and combined goal modes. |
+| `--set-group LABEL` | Set the explicitly selected session's local display group through `/api/annotate`. At most 40 characters; an empty string clears it. Requires `--session HARNESS:SESSION_ID`; accepts `--port` and `--no-update-check`. Does not require a terminal, change intent or call a model. |
 | `--clear` | Only with `--goal`: save an empty goal, keeping outcome lines and earlier revisions within the existing history limit. This does not discard intent history. An unsaved draft may be offered again; the command says when one is. |
 | `--adopt` | Only with `--goal`: adopt the current harness `/goal`, otherwise the offered prompt draft, through the page's own adoption path. Checks its source, exact words, time and expected revision again before saving. Refuses a changed or missing candidate and preserves intent discarded on the board meanwhile. Keeps outcome lines. |
 | `--pause-model-calls` | Send the page's durable Pause model calls to a running dashboard, from any shell. Needs no session or typed command. Stops that dashboard's ordinary readings, long analyses, unasked checks, session summaries and Live monitor holders; preserves charged attempts. Starts nothing. Honors an explicit `--port`; rejects other options. Exits `0` only after a confirmed stored pause, otherwise `1`. The success line names the dashboard address and port that received the pause. A lost reply is not retried automatically. Resume model calls stays on the board and does not restart old jobs. |
@@ -203,9 +214,9 @@ Dashboards using the same Compass home share persistent stores.
 | `--history-days DAYS` | Retain observations for this many days. Default: `14`. Must be finite and greater than zero; fractions are accepted. Narrowing the window evicts older records; widening it cannot recover them. |
 | `--history-max-bytes BYTES` | History size and read cap. Default: `1048576` (1 MiB). Must be a positive integer. A history file larger than this cap is discarded unread rather than parsed. |
 | `--no-history` | Do not read or write observation history for this run. Existing history is left on disk. Does not disable the separate annotations or session-end store. |
-| `--no-annotations` | Do not read or write saved goals, expected outcome lines or readings for this run. The page offers no editable intent fields; `Analyze drift` remains visible but disabled with a reason. Existing annotations are left on disk. Does not govern the separate session-summary store. |
+| `--no-annotations` | Do not read or write saved goals, expected outcome lines, readings or group labels for this run. The page offers no editable intent fields; `Analyze drift` remains visible but disabled with a reason. Existing annotations are left on disk. Does not govern the separate session-summary store. |
 | `--no-dismiss` | Do not read or write the handled-session store. Previously handled sessions return to the board and its dismiss control is unavailable for this run. |
-| `--forget` | A one-shot cleanup: delete observation history, recorded session ends, stored session summaries and copied-correction digests; sweep annotation discard records; store model calls as paused, which stops readings, goal summaries and session summaries until you use Resume model calls in the page, and store session summaries as off, which stays after you resume until you turn summaries on again. Preserve the words you typed, unexpired model-spend timestamps and `compass-typed-presses.json`, which like those timestamps guards what a press may spend: deleting it would let a typed command that already paid for a reading pay for another. Refused while a dashboard answers on the selected port: stop it first. The deletions are irreversible. |
+| `--forget` | A one-shot cleanup: delete observation history, recorded session ends, launcher parent declarations, stored session summaries and copied-correction digests; sweep annotation discard records; store model calls as paused, which stops readings, goal summaries and session summaries until you use Resume model calls in the page, and store session summaries as off, which stays after you resume until you turn summaries on again. Preserve the words and group labels you typed, unexpired model-spend timestamps and `compass-typed-presses.json`, which like those timestamps guards what a press may spend: deleting it would let a typed command that already paid for a reading pay for another. Refused while a dashboard answers on the selected port: stop it first. The deletions are irreversible. |
 
 `--forget` checks only the named port. Stop every dashboard sharing that Compass home before
 cleanup; an instance on another port can otherwise retain or recreate observations. It does not
@@ -264,6 +275,7 @@ owned by the installed harness, as explained in [Security](SECURITY.md#observer-
 
 | Variable | Effect |
 |---|---|
+| `COMPASS_PARENT_SESSION` | Launcher declaration on a child: `HARNESS:SESSION_ID`. Only `event_hook.py` reads it, on SessionStart. Known hook harness tokens are `claude`, `codex`, `gemini` and `droid`; Claude accepts its eight-character published key or a full UUID, the others a full UUID. Malformed values are dropped. It links only to a row on this board; no process or transcript is discovered from it. A resume without the variable preserves this run's earlier declaration. Received declarations survive restarts in bounded private storage; absent claims expire after the activity window without an event. Unavailable storage is diagnosed and new claims may last only in memory. `--no-events` neither loads nor saves them; `--forget` removes them. Events never received cannot be recovered. |
 | `COMPASS_HOME` | Move Compass's own state, logs and persistent stores. Default: `.compass` under your home directory. Does not relocate harness transcripts. Use the same value for start, stop, status and forget. |
 | `COMPASS_ALLOW_TOOL_OUTPUT` | `1` is accepted and does nothing in this release; will be removed in a later release. |
 | `SPACEDOCK_INTERNAL` | Exactly `1` marks release lookups as internal, overriding the saved internal flag. No other value does. |
@@ -298,7 +310,8 @@ covers instance control and the stores addressed above; it is not a complete inv
 | `compass-update-check.json` | Last attempted UTC day, plus the last successful release answer and its time. Its persistent `.lock` file serializes servers sharing one Compass home; no request is made if the lock or atomic save fails. |
 | `compass-history.json` | Bounded observation history. |
 | `compass-ends.json` | Recorded session ends from the event coordinator. |
-| `compass-annotations.json` | Saved reader goals, outcome lines, readings and discard records. |
+| `declared-parents/claims.json` and `claims.lock` beside it | Bounded launcher parent claims and their stable writer lock. `--forget` removes claims and leaves the lock file. See the [security contract](SECURITY.md#launcher-parent-declarations-and-group-labels) for retention and failure behavior. |
+| `compass-annotations.json` | Saved reader goals, outcome lines, readings, local group labels and discard records. |
 | `compass-summaries.json` | Stored session summaries and word-free source comparison metadata. Independent of annotations; Delete summary removes one session and `--forget` deletes the store. |
 | `compass-dismissals.json` | Sessions marked handled. |
 | `compass-project-checks.json` | Commands you list as checks for a project. You write it; Compass only reads it. [How to list one](HOW_TO_USE.md#list-a-projects-checks). |

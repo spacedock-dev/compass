@@ -39,6 +39,7 @@ it has no knowledge of.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
@@ -90,6 +91,7 @@ ALLOWED_FIELDS: Final = frozenset(
         "cwd",
         "subagent_id",
         "transcript_path",
+        "declared_parent",
         # Terminal identity, gathered by a hook on `session_started` alone and
         # used only to build a focus command. Deliberately NOT in `PATCHABLE`
         # below: every member there is a published display claim, and
@@ -223,6 +225,7 @@ class Event:
     tmux_server: str | None = None
     pattern_id: str | None = None
     tool_name: str | None = None
+    declared_parent: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -407,6 +410,22 @@ def normalize_session_id(harness: str, session_id: str) -> str | None:
     return result if isinstance(result, str) and result else None
 
 
+def parent_declaration(value: Any) -> dict[str, str] | None:
+    """Admit only bounded identifiers; unknown harnesses can remain explicitly unlinked."""
+    if not isinstance(value, dict) or set(value) != {"harness", "sid"}:
+        return None
+    harness, sid = value["harness"], value["sid"]
+    if not isinstance(harness, str) or not isinstance(sid, str):
+        return None
+    if re.fullmatch(r"[a-z][a-z0-9_]{0,31}", harness) is None:
+        return None
+    uuid = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    pattern = r"[0-9a-fA-F]{8}|" + uuid if harness == "claude" else uuid
+    if re.fullmatch(pattern, sid) is None:
+        return None
+    return {"harness": harness, "sid": sid.lower()}
+
+
 def _identify(harness: str, payload: Mapping[str, Any]) -> tuple[str, str, str] | Rejected:
     """Resolve name, native id and collector key, or say why none of them hold.
 
@@ -499,6 +518,9 @@ def parse(
         cwd=_text(payload, "cwd", limit=MAX_PATH_LEN),
         subagent_id=_text(payload, "subagent_id", limit=MAX_ID_LEN),
         transcript_path=_text(payload, "transcript_path", limit=MAX_PATH_LEN),
+        declared_parent=parent_declaration(payload.get("declared_parent"))
+        if name == "session_started"
+        else None,
         tmux_socket=_text(payload, "tmux_socket", limit=MAX_TERMINAL_ID_LEN),
         tmux_pane=_text(payload, "tmux_pane", limit=MAX_TERMINAL_ID_LEN),
         tmux_server=_text(payload, "tmux_server", limit=MAX_TERMINAL_ID_LEN),

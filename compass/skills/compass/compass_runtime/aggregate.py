@@ -14,6 +14,7 @@ from . import annotations as annotation_store
 from . import (
     board_explanations,
     copied_corrections,
+    declared_sessions,
     deliveries,
     departures,
     dismissals,
@@ -705,6 +706,7 @@ def _attach_annotations(
         # a name cannot reach inside a mapping.
         for name, value in published.items():
             row[f"annotation_{name}"] = value
+        row.update(annotation_store.published_group(entry))
 
 
 def _settle_stopped_session(session: Session) -> None:
@@ -1022,6 +1024,11 @@ class Application:
         out_sessions, cleared = _subtract_dismissed(out_sessions, cleared_marks)
         if notify and not in_quiet:
             reach.maybe_reach_nudge(config, state, out_sessions, now=now)
+        source = self.overlays
+        declarations: dict[tuple[str, str], dict[str, str]] = getattr(
+            source, "parent_declarations", dict
+        )()
+        declared_sessions.attach(out_sessions, declarations, config=config, now=now)
         _attach_cached_goals(config, out_sessions)
         sessions.assign_display_ids(config, out_sessions)
         out_sessions.sort(key=row_order)
@@ -1279,7 +1286,9 @@ class Application:
         for row in rows:
             row.update(unasked.published(self.config, stored, row, entries=entries, now=now))
         if self.unasked_lane is not None:
-            self.unasked_lane.consider(self.state, rows, entries, now=now)
+            self.unasked_lane.consider(
+                self.state, [declared_sessions.model_row(row) for row in rows], entries, now=now
+            )
         # The capability flag, keyed the way `dismiss` and `annotate` are:
         # present exactly when the lane is live, so a page with the switch off
         # draws nothing rather than a panel that never fills.
