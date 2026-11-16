@@ -112,8 +112,17 @@ def _exchange(
             sock.settimeout(sock.remaining())
             sock.connect(("127.0.0.1", port))
             conn.sock = sock
-            conn.request(method, path, body=body, headers=dict(headers or {}))
-            response = conn.getresponse()
+            try:
+                conn.request(method, path, body=body, headers=dict(headers or {}))
+            except BrokenPipeError as error:
+                # The cap can close after sending a refusal but before the POST body arrives.
+                # Read that answer if present; without one, retain the send failure for retries.
+                try:
+                    response = conn.getresponse()
+                except (OSError, http.client.HTTPException):
+                    raise error from None
+            else:
+                response = conn.getresponse()
             with response:
                 raw = response.read(cap + 1)
                 sock.remaining()
