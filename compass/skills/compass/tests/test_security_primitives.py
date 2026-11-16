@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -166,7 +167,7 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("compass_runtime/frontend_dev.py", "load_manifest"): (
         1,
-        "KNOWN GAP: development manifest under temporary directory uses Path.open.",
+        "KNOWN GAP: Vite-authored development manifest, not Compass state; temporary directory read uses Path.open.",
     ),
     ("compass_runtime/git_status.py", "_read_regular"): (
         1,
@@ -214,7 +215,7 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("compass_runtime/reader_checks.py", "_read"): (
         1,
-        "KNOWN GAP: reader checks follow links and lack owner/identity checks despite nonblocking regular-file reads.",
+        "KNOWN GAP: reader-authored checks, never written by Compass; follows links and lacks owner/identity checks despite nonblocking regular-file reads.",
     ),
     ("compass_runtime/reading_ci_acquire.py", "_Read.ci"): (
         1,
@@ -243,10 +244,6 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ("compass_runtime/sessions.py", "_git_checkout"): (
         2,
         "_git_checkout: Repository gitdir/commondir marker reads, not Compass state.",
-    ),
-    ("compass_runtime/settings.py", "_read_store"): (
-        1,
-        "KNOWN GAP: settings read checks regular-file type but lacks owner/identity and directory checks.",
     ),
     ("compass_runtime/terminal_client.py", "read_line"): (
         1,
@@ -287,6 +284,15 @@ for _harness in ("compass-gemini", "compass-droid"):
             if module in {"launch.py", "notify_hook.py"}
         }
     )
+
+
+# These inputs are authored outside Compass; no Compass-written state reader may claim a gap.
+NON_STATE_READ_GAPS = frozenset(
+    {
+        ("compass_runtime/frontend_dev.py", "load_manifest"),
+        ("compass_runtime/reader_checks.py", "_read"),
+    }
+)
 
 
 def _name(node: ast.expr, imports: dict[str, str]) -> str:
@@ -457,7 +463,9 @@ def _stale_entries(
     module: str, counts: dict[tuple[str, str], int], process_counts: dict[tuple[str, str], int]
 ) -> list[str]:
     found = []
-    for key, (maximum, _reason) in RAW_FILES.items():
+    for key, (maximum, reason) in RAW_FILES.items():
+        if key[0] == module and reason.startswith("KNOWN GAP") and key not in NON_STATE_READ_GAPS:
+            found.append(f"{module} {key[1]}: unreviewed Compass-written state-read gap")
         if key[0] == module and counts.get(key, 0) < maximum:
             found.append(f"{module} {key[1]}: stale raw-file inventory")
     for key, (arguments, _reason) in PROCESSES.items():
@@ -541,7 +549,6 @@ class SecurityPrimitivesTest(unittest.TestCase):
     def test_deferred_unsafe_sites_remain_known_gaps(self) -> None:
         missing = {
             ("compass_runtime/reader_checks.py", "_read"): ("owner", "link"),
-            ("compass_runtime/settings.py", "_read_store"): ("owner",),
         }
         for key, gaps in missing.items():
             with self.subTest(key=key):
@@ -595,6 +602,17 @@ class SecurityPrimitivesTest(unittest.TestCase):
         ):
             with self.subTest(source=source):
                 self.assertTrue(violations(source, module))
+
+    def test_a_state_reader_cannot_be_exempted_by_adding_a_known_gap(self) -> None:
+        source = "def load():\n return open('/state/compass-settings.json').read()"
+        for module in ("compass_runtime/settings.py", "compass_runtime/future_state.py"):
+            with (
+                self.subTest(module=module),
+                mock.patch.dict(RAW_FILES, {(module, "load"): (1, "KNOWN GAP: state read.")}),
+            ):
+                self.assertTrue(
+                    any("state-read gap" in reason for reason in violations(source, module))
+                )
 
     def test_new_raw_file_sites_are_refused(self) -> None:
         for call in (

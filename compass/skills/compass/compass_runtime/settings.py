@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import json
 import os
-import stat
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
 from . import io as runtime_io
@@ -107,20 +106,16 @@ def _valid(limit: Limit, value: Any) -> bool:
     )
 
 
-def _read_store(path: str) -> bytes:
-    """The store's first bytes, from a regular file only: a link or a FIFO left at the path would
-    otherwise be followed, or block every press that reads the settings."""
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-    descriptor = os.open(path, flags)
-    with os.fdopen(descriptor, "rb") as handle:
-        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
-            raise OSError(path)
+def _read_store(config: RuntimeConfig) -> bytes:
+    with os.fdopen(
+        runtime_io.open_regular(store_path(config), root=str(config.state_home)), "rb"
+    ) as handle:
         return handle.read(_MAX_STORE_BYTES + 1)
 
 
 def _stored(config: RuntimeConfig) -> dict[str, Any] | None:
     try:
-        raw = _read_store(store_path(config))
+        raw = _read_store(config)
     except FileNotFoundError:
         return {}
     except OSError:
@@ -168,7 +163,9 @@ def save(config: RuntimeConfig, changes: Mapping[str, Any]) -> Settings:
             raise InvalidSettingError(str(key))
     path = store_path(config)
     runtime_io.ensure_owner_dir(str(config.state_home), root=str(config.state_home))
-    with runtime_io.held_file_lock(f"{path}.lock", wait=_LOCK_WAIT_SEC) as held:
+    with runtime_io.held_file_lock(
+        f"{path}.lock", wait=_LOCK_WAIT_SEC, root=str(config.state_home)
+    ) as held:
         # A filesystem that cannot lock still takes the write, as the annotation store does; one
         # whose lock another writer holds or that refuses it does not, so two saves never
         # interleave their read and write.

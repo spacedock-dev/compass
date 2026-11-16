@@ -4509,8 +4509,10 @@ on POSIX, foreign-owned files refuse. This applies to the shared state I/O helpe
 Python hook capability and memo reads, and MCP instance discovery; it is not a claim about every
 state reader. Annotation, observer sidecar, delivery, departure, session-end, dismissal,
 history, semantic-history, summary, copied-correction, tripwire, typed-press and reading-job
-marker loads use this policy too. Terminal-monitor control records and locks are admitted below
-the state home. Tripwire, monitor, long-reading marker and interaction-registration publications
+marker loads use this policy too. Reading limits and the update-check preference also use it,
+anchored to the configured state home. An unreadable or unsafe settings file restores default
+reading limits and disables update checks. Terminal-monitor control records and locks are admitted
+below the state home. Tripwire, monitor, long-reading marker and interaction-registration publications
 refuse an existing link, special file or foreign-owned target before replacing it. The long-reading
 publication fence checks the permission database with the same strict admission as other policy
 connections; SQLite still reopens by pathname. Quiet-hours files also use strict state reads,

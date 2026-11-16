@@ -28,6 +28,7 @@ from compass_runtime import (
     reading_jobs,
     reading_long_markers,
     semantic_history,
+    settings,
     summary_jobs,
     summary_store,
     tripwires,
@@ -36,7 +37,7 @@ from compass_runtime import (
 
 from . import test_reading_long_markers as marker_tests
 from .support import make_config
-from .test_security_primitives import RAW_FILES
+from .test_security_primitives import NON_STATE_READ_GAPS, RAW_FILES
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -111,6 +112,18 @@ class StrictStateFilesTest(unittest.TestCase):
                 {"goal": "own goal"},
                 lambda: observer.read_sidecar(config, "claude", "abcdefgh"),
                 None,
+            ),
+            (
+                Path(settings.store_path(config)),
+                {"analyze_record_events": 300},
+                lambda: settings.load(config),
+                settings.DEFAULTS,
+            ),
+            (
+                Path(settings.store_path(config)),
+                {"no_update_check": False},
+                lambda: settings.no_update_check(config),
+                True,
             ),
             (Path(deliveries.store_path(config)), envelope, lambda: deliveries.load(config), ()),
             (Path(departures.store_path(config)), envelope, lambda: departures.load(config), ()),
@@ -239,31 +252,35 @@ class StrictStateFilesTest(unittest.TestCase):
         with self.planted(path, kind):
             self.assertIsNone(fixture.loaded(owner))
 
-    def test_no_listed_state_reader_keeps_a_raw_read_exemption(self) -> None:
-        modules = {
-            "annotations",
-            "observer",
-            "deliveries",
-            "departures",
-            "ends",
-            "dismissals",
-            "history",
-            "semantic_history",
-            "summary_store",
-            "copied_corrections",
-            "tripwires",
-            "typed_press",
-            "reading_jobs",
-            "summary_jobs",
-            "reading_long_markers",
-            "monitor_store",
-        }
+    @unittest.skipIf(os.name == "nt", "POSIX UID")
+    def test_another_users_settings_directory_cannot_set_limits_or_allow_update_checks(
+        self,
+    ) -> None:
+        settings.save(self.config, {"analyze_record_events": 300})
+        self.assertEqual(300, settings.load(self.config).analyze_record_events)
+        self.assertFalse(settings.no_update_check(self.config))
+        original = os.fstat
+        inode = self.root.stat().st_ino
+
+        def foreign_directory(fd: int) -> os.stat_result:
+            info = original(fd)
+            if info.st_ino == inode:
+                fields = list(info)
+                fields[4] = os.getuid() + 1
+                return os.stat_result(fields)
+            return info
+
+        with mock.patch.object(os, "fstat", side_effect=foreign_directory):
+            self.assertEqual(settings.DEFAULTS, settings.load(self.config))
+            self.assertTrue(settings.no_update_check(self.config))
+
+    def test_no_compass_written_state_reader_keeps_a_raw_read_exemption(self) -> None:
         self.assertEqual(
             [],
             [
                 key
                 for key, (_, reason) in RAW_FILES.items()
-                if Path(key[0]).stem in modules and reason.startswith("KNOWN GAP")
+                if reason.startswith("KNOWN GAP") and key not in NON_STATE_READ_GAPS
             ],
         )
 

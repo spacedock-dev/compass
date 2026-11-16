@@ -586,9 +586,10 @@ inventory. A process entry pins its module, class-qualified lexical owner and ar
 entries pin the module, qualified owner and call count. Nested functions retain their enclosing
 owners too. Prefer the transport, `rooted_path`
 and `io` primitives. An exception needs a one-line reason and review of its executable or path,
-not just an added tuple to quiet a failure. Entries marked `KNOWN GAP` preserve pre-existing raw
-state-reader debt; they do not certify those readers as safe. Synthetic rejection tests exercise
-all three checkers. Non-gap file entries name the function enforcing the stated checks or owning
+not just an added tuple to quiet a failure. Entries marked `KNOWN GAP` are limited to the reviewed
+Vite development manifest and reader-authored project checks; Compass-written state readers cannot
+claim them. These entries do not certify those external readers as safe. Synthetic rejection tests
+exercise all three checkers. Non-gap file entries name the function enforcing the stated checks or owning
 the exemption. The lexical checker follows static aliases, constant `getattr` and runner defaults,
 and refuses unresolved attributes on primitive modules. It is not interprocedural dataflow or
 dynamic-import analysis.
