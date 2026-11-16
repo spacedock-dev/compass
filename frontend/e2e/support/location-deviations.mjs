@@ -3,7 +3,7 @@
 export function recordedLocationNotes(record, payload, project = '') {
   const rows = Array.isArray(payload?.sessions) ? payload.sessions : [];
   const noteFor = (label) => {
-    const members = rows.filter((row) => row.project === label);
+    const members = rows.filter((row) => String(row.project ?? '') === label);
     const measured = members.filter(
       (row) =>
         ['git common directory', 'working directory path'].includes(row.project_identity_source) &&
@@ -27,7 +27,7 @@ export function recordedLocationNotes(record, payload, project = '') {
     };
   };
   const replace = (text, label, title = '') => {
-    if (typeof text !== 'string' || !label) return text;
+    if (typeof text !== 'string' || typeof label !== 'string') return text;
     const { before, after } = noteFor(label);
     const start = title && text.includes(title) ? text.indexOf(title) + title.length : 0;
     const at = text.indexOf(before, start);

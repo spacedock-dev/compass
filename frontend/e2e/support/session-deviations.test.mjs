@@ -109,3 +109,19 @@ test('a reader sees a published session age in the projected recorded header onl
     false,
   );
 });
+
+test('a project with an empty display label says its members have no measured location', () => {
+  const warning = '2 sessions share this display label; shared location is not established';
+  const sessions = [
+    { harness: 'claude', sid: 'one', project: '' },
+    { harness: 'claude', sid: 'two', project: null },
+  ];
+  const record = {
+    groups: [{ rows: [{ project: '', text: `Exact location not published${warning}` }] }],
+  };
+  assert.equal(
+    recordedLocationNotes(record, { sessions }).groups[0].rows[0].text,
+    'Exact location not publishedLocation not measured for 2 sessions with this display label',
+  );
+  assert.equal(record.groups[0].rows[0].text, `Exact location not published${warning}`);
+});
