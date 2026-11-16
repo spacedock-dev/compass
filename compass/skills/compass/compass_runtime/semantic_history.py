@@ -79,7 +79,9 @@ def _redact_history(value: Any) -> Any:
 
 def _read(config: RuntimeConfig) -> dict[str, Any]:
     try:
-        with open(store_path(config), "rb") as handle:
+        with os.fdopen(
+            runtime_io.open_regular(store_path(config), root=str(config.state_home)), "rb"
+        ) as handle:
             raw = handle.read(config.state_read_cap_bytes + 1)
         if len(raw) > config.state_read_cap_bytes:
             return {"v": SCHEMA_VERSION, "projects": {}}

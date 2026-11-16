@@ -344,7 +344,9 @@ def load(config: RuntimeConfig) -> tuple[Delivery, ...]:
     down a collection. A malformed record is dropped on its own.
     """
     try:
-        with open(store_path(config), "rb") as handle:
+        with os.fdopen(
+            runtime_io.open_regular(store_path(config), root=str(config.state_home)), "rb"
+        ) as handle:
             raw = handle.read(config.delivery_read_cap_bytes + 1)
         if len(raw) > config.delivery_read_cap_bytes:
             return ()

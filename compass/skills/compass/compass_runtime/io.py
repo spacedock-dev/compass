@@ -951,9 +951,12 @@ _DIRECTORY_REFUSES = frozenset(
 
 
 @contextlib.contextmanager
-def held_file_lock(path: str | os.PathLike[str], *, wait: float) -> Iterator[str]:
+def held_file_lock(
+    path: str | os.PathLike[str], *, wait: float, root: str | None = None
+) -> Iterator[str]:
     """Hold an OS lock on `path` for the block, waiting at most `wait` seconds.
 
+    A supplied root anchors the open below strict state-directory admission.
     Yields `LOCK_HELD` while held, `LOCK_BUSY` when another holder kept it past
     the wait, `LOCK_UNSUPPORTED` when the filesystem reports it cannot lock,
     `LOCK_UNCREATABLE` when there is no lock file and its directory refuses a
@@ -971,16 +974,32 @@ def held_file_lock(path: str | os.PathLike[str], *, wait: float) -> Iterator[str
     threads must let only one of them hold this at a time.
     """
     try:
-        if os.path.islink(path):
-            raise OSError(errno.ELOOP, "Refusing a symlink", path)  # noqa: TRY301
-        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-        fd = os.open(path, flags, 0o600)
+        with contextlib.ExitStack() as guard:
+            parent = None
+            if root is not None:
+                path = os.path.abspath(path)
+                if os.name == "nt":
+                    directory = guard.enter_context(
+                        _windows_directory(os.path.dirname(path), root=root, create=True)
+                    )
+                    path = os.path.join(directory, os.path.basename(path))
+                else:
+                    parent = _owner_directory_fd(os.path.dirname(path), root=root)
+                    guard.callback(os.close, parent)
+            if os.path.islink(path):
+                raise OSError(errno.ELOOP, "Refusing a symlink", path)  # noqa: TRY301
+            flags = (
+                os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+            )
+            fd = os.open(
+                path if parent is None else os.path.basename(path),
+                flags,
+                0o600,
+                **({} if parent is None else {"dir_fd": parent}),
+            )
         try:
-            info = os.fstat(fd)
-            if not stat.S_ISREG(info.st_mode) or (os.name != "nt" and info.st_uid != os.getuid()):
-                raise OSError(errno.EPERM, "Lock is not a privately owned regular file", path)  # noqa: TRY301
-            if os.name != "nt":
-                os.fchmod(fd, 0o600)
+            _check_regular(os.fstat(fd), os.fspath(path))
+            os.fchmod(fd, 0o600) if os.name != "nt" else None
         except BaseException:
             os.close(fd)
             raise

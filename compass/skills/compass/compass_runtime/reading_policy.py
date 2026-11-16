@@ -1269,25 +1269,27 @@ def long_publication_permission(config: RuntimeConfig, permission: LongPermissio
     reason = "store-unavailable"
     try:
         path = store_path(config)
-        before = path.lstat()
-        if runtime_io.sqlite_module is not None and stat.S_ISREG(before.st_mode):
-            db = held.enter_context(
-                contextlib.closing(
-                    runtime_io.sqlite_module.connect(
-                        path.absolute().as_uri() + "?mode=rw",
-                        uri=True,
-                        timeout=WRITE_WAIT_SEC,
-                        isolation_level=None,
+        if runtime_io.sqlite_module is not None:
+            runtime_io.check_sqlite_file(str(path), root=str(config.state_dir))
+            before = path.lstat()
+            if stat.S_ISREG(before.st_mode):
+                db = held.enter_context(
+                    contextlib.closing(
+                        runtime_io.sqlite_module.connect(
+                            path.absolute().as_uri() + "?mode=rw",
+                            uri=True,
+                            timeout=WRITE_WAIT_SEC,
+                            isolation_level=None,
+                        )
                     )
                 )
-            )
-            db.execute("BEGIN IMMEDIATE")
-            after = path.lstat()
-            if stat.S_ISREG(after.st_mode) and (before.st_dev, before.st_ino) == (
-                after.st_dev,
-                after.st_ino,
-            ):
-                reason = _long_permission_reason(db, permission)
+                db.execute("BEGIN IMMEDIATE")
+                after = path.lstat()
+                if stat.S_ISREG(after.st_mode) and (before.st_dev, before.st_ino) == (
+                    after.st_dev,
+                    after.st_ino,
+                ):
+                    reason = _long_permission_reason(db, permission)
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):
         held.close()
         reason = "store-unavailable"

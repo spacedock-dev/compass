@@ -2168,7 +2168,9 @@ def read_sidecar(config: RuntimeConfig, harness: str, sid: str) -> dict[str, Any
     if path is None:
         return None
     try:
-        with open(path, encoding="utf-8") as handle:
+        with os.fdopen(
+            runtime_io.open_regular(path, root=str(config.state_dir)), "r", encoding="utf-8"
+        ) as handle:
             value = json.loads(handle.read(config.state_read_cap_bytes))
     except (OSError, ValueError, json.JSONDecodeError, RecursionError):
         return None

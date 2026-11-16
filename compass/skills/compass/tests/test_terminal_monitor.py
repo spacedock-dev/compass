@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 from unittest import mock
 
+from compass_runtime import io as runtime_io
 from compass_runtime import loopback_transport, monitor_store, terminal_sessions
 from compass_runtime import terminal_client as client
 from compass_runtime import terminal_monitor as monitor
@@ -989,8 +990,17 @@ class MonitorCorrectionsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home:
             store = monitor_store.Store(home, "abcdefab")
             with (
-                mock.patch.dict(sys.modules, {"msvcrt": msvcrt}),
-                mock.patch.object(sys, "platform", "win32"),
+                mock.patch.object(runtime_io, "_LOCK_BUSY", PermissionError),
+                mock.patch.object(
+                    runtime_io,
+                    "_try_lock",
+                    side_effect=lambda fd: msvcrt.locking(fd, msvcrt.LK_NBLCK, 1),
+                ),
+                mock.patch.object(
+                    runtime_io,
+                    "_release_lock",
+                    side_effect=lambda fd: msvcrt.locking(fd, msvcrt.LK_UNLCK, 1),
+                ),
             ):
                 with store.lock("command") as first:
                     self.assertTrue(first)
@@ -1010,8 +1020,17 @@ class MonitorCorrectionsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home:
             store = monitor_store.Store(home, "abcdefab")
             with (
-                mock.patch.dict(sys.modules, {"msvcrt": msvcrt}),
-                mock.patch.object(sys, "platform", "win32"),
+                mock.patch.object(runtime_io, "_LOCK_BUSY", PermissionError),
+                mock.patch.object(
+                    runtime_io,
+                    "_try_lock",
+                    side_effect=lambda fd: msvcrt.locking(fd, msvcrt.LK_NBLCK, 1),
+                ),
+                mock.patch.object(
+                    runtime_io,
+                    "_release_lock",
+                    side_effect=lambda fd: msvcrt.locking(fd, msvcrt.LK_UNLCK, 1),
+                ),
                 self.assertRaises(OSError),
                 store.lock("command"),
             ):
@@ -1439,8 +1458,14 @@ class MonitorRecoveryTest(unittest.TestCase):
                         },
                     ),
                 ),
-                mock.patch("time.monotonic", side_effect=[0, 0, 100]),
-                mock.patch("time.sleep"),
+                mock.patch.object(
+                    monitor,
+                    "time",
+                    types.SimpleNamespace(
+                        monotonic=mock.Mock(side_effect=[0, 0, 100]),
+                        sleep=mock.Mock(),
+                    ),
+                ),
                 mock.patch.object(monitor, "_start") as start,
                 mock.patch("sys.stderr", io.StringIO()),
             ):

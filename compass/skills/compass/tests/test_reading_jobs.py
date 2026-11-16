@@ -37,7 +37,7 @@ KEY = "claude:s1"
 
 @contextlib.contextmanager
 def _windows_rename() -> Iterator[None]:
-    """`Path.rename` and `Path.read_text` as a Windows MoveFileEx meets them.
+    """`Path.rename` and state opens as a Windows MoveFileEx meets them.
 
     MoveFileEx opens its source by path for DELETE, sharing everything, and then
     renames through that handle: a second rename follows the file wherever the
@@ -46,7 +46,7 @@ def _windows_rename() -> Iterator[None]:
     """
     held: dict[int, int] = {}
     guard = threading.Lock()
-    rename, read_text = Path.rename, Path.read_text
+    rename, open_regular = Path.rename, runtime_io.open_regular
 
     def moved(path: Path, target: Any) -> Any:
         inode = path.stat().st_ino
@@ -62,18 +62,21 @@ def _windows_rename() -> Iterator[None]:
             with guard:
                 held[inode] -= 1
 
-    def read(path: Path, *args: Any, **kwargs: Any) -> str:
+    def read(path: Any, *args: Any, **kwargs: Any) -> int:
         try:
-            inode = path.stat().st_ino
+            inode = Path(path).stat().st_ino
         except OSError:
             inode = -1
         with guard:
             busy = held.get(inode, 0) > 0
         if busy:
             raise PermissionError(32, "sharing violation")
-        return read_text(path, *args, **kwargs)
+        return open_regular(path, *args, **kwargs)
 
-    with mock.patch.object(Path, "rename", moved), mock.patch.object(Path, "read_text", read):
+    with (
+        mock.patch.object(Path, "rename", moved),
+        mock.patch.object(runtime_io, "open_regular", read),
+    ):
         yield
 
 
@@ -531,14 +534,14 @@ class ARestartRecordsTheAttemptItInterruptedTest(unittest.TestCase):
         self._marker(
             "abc", json.dumps({"id": "abc", "harness": "claude", "sid": "s1", "pid": 4242})
         )
-        real = Path.read_text
+        real = runtime_io.open_regular
 
-        def refuse(path: Path, *args: Any, **kwargs: Any) -> str:
-            if ".claim-" in path.name:
+        def refuse(path: Any, *args: Any, **kwargs: Any) -> int:
+            if ".claim-" in Path(path).name:
                 raise PermissionError(32, "sharing violation")
             return real(path, *args, **kwargs)
 
-        with mock.patch.object(Path, "read_text", refuse):
+        with mock.patch.object(runtime_io, "open_regular", refuse):
             self.assertEqual(0, reading_jobs.recover(self.application, alive=lambda _pid: False))
         self.assertIsNone(self._entry().get("readings"))
         self.assertEqual(["abc.json.claim-"], [p.name[:15] for p in self.markers.iterdir()])

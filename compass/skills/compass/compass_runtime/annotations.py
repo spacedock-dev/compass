@@ -1734,7 +1734,9 @@ def _read_store(config: RuntimeConfig) -> _Store:
     """
     cap = config.annotation_read_cap_bytes
     try:
-        with open(store_path(config), "rb") as handle:
+        with os.fdopen(
+            runtime_io.open_regular(store_path(config), root=str(config.state_home)), "rb"
+        ) as handle:
             raw = handle.read(cap + 1)
     except (FileNotFoundError, NotADirectoryError):
         # No file, or a state home that cannot hold one: nothing is there to lose.

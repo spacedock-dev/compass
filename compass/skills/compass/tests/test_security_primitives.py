@@ -156,10 +156,6 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "_fsync_directory: Directory descriptor for durability, no content read.",
     ),
-    ("compass_runtime/annotations.py", "_read_store"): (
-        1,
-        "KNOWN GAP: Compass annotation state uses blocking, symlink-following open.",
-    ),
     ("compass_runtime/ci_read.py", "_run"): (
         2,
         "_run: Private TemporaryDirectory output captures for a bounded subprocess.",
@@ -168,26 +164,6 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "document: External settings descriptor checked for regular file and bounded reads.",
     ),
-    ("compass_runtime/copied_corrections.py", "_read"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/deliveries.py", "load"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/departures.py", "_load_at"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/dismissals.py", "load"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/ends.py", "load"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
     ("compass_runtime/frontend_dev.py", "load_manifest"): (
         1,
         "KNOWN GAP: development manifest under temporary directory uses Path.open.",
@@ -195,10 +171,6 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ("compass_runtime/git_status.py", "_read_regular"): (
         1,
         "_read_regular: Nonblocking descriptor with regular-file and size checks for repository data.",
-    ),
-    ("compass_runtime/history.py", "load"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
     ),
     ("compass_runtime/http_api.py", "_RequestHandler._interaction_asset"): (
         2,
@@ -216,14 +188,6 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "_read_registration_file: Registration helper refuses links and nonregular files using descriptor checks.",
     ),
-    ("compass_runtime/interaction_prototype.py", "TmuxAdapter.start_client"): (
-        1,
-        "TmuxAdapter.start_client: Exclusive owner-only temporary file in a private temporary directory.",
-    ),
-    ("compass_runtime/interaction_prototype.py", "InteractionPrototype._write_registration_file"): (
-        2,
-        "KNOWN GAP: exclusive staging does not validate parent directory ownership or refuse directory links.",
-    ),
     ("compass_runtime/lifecycle.py", "_identity_text"): (
         1,
         "_identity_text: Fixed OS identity paths; nonblocking nofollow regular descriptor, root/user owner, 1024-byte cap.",
@@ -232,19 +196,7 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "daemon_redirect_stdio: OS null device for detached process stdin.",
     ),
-    ("compass_runtime/monitor_store.py", "Store.lock"): (
-        1,
-        "KNOWN GAP: lock open lacks NONBLOCK and owner/identity checks; only regular-file and advisory-lock checks.",
-    ),
-    ("compass_runtime/monitor_store.py", "Store.read"): (
-        1,
-        "KNOWN GAP: control read checks regular-file type and size but lacks owner/identity and directory checks.",
-    ),
     ("compass_runtime/notifications.py", "resolve_quiet_hours"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/observer.py", "read_sidecar"): (
         1,
         "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
     ),
@@ -280,33 +232,9 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "_Read.read: self.open opens an acquisition context, not a file.",
     ),
-    ("compass_runtime/reading_jobs.py", "_mark_unstored"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/reading_jobs.py", "cancel"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/reading_jobs.py", "_recover"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/reading_jobs.py", "_holder"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/reading_long_markers.py", "_write"): (
-        1,
-        "_write: Exclusive owner-only temporary staging descriptor.",
-    ),
     ("compass_runtime/reading_long_markers.py", "sync_directory"): (
         1,
         "sync_directory: Directory durability descriptor, no file content.",
-    ),
-    ("compass_runtime/reading_long_markers.py", "_read"): (
-        1,
-        "KNOWN GAP: long-reading marker uses Path.open after path checks.",
     ),
     ("compass_runtime/reading_policy.py", "_connect"): (
         1,
@@ -316,10 +244,6 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "_aws_config: External AWS settings read through bounded descriptor checks.",
     ),
-    ("compass_runtime/semantic_history.py", "_read"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
     ("compass_runtime/sessions.py", "_git_checkout"): (
         2,
         "_git_checkout: Repository gitdir/commondir marker reads, not Compass state.",
@@ -328,26 +252,6 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "KNOWN GAP: settings read checks regular-file type but lacks owner/identity and directory checks.",
     ),
-    ("compass_runtime/summary_jobs.py", "_eligible"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/summary_jobs.py", "_stop"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/summary_jobs.py", "cancel"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/summary_jobs.py", "recover"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/summary_store.py", "load"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
     ("compass_runtime/terminal_client.py", "read_line"): (
         1,
         "read_line: Nonblocking regular-file read helper for external harness status.",
@@ -355,14 +259,6 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ("compass_runtime/terminal_client.py", "release_version"): (
         2,
         "release_version: Installed immutable version/manifest data.",
-    ),
-    ("compass_runtime/tripwires.py", "load"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/typed_press.py", "_consumed"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
     ),
     ("compass_runtime/update_check.py", "_read"): (
         1,
@@ -648,12 +544,6 @@ class SecurityPrimitivesTest(unittest.TestCase):
 
     def test_deferred_unsafe_sites_remain_known_gaps(self) -> None:
         missing = {
-            ("compass_runtime/monitor_store.py", "Store.lock"): ("owner", "nonblock"),
-            ("compass_runtime/monitor_store.py", "Store.read"): ("owner",),
-            (
-                "compass_runtime/interaction_prototype.py",
-                "InteractionPrototype._write_registration_file",
-            ): ("directory",),
             ("compass_runtime/reader_checks.py", "_read"): ("owner", "link"),
             ("compass_runtime/settings.py", "_read_store"): ("owner",),
         }

@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import contextlib
 import copy
 import json
 import math
 import os
 import re
-import tempfile
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -101,7 +99,9 @@ def _rule(value: Any) -> bool:
 
 def load(config: RuntimeConfig) -> dict[str, dict[str, Any]] | None:
     try:
-        with open(store_path(config), "rb") as handle:
+        with os.fdopen(
+            runtime_io.open_regular(store_path(config), root=str(config.state_home)), "rb"
+        ) as handle:
             raw = handle.read(READ_CAP + 1)
     except FileNotFoundError:
         return {}
@@ -126,7 +126,6 @@ def load(config: RuntimeConfig) -> dict[str, dict[str, Any]] | None:
 
 
 def save(config: RuntimeConfig, rules: dict[str, dict[str, Any]]) -> bool:
-    temporary = ""
     try:
         raw = json.dumps({"v": 1, "rules": list(rules.values())}).encode()
         if (
@@ -136,19 +135,11 @@ def save(config: RuntimeConfig, rules: dict[str, dict[str, Any]]) -> bool:
         ):
             return False
         runtime_io.ensure_owner_dir(str(config.state_home), root=str(config.state_home))
-        fd, temporary = tempfile.mkstemp(prefix=".tripwires-", dir=config.state_home)
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(raw)
-            handle.flush()
-            os.fsync(handle.fileno())
-        target = store_path(config)
-        os.replace(temporary, target)
+        runtime_io.atomic_write_owner_only(
+            store_path(config), raw, sync=True, root=str(config.state_home)
+        )
     except (OSError, ValueError, TypeError, RecursionError):
         return False
-    finally:
-        if temporary:
-            with contextlib.suppress(OSError):
-                os.unlink(temporary)
     return True
 
 

@@ -226,7 +226,9 @@ def _read(config: RuntimeConfig) -> dict[tuple[str, str], Held]:
     reader's own words, the direction that never hides a real direction.
     """
     try:
-        with open(store_path(config), "rb") as handle:
+        with os.fdopen(
+            runtime_io.open_regular(store_path(config), root=str(config.state_home)), "rb"
+        ) as handle:
             raw = handle.read(_READ_CAP_BYTES + 1)
     except OSError:
         return {}

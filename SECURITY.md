@@ -4507,7 +4507,15 @@ so admission cannot close a racing path replacement.
 Converted state writers and readers use the strict policy: final symlinks, nonregular files and,
 on POSIX, foreign-owned files refuse. This applies to the shared state I/O helpers, daemon logs,
 Python hook capability and memo reads, and MCP instance discovery; it is not a claim about every
-state reader. Daemon logs tighten existing owned files to `0o600`. Annotation, observer sidecar,
+state reader. Annotation, observer sidecar, delivery, departure, session-end, dismissal,
+history, semantic-history, summary, copied-correction, tripwire, typed-press and reading-job
+marker loads use this policy too. Terminal-monitor control records and locks are admitted below
+the state home. Tripwire, monitor, long-reading marker and interaction-registration publications
+refuse an existing link, special file or foreign-owned target before replacing it. The long-reading
+publication fence checks the permission database with the same strict admission as other policy
+connections; SQLite still reopens by pathname.
+
+Daemon logs tighten existing owned files to `0o600`. Annotation, observer sidecar,
 semantic history, delivery, departure and session-end saves and status-line memos use unique,
 exclusively created `0o600` temporary files, then replace the target atomically. POSIX creation and
 replacement stay relative to the validated directory descriptor. Annotation saves retain their

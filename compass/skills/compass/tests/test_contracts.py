@@ -2122,8 +2122,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.summary_jobs",
             "compass_runtime.supervise",
         },
-        # The read-only terminal substrate uses lower-level path and diagnostic
-        # primitives. Its CLI, lifecycle and HTTP integrations stay above it.
+        # Registration publications share strict state I/O and diagnostic primitives; CLI,
+        # lifecycle and HTTP integrations stay above the read-only terminal substrate.
         "compass_runtime.interaction_prototype": {
             "compass_runtime.rooted_path",
             "compass_runtime.io",

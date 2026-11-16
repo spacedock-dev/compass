@@ -226,7 +226,10 @@ def _marker(config: Any, job_id: str) -> Path:
 def _mark_unstored(config: RuntimeConfig, job_id: str, why: str) -> None:
     path = _marker(config, job_id)
     with _MARKER_LOCK, contextlib.suppress(OSError, ValueError):
-        marker = json.loads(path.read_text(encoding="utf-8"))
+        with os.fdopen(
+            runtime_io.open_regular(path, root=str(config.state_dir)), "r", encoding="utf-8"
+        ) as handle:
+            marker = json.load(handle)
         previous = marker.get("reason")
         marker["reason"] = (
             why
@@ -311,7 +314,12 @@ def cancel(application: Application, session_key: str, job_id: str) -> bool:
     # reason keeps it: "may still be running" is never overwritten.
     path = _marker(application.config, job_id)
     with _MARKER_LOCK, contextlib.suppress(OSError, ValueError):
-        marker = json.loads(path.read_text(encoding="utf-8"))
+        with os.fdopen(
+            runtime_io.open_regular(path, root=str(application.config.state_dir)),
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            marker = json.load(handle)
         if "reason" not in marker:
             marker["reason"] = reading.WITHHELD_CANCELLED
             runtime_io.atomic_write_owner_only(
@@ -543,7 +551,10 @@ def _recover(application: Application, alive: Callable[[int], bool]) -> int:
         if claimed is None:
             continue
         try:
-            text = claimed.read_text(encoding="utf-8")
+            with os.fdopen(
+                runtime_io.open_regular(claimed, root=str(config.state_dir)), "r", encoding="utf-8"
+            ) as handle:
+                text = handle.read()
         except OSError:
             # Not a malformed marker, so not deleted as one. A file that is gone
             # was taken by another claimer; any other error is left named for
@@ -642,6 +653,9 @@ def _holder(path: Path, claimant: str) -> int | None:
         except ValueError:
             return None
     try:
-        return int(json.loads(path.read_text(encoding="utf-8"))["pid"])
+        with os.fdopen(
+            runtime_io.open_regular(path, root=str(path.parent.parent)), "r", encoding="utf-8"
+        ) as handle:
+            return int(json.load(handle)["pid"])
     except (OSError, ValueError, KeyError, TypeError):
         return 0

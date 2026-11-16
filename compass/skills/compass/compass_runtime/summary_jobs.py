@@ -375,9 +375,15 @@ def _admit(
 
 
 def _eligible(application: reading_jobs.Application, job: Job) -> str:
-    marker = json.loads(
-        _marker(application.config, job.harness, job.sid).read_text(encoding="utf-8")
-    )
+    with os.fdopen(
+        runtime_io.open_regular(
+            _marker(application.config, job.harness, job.sid),
+            root=str(application.config.state_dir),
+        ),
+        "r",
+        encoding="utf-8",
+    ) as handle:
+        marker = json.load(handle)
     if marker.get("reason"):
         return str(marker["reason"])
     answer = reading_policy.summary_status(application.config, now=application.clock())
@@ -713,7 +719,12 @@ def _stop(application: reading_jobs.Application, harness: str, sid: str, reason:
     if not path.exists():
         return False
     try:
-        marker = json.loads(path.read_text(encoding="utf-8"))
+        with os.fdopen(
+            runtime_io.open_regular(path, root=str(application.config.state_dir)),
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            marker = json.load(handle)
         if not isinstance(marker, dict):
             raise TypeError("Summary job marker is not an object")  # noqa: TRY301
     except (ValueError, TypeError):
@@ -757,9 +768,15 @@ def cancel(
         if expected_job is not None:
             # A sibling dashboard may own the marker even while this registry remembers ours.
             try:
-                marker = json.loads(
-                    _marker(application.config, harness, sid).read_text(encoding="utf-8")
-                )
+                with os.fdopen(
+                    runtime_io.open_regular(
+                        _marker(application.config, harness, sid),
+                        root=str(application.config.state_dir),
+                    ),
+                    "r",
+                    encoding="utf-8",
+                ) as handle:
+                    marker = json.load(handle)
             except (OSError, ValueError):
                 return False
             if not isinstance(marker, dict) or marker.get("id") != expected_job:
@@ -839,7 +856,12 @@ def recover(application: reading_jobs.Application, *, alive: Callable[[int], boo
     with _locked(application):
         for path in markers.glob("*.json"):
             try:
-                marker = json.loads(path.read_text(encoding="utf-8"))
+                with os.fdopen(
+                    runtime_io.open_regular(path, root=str(application.config.state_dir)),
+                    "r",
+                    encoding="utf-8",
+                ) as handle:
+                    marker = json.load(handle)
                 current = application.state.summary_jobs.get(_key(marker["harness"], marker["sid"]))
                 if (isinstance(current, Job) and current.state in ACTIVE) or (
                     marker["pid"] != os.getpid() and alive(marker["pid"])

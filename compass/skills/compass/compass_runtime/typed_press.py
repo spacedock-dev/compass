@@ -267,7 +267,8 @@ def _consumed(path: Path) -> dict[str, float] | None:
     Legacy ids have no hold time: retain them for a full window from migration.
     """
     try:
-        raw = path.read_bytes()
+        with os.fdopen(runtime_io.open_regular(path, root=str(path.parent)), "rb") as handle:
+            raw = handle.read()
     except FileNotFoundError:
         return {}
     except OSError:

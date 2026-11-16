@@ -374,25 +374,20 @@ class TmuxAdapter:
         config_path = self._client_config
         if config_path is None:
             raise OriginUnavailableError("tmux client configuration path is missing")
-        temporary = config_path.with_name(f".{config_path.name}.{secrets.token_hex(4)}.tmp")
-        try:
-            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                json.dump(
-                    {
-                        "port": port,
-                        "registration_token": registration_token,
-                        "compass_session_id": compass_session_id,
-                        "lease_sec": lease_sec,
-                        "require_session_environment": False,
-                    },
-                    handle,
-                    separators=(",", ":"),
-                )
-            os.replace(temporary, config_path)
-        finally:
-            with contextlib.suppress(OSError):
-                temporary.unlink()
+        runtime_io.atomic_write_owner_only(
+            str(config_path),
+            json.dumps(
+                {
+                    "port": port,
+                    "registration_token": registration_token,
+                    "compass_session_id": compass_session_id,
+                    "lease_sec": lease_sec,
+                    "require_session_environment": False,
+                },
+                separators=(",", ":"),
+            ),
+            root=str(config_path.parent),
+        )
 
     def bind_origin(self, origin: TmuxOrigin) -> None:
         """Adopt one external origin, or verify the disposable origin already prepared."""
@@ -1026,9 +1021,7 @@ class InteractionPrototype:
         path = self._registration_file
         if path is None:
             raise OriginUnavailableError("external registration file is missing")
-        temporary = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
         try:
-            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             payload = json.dumps(
                 {
                     "port": port,
@@ -1040,17 +1033,9 @@ class InteractionPrototype:
                 },
                 separators=(",", ":"),
             )
-            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
+            runtime_io.atomic_write_owner_only(str(path), payload, sync=True, root=str(path.parent))
         except OSError as exc:
             raise OriginUnavailableError("cannot write external registration file") from exc
-        finally:
-            with contextlib.suppress(OSError):
-                temporary.unlink()
 
     def _remove_registration_file(self) -> None:
         path = self._registration_file

@@ -5,6 +5,7 @@ from __future__ import annotations
 import concurrent.futures
 import contextlib
 import dataclasses
+import os
 import threading
 import unittest
 from typing import Any
@@ -236,3 +237,32 @@ class PublicationFenceTest(unittest.TestCase):
     def test_sqlite_unavailable_yields_no_success(self) -> None:
         with mock.patch.object(runtime_io, "sqlite_module", None):
             self.assertEqual("store-unavailable", self.publish())
+
+    @unittest.skipIf(os.name == "nt", "POSIX ownership")
+    def test_another_users_permission_store_cannot_authorize_publication(self) -> None:
+        self.assertEqual("", self.publish())
+        with mock.patch.object(os, "getuid", return_value=os.getuid() + 1):
+            self.assertEqual("store-unavailable", self.publish())
+
+    def test_a_missing_sqlite_runtime_withholds_publication_without_raising(self) -> None:
+        policy.store_path(self.config).unlink()
+        with mock.patch.object(runtime_io, "sqlite_module", None):
+            self.assertEqual("store-unavailable", self.publish())
+
+    @unittest.skipIf(os.name == "nt", "POSIX symlink substitution")
+    def test_a_database_swapped_for_a_link_after_admission_is_not_opened(self) -> None:
+        check = runtime_io.check_sqlite_file
+
+        def substitute(path: str, **options: Any) -> None:
+            check(path, **options)
+            database = policy.store_path(self.config)
+            target = database.with_suffix(".original")
+            database.rename(target)
+            database.symlink_to(target)
+
+        with (
+            mock.patch.object(runtime_io, "check_sqlite_file", side_effect=substitute),
+            mock.patch.object(self.sqlite, "connect", wraps=self.sqlite.connect) as connect,
+        ):
+            self.assertEqual("store-unavailable", self.publish())
+            connect.assert_not_called()
