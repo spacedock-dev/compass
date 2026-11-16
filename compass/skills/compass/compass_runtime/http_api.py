@@ -5919,8 +5919,22 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # about sessions, being a run-wide fact.
             self._reject(503)
             return
+        if not self._loopback_resource_ok():
+            self._post_admission_refusal()
+            return
         if not coordinator.focus_authorized(self.headers.get("X-Compass-Capability")):
-            self._reject(403)
+            self._drain_body()
+            self._send(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "reason": "stale-capability",
+                        "message": "Raise refused: the dashboard restarted. Reload the page.",
+                    }
+                ).encode(),
+                "application/json",
+                code=403,
+            )
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -6029,7 +6043,21 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     def _post_admission_refusal(self) -> None:
         if not self._tunnel_port_mismatch():
-            self._reject(403)
+            self._drain_body()
+            self._send(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "reason": "admission-refused",
+                        "message": (
+                            "Compass refused this request: board actions require "
+                            "direct loopback access from the same origin."
+                        ),
+                    }
+                ).encode(),
+                "application/json",
+                code=403,
+            )
             return
         self._drain_body()
         self._send(

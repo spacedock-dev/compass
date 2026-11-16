@@ -16,6 +16,11 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+Raise now diagnoses a restarted dashboard only from an explicit `stale-capability` refusal.
+Other 403 replies keep the server's refusal sentence, with a generic refusal for older HTML
+replies. The live client-contract fixtures are regenerated with the server; the retired page's
+golden answers remain unchanged.
+
 2026-11-16, declared process children and local groups add relationship links, a waiting-child
 state label, a Group facet and optional label buckets to Sessions. The retired page's payloads
 carry none of these fields, so their asking tests and golden files stay unchanged. The new

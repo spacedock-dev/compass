@@ -264,7 +264,15 @@ export type ApiResult<T> =
 
 export type ApiFailure = Exclude<ApiResult<unknown>, { kind: 'ok' }>;
 
-export type FocusOutcome = 'sent' | 'declined' | 'throttled' | 'stale' | 'failed' | 'unavailable';
+export type FocusRefusal = { readonly state: 'refused'; readonly message: string };
+export type FocusOutcome =
+  | 'sent'
+  | 'declined'
+  | 'throttled'
+  | 'stale'
+  | 'failed'
+  | 'unavailable'
+  | FocusRefusal;
 
 export interface UnaskedGrantRequest extends SessionIdentity {
   readonly provider: string;

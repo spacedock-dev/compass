@@ -305,9 +305,8 @@ export function createApiClient(deps: {
       signal?: AbortSignal,
     ) => post<NotifyReceipt>('/api/notify', body, signal),
 
-    /* One attempt per call. 429 means wait and 403 means this document is
-       stale; nothing else the server says is actionable from here. A missing
-       capability sends nothing, because the request could only be refused. */
+    /* Only a capability refusal diagnoses a stale document: admission can
+       refuse the same action before the capability is checked. */
     async focus(options: {
       readonly identity: SessionIdentity;
       readonly capability: string;
@@ -323,7 +322,17 @@ export function createApiClient(deps: {
       );
       if (result.kind === 'http-error') {
         if (result.status === 429) return 'throttled';
-        if (result.status === 403) return 'stale';
+        if (result.status === 403) {
+          const body = isRecord(result.body) ? result.body : {};
+          if (body['reason'] === 'stale-capability') return 'stale';
+          return {
+            state: 'refused',
+            message:
+              typeof body['message'] === 'string' && body['message'].trim()
+                ? body['message']
+                : 'Raise refused by Compass.',
+          };
+        }
         return 'failed';
       }
       if (result.kind !== 'ok') return 'failed';

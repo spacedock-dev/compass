@@ -17,15 +17,16 @@
     "query": ""
   },
   "response": {
-    "error_page": {
-      "contains": [
-        "Error code: 403",
-        "Error response"
-      ],
-      "kind": "python-http-server"
+    "body": {
+      "message": "Compass refused this request: board actions require direct loopback access from the same origin.",
+      "ok": false,
+      "reason": "admission-refused"
     },
     "headers": {
-      "Content-Type": "text/html;charset=utf-8"
+      "Cache-Control": "no-store",
+      "Content-Length": "155",
+      "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
+      "Content-Type": "application/json"
     },
     "status": 403
   }

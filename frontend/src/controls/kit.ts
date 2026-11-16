@@ -1,5 +1,5 @@
 import { createContext, useContext, useSyncExternalStore } from 'react';
-import type { FocusOutcome, SessionIdentity } from '../api/types';
+import type { FocusOutcome, FocusRefusal, SessionIdentity } from '../api/types';
 import type { MemoState, MemoStore } from '../storage';
 import type { Clock } from '../transport/ports';
 import { createDisclosureStore } from './disclosureStore';
@@ -21,7 +21,8 @@ export type CueState =
   | 'sent'
   | 'declined'
   | 'throttled'
-  | 'stale';
+  | 'stale'
+  | FocusRefusal;
 export type BriefingState = 'copied' | 'error';
 
 export interface ControlsDeps {
@@ -178,7 +179,7 @@ export function useControls(): Controls {
   return controls;
 }
 
-export function useKeyedValue<S extends string>(store: KeyedState<S>, key: string): S | undefined {
+export function useKeyedValue<S>(store: KeyedState<S>, key: string): S | undefined {
   return useSyncExternalStore(store.subscribe, () => store.read(key));
 }
 

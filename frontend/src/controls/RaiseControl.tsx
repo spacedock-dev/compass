@@ -14,14 +14,13 @@ export interface RaiseControlProps {
   readonly primary?: boolean;
 }
 
-/* Six states the page can honestly tell apart, because the response is one
-   boolean and nothing else. A declined lookup, an unknown session and a command
+/* A successful response is one boolean. A declined lookup, an unknown session and a command
    that failed are the same `false` to a caller by contract, so the declined
    wording covers all three. SENT and not RAISED: the boolean is the raise
    command's own exit status, and a socket raise can change what a tmux client
    shows without bringing a GUI window forward. The ceiling wording names neither
    arm, because the server refuses on two and the page cannot tell which. */
-const SAID: Record<Exclude<CueState, 'copied'>, string> = {
+const SAID: Record<Exclude<CueState, 'copied' | object>, string> = {
   sending: 'Raise requested',
   sent: 'Raise sent; the terminal switched to this session. Its window may still be behind others.',
   declined: 'No terminal was raised',
@@ -31,6 +30,10 @@ const SAID: Record<Exclude<CueState, 'copied'>, string> = {
   stale: 'Raise refused: the dashboard restarted. Reload the page.',
   failed: 'Raise could not be sent',
 };
+
+function sentence(state: Exclude<CueState, 'copied'>): string {
+  return typeof state === 'object' ? state.message : SAID[state];
+}
 
 function isRaiseCue(state: CueState | undefined): state is Exclude<CueState, 'copied'> {
   return state !== undefined && state !== 'copied';
@@ -55,7 +58,7 @@ export function RaiseControl({ harness, sid, focusable, primary = false }: Raise
 
   const say = (outcome: Exclude<CueState, 'copied'>, press: number) => {
     controls.cues.remember(key, outcome);
-    controls.announce(`raise:${harness}:${sid}#${String(press)}`, SAID[outcome]);
+    controls.announce(`raise:${harness}:${sid}#${String(press)}`, sentence(outcome));
   };
 
   const press = async () => {
@@ -85,7 +88,12 @@ export function RaiseControl({ harness, sid, focusable, primary = false }: Raise
         variant={primary ? 'raise-primary' : 'raise'}
         data-control="raise"
         aria-label="Raise the terminal this session is running in"
-        {...(state ? { 'data-raise-state': state, 'aria-describedby': cueId } : {})}
+        {...(state
+          ? {
+              'data-raise-state': typeof state === 'object' ? state.state : state,
+              'aria-describedby': cueId,
+            }
+          : {})}
         {...(busy ? { 'aria-disabled': true } : {})}
         onClick={() => void press()}
       >
@@ -93,7 +101,7 @@ export function RaiseControl({ harness, sid, focusable, primary = false }: Raise
       </Button>
       {state ? (
         <span id={cueId} className="ctl-visually-hidden">
-          {SAID[state]}
+          {sentence(state)}
         </span>
       ) : null}
     </>

@@ -308,6 +308,7 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
             "proxy": [("Forwarded", "for=192.0.2.10")],
             "transfer": [("Transfer-Encoding", "chunked")],
             "malformed": [("Bad ", "value")],
+            "stale-capability": [("X-Compass-Capability", "old-process-capability")],
         }
         headers += extra.get(kind, [])
         if kind.startswith("duplicate-"):
@@ -443,6 +444,22 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
                 # A different local service or a forwarding proxy earns no tunnel diagnosis.
                 self.assertEqual(403, self.request("POST", "/api/reading", kind))
                 self.assertNotIn(b"tunnel-port-mismatch", self.last_body)
+
+    def test_a_refused_board_action_names_admission_instead_of_a_restart(self) -> None:
+        for kind in ("duplicate", "cross-port", "lan", "proxy"):
+            with self.subTest(kind=kind):
+                self.assertEqual(403, self.request("POST", "/api/focus", kind))
+                self.assertIn(b"admission-refused", self.last_body)
+                body = json.loads(self.last_body)
+                self.assertEqual("admission-refused", body["reason"])
+                self.assertIn("direct loopback", body["message"])
+
+    def test_an_old_focus_capability_asks_the_reader_to_reload(self) -> None:
+        self.assertEqual(403, self.request("POST", "/api/focus", "stale-capability"))
+        self.assertIn(b"stale-capability", self.last_body)
+        body = json.loads(self.last_body)
+        self.assertEqual("stale-capability", body["reason"])
+        self.assertIn("Reload", body["message"])
 
     def test_valid_discard_rejects_lan_and_forwarding(self) -> None:
         self.assertTrue(http_api._RequestHandler._valid_long_discard(VALID_DISCARD))
