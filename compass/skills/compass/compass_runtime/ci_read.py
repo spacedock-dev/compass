@@ -751,10 +751,11 @@ def glab_hosts(environ: Mapping[str, str]) -> frozenset[str]:
     absent is empty, and so is a file holding a character yaml.v3 and this reader would split on
     differently.
     """
-    return _configured_glab_hosts(_glab_config_text(environ) or "")
+    return _configured_glab_hosts(_glab_config_text(environ) or "") or frozenset()
 
 
-def _configured_glab_hosts(text: str) -> frozenset[str]:
+def _configured_glab_hosts(text: str) -> frozenset[str] | None:
+    """Admitted hosts, or None when shared YAML values prevent a safe interpretation."""
     hosts: set[str] = set()
     redirected: set[str] = set()
     inside, depth, current = False, 0, ""
@@ -764,7 +765,7 @@ def _configured_glab_hosts(text: str) -> frozenset[str]:
             continue
         indent = len(line) - len(line.lstrip(" "))
         if inside and indent and _spreads(stripped):
-            return frozenset()
+            return None
         if inside and _unplaceable(line, stripped):
             redirected.add(current)
             continue
@@ -1258,7 +1259,10 @@ def _read_gitlab(
     config_text = _glab_config_text(source)
     if config_text is None:
         return {**record, "error": ERROR_GLAB_CONFIG}
-    if host not in _configured_glab_hosts(config_text):
+    hosts = _configured_glab_hosts(config_text)
+    if hosts is None:
+        return {**record, "error": ERROR_GLAB_CONFIG}
+    if host not in hosts:
         return {
             **record,
             "error": ERROR_GLAB_CONFIG if source.get("GLAB_CONFIG_DIR") else ERROR_HOST,

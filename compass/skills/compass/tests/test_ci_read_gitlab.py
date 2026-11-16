@@ -319,17 +319,21 @@ class AHostWhoseConfigurationRedirectsTheCallIsNotRead(unittest.TestCase):
         for line in (
             "{api_protocol: http}",
             "? api_protocol",
-            "&anchor",
-            "*anchor",
             "[x]",
             '"api_\\x70rotocol": http',
-            "<<: *h",
-            "api_protocol: &h http",
             "!!str api_protocol: http",
         ):
             with self.subTest(line=line):
                 self.host_block(line)
                 self.refused()
+
+    def test_shared_yaml_values_say_the_configuration_could_not_be_used(self) -> None:
+        for line in ("&anchor", "*anchor", "<<: *h", "api_protocol: &h http"):
+            with self.subTest(line=line):
+                self.host_block(line)
+                self.assertEqual(frozenset(), ci_read.glab_hosts(self.stub.environ))
+                self.assertEqual(ci_read.ERROR_GLAB_CONFIG, read(self.stub)["error"])
+                self.assertEqual([], self.stub.calls)
 
     def test_skipped_tls_verification_is_read_only_when_plainly_off(self) -> None:
         for line in (
@@ -443,6 +447,14 @@ class TheLaunchKeepsEverySafeguard(unittest.TestCase):
         record = read(self.stub)
         self.assertEqual("glab-config-unusable", record["error"])
         self.assertEqual([], self.stub.calls)
+        self.assertIsNotNone(ci_read.validate(record))
+
+    def test_a_configuration_with_an_anchor_says_the_file_could_not_be_used(self) -> None:
+        self.stub.configure(f"hosts:\n    {HOST}:\n        api_protocol: &protocol https\n")
+        record = read(self.stub)
+        self.assertEqual("glab-config-unusable", record["error"])
+        self.assertEqual([], self.stub.calls)
+        self.assertEqual(frozenset(), ci_read.glab_hosts(self.stub.environ))
         self.assertIsNotNone(ci_read.validate(record))
 
     def test_an_unreadable_configuration_says_the_file_could_not_be_used(self) -> None:

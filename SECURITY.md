@@ -3254,7 +3254,8 @@ The launch keeps these bounds, each pinned by `test_ci_read`, and by `test_ci_re
   it ran the merge request's head, which is the session's commit; a merged-results pipeline settles
   nothing. A goal URL that names any
   other host starts no `glab` and says so beside the reading. A refused or unreadable config file
-  says it could not be used, rather than saying the host was not named. One leading UTF-8 BOM
+  says it could not be used, including when anchors, aliases or merge keys prevent Compass from
+  interpreting `hosts:` safely. One leading UTF-8 BOM
   is removed before parsing; only space and tab are trimmed around keys and values, so other
   Unicode whitespace remains part of a scalar. Only a goal URL binds a merge request:
   what Claude Code writes for one is not measured
