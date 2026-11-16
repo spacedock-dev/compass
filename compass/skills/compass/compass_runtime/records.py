@@ -611,6 +611,12 @@ _CREDENTIAL_LIKE_RE: Final = re.compile(r"^(?:\S{16,}|\S*[0-9._~+/!@#%^*&=-]\S*)
 # credential-like value, and a bare `key` needs a name before it (`STRIPE_KEY`),
 # because "the key: value" and "sort_key=name" are prose and config.
 _CUE_STRICT: Final = ("secret", "token")
+# These roles describe lookup and schema identifiers, including namespaced ones.
+# Uppercase assignments keep their prior protection even for these roles.
+_STRUCTURAL_KEY_ROLES: Final = frozenset({"sort", "primary", "foreign", "cache", "partition"})
+_KEY_ASSIGNMENT_NAME_RE: Final = re.compile(
+    r"(?<![A-Za-z0-9_])(?P<cuename>[A-Za-z0-9_]*_(?i:key))[\"']?\s*[=:]"
+)
 
 
 _AUTH_CREDENTIAL_WORD: Final = re.compile(r"(?=[A-Za-z0-9._~+/=-]*[0-9+/=])[A-Za-z0-9._~+/=-]{12,}")
@@ -667,6 +673,41 @@ def _auth_value_is_secret(value: str, *, cued: bool = False, basic: bool = False
     )
 
 
+def _structural_key_role_start(match: re.Match[str]) -> int | None:
+    # The raw recognizer can start at `rt_key` in `so<wbr>rt_key`.
+    # Read only the final role across transparent formatting; scanning the
+    # whole prefix per candidate would reintroduce quadratic work.
+    text = match.string
+    at = match.end("cuename") - len("_key")
+    role: list[str] = []
+    longest = max(map(len, _STRUCTURAL_KEY_ROLES))
+    markup: dict[int, int] | None = None
+    while at and len(role) <= longest:
+        if _HIDDEN_CHARS_RE.fullmatch(text, at - 1, at):
+            at -= 1
+            continue
+        if text[at - 1] == ">":
+            floor = max(0, at - INLINE_MARKUP_MAX_CHARS)
+            first = text.rfind("<", floor, at)
+            if first >= 0 and _INLINE_MARKUP_RE.fullmatch(text, first, at):
+                at = first
+                continue
+            if markup is None:
+                markup = {
+                    floor + last: floor + first for first, last in _markup_spans(text[floor:at])
+                }
+            first = markup.get(at, -1)
+            if first >= 0:
+                at = first
+                continue
+        ch = text[at - 1]
+        if not ch.isascii() or not ch.isalnum():
+            break
+        role.append(ch)
+        at -= 1
+    return at if "".join(reversed(role)).lower() in _STRUCTURAL_KEY_ROLES else None
+
+
 def _cued_value_is_secret(match: re.Match[str]) -> bool:
     """Whether a `cued` candidate holds a credential, per the rules beside the shape."""
     quoted = match.group("cuedquoted")
@@ -680,9 +721,11 @@ def _cued_value_is_secret(match: re.Match[str]) -> bool:
         return len(value) >= 16 and credential_like
     raw_name = match.group("cuename") or ""
     name = raw_name.lower()
-    # A bare `key` only as an environment-style assignment: `STRIPE_KEY=`, never `sort_key=`.
     bare_key = name.endswith("key") and not name.endswith(("api_key", "apikey"))
-    if bare_key and not (raw_name.isupper() and name.endswith("_key")):
+    if bare_key and (
+        not name.endswith("_key")
+        or (not raw_name.isupper() and _structural_key_role_start(match) is not None)
+    ):
         return False
     if name.endswith("pwd") and value.startswith(("/", "~", ".")):
         # The shell's working directory, `PWD=/home/…`, not a password.
@@ -1097,7 +1140,9 @@ def _needs_secret_scan(text: str) -> bool:
     if any(hint in text for hint in _SECRET_HINTS):
         return True
     lowered = text.lower()
-    return any(hint in lowered for hint in ("authorization", "basic", "token", "negotiate", "ntlm"))
+    return any(
+        hint in lowered for hint in ("authorization", "basic", "token", "negotiate", "ntlm", "key")
+    )
 
 
 # One forward pass tracks curl until a command boundary. Starting a new search
@@ -1825,6 +1870,67 @@ _MASK_INVISIBLE: Final = frozenset("\u200b\u2060\u2061\u2062\u2063\u2064\ufeff\u
 _LINE_BREAKS: Final = frozenset("\n\r\x0b\x0c\x1c\x1d\x1e\x85")
 
 
+def _ordinary_key_name_spans(text: str) -> list[tuple[int, int]]:
+    # Controls and markup can split the role, `_key`, or the separator.
+    # Keep source intervals: raw and inline matches can start at different
+    # fragments of the same name after controls become spaces.
+    tags = "<" in text
+    if tags and len(text) > INLINE_MARKUP_MAX_CHARS and _INLINE_MARKUP_START_RE.search(text):
+        return []
+    markup = _markup_spans(text) if tags else []
+    hidden = list(markup)
+    hidden.extend(match.span() for match in _HIDDEN_CHARS_RE.finditer(text))
+    plain, cuts, removed = _view(text, hidden)
+    ordinary = []
+    markup_at = 0
+    for match in _KEY_ASSIGNMENT_NAME_RE.finditer(plain):
+        first = _structural_key_role_start(match)
+        if first is None or match.group("cuename").isupper():
+            continue
+        cut = bisect_right(cuts, first)
+        first += removed[cut - 1] if cut else 0
+        last = match.end("cuename")
+        cut = bisect_left(cuts, last)
+        last += removed[cut - 1] if cut else 0
+        raw_first = last
+        while (
+            raw_first
+            and text[raw_first - 1].isascii()
+            and (text[raw_first - 1].isalnum() or text[raw_first - 1] == "_")
+        ):
+            raw_first -= 1
+        raw_name = text[raw_first:last]
+        if raw_name.lower().endswith("_key") and raw_name.isupper():
+            continue
+        # A credential inside a tag/comment still needs control normalization;
+        # only the visible name fragments and their hidden characters qualify.
+        while markup_at < len(markup) and markup[markup_at][1] <= first:
+            markup_at += 1
+        while markup_at < len(markup) and markup[markup_at][0] < last:
+            tag_first, tag_last = markup[markup_at]
+            if first < tag_first:
+                ordinary.append((first, tag_first))
+            first = tag_last
+            markup_at += 1
+        if first < last:
+            ordinary.append((first, last))
+    return ordinary
+
+
+def _control_secret_matches(original: str, context: str) -> list[_SecretSpan]:
+    # Replacing controls must not invent a mixed-case cue inside an exempt
+    # name, including in derived scans whose projected spans keep only bodies.
+    # Retain the original name controls in this same-length recognition view;
+    # the caller publishes context and retains original credential evidence.
+    parts: list[str] = []
+    at = 0
+    for first, last in _ordinary_key_name_spans(original):
+        parts.extend((context[at:first], original[first:last]))
+        at = last
+    parts.append(context[at:])
+    return _redaction_spans("".join(parts))
+
+
 def mask_prose(text: str) -> str:
     """A person's message with every value `mask_words` names masked, as one line.
 
@@ -1856,7 +1962,7 @@ def mask_prose(text: str) -> str:
     # directly to the shape view, which must read through controls inside keys.
     context = "".join(" " if control(ch) else ch for ch in text)
     if context != text:
-        found.extend(_redaction_spans(context))
+        found.extend(_control_secret_matches(text, context))
     found.extend(_prose_userinfo_matches(context))
     view, project = _marked_view(context, found, marker="RedactedValue123")
     found.extend(_prose_secret_matches(context, found))
@@ -1871,7 +1977,7 @@ def mask_prose(text: str) -> str:
         # the ASCII command stand-in alone cannot preserve that admission.
         control_view, control_project = _marked_view(text, raw_evidence)
         control_context = "".join(" " if control(ch) else ch for ch in control_view)
-        control_found = _redaction_spans(control_context)
+        control_found = _control_secret_matches(control_view, control_context)
         control_rendered, body_project = _marked_view(control_context, control_found)
         found.extend(control_project(control_found))
         found.extend(control_project(body_project(_prose_secret_matches(control_rendered, []))))
@@ -2041,6 +2147,20 @@ def fenced(tag: str, text: str, *, nonce: str, **attributes: object) -> str:
     return f'<{tag}{attrs} id="{nonce}">\n{text}\n</{tag} id="{nonce}">\n'
 
 
+def _safe_controls(text: str) -> str:
+    # A second redaction follows sanitization. Turning `so<ZWSP>rt_key` into
+    # `so rt_key` would create a new cue after the full name was exempted.
+    # Join controls only inside structural names, after original redaction.
+    parts: list[str] = []
+    at = 0
+    for first, last in _ordinary_key_name_spans(text):
+        parts.append(_UNSAFE_CHARS.sub(" ", text[at:first]))
+        parts.append(_UNSAFE_CHARS.sub("", text[first:last]))
+        at = last
+    parts.append(_UNSAFE_CHARS.sub(" ", text[at:]))
+    return "".join(parts)
+
+
 def safe_text(value: Any, limit: int) -> str:
     """Untrusted text, safe to put on a row: no control characters, no
     credentials, bounded.
@@ -2080,7 +2200,7 @@ def safe_text(value: Any, limit: int) -> str:
         if not _printable_ascii(text) and _UNSAFE_CHARS.search(text) is not None:
             # Masked while the control is still there for the second view to see
             # through. As a space it split the key, and its tail published.
-            text = _UNSAFE_CHARS.sub(" ", redact_secrets(text))
+            text = _safe_controls(redact_secrets(text))
     return redact_clip(text, limit)
 
 
