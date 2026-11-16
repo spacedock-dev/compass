@@ -3477,6 +3477,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
         the press is asserted rather than assumed, and nothing on render,
         poll, reconnect, resume, focus change or revision save carries it.
         """
+        # Admission precedes availability reads: a remote peer learns neither body validity
+        # nor whether a reading provider or its store is enabled.
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            return 403
         config = self.server.application.config
         # Pause model calls also stops goal summaries, which need neither the
         # annotation store nor a qualified reading provider, so an off is
@@ -3499,9 +3503,6 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # provider opens the route; which one may run is the route's
             # question, answered below from the harness.
             (not available, 503),
-            # A lured navigation reads nothing back, but it would still spend
-            # the reader's capacity, which is the harm this route carries.
-            (self._is_document_navigation() or not self._loopback_resource_ok(), 403),
             (payload.get("observer_model") != 1, 400),
             (payload.get("press") is not True, 400),
         )
@@ -3565,6 +3566,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         )
 
     def _reading_long_discard(self) -> None:
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
         application = self.server.application
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -3650,6 +3654,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         for `_focus`'s ruling: a harness name is public and a session id is
         not, so a 404 here would be an existence oracle.
         """
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
         application = self.server.application
         config = application.config
         try:
@@ -3669,7 +3676,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     def _reading_dispatch(self, payload: dict[str, Any]) -> None:
         application = self.server.application
-        if not reading_long_preview.valid_ingress(payload) or (
+        refusal: int | None
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            refusal = 403
+        elif not reading_long_preview.valid_ingress(payload) or (
             "typed_action" in payload
             and (
                 payload["typed_action"] not in ("drift", "drift again")
@@ -3677,12 +3687,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 or payload.get("mode") == "long"
             )
         ):
-            self._reject(400)
-            return
-        refusal = self._reading_refusal(
-            payload,
-            off=payload.get("consent") in ("off", "on") or payload.get("ci_read") in ("off", "on"),
-        )
+            refusal = 400
+        else:
+            refusal = self._reading_refusal(
+                payload,
+                off=payload.get("consent") in ("off", "on")
+                or payload.get("ci_read") in ("off", "on"),
+            )
         if refusal is not None:
             self._reject(refusal)
             return
@@ -4020,6 +4031,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         and reserves nothing, and it never waits for the reap: the job's own
         thread does that.
         """
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
         config = self.server.application.config
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -4229,6 +4243,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         charge is the model seam's (`reading_policy.GuardedModel`), the same one Analyze pays at.
         An unknown session answers as a session with no prompts does, for `_focus`'s reason.
         """
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
         config = self.server.application.config
         try:
             length = int(self.headers.get("Content-Length") or 0)

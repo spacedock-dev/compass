@@ -5895,6 +5895,10 @@ because the gate reads the first copy and a proxy may act on the last. A header 
 cannot read, such as one with whitespace before its colon, is refused with 400 and the connection
 closed, because the parser stops there and every header after it would go unseen.
 
+Reading POST routes refuse navigation and non-loopback or forwarded requests with 403 before
+checking body size, JSON validity or reading availability. Those refusals disclose neither the
+body's validity nor whether readings are enabled.
+
 Loopback-only routes require both a loopback TCP peer and a loopback Host authority: a
 `LOCAL_HOSTS` name (`localhost`, `127.0.0.1`, `::1`) or a loopback IP. An allowed DNS name never
 grants those powers, even when a local reverse proxy connects from `127.0.0.1`. They also refuse

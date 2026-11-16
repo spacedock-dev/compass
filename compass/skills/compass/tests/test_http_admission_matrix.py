@@ -331,9 +331,9 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
 
         body = json.dumps(VALID_DISCARD).encode() if path == "/api/reading-long-discard" else b"[]"
         if payload is not None:
-            body = json.dumps(payload).encode()
+            body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
         # Peer injection changes only the address the real socket handler sees; binding stays
-        # loopback. Discard must pass validation before it can exercise its admission guard.
+        # loopback; the request still crosses the real parser and dispatch gates.
         try:
             with (
                 mock.patch.object(http_api._RequestHandler, "__init__", handler),
@@ -384,6 +384,25 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
         for path in sorted(GET):
             with self.subTest(path=path):
                 self.assertEqual(403, self.request("GET", path, "cross-port-cors"))
+
+    def test_unadmitted_reading_posts_reveal_neither_body_validity_nor_availability(self) -> None:
+        paths = (
+            "/api/reading",
+            "/api/reading/cancel",
+            "/api/reading-long-discard",
+            "/api/goal/find",
+        )
+        config = self.httpd.application.config
+        for available in (True, False):
+            self.httpd.application.config = dataclasses.replace(
+                config, annotations_enabled=available, annotation_body_cap_bytes=512
+            )
+            with mock.patch.object(annotation_store, "any_reading_enabled", return_value=available):
+                for path in paths:
+                    for kind in ("lan", "proxy", "navigation"):
+                        for body in (b"{", b"[]", b"{}", b"x" * 513, VALID_DISCARD):
+                            with self.subTest(path=path, kind=kind, body=body, available=available):
+                                self.assertEqual(403, self.request("POST", path, kind, body))
 
     def test_valid_discard_rejects_lan_and_forwarding(self) -> None:
         self.assertTrue(http_api._RequestHandler._valid_long_discard(VALID_DISCARD))
