@@ -24,11 +24,11 @@ from . import (
     test_transcripts,
 )
 
-# Real child processes and a real installed-copy server; run after the parallel workers.
-REAL_TIME_TESTS = True
-
 
 class AReaderCanTrustTheHarnessUnderContention(unittest.TestCase):
+    # Races real hangup, process startup and reaping under injected contention.
+    REAL_TIME_TESTS = True
+
     def check_case(self, case: unittest.TestCase) -> None:
         result = unittest.TestResult()
         case.run(result)

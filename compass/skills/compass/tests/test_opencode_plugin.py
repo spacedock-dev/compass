@@ -25,8 +25,6 @@ SID = "ses_" + "a" * 26
 OTHER = "ses_" + "a" * 25 + "b"
 TOKEN = "test-capability"  # noqa: S105 — local test sentinel
 NODE = shutil.which("node")
-# The adapter's HTTP deadline is measured as a real node process's wall-clock lifetime.
-REAL_TIME_TESTS = True
 RUNNER = r"""
 import {readFileSync, writeFileSync, unlinkSync} from "node:fs";
 import {pathToFileURL} from "node:url";
@@ -65,6 +63,9 @@ def native(kind: str, request: str = "req-one", sid: str = SID) -> dict[str, Any
 
 @unittest.skipUnless(NODE, "node is required to exercise the JavaScript adapter")
 class OpenCodePluginTest(support.RuntimeTestCase):
+    # Measures permission callback latency and socket release deadlines.
+    REAL_TIME_TESTS = True
+
     def setUp(self) -> None:
         super().setUp()
         temporary = tempfile.TemporaryDirectory()

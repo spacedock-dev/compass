@@ -25,13 +25,14 @@ from compass_runtime import terminal_client as client
 
 from .support import SERVER_PATH, ThreadingLoopbackHTTPServer, make_config
 
-# Measures readiness and cooperative exit of real detached subprocesses.
-REAL_TIME_TESTS = True
 NATIVE = "abcdefab-1111-4111-8111-111111111111"
 SID = NATIVE[:8]
 
 
 class ProcessTest(unittest.TestCase):
+    # Races real monitor start, replacement and exit against lease deadlines.
+    REAL_TIME_TESTS = True
+
     def setUp(self) -> None:  # noqa: C901 - the synthetic board and its process cleanup share one fixture
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)

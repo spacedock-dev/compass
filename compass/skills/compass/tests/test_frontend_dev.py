@@ -32,11 +32,11 @@ try:
 except ImportError:
     frontend_dev = None  # type: ignore[assignment]
 
-# The handshake's two-second elapsed deadline runs on the wall clock against a real listener.
-REAL_TIME_TESTS = True
-
 
 class FrontendDevelopmentTest(unittest.TestCase):
+    # Measures real handshake deadlines and races development server startup.
+    REAL_TIME_TESTS = True
+
     def setUp(self) -> None:
         self.assertIsNotNone(frontend_dev, "development startup admission is missing")
         self.temp = tempfile.TemporaryDirectory(prefix="compass-dev-admission-")

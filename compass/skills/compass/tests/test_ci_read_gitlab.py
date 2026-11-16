@@ -30,8 +30,6 @@ from .test_ci_read import ELSEWHERE_HEAD, SESSION_HEAD, ci_goal_row
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-# The verdict scan's linear-time guard is an elapsed bound.
-REAL_TIME_TESTS = True
 
 HOST = "gitlab.example.com"
 PROJECT = "acme/widgets"
@@ -810,6 +808,9 @@ class AStoredGitlabReadIsValidatedAndBecomesFacts(unittest.TestCase):
 
 class ADoneMergeRequestSettlesTheGoal(base.AClaudeCodeReadingProducer):
     """The acceptance case: a passed pipeline reads `consistent` on a pipeline goal."""
+
+    # Measures the elapsed bound for long verdict tokens.
+    REAL_TIME_TESTS = True
 
     def setUp(self) -> None:
         super().setUp()

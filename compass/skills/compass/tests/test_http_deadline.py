@@ -10,11 +10,11 @@ import unittest
 
 from compass_runtime import lifecycle, terminal_client
 
-# Measures wall-clock bounds while a peer drips headers and response bodies.
-REAL_TIME_TESTS = True
-
 
 class DeadlineTest(unittest.TestCase):
+    # Measures whole-exchange deadlines against a dripping loopback listener.
+    REAL_TIME_TESTS = True
+
     def test_a_person_is_not_kept_waiting_by_dripping_headers_or_bodies(self) -> None:
         replies = (
             b"HTTP/1.1 200 OK\r\nX-Slow: " + b"x" * 80 + b"\r\n\r\n",

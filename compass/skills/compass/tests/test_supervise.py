@@ -28,9 +28,6 @@ from compass_runtime import supervise
 from .supervise_support import controlled_reap
 from .support import process_alive
 
-# Real children against real timeouts and group deadlines: load stretches them (run 42225631356).
-REAL_TIME_TESTS = True
-
 # A CLI that starts a grandchild, writes the grandchild's pid where the test can
 # read it, and then outlives any timeout the test sets.
 _SPAWNS_A_GRANDCHILD = (
@@ -65,6 +62,9 @@ class _Clock:
 
 
 class GroupQuiescenceTest(unittest.TestCase):
+    # Races real process-group exit and late probe reaping.
+    REAL_TIME_TESTS = True
+
     def test_only_a_running_member_of_the_group_keeps_its_output_open(self) -> None:
         for output, expected in (
             ("42 S\n42 Z\n", True),
@@ -264,6 +264,9 @@ class GroupQuiescenceTest(unittest.TestCase):
 
 
 class SupervisedRunTest(unittest.TestCase):
+    # Measures call timeouts and races real process startup and exit.
+    REAL_TIME_TESTS = True
+
     def setUp(self) -> None:
         self.home = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__("shutil").rmtree(self.home, True))
@@ -712,6 +715,9 @@ _CANCELS_ITS_CLI = (
 class CancelKillsTheCliAndNothingElseTest(unittest.TestCase):
     """DRC-4693: Cancel ends the CLI's group or Job Object, and never the caller's."""
 
+    # Measures cancellation and reap deadlines for live processes.
+    REAL_TIME_TESTS = True
+
     def setUp(self) -> None:
         self.home = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__("shutil").rmtree(self.home, True))
@@ -992,6 +998,9 @@ class _FakeWindowsProcess:
 
 class AnOutputFileHasABoundTest(unittest.TestCase):
     """DRC-4667: a CLI that writes far past what a call can use is stopped near the bound."""
+
+    # Measures flood shutdown and races output against process exit.
+    REAL_TIME_TESTS = True
 
     def setUp(self) -> None:
         self.home = Path(tempfile.mkdtemp())
@@ -1335,6 +1344,9 @@ class AnOutputFileHasABoundTest(unittest.TestCase):
 class TheReservationAndTheShutdownShareALockTest(unittest.TestCase):
     """DRC-4712: `admitting` holds the lock `kill_all` takes, so the two are ordered."""
 
+    # Waits out a real join interval to prove shutdown stays blocked.
+    REAL_TIME_TESTS = True
+
     def setUp(self) -> None:
         patcher = mock.patch.object(supervise, "_SHUTDOWN", threading.Event())
         patcher.start()
@@ -1400,6 +1412,9 @@ class AWindowsPromptNobodyReadsTest(unittest.TestCase):
     any timed wait, so a prompt larger than the pipe held the call past its
     timeout for as long as the CLI ran.
     """
+
+    # Measures the real timeout while stdin remains blocked.
+    REAL_TIME_TESTS = True
 
     def setUp(self) -> None:
         patcher = mock.patch.object(supervise, "_SHUTDOWN", threading.Event())
@@ -1493,6 +1508,9 @@ class ThePollFallbackLimitIsDocumentedTest(unittest.TestCase):
     group, because that kill comes before the reap. If this starts sweeping,
     change the two documents with it.
     """
+
+    # Races real leader exit against surviving helper output.
+    REAL_TIME_TESTS = True
 
     def setUp(self) -> None:
         self.home = Path(tempfile.mkdtemp())

@@ -37,8 +37,6 @@ from compass_runtime import quota, records
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
-# Masking and redaction kept linear, measured on this process's and thread's CPU.
-REAL_TIME_TESTS = True
 
 # +08:00 with no DST, so the offset is the same in every season and a failure
 # reads as a timezone bug rather than as a date-dependent flake. This is also
@@ -1248,30 +1246,6 @@ class HiddenCharactersInsideACredentialTest(unittest.TestCase):
             with self.subTest(code_point=f"U+{ord(char):04X}"):
                 self.assertEqual("a b", records.safe_text(f"a{char}b", 40))
 
-    def test_pathological_inputs_stay_linear(self) -> None:
-        # Each of these is a shape that would turn a per-opener scan quadratic: unclosed comment
-        # openers, a comment opener in front of a run of hints, a hint broken by a hidden character
-        # tens of thousands of times. Quadratic at this size is minutes; linear measured under
-        # 1.0 s for the slowest on a loaded laptop (2026-11-14), and a megabyte of each doubled
-        # cleanly at 2 MB, the slowest 3.8 s against 1.6 s for the raw scan alone before.
-        size = 250_000
-        inputs = {
-            "unclosed comment openers": "<!--" * (size // 4),
-            "closed empty comments": "<!---->" * (size // 7),
-            "one opener then hints": "<!--" + "sk-ant-" * (size // 7),
-            "invisible run": "\u2060" * size,
-            "hint then invisible": ("sk-\u2060") * (size // 4),
-            "cue then zero-width space": ("token=\u200b") * (size // 7),
-            "joined emoji": ("\U0001f468\u200d") * (size // 2),
-            "unclosed wbr": "<wbr" * (size // 4),
-        }
-        for name, text in inputs.items():
-            with self.subTest(name=name):
-                started = time.process_time()
-                records.redact_secrets(text)
-                records.safe_text(text, 140)
-                self.assertLess(time.process_time() - started, 4.0)
-
 
 def mask(line: str) -> str:
     """A command line masked the way a check line is: shell words, one by one."""
@@ -1482,6 +1456,9 @@ def _one_at_a_time_scrub(text: str, values: list[str], *, prose: bool = False) -
 
 class ScrubManyValuesTest(unittest.TestCase):
     """One compiled alternation per scrub, and a cap that keeps the newest values."""
+
+    # Measures CPU bounds for overlapping and large value scrubs.
+    REAL_TIME_TESTS = True
 
     VALUES = ("FakePass99", "Fake Pass 77", "it's-Fake88", "FakePass99Longer", "abcd", "abcdef")
     CORPUS = (
@@ -2594,16 +2571,6 @@ class ScrubDriversReadInLinearWorkTest(unittest.TestCase):
                     self.assertGreater(work[0], 0)
                     self.assertLess(work[1], 2.2 * work[0], work)
 
-    def test_a_password_flag_run_of_160_thousand_characters_scrubs_quickly(self) -> None:
-        if sys.gettrace() is not None or "coverage" in sys.modules:
-            self.skipTest("timed without a tracer only")
-        values = ["FakeWxyz", " -pFakeWxyz"]
-        text = " -pFakeWxyz" * 14_545 + ".py"
-        records.scrub_values("warm", values)
-        started = time.process_time()
-        records.scrub(text, values)
-        self.assertLess(time.process_time() - started, 1.0)
-
     def test_the_flag_reader_masks_exactly_what_the_flag_regex_masked(self) -> None:
         rng = random.Random(5077)
         marker = records.SECRET_MARKER
@@ -2807,6 +2774,9 @@ class LongIndexTest(unittest.TestCase):
 class LongValueScrubTest(unittest.TestCase):
     """One very long masked value costs work linear in the text, whatever its length."""
 
+    # Measures CPU bounds for long credential scrubs.
+    REAL_TIME_TESTS = True
+
     SHAPES: ClassVar[dict[str, Any]] = {
         "recipe": (lambda m: "!" * m + "x", lambda m: "!" * m),
         "userinfo": (lambda m: "a:" * m + "x", lambda m: "a:" * (2 * m)),
@@ -2968,17 +2938,6 @@ class MaskCommandTest(unittest.TestCase):
         self.assertTrue(masked.endswith("fetch origin"))
         masked = mask("git -c 'http.extraheader=AUTHORIZATION: basic FakeB64Value99' fetch")
         self.assertNotIn("FakeB64Value99", masked)
-
-    def test_a_long_run_of_dots_in_one_word_returns_promptly(self) -> None:
-        started = time.thread_time()
-        self.assertEqual(["Loading" + "." * 60], records.mask_words(["Loading" + "." * 60]))
-        masked = records.mask_prose("please wait" + "." * 60 + " ok")
-        self.assertIn("ok", masked)
-        self.assertLess(time.thread_time() - started, 1.0)
-        self.assertNotIn(
-            "FakeB64Value99",
-            mask("git -c http.https://github.com/.extraheader=FakeB64Value99 fetch"),
-        )
 
     def test_redis_cli_password_flag_is_masked_only_for_redis_cli(self) -> None:
         self.assertNotIn("FakePass99", mask("redis-cli -a FakePass99 ping"))
@@ -3346,26 +3305,6 @@ class MoreSecretFormsTest(unittest.TestCase):
                 masked = records.mask_words(words, pytest=line.startswith("pytest"))
                 self.assertEqual(words, masked)
 
-    def test_every_new_form_stays_linear_on_a_hundred_thousand_characters(self) -> None:
-        if sys.gettrace() is not None or "coverage" in sys.modules:
-            self.skipTest("timed without a tracer only")
-        run = "a" * 100_000
-        for words in (
-            ["tool", "--passphrase=" + run],
-            ["npm", "config", "set", "//r/:_authToken=" + run],
-            ["kubectl", "--from-literal=" + "k" * 50_000 + "=" + run],
-            ["openssl", "-passin", "pass:" + run],
-            ["x", "--" + "a-" * 50_000 + "pass"],
-            ["x", "//" + "_auth" * 20_000],
-            ["x", "-pass", "pass:" * 20_000],
-            ["x", "a" * 100_000 + "@"],
-            ["x", "a:" * 50_000 + "b@"],
-        ):
-            with self.subTest(word=words[-1][:12]):
-                start = time.process_time()
-                records.mask_words(words)
-                self.assertLess(time.process_time() - start, 1.0)
-
 
 class OutputSecretShapesTest(unittest.TestCase):
     """Credentials a command's output prints, which carry no vendor prefix of their own.
@@ -3373,6 +3312,9 @@ class OutputSecretShapesTest(unittest.TestCase):
     Every value is obviously fake. Each shape has its own test, so a regression
     names the shape it lost.
     """
+
+    # Measures thread CPU bounds for signature scanning.
+    REAL_TIME_TESTS = True
 
     MARK = records.SECRET_MARKER
 
@@ -3546,6 +3488,91 @@ class CutTextTest(unittest.TestCase):
                 self.assertLessEqual(len(shown), 240)
                 self.assertFalse(shown.rstrip("\u2026").endswith(("sk", "sk-", "sk-an")))
                 self.assertTrue(records.SECRET_MARKER in shown or "sk-" not in shown, shown[-30:])
+
+
+class HiddenCredentialTimeTest(unittest.TestCase):
+    # Measures process CPU bounds for hostile hidden-character redaction.
+    REAL_TIME_TESTS = True
+
+    def test_pathological_inputs_stay_linear(self) -> None:
+        # Each of these is a shape that would turn a per-opener scan quadratic: unclosed comment
+        # openers, a comment opener in front of a run of hints, a hint broken by a hidden character
+        # tens of thousands of times. Quadratic at this size is minutes; linear measured under
+        # 1.0 s for the slowest on a loaded laptop (2026-11-14), and a megabyte of each doubled
+        # cleanly at 2 MB, the slowest 3.8 s against 1.6 s for the raw scan alone before.
+        size = 250_000
+        inputs = {
+            "unclosed comment openers": "<!--" * (size // 4),
+            "closed empty comments": "<!---->" * (size // 7),
+            "one opener then hints": "<!--" + "sk-ant-" * (size // 7),
+            "invisible run": "\u2060" * size,
+            "hint then invisible": ("sk-\u2060") * (size // 4),
+            "cue then zero-width space": ("token=\u200b") * (size // 7),
+            "joined emoji": ("\U0001f468\u200d") * (size // 2),
+            "unclosed wbr": "<wbr" * (size // 4),
+        }
+        for name, text in inputs.items():
+            with self.subTest(name=name):
+                started = time.process_time()
+                records.redact_secrets(text)
+                records.safe_text(text, 140)
+                self.assertLess(time.process_time() - started, 4.0)
+
+
+class ScrubDriverTimeTest(unittest.TestCase):
+    # Measures process CPU time for a long password-flag run.
+    REAL_TIME_TESTS = True
+
+    def test_a_password_flag_run_of_160_thousand_characters_scrubs_quickly(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        values = ["FakeWxyz", " -pFakeWxyz"]
+        text = " -pFakeWxyz" * 14_545 + ".py"
+        records.scrub_values("warm", values)
+        started = time.process_time()
+        records.scrub(text, values)
+        self.assertLess(time.process_time() - started, 1.0)
+
+
+class MaskCommandTimeTest(unittest.TestCase):
+    # Measures thread CPU time for masking a long run of dots.
+    REAL_TIME_TESTS = True
+
+    def test_a_long_run_of_dots_in_one_word_returns_promptly(self) -> None:
+        started = time.thread_time()
+        self.assertEqual(["Loading" + "." * 60], records.mask_words(["Loading" + "." * 60]))
+        masked = records.mask_prose("please wait" + "." * 60 + " ok")
+        self.assertIn("ok", masked)
+        self.assertLess(time.thread_time() - started, 1.0)
+        self.assertNotIn(
+            "FakeB64Value99",
+            mask("git -c http.https://github.com/.extraheader=FakeB64Value99 fetch"),
+        )
+
+
+class MoreSecretFormsTimeTest(unittest.TestCase):
+    # Measures process CPU time for long credential flag forms.
+    REAL_TIME_TESTS = True
+
+    def test_every_new_form_stays_linear_on_a_hundred_thousand_characters(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        run = "a" * 100_000
+        for words in (
+            ["tool", "--passphrase=" + run],
+            ["npm", "config", "set", "//r/:_authToken=" + run],
+            ["kubectl", "--from-literal=" + "k" * 50_000 + "=" + run],
+            ["openssl", "-passin", "pass:" + run],
+            ["x", "--" + "a-" * 50_000 + "pass"],
+            ["x", "//" + "_auth" * 20_000],
+            ["x", "-pass", "pass:" * 20_000],
+            ["x", "a" * 100_000 + "@"],
+            ["x", "a:" * 50_000 + "b@"],
+        ):
+            with self.subTest(word=words[-1][:12]):
+                start = time.process_time()
+                records.mask_words(words)
+                self.assertLess(time.process_time() - start, 1.0)
 
 
 if __name__ == "__main__":

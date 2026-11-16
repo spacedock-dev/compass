@@ -55,8 +55,6 @@ if TYPE_CHECKING:
 # could never be mistaken for a real one.
 TOKEN = "usage-test-access-token"  # noqa: S105 — deliberately fake; asserted ABSENT from outputs
 NOW = 1_700_000_000.0
-# Measures the vendor fetch's whole-exchange and DNS deadline in wall time.
-REAL_TIME_TESTS = True
 
 # The two rows whose only route to a number is the fetch cache. Kept as one
 # mapping so a freshness assertion cannot be written for one and forgotten
@@ -2019,6 +2017,9 @@ class VendorTransportTest(unittest.TestCase):
     `HTTPSConnection.connect` opens plain TCP, so the opener, its redirect and
     proxy handling, the deadline and the request bytes all run unchanged.
     """
+
+    # Measures the whole-exchange deadline against a dripping vendor response.
+    REAL_TIME_TESTS = True
 
     DRIP_SEC = 3.0
 

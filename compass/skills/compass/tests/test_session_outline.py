@@ -36,9 +36,6 @@ HOLD_SEC = 2 * WAIT_SEC
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-# Outline reads run under the real 0.25 s budget, and the default-budget test measures that budget.
-REAL_TIME_TESTS = True
-
 
 class OutlineFactBoundsTest(unittest.TestCase):
     def setUp(self) -> None:

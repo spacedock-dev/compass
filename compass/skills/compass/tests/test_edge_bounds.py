@@ -21,11 +21,11 @@ from compass_runtime import correction, loopback_transport, records
 
 from .test_mcp_server import _call, _Harness, _Stdout
 
-# Measures real trickling sockets and the correction formatter's elapsed work.
-REAL_TIME_TESTS = True
-
 
 class EdgeDeadlineTest(unittest.TestCase):
+    # Measures whole-exchange deadlines for stalled and dripping sockets.
+    REAL_TIME_TESTS = True
+
     def test_sendall_uses_remaining_exchange_budget(self) -> None:
         for edge in ("hook", "mcp"):
             with self.subTest(edge=edge):
@@ -341,6 +341,9 @@ class McpAdmissionTest(unittest.TestCase):
 
 
 class CorrectionBoundTest(unittest.TestCase):
+    # Measures the elapsed bound for separator-heavy input.
+    REAL_TIME_TESTS = True
+
     def test_separator_heavy_under_limit_input_is_fast(self) -> None:
         for tail in ("key", "sk-ant-" + "1" * 3):
             with self.subTest(tail=tail):

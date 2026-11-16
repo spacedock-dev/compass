@@ -41,8 +41,6 @@ NOW = 1_800_000_000.0
 # clock (`LogicalDeadline`), because a wall-clock upper bound over the deadline measures the
 # scheduler as much as the reader (0.352 s observed against 0.2 s + 0.15 s on a loaded macOS lane).
 HANG_GUARD_SEC = 5.0
-# The hang guard and the footer subprocess's exit are waited for on the wall clock.
-REAL_TIME_TESTS = True
 
 # `LogicalDeadline` replaces the clock and the `select` of `_read_pipe`, which Windows never runs
 # (its reader is a thread), so the tests that observe the logical budget are POSIX tests.
@@ -174,6 +172,9 @@ class HangGuardTest(unittest.TestCase):
     kills it at a fixed limit, so a regression here is a failure and never a hang.
     """
 
+    # Waits out the real hang guard in a child process.
+    REAL_TIME_TESTS = True
+
     CHILD_LIMIT_SEC = 20.0  # kill limit for the child; the child itself needs about a second
 
     SCRIPT = """
@@ -232,6 +233,9 @@ else:
 
 
 class ReadStatusLineTest(unittest.TestCase):
+    # Measures real pipe deadlines and timed partial writes.
+    REAL_TIME_TESTS = True
+
     @POSIX_ONLY
     def test_a_pipe_held_open_with_nothing_written_answers_none_at_the_deadline(self) -> None:
         with held_open_pipe() as (stream, write_fd):
@@ -1091,6 +1095,9 @@ class FooterDispatchTest(unittest.TestCase):
 
 class FooterLightPathTest(unittest.TestCase):
     """The footer's budget is mostly import time, so the import set is the deterministic proof."""
+
+    # Measures the footer process exit bound with stdin held open.
+    REAL_TIME_TESTS = True
 
     def run_server(self, *args: str, stdin: str, home: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(

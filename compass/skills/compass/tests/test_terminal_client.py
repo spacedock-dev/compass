@@ -1047,7 +1047,7 @@ class PauseCommandTest(HomeCase):
 
 
 class SessionsCommandTest(HomeCase):
-    # Measures the six-second cold reply and the session-list whole-exchange deadline.
+    # Measures cold replies and the session-list whole-exchange deadline.
     REAL_TIME_TESTS = True
 
     def run_sessions(
@@ -1084,7 +1084,15 @@ class SessionsCommandTest(HomeCase):
         self.assertEqual([], [path for _, path in fake.requests if "?" in path])
 
     def test_a_person_can_read_their_sessions_when_the_cold_board_takes_six_seconds(self) -> None:
-        with FakeDashboard(answers=data_reply(BOARD), delays={"/api/sessions": 6}) as fake:
+        # Scale both budgets and the cold reply by ten; keep the real socket exchange.
+        with (
+            mock.patch.object(terminal_client, "REQUEST_TIMEOUT_SEC", 0.5),
+            mock.patch.object(terminal_client, "LIST_REQUEST_TIMEOUT_SEC", 3.0),
+            mock.patch.dict(terminal_client.request.__kwdefaults__, timeout=0.5),
+            mock.patch.dict(terminal_client.get.__kwdefaults__, timeout=0.5),
+            mock.patch.dict(terminal_client.read_sessions.__kwdefaults__, timeout=3.0),
+            FakeDashboard(answers=data_reply(BOARD), delays={"/api/sessions": 0.6}) as fake,
+        ):
             code, out, err = self.run_sessions(port=fake.port)
 
         self.assertEqual((0, ""), (code, err))
@@ -1092,10 +1100,14 @@ class SessionsCommandTest(HomeCase):
         self.assertNotIn("could not be read", out)
 
     def test_a_person_is_not_left_waiting_forever_for_their_session_list(self) -> None:
-        with FakeDashboard(answers=data_reply(BOARD), delays={"/api/sessions": None}) as fake:
+        # The existing timeout parameter is injected through its default at one tenth scale.
+        with (
+            mock.patch.dict(terminal_client.read_sessions.__kwdefaults__, timeout=3.0),
+            FakeDashboard(answers=data_reply(BOARD), delays={"/api/sessions": None}) as fake,
+        ):
             # Release the fixture even if the client's deadline is broken, so that the test
             # reports a failure instead of leaving a listener and a blocked request behind.
-            guard = threading.Timer(35, fake.release.set)
+            guard = threading.Timer(3.5, fake.release.set)
             guard.start()
             try:
                 started = time.monotonic()
@@ -1109,8 +1121,8 @@ class SessionsCommandTest(HomeCase):
             (1, "", "Compass answered, but its session list could not be read.\n"),
             (code, out, err),
         )
-        self.assertGreater(elapsed, 6)
-        self.assertLess(elapsed, 34)
+        self.assertGreater(elapsed, 0.6)
+        self.assertLess(elapsed, 3.4)
 
     def test_a_person_reads_both_lists_when_history_and_full_rows_exceed_the_cap(self) -> None:
         board = {
