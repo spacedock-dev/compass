@@ -72,6 +72,121 @@ def tz(name: str) -> Iterator[None]:
         time.tzset()
 
 
+def public_redactors() -> dict[str, Callable[[str], str]]:
+    return {
+        "redact_secrets": records.redact_secrets,
+        "safe_text": lambda text: records.safe_text(text, 100_000),
+        "redact_clip": lambda text: records.redact_clip(text, 100_000),
+        "mask_prose": records.mask_prose,
+    }
+
+
+def contextual_credential_cases() -> Iterator[tuple[str, str, str, str, str, str, bool]]:
+    # Enumerates the contextual shape streams and the word masker branches. The
+    # public shape redactors do not promise the command-only forms mask_prose does.
+    value = "Synthetic" + "Context123456"
+    contexts = {
+        "cued assignment": ("DB_PASSWORD={}", True),
+        "generic assignment": ("SESSION={}", False),
+        "quoted assignment": ('DB_PASSWORD="{} with spaces"', True),
+        "aws secret assignment": ("aws_secret_access_key=" + "{0}" * 2, True),
+        "password flag": ("tool --password {}", True),
+        "short password flag": ("tool -p {}", False),
+        "joined password flag": ("tool -p{}", False),
+        "auth flag": ("tool --auth {}", False),
+        "cookie flag": ("curl --cookie {}", False),
+        "joined cookie flag": ("curl --cookie={}", False),
+        "npm auth flag": ("npm //host/:_authToken {}", False),
+        "redis password": ("redis-cli -a {}", False),
+        "redis joined password": ("redis-cli --pass={}", False),
+        "ssh passphrase": ("ssh-keygen -N {}", False),
+        "ldap password": ("ldapsearch -w {}", False),
+        "ldap joined password": ("ldapsearch -w{}", False),
+        "http user": ("curl -u user:{}", True),
+        "http joined user": ("curl --user=user:{}", True),
+        "http proxy user": ("curl --proxy-user user:{}", False),
+        "httpie user": ("http -a user:{}", False),
+        "url userinfo": ("https://user:{}@host/", True),
+        "quoted userinfo": ("user:{}@host", False),
+        "authorization header": ("Authorization: Bearer {}", True),
+        "proxy authorization": ("Proxy-Authorization: Basic {}", True),
+        "bare authorization": ("Authorization: {}", True),
+        "encoded authorization": ("Authorization%3A%20Basic%20{}", True),
+        "standalone scheme": ("Token {}", True),
+        "bare bearer": ("Bearer {}", True),
+        "api header": ("X-Api-Key: {}", False),
+        "cookie header": ("curl -H Cookie: {}", False),
+        "joined vendor header": ("curl --header=X-Vault-Token:{}", True),
+        "extraheader": ("git -c http.extraheader=X-Api-Key:{}", False),
+        "netrc login": ("machine host login user password {}", True),
+        "netrc default": ("default password {}", True),
+        "signed query": ("https://host/?X-Amz-Signature={}", True),
+        "html signed query": ("https://host/?a=b&amp;sig={}", True),
+        "json signed query": (r"https://host/?a=b\u0026sig={}", True),
+        "secret string": ('SecretString: "{}"', True),
+        "dotted config": ("tool -Dspring.datasource.password={}", True),
+        "literal pair": ("kubectl --from-literal name={}", False),
+        "vault login": ("vault login {}", False),
+        "cargo login": ("cargo login {}", False),
+        "aws configure": ("aws configure set aws_secret_access_key {}", False),
+        "aws ssm": ("aws ssm put-parameter --value {}", False),
+        "gh secret": ("gh secret set NAME --body {}", False),
+    }
+    contexts.update(
+        {
+            "quoted spaced userinfo": ('"user:{} with spaces@host"', False),
+            "clustered curl user": ("curl -sSu user:{}", False),
+            "wget joined user flag": ("wget --user=user:{}", False),
+            "wget short joined user": ("wget -uuser:{}", False),
+            "redis short joined password": ("redis-cli -a{}", False),
+            "ssh joined passphrase": ("ssh-keygen -N{}", False),
+            "wrapped authorization": ("Authorization:\nBasic {}", True),
+            "wrapped api header": ("X-Api-Key:\n{}", False),
+            "quoted netrc": ('machine host login user password "{} with spaces"', True),
+            "openssl pass source": ("openssl -passin pass:{}", False),
+        }
+    )
+    leads = {
+        "aws": "AKIA" + "Q" * 16,
+        "google": "AIza" + "R" * 35,
+        "github": "ghp_" + "S" * 36,
+        "slack": "xoxb-" + "T" * 24,
+    }
+    for name, (template, shared) in contexts.items():
+        secret = value if name != "aws secret assignment" else "Q" * 20
+        context = template.format(secret)
+        for family, key in leads.items():
+            for form, lead in (
+                ("name", key + "_NAME=ordinary"),
+                ("bare", key),
+                ("session", key + "_SESSION=ordinary"),
+            ):
+                for cleaner in public_redactors():
+                    command_contexts = {
+                        "clustered curl user",
+                        "wget joined user flag",
+                        "wget short joined user",
+                        "redis short joined password",
+                        "ssh joined passphrase",
+                        "redis password",
+                        "ssh passphrase",
+                        "ldap password",
+                        "ldap joined password",
+                        "http proxy user",
+                        "httpie user",
+                        "vault login",
+                        "cargo login",
+                        "aws configure",
+                        "aws ssm",
+                        "gh secret",
+                    }
+                    prose_admitted = name not in {"cookie header", "openssl pass source"} and (
+                        name not in command_contexts or (form != "bare" and family != "slack")
+                    )
+                    protected = shared or (cleaner == "mask_prose" and prose_admitted)
+                    yield name, family, form, cleaner, lead + " " + context, secret, protected
+
+
 class IsoEpochTest(unittest.TestCase):
     # 2026-01-02T03:04:05Z, chosen so every field differs and a transposition
     # cannot pass by symmetry.
@@ -841,6 +956,24 @@ class RedactSecretsTest(unittest.TestCase):
                         shown = clean(prefix + body + suffix + "=" + value)
                         self.assertNotIn(value, shown)
                         self.assertIn("REDACTED", shown)
+
+    def test_prose_values_sharing_the_marker_text_are_withheld_whole(self) -> None:
+        for value in ("Synthetic" + "REDACTED", "Synthetic" + "ED", "…" + "Synthetic123"):
+            for template, expected in (
+                ("SESSION={}", "SESSION=…REDACTED"),
+                ("tool -p {}", "tool -p …REDACTED"),
+                ("user:{}@host", "user:…REDACTED@host"),
+            ):
+                with self.subTest(value=value, template=template):
+                    self.assertEqual(expected, records.mask_prose(template.format(value)))
+
+    def test_contextual_credentials_stay_private_after_key_shaped_leads(self) -> None:
+        for name, family, form, cleaner, text, value, protected in contextual_credential_cases():
+            with self.subTest(context=name, family=family, form=form, cleaner=cleaner):
+                shown = public_redactors()[cleaner](text)
+                if protected:
+                    self.assertNotIn(value, shown)
+                self.assertIn("REDACTED", shown)
 
     def test_key_shaped_assignment_names_preserve_mask_prose_value_masking(self) -> None:
         value = "Synthetic" + "Session123"

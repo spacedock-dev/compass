@@ -5565,7 +5565,10 @@ API keys are masked even when a letter, digit, underscore or hyphen follows them
 When a capped match consumes the start of an adjacent credential, independent scans retain
 prefixed credentials, URL passwords and cued values crossing that cap. Overlapping accepted
 spans are merged so both bodies stay hidden. An admitted cued assignment stays masked even
-when its name contains a complete key shape. Unbounded shapes, including PEM closing lines,
+when its name contains a complete key shape. Contextual recognizers read the original text,
+and their masked spans are merged with credential shapes before markers are written. A key
+inside an assignment name therefore cannot disable a later command's password flag.
+Unbounded shapes, including PEM closing lines,
 use non-overlapping scans of each shape rather than repeatedly parsing already covered tails.
 Existing matches stay masked, including lowercase generic `sk-` bodies after whitespace,
 assignment, quotes or brackets. AWS, fine-grained GitHub, `lin_api_`, `ya29.` and Anthropic
