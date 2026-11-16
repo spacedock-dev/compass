@@ -548,7 +548,9 @@ pure waiting, and it is avoidable by reordering two steps.
 
 **Never promote a deferred finding into the current PR.** When an arbiter defers something, file
 it. Promoting it buys another implement-and-CI round for a finding already judged not worth
-blocking on. Four promotions on that run cost about an hour.
+blocking on. Four promotions on that run cost about an hour. A small item folded into a fix round
+that is already running buys no extra round, and the burndown skill's delegation reference says
+when that is the cheaper choice.
 
 **Give an estimate before starting.** A directive to spend tokens freely is not a directive to
 spend a day. Say what the work costs at full rigor and at calibrated rigor, and let the person
