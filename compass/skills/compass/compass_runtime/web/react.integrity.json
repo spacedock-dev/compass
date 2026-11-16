@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2339091,
+    "bytes": 2339591,
     "file": "react.html",
-    "sha256": "201a15ec6494ec14f2bbfe6e5d6ce38b279226d609152c183aa03ec9868119b3"
+    "sha256": "b16b6a298378280002e0615319733c6144566176deee212db0ca714490e93264"
   },
   "format": 1,
   "frontend": "react",
@@ -371,7 +371,7 @@
       },
       {
         "file": "frontend/src/attention/model.ts",
-        "sha256": "131acc89d4da0435d1558b086987b9455296eaa3f8c936d12ec253d0caf9d6ec"
+        "sha256": "65cc6ffaad4fd156b84b223962a84a686d3555fa8028877c38e43b56cb988139"
       },
       {
         "file": "frontend/src/attention/reports.ts",
@@ -383,11 +383,11 @@
       },
       {
         "file": "frontend/src/attention/subjects.ts",
-        "sha256": "d3b23ee53efadb92c80157fb15592dd297ae4918237e3ce050fdd74bc05c9392"
+        "sha256": "4c3b2add7d7e382399f2abe34aeea74c00f7993cc7b69b1d1d1a4e55e97bce64"
       },
       {
         "file": "frontend/src/attention/text.ts",
-        "sha256": "aa7aa1798dbfa7762576cd54c862831a56df00d46e71efc0c739e6325f920c07"
+        "sha256": "04c8a240e4dd12c06dca51e404008dc2e3f4f2edfb6696c29264e53b789e47a6"
       },
       {
         "file": "frontend/src/capacity/CapacityStrip.tsx",
@@ -1019,11 +1019,11 @@
       },
       {
         "file": "frontend/src/observed/location.ts",
-        "sha256": "27cf69e74dd3e54dbed3c3b124016646485c2d5d15b26ffced3d21604e552cc7"
+        "sha256": "e5be267f50f2349170ca03e750f9c781eeb29a7a7e93fbd7a31d35ebebc4d346"
       },
       {
         "file": "frontend/src/observed/model.ts",
-        "sha256": "3e79a08cf8f35e3c6a8e292f95658a783123aa9650aeff336516476f7dd1e6e6"
+        "sha256": "4b4a87a7487245fd2e2e795477a08e22c27032470900d3ce90f266346c2b12fb"
       },
       {
         "file": "frontend/src/observed/native.ts",
@@ -1251,7 +1251,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionDetail.tsx",
-        "sha256": "1e7669ad3391f81314235cc1911ee5b4b0d75144bb42a46698e3af000bf50363"
+        "sha256": "eb8e505a66e0ec648f45bc426337215d5bc6a03510cfed44e70e0c3813374f96"
       },
       {
         "file": "frontend/src/sessions/SessionsFilters.tsx",
@@ -1279,7 +1279,7 @@
       },
       {
         "file": "frontend/src/sessions/detail.ts",
-        "sha256": "fc75ff047db97e4cf2ff4e5a44976f5abb4fcfb3e0c7c3754437d39e1948fe85"
+        "sha256": "c1692387df1e53575eb6955942eca39850cff9f5624821b8f9c243d2c207eab7"
       },
       {
         "file": "frontend/src/sessions/filterStore.ts",
