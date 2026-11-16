@@ -18,7 +18,6 @@ from compass_runtime import events, http_api, interaction_prototype, observation
 from .support import RuntimeTestCase, build_app, make_server, poll_fast, saturated_server
 from .test_interaction_prototype import FakeTmuxAdapter
 
-REAL_TIME_TESTS = True
 GET = {
     "/",
     "/assets/xterm.js",

@@ -1451,6 +1451,9 @@ class AWindowsPromptNobodyReadsTest(unittest.TestCase):
 class TheWindowsPromptIsStillSentTest(unittest.TestCase):
     """Review T4: feeding from a thread must still deliver the prompt, whole."""
 
+    # Only checks prompt delivery; the event wait guards an immediate completion.
+    REAL_TIME_TESTS = False
+
     def test_the_windows_runner_still_sends_the_prompt(self) -> None:
         written: list[Any] = []
         done = threading.Event()

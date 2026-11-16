@@ -55,7 +55,8 @@ if TYPE_CHECKING:
 # could never be mistaken for a real one.
 TOKEN = "usage-test-access-token"  # noqa: S105 — deliberately fake; asserted ABSENT from outputs
 NOW = 1_700_000_000.0
-REAL_TIME_TESTS = True  # Measures the vendor fetch's whole-exchange and DNS deadline in wall time.
+# Measures the vendor fetch's whole-exchange and DNS deadline in wall time.
+REAL_TIME_TESTS = True
 
 # The two rows whose only route to a number is the fetch cache. Kept as one
 # mapping so a freshness assertion cannot be written for one and forgotten

@@ -42,8 +42,6 @@ if TYPE_CHECKING:
 
 MANIFEST = SERVER_PATH.parents[2] / ".claude-plugin" / "plugin.json"
 HEAVY = ("compass_runtime.cli", "compass_runtime.http_api", "compass_runtime.aggregate")
-# Session-list tests measure a cold reply and the whole-exchange deadline on real sockets.
-REAL_TIME_TESTS = True
 
 
 class FakeDashboard:
@@ -501,6 +499,9 @@ class DiscoveryTest(HomeCase):
 
 
 class RequestPathTest(unittest.TestCase):
+    # Measures connection-cap retry timers and busy deadlines on real sockets.
+    REAL_TIME_TESTS = True
+
     def test_the_probe_waits_out_a_dashboard_at_its_connection_cap(self) -> None:
         with support.saturated_server() as (httpd, release):
             threading.Timer(0.3, release).start()
@@ -1046,6 +1047,9 @@ class PauseCommandTest(HomeCase):
 
 
 class SessionsCommandTest(HomeCase):
+    # Measures the six-second cold reply and the session-list whole-exchange deadline.
+    REAL_TIME_TESTS = True
+
     def run_sessions(
         self,
         mode: str | None = None,

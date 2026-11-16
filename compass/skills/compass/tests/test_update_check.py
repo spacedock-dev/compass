@@ -41,10 +41,11 @@ from . import support
 from .support import REAL_FETCH_RELEASE, SERVER_PATH, make_config, make_runtime, serve_until_closed
 from .test_cli_version import run_main
 
-REAL_TIME_TESTS = True  # Measures the DNS and whole-exchange timeout against wall time.
-
 
 class DailyCheckTest(unittest.TestCase):
+    # Races a one-second background-start wait against a real two-second fetch hold.
+    REAL_TIME_TESTS = True
+
     def setUp(self) -> None:
         home = tempfile.TemporaryDirectory()
         self.addCleanup(home.cleanup)
@@ -1013,6 +1014,9 @@ class MemoryTransportTest(unittest.TestCase):
 
 
 class ExchangeDeadlineTest(unittest.TestCase):
+    # Measures stalled DNS and continuously dripping HTTP exchanges against elapsed deadlines.
+    REAL_TIME_TESTS = True
+
     def test_a_stalled_dns_lookup_expires_before_any_connection(self) -> None:
         release = threading.Event()
         finished = threading.Event()

@@ -45,8 +45,6 @@ from .test_subagent_checks import Subagent
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-# Two tests time a replay against the record and a fresh replay, on the wall clock.
-REAL_TIME_TESTS = True
 GOAL = "Ship the placeholder parser"
 LINE = "The parser tests pass"
 
@@ -400,6 +398,9 @@ class ACiPollMovesTheLiveLevelOnlyWhenTheSessionIsBoundToIt(_Replay):
 class TheReplayIsBoundedTest(_Replay):
     """The level is asked for over the last `LIVE_REPLAY_STEPS` moving calls only, and a
     request that finds the transcript and the words unchanged replays nothing."""
+
+    # Measures warm replay speed against fresh replay and record parsing on the wall clock.
+    REAL_TIME_TESTS = True
 
     def many_calls(self, n: int) -> None:
         # Distinct targeted checks beside writes: the shape that made each evaluation

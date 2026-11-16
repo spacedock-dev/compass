@@ -46,8 +46,6 @@ from .support import (
 if TYPE_CHECKING:
     import email.message
 
-# Servers, daemons and signals run as real processes, and their starts and exits are waited for.
-REAL_TIME_TESTS = True
 # `--diagnose` reads every harness store; three suites at once measured it past the old 30 s.
 DIAGNOSE_LIMIT_SEC = 120
 
@@ -498,6 +496,9 @@ print(json.dumps({{
 
 
 class CompassServerTest(support.RuntimeTestCase):
+    # Measures connection-cap retry timers and busy-probe deadlines on real sockets.
+    REAL_TIME_TESTS = True
+
     def test_state_file_roundtrips_and_names_itself_per_port(self) -> None:
         with (
             tempfile.TemporaryDirectory() as tmp,
@@ -1495,6 +1496,9 @@ class DaemonLifecycleTest(unittest.TestCase):
     Everything else in this file tests a piece. This tests the promise.
     """
 
+    # Exercises real daemon startup, parent exit and signal-driven process exit races.
+    REAL_TIME_TESTS = True
+
     SERVER = str(SERVER_PATH)
 
     @staticmethod
@@ -2015,6 +2019,9 @@ class SpawnArgvOptOutTest(unittest.TestCase):
 class ProducerTest(support.RuntimeTestCase):
     """The producer keeps the snapshot warm, but only for a connected stream."""
 
+    # Measures an idle producer over ten real polling intervals and stop wakeups.
+    REAL_TIME_TESTS = True
+
     @staticmethod
     def _wait_for(predicate: Any, *, timeout: float = 10.0) -> bool:
         """Poll until true, or give up.
@@ -2236,6 +2243,9 @@ class ServeOwnsReadingJobsTest(unittest.TestCase):
 class AnIgnoredHangupStaysIgnoredTest(unittest.TestCase):
     """Verify N1: a server started under `nohup` must survive the hangup it was told to ignore."""
 
+    # Measures signal survival over a real second and signal-driven startup/exit races.
+    REAL_TIME_TESTS = True
+
     def _serve_ignoring(self, name: str) -> None:
         server, number = self._start_ignoring(name)
         os.kill(server.pid, number)
@@ -2433,6 +2443,9 @@ class ATerminalHangupStillCleansUpTest(unittest.TestCase):
     Ctrl-backslash SIGQUIT) reaches only the daemon. Measured before the fix:
     the daemon died without its `finally` and the CLI ran on, untimed.
     """
+
+    # Measures terminal-hangup cleanup of real daemon and supervised child processes.
+    REAL_TIME_TESTS = True
 
     @staticmethod
     def _stop(pid: int) -> None:

@@ -20,8 +20,6 @@ from .support import SERVER_PATH
 from .test_terminal_client import ClockedDashboard, FakeDashboard
 
 FIXTURES = Path(__file__).resolve().parents[4] / "frontend/test/fixtures"
-# A cold project read exercises the session list's real six-second response time.
-REAL_TIME_TESTS = True
 
 
 def recorded(name: str) -> dict[str, Any]:
@@ -528,6 +526,9 @@ class ProjectTest(unittest.TestCase):
 
 
 class ProjectCommandTest(unittest.TestCase):
+    # Measures a cold project read against the real six-second session-list response.
+    REAL_TIME_TESTS = True
+
     def run_project(
         self, fake: FakeDashboard | ClockedDashboard, **kwargs: Any
     ) -> tuple[int, str, str]:
