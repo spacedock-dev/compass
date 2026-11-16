@@ -32,7 +32,7 @@ describe('the declared-session model', () => {
     expect(
       declaredRelations({ sessions: [{ ...fixture.payload.sessions[0], title: '' }] }, source)
         .waitingText,
-    ).toBe('Waiting on child');
+    ).toBe('Waiting on child "child"');
     expect(declaredRelations({ sessions: [] }, source).waitingText).toBe(
       'Waiting on child not on the board',
     );

@@ -49,7 +49,7 @@
   "expected": {
     "parent": [
       "Group: release <&> \"team\"",
-      "Waiting on Check build"
+      "Waiting on child \"Check build\""
     ],
     "child": [
       "Group: release <&> \"team\" (from parent)",

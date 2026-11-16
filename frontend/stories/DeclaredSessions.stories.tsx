@@ -13,10 +13,12 @@ function Example({
   hash = '#n=sessions',
   childQuestion = false,
   parentQuestion = false,
+  childTitle = 'Check build',
 }: {
   readonly hash?: string;
   readonly childQuestion?: boolean;
   readonly parentQuestion?: boolean;
+  readonly childTitle?: string;
 }) {
   const [shell] = useState(() =>
     createShell({
@@ -48,7 +50,9 @@ function Example({
                           ]
                         : [],
                     sessions: [
-                      ...fixture.payload.sessions,
+                      ...fixture.payload.sessions.map((one) =>
+                        one.sid === 'child' ? { ...one, title: childTitle } : one,
+                      ),
                       {
                         harness: 'codex',
                         sid: 'bare',
@@ -100,7 +104,7 @@ const row = (root: HTMLElement, sid: string) =>
 export const LinkedChildrenAndWait: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByRole('link', { name: 'Waiting on Check build' });
+    await canvas.findByRole('link', { name: 'Waiting on child "Check build"' });
     await expect(row(canvasElement, 'child')).toHaveAttribute('data-declared-depth', '1');
     const active = [
       ...canvasElement.querySelectorAll('[data-next-operation-group="active"] article'),
@@ -120,7 +124,9 @@ export const LinkedChildrenAndWait: Story = {
     await userEvent.click(within(popup).getByRole('checkbox', { name: /Interactive or unknown/ }));
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(row(canvasElement, 'child')).toBeNull());
-    await expect(canvas.getByRole('link', { name: 'Waiting on Check build' })).toBeVisible();
+    await expect(
+      canvas.getByRole('link', { name: 'Waiting on child "Check build"' }),
+    ).toBeVisible();
   },
 };
 export const UnmatchedParentAndOwnGroup: Story = {
@@ -168,7 +174,7 @@ export const ParentPageNamesChildrenAndTheirState: Story = {
     await expect(children).toHaveTextContent('Check build · Working');
     await expect(children).toHaveTextContent('Check docs · Ended');
     await expect(canvasElement.querySelector('[data-next-session-status]')).toHaveTextContent(
-      'Waiting on Check build',
+      'Waiting on child',
     );
   },
 };
@@ -196,10 +202,11 @@ export const UnmatchedChildPage: Story = {
 export const FamilyLinksNavigateToTheirNamedSession: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const waiting = await canvas.findByRole('link', { name: 'Waiting on Check build' });
+    const waiting = await canvas.findByRole('link', { name: 'Waiting on child "Check build"' });
     const browser =
       '__vitest_browser_runner__' in window ? (await import('vitest/browser')).page : null;
-    if (browser) await browser.getByRole('link', { name: 'Waiting on Check build' }).click();
+    if (browser)
+      await browser.getByRole('link', { name: 'Waiting on child "Check build"' }).click();
     else await userEvent.click(waiting);
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-session-detail]')).toHaveAttribute(
@@ -232,7 +239,7 @@ export const ParentQuestionOutranksChildWait: Story = {
     await canvas.findByText('Ship now?');
     const state = row(canvasElement, 'parent').querySelector('[data-next-row-state]');
     await expect(state).toHaveTextContent('Waiting on you');
-    await expect(state).not.toHaveTextContent('Waiting on Check build');
+    await expect(state).not.toHaveTextContent('Waiting on child "Check build"');
     await userEvent.click(
       within(row(canvasElement, 'parent')).getByRole('link', {
         name: 'Open session Coordinate release',
@@ -244,7 +251,7 @@ export const ParentQuestionOutranksChildWait: Story = {
       ),
     );
     await expect(canvasElement.querySelector('[data-next-session-status]')).not.toHaveTextContent(
-      'Waiting on Check build',
+      'Waiting on child',
     );
     await expect(canvas.getAllByText('Ship now?')[0]).toBeVisible();
   },
@@ -341,6 +348,33 @@ export const ParentLinkFromSessionsRowUsesPointer: Story = {
     );
     await expect(
       within(canvasElement).getByRole('heading', { name: 'Coordinate release' }),
+    ).toBeVisible();
+  },
+};
+
+export const PromptFirstTitleIsAChildWait: Story = {
+  args: { childTitle: 'You are verifying a fix round' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const link = await canvas.findByRole('link', {
+      name: 'Waiting on child "You are verifying a fix round"',
+    });
+    const state = row(canvasElement, 'parent').querySelector('[data-next-row-state]');
+    await expect(state?.textContent).toBe('Waiting on child');
+    await expect(state).not.toHaveTextContent(/Waiting on you/i);
+    await expect(link).toBeVisible();
+    await userEvent.click(
+      within(row(canvasElement, 'parent')).getByRole('link', {
+        name: 'Open session Coordinate release',
+      }),
+    );
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-session-status]')?.textContent).toBe(
+        'State: Waiting on child',
+      ),
+    );
+    await expect(
+      canvas.getByRole('link', { name: 'Waiting on child "You are verifying a fix round"' }),
     ).toBeVisible();
   },
 };

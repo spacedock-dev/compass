@@ -77,7 +77,7 @@ export function declaredRelations(payload: Row, source: Row | undefined) {
     parentText: parent ? `Child of ${parent.title}` : declared ? NOT_LINKED : '',
     waiting,
     waitingText: waiting
-      ? `Waiting on ${waiting.title}`
+      ? `Waiting on child "${waiting.title}"`
       : source?.['waiting_on_child']
         ? 'Waiting on child not on the board'
         : '',

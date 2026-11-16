@@ -37,6 +37,11 @@ export function RelationshipLabels({
           )}
         </span>
       ) : null}
+      {relations.waitingText ? (
+        <span className="mt-1 block text-label text-muted-foreground">
+          <WaitingChild relations={relations} focusScope={focusScope} fallback={fallback} />
+        </span>
+      ) : null}
     </>
   );
 }

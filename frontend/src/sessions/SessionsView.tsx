@@ -1,5 +1,5 @@
 import { groupName, groupOf, nestRows } from './declared';
-import { RelationshipLabels, WaitingChild } from './DeclaredRelationships';
+import { RelationshipLabels } from './DeclaredRelationships';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import {
@@ -154,15 +154,7 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
         className={`m-0 block text-label font-semibold uppercase tracking-[.07em] [font-family:var(--mono)] ${state === 'Waiting on you' ? 'text-[var(--amber)]' : state === 'Working' ? 'text-foreground' : 'text-[var(--ink-label)]'}`}
         data-next-row-state={state}
       >
-        {row.relations.waitingText && state === 'Working' ? (
-          <WaitingChild
-            relations={row.relations}
-            focusScope={`sessions-row:${row.key}`}
-            fallback={SEARCH_KEY}
-          />
-        ) : (
-          state
-        )}
+        {row.relations.waitingText && state === 'Working' ? 'Waiting on child' : state}
       </span>
       <span className="next-operation-harness">{row.harnessLabel}</span>
       <RouteAnchor

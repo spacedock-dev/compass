@@ -183,8 +183,9 @@ links to it, or to Attention when there are several. Filters reset when you relo
 
 A launcher can [declare a parent and assign a group](../HOW_TO_USE.md#nest-a-launched-run-under-its-coordinator).
 Linked children follow their visible parent on Sessions and name it with a page link. A parent
-held working says "Waiting on" and links to the selected working child, even when a filter hides
-that child. An open question keeps its input-wait state on the row and session page.
+held working says "Waiting on child". Its relationship line links to the selected working child
+as `Waiting on child "title"`, even when a filter hides that child. An open question keeps its
+input-wait state on the row and session page.
 An unmatched declaration says the parent is not on the board and is not linked. Open
 a parent to see its linked children and their states, or a child to open its parent. Group labels
 stay separate from goals; inherited labels say "from parent". Group by group arranges the kept

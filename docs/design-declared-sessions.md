@@ -73,7 +73,11 @@ concurrency warnings, idle-owner recommendations, notification edges and workstr
 the native view. Project slots normalize before narrowing focus to identity and state; the timeline
 also normalizes a full focus row before deciding whether final output is a result. Display state
 still owns row badges, active/history grouping, filters, navigation, state counts and the current
-activity line. A held parent keeps its Waiting on child presentation beside its unchanged reading.
+activity line. A held parent's state slot says "Waiting on child" beside its unchanged reading.
+The relationship line links to the child as `Waiting on child "title"` on rows, pages and terminal
+surfaces. Keeping prompt-first titles outside the uppercase state slot prevents "You are" from
+reading as an input wait. The held activity detail says "waiting on a linked child session";
+resolved child identities remain in relationship metadata rather than that sentence.
 Real-server native/held recordings hold browser/Python parity, and a Storybook press applies the
 hold while preserving the reading wording and the final result on Decisions.
 

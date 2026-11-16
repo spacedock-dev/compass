@@ -1077,7 +1077,7 @@ def relationship_lines(source: Row, sources: list[Row]) -> list[str]:
         lines.append("Declared parent is not on the board; not linked.")
     waiting = target(source.get("waiting_on_child"))
     if waiting:
-        lines.append(f"Waiting on {name(waiting)}")
+        lines.append(f'Waiting on child "{name(waiting)}"')
     elif source.get("waiting_on_child"):
         lines.append("Waiting on child not on the board")
     return lines

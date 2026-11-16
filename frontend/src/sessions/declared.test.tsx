@@ -30,7 +30,7 @@ describe('declared process children', () => {
       within(row('child')).getByRole('link', { name: 'Child of Coordinate release' }),
     ).toHaveAttribute('href', expect.stringContaining('claude:parent'));
     expect(
-      within(row('parent')).getByRole('link', { name: 'Waiting on Check build' }),
+      within(row('parent')).getByRole('link', { name: 'Waiting on child "Check build"' }),
     ).toHaveAttribute('href', expect.stringContaining('codex:child'));
   });
   it('a hidden headless child stays hidden while its parent still names the wait', async () => {
@@ -39,7 +39,7 @@ describe('declared process children', () => {
       filterStoreFor(page.shell.controls).set({ ...EMPTY_FILTERS, headless: ['other'] }),
     );
     expect(row('child')).toBeNull();
-    expect(row('parent')).toHaveTextContent('Waiting on Check build');
+    expect(row('parent')).toHaveTextContent('Waiting on child "Check build"');
   });
   it('a child still names a parent removed by filters and loses the link when it leaves the board', async () => {
     const page = await open();
@@ -70,7 +70,7 @@ describe('declared process children', () => {
     expect(links).toHaveTextContent('Check build');
     expect(links).toHaveTextContent('Check docs');
     expect(document.querySelector('[data-next-session-status]')).toHaveTextContent(
-      'Waiting on Check build',
+      'Waiting on child',
     );
     await page.poll({
       ...fixture.payload,
@@ -168,7 +168,7 @@ it('a parent exact question remains its visible state while a child works', asyn
   await page.settle();
   const state = row('parent').querySelector('[data-next-row-state]');
   expect(state).toHaveTextContent('Waiting on you');
-  expect(state).not.toHaveTextContent('Waiting on Check build');
+  expect(state).not.toHaveTextContent('Waiting on child "Check build"');
   await act(async () =>
     page.router.navigate({
       view: 'session',
@@ -181,7 +181,7 @@ it('a parent exact question remains its visible state while a child works', asyn
     'State: needs input',
   );
   expect(document.querySelector('[data-next-session-status]')).not.toHaveTextContent(
-    'Waiting on Check build',
+    'Waiting on child "Check build"',
   );
   expect(screen.getAllByText('Ship now?')[0]).toBeInTheDocument();
 });
@@ -224,4 +224,39 @@ it('a reader distinguishes a literal No group label in headings, choices and sel
   await page.settle();
   expect(row('absent')).not.toBeNull();
   expect(screen.getByRole('button', { name: /Group:.*"No group".*No group/ })).toBeInTheDocument();
+});
+
+it('keeps prompt-first child titles out of the state slot and quotes their relationship link', async () => {
+  const title = 'You are verifying a fix round';
+  const page = mountSessions({
+    data: {
+      ...fixture.payload,
+      sessions: fixture.payload.sessions.map((one) =>
+        one.sid === 'child' ? { ...one, title } : one,
+      ),
+    },
+  });
+  await page.settle();
+  const state = row('parent').querySelector('[data-next-row-state]');
+  expect(state?.textContent).toBe('Waiting on child');
+  expect(state).not.toHaveTextContent(/Waiting on you/i);
+  expect(
+    within(row('parent')).getByRole('link', {
+      name: 'Waiting on child "You are verifying a fix round"',
+    }),
+  ).toHaveAttribute('href', expect.stringContaining('codex:child'));
+  await act(async () =>
+    page.router.navigate({
+      view: 'session',
+      project: 'demo',
+      harness: 'claude',
+      session: 'parent',
+    }),
+  );
+  expect(document.querySelector('[data-next-session-status]')?.textContent).toBe(
+    'State: Waiting on child',
+  );
+  expect(
+    screen.getByRole('link', { name: 'Waiting on child "You are verifying a fix round"' }),
+  ).toBeInTheDocument();
 });

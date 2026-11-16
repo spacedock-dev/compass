@@ -1,5 +1,5 @@
 import { declaredRelations } from './declared';
-import { RelationshipLabels, WaitingChild, LinkedChildren } from './DeclaredRelationships';
+import { RelationshipLabels, LinkedChildren } from './DeclaredRelationships';
 import { Badge } from '../ui/badge';
 import { useHoldStill } from './useHoldStill';
 import { Card } from '../ui/card';
@@ -255,14 +255,9 @@ function Header({
               />
               <span>
                 <span className="next-visually-hidden">State: </span>
-                {relations.waitingText && !ended && !observed.askKnown && !observed.isNeeds ? (
-                  <WaitingChild
-                    relations={relations}
-                    focusScope={`session:${observed.harness}:${observed.sid}`}
-                  />
-                ) : (
-                  word
-                )}
+                {relations.waitingText && !ended && !observed.askKnown && !observed.isNeeds
+                  ? 'Waiting on child'
+                  : word}
               </span>
             </Badge>
           </span>

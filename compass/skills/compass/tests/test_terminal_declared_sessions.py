@@ -43,7 +43,7 @@ class DeclaredSessionWordsTest(unittest.TestCase):
         payload["sessions"][0].update(state="idle", ended_at=1899999999)
         payload["sessions"][2].update(state="idle", waiting_on_child=None)
         output = "\n".join(terminal_sessions.render_sessions(payload))
-        self.assertNotIn("Waiting on Check build", output)
+        self.assertNotIn('Waiting on child "Check build"', output)
         self.assertIn("Ended", output)
 
     def render_both(self, payload: terminal_sessions.Row) -> tuple[str, str]:
@@ -69,7 +69,7 @@ class DeclaredSessionWordsTest(unittest.TestCase):
         payload["sessions"] = payload["sessions"][1:]
         for output in self.render_both(payload):
             self.assertIn("Waiting on child not on the board", output)
-            self.assertNotIn("Waiting on Check build", output)
+            self.assertNotIn('Waiting on child "Check build"', output)
 
     def test_relationship_text_cannot_steer_the_terminal(self) -> None:
         payload = copy.deepcopy(FIXTURE["payload"])
@@ -78,7 +78,7 @@ class DeclaredSessionWordsTest(unittest.TestCase):
         payload["sessions"][0]["group"] = "release\tteam\x00\u202e"
         for output in self.render_both(payload):
             self.assertIn("Child of Coordinate release", output)
-            self.assertIn("Waiting on Check build", output)
+            self.assertIn('Waiting on child "Check build"', output)
             self.assertIn("Group: release team (from parent)", output)
             for unsafe in ("\x1b", "\x00", "\u202e", "\t", "secret"):
                 self.assertNotIn(unsafe, output)
@@ -95,5 +95,12 @@ class DeclaredSessionWordsTest(unittest.TestCase):
         ]
         self.assertEqual(len(relationships), 2)
         self.assertIn("Child of " + "P" * 150 + "…", relationships)
-        self.assertIn("Waiting on " + "C" * 148 + "…", relationships)
+        self.assertIn('Waiting on child "' + "C" * 141 + "…", relationships)
         self.assertTrue(all(len(line) == 160 for line in relationships))
+
+    def test_prompt_first_child_title_is_quoted_as_a_child_in_both_commands(self) -> None:
+        payload = copy.deepcopy(FIXTURE["payload"])
+        payload["sessions"][0]["title"] = "You are verifying a fix round"
+        for output in self.render_both(payload):
+            self.assertIn('Waiting on child "You are verifying a fix round"', output)
+            self.assertNotIn("Waiting on You are", output)

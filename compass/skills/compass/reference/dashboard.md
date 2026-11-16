@@ -221,7 +221,8 @@ MCP tools appear under the service being called rather than their wire name, for
 Sessions places a linked child after its visible parent within the same active/history section and
 group bucket, with a "Child of" link. A parent outside the filtered set is still named on its child.
 An unmatched declaration says "Declared parent is not on the board; not linked." The parent's
-"Waiting on" line links to the selected working child even when a filter hides that child.
+state reads "Waiting on child". Its relationship line links to the selected working child as
+`Waiting on child "title"`, even when a filter hides that child.
 An open question keeps its input-wait state on both row and session page. Open a
 parent's page to see its linked children and states; open a child to see its parent. An ended child
 remains listed while it stays on the board, but no longer holds its parent working.
