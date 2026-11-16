@@ -157,7 +157,10 @@ jobs:
       - name: Mypy (strict)
         run: mypy
 
-  # Parallel legs, one runner each: the dashboard suite, and the script suite in shards. Serial in one
+  # Parallel legs, one runner each: the dashboard suite in two shards, and the script suite in three.
+  # The dashboard suite was one leg until 2026-11-16, when its macOS leg took 607 to 729 s and
+  # gated every Python change; each shard runs its own modules' serial pass, so splitting it halves
+  # both phases (scripts/run_tests.py balances the shards by MODULE_COST). Serial in one
   # job they took 557 s (the dashboard suite 120 s, then the script suite 428 s, 2026-11-02), and the
   # script suite is what set the wall clock. `QualificationRetry` is one class with a class fixture
   # and cannot be split across legs, so the shard count is the one that keeps its shard from being
@@ -176,8 +179,6 @@ jobs:
         shard: [1, 2, 3]
         exclude:
           - suite: dashboard
-            shard: 2
-          - suite: dashboard
             shard: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -192,7 +193,7 @@ jobs:
       # Once, on the dashboard leg: the launch is the same on every leg, so repeating it would
       # only spend three more runners' start-up on the same answer.
       - name: Direct-launch smoke on the supported floor
-        if: matrix.suite == 'dashboard'
+        if: matrix.suite == 'dashboard' && matrix.shard == 1
         run: |
           cd "${RUNNER_TEMP}"
           python "${GITHUB_WORKSPACE}/compass/skills/compass/server.py" --help
@@ -211,7 +212,9 @@ jobs:
       # measured 2026-09-23; the script suite is sharded below).
       - name: Run dashboard test discovery on the floor
         if: matrix.suite == 'dashboard'
-        run: python scripts/run_tests.py --slowest 10 -s compass/skills/compass/tests -t .
+        env:
+          DASHBOARD_SHARD: ${{ matrix.shard }}
+        run: python scripts/run_tests.py --slowest 10 --shard "$DASHBOARD_SHARD/2" -s compass/skills/compass/tests -t .
       - name: Run script unit tests on the floor
         if: matrix.suite == 'scripts'
         env:
@@ -234,8 +237,6 @@ jobs:
         suite: [dashboard, scripts]
         shard: [1, 2, 3]
         exclude:
-          - suite: dashboard
-            shard: 2
           - suite: dashboard
             shard: 3
     steps:
@@ -260,7 +261,8 @@ jobs:
         if: matrix.suite == 'dashboard'
         env:
           COVERAGE_CORE: sysmon
-        run: python3 scripts/run_tests.py --coverage --slowest 10 -s compass/skills/compass/tests -t .
+          DASHBOARD_SHARD: ${{ matrix.shard }}
+        run: python3 scripts/run_tests.py --coverage --slowest 10 --shard "$DASHBOARD_SHARD/2" -s compass/skills/compass/tests -t .
       - name: Script suite shard under coverage
         if: matrix.suite == 'scripts'
         env:
@@ -457,8 +459,6 @@ jobs:
         shard: [1, 2, 3]
         exclude:
           - suite: dashboard
-            shard: 2
-          - suite: dashboard
             shard: 3
     steps:
       # actions/checkout@v7.0.1 — pinned to immutable SHA.
@@ -482,7 +482,9 @@ jobs:
         run: python -c "import sqlite3; print(sqlite3.sqlite_version)"
       - name: Run dashboard test discovery
         if: matrix.suite == 'dashboard'
-        run: python scripts/run_tests.py --slowest 10 -s compass/skills/compass/tests -t .
+        env:
+          DASHBOARD_SHARD: ${{ matrix.shard }}
+        run: python scripts/run_tests.py --slowest 10 --shard "$DASHBOARD_SHARD/2" -s compass/skills/compass/tests -t .
       - name: Run script unit tests
         if: matrix.suite == 'scripts'
         env:
@@ -496,7 +498,7 @@ jobs:
   # because no other job runs this interpreter and a change outside the platform list can still
   # break on it.
   platform-tests-current:
-    name: Tests (${{ matrix.os }}, Python 3.15, dashboard)
+    name: Tests (${{ matrix.os }}, Python 3.15, dashboard ${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.python == 'true'
     runs-on: ${{ matrix.os }}
@@ -505,6 +507,7 @@ jobs:
       fail-fast: false
       matrix:
         os: ["${{ needs.changes.outputs.platform == 'true' && 'macos-latest' || 'ubuntu-latest' }}"]
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -522,7 +525,9 @@ jobs:
       - name: Show interpreter
         run: python -c "import sys, os; print(sys.version, os.name, sys.platform, hasattr(os, 'waitid'))"
       - name: Run dashboard test discovery
-        run: python scripts/run_tests.py --slowest 10 -s compass/skills/compass/tests -t .
+        env:
+          DASHBOARD_SHARD: ${{ matrix.shard }}
+        run: python scripts/run_tests.py --slowest 10 --shard "$DASHBOARD_SHARD/2" -s compass/skills/compass/tests -t .
 
   # Every frontend change, on Linux. The Vitest suite runs on Linux in `frontend-coverage`, so this
   # job runs the Node build tests that `pnpm test` adds to it rather than the suite a second time.

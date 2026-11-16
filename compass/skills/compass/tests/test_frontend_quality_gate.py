@@ -304,7 +304,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
         self.assertEqual(["dashboard", "scripts"], platform["strategy"]["matrix"]["suite"])
         self.assertEqual([1, 2, 3], platform["strategy"]["matrix"]["shard"])
         self.assertEqual(
-            [{"suite": "dashboard", "shard": 2}, {"suite": "dashboard", "shard": 3}],
+            [{"suite": "dashboard", "shard": 3}],
             platform["strategy"]["matrix"]["exclude"],
         )
         # The newest stable CPython on every Python change: on macOS beside the 3.12 leg above when
@@ -407,18 +407,17 @@ class FrontendWiringControlsTest(unittest.TestCase):
     def test_runtime_floor_runs_as_parallel_legs_with_one_smoke_launch(self) -> None:
         floor = jobs()["runtime-floor"]
         matrix = floor["strategy"]["matrix"]
-        # The dashboard suite and the script suite in three shards, one runner each, like
+        # The dashboard suite in two shards and the script suite in three, one runner each, like
         # `platform-tests`: serial in one job they took 557 s, and the script suite set the wall clock.
         self.assertEqual(["dashboard", "scripts"], matrix["suite"])
         self.assertEqual([1, 2, 3], matrix["shard"])
-        self.assertEqual(
-            [{"suite": "dashboard", "shard": 2}, {"suite": "dashboard", "shard": 3}],
-            matrix["exclude"],
-        )
+        self.assertEqual([{"suite": "dashboard", "shard": 3}], matrix["exclude"])
         self.assertFalse(floor["strategy"]["fail-fast"])
         by_name = {step["name"]: step for step in floor["steps"] if "name" in step}
         smoke = by_name["Direct-launch smoke on the supported floor"]
-        self.assertEqual("matrix.suite == 'dashboard'", smoke["if"], "the launch runs once")
+        self.assertEqual(
+            "matrix.suite == 'dashboard' && matrix.shard == 1", smoke["if"], "the launch runs once"
+        )
         self.assertIn("server.py", smoke["run"])
         dashboard = by_name["Run dashboard test discovery on the floor"]
         scripts = by_name["Run script unit tests on the floor"]
@@ -427,7 +426,8 @@ class FrontendWiringControlsTest(unittest.TestCase):
         # The shard reaches the shell through env, never interpolated into `run`.
         self.assertEqual("${{ matrix.shard }}", scripts["env"]["SCRIPT_SHARD"])
         self.assertIn('--shard "$SCRIPT_SHARD/3"', scripts["run"])
-        self.assertNotIn("--shard", dashboard["run"])
+        self.assertEqual("${{ matrix.shard }}", dashboard["env"]["DASHBOARD_SHARD"])
+        self.assertIn('--shard "$DASHBOARD_SHARD/2"', dashboard["run"])
         # Together the legs run the same two suites the single job ran, with nothing left out.
         self.assertIn("-s compass/skills/compass/tests -t .", dashboard["run"])
         self.assertIn("-s scripts/tests -t scripts/tests", scripts["run"])
