@@ -832,7 +832,8 @@ def workflow_security_errors(document: dict[str, Any]) -> list[str]:
             image = node.get(key)
             if isinstance(image, str) and not re.fullmatch(r".+@sha256:[0-9a-f]{64}", image):
                 errors.append(f"mutable image: {image}")
-        if isinstance(uses, str) and uses.startswith("actions/github-script@"):
+        # GitHub resolves an action's owner and name without regard to case.
+        if isinstance(uses, str) and uses.lower().startswith("actions/github-script@"):
             inputs = node.get("with", {})
             script = inputs.get("script") if isinstance(inputs, dict) else None
             if isinstance(script, str) and "${{" in script:
@@ -848,14 +849,17 @@ def workflow_security_errors(document: dict[str, Any]) -> list[str]:
 
 class WorkflowPrimitivePinsTest(unittest.TestCase):
     def test_github_script_expressions_require_environment_variables(self) -> None:
-        step = {
-            "uses": "actions/github-script@" + "a" * 40,
-            "with": {"script": "core.info('${{ github.event.pull_request.title }}')"},
-        }
-        self.assertIn(
-            "expression interpolated into github-script source",
-            workflow_security_errors({"steps": [step]}),
-        )
+        for name in ("actions/github-script", "Actions/GitHub-Script"):
+            with self.subTest(name=name):
+                step = {
+                    "uses": name + "@" + "a" * 40,
+                    "with": {"script": "core.info('${{ github.event.pull_request.title }}')"},
+                }
+                self.assertIn(
+                    "expression interpolated into github-script source",
+                    workflow_security_errors({"steps": [step]}),
+                )
+        step = {"uses": "actions/github-script@" + "a" * 40}
         step["with"] = {"script": "core.info(process.env.TITLE)"}
         step["env"] = {"TITLE": "${{ github.event.pull_request.title }}"}
         self.assertEqual([], workflow_security_errors({"steps": [step]}))
