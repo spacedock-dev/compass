@@ -20,8 +20,6 @@ from .support import SERVER_PATH
 from .test_terminal_client import ClockedDashboard, FakeDashboard
 
 FIXTURES = Path(__file__).resolve().parents[4] / "frontend/test/fixtures"
-# A cold project read exercises the session list's real six-second response time.
-REAL_TIME_TESTS = True
 
 
 def recorded(name: str) -> dict[str, Any]:
@@ -528,6 +526,9 @@ class ProjectTest(unittest.TestCase):
 
 
 class ProjectCommandTest(unittest.TestCase):
+    # Measures a cold project read against a real response beyond the ordinary request budget.
+    REAL_TIME_TESTS = True
+
     def run_project(
         self, fake: FakeDashboard | ClockedDashboard, **kwargs: Any
     ) -> tuple[int, str, str]:
@@ -593,7 +594,15 @@ class ProjectCommandTest(unittest.TestCase):
     def test_a_person_reads_their_project_when_the_cold_session_list_takes_six_seconds(
         self,
     ) -> None:
-        with FakeDashboard(answers=self.answers(), delays={"/api/sessions": 6}) as fake:
+        # Scale the ordinary/list budgets and the cold reply by ten, retaining real I/O.
+        with (
+            mock.patch.object(terminal_client, "REQUEST_TIMEOUT_SEC", 0.5),
+            mock.patch.object(terminal_client, "LIST_REQUEST_TIMEOUT_SEC", 3.0),
+            mock.patch.dict(terminal_client.request.__kwdefaults__, timeout=0.5),
+            mock.patch.dict(terminal_client.get.__kwdefaults__, timeout=0.5),
+            mock.patch.dict(terminal_client.read_sessions.__kwdefaults__, timeout=3.0),
+            FakeDashboard(answers=self.answers(), delays={"/api/sessions": 0.6}) as fake,
+        ):
             code, out, err = self.run_project(fake)
 
         self.assertEqual((0, ""), (code, err))

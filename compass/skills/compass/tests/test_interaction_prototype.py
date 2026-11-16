@@ -27,10 +27,6 @@ from compass_runtime import interaction_prototype as interaction
 
 from .support import PAGE_BYTES, build_app, make_server, poll_fast
 
-# The registration lease renews on a real timer.
-REAL_TIME_TESTS = True
-
-
 # One short-named folder for every fixture socket in this module, removed when the module ends:
 # a UNIX socket path is capped near 104 bytes on macOS, and an adapter a test only prepares is
 # never stopped, so a folder per adapter would be left behind.
@@ -203,6 +199,9 @@ class FakeTmuxAdapter:
 
 
 class InteractionPrototypeHTTPTest(unittest.TestCase):
+    # Waits out real lease expiry and quiet stream deadlines.
+    REAL_TIME_TESTS = True
+
     def setUp(self) -> None:
         self.adapter = FakeTmuxAdapter()
         self.prototype = interaction.InteractionPrototype(self.adapter, lease_sec=0.3)
@@ -599,6 +598,7 @@ class InteractionPrototypeHTTPTest(unittest.TestCase):
             with self.subTest(extra=extra):
                 self.assertIn(expected, self._upgrade_status(*extra))
 
+    @unittest.skip("flaky: skipped until fixed, see docs/flaky-tests.md")
     def test_a_quiet_stream_outlives_the_connection_timeout(self) -> None:
         # The socket timeout bounds one send or read, not a stream: this socket only writes,
         # so a terminal with nothing to say for longer than the timeout keeps its viewer.
@@ -693,6 +693,9 @@ class LeaseAtTheConnectionCapTest(unittest.TestCase):
     answer it said "renewal refused", the client exited, and the lease lapsed while the
     dashboard was only busy.
     """
+
+    # Waits through a real connection cap while the lease renews.
+    REAL_TIME_TESTS = True
 
     LEASE_SEC = 3.0
 

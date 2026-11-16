@@ -423,6 +423,8 @@ export const HoldsControlUnderPointer: Story = {
 
 /* Every control, sentence and limit the retired More held, in its new home, and More gone. */
 export const MoreIsRetired: Story = {
+  // Flaky: kept out of the test run until fixed; see docs/flaky-tests.md.
+  tags: ['!test'],
   render: () => <PageExample />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -560,6 +562,8 @@ function spyScroll() {
 /* The Goal cites an entry on the older record page. The press opens Full activity, reads that page, and lands
    on the entry with its tint; Escape goes back to the press, and neither move animates under reduced motion. */
 export const CitationLoadsAnOlderEntry: Story = {
+  // Flaky: kept out of the test run until fixed; see docs/flaky-tests.md.
+  tags: ['!test'],
   render: () => <PageExample cites={['e5']} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);

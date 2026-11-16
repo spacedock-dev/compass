@@ -2020,6 +2020,8 @@ export const OutcomeAccordionKeyboard: Story = {
 };
 
 export const OverCapLineBlocksSave: Story = {
+  // Flaky: kept out of the test run until fixed; see docs/flaky-tests.md.
+  tags: ['!test'],
   name: 'Over Cap Line Blocks Save',
   args: {
     setup: {

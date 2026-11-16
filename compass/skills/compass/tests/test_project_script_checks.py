@@ -32,9 +32,6 @@ from compass_runtime import (
 from . import support
 from .test_claude_checks import ClaudeChecksTestCase
 
-# Script-file parsers bounded in time, on this thread's CPU.
-REAL_TIME_TESTS = True
-
 GIT = shutil.which("git")
 BEFORE_THE_SESSION = "2026-09-01T00:00:00Z"
 AFTER_THE_SESSION = "2026-10-20T00:00:00Z"
@@ -1124,6 +1121,9 @@ class TheResultIsReadLikeAnyCheck(ProjectScriptTestCase):
 
 
 class TheParsersAreBoundedInTime(unittest.TestCase):
+    # Measures thread CPU bounds for hostile declaring files.
+    REAL_TIME_TESTS = True
+
     def refusal(self, name: str, text: str) -> tuple[Any, float]:
         started = time.thread_time()
         result = project_scripts._parse(name, text.encode())

@@ -983,7 +983,7 @@ class NotifyHookTest(unittest.TestCase):
             def log_message(self, *args: Any) -> None:
                 pass
 
-        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Proxy)
+        httpd = support.ThreadingLoopbackHTTPServer(("127.0.0.1", 0), Proxy)
         thread = threading.Thread(target=poll_fast(httpd), daemon=True)
         thread.start()
         try:
@@ -1024,7 +1024,7 @@ class NotifyHookTest(unittest.TestCase):
             def log_message(self, *args: Any) -> None:
                 pass
 
-        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Redirector)
+        httpd = support.ThreadingLoopbackHTTPServer(("127.0.0.1", 0), Redirector)
         thread = threading.Thread(target=poll_fast(httpd), daemon=True)
         thread.start()
         try:

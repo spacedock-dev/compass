@@ -55,8 +55,6 @@ from .fixtures import protobuf_bytes_field, protobuf_int_field
 from .support import make_runtime
 from .test_claude_checks import Transcript
 
-# A planted FIFO must finish before a short join, rather than wait for a writer.
-REAL_TIME_TESTS = True
 UUID = "12345678-1234-1234-1234-123456789abc"
 
 if TYPE_CHECKING:
@@ -64,6 +62,8 @@ if TYPE_CHECKING:
 
 
 class OwnerIoTest(unittest.TestCase):
+    # FIFO refusals finish immediately; joins only guard against a blocked reader.
+
     def setUp(self) -> None:
         home = tempfile.TemporaryDirectory()
         self.addCleanup(home.cleanup)

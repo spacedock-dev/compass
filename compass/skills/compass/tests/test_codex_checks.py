@@ -44,8 +44,6 @@ CHILD = "019a2b3c-0000-7000-8000-0000000000ff"
 GRANDCHILD = "019a2b3c-0000-7000-8000-0000000000fe"
 START = dt.datetime(2026, 10, 30, 3, 0, 0, tzinfo=dt.UTC)
 REMOTE = ("github.com", "acme/widgets")
-# Codex call parsing kept linear, measured on this thread's CPU.
-REAL_TIME_TESTS = True
 
 BOUND_GOAL = "https://github.com/acme/widgets/pull/7"
 # Text a patch carried. It must never reach anything Compass publishes.
@@ -1096,17 +1094,6 @@ class ACommandStillRunningAgesAPass(CodexChecksTestCase):
         self.assertIs(True, check["changed_after"])
         self.assertEqual(1, self.read()[1]["unread_calls"])
 
-    def test_twenty_thousand_printed_lines_are_read_in_linear_time(self) -> None:
-        # Measured on the reviewed tip: 20,000 printed lines beside 8,000 commands took 16 s to read.
-        call = self.rollout.function_call("exec_command", {"cmd": "cat build.log"})
-        self.rollout.output(call, self.PRINTED + "Process running with session ID 7\n" * 20000)
-        for i in range(2000):
-            self.rollout.command(f"ls dir{i}", "x")
-        began = time.thread_time()
-        found = project_context.codex_calls(self.rollout.rows)
-        self.assertLess(time.thread_time() - began, 1.0)
-        self.assertEqual([], [call for call in found.calls if call[2].startswith("running:")])
-
 
 class InputInsideAnExecScriptAgesAPass(CodexChecksTestCase):
     """An `exec` script calls Codex's tools itself. A `write_stdin` in it that sends input is the
@@ -1885,10 +1872,6 @@ class TheGatesAdmitCodex(unittest.TestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class APackageManagerScriptShellSetEarlierInACodexSession(CodexChecksTestCase):
     def test_a_codex_shell_call_that_sets_the_script_shell_leaves_a_later_npm_test_ordinary(
         self,
@@ -1903,3 +1886,25 @@ class APackageManagerScriptShellSetEarlierInACodexSession(CodexChecksTestCase):
         self.rollout.command("pnpm test", "5 passed", exit_code=0)
         self.rollout.command("npm test", "5 passed", exit_code=0)
         self.assertEqual(["npm test"], [row["title"] for row in self.of("check")])
+
+
+class CodexRunningCommandTimeTest(CodexChecksTestCase):
+    PRINTED = ACommandStillRunningAgesAPass.PRINTED
+
+    # Measures thread CPU time for parsing twenty thousand printed status lines.
+    REAL_TIME_TESTS = True
+
+    def test_twenty_thousand_printed_lines_are_read_in_linear_time(self) -> None:
+        # Measured on the reviewed tip: 20,000 printed lines beside 8,000 commands took 16 s to read.
+        call = self.rollout.function_call("exec_command", {"cmd": "cat build.log"})
+        self.rollout.output(call, self.PRINTED + "Process running with session ID 7\n" * 20000)
+        for i in range(2000):
+            self.rollout.command(f"ls dir{i}", "x")
+        began = time.thread_time()
+        found = project_context.codex_calls(self.rollout.rows)
+        self.assertLess(time.thread_time() - began, 1.0)
+        self.assertEqual([], [call for call in found.calls if call[2].startswith("running:")])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -29,9 +29,6 @@ from compass_runtime import rooted_path
 
 from .support import SERVER_PATH
 
-# Launchers, uv and scripts run as real processes, and their starts and exits are waited for.
-REAL_TIME_TESTS = True
-
 SKILL = SERVER_PATH.parent
 PLUGIN_ROOT = SKILL.parents[1]
 REPO = PLUGIN_ROOT.parent
@@ -321,6 +318,9 @@ class UvDoesNotExecuteTheProjectTest(LauncherTest):
 
 
 class BelowTheFloorWithUvTest(LauncherTest):
+    # Measures hung-uv abandonment and real launcher/child signal and shutdown races.
+    REAL_TIME_TESTS = True
+
     def test_someone_with_uv_and_a_new_python_installed_has_the_hook_run_there_unchanged(
         self,
     ) -> None:

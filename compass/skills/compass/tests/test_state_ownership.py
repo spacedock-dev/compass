@@ -27,7 +27,6 @@ from .test_terminal_client import FakeDashboard, closed_port
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-REAL_TIME_TESTS = True
 LOCAL = {"machine": "machine-a", "boot": "boot-a", "network": "net-a", "process": "pid-a"}
 REMOTE = {**LOCAL, "network": "net-b", "process": "pid-b"}
 
@@ -516,6 +515,9 @@ class SystemIdentityFileTest(unittest.TestCase):
 
 
 class BootTimeTest(unittest.TestCase):
+    # Compares the native boot measurement with the real wall clock.
+    REAL_TIME_TESTS = True
+
     def test_native_boot_measurement_predates_now(self) -> None:
         started = lifecycle.boot_started()
         self.assertIsNotNone(started)

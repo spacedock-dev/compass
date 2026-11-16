@@ -31,8 +31,6 @@ from .support import make_runtime, process_alive
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-# Real CLIs are spawned, cancelled and reaped, and a cancel is held to half the CLI's sleep.
-REAL_TIME_TESTS = True
 
 KEY = "claude:s1"
 
@@ -687,6 +685,9 @@ class CancelAnAnalysisTest(unittest.TestCase):
     afterwards. Every race is held open with a barrier at a named seam, never
     by a sleep: sleep-timed races passed and lied in S5's review.
     """
+
+    # Measures cancellation latency and races real CLI handover and reaping.
+    REAL_TIME_TESTS = True
 
     def setUp(self) -> None:
         self.home = Path(tempfile.mkdtemp())

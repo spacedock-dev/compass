@@ -33,9 +33,6 @@ from .support import (
     store_patch,
 )
 
-# Real CLIs are flooded, timed out and reaped, and those waits run on the wall clock.
-REAL_TIME_TESTS = True
-
 
 def _pi_message(
     msg_id: str,
@@ -2553,6 +2550,9 @@ class SupervisedModelCallTest(unittest.TestCase):
     them gets. `on_spawn` is passed only when a caller gives one, which keeps a
     runner with `subprocess.run`'s signature valid.
     """
+
+    # Measures flood shutdown and races real CLI process exit.
+    REAL_TIME_TESTS = True
 
     def setUp(self) -> None:
         from compass_runtime import supervise  # noqa: PLC0415

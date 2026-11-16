@@ -23,7 +23,7 @@ import unittest
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Self
@@ -39,6 +39,7 @@ from compass_runtime.state import build_runtime_state
 from .support import (
     SERVER_PATH,
     RuntimeTestCase,
+    ThreadingLoopbackHTTPServer,
     make_server,
     poll_fast,
     runtime,
@@ -54,7 +55,6 @@ if TYPE_CHECKING:
 # could never be mistaken for a real one.
 TOKEN = "usage-test-access-token"  # noqa: S105 — deliberately fake; asserted ABSENT from outputs
 NOW = 1_700_000_000.0
-REAL_TIME_TESTS = True  # Measures the vendor fetch's whole-exchange and DNS deadline in wall time.
 
 # The two rows whose only route to a number is the fetch cache. Kept as one
 # mapping so a freshness assertion cannot be written for one and forgotten
@@ -2018,6 +2018,9 @@ class VendorTransportTest(unittest.TestCase):
     proxy handling, the deadline and the request bytes all run unchanged.
     """
 
+    # Measures the whole-exchange deadline against a dripping vendor response.
+    REAL_TIME_TESTS = True
+
     DRIP_SEC = 3.0
 
     def setUp(self) -> None:
@@ -2026,7 +2029,7 @@ class VendorTransportTest(unittest.TestCase):
         self.redirect_status = 302
         self.stop = threading.Event()
         self.addCleanup(self.stop.set)
-        server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
+        server = ThreadingLoopbackHTTPServer(("127.0.0.1", 0), self._handler())
         serve_until_closed(server)
         self.addCleanup(server.shutdown)
         self.port = server.server_port

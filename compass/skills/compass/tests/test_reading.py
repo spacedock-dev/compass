@@ -38,8 +38,6 @@ from .recorded_name import original_product_name
 
 SESSION = {"harness": "claude", "sid": "S1"}
 NOW = 1_700_100_000.0
-# Building a long session's prompt, measured on this thread's CPU.
-REAL_TIME_TESTS = True
 
 SOFT_HYPHEN = "\u00ad"
 RTL_OVERRIDE = "\u202e"
@@ -1126,17 +1124,6 @@ class WhatTheReadingWasActuallyShown(unittest.TestCase):
             with self.subTest(cap=cap):
                 prompt, _ = reading.build_prompt((entry(),), goal=goal, lines=(), max_bytes=cap)
                 self.assertLessEqual(len(prompt.encode("utf-8")), cap)
-
-    def test_a_reader_on_a_long_session_does_not_wait_seconds_for_the_prompt(self) -> None:
-        ledger = tuple(
-            entry(id=f"f{i}", summary="s" * 180, at=1_700_000_000.0 + i) for i in range(2000)
-        )
-        started = time.thread_time()
-        _, selected = reading.build_prompt(ledger, goal="g", lines=(), max_bytes=200_000)
-        # A prompt that waited seconds is the defect. Counted in this thread's CPU, so time a
-        # loaded runner spends on other work is not charged to the prompt.
-        self.assertLess(time.thread_time() - started, 2.5)
-        self.assertGreater(len(selected.entries), 100)
 
     def test_the_reading_reads_the_most_recent_work_first(self) -> None:
         ledger = tuple(entry(id=f"f{i}", summary="s" * 180, at=float(i + 1)) for i in range(50))
@@ -4516,6 +4503,22 @@ class AStoredExplanationHoldsTheCallsMaskedValuesMasked(unittest.TestCase):
         )
         self.assertNotIn("FakePass99", json.dumps(assessment))
         self.assertIn("not asked for", json.dumps(assessment))
+
+
+class ReadingPromptTimeTest(unittest.TestCase):
+    # Measures thread CPU time to build a prompt from two thousand entries.
+    REAL_TIME_TESTS = True
+
+    def test_a_reader_on_a_long_session_does_not_wait_seconds_for_the_prompt(self) -> None:
+        ledger = tuple(
+            entry(id=f"f{i}", summary="s" * 180, at=1_700_000_000.0 + i) for i in range(2000)
+        )
+        started = time.thread_time()
+        _, selected = reading.build_prompt(ledger, goal="g", lines=(), max_bytes=200_000)
+        # A prompt that waited seconds is the defect. Counted in this thread's CPU, so time a
+        # loaded runner spends on other work is not charged to the prompt.
+        self.assertLess(time.thread_time() - started, 2.5)
+        self.assertGreater(len(selected.entries), 100)
 
 
 if __name__ == "__main__":

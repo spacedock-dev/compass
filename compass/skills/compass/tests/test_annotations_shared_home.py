@@ -43,8 +43,6 @@ from .support import make_runtime
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-# How long a save or a collection waits on a store lock another process holds.
-REAL_TIME_TESTS = True
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 SID = "0123456789abcdef-shared-home"
@@ -167,6 +165,9 @@ class _SharedHomeCase(unittest.TestCase):
 class TheIssuesInterleavingTest(_SharedHomeCase):
     """The reproduction on the issue, step for step."""
 
+    # Measures writer exclusion over the real BLOCKED_FOR interval in the inherited race helper.
+    REAL_TIME_TESTS = True
+
     def test_an_older_save_resumed_after_a_newer_commit_keeps_both_revisions(self) -> None:
         first, second, overlapped = self.race(
             self.goal(self.first, "Older goal typed at 100", START + 100),
@@ -185,6 +186,9 @@ class TheIssuesInterleavingTest(_SharedHomeCase):
 
 class EveryWriterSharesTheBoundaryTest(_SharedHomeCase):
     """One case per writer: a stale writer never drops what the other committed."""
+
+    # Measures writer exclusion over the real BLOCKED_FOR interval in the inherited race helper.
+    REAL_TIME_TESTS = True
 
     def seed(self, goal: str = "Seeded goal", lines: list[str] | None = None) -> None:
         outcome = annotation_store.annotate(
@@ -475,6 +479,9 @@ class EveryWriterSharesTheBoundaryTest(_SharedHomeCase):
 
 class ABusyStoreIsReportedNotWrittenTest(_SharedHomeCase):
     """Another process holding the store past the wait: nothing is written, and it says so."""
+
+    # Measures busy-store lock deadlines and elapsed save/read waits against a stopped holder.
+    REAL_TIME_TESTS = True
 
     OTHER = "another-session"
 
@@ -1009,6 +1016,9 @@ class ARefreshCannotUndoASaveTest(_SharedHomeCase):
     assigned its older copy, so the press that followed found no entry.
     """
 
+    # Measures save exclusion during a refresh over the real BLOCKED_FOR interval.
+    REAL_TIME_TESTS = True
+
     def save_during_refresh(self) -> str:
         """A save pressed while a refresh sits between its read and its copy; its outcome.
 
@@ -1091,6 +1101,9 @@ class AFirstCollectionWaitsForABusyStoreTest(_SharedHomeCase):
     back. It waits as long as a save would. A later collection keeps its copy
     after the short wait instead, so a stuck holder never stalls the board.
     """
+
+    # Measures timed lock release and elapsed first/later collection waits.
+    REAL_TIME_TESTS = True
 
     def seed(self) -> None:
         saved = annotation_store.annotate(
@@ -1192,6 +1205,9 @@ class ARefreshNeverFailsAnotherDashboardsSaveTest(unittest.TestCase):
     as long as the refreshing process holds its real read handle.
     """
 
+    # Races a save and replace retries against another process holding its read for 1.5 seconds.
+    REAL_TIME_TESTS = True
+
     HOLD = 1.5
 
     @unittest.skipIf(os.name == "nt", "models Windows' refusal on POSIX")
@@ -1246,6 +1262,9 @@ class ARefreshNeverFailsAnotherDashboardsSaveTest(unittest.TestCase):
 
 class AWriterInsideAWriterTest(_SharedHomeCase):
     """A writer called while this thread already writes the store fails at once."""
+
+    # Measures nested-writer refusal latency against the real store-lock wait.
+    REAL_TIME_TESTS = True
 
     def test_a_nested_writer_raises_rather_than_waiting_out_its_own_lock(self) -> None:
         began = time.monotonic()

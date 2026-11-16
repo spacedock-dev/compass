@@ -19,7 +19,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any, cast
 from unittest import mock
@@ -41,10 +41,11 @@ from . import support
 from .support import REAL_FETCH_RELEASE, SERVER_PATH, make_config, make_runtime, serve_until_closed
 from .test_cli_version import run_main
 
-REAL_TIME_TESTS = True  # Measures the DNS and whole-exchange timeout against wall time.
-
 
 class DailyCheckTest(unittest.TestCase):
+    # Races a one-second background-start wait against a real two-second fetch hold.
+    REAL_TIME_TESTS = True
+
     def setUp(self) -> None:
         home = tempfile.TemporaryDirectory()
         self.addCleanup(home.cleanup)
@@ -677,7 +678,7 @@ class LocalTransportTest(unittest.TestCase):
             def log_message(self, *_args: object) -> None:
                 pass
 
-        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server = support.ThreadingLoopbackHTTPServer(("127.0.0.1", 0), Handler)
         serve_until_closed(server)
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
@@ -750,7 +751,9 @@ class LocalTransportTest(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_a_closed_port_is_silent_and_not_retried(self) -> None:
-        with ThreadingHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler) as closed:
+        with support.ThreadingLoopbackHTTPServer(
+            ("127.0.0.1", 0), BaseHTTPRequestHandler
+        ) as closed:
             port = closed.server_port
         stdout, stderr = io.StringIO(), io.StringIO()
         with (
@@ -1011,6 +1014,9 @@ class MemoryTransportTest(unittest.TestCase):
 
 
 class ExchangeDeadlineTest(unittest.TestCase):
+    # Measures stalled DNS and continuously dripping HTTP exchanges against elapsed deadlines.
+    REAL_TIME_TESTS = True
+
     def test_a_stalled_dns_lookup_expires_before_any_connection(self) -> None:
         release = threading.Event()
         finished = threading.Event()

@@ -33,8 +33,6 @@ if TYPE_CHECKING:
 SESSION = "abcdef12-3456-7890-abcd-ef1234567890"
 NOW = 1_700_000_000.0
 HOOK = Path(event_hook.__file__).resolve()
-# The hook runs as a real interpreter, and the guard that it never hangs is an elapsed bound.
-REAL_TIME_TESTS = True
 ROOT = HOOK.parents[3]
 
 
@@ -156,6 +154,9 @@ def deterministic_driver() -> str:
 
 
 class CommandSocketTest(unittest.TestCase):
+    # Measures hook process deadlines and races late matching against exit.
+    REAL_TIME_TESTS = True
+
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

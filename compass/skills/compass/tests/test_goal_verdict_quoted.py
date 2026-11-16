@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import time
+import unittest
 from typing import Any, ClassVar, cast
 
 from compass_runtime import annotations as annotation_store
@@ -20,9 +21,6 @@ from .test_ci_read import GOAL_URL, GREEN, record_with
 from .test_claude_checks import SHORT, ClaudeChecksTestCase
 from .test_goal_verdict import GOAL, VERDICT_AT, goal_row
 from .test_reading_record_guards import write_fact
-
-# Scanning unbalanced quotes kept linear, measured on this thread's CPU.
-REAL_TIME_TESTS = True
 
 OUTPUT = "Ran 412 tests in 3.1s"
 
@@ -322,13 +320,6 @@ class AQuoteInARecordedChecksOutputIsSaidToBeThere(base.AClaudeCodeReadingProduc
         self.assertEqual(180, reading.MAX_QUOTED_SPAN_CHARS)
         self.assertEqual(project_context.TOOL_REPORT_TAIL_CHARS, reading.MAX_QUOTED_SPAN_CHARS)
 
-    def test_unbalanced_quotes_are_scanned_in_linear_time(self) -> None:
-        for unit in ("\u201c", "\u201c a", '\u201c"', '"', '" a'):
-            with self.subTest(unit=unit):
-                started = time.thread_time()
-                self.assertEqual((), reading._quoted_spans(unit * 20000))
-                self.assertLess(time.thread_time() - started, 2.0)
-
     def test_a_span_naming_a_remote_job_is_left_to_the_ci_facts(self) -> None:
         for span in ("coverage-gate pass", "server-unittest pass", "ci/lint passed"):
             with self.subTest(span=span):
@@ -462,3 +453,15 @@ class QuotedCiRowsAreLeftToTheCiFacts(base.AClaudeCodeReadingProducer):
         self.assertEqual(reading.GOAL_VERDICT_AGREES, verdict["check"])
         self.assertEqual(reading.GOAL_VERDICT_CI, verdict["why"])
         self.assertTrue(verdict["cites"])
+
+
+class QuotedSpanTimeTest(unittest.TestCase):
+    # Measures thread CPU time for scanning long unbalanced quote runs.
+    REAL_TIME_TESTS = True
+
+    def test_unbalanced_quotes_are_scanned_in_linear_time(self) -> None:
+        for unit in ("\u201c", "\u201c a", '\u201c"', '"', '" a'):
+            with self.subTest(unit=unit):
+                started = time.thread_time()
+                self.assertEqual((), reading._quoted_spans(unit * 20000))
+                self.assertLess(time.thread_time() - started, 2.0)

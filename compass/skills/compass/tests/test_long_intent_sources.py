@@ -20,9 +20,6 @@ from compass_runtime.state import build_runtime_state
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-# The relative cost of one lookup against twenty, measured on this thread's CPU.
-REAL_TIME_TESTS = True
-
 
 def out_of_time_reach(config: RuntimeConfig) -> RuntimeConfig:
     """Every read's time budget pushed past any runner, so only the byte budgets cut a read.
@@ -35,7 +32,7 @@ def out_of_time_reach(config: RuntimeConfig) -> RuntimeConfig:
     return dataclasses.replace(config, **longer)
 
 
-class LongIntentSourcesTest(unittest.TestCase):
+class _LongIntentSourcesCase(unittest.TestCase):
     temp: tempfile.TemporaryDirectory[str]
     root: Path
     path: Path
@@ -104,6 +101,8 @@ class LongIntentSourcesTest(unittest.TestCase):
             for row in self.rows
         ]
 
+
+class LongIntentSourcesTest(_LongIntentSourcesCase):
     def test_a_reader_with_a_week_long_session_can_use_a_recent_direction_as_their_goal(
         self,
     ) -> None:
@@ -114,51 +113,6 @@ class LongIntentSourcesTest(unittest.TestCase):
         self.assertEqual("Build synthetic step 3. Keep the tests.", words.text)
         page = record_pages.read(self.config, str(self.path), "claude", "long", cursor_key=b"test")
         self.assertEqual(self.facts[-1]["fact_id"], page["entries"][0]["fact_id"])
-
-    def test_a_reader_with_twenty_later_directions_on_a_week_long_session_sees_them_all_in_about_the_time_of_one(
-        self,
-    ) -> None:
-        path = self.root / "twenty.jsonl"
-        rows = [self.record(n) for n in range(10, 30)]
-        # Shared image-filled week-long fixture; only the compact requests differ.
-        with path.open("wb") as handle:
-            with self.path.open("rb") as original:
-                while chunk := original.read(1024 * 1024):
-                    handle.write(chunk)
-            handle.write("".join(json.dumps(row) + "\n" for row in rows).encode())
-        facts = [
-            next(
-                iter(
-                    project_context._instruction_facts(
-                        self.config, json.dumps(row).encode(), "claude", "long"
-                    )
-                )
-            )[1]
-            for row in rows
-        ]
-        ids = [str(fact["fact_id"]) for fact in facts]
-        with mock.patch.object(observer, "resolve_transcript", return_value=str(path)):
-            # This thread's CPU, so another process's load cannot land on one side of the ratio.
-            start = time.thread_time()
-            single = project_context.direction_lookup(
-                self.config, self.state, "claude", "long", ids[0]
-            )
-            single_cost = time.thread_time() - start
-            start = time.thread_time()
-            with mock.patch.object(
-                record_pages, "scan_source", wraps=record_pages.scan_source
-            ) as scan:
-                batch = project_context.direction_lookups(
-                    self.config, self.state, "claude", "long", ids
-                )
-            batch_cost = time.thread_time() - start
-        self.assertEqual(1, scan.call_count)
-        self.assertEqual(
-            [row["message"]["content"][0]["text"] for row in rows],
-            [result.words.text for result in batch],
-        )
-        self.assertEqual([single.scanned_bytes] * 20, [result.scanned_bytes for result in batch])
-        self.assertLess(batch_cost, single_cost * 3)
 
     def test_a_reader_gets_each_batch_answer_in_the_order_they_requested_even_with_conflicting_copies(
         self,
@@ -511,3 +465,53 @@ class LongIntentSourcesTest(unittest.TestCase):
             menu = http_api._prompt_facts(self.app, self.row, [])
         self.assertEqual("", words.text)
         self.assertFalse(any(fact.get("reader_words") for fact in menu))
+
+
+class LongIntentBatchTimeTest(_LongIntentSourcesCase):
+    # Measures the thread CPU ratio for twenty direction reads against one.
+    REAL_TIME_TESTS = True
+
+    def test_a_reader_with_twenty_later_directions_on_a_week_long_session_sees_them_all_in_about_the_time_of_one(
+        self,
+    ) -> None:
+        path = self.root / "twenty.jsonl"
+        rows = [self.record(n) for n in range(10, 30)]
+        # Shared image-filled week-long fixture; only the compact requests differ.
+        with path.open("wb") as handle:
+            with self.path.open("rb") as original:
+                while chunk := original.read(1024 * 1024):
+                    handle.write(chunk)
+            handle.write("".join(json.dumps(row) + "\n" for row in rows).encode())
+        facts = [
+            next(
+                iter(
+                    project_context._instruction_facts(
+                        self.config, json.dumps(row).encode(), "claude", "long"
+                    )
+                )
+            )[1]
+            for row in rows
+        ]
+        ids = [str(fact["fact_id"]) for fact in facts]
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(path)):
+            # This thread's CPU, so another process's load cannot land on one side of the ratio.
+            start = time.thread_time()
+            single = project_context.direction_lookup(
+                self.config, self.state, "claude", "long", ids[0]
+            )
+            single_cost = time.thread_time() - start
+            start = time.thread_time()
+            with mock.patch.object(
+                record_pages, "scan_source", wraps=record_pages.scan_source
+            ) as scan:
+                batch = project_context.direction_lookups(
+                    self.config, self.state, "claude", "long", ids
+                )
+            batch_cost = time.thread_time() - start
+        self.assertEqual(1, scan.call_count)
+        self.assertEqual(
+            [row["message"]["content"][0]["text"] for row in rows],
+            [result.words.text for result in batch],
+        )
+        self.assertEqual([single.scanned_bytes] * 20, [result.scanned_bytes for result in batch])
+        self.assertLess(batch_cost, single_cost * 3)

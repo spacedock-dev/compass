@@ -42,10 +42,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-# The segment listing's linear-time guard is an elapsed bound.
-REAL_TIME_TESTS = True
-
-
 def facts_of(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         project_context._semantic_fact_from_event(dict(row), str(row["kind"]), "tool_report", "")
@@ -364,14 +360,6 @@ class TheProducerListsEachTier(ClaudeChecksTestCase):
             ("failed", "x"), project_context._ci_outcome("pr_checks", "failed", "x", "Exit code 1")
         )
         project_context._ci_outcome("pr_checks", "failed", "x", "Exit code " + zeros)
-
-    def test_listing_many_segments_stays_linear(self) -> None:
-        command = "make x; " * 6000
-        started = time.monotonic()
-        call = project_context._ShellCall(0.0, "/", {"command": command})
-        masked = [call.status_masked(i) for i in range(len(call.parts))]
-        self.assertLess(time.monotonic() - started, 5.0)
-        self.assertFalse(any(masked[-1:]))
 
     def test_the_resolvers_never_fails_words_are_the_producers_read_only_words(self) -> None:
         for word in reading._NEVER_FAILS_WORDS:
@@ -1411,15 +1399,6 @@ class TheEdgesOfTheCommandTiers(ClaudeChecksTestCase):
         for number in (14, 15, 16, 20, 21, 22, 23):
             self.assertEqual("not-recorded", got[f"gh pr checks {number}"])
 
-    def test_a_hostile_first_line_is_not_matched_against_the_error_shapes(self) -> None:
-        if sys.gettrace() is not None or "coverage" in sys.modules:
-            self.skipTest("timed without a tracer only")
-        for line in ("a: " * 40_000, "a" * 100_000 + " gh auth login"):
-            started = time.process_time()
-            self.assertFalse(project_context._gh_error_line(f"Exit code 1\n{line}"))
-            self.assertLess(time.process_time() - started, 1.0)
-        self.assertTrue(project_context._gh_error_line("Exit code 1\ngh: Not Found (HTTP 404)"))
-
     def test_the_last_stage_of_a_pipe_after_work_speaks_for_itself(self) -> None:
         self.session.bash("make stage | ./release.sh", "done", is_error=False)
         self.session.bash("make stage2 | ./fail.sh", "boom", is_error=True)
@@ -1457,6 +1436,33 @@ class TheEdgesOfTheCommandTiers(ClaudeChecksTestCase):
         )
         failed = [f["fact_id"] for f in facts if f.get("result") == "failed"]
         self.assertIn(failed[0], got.cites)
+
+
+class CommandListingTimeTest(ClaudeChecksTestCase):
+    # Measures the elapsed bound for listing six thousand command segments.
+    REAL_TIME_TESTS = True
+
+    def test_listing_many_segments_stays_linear(self) -> None:
+        command = "make x; " * 6000
+        started = time.monotonic()
+        call = project_context._ShellCall(0.0, "/", {"command": command})
+        masked = [call.status_masked(i) for i in range(len(call.parts))]
+        self.assertLess(time.monotonic() - started, 5.0)
+        self.assertFalse(any(masked[-1:]))
+
+
+class CommandErrorShapeTimeTest(ClaudeChecksTestCase):
+    # Measures process CPU time for matching hostile command error lines.
+    REAL_TIME_TESTS = True
+
+    def test_a_hostile_first_line_is_not_matched_against_the_error_shapes(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        for line in ("a: " * 40_000, "a" * 100_000 + " gh auth login"):
+            started = time.process_time()
+            self.assertFalse(project_context._gh_error_line(f"Exit code 1\n{line}"))
+            self.assertLess(time.process_time() - started, 1.0)
+        self.assertTrue(project_context._gh_error_line("Exit code 1\ngh: Not Found (HTTP 404)"))
 
 
 if __name__ == "__main__":

@@ -25,9 +25,6 @@ from compass_runtime.state import build_runtime_state
 
 from .test_subject_consumers import ALL_SUBJECTS, fact
 
-# The staleness check's linear-time guard is an elapsed bound.
-REAL_TIME_TESTS = True
-
 SESSION = {"harness": "claude", "sid": "s-1"}
 TAIL = "FAILED tests/test_retry.py::test_backoff - AssertionError: 2 != 3"
 PASS_TAIL = "3 passed in 0.12s"  # noqa: S105 - a test runner line, not a credential
@@ -747,6 +744,9 @@ class TheCutoffAndTheUnreadFlagSayWhatWasWithheld(unittest.TestCase):
 
 
 class TheStalenessCheckStaysLinear(unittest.TestCase):
+    # Measures the elapsed bound for a long failures ledger.
+    REAL_TIME_TESTS = True
+
     def test_a_long_session_of_failures_and_passes_is_decided_quickly(self) -> None:
         facts = [WORDS]
         for i in range(1_500):

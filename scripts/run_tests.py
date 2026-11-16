@@ -28,8 +28,9 @@ fixtures and verdict, and spreads the work:
   tests provoke on purpose (2026-10-28), which buried the one line that mattered.
   ``--no-buffer`` prints it as it happens. A subprocess writes to the real
   descriptors and is never held.
-- A module that sets ``REAL_TIME_TESTS = True`` measures something against the
-  real clock, which a loaded machine stretches. Its units run after every
+- A module that sets ``REAL_TIME_TESTS = True``, or a test class that does,
+  measures something against the real clock, which a loaded machine stretches.
+  A class's own declaration wins over its module's. Its units run after every
   parallel worker has exited, one at a time in one more worker, so they share
   the machine with nothing else in the run. Under ``--shard`` each such module
   still belongs to one leg, so it runs in exactly one leg's serial pass.
@@ -104,6 +105,37 @@ MODULE_COST: dict[str, float] = {
     "test_qualification_semantic_measurement": 137.0,
     "test_release_transition": 130.0,
     "test_claude_route_verification": 58.0,
+    # The dashboard suite, measured locally on macOS at three workers (2026-11-16, run_tests'
+    # `--slowest` report): serial-pass units at their own time, parallel units at a third.
+    "test_terminal_monitor_process": 29.8,
+    "test_supervise": 27.1,
+    "test_http_api": 26.2,
+    "test_lifecycle": 26.0,
+    "test_live_estimate": 22.0,
+    "test_annotations_shared_home": 19.8,
+    "test_frontend_dev": 11.5,
+    "test_records": 10.8,
+    "test_reading_long_worker": 9.8,
+    "test_opencode_plugin": 9.7,
+    "test_terminal_client": 8.4,
+    "test_interaction_prototype": 7.5,
+    "test_harness_contention": 7.2,
+    "test_launch": 7.0,
+    "test_ci_read": 6.8,
+    "test_reading_long_reconcile": 6.4,
+    "test_reading_jobs": 5.9,
+    "test_update_check": 5.7,
+    "test_project_script_checks": 5.1,
+    "test_reading_partial_publication": 4.7,
+    "test_ci_read_gitlab": 4.6,
+    "test_irreversible": 4.6,
+    "test_contracts": 4.3,
+    "test_observer": 3.8,
+    "test_reading_useful_long": 3.7,
+    "test_frontend_quality_gate": 3.5,
+    "test_react_frontend": 3.3,
+    "test_edge_bounds": 3.2,
+    "test_reading_long_coordinator": 3.2,
 }
 DEFAULT_COST = 2.0
 
@@ -142,9 +174,18 @@ def module_of(tests: list[unittest.TestCase]) -> str:
 
 
 def is_real_time(tests: list[unittest.TestCase]) -> bool:
-    """Whether a unit's module declares ``REAL_TIME_TESTS = True``; nothing else counts."""
-    module = sys.modules.get(type(tests[0]).__module__)
-    return getattr(module, REAL_TIME_MARKER, False) is True
+    """Whether a unit declares ``REAL_TIME_TESTS = True``; nothing else counts.
+
+    A test class's own declaration wins over its module's, so a module whose few timing
+    classes measured the real clock no longer holds its other tests in the serial pass.
+    Measured 2026-11-16: the serial pass was 516 s of the macOS dashboard leg's 729 s, and
+    test_terminal_client alone was 88 s of it, most of it tests that time nothing.
+    """
+    kind = type(tests[0])
+    declared = getattr(kind, REAL_TIME_MARKER, None)
+    if declared is None:
+        declared = getattr(sys.modules.get(kind.__module__), REAL_TIME_MARKER, False)
+    return declared is True
 
 
 def iter_tests(suite: unittest.TestSuite) -> Iterator[unittest.TestCase]:
@@ -315,10 +356,13 @@ def report(total: dict[str, Any], elapsed: float, jobs: int) -> bool:
         for name, text, _test_id in total[key]:
             out.write(f"{'=' * 70}\n{flavour}: {name}\n{'-' * 70}\n{text}\n")
     report_retries(total)
-    serial = f", then {total['serial']} units serially" if total["serial"] else ""
-    out.write(
-        f"{'-' * 70}\nRan {total['run']} tests in {elapsed:.3f}s ({jobs} workers{serial})\n\n"
-    )
+    # Each phase's own wall time, so a slow leg says whether its workers or its serial pass cost it.
+    workers = f"{jobs} workers"
+    serial = ""
+    if total["serial"]:
+        workers += f" in {total['parallel_seconds']:.1f}s"
+        serial = f", then {total['serial']} units serially in {total['serial_seconds']:.1f}s"
+    out.write(f"{'-' * 70}\nRan {total['run']} tests in {elapsed:.3f}s ({workers}{serial})\n\n")
     extras = [
         f"{label}={len(total[key])}"
         for label, key in (
@@ -373,6 +417,8 @@ def new_total() -> dict[str, Any]:
         "durations": [],
         "by_unit": {},
         "serial": 0,
+        "parallel_seconds": 0.0,
+        "serial_seconds": 0.0,
         "retried": [],
         "failed_again": [],
         "retry_note": "",
@@ -561,9 +607,13 @@ def run(  # noqa: PLR0913 - one keyword per command-line option main() passes th
         "buffer": buffer,
     }
     total = new_total()
+    phase_started = time.perf_counter()
     jobs = run_phase(context, config, order_units(parallel), jobs, expected, total)
+    total["parallel_seconds"] = time.perf_counter() - phase_started
     total["serial"] = len(serial)
+    phase_started = time.perf_counter()
     run_phase(context, config, order_units(serial), 1, expected, total)
+    total["serial_seconds"] = time.perf_counter() - phase_started
     if retry:
         retry_failures(context, config, expected, total)
         heading = start + (f", shard {shard[0]}/{shard[1]}" if shard else "")

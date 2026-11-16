@@ -12,7 +12,7 @@ import tempfile
 import threading
 import time
 import unittest
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 
@@ -25,8 +25,6 @@ SID = "ses_" + "a" * 26
 OTHER = "ses_" + "a" * 25 + "b"
 TOKEN = "test-capability"  # noqa: S105 — local test sentinel
 NODE = shutil.which("node")
-# The adapter's HTTP deadline is measured as a real node process's wall-clock lifetime.
-REAL_TIME_TESTS = True
 RUNNER = r"""
 import {readFileSync, writeFileSync, unlinkSync} from "node:fs";
 import {pathToFileURL} from "node:url";
@@ -65,6 +63,9 @@ def native(kind: str, request: str = "req-one", sid: str = SID) -> dict[str, Any
 
 @unittest.skipUnless(NODE, "node is required to exercise the JavaScript adapter")
 class OpenCodePluginTest(support.RuntimeTestCase):
+    # Measures permission callback latency and socket release deadlines.
+    REAL_TIME_TESTS = True
+
     def setUp(self) -> None:
         super().setUp()
         temporary = tempfile.TemporaryDirectory()
@@ -91,7 +92,7 @@ class OpenCodePluginTest(support.RuntimeTestCase):
             def log_message(self, _format: str, *args: object) -> None:
                 pass
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server = support.ThreadingLoopbackHTTPServer(("127.0.0.1", 0), Handler)
         thread = threading.Thread(target=support.poll_fast(self.server), daemon=True)
         thread.start()
         self.addCleanup(self.server.server_close)

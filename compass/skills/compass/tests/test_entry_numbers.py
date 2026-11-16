@@ -18,9 +18,6 @@ from compass_runtime.state import build_runtime_state
 
 from .test_claude_checks import SHORT, ClaudeChecksTestCase
 
-# A long transcript's index inside its page bound, and a resumed index's cost.
-REAL_TIME_TESTS = True
-
 KEY = b"entry-numbers-test"
 
 
@@ -181,15 +178,6 @@ class MessageIndexTest(EntryNumbersTestCase):
         self.assertEqual([1, 2], sorted(x for x in numbers if x is not None)[:2])
         self.assertEqual(1, numbers.count(None))
 
-    def test_a_very_long_single_word_message_costs_the_index_no_masking(self) -> None:
-        self.say("Before.")
-        self.say("x" * (300 * 1024))
-        self.say("After.")
-        started = time.thread_time()
-        index = self.index()
-        self.assertLess(time.thread_time() - started, 2.0)
-        self.assertEqual(4, len(index.keys))
-
     def test_the_index_and_the_pages_give_a_long_message_the_same_id(self) -> None:
         self.say("Before.")
         self.say("word " * 20_000)
@@ -228,6 +216,9 @@ class MessageIndexTest(EntryNumbersTestCase):
 
 class LargeTranscriptTest(EntryNumbersTestCase):
     """The first request on a long session pays for one forward pass, inside the record page bound."""
+
+    # Measures wall and thread CPU bounds for large transcript indexing.
+    REAL_TIME_TESTS = True
 
     def write_large(self, megabytes: int) -> int:
         """Tool results dominate a real transcript's bytes; a message is one record in six."""
@@ -450,3 +441,17 @@ class FocusedContextTest(EntryNumbersTestCase):
             )
         bare: dict[str, Any] = {"project": "p"}
         self.assertIs(bare, http_api._with_message_ordinals(self.app(), bare, ("claude", SHORT)))
+
+
+class MessageIndexTimeTest(EntryNumbersTestCase):
+    # Measures thread CPU time to index a long single-word message.
+    REAL_TIME_TESTS = True
+
+    def test_a_very_long_single_word_message_costs_the_index_no_masking(self) -> None:
+        self.say("Before.")
+        self.say("x" * (300 * 1024))
+        self.say("After.")
+        started = time.thread_time()
+        index = self.index()
+        self.assertLess(time.thread_time() - started, 2.0)
+        self.assertEqual(4, len(index.keys))
