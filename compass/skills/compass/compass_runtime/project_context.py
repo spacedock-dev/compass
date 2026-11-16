@@ -167,8 +167,8 @@ _SEMANTIC_FACT_TYPES = {
     "command_run": "tool_report",
 }
 _DISPATCH_BUILD_RE = re.compile(r"^\s*spacedock\s+dispatch\s+build(?:\s+(.*))?$", re.IGNORECASE)
-_DISPATCH_FILE_PREFIX = f"{spacedock.DISPATCH_DIRECTORY}/spacedock-ensign-"
 _DISPATCH_VALUE_OPTIONS = {
+    "--entity-path",
     "--checklist-file",
     "--host",
     "--stage",
@@ -1234,6 +1234,10 @@ def _dispatch_identity(command_line: str) -> tuple[str, str, str] | None:
         tokens = shlex.split(match.group(1) or "")
     except ValueError:
         return None
+    return _dispatch_argument_identity(tokens)
+
+
+def _dispatch_argument_identity(tokens: list[str]) -> tuple[str, str, str] | None:
     slug = ""
     stage = ""
     workflow_binding = ""
@@ -1248,6 +1252,10 @@ def _dispatch_identity(command_line: str) -> tuple[str, str, str] | None:
                 stage = value
             elif part == "--workflow-dir":
                 workflow_binding = value
+            elif part == "--entity-path":
+                candidate = os.path.basename(value).removesuffix(".md")
+                if spacedock.SD_STAGE_RE.fullmatch(candidate):
+                    slug = candidate
             index += 2
             continue
         if part.startswith("-"):
@@ -1438,6 +1446,7 @@ def _dispatch_events(
             continue
         workflow_binding, slug, stage = identity
         title = slug + (f" → {stage}" if stage else " dispatched")
+        candidates = spacedock.dispatch_candidates(f"{slug}-{stage}")
         events.append(
             {
                 "at": at,
@@ -1451,8 +1460,11 @@ def _dispatch_events(
                 "entity": slug,
                 "workflow_binding": workflow_binding,
                 "stage": stage,
-                "dispatch_artifact": (f"{_DISPATCH_FILE_PREFIX}{slug}-{stage}.md" if stage else ""),
-                "dispatch_artifact_prefix": f"{_DISPATCH_FILE_PREFIX}{slug}-",
+                "dispatch_artifact": candidates[0] if stage and candidates else "",
+                "dispatch_artifacts": list(candidates) if stage else [],
+                "dispatch_artifact_prefixes": (
+                    [path.removesuffix(".md") for path in candidates] if not stage else []
+                ),
                 "succeeded": result.get("succeeded") if result is not None else None,
             }
         )
@@ -12016,8 +12028,11 @@ def _prepared_dispatches(events: list[dict[str, Any]]) -> list[tuple[str, str, s
         workflow = str(event.get("workflow_binding") or "")
         entity = str(event.get("entity") or "")
         stage = str(event.get("stage") or "")
-        if workflow and entity and (artifact or prefix):
-            prepared.append((artifact, prefix, workflow, entity, stage))
+        if workflow and entity:
+            artifacts = {artifact, *event.get("dispatch_artifacts", [])} - {""}
+            prefixes = {prefix, *event.get("dispatch_artifact_prefixes", [])} - {""}
+            prepared.extend((path, "", workflow, entity, stage) for path in artifacts)
+            prepared.extend(("", path, workflow, entity, stage) for path in prefixes)
     return prepared
 
 
@@ -12029,7 +12044,7 @@ def _artifact_bindings(
         if exact and artifact == exact:
             bindings.add((workflow, entity, prepared_stage))
             continue
-        if not artifact.startswith(prefix) or not artifact.endswith(".md"):
+        if not prefix or not artifact.startswith(prefix) or not artifact.endswith(".md"):
             continue
         stage = artifact[len(prefix) : -len(".md")]
         if stage and spacedock.SD_STAGE_RE.fullmatch(stage):

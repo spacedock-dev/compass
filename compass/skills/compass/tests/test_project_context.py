@@ -1384,6 +1384,43 @@ class ProjectContextTest(unittest.TestCase):
 
         self.assertEqual([], steering)
 
+    @mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": "/probe/runtime"})
+    def test_a_semantic_worker_is_bound_to_its_prepared_project_assignment(self) -> None:
+        # Name and path captured from spacedock dispatch build --host codex.
+        for directory in spacedock.dispatch_directories():
+            for name in ("task-1-implementation.md", "spacedock-ensign-task-1-implementation.md"):
+                for stage_option in (" --stage implementation", ""):
+                    for entity_option in ("task-1", "--entity-path /probe/entities/task-1.md"):
+                        with self.subTest(
+                            directory=directory, name=name, stage=stage_option, entity=entity_option
+                        ):
+                            prepared = project_context._dispatch_events(
+                                "spacedock dispatch build --workflow-dir /probe "
+                                + entity_option
+                                + stage_option
+                                + " --checklist-file /probe/checklist.txt --host codex",
+                                at=1.0,
+                                result=None,
+                                harness="pi",
+                                sid="first-officer",
+                            )
+                            self.assertEqual(1, len(prepared))
+                            events = project_context._bind_dispatch_artifacts(
+                                [
+                                    *prepared,
+                                    {
+                                        "at": 2.0,
+                                        "kind": "task_started",
+                                        "source": "worker",
+                                        "dispatch_artifact": f"{directory}/{name}",
+                                    },
+                                ]
+                            )
+                            self.assertEqual("/probe", events[-1].get("workflow_binding"))
+                            self.assertEqual("task-1", events[-1]["entity"])
+                            self.assertEqual("implementation", events[-1]["stage"])
+                            self.assertIn("exact prepared-dispatch match", events[-1]["source"])
+
     def test_exact_dispatch_artifact_binds_spawn_and_result_to_workflow_item(self) -> None:
         # Given: an exact artifact connects prepared dispatch, spawn, and result records.
         artifact = "/tmp/spacedock-dispatch/spacedock-ensign-search-review.md"
