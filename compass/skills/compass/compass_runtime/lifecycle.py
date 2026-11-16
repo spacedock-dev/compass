@@ -1269,7 +1269,7 @@ def prepare_daemon_home(
         runtime_io.diag(
             f"Compass: cannot use {compass_home(config)} for the daemon state and log "
             f"({type(exc).__name__}: {exc}). Point {runtime_config.COMPASS_HOME_ENV} at a "
-            f"writable directory, or drop --daemon to run in the foreground.",
+            "writable directory; a start without --daemon needs it too.",
             diagnostic_sink,
         )
         return False
