@@ -5019,11 +5019,17 @@ memory, exactly as it does today.
 `--status` rather than the family of per-run switches, because what it does is not reversible by
 running the next command without it. It removes the file whether or not the store is enabled, and it
 adds no endpoint: nothing over the loopback port can delete history. It is refused while a dashboard
-answers on the port it names, and says to `--stop` that instance first: a running server holds its
-own copy of the history in memory and would write the deleted records back on the next transition,
-which is the one way a delete could report success and not have happened. A dashboard on some other
-port is out of that probe's reach, so the recording lane also drops its copy when the file it read
-has gone.
+answers on the port it names or any dashboard state file in the folder may still have a live writer.
+Every recorded writer must have matching machine, boot, network and process namespace evidence and
+a definitely absent process; a locally absent PID cannot establish death in another environment.
+Missing ownership evidence, legacy records and unreadable state block cleanup. The refusal changes
+no stores, names the state file and says to run `--stop --port PORT` where that dashboard runs, or
+press Ctrl+C in its foreground terminal. If it already stopped, verify that there before removing
+only its state file and matching `.origin` file. With no state files, the selected-port check still
+applies. Stop all dashboards sharing the folder and avoid starting one during cleanup: discovery
+and deletion do not exclude concurrent publication of a new dashboard state file.
+A running server holds its own history in memory and could write deleted records back on
+the next transition, so the recording lane also drops its copy when the file it read has gone.
 
 A store that cannot be read is discarded rather than repaired. Corrupt bytes, an unreadable file, a
 version the running build does not understand: in every case the store is dropped, the board starts

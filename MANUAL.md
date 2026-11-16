@@ -216,11 +216,17 @@ Dashboards using the same Compass home share persistent stores.
 | `--no-history` | Do not read or write observation history for this run. Existing history is left on disk. Does not disable the separate annotations or session-end store. |
 | `--no-annotations` | Do not read or write saved goals, expected outcome lines, readings or group labels for this run. The page offers no editable intent fields; `Analyze drift` remains visible but disabled with a reason. Existing annotations are left on disk. Does not govern the separate session-summary store. |
 | `--no-dismiss` | Do not read or write the handled-session store. Previously handled sessions return to the board and its dismiss control is unavailable for this run. |
-| `--forget` | A one-shot cleanup: delete observation history, recorded session ends, launcher parent declarations, stored session summaries and copied-correction digests; sweep annotation discard records; store model calls as paused, which stops readings, goal summaries and session summaries until you use Resume model calls in the page, and store session summaries as off, which stays after you resume until you turn summaries on again. Preserve the words and group labels you typed, unexpired model-spend timestamps and `compass-typed-presses.json`, which like those timestamps guards what a press may spend: deleting it would let a typed command that already paid for a reading pay for another. Refused while a dashboard answers on the selected port: stop it first. The deletions are irreversible. |
+| `--forget` | A one-shot cleanup: delete observation history, recorded session ends, launcher parent declarations, stored session summaries and copied-correction digests; sweep annotation discard records; store model calls as paused, which stops readings, goal summaries and session summaries until you use Resume model calls in the page, and store session summaries as off, which stays after you resume until you turn summaries on again. Preserve the words and group labels you typed, unexpired model-spend timestamps and `compass-typed-presses.json`, which like those timestamps guards what a press may spend: deleting it would let a typed command that already paid for a reading pay for another. Refused while a dashboard answers on the selected port or any dashboard state file in the Compass home lacks proof that its writer is gone. A refusal for a recorded writer names its state file; stop that dashboard in the environment where it runs first. The deletions are irreversible. |
 
-`--forget` checks only the named port. Stop every dashboard sharing that Compass home before
-cleanup; an instance on another port can otherwise retain or recreate observations. It does not
-erase harness transcripts or every Compass setting and store.
+`--forget` checks the selected port and every dashboard state file in that Compass home. A recorded
+writer is proven gone only with matching machine, boot, network and process namespace evidence and
+a definitely absent process. Unproven writers, legacy, corrupt or unreadable records block the whole
+cleanup, leaving every store unchanged. Run `--stop --port PORT` where the recorded dashboard runs,
+or press Ctrl+C in its foreground terminal. If it has already stopped, verify that there before
+removing only its state file and matching `.origin` file, then retry. With no state files, cleanup
+behaves as usual. Stop every dashboard sharing the folder and do not start one during cleanup;
+the check does not lock out concurrent starts. It does not erase harness transcripts or every
+Compass setting and store.
 
 ### Workflow and event controls
 

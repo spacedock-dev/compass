@@ -854,6 +854,9 @@ def run_one_shot(
         # command without it. It deletes the file whether or not the store is
         # enabled, and it adds no route: nothing over the loopback port can
         # delete history.
+        if refusal := lifecycle.forget_refusal(config):
+            runtime_io.diag(refusal, print)
+            return 1
         path = history.store_path(config)
         ends_path = ends.store_path(config)
         annotations_path = annotation_store.store_path(config)
@@ -863,8 +866,8 @@ def run_one_shot(
         # delete reported success and every record came back. The probe is the
         # one `--status` and `--stop` already use, so it needs neither the home
         # the dashboard was started with nor a state file. It covers the port
-        # this invocation names and cannot see an instance on another one, which
-        # is why the lane also drops a baseline whose file has gone.
+        # this invocation names, including a dashboard without a state file.
+        # The folder-wide guard above covers recorded writers on other ports.
         if lifecycle.instance_status(config, args.port)["state"] in ("running", "busy"):
             # All three files, because the refusal keeps all three (DRC-4547,
             # DRC-4565): a reader who ran this to drop a recorded end is owed
