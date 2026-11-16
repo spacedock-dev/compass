@@ -1427,7 +1427,7 @@
       },
       {
         "file": "frontend/src/shell/favicon.ts",
-        "sha256": "e8942c34b195eb12f480ac7300d751bc1ee8dcb98a8d14913e0e5205f4388915"
+        "sha256": "281a600e7fbaddae4b4fb735e86b4494661aa5653499933c85b834856d5fb1bb"
       },
       {
         "file": "frontend/src/shell/format.ts",

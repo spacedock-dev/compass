@@ -16,7 +16,7 @@ OPENERS = {
     "compass_runtime/reach.py": "Opt-in HTTPS delivery, proxy-free and redirect-refusing.",
 }
 
-# module/function -> (reviewed argv expressions, reason). Exact argv shapes also reject
+# module/qualified lexical owner -> (reviewed argv expressions, reason). Exact argv shapes also reject
 # a bare binary planted in an already reviewed function; this is not interprocedural proof.
 PROCESSES = {
     ("launch.py", "find_new_python"): (
@@ -33,13 +33,13 @@ PROCESSES = {
         ("resolved",),
         "rooted_path.prepared resolves argv and scrubs child PATH.",
     ),
-    ("compass_runtime/interaction_prototype.py", "start_read_only_stream"): (
+    ("compass_runtime/interaction_prototype.py", "TmuxAdapter.start_read_only_stream"): (
         (
             "[self._executable, '-f', '/dev/null', '-S', self._socket, '-CC', 'attach-session', '-r', '-t', origin.session_id]",
         ),
         "Constructor resolves tmux through rooted_path.which and validates rooted overrides.",
     ),
-    ("compass_runtime/interaction_prototype.py", "_run"): (
+    ("compass_runtime/interaction_prototype.py", "TmuxAdapter._run"): (
         ("[self._executable, '-f', '/dev/null', '-S', self._socket, *arguments]",),
         "Same constructor-resolved tmux; child PATH is scrubbed.",
     ),
@@ -51,7 +51,7 @@ PROCESSES = {
         ("['/usr/bin/osascript', '-e', script]",),
         "Fixed OS program: PATH lookup would weaken the absolute binding.",
     ),
-    ("compass_runtime/supervise.py", "read"): (
+    ("compass_runtime/supervise.py", "_group_running.read"): (
         ("['/bin/ps', '-axo', 'pgid=,stat=']",),
         "Fixed POSIX process table reader; no PATH lookup.",
     ),
@@ -121,9 +121,37 @@ RUNNERS = {
     ): "Forwards the rooted Git probe runner.",
 }
 
-# Raw file calls are reviewed by module and function, with call counts so adding a twin
+# Raw file calls are reviewed by module and qualified lexical owner, with call counts so adding a twin
 # inside an existing function also fails. KNOWN GAP entries freeze debt, not certify safety.
 RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
+    ("launch.py", "main"): (
+        1,
+        "main: Script source explicitly requested by the invoking harness, executed as Python would; not state data.",
+    ),
+    ("notify_hook.py", "_open_state"): (
+        1,
+        "_open_state: Held parent, NOFOLLOW/NONBLOCK leaf, and _check_regular descriptor validation.",
+    ),
+    ("notify_hook.py", "_windows_directory"): (
+        2,
+        "_windows_directory: Configured root creation, then owned non-reparse descendants held by Windows handles.",
+    ),
+    ("notify_hook.py", "_directory_child"): (
+        3,
+        "_directory_child: Relative held-parent directory opens with NOFOLLOW; _directory_fd checks ownership and bounds trusted links.",
+    ),
+    ("notify_hook.py", "_directory_fd"): (
+        1,
+        "_directory_fd: Opens fixed filesystem root for the checked held-directory walk, no content read.",
+    ),
+    ("notify_hook.py", "_owner_directory_fd"): (
+        3,
+        "_owner_directory_fd: Confined descendants opened relative to held owned parents with NOFOLLOW and mode checks.",
+    ),
+    ("notify_hook.py", "write_owner_json"): (
+        1,
+        "write_owner_json: Exclusive owner-only staging leaf under checked held parents, then atomic replacement.",
+    ),
     ("compass_runtime/annotations.py", "_fsync_directory"): (
         1,
         "_fsync_directory: Directory descriptor for durability, no content read.",
@@ -172,9 +200,9 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
     ),
-    ("compass_runtime/http_api.py", "_interaction_asset"): (
+    ("compass_runtime/http_api.py", "_RequestHandler._interaction_asset"): (
         2,
-        "_interaction_asset: Bundled terminal assets verified against shipped SHA-256 digests.",
+        "_RequestHandler._interaction_asset: Bundled terminal assets verified against shipped SHA-256 digests.",
     ),
     ("compass_runtime/https_transport.py", "open_bounded"): (
         1,
@@ -188,11 +216,11 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "_read_registration_file: Registration helper refuses links and nonregular files using descriptor checks.",
     ),
-    ("compass_runtime/interaction_prototype.py", "start_client"): (
+    ("compass_runtime/interaction_prototype.py", "TmuxAdapter.start_client"): (
         1,
-        "start_client: Exclusive owner-only temporary file in a private temporary directory.",
+        "TmuxAdapter.start_client: Exclusive owner-only temporary file in a private temporary directory.",
     ),
-    ("compass_runtime/interaction_prototype.py", "_write_registration_file"): (
+    ("compass_runtime/interaction_prototype.py", "InteractionPrototype._write_registration_file"): (
         2,
         "KNOWN GAP: exclusive staging does not validate parent directory ownership or refuse directory links.",
     ),
@@ -204,11 +232,11 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "daemon_redirect_stdio: OS null device for detached process stdin.",
     ),
-    ("compass_runtime/monitor_store.py", "lock"): (
+    ("compass_runtime/monitor_store.py", "Store.lock"): (
         1,
         "KNOWN GAP: lock open lacks NONBLOCK and owner/identity checks; only regular-file and advisory-lock checks.",
     ),
-    ("compass_runtime/monitor_store.py", "read"): (
+    ("compass_runtime/monitor_store.py", "Store.read"): (
         1,
         "KNOWN GAP: control read checks regular-file type and size but lacks owner/identity and directory checks.",
     ),
@@ -240,17 +268,17 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "KNOWN GAP: reader checks follow links and lack owner/identity checks despite nonblocking regular-file reads.",
     ),
-    ("compass_runtime/reading_ci_acquire.py", "ci"): (
+    ("compass_runtime/reading_ci_acquire.py", "_Read.ci"): (
         1,
-        "ci: self.open opens an acquisition context, not a file.",
+        "_Read.ci: self.open opens an acquisition context, not a file.",
     ),
-    ("compass_runtime/reading_ci_acquire.py", "git"): (
+    ("compass_runtime/reading_ci_acquire.py", "_Read.git"): (
         1,
-        "git: self.open opens an acquisition context, not a file.",
+        "_Read.git: self.open opens an acquisition context, not a file.",
     ),
-    ("compass_runtime/reading_ci_acquire.py", "read"): (
+    ("compass_runtime/reading_ci_acquire.py", "_Read.read"): (
         1,
-        "read: self.open opens an acquisition context, not a file.",
+        "_Read.read: self.open opens an acquisition context, not a file.",
     ),
     ("compass_runtime/reading_jobs.py", "_mark_unstored"): (
         1,
@@ -351,6 +379,24 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
 }
 
 
+# Installed copies have separate module keys, so drift in either copy is checked too.
+for _harness in ("compass-gemini", "compass-droid"):
+    PROCESSES.update(
+        {
+            (f"{_harness}/hooks/{module}", function): entry
+            for (module, function), entry in list(PROCESSES.items())
+            if module == "launch.py"
+        }
+    )
+    RAW_FILES.update(
+        {
+            (f"{_harness}/hooks/{module}", function): entry
+            for (module, function), entry in list(RAW_FILES.items())
+            if module in {"launch.py", "notify_hook.py"}
+        }
+    )
+
+
 def _name(node: ast.expr, imports: dict[str, str]) -> str:
     if isinstance(node, ast.Name):
         return imports.get(node.id, node.id)
@@ -438,7 +484,20 @@ def _assigned_aliases(tree: ast.AST, found: dict[str, str]) -> dict[str, str]:
     return found
 
 
-def _runner_defaults(tree: ast.AST, imports: dict[str, str], module: str) -> list[str]:
+def _owner(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> str:
+    names = []
+    while True:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.append(node.name)
+        if node not in parents:
+            break
+        node = parents[node]
+    return ".".join(reversed(names)) or "<module>"
+
+
+def _runner_defaults(
+    tree: ast.AST, imports: dict[str, str], module: str, parents: dict[ast.AST, ast.AST]
+) -> list[str]:
     found = []
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -447,8 +506,9 @@ def _runner_defaults(tree: ast.AST, imports: dict[str, str], module: str) -> lis
         runners = [
             value for value in defaults if value is not None and _process(_name(value, imports))
         ]
-        if runners and ((module, node.name) not in RUNNERS or len(runners) != 1):
-            found.append(f"{module} {node.name}: unreviewed injectable process runner")
+        function = _owner(node, parents)
+        if runners and ((module, function) not in RUNNERS or len(runners) != 1):
+            found.append(f"{module} {function}: unreviewed injectable process runner")
     return found
 
 
@@ -456,16 +516,13 @@ def violations(source: str, module: str) -> list[str]:
     tree = ast.parse(source)
     imports = _imports(tree)
     parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
-    found = _runner_defaults(tree, imports, module)
+    found = _runner_defaults(tree, imports, module, parents)
     counts: dict[tuple[str, str], int] = {}
     process_counts: dict[tuple[str, str], int] = {}
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        owner: ast.AST = node
-        while owner in parents and not isinstance(owner, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            owner = parents[owner]
-        function = getattr(owner, "name", "<module>")
+        function = _owner(node, parents)
         key = module, function
         name = _name(node.func, imports)
         prefix = f"{module}:{node.lineno} {function}: "
@@ -495,11 +552,7 @@ def violations(source: str, module: str) -> list[str]:
         } or name.endswith(
             (".open", ".read_bytes", ".read_text", ".write_bytes", ".write_text", ".mkdir")
         )
-        if (
-            module.startswith("compass_runtime/")
-            and module not in {"compass_runtime/io.py", "compass_runtime/spacedock.py"}
-            and raw
-        ):
+        if module not in {"compass_runtime/io.py", "compass_runtime/spacedock.py"} and raw:
             counts[key] = counts.get(key, 0) + 1
             maximum, _reason = RAW_FILES.get(key, (0, ""))
             if counts[key] > maximum:
@@ -522,6 +575,48 @@ def _stale_entries(
 
 
 class SecurityPrimitivesTest(unittest.TestCase):
+    def test_a_raw_open_in_any_shipped_top_level_script_requires_review(self) -> None:
+        modules = [
+            "notify_hook.py",
+            "event_hook.py",
+            "mcp_server.py",
+            "statusline_hook.py",
+            "agy_hook.py",
+            "launch.py",
+            "server.py",
+            "compass-gemini/hooks/event_hook.py",
+            "compass-gemini/hooks/notify_hook.py",
+            "compass-gemini/hooks/launch.py",
+            "compass-droid/hooks/event_hook.py",
+            "compass-droid/hooks/notify_hook.py",
+            "compass-droid/hooks/launch.py",
+        ]
+        for module in modules:
+            with self.subTest(module=module):
+                self.assertTrue(
+                    any(
+                        "unreviewed raw file operation" in error
+                        for error in violations("open('/tmp/unreviewed')", module)
+                    )
+                )
+
+    def test_same_named_methods_cannot_share_a_reviewed_primitive_entry(self) -> None:
+        source = "class Other:\n def _run(self):\n  open('/tmp/unreviewed')"
+        found = violations(source, "compass_runtime/ci_read.py")
+        self.assertTrue(
+            any("Other._run: unreviewed raw file operation" in error for error in found)
+        )
+        source = "import subprocess\nclass Other:\n def _run(self):\n  subprocess.run([self._executable, '-f', '/dev/null', '-S', self._socket, *arguments])"
+        found = violations(source, "compass_runtime/interaction_prototype.py")
+        self.assertTrue(
+            any("Other._run: unreviewed process executable" in error for error in found)
+        )
+        source = "import subprocess\nclass Other:\n def probe(self, runner=subprocess.run): pass"
+        found = violations(source, "compass_runtime/git_status.py")
+        self.assertTrue(
+            any("Other.probe: unreviewed injectable process runner" in error for error in found)
+        )
+
     def test_static_alias_default_and_launcher_bypasses_rejected(self) -> None:
         for source in (
             "import urllib.request; req = urllib.request; req.urlopen('u')",
@@ -553,11 +648,12 @@ class SecurityPrimitivesTest(unittest.TestCase):
 
     def test_deferred_unsafe_sites_remain_known_gaps(self) -> None:
         missing = {
-            ("compass_runtime/monitor_store.py", "lock"): ("owner", "nonblock"),
-            ("compass_runtime/monitor_store.py", "read"): ("owner",),
-            ("compass_runtime/interaction_prototype.py", "_write_registration_file"): (
-                "directory",
-            ),
+            ("compass_runtime/monitor_store.py", "Store.lock"): ("owner", "nonblock"),
+            ("compass_runtime/monitor_store.py", "Store.read"): ("owner",),
+            (
+                "compass_runtime/interaction_prototype.py",
+                "InteractionPrototype._write_registration_file",
+            ): ("directory",),
             ("compass_runtime/reader_checks.py", "_read"): ("owner", "link"),
             ("compass_runtime/settings.py", "_read_store"): ("owner",),
         }
@@ -579,6 +675,14 @@ class SecurityPrimitivesTest(unittest.TestCase):
             if "tests" not in path.relative_to(ROOT).parts:
                 found.extend(
                     violations(path.read_text(encoding="utf-8"), path.relative_to(ROOT).as_posix())
+                )
+        repository = ROOT.parents[2]
+        for harness in ("compass-gemini", "compass-droid"):
+            for path in sorted((repository / harness / "hooks").glob("*.py")):
+                found.extend(
+                    violations(
+                        path.read_text(encoding="utf-8"), path.relative_to(repository).as_posix()
+                    )
                 )
         self.assertEqual([], found, "\n".join(found))
 

@@ -731,6 +731,26 @@ class SemgrepPinTest(unittest.TestCase):
     def job(self) -> dict[str, Any]:
         return cast("dict[str, Any]", workflows()["sast.yml"]["jobs"]["semgrep"])
 
+    def test_the_scan_triages_only_frontend_test_files_and_still_blocks_new_findings(self) -> None:
+        scan = next(
+            step["run"] for step in self.job()["steps"] if step.get("name") == "Run Semgrep"
+        )
+        words = shlex.split(scan, comments=True)
+        self.assertIn("--error", words)
+        self.assertEqual(
+            "60", words[words.index("--timeout") + 1] if "--timeout" in words else None
+        )
+        self.assertEqual(
+            ["WARNING", "ERROR"],
+            [words[i + 1] for i, word in enumerate(words) if word == "--severity"],
+        )
+        self.assertEqual(
+            ["semgrep-rules", "frontend/src/**/*.test.*"],
+            [words[i + 1] for i, word in enumerate(words) if word == "--exclude"],
+        )
+        self.assertNotIn("--exclude-rule", words)
+        self.assertIn("test-only DOM fixtures", scan)
+
     def test_the_image_is_pinned_by_digest(self) -> None:
         self.assertRegex(self.job()["container"]["image"], SEMGREP_IMAGE)
 
@@ -812,6 +832,12 @@ def workflow_security_errors(document: dict[str, Any]) -> list[str]:
             image = node.get(key)
             if isinstance(image, str) and not re.fullmatch(r".+@sha256:[0-9a-f]{64}", image):
                 errors.append(f"mutable image: {image}")
+        # GitHub resolves an action's owner and name without regard to case.
+        if isinstance(uses, str) and uses.lower().startswith("actions/github-script@"):
+            inputs = node.get("with", {})
+            script = inputs.get("script") if isinstance(inputs, dict) else None
+            if isinstance(script, str) and "${{" in script:
+                errors.append("expression interpolated into github-script source")
         run = node.get("run")
         if not isinstance(run, str):
             continue
@@ -822,6 +848,22 @@ def workflow_security_errors(document: dict[str, Any]) -> list[str]:
 
 
 class WorkflowPrimitivePinsTest(unittest.TestCase):
+    def test_github_script_expressions_require_environment_variables(self) -> None:
+        for name in ("actions/github-script", "Actions/GitHub-Script"):
+            with self.subTest(name=name):
+                step = {
+                    "uses": name + "@" + "a" * 40,
+                    "with": {"script": "core.info('${{ github.event.pull_request.title }}')"},
+                }
+                self.assertIn(
+                    "expression interpolated into github-script source",
+                    workflow_security_errors({"steps": [step]}),
+                )
+        step = {"uses": "actions/github-script@" + "a" * 40}
+        step["with"] = {"script": "core.info(process.env.TITLE)"}
+        step["env"] = {"TITLE": "${{ github.event.pull_request.title }}"}
+        self.assertEqual([], workflow_security_errors({"steps": [step]}))
+
     def test_install_requires_effective_ignore_scripts(self) -> None:
         for run in (
             'npm ci --userconfig="--ignore-scripts"',

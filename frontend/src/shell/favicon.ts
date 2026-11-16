@@ -2,6 +2,8 @@
    inline as a data URI: the page ships as one file and nothing else is served for it. An icon is always set,
    because a browser keeps the last one it drew when the link is removed. */
 const icon = (body: string) =>
+  // Private helper called only with the two fixed SVG fragments below; no session or network data reaches body.
+  // nosemgrep: javascript.lang.security.html-in-template-string
   `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">${body}</svg>`)}`;
 
 export const RESTING_ICON = icon(

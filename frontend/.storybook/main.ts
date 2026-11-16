@@ -12,6 +12,8 @@ const config: StorybookConfig = {
   features: { developmentModeForBuild: false },
   async previewHead(head) {
     const { css } = await readFonts(fileURLToPath(new URL('../../', import.meta.url)));
+    // Storybook supplies head; readFonts embeds only repository-owned CSS and validated base64 font bytes.
+    // nosemgrep: javascript.lang.security.html-in-template-string
     return `${head}<style>${css}</style>`;
   },
   async viteFinal(config) {
