@@ -131,6 +131,23 @@ class CodexTurnStopTest(RuntimeTestCase):
             with self.subTest(record=newer["payload"]["type"]):
                 self.assertIsNone(self._collect([*self._head(), newer])["turn_end_at"])
 
+    def test_a_same_timestamp_abort_or_turn_activity_retires_the_stop(self) -> None:
+        for record in (_aborted(self.stop), _started(self.stop, "t2"), _model_output(self.stop)):
+            with self.subTest(kind=record["payload"]["type"]):
+                entries = [*self._head(), record]
+                entries[0]["payload"]["source"] = "exec"
+                session = self._collect(entries)
+                self.assertTrue(session["headless"])
+                self.assertIsNone(session["turn_end_at"])
+                self.assertNotEqual("run finished", session["state_detail"])
+
+    def test_same_timestamp_settings_and_a_closed_turns_completion_keep_the_stop(self) -> None:
+        for record in (_settings(self.stop), _command_done(self.stop, "t1")):
+            with self.subTest(kind=record["payload"]["type"]):
+                self.assertAlmostEqual(
+                    self.stop, self._collect([*self._head(), record])["turn_end_at"], delta=1.0
+                )
+
     def test_a_non_turn_record_inside_the_activity_grace_leaves_the_stop(self) -> None:
         session = self._collect([*self._head(), _settings(self.stop + 5)])
         self.assertAlmostEqual(self.stop, session["turn_end_at"], delta=1.0)
@@ -208,6 +225,15 @@ class CodexTranscriptNewestTurnRecordTest(RuntimeTestCase):
             [_started(100), _complete(200), _started(300, "t2"), _aborted(400, "t2")]
         )
         self.assertAlmostEqual(400, info["last_turn_ts"], delta=1.0)
+        self.assertEqual(0, info["turn_stop_ts"])
+
+    def test_an_abort_at_the_finish_timestamp_leaves_no_standing_stop(self) -> None:
+        info = self._analyze([_started(100), _complete(200), _aborted(200)])
+        self.assertEqual(0, info["turn_stop_ts"])
+        self.assertAlmostEqual(200, info["last_turn_ts"], delta=1.0)
+
+    def test_a_later_completion_can_restore_a_stop_at_the_same_timestamp(self) -> None:
+        info = self._analyze([_started(100), _complete(200), _aborted(200), _complete(200, "t2")])
         self.assertAlmostEqual(200, info["turn_stop_ts"], delta=1.0)
 
     def test_a_rollout_with_no_record_reports_zero(self) -> None:

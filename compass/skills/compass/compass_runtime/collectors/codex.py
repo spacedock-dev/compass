@@ -413,7 +413,7 @@ def transcript_turn_end(
 
     Codex's own `task_complete` (owner, 2026-11-02), read as Claude Code's transcript stop is
     (`collectors.claude.transcript_turn_end`): for a board no Codex hook reaches and for a stop
-    from before a restart. It stands only while no turn record is newer than it (a
+    from before a restart. It stands only while no turn record follows it in the rollout (a
     `turn_aborted` is one, so an aborted turn publishes no stop), no subagent is running, and no
     other work is newer by more than the activity grace. Never written as `finished_at`.
     """
