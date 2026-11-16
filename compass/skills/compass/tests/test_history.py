@@ -17,6 +17,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -1603,6 +1604,78 @@ class ForgetPreservesStoresWhoseDashboardMayBeElsewhereTest(HistoryStoreTestCase
         self.assertEqual(0, code, said)
         self.assertEqual(len(modules), len(attempts))
         self.assertTrue(lifecycle.write_state(self.config(), 9554, started=2.0))
+
+    def test_an_interaction_start_refused_during_cleanup_cannot_recreate_history(self) -> None:
+        from compass_runtime import (  # noqa: PLC0415
+            aggregate,
+            cli,
+            http_api,
+            lifecycle,
+            update_check,
+        )
+
+        self.seed_stores()
+        path = Path(history.store_path(self.config()))
+        registration = Path(self.state_home, "interaction-registration.json")
+        delete_history = history.forget
+        server_type = http_api.CompassHTTPServer
+        startup_results = []
+
+        def bind_ephemeral(address: Any, *args: Any, **kwargs: Any) -> Any:
+            del address
+            return server_type(("127.0.0.1", 0), *args, **kwargs)
+
+        def at_readiness() -> None:
+            self.assertTrue(Path(self.state_home, "compass-9554.json").exists())
+            self.assertTrue(registration.exists())
+            self.assertTrue(path.exists())
+
+        def start_interaction() -> int:
+            with (
+                mock.patch.object(
+                    aggregate,
+                    "default_harnesses",
+                    return_value=(stub_spec([loaded_row(last_activity=time.time())]),),
+                ),
+                mock.patch.object(http_api, "CompassHTTPServer", side_effect=bind_ephemeral),
+                mock.patch.object(server_type, "serve_forever", side_effect=at_readiness),
+                mock.patch.object(lifecycle, "run_producer"),
+                mock.patch.object(update_check, "start"),
+                mock.patch.object(update_check, "print_startup_hint"),
+            ):
+                return cli.main(
+                    [
+                        "--port",
+                        "9554",
+                        "--no-events",
+                        "--interaction-origin-session",
+                        "claude:sid-1",
+                        "--interaction-origin-registration-file",
+                        str(registration),
+                    ]
+                )
+
+        def delete_then_start(config: RuntimeConfig) -> bool:
+            deleted = delete_history(config)
+            self.assertTrue(deleted)
+            self.assertFalse(path.exists())
+            startup_results.append(start_interaction())
+            return deleted
+
+        with mock.patch.object(history, "forget", side_effect=delete_then_start):
+            code, said = self.forget()
+        self.assertEqual(0, code, said)
+        self.assertEqual([1], startup_results)
+        self.assertIn("lifecycle lock", said)
+        self.assertFalse(registration.exists())
+        self.assertFalse(path.exists(), "a refused startup recreated history during cleanup")
+
+        with (
+            mock.patch.dict(os.environ, {COMPASS_HOME_ENV: self.state_home}),
+            contextlib.redirect_stdout(std_io.StringIO()),
+        ):
+            self.assertEqual(0, start_interaction())
+        self.assertTrue(path.exists(), "a successful interaction startup still records history")
 
     def test_a_killed_cleanup_cannot_leave_a_lock_that_prevents_dashboard_startup(self) -> None:
         from compass_runtime import lifecycle  # noqa: PLC0415

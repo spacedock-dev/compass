@@ -163,7 +163,7 @@ If permissions block `--status` or `--stop`, it prints "Compass's connection to 
 blocked by a sandbox or permissions." and exits non-zero without changing anything or claiming
 whether a dashboard runs.
 
-The server writes fifteen files, all under `~/.compass` (relocatable with `COMPASS_HOME`):
+The server writes sixteen files, all under `~/.compass` (relocatable with `COMPASS_HOME`):
 `compass-<port>.json`, which records the running instance; `compass-<port>.json.origin`, its
 nonsecret machine, boot and namespace identity; `compass-<port>.json.lock`, its persistent state
 publication lock; `compass-lifecycle.lock`, the persistent cleanup and state publication lock;

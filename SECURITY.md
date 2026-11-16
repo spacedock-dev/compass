@@ -4390,11 +4390,12 @@ how hard, to anyone who can read the notification stream. That is stated here ra
 
 ## Process lifecycle: written paths, and `/api/shutdown`
 
-The server writes fourteen files, all under `~/.compass` (relocatable with `COMPASS_HOME`,
+The server writes fifteen files, all under `~/.compass` (relocatable with `COMPASS_HOME`,
 authoritative when nonblank): `compass-<port>.json`, recording the running instance (`pid`, `port`,
 `started`, `log`, `python`, `state_format`); `compass-<port>.json.origin`, a nonsecret record tied to that
 instance's pid, port and start time; `compass-<port>.json.lock`, the persistent OS lock used to
-serialize state publication and removal; `compass-<port>.log`, where a detached (`--daemon`) instance's
+serialize state publication and removal; `compass-lifecycle.lock`, the persistent OS lock shared
+by store deletion and state publication; `compass-<port>.log`, where a detached (`--daemon`) instance's
 output goes; `compass-dismissals.json`, the sessions the reader marked handled, described in
 Dismissals below; `observer/<harness>_<sid>.json`, the sidecar `GET /api/observe` records when a
 reader opens that panel for a session, named in invariant 2 above; `compass-history.json`, the
@@ -4412,12 +4413,12 @@ prototype below and not reached by `--forget`; and `compass-typed-presses.json`,
 typed `/compass:compass drift` commands a press from inside a session started a reading on, owner-only
 and described in the drift action's row of What can reach into a session above, which `--forget`
 keeps because it guards the spend as the spend timestamps do. One forwarder writes a
-fifteenth, in the same directory and named in invariant 2 above:
+sixteenth, in the same directory and named in invariant 2 above:
 `statusline_hook.py` keeps `statusline-<harness>-<session>.json` per conversation, holding a
 normalized state name and a timestamp, so a status line that fires many times a turn posts once. The directory is created `0o700` because the log can carry local paths: uncaught
 tracebacks land there, not just Python-level prints. Nothing ever removes or rotates the log. A
-clean shutdown removes that instance's state and origin record but leaves its log and lock
-file behind. A crash can leave the state and origin too. The log records a detached run, so
+clean shutdown removes that instance's state and origin record but leaves its log and both lock
+files behind. A crash can leave the state and origin too. The log records a detached run, so
 `~/.compass` accumulates one log file per port indefinitely.
 
 A failed loopback probe cannot establish that a recorded dashboard is dead: a container can
@@ -5037,7 +5038,9 @@ press Ctrl+C in its foreground terminal. If it already stopped, verify that ther
 only its state file and matching `.origin` file. With no state files, the selected-port check still
 applies. Cleanup and dashboard state publication take the same OS lock in that folder,
 `compass-lifecycle.lock`. Cleanup checks again under the lock and holds it through every store
-change. A competing cleanup or dashboard startup refuses clearly; retry after the holder finishes.
+change. Interaction discovery collects sessions only after successful state publication, so a
+startup refused during cleanup cannot recreate history. A competing cleanup or dashboard startup
+refuses clearly; retry after the holder finishes.
 The lock file stays in place, but killing its holder releases the OS lock. Locking that is unavailable
 or unsupported refuses cleanup and state publication. This exclusion requires both commands to use
 a build with this lock; stop dashboards using older builds before cleanup.

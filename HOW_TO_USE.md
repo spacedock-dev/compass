@@ -717,7 +717,8 @@ from Compass, which hold no text either.
 
 Stop every dashboard sharing the Compass folder first. Cleanup and dashboard state publication
 share a folder lock. If another cleanup or startup holds it, the competing command refuses clearly;
-retry after it finishes. Killing a holder releases the lock, so a leftover lock file needs no manual
+retry after it finishes. A startup refused during cleanup does not recreate history through
+interaction discovery. Killing a holder releases the lock, so a leftover lock file needs no manual
 removal. This requires both commands to use a build with the lock; stop dashboards using older
 builds first.
 `--forget` refuses while an instance answers on the selected port, naming all four stores it

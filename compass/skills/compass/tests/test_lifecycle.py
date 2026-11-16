@@ -525,6 +525,55 @@ class CleanupRefusesDashboardStartupTest(support.RuntimeTestCase):
             server.server_close.assert_called_once()
             self.assertFalse(Path(tmp, "compass-9554.json").exists())
 
+    def test_a_dashboard_names_each_unavailable_lifecycle_lock_before_starting_work(self) -> None:
+        for outcome in ("busy", "denied", "unsupported", "uncreatable"):
+            with (
+                self.subTest(outcome=outcome),
+                tempfile.TemporaryDirectory() as tmp,
+                mock.patch.dict(os.environ, {"COMPASS_HOME": tmp}),
+                mock.patch.object(
+                    runtime_io, "held_file_lock", return_value=contextlib.nullcontext(outcome)
+                ),
+                mock.patch.object(cli, "build_server") as build,
+                mock.patch.object(reading_jobs, "recover") as recover,
+                mock.patch.object(update_check, "start") as update,
+                mock.patch.object(update_check, "print_startup_hint"),
+                contextlib.redirect_stdout(io.StringIO()) as output,
+            ):
+                server = mock.Mock(spec=["serve_forever", "server_close"])
+                build.return_value = server
+                self.assertEqual(1, cli.main(["--port", "9554", "--no-events"]))
+                self.assertIn("lifecycle lock", output.getvalue())
+                self.assertIn(outcome, output.getvalue())
+                self.assertIn("Retry", output.getvalue())
+                recover.assert_not_called()
+                update.assert_not_called()
+                server.serve_forever.assert_not_called()
+                server.server_close.assert_called_once()
+                self.assertFalse(Path(tmp, "compass-9554.json").exists())
+
+    def test_a_dashboard_can_retry_the_command_after_cleanup_releases_its_lock(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.dict(os.environ, {"COMPASS_HOME": tmp}),
+            mock.patch.object(cli, "build_server") as build,
+            mock.patch.object(lifecycle, "run_producer"),
+            mock.patch.object(update_check, "start"),
+            mock.patch.object(update_check, "print_startup_hint"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            refused = mock.Mock(spec=["serve_forever", "server_close"])
+            retried = mock.Mock(spec=["serve_forever", "server_close"])
+            build.side_effect = [refused, retried]
+            with runtime_io.held_file_lock(Path(tmp, "compass-lifecycle.lock"), wait=0) as held:
+                self.assertEqual("held", held)
+                self.assertEqual(1, cli.main(["--port", "9554", "--no-events"]))
+            self.assertEqual(0, cli.main(["--port", "9554", "--no-events"]))
+            refused.serve_forever.assert_not_called()
+            retried.serve_forever.assert_called_once()
+            retried.server_close.assert_called_once()
+            self.assertTrue(Path(tmp, "compass-lifecycle.lock").exists())
+
 
 class CompassServerTest(support.RuntimeTestCase):
     # Measures connection-cap retry timers and busy-probe deadlines on real sockets.

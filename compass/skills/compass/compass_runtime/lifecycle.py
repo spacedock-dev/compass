@@ -1404,6 +1404,7 @@ def serve(  # noqa: C901, PLR0915 - ordered signal, recovery, serving and shutdo
     *,
     started: float,
     announce_fd: int | None = None,
+    before_ready: Callable[[], None] | None = None,
     diagnostic_sink: Callable[[str], None] = print,
 ) -> None:
     """Announce, record, serve, and clean up after only this instance.
@@ -1412,17 +1413,6 @@ def serve(  # noqa: C901, PLR0915 - ordered signal, recovery, serving and shutdo
     first, and this listener is IPv4-only, so the literal address is the one
     that always connects.
     """
-    prototype = getattr(server, "interaction_prototype", None)
-    if prototype is not None:
-        try:
-            prototype.start(port)
-        except runtime_interaction.OriginUnavailableError as exc:
-            runtime_io.diag(
-                f"Compass: interaction bootstrap unavailable ({exc}).",
-                diagnostic_sink,
-            )
-            server.server_close()
-            return
     runtime_io.diag(f"Compass: http://127.0.0.1:{port}/", diagnostic_sink)
     observation = getattr(server, "observation", None)
     producer_stop = threading.Event()
@@ -1445,6 +1435,18 @@ def serve(  # noqa: C901, PLR0915 - ordered signal, recovery, serving and shutdo
             capabilities=observation.capabilities() if observation is not None else None,
             diagnostic_sink=diagnostic_sink,
         )
+        if published and before_ready is not None:
+            before_ready()
+        prototype = getattr(server, "interaction_prototype", None)
+        if prototype is not None:
+            try:
+                prototype.start(port)
+            except runtime_interaction.OriginUnavailableError as exc:
+                runtime_io.diag(
+                    f"Compass: interaction bootstrap unavailable ({exc}).",
+                    diagnostic_sink,
+                )
+                return
         if announce_fd is not None:
             # After write_state, so --status works the instant the parent returns.
             daemon_announce(announce_fd)

@@ -225,7 +225,8 @@ cleanup, leaving every store unchanged. Run `--stop --port PORT` where the recor
 or press Ctrl+C in its foreground terminal. If it has already stopped, verify that there before
 removing only its state file and matching `.origin` file, then retry. With no state files, cleanup
 behaves as usual. Cleanup repeats these checks under the folder's `compass-lifecycle.lock` OS lock,
-held through every store change. Dashboard state publication takes the same lock. A competing
+held through every store change. Dashboard state publication takes the same lock and precedes
+interaction discovery, which can write history. A competing
 cleanup or startup refuses clearly; retry after the holder finishes. Killing a holder releases the
 lock, even though the lock file remains. Unavailable or unsupported locking refuses cleanup and
 state publication. Both commands must use a build with this lock; stop dashboards using older

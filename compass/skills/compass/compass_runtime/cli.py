@@ -88,30 +88,34 @@ def build_server(
     application: aggregate.Application,
     page_bytes: bytes,
     coordinator: observation.Observation | None,
-    *,
-    interaction_session: str | None,
-    interaction_registration_file: Path | None,
 ) -> http_api.CompassHTTPServer:
-    """Keep the verified and focus-capable pages separate; attach the optional terminal."""
-    prototype = None
-    if interaction_session is not None:
-        known_sessions = collected_session_ids(application)
-        prototype = runtime_interaction.InteractionPrototype(
-            collected_session_id=interaction_session,
-            session_exists=known_sessions.__contains__,
-            registration_file=interaction_registration_file,
-        )
+    """Keep the verified and focus-capable pages separate."""
     return http_api.CompassHTTPServer(
         address,
         application,
         page_bytes,
         coordinator,
-        interaction_prototype=prototype,
         injected_page_bytes=(
             inject_focus_capability(page_bytes, coordinator.focus_capability())
             if coordinator is not None and application.config.focus_enabled
             else page_bytes
         ),
+    )
+
+
+def prepare_interaction(
+    server: http_api.CompassHTTPServer,
+    application: aggregate.Application,
+    session: str,
+    registration_file: Path | None,
+) -> None:
+    # Collection can write history and overlays. Freeze identities only after
+    # publication excludes cleanup, before registration or readiness can proceed.
+    known_sessions = collected_session_ids(application)
+    server.interaction_prototype = runtime_interaction.InteractionPrototype(
+        collected_session_id=session,
+        session_exists=known_sessions.__contains__,
+        registration_file=registration_file,
     )
 
 
@@ -1257,8 +1261,6 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
             application,
             page_bytes,
             coordinator,
-            interaction_session=args.interaction_origin_session,
-            interaction_registration_file=args.interaction_origin_registration_file,
         )
     except OSError as exc:
         runtime_io.diag(http_api.bind_error_message(exc, args.port, args.host), print)
@@ -1285,7 +1287,23 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
         update_check.print_startup_hint(config)
 
     try:
-        lifecycle.serve(config, server, args.port, started=started, announce_fd=announce_fd)
+        lifecycle.serve(
+            config,
+            server,
+            args.port,
+            started=started,
+            announce_fd=announce_fd,
+            before_ready=(
+                lambda: prepare_interaction(
+                    server,
+                    application,
+                    args.interaction_origin_session,
+                    args.interaction_origin_registration_file,
+                )
+            )
+            if args.interaction_origin_session is not None
+            else None,
+        )
     except lifecycle.StateOwnershipError as exc:
         runtime_io.diag(str(exc), print)
         return 1
