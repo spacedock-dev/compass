@@ -1035,13 +1035,19 @@ class Observation:
             self._parents[key] = (parent, now)
         else:
             return
+        if event.declared_parent is not None or key in self._unpersisted_parents:
+            self._unpersisted_parents[key] = self._parents[key]
         stored = declared_parent_store.record(
-            self.config, key, event.declared_parent, now=now, diagnostic_sink=self.diagnostic_sink
+            self.config,
+            key,
+            event.declared_parent,
+            now=now,
+            diagnostic_sink=self.diagnostic_sink,
+            pending=self._unpersisted_parents,
         )
         if stored is None:
             self._unpersisted_parents[key] = self._parents[key]
         else:
-            self._unpersisted_parents.pop(key, None)
             self._restore_parents(stored)
 
     def _prune_parents(self, keys: set[SessionKey], now: float) -> None:
@@ -1049,19 +1055,30 @@ class Observation:
         for key, (_, at) in list(self._parents.items()):
             if key not in keys and now - at >= self.config.focus_target_ttl_sec:
                 del self._parents[key]
-        stored = declared_parent_store.prune(
-            self.config, keys, now=now, diagnostic_sink=self.diagnostic_sink
-        )
         self._unpersisted_parents = {
             key: value for key, value in self._unpersisted_parents.items() if key in self._parents
         }
+        stored = declared_parent_store.prune(
+            self.config,
+            keys,
+            now=now,
+            diagnostic_sink=self.diagnostic_sink,
+            pending=self._unpersisted_parents,
+        )
         if stored is not None:
             self._restore_parents(stored)
 
     def _restore_parents(self, stored: declared_parent_store.Claims) -> None:
-        self._parents = dict(stored)
-        for key, value in self._unpersisted_parents.items():
-            if key in stored and stored[key][1] >= value[1]:
+        # A successful unrelated write or a newer timestamp for a different
+        # parent does not confirm that this run's accepted claim was saved.
+        self._unpersisted_parents = {
+            key: value
+            for key, value in self._unpersisted_parents.items()
+            if stored.get(key) != value
+        }
+        self._parents = dict(self._unpersisted_parents)
+        for key, value in stored.items():
+            if key in self._unpersisted_parents:
                 continue
             if key in self._parents or len(self._parents) < min(
                 declared_parent_store.MAX_SESSIONS, self.config.event_overlay_max_sessions

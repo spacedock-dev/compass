@@ -18,6 +18,7 @@ from unittest import mock
 from compass_runtime import aggregate, cli, declared_sessions, lifecycle, observation
 from compass_runtime import annotations as annotation_store
 from compass_runtime import declared_parent_store as store
+from compass_runtime import io as runtime_io
 
 from .support import make_runtime
 from .test_declared_sessions import CHILD, NOW, PARENT, row
@@ -110,6 +111,7 @@ class DurableClaims(unittest.TestCase):
         outside.write_text("untouched")
         for kind in ("symlink", "fifo", "lock", "directory"):
             with self.subTest(kind=kind):
+                self.messages.clear()
                 if kind == "fifo" and not hasattr(os, "mkfifo"):
                     continue
                 target = store.parent / "claims.lock" if kind == "lock" else store
@@ -142,6 +144,33 @@ class DurableClaims(unittest.TestCase):
         self.declare(self.source())
         self.assertEqual([], list(other.iterdir()))
 
+    def test_busy_lock_does_not_publish_or_forget(self) -> None:
+        path = Path(store.store_path(self.config))
+        key = ("claude", CHILD[:8])
+        parent = {"harness": "claude", "sid": PARENT}
+        for operation in ("record", "forget"):
+            with self.subTest(operation=operation):
+                self.declare(self.source())
+                before = path.read_bytes()
+                self.messages.clear()
+                with runtime_io.held_file_lock(path.parent / "claims.lock", wait=0.1) as held:
+                    self.assertEqual(runtime_io.LOCK_HELD, held)
+                    self.now += 1
+                    if operation == "record":
+                        self.assertIsNone(
+                            store.record(
+                                self.config,
+                                key,
+                                parent,
+                                now=self.now,
+                                diagnostic_sink=self.messages.append,
+                            )
+                        )
+                        self.assertTrue(any("unavailable" in message for message in self.messages))
+                    else:
+                        self.assertFalse(store.forget(self.config))
+                    self.assertEqual(before, path.read_bytes())
+
     def test_corrupt_or_unwritable_store_is_diagnosed_and_not_overwritten(self) -> None:
         store = self.home / "declared-parents" / "claims.json"
         store.parent.mkdir(mode=0o700)
@@ -167,6 +196,113 @@ class DurableClaims(unittest.TestCase):
         self.now += self.config.focus_target_ttl_sec + 1
         source.note_rows(set())
         self.assertEqual({}, source.parent_declarations())
+
+    def test_failed_initial_claim_survives_a_later_event(self) -> None:
+        self.assert_failed_claim_recovers(replacing=False)
+
+    def test_failed_replacement_is_not_reverted_by_a_later_event(self) -> None:
+        self.assert_failed_claim_recovers(replacing=True)
+
+    def test_later_event_preserves_another_writers_persisted_replacement(self) -> None:
+        source = self.source()
+        self.declare(source)
+        self.now += 1
+        parent = {"harness": "claude", "sid": "87654321-3456-7890-abcd-ef1234567890"}
+        self.assertEqual(
+            "accepted",
+            self.source().submit(
+                "claude",
+                {
+                    "v": 1,
+                    "event": "session_started",
+                    "session_id": CHILD,
+                    "declared_parent": parent,
+                },
+            ),
+        )
+        self.now += 1
+        self.assertEqual(
+            "accepted",
+            source.submit("claude", {"v": 1, "event": "turn_started", "session_id": CHILD}),
+        )
+        expected = {("claude", CHILD[:8]): parent}
+        self.assertEqual(expected, source.parent_declarations())
+        self.assertEqual(expected, self.source().parent_declarations())
+
+    def test_pending_claim_is_retried_by_collection_or_another_sessions_write(self) -> None:
+        for trigger in ("collection", "other_session"):
+            with self.subTest(trigger=trigger):
+                source = self.source()
+                with mock.patch.object(
+                    runtime_io, "atomic_write_owner_only", side_effect=OSError("transient")
+                ):
+                    self.declare(source)
+                expected = {"harness": "claude", "sid": PARENT}
+                self.now += 1
+                if trigger == "collection":
+                    source.note_rows({("claude", CHILD[:8])})
+                else:
+                    self.declare(source, "87654321-3456-7890-abcd-ef1234567890")
+                self.assertEqual(expected, source.parent_declarations()[("claude", CHILD[:8])])
+                self.assertEqual(
+                    expected, self.source().parent_declarations()[("claude", CHILD[:8])]
+                )
+                self.assertTrue(store.forget(self.config))
+
+    def test_successful_write_that_cannot_fit_pending_claim_keeps_it_in_memory(self) -> None:
+        self.config = dataclasses.replace(self.config, event_overlay_max_sessions=1)
+        source = self.source()
+        with mock.patch.object(
+            runtime_io, "atomic_write_owner_only", side_effect=OSError("transient")
+        ):
+            self.declare(source)
+        expected = {("claude", CHILD[:8]): {"harness": "claude", "sid": PARENT}}
+        other = "87654321-3456-7890-abcd-ef1234567890"
+        self.declare(self.source(), other)
+        self.now += 1
+        source.note_rows({("claude", CHILD[:8]), ("claude", other[:8])})
+        self.assertEqual(expected, source.parent_declarations())
+        self.assertEqual(
+            "accepted",
+            source.submit("claude", {"v": 1, "event": "turn_started", "session_id": CHILD}),
+        )
+        self.assertEqual(expected, source.parent_declarations())
+        self.assertTrue(store.forget(self.config))
+        source.note_rows({("claude", CHILD[:8])})
+        self.assertEqual(expected, self.source().parent_declarations())
+
+    def assert_failed_claim_recovers(self, *, replacing: bool) -> None:
+        source = self.source()
+        if replacing:
+            self.declare(source)
+        parent = "87654321-3456-7890-abcd-ef1234567890" if replacing else PARENT
+        expected = {("claude", CHILD[:8]): {"harness": "claude", "sid": parent}}
+        self.now += 1
+        with mock.patch.object(
+            runtime_io, "atomic_write_owner_only", side_effect=OSError("transient")
+        ):
+            self.assertEqual(
+                "accepted",
+                source.submit(
+                    "claude",
+                    {
+                        "v": 1,
+                        "event": "session_started",
+                        "session_id": CHILD,
+                        "declared_parent": expected[("claude", CHILD[:8])],
+                    },
+                ),
+            )
+        self.assertEqual(expected, source.parent_declarations())
+        source.note_rows({("claude", CHILD[:8])})
+        self.assertEqual(expected, source.parent_declarations())
+        self.now += 1
+        self.assertEqual(
+            "accepted",
+            source.submit("claude", {"v": 1, "event": "turn_started", "session_id": CHILD}),
+        )
+        self.assertEqual(expected, source.parent_declarations())
+        self.assertEqual(expected, self.source().parent_declarations())
 
     def test_in_memory_capacity_and_expiry_hold_when_storage_is_unavailable(self) -> None:
         self.config = dataclasses.replace(self.config, event_overlay_max_sessions=1)

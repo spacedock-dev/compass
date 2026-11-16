@@ -410,10 +410,12 @@ The schema, identities and timestamps are validated on reload. Original retentio
 survive restart; loading cannot renew a working deadline. Once current visibility is known,
 absent claims expire after the configured activity window without an event. Visible claims remain
 until they leave that window and expire. A corrupt, unreadable or unsafe store is refused rather
-than overwritten. Failed writes are diagnosed; received claims can remain in memory for this run,
-but may be lost on restart. `--no-events` neither loads nor saves claims. `--forget` removes them
-while preserving user-authored groups. Persistence cannot recover SessionStart events never
-received, including claims lost before upgrading from the memory-only implementation.
+than overwritten. Failed writes are diagnosed; received claims remain authoritative in memory
+until expiry, replacement or a later write saves them. Event and collection writes retry them,
+but claims still pending may be lost on restart. `--no-events` neither loads nor saves claims.
+`--forget` removes them while preserving user-authored groups. Persistence cannot recover
+SessionStart events never received, including claims lost before upgrading from the memory-only
+implementation.
 
 A forged or mistaken link can nest one of the user's own rows under another and hold an otherwise
 idle parent Working while a linked child works. The hold ends when the child is idle, finished or

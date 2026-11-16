@@ -120,6 +120,7 @@ def change(
     *,
     now: float,
     diagnostic_sink: Callable[[str], None],
+    pending: Claims | None = None,
 ) -> Claims | None:
     """Merge under a stable lock; refuse unknown data instead of replacing it with memory."""
     path = store_path(config)
@@ -133,6 +134,11 @@ def change(
                     raise OSError("declaration lock unavailable")  # noqa: TRY301 - one diagnostic for every persistence refusal
                 claims = _read(config, now)
                 before = dict(claims)
+                for key, value in (pending or {}).items():
+                    if key in claims or len(claims) < min(
+                        MAX_SESSIONS, config.event_overlay_max_sessions
+                    ):
+                        claims[key] = value
                 update(claims)
                 if claims != before:
                     runtime_io.atomic_write_owner_only(
@@ -151,6 +157,7 @@ def record(
     *,
     now: float,
     diagnostic_sink: Callable[[str], None],
+    pending: Claims | None = None,
 ) -> Claims | None:
     def update(claims: Claims) -> None:
         existing = claims.get(key)
@@ -162,18 +169,23 @@ def record(
         elif existing is not None:
             claims[key] = (existing[0], now)
 
-    return change(config, update, now=now, diagnostic_sink=diagnostic_sink)
+    return change(config, update, now=now, diagnostic_sink=diagnostic_sink, pending=pending)
 
 
 def prune(
-    config: RuntimeConfig, visible: set[Key], *, now: float, diagnostic_sink: Callable[[str], None]
+    config: RuntimeConfig,
+    visible: set[Key],
+    *,
+    now: float,
+    diagnostic_sink: Callable[[str], None],
+    pending: Claims | None = None,
 ) -> Claims | None:
     def update(claims: Claims) -> None:
         for key, (_, at) in list(claims.items()):
             if key not in visible and now - at >= config.focus_target_ttl_sec:
                 del claims[key]
 
-    return change(config, update, now=now, diagnostic_sink=diagnostic_sink)
+    return change(config, update, now=now, diagnostic_sink=diagnostic_sink, pending=pending)
 
 
 def forget(config: RuntimeConfig) -> bool:

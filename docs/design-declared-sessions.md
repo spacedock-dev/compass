@@ -24,11 +24,14 @@ atomic write and stable lock. Read-modify-write preserves concurrent writers, at
 and 256 KiB. Reload validates schema, identities and finite positive timestamps without renewing
 them. Expiry waits until row visibility is known: an old visible coordinator survives, while an
 absent claim expires after the focus-target inactivity TTL. A malformed or unreadable store is
-refused rather than replaced. Failed writes are diagnosed and leave bounded claims in memory;
-collection must not erase that fallback. `--forget` removes the claims, leaving the stable lock
-file. `--no-events` constructs no coordinator and restores nothing. Persistence cannot recover
-SessionStart events never received, including claims lost before upgrading from memory-only
-storage. Ended rows can still describe their declared parent while they remain on the board.
+refused rather than replaced. Failed writes are diagnosed and leave bounded claims authoritative
+in memory until expiry or replacement. Later event and collection writes retry pending claims;
+only a stored snapshot containing the same claim and retention timestamp clears its fallback.
+An unrelated successful write or an older saved parent cannot clear it. `--forget` removes the
+claims, leaving the stable lock file. `--no-events` constructs no coordinator and restores nothing.
+Persistence cannot recover SessionStart events never received, including claims lost before
+upgrading from memory-only storage. Ended rows can still describe their declared parent while they
+remain on the board.
 
 ## Resolution and cycles
 
