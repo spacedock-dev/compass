@@ -9,6 +9,7 @@ import itertools
 import json
 import os
 import shutil
+import socket
 import subprocess
 import tempfile
 import threading
@@ -1515,11 +1516,61 @@ class ObserverRouteTest(RuntimeTestCase):
 
     def _get(self, server: Any, query: str) -> tuple[int, bytes]:
         conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=30)
-        conn.request("GET", "/api/observe" + query)
+        conn.request(
+            "GET",
+            "/api/observe" + query,
+            headers={"Origin": f"http://127.0.0.1:{server.server_port}"},
+        )
         response = conn.getresponse()
         body = response.read()
         conn.close()
         return response.status, body
+
+    def test_an_image_without_origin_or_fetch_metadata_cannot_record_an_observation(self) -> None:
+        sid = "abcdef12-3456-7890-abcd-ef1234567890"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "projects" / "repo"
+            project.mkdir(parents=True)
+            (project / f"{sid}.jsonl").write_text(
+                _claude_message("u1", "user", "Fix the failing build") + "\n", encoding="utf-8"
+            )
+            with (
+                store_patch(PROJECTS_DIR=str(project.parent)),
+                mock.patch.dict(os.environ, {"COMPASS_HOME": str(root / "home")}),
+            ):
+                httpd = make_server()
+            thread = threading.Thread(target=poll_fast(httpd), daemon=True)
+            thread.start()
+            try:
+                sidecar = observer.sidecar_path(httpd.application.config, "claude", sid)
+                assert sidecar is not None
+                for metadata, expected in (
+                    ("", 403),
+                    (f"Origin: http://127.0.0.1:{httpd.server_port}\r\n", 200),
+                    ("Sec-Fetch-Site: same-origin\r\nSec-Fetch-Mode: cors\r\n", 200),
+                ):
+                    with self.subTest(metadata=metadata):
+                        Path(sidecar).unlink(missing_ok=True)
+                        with socket.create_connection(
+                            ("127.0.0.1", httpd.server_port), timeout=10
+                        ) as sock:
+                            sock.sendall(
+                                (
+                                    f"GET /api/observe?harness=claude&sid={sid} HTTP/1.1\r\n"
+                                    f"Host: 127.0.0.1:{httpd.server_port}\r\n"
+                                    f"{metadata}Connection: close\r\n\r\n"
+                                ).encode()
+                            )
+                            response = http.client.HTTPResponse(sock)
+                            response.begin()
+                            response.read()
+                        self.assertEqual(expected == 200, Path(sidecar).exists())
+                        self.assertEqual(expected, response.status)
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+                thread.join(2)
 
     def test_the_route_answers_with_the_sidecar_and_writes_it(self) -> None:
         # A CLAUDE-shaped record in the Claude store. It used to be Pi's

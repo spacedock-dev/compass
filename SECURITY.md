@@ -367,7 +367,10 @@ The posture rests on two invariants:
    block and records the answer as a sidecar under `~/.compass/observer/`, again Compass's own
    state and never a harness store. It answers only a loopback request that carries no proxy
    forwarding header and refuses a document or frame navigation, so a non-default bind does not
-   widen it. Its two components are the harness key and the session id, and
+   widen it. It also requires an admitted Origin or `Sec-Fetch-Site: same-origin`; a GET with
+   neither is refused before reading a transcript or writing a sidecar. Older browsers that send
+   neither on cross-site images cannot trigger it. A direct client must supply the board's Origin.
+   Its two components are the harness key and the session id, and
    both must match `[A-Za-z0-9._-]{1,128}` before either reaches a path. `records.safe_text`
    bounds a string and strips control characters, and passes a separator straight through, so the
    grammar is what keeps the write inside that directory rather than the join. The file holds

@@ -409,6 +409,8 @@ class _Collected(_Config):
         try:
             payload = None if body is None else json.dumps(body).encode()
             headers = {} if body is None else {"Content-Type": "application/json"}
+            if path.startswith("/api/observe?"):
+                headers["Origin"] = f"http://127.0.0.1:{port}"
             conn.request(method, path, body=payload, headers=headers)
             response = conn.getresponse()
             return response.status, response.read()

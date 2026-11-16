@@ -2658,7 +2658,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
         The operator triggers it by clicking "observe" on a session card.
         Strictly same-origin: the route answers only loopback requests.
         """
-        if not self._loopback_read_ok():
+        # Unlike a read, this GET writes. An old browser's cross-site image carries neither
+        # Origin nor fetch metadata; a same-origin fetch must identify itself here.
+        if not self._loopback_read_ok() or not (
+            self.headers.get("Origin")
+            or (self.headers.get("Sec-Fetch-Site") or "").lower() == "same-origin"
+        ):
             self.send_error(403)
             return
         query = parse_qs(url.query)

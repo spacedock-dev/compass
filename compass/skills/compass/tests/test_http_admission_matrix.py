@@ -404,6 +404,9 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
                             with self.subTest(path=path, kind=kind, body=body, available=available):
                                 self.assertEqual(403, self.request("POST", path, kind, body))
 
+    def test_an_observation_without_origin_or_fetch_metadata_is_refused(self) -> None:
+        self.assertEqual(403, self.request("GET", "/api/observe", "local"))
+
     def test_valid_discard_rejects_lan_and_forwarding(self) -> None:
         self.assertTrue(http_api._RequestHandler._valid_long_discard(VALID_DISCARD))
         with mock.patch.object(
