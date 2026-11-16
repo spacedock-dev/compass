@@ -662,6 +662,9 @@ class Observation:
             return False
         if key in self._ended:
             del self._ended[key]
+            self._git.pop(key, None)
+            if event.event == "store_changed":
+                self._finished.pop(key, None)
             return True
         return False
 

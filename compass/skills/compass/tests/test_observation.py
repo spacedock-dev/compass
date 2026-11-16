@@ -400,7 +400,7 @@ class LedgerTest(ObservationTestCase):
         self.assertEqual({("claude", PREFIX): NOW}, ends.restored(ends.load(coordinator.config)))
 
     def test_a_lifted_end_is_removed_from_the_end_store(self) -> None:
-        # Delete-through on the same three edges `_lift_ended` forgets on;
+        # Delete-through on the activity edges that lift an end;
         # without it a `claude --resume <id>` would come back ended after the
         # next restart even though this run had already lifted the mark.
         for event in ("session_started", "turn_started", "input_requested"):
@@ -2729,6 +2729,46 @@ class GitProbeDispatchTest(ObservationTestCase):
         self.assertIsNotNone(coordinator.git_for("claude", PREFIX))
         coordinator.submit("claude", self.envelope(event="turn_started"))
         self.assertIsNone(coordinator.git_for("claude", PREFIX))
+
+    def test_later_tool_activity_discards_the_previous_ends_stop_and_git_reading(self) -> None:
+        coordinator = self.build()
+        coordinator._spawn = lambda run: run()
+        coordinator._git_prober = lambda _cwd: git_status.GitStatus(dirty=False, changed=0)
+        coordinator.submit("claude", self.envelope(event="turn_stopped"))
+        self.now += 1
+        coordinator.submit("claude", self.end_envelope())
+        self.assertGreater(coordinator.finished_at("claude", PREFIX), 0.0)
+        self.assertIsNotNone(coordinator.git_for("claude", PREFIX))
+
+        self.now += 1
+        coordinator.submit("claude", self.envelope(event="store_changed"))
+        self.assertEqual(0.0, coordinator.ended_at("claude", PREFIX))
+        with self.subTest(state="previous stop"):
+            self.assertEqual(0.0, coordinator.finished_at("claude", PREFIX))
+        with self.subTest(state="previous git reading"):
+            self.assertIsNone(coordinator.git_for("claude", PREFIX))
+
+    def test_a_later_stop_does_not_carry_the_previous_ends_git_reading_into_another_end(
+        self,
+    ) -> None:
+        coordinator = self.build()
+        coordinator._spawn = lambda run: run()
+        coordinator._git_prober = lambda _cwd: git_status.GitStatus(dirty=False, changed=0)
+        coordinator.submit("claude", self.end_envelope())
+        self.assertIsNotNone(coordinator.git_for("claude", PREFIX))
+
+        self.now += 1
+        coordinator.submit("claude", self.envelope(event="turn_stopped"))
+        self.assertEqual(0.0, coordinator.ended_at("claude", PREFIX))
+        self.assertEqual(self.now, coordinator.finished_at("claude", PREFIX))
+        with self.subTest(state="later stop"):
+            self.assertIsNone(coordinator.git_for("claude", PREFIX))
+        self.now += 5
+        coordinator.submit("claude", self.envelope(event="session_ended"))
+        self.assertEqual(self.now, coordinator.ended_at("claude", PREFIX))
+        self.assertEqual(NOW + 1, coordinator.finished_at("claude", PREFIX))
+        with self.subTest(state="later end without cwd"):
+            self.assertIsNone(coordinator.git_for("claude", PREFIX))
 
     def test_a_session_that_reaches_a_gate_discards_its_reading(self) -> None:
         # The same edge on the other kind of alive. A person being asked a
