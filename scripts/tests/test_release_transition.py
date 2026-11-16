@@ -194,6 +194,35 @@ class ResolveTest(unittest.TestCase):
                     rt.resolve(fx.work, "v0.2.0")
                 self.assertIn("refusing to resume", str(caught.exception))
 
+    def test_a_release_with_repeated_keys_or_changed_modes_cannot_be_resumed(self) -> None:
+        for tamper in ("duplicate key", "executable mode"):
+            with self.subTest(tamper=tamper):
+                fx = Fixture(self)
+                fx.commit("feat: work")
+                fx.tag("v0.2.0")
+                rt.bump(fx.work, "0.2.0")
+                path = fx.work / MANIFESTS[1]
+                if tamper == "duplicate key":
+                    body = path.read_text(encoding="utf-8")
+                    description = json.loads(body)["description"]
+                    path.write_text(
+                        '{"description": ' + json.dumps(description) + "," + body[1:],
+                        encoding="utf-8",
+                    )
+                git(fx.work, "add", "-A")
+                if tamper == "executable mode":
+                    git(fx.work, "update-index", "--chmod=+x", MANIFESTS[1])
+                git(
+                    fx.work, "-c", f"user.name={rt.BOT_NAME}", "-c", f"user.email={rt.BOT_EMAIL}",
+                    "commit", "-q", "-m", "chore(release): v0.2.0",
+                )  # fmt: skip
+                git(fx.work, "push", "-q", "origin", "main")
+                fx.fetch()
+                with self.assertRaises(rt.ReleaseError) as caught:
+                    rt.resolve(fx.work, "v0.2.0")
+                self.assertIn(MANIFESTS[1], str(caught.exception))
+                self.assertIn("refusing to resume", str(caught.exception))
+
     def test_a_merge_commit_titled_as_a_release_is_not_resumed(self) -> None:
         # Its diff against the first parent can be the version alone while the second
         # parent brings anything, so a release commit must have exactly one parent.

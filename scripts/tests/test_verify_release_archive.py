@@ -111,6 +111,25 @@ class ArchiveProofTest(unittest.TestCase):
         git(self.fx.work, "commit", "-q", "-m", "chore(release): v0.2.0")
         self.rejected(git(self.fx.work, "rev-parse", "HEAD"), "README.md")
 
+    def test_a_release_commit_with_a_repeated_manifest_key_is_refused(self) -> None:
+        rt.bump(self.fx.work, "0.2.0")
+        path = self.fx.work / MANIFESTS[1]
+        body = path.read_text(encoding="utf-8")
+        description = json.loads(body)["description"]
+        path.write_text(
+            '{"description": ' + json.dumps(description) + "," + body[1:], encoding="utf-8"
+        )
+        git(self.fx.work, "add", "-A")
+        git(self.fx.work, "commit", "-q", "-m", "chore(release): v0.2.0")
+        self.rejected(git(self.fx.work, "rev-parse", "HEAD"), MANIFESTS[1])
+
+    def test_a_release_commit_that_makes_a_manifest_executable_is_refused(self) -> None:
+        rt.bump(self.fx.work, "0.2.0")
+        git(self.fx.work, "add", "-A")
+        git(self.fx.work, "update-index", "--chmod=+x", MANIFESTS[1])
+        git(self.fx.work, "commit", "-q", "-m", "chore(release): v0.2.0")
+        self.rejected(git(self.fx.work, "rev-parse", "HEAD"), MANIFESTS[1])
+
     def test_an_archive_that_differs_from_the_commit_is_refused(self) -> None:
         # export-subst rewrites a blob on the way into the archive, which is the one
         # way `git archive` can ship bytes that the commit's own diff does not show.
@@ -326,7 +345,7 @@ class StricterProofTest(unittest.TestCase):
             vra.check_changes(
                 self.fx.work, git(self.fx.work, "rev-parse", "HEAD"), final, list(MANIFESTS)
             )
-        self.assertIn("missing or not JSON", str(caught.exception))
+        self.assertIn(MANIFESTS[1], str(caught.exception))
 
     def test_the_allowed_paths_come_from_the_verified_script_not_the_release_commit(self) -> None:
         script = self.fx.work / "scripts/bump_version.py"
