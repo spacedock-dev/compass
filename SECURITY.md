@@ -5922,8 +5922,9 @@ response before routing, for GET and POST alike; other methods have no route. Th
 admission refusal, like an untrusted Host, rather than a separate request-parser error.
 
 A POST body is framed by Content-Length alone. A POST carrying `Transfer-Encoding` is refused with
-501 before routing and its connection is closed. Every connection holds a handler thread, so the
-server serves at most 64 at once and answers the next with a 503 carrying `Retry-After: 1` and
+501 before routing and its connection is closed. The listener requests a backlog of 256 pending
+connections to absorb hook bursts; the operating system may cap it. This is separate from active
+handlers. Every accepted connection holds a handler thread, so the server serves at most 64 at once and answers the next with a 503 carrying `Retry-After: 1` and
 closes it rather than queuing it. The MCP server's poll and the `--status`, `--stop` and terminal
 health probes wait that refusal out within their own timeouts rather than reading it as an answer;
 a probe that never gets past it says the dashboard is busy and stops nothing. The terminal Live

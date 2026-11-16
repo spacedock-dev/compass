@@ -356,6 +356,11 @@ class CompassHTTPServer(ThreadingHTTPServer):
     interpreter without either one answering with the other's data.
     """
 
+    # Pending accepts are separate from the 64 active handlers below. A 150-hook raw-socket
+    # burst on macOS/Python 3.12 delivered 49/150 at backlog 5 and 150/150 at 256.
+    # Hooks do not retry, so leave room for a full burst before an accept runs.
+    request_queue_size = 256
+
     # Every connection costs a thread and a descriptor for as long as it lives. Most of the
     # long-lived ones are bounded already: 8 SSE streams (`stream_max_clients`),
     # INTERACTION_STREAM_LIMIT terminal sockets, and one browser's 6-socket pool per origin.
