@@ -175,7 +175,7 @@ _DISPATCH_VALUE_OPTIONS = {
     "--stamp",
     "--workflow-dir",
 }
-_CODEX_ENSIGN_TASK_RE = re.compile(r"^spacedock_ensign_([a-z0-9_]+?)(?:_cycle\d+)?$")
+_CODEX_ENSIGN_TASK_RE = re.compile(r"^(?:spacedock_ensign_)?([a-z0-9][a-z0-9_-]*?)(?:_cycle\d+)?$")
 
 
 def _discovery_result(state: str, reason: str = "") -> dict[str, Any]:
@@ -1278,9 +1278,9 @@ def _subagent_tasks(arguments: dict[str, Any]) -> list[str]:
 def _dispatch_artifact(text: str) -> str:
     for directory in spacedock.dispatch_directories():
         pattern = re.escape(directory + "/") + r"[A-Za-z0-9][A-Za-z0-9._-]*\.md"
-        match = re.search(pattern, text)
-        if match is not None and spacedock.dispatch_artifact_identity(match.group(0)) is not None:
-            return match.group(0)
+        for match in re.finditer(pattern, text):
+            if spacedock.dispatch_artifact_identity(match.group(0)) is not None:
+                return match.group(0)
     return ""
 
 

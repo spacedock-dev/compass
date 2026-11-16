@@ -2514,12 +2514,8 @@ class DispatchSecurityTest(unittest.TestCase):
         self.assertEqual(str(self.artifact), project_context._dispatch_artifact(str(self.artifact)))
 
     def test_a_semantic_dispatch_places_the_project_worker_and_names_its_assignment(self) -> None:
-        # Basenames captured on this machine; no captured prompt content is used.
-        for name in (
-            "task-implementation.md",
-            "thing-implementation-advance.md",
-            "d25aaac3-cd52-444a-a3e5-dfc783843984-task-implementation.md",
-        ):
+        # Captured from spacedock dispatch build --host codex, including --advance.
+        for name in ("task-1-implementation.md", "task-1-implementation-advance.md"):
             with self.subTest(name=name):
                 artifact = self.directory / name
                 artifact.write_text(
@@ -2528,20 +2524,26 @@ class DispatchSecurityTest(unittest.TestCase):
                     encoding="utf-8",
                 )
                 artifact.chmod(0o600)
-                entity = "thing" if name.startswith("thing-") else "task"
                 self.assertEqual(
-                    (entity, "implementation"), spacedock.dispatch_artifact_identity(str(artifact))
+                    ("task-1", "implementation"),
+                    spacedock.dispatch_artifact_identity(str(artifact)),
                 )
                 self.assertEqual(
                     str(artifact), project_context._dispatch_artifact("Read " + str(artifact))
                 )
-                self.assertEqual(
-                    (str(artifact), "/repo/.spacedock/explore", entity, "implementation"),
-                    project_context._codex_dispatch_artifact(
-                        "spacedock_ensign_" + name[:-3].replace("-", "_")
-                    ),
-                )
+                for task in (name[:-3], name[:-3].replace("-", "_")):
+                    self.assertEqual(
+                        (str(artifact), "/repo/.spacedock/explore", "task-1", "implementation"),
+                        project_context._codex_dispatch_artifact(task),
+                    )
                 artifact.unlink()
+
+    def test_a_dispatch_mention_after_unrelated_notes_still_places_the_worker(self) -> None:
+        artifact = str(self.directory / "task-1-implementation.md")
+        self.assertEqual(
+            artifact,
+            project_context._dispatch_artifact(f"See {self.directory}/notes.md then {artifact}"),
+        )
 
     def test_real_symlink_cannot_redirect_the_read(self) -> None:
         target = self.root / "private.md"

@@ -125,7 +125,9 @@ def dispatch_artifact_identity(artifact: str) -> tuple[str, str] | None:
 
 def dispatch_candidates(task_name: str) -> tuple[str, ...]:
     """Exact semantic and legacy candidates for one Codex worker's final path component."""
-    match = re.fullmatch(r"spacedock_ensign_([a-z0-9][a-z0-9_]*?)(?:_cycle[0-9]+)?", task_name)
+    match = re.fullmatch(
+        r"(?:spacedock_ensign_)?([a-z0-9][a-z0-9_-]*?)(?:_cycle[0-9]+)?", task_name
+    )
     if match is None:
         return ()
     stem = match.group(1).replace("_", "-")

@@ -36,7 +36,7 @@ _CHILD_LIFECYCLE_BYTES = 128 * 1024
 _CHILD_LIFECYCLE_EVENT_CAP = 12
 _CHILD_ASSIGNMENT_CAP = 140
 _ENSIGN_AGENT_PATH_RE = re.compile(
-    r"^/root/(?:[a-z0-9_]+/)*spacedock_ensign_([a-z0-9][a-z0-9_]*?)(?:_cycle[0-9]+)?$"
+    r"^/root/(?:[a-z0-9_-]+/)*(?:spacedock_ensign_)?([a-z0-9][a-z0-9_-]*?)(?:_cycle[0-9]+)?$"
 )
 
 
