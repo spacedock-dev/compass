@@ -670,7 +670,9 @@ class AskServer:
 
     def _notification(self, method: str, message: dict[str, Any]) -> None:
         if method == "notifications/cancelled":
-            self._cancel(_params(message).get("requestId"))
+            request_id = _params(message).get("requestId")
+            if isinstance(request_id, (str, int)) and not isinstance(request_id, bool):
+                self._cancel(request_id)
         # Every other notification, `notifications/initialized` included, is
         # acknowledged by silence: it has no id and JSON-RPC forbids a reply.
 

@@ -874,6 +874,66 @@ class CancellationTest(unittest.TestCase):
         # The poll stopped: nothing more went out after the frame was written.
         self.assertEqual(settled, dashboard.poll_count())
 
+    def test_a_cancellation_without_a_request_id_leaves_every_question_waiting(self) -> None:
+        for params in (None, {}, {"requestId": None}):
+            with self.subTest(params=params):
+                self.assert_questions_keep_waiting(params)
+
+    def test_a_cancellation_with_a_non_id_value_leaves_every_question_waiting(self) -> None:
+        invalid_ids: tuple[Any, ...] = (True, False, 1.0, [], {}, ["c1"])
+        for value in invalid_ids:
+            with self.subTest(value=value):
+                self.assert_questions_keep_waiting({"requestId": value}, request_id=value)
+
+    def assert_questions_keep_waiting(
+        self, params: dict[str, Any] | None, *, request_id: Any = 1
+    ) -> None:
+        dashboard = _FakeDashboard(poll=[(204, None)])
+        with mock.patch.object(mcp_server, "_open", dashboard), _Harness() as harness:
+            harness.push(_call(request_id, "Ship it?", ["ship", "hold"]))
+            harness.push(_call("c2", "Deploy it?", ["deploy", "wait"]))
+            harness.push({"jsonrpc": "2.0", "id": "ready", "method": "ping"})
+            self.assertEqual(["ready"], [frame["id"] for frame in harness.wait_for_frames(1)])
+            with harness.server._aborts_lock:
+                pending = list(harness.server._aborts.values())
+            self.assertEqual(2, len(pending))
+            notification: dict[str, Any] = {
+                "jsonrpc": "2.0",
+                "method": "notifications/cancelled",
+            }
+            if params is not None:
+                notification["params"] = params
+            harness.push(notification)
+            harness.push({"jsonrpc": "2.0", "id": "after", "method": "ping"})
+            harness.wait_for_frames(2)
+            self.assertTrue(all(not abort.is_set() for abort in pending))
+            self.assertEqual(["ready", "after"], [frame["id"] for frame in harness.stdout.frames()])
+
+    def test_a_cancellation_names_only_its_question_for_string_and_integer_ids(self) -> None:
+        for request_id, other_id in ((0, "other"), ("", "other"), (1, "1"), ("1", 1)):
+            with self.subTest(request_id=request_id):
+                dashboard = _FakeDashboard(poll=[(204, None)])
+                with mock.patch.object(mcp_server, "_open", dashboard), _Harness() as harness:
+                    harness.push(_call(request_id, "Ship it?", ["ship", "hold"]))
+                    harness.push(_call(other_id, "Deploy it?", ["deploy", "wait"]))
+                    harness.push({"jsonrpc": "2.0", "id": "ready", "method": "ping"})
+                    self.assertEqual(
+                        ["ready"], [frame["id"] for frame in harness.wait_for_frames(1)]
+                    )
+                    with harness.server._aborts_lock:
+                        other = harness.server._aborts[mcp_server._call_key(other_id)]
+                    harness.push(
+                        {
+                            "jsonrpc": "2.0",
+                            "method": "notifications/cancelled",
+                            "params": {"requestId": request_id},
+                        }
+                    )
+                    frames = harness.wait_for_frames(2)
+                    self.assertEqual(["ready", request_id], [frame["id"] for frame in frames])
+                    self.assertEqual(mcp_server.DECLINE_UNANSWERED, _text(frames[1]))
+                    self.assertFalse(other.is_set())
+
     def test_a_ping_is_answered_while_a_call_is_held(self) -> None:
         dashboard = _FakeDashboard(poll=[(204, None)])
         with mock.patch.object(mcp_server, "_open", dashboard), _Harness() as harness:
@@ -882,7 +942,13 @@ class CancellationTest(unittest.TestCase):
             harness.push({"jsonrpc": "2.0", "id": "p", "method": "ping"})
             frames = harness.wait_for_frames(1)
             self.assertEqual(["p"], [frame["id"] for frame in frames])
-            harness.push({"jsonrpc": "2.0", "method": "notifications/cancelled"})
+            harness.push(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/cancelled",
+                    "params": {"requestId": "c1"},
+                }
+            )
             harness.wait_for_frames(2)
 
     def test_stdin_closing_aborts_an_outstanding_call(self) -> None:
