@@ -126,7 +126,7 @@ _SECRET_SHAPES: Final = (
     # Stripe's secret and restricted keys. `pk_live_` is deliberately absent: a
     # publishable key is published on purpose.
     ("stripe", 8, True, r"(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,120}"),  # 74 in 19 files
-    ("aws", 4, True, r"(?:AKIA|ASIA)[0-9A-Z]{16}(?![A-Za-z0-9_-])"),  # 246 in 50 files
+    ("aws", 4, True, r"(?:AKIA|ASIA)[0-9A-Z]{16}"),  # 246 in 50 files
     # The other half of the AWS pair, which the marker beside `AKIA…REDACTED`
     # used to imply was covered and was not. A bare 40-character base64 run is
     # not distinguishable from a hash, a diff or a path segment, so this one is
@@ -165,7 +165,7 @@ _SECRET_SHAPES: Final = (
     # Zero values, and 45 mentions of the bare prefix across 22 files — a
     # guidance list naming the shape, never a key of the right length behind it.
     # Kept for the reason `github_fine` is: absence today is not a contract.
-    ("google", 4, True, r"AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])"),  # 0
+    ("google", 4, True, r"AIza[A-Za-z0-9_-]{35}"),  # 0
     # Three base64url segments, not one. A lone `eyJ…` run is base64 for `{"` and
     # turns up in any pasted payload; the two dots are what make it a token.
     # 1,024 and 4,096 are a JOSE header and a claim set with room to spare; the
@@ -376,6 +376,16 @@ _SECRET_RE: Final = re.compile(
 )
 _SECRET_KEEP: Final = {name: keep for name, keep, _, _ in _SECRET_SHAPES}
 _SECRET_ANCHORED: Final = frozenset(name for name, _, anchored, _ in _SECRET_SHAPES if anchored)
+# Try prefixed shapes without the cued-name branch, which rescanned 512
+# characters at every hidden separator on a run of incomplete prefixes.
+# A failed prefix still tries the full grammar when a cue delimiter is present.
+_PREFIX_SECRET_RE: Final = re.compile(
+    "|".join(
+        f"(?P<{name}>{pattern})"
+        for name, _, anchored, pattern in _SECRET_SHAPES
+        if anchored or name == "pem"
+    )
+)
 _TOKEN_CHARS: Final = frozenset(string.ascii_letters + string.digits + "_-")
 
 # A cued shape keeps everything but the last N characters of its match, because
@@ -466,6 +476,8 @@ _SECRET_OPENERS: Final = (
     "-----BEGIN ",
     "ya29.",
 )
+_SECRET_OPENER_RE: Final = re.compile("|".join(re.escape(value) for value in _SECRET_OPENERS))
+_SECRET_MAX_OPENER: Final = max(map(len, _SECRET_OPENERS))
 _SECRET_HINTS: Final = (
     *_SECRET_OPENERS,
     # A pre-signed URL's signature parameter, in the spellings the vendors use.
@@ -662,7 +674,7 @@ def _mark_secret(match: re.Match[str]) -> str | None:
 
     None rather than the match text, because the caller has to tell the two
     apart: a rejected span must be re-entered one character in (see
-    `_redact_scan`), and `re.sub` cannot express that.
+    `_secret_matches`), and `re.sub` cannot express that.
     """
     name = match.lastgroup or ""
     body = match.group()
@@ -748,20 +760,8 @@ def _mark_secret(match: re.Match[str]) -> str | None:
 
 
 def _redact_scan(text: str) -> str:
-    """Every shape on the list marked, scanning left to right.
-
-    Hand-rolled instead of `re.sub` for one reason: `sub` resumes at
-    `match.end()`, so a rejected candidate can shield a credential inside it.
-    A lowercase hyphenated `sk-` identifier can contain a shorter prefixed shape
-    with a qualifying body. Resume at `match.start() + 1` so it is still read.
-    """
-    out: list[str] = []
-    pos = 0
-    for start, end, marked in _secret_matches(text):
-        out.extend((text[pos:start], marked))
-        pos = end
-    out.append(text[pos:])
-    return "".join(out)
+    """Every accepted shape marked, including overlapping capped bodies."""
+    return _write_marked(text, _secret_matches(text))
 
 
 def _secret_matches(text: str) -> list[tuple[int, int, str]]:
@@ -771,9 +771,21 @@ def _secret_matches(text: str) -> list[tuple[int, int, str]]:
     while (match := _SECRET_RE.search(text, pos)) is not None:
         marked = _mark_secret(match)
         if marked is None:
+            # A rejected identifier can enclose an admitted credential prefix.
             pos = match.start() + 1
             continue
         found.append((match.start(), match.end(), marked))
+        # A capped body can consume the next credential's prefix. Look inside
+        # accepted spans as well, but only at literal openers, with bounded
+        # prefixed patterns rather than rescanning unbounded cue/value shapes.
+        for opener in _SECRET_OPENER_RE.finditer(
+            text, match.start() + 1, match.end() + _SECRET_MAX_OPENER - 1
+        ):
+            if opener.start() >= match.end():
+                break
+            nested = _PREFIX_SECRET_RE.match(text, opener.start())
+            if nested is not None and (replacement := _mark_secret(nested)) is not None:
+                found.append((nested.start(), nested.end(), replacement))
         pos = match.end()
     return found
 
@@ -911,9 +923,17 @@ def _redact_inline_markup(text: str) -> str:
     # still read from the word's own start, and by the raw scan.
     for cut in cuts:
         if plain.startswith(_SECRET_OPENERS, cut):
-            match = _SECRET_RE.match(plain[cut : cut + _CUT_MATCH_CHARS])
+            piece = plain[cut : cut + _CUT_MATCH_CHARS]
+            matcher = _PREFIX_SECRET_RE
+            match = matcher.match(piece)
+            # A cued name can start with a token prefix (AKIA_ACCESS_KEY).
+            # Its delimiter is necessary, so this C substring check skips no
+            # candidate while avoiding a regex rescan of long rejected names.
+            if match is None and ("=" in piece or ":" in piece):
+                matcher = _SECRET_RE
+                match = matcher.match(piece)
             if match is not None and match.end() == _CUT_MATCH_CHARS:
-                match = _SECRET_RE.match(plain[cut : cut + _CUT_MATCH_LONGEST])
+                match = matcher.match(plain[cut : cut + _CUT_MATCH_LONGEST])
             if match is not None and (marked := _mark_secret(match)) is not None:
                 found.append(original(cut + match.start(), cut + match.end(), marked))
     if not found:
@@ -1866,6 +1886,9 @@ def cut_text(value: str, cap: int, whole: int) -> tuple[str, bool]:
         # `…`, and made two options that differed early read the same.
         floor = max(start - _SECRET_MAX_KEEP, 0)
         end = min(start, limit)
+        # The gcloud prefix keeps a dot, which the token-character walk stops at.
+        if text[max(start - 5, 0) : start] == "ya29.":
+            end = min(end, start - 5)
         while end > floor and text[end - 1] in _TOKEN_CHARS:
             end -= 1
         head = text[:end]

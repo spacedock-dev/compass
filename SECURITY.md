@@ -5559,7 +5559,11 @@ survive, because those are the instruction and the reason the line is on the car
 visible deliberately. Someone who sees it learns their prompt history holds a live key, which is the
 only route by which it gets rotated.
 
-Each prefix shape keeps its body length, alphabet and trailing-character requirements.
+Each prefix shape keeps its body length and alphabet. Complete AWS access key IDs and Google
+API keys are masked even when a letter, digit, underscore or hyphen follows them, including a
+`_prod` suffix. The suffix remains readable. Other trailing-character requirements still apply.
+When a capped match consumes the start of an adjacent credential, overlapping accepted matches
+are merged so the second body stays hidden too.
 Existing matches stay masked, including lowercase generic `sk-` bodies after whitespace,
 assignment, quotes or brackets. AWS, fine-grained GitHub, `lin_api_`, `ya29.` and Anthropic
 matches at least 90 characters long keep their existing acceptance regardless of the lead.
@@ -5657,7 +5661,8 @@ precedent).
 The order matters as much as the coverage. Redaction runs before the bound, never after, because a
 key cut at a 140-character cap is still a hundred usable characters of key and a shape whose tail has
 fallen off no longer matches. A slice that ran first is what published a URL credential cut short of
-its `@`.
+its `@`. A strict text cap that would split a redaction marker or its retained prefix steps back
+before that prefix, including the dot in `ya29.`.
 
 Since 2026-10-05 the shared filter also checks a second view with transparent HTML inline formatting
 removed, before the credential hint check. A match masks the corresponding original span; ordinary

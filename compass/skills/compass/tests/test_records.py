@@ -772,6 +772,38 @@ class RedactSecretsTest(unittest.TestCase):
         short = "x" + "sk-ant-" + "B" * 20
         self.assertEqual("xsk-ant-…REDACTED", records.redact_secrets(short))
 
+    def test_touching_credentials_hide_both_bodies_when_a_match_caps_inside_the_next_prefix(
+        self,
+    ) -> None:
+        for length in range(251, 256):
+            for second_prefix, second_body in (("ghp_", "B" * 36), ("github_pat_", "C" * 40)):
+                raw = "rotate " + "ghp_" + "A" * length + second_prefix + second_body + " today"
+                for clean in (
+                    records.redact_secrets,
+                    lambda text: records.safe_text(text, 10_000),
+                    lambda text: records.redact_clip(text, 10_000),
+                    records.mask_prose,
+                ):
+                    with self.subTest(length=length, second=second_prefix, clean=clean):
+                        shown = clean(raw)
+                        expected = "rotate ghp_…REDACTED today"
+                        if length == 255:
+                            expected = "rotate ghp_…REDACTED" + second_prefix + "…REDACTED today"
+                        self.assertEqual(expected, shown)
+
+    def test_aws_and_google_keys_are_hidden_before_a_token_character_suffix(self) -> None:
+        for prefix, body in (("AKIA", "Q" * 16), ("ASIA", "R" * 16), ("AIza", "S" * 35)):
+            leads: tuple[str, ...] = ("", " ", "x", "1", "_", "=", "(")
+            if prefix != "AIza":
+                leads += ("-",)
+            for lead in leads:
+                for suffix in ("_prod", "-prod", "a", "7"):
+                    raw = lead + prefix + body + suffix
+                    with self.subTest(prefix=prefix, lead=lead, suffix=suffix):
+                        self.assertEqual(
+                            lead + prefix + "…REDACTED" + suffix, records.redact_secrets(raw)
+                        )
+
     def test_a_rejected_span_does_not_shield_a_later_credential(self) -> None:
         # A rejected identifier must not stop the scan before a later credential.
         line = "dask-scheduler-configuration-defaults-file-name then AKIAIOSFODNN7EXAMPLE"
@@ -1245,6 +1277,23 @@ class HiddenCharactersInsideACredentialTest(unittest.TestCase):
         for char in ("\x80", "\x85", "\x9f", "\u061c", "\u2028", "\u2029"):
             with self.subTest(code_point=f"U+{ord(char):04X}"):
                 self.assertEqual("a b", records.safe_text(f"a{char}b", 40))
+
+    def test_a_hidden_boundary_keeps_cued_values_private_even_after_a_credential_prefix(
+        self,
+    ) -> None:
+        for separator in ("\u200b", "<wbr>", "<!--gap-->"):
+            for prefix in ("AKIA_ACCESS_", "ASIA_SERVICE_"):
+                body = "Synthetic" + "Secret42"
+                raw = "word" + separator + prefix + separator + "KEY=" + body
+                for clean in (
+                    records.redact_secrets,
+                    lambda text: records.safe_text(text, 10_000),
+                    lambda text: records.redact_clip(text, 10_000),
+                ):
+                    with self.subTest(separator=separator, prefix=prefix, clean=clean):
+                        shown = clean(raw)
+                        self.assertNotIn(body, shown)
+                        self.assertIn("KEY=…REDACTED", shown)
 
 
 def mask(line: str) -> str:
@@ -3481,6 +3530,15 @@ class CutTextTest(unittest.TestCase):
         self.assertTrue(first.startswith("Use cfg_" + "q" * 200))
         self.assertLessEqual(len(first), 240)
 
+    def test_clipping_anywhere_in_a_gcloud_marker_leaves_no_partial_prefix(self) -> None:
+        raw = "ask " + "ya29." + "B" * 50 + " tail" * 20
+        for cap in range(5, 19):
+            with self.subTest(cap=cap):
+                shown, cut = records.cut_text(raw, cap, 32_768)
+                self.assertTrue(cut)
+                self.assertEqual("ask…", shown)
+                self.assertLessEqual(len(shown), cap)
+
     def test_the_kept_prefix_is_never_left_at_the_cut(self) -> None:
         for lead in range(220, 245):
             with self.subTest(lead=lead):
@@ -3493,6 +3551,20 @@ class CutTextTest(unittest.TestCase):
 class HiddenCredentialTimeTest(unittest.TestCase):
     # Measures process CPU bounds for hostile hidden-character redaction.
     REAL_TIME_TESTS = True
+
+    def test_a_million_hidden_prefix_characters_are_redacted_within_four_cpu_seconds(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        # One million characters; four CPU seconds leaves machine headroom without the old
+        # per-boundary 512-character cued-name rescan (over nine seconds locally).
+        body = "Z" * 36
+        raw = ("\u200bghp_" * 200_000) + " " + "ghp_" + body
+        started = time.process_time()
+        shown = records.redact_secrets(raw)
+        elapsed = time.process_time() - started
+        self.assertNotIn(body, shown)
+        self.assertIn("ghp_…REDACTED", shown)
+        self.assertLess(elapsed, 4.0)
 
     def test_pathological_inputs_stay_linear(self) -> None:
         # Each of these is a shape that would turn a per-opener scan quadratic: unclosed comment
