@@ -1370,6 +1370,47 @@ class ForgetPreservesStoresWhoseDashboardMayBeElsewhereTest(HistoryStoreTestCase
                     path.unlink()
                     Path(str(path) + ".origin").unlink()
 
+    def test_forget_names_every_preserved_store_when_the_selected_dashboard_is_running_or_busy(
+        self,
+    ) -> None:
+        from compass_runtime import cli, lifecycle  # noqa: PLC0415
+
+        self.record_dashboard(4553, self.LOCAL)
+        for status in ("running", "busy"):
+            with self.subTest(status=status):
+                before = self.seed_stores()
+                with (
+                    mock.patch.dict(os.environ, {COMPASS_HOME_ENV: self.state_home}),
+                    mock.patch.object(lifecycle, "environment_identity", return_value=self.LOCAL),
+                    mock.patch.object(lifecycle, "_state_process_exists", return_value=True),
+                    mock.patch.object(
+                        lifecycle,
+                        "instance_status",
+                        return_value={
+                            "state": status,
+                            "port": 4553,
+                            "pid": 4242,
+                            "started": 1.0,
+                            "log": "",
+                        },
+                    ),
+                    contextlib.redirect_stdout(std_io.StringIO()) as output,
+                    contextlib.redirect_stderr(output),
+                ):
+                    code = cli.main(["--forget"])
+                self.assertNotEqual(0, code)
+                self.assertEqual(before, self.snapshot())
+                said = output.getvalue()
+                for name in (
+                    "compass-history.json",
+                    "compass-ends.json",
+                    "compass-annotations.json",
+                    "compass-summaries.json",
+                ):
+                    self.assertIn(str(Path(self.state_home, name)), said)
+                self.assertIn("running on port 4553", said)
+                self.assertIn("--stop", said)
+
     def test_forget_keeps_stores_when_the_local_writer_is_live_or_its_death_is_unknown(
         self,
     ) -> None:
@@ -1447,7 +1488,9 @@ class ForgetPreservesStoresWhoseDashboardMayBeElsewhereTest(HistoryStoreTestCase
         self.assertEqual(before, self.snapshot())
         self.assertIn(str(path), said)
 
-    def test_forget_keeps_stores_if_ownership_changes_during_the_check(self) -> None:
+    def test_forget_keeps_stores_when_the_snapshot_writer_is_live_during_origin_replacement(
+        self,
+    ) -> None:
         from compass_runtime import lifecycle  # noqa: PLC0415
 
         path = self.record_dashboard(9554, self.LOCAL)
@@ -1472,7 +1515,8 @@ class ForgetPreservesStoresWhoseDashboardMayBeElsewhereTest(HistoryStoreTestCase
             code, said = self.forget()
         self.assertNotEqual(0, code)
         self.assertIn(str(path), said)
-        # The test's competing publication is the only permitted file change.
+        # The live snapshot writer independently requires refusal; this does not
+        # establish exclusion of a competing publication after a dead writer's read.
         before.pop(Path(str(path) + ".origin"))
         after = self.snapshot()
         after.pop(Path(str(path) + ".origin"))
