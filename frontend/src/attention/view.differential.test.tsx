@@ -80,6 +80,9 @@ function summarize(root: ParentNode): Summary {
     })(),
     items: [...element.querySelectorAll(':scope > ol > li')].map((li) => {
       const article = li.querySelector('article') as HTMLElement;
+      const content = article.cloneNode(true) as HTMLElement;
+      // Replacement location cards change following indices; the array still checks row order.
+      content.querySelector('.next-attention-index')?.remove();
       return {
         hidden: li.hasAttribute('hidden'),
         subject: article.dataset['nextAttentionSubject'] ?? '',
@@ -87,7 +90,7 @@ function summarize(root: ParentNode): Summary {
         kind: article.dataset['nextAttentionKind'] ?? '',
         tone: article.dataset['tone'] ?? '',
         board: article.dataset['nextBoardRisk'] ?? '',
-        text: norm(article),
+        text: norm(content),
         links: links(article),
         buttons: [...article.querySelectorAll('button')].map((button) =>
           button.getAttribute('aria-label'),
@@ -226,7 +229,6 @@ describe('the Attention screen reads as the legacy screen does, over generated p
           failures.push(
             `seed ${String(seed)} (${expanded.length ? 'expanded' : 'collapsed'}, capability ${capability || 'none'}): ${firstDifference(left, right)}`,
           );
-          break;
         }
         for (const section of old.sections)
           for (const item of section.items) {

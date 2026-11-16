@@ -150,7 +150,9 @@ function CommandSurface({
     : observed.isEnded
       ? 'session ended'
       : observed.state;
-  const turnEnd = session['waiting_on_child'] ? null : turnEndedSentence(session, generated);
+  const turnEnd = session['waiting_on_child']
+    ? null
+    : turnEndedSentence(session, generated, observed.askKnown);
   return (
     <div className="next-session-command-surface" aria-label="Session command surface">
       <Card
@@ -161,8 +163,10 @@ function CommandSurface({
         data-next-session-command="activity"
       >
         <span className="next-session-current-label">CURRENT ACTIVITY</span>
-        <strong {...(observed.nowKnown ? {} : { className: 'next-session-absent' })}>
-          {turnEnd ?? `${state} · ${observed.nowText}`}
+        <strong
+          {...(observed.askKnown || observed.nowKnown ? {} : { className: 'next-session-absent' })}
+        >
+          {observed.askKnown ? observed.askText : (turnEnd ?? `${state} · ${observed.nowText}`)}
         </strong>
         {context ? (
           <InstructionLine

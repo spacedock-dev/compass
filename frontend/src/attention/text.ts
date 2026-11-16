@@ -90,7 +90,7 @@ export function identityText(
   }
   if ('kind' in subject && subject.kind === 'collision') {
     const detail = subject.signals[0]?.detail ?? {};
-    return `${String(detail.label || 'Unlabelled display')} display label · ${String(Number(detail.memberCount) || 0)} exact sessions`;
+    return `${detail.label ? `${detail.label} display label` : 'Across display labels'} · ${String(Number(detail.memberCount) || 0)} exact sessions`;
   }
   const identity = subjectIdentity(subject);
   if (identity) {
@@ -302,7 +302,9 @@ export function subjectSource(subject: Subject, model: AttentionModel): string {
    never a route: it needs a project and a sid. */
 export function subjectRoute(subject: Subject): RouteInput {
   if (subject.kind === 'collision')
-    return { view: 'project', project: subject.identity?.project ?? '' };
+    return subject.identity?.project
+      ? { view: 'project', project: subject.identity.project }
+      : { view: 'sessions' };
   const identity = subjectIdentity(subject);
   const project = text(identity && identity['project']);
   const harness = text(identity && identity['harness']);

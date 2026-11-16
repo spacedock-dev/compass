@@ -26,7 +26,7 @@ export function riskSubject(risk: BoardRisk, model: AttentionModel): Subject | u
         row.kind === 'collision' &&
         row.primaryKind === risk.kind &&
         risk.identity ===
-          `${String((row.identity as unknown as Row | undefined)?.['project'])} ${risk.kind === 'checkout' ? 'checkout' : 'display label'}`,
+          `${String((row.identity as unknown as Row | undefined)?.['project'] || 'Across display labels ·')} ${risk.kind === 'checkout' ? 'checkout' : 'display label'}`,
     );
   }
   if (risk.kind === 'ask') {

@@ -6,7 +6,14 @@ import { loadLegacyViews } from '../observed/legacy.test.helper';
 import { mountShell } from '../shell/testing';
 import { formatDuration } from '../shell/format';
 import { retractSessionCopies } from '../../test/sessionCopyDeviation';
-import { noTitleText, type Row } from '../observed';
+import {
+  noTitleText,
+  exactAskOwner,
+  payloadAskRows,
+  sessionKey,
+  trimmed,
+  type Row,
+} from '../observed';
 import { turnEndedSentence } from './detail';
 import { harnessLabels } from './rows';
 
@@ -222,6 +229,22 @@ function legacySummary(
   );
   projectRecordedTurnEnd(template.content, payload as Record<string, unknown>, route);
   projectRecordedCommandOpener(template.content, payload as Record<string, unknown>, route);
+  // Current activity now gives the exact owned question priority; its record is not rewritten.
+  const data = payload as Row;
+  const question =
+    data['ask'] === true
+      ? payloadAskRows(data).find((ask) => {
+          const owner = exactAskOwner(data, ask);
+          return (
+            owner &&
+            String(owner['project'] ?? '') === route.project &&
+            sessionKey(owner) === sessionKey({ harness: route.harness, sid: route.session }) &&
+            trimmed(ask['question'])
+          );
+        })
+      : undefined;
+  const activity = template.content.querySelector('.next-session-current > strong');
+  if (activity && question) activity.textContent = String(question['question']);
 
   return summarize(template.content);
 }

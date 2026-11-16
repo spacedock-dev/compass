@@ -1,6 +1,6 @@
 import { nativeSession } from './native';
 import { nextNumber } from '../api/bootstrap';
-import { locationWarnings, rowLocationNote } from './location';
+import { boardLocationWarnings, rowLocationNote } from './location';
 import {
   observeCapacity,
   type BoardRisk,
@@ -223,21 +223,19 @@ export function observe(input: unknown): Observed {
   projects.sort((a, b) => rank(a) - rank(b) || compare(a.key, b.key));
   const capacity = observeCapacity(payload);
   const boardRisks: BoardRisk[] = [...capacity.risks];
-  for (const project of projects) {
-    if (!project.key.trim()) continue;
-    for (const warning of locationWarnings(groups.get(project.key) ?? []))
-      boardRisks.push({
-        scope: 'board',
-        kind: warning.kind,
-        title: warning.title,
-        identity: `${project.key} ${warning.kind === 'checkout' ? 'checkout' : 'display label'}`,
-        src: 'Published project location evidence',
-        nowText: warning.text,
-        nowKnown: true,
-        nextText: 'Compare title, worktree, id and start time below',
-        nextKnown: true,
-        tone: 'unknown',
-      });
+  for (const { label, warning } of boardLocationWarnings(sources)) {
+    boardRisks.push({
+      scope: 'board',
+      kind: warning.kind,
+      title: warning.title,
+      identity: `${label || 'Across display labels ·'} ${warning.kind === 'checkout' ? 'checkout' : 'display label'}`,
+      src: 'Published project location evidence',
+      nowText: warning.text,
+      nowKnown: true,
+      nextText: 'Compare title, worktree, id and start time below',
+      nextKnown: true,
+      tone: 'unknown',
+    });
   }
   for (const ask of unowned) {
     boardRisks.push({

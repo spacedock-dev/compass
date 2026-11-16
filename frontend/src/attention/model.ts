@@ -1,4 +1,4 @@
-import { locationWarnings } from '../observed/location';
+import { boardLocationWarnings } from '../observed/location';
 import { nextNumber } from '../api/bootstrap';
 import {
   delegatedWork,
@@ -735,46 +735,30 @@ export function attentionModel(input: unknown): AttentionModel {
     }
   }
 
-  const labels = new Map<string, Map<string, { session: Row; sourceIndex: number }>>();
-  for (const [sourceIndex, session] of sessions.entries()) {
-    const project = session['project'];
-    const label = typeof project === 'string' && project.trim() ? project : '';
-    if (!label) continue;
-    let members = labels.get(label);
-    if (!members) {
-      members = new Map();
-      labels.set(label, members);
-    }
-    const key = sessionKey(session);
-    if (!members.has(key)) members.set(key, { session, sourceIndex });
-  }
   const harnessOrder = harnessOrderOf(payload);
-  for (const [label, members] of labels) {
-    const memberRows = [...members.values()];
-    for (const warning of locationWarnings(memberRows.map((row) => row.session))) {
-      const key = `${warning.kind}:${label}`;
-      const lowest = Math.min(...memberRows.map((row) => row.sourceIndex));
-      riskSubjects.set(key, {
-        key,
-        stableId: key,
-        kind: 'collision',
-        section: 'risk',
-        primaryKind: warning.kind,
-        signals: [
-          {
-            kind: warning.kind,
-            section: 'risk',
-            sourceIndex: lowest,
-            detail: { label, memberCount: warning.members.length, text: warning.text },
-          },
-        ],
-        session: null,
-        sessions: [...warning.members],
-        asks: [],
-        sourceIndex: lowest,
-        identity: { harness: '', project: label, sid: '' },
-      });
-    }
+  for (const { label, warning } of boardLocationWarnings(sessions)) {
+    const key = `${warning.kind}:${label}`;
+    const lowest = Math.min(...warning.members.map((row) => sessions.indexOf(row)));
+    riskSubjects.set(key, {
+      key,
+      stableId: key,
+      kind: 'collision',
+      section: 'risk',
+      primaryKind: warning.kind,
+      signals: [
+        {
+          kind: warning.kind,
+          section: 'risk',
+          sourceIndex: lowest,
+          detail: { label, memberCount: warning.members.length, text: warning.text },
+        },
+      ],
+      session: null,
+      sessions: [...warning.members],
+      asks: [],
+      sourceIndex: lowest,
+      identity: { harness: '', project: label, sid: '' },
+    });
   }
 
   const riskRepresented = new Set<string>();

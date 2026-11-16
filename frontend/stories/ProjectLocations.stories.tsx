@@ -14,8 +14,12 @@ function Board({
   checkout = 'idle',
   unknown = false,
   fallbacks = false,
+  subdirectory = false,
+  duplicate = false,
 }: {
   readonly locations?: number;
+  readonly subdirectory?: boolean;
+  readonly duplicate?: boolean;
   readonly unknown?: boolean;
   readonly fallbacks?: boolean;
   readonly checkout?: 'idle' | 'shared' | 'distinct' | 'missing';
@@ -36,6 +40,12 @@ function Board({
                 ? `checkout:${String(i)}`
                 : 'checkout:shared-evidence',
         });
+    if (subdirectory) locationRow(data, 1)['project'] = 'audits/src';
+    if (duplicate) {
+      const row = locationRow(data, 0);
+      row['project_identity_source'] = 'collector project label';
+      data['sessions'] = [row, { ...row }];
+    }
     if (locations > 1) locationRow(data, 8)['project_key'] = 'path:other';
     if (unknown)
       locationRow(data, 7)['project_identity_source'] = 'inferred Claude worktree layout';
@@ -150,5 +160,31 @@ export const UnpublishedMemberDetails: Story = {
       }),
     ).toHaveAttribute('href', '#n=session:audits:claude:audit-8');
     await expect(canvasElement.textContent).not.toContain('1970-01-01');
+  },
+};
+
+export const RootAndSubdirectoryShareCheckout: Story = {
+  args: { checkout: 'shared', subdirectory: true },
+  play: async ({ canvasElement }) => {
+    const heading = await within(canvasElement).findByRole('link', {
+      name: 'Concurrent sessions in one checkout',
+    });
+    await expect(heading).toHaveAttribute('href', '#n=sessions');
+    const card = canvasElement.querySelector('[data-next-board-risk="checkout"]') as HTMLElement;
+    await expect(card).toHaveTextContent('2 sessions working or waiting in the same checkout');
+    await expect(within(card).getAllByRole('link', { name: /Audit \d/ })).toHaveLength(2);
+    await expect(within(card).getByRole('link', { name: /Audit 1/ })).toHaveAttribute(
+      'href',
+      '#n=session:audits%2Fsrc:claude:audit-1',
+    );
+  },
+};
+
+export const RepeatedIdentityHasNoOrphanCard: Story = {
+  args: { duplicate: true },
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByText(/of 2 sessions carry a subject/);
+    await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
+    await expect(canvasElement).not.toHaveTextContent('Location not measured for 2 sessions');
   },
 };

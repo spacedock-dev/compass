@@ -40,6 +40,10 @@ function withoutHistory(input: Record<string, unknown>): Record<string, unknown>
     );
   return {
     ...model,
+    // Location cards are proven by their distinct linked members, not the recorded duplicate counts.
+    boardRisks: (model['boardRisks'] as Record<string, unknown>[]).filter(
+      (risk) => !['collision', 'checkout'].includes(String(risk['kind'])),
+    ),
     projects,
     activeProjects: grouped(model['activeProjects']),
     restProjects: grouped(model['restProjects']),

@@ -95,3 +95,36 @@ export function locationWarnings(rows: readonly Row[]): LocationWarning[] {
     });
   return warnings;
 }
+
+/* Checkout evidence is independent of display labels: root and subdirectory sessions can publish
+   different labels for one checkout. Both board models must use the same members and warning key. */
+export function boardLocationWarnings(
+  rows: readonly Row[],
+): { label: string; warning: LocationWarning }[] {
+  const unique = new Map<string, Row>();
+  for (const row of rows) if (!unique.has(sessionKey(row))) unique.set(sessionKey(row), row);
+  const members = [...unique.values()];
+  const labels = new Map<string, Row[]>();
+  for (const row of members) {
+    const label = String(row['project'] ?? '');
+    if (!label.trim()) continue;
+    const group = labels.get(label) ?? [];
+    group.push(row);
+    labels.set(label, group);
+  }
+  const warnings = [...labels].flatMap(([label, group]) =>
+    locationWarnings(group)
+      .filter((warning) => warning.kind === 'collision')
+      .map((warning) => ({ label, warning })),
+  );
+  for (const warning of locationWarnings(members).filter(
+    (warning) => warning.kind === 'checkout',
+  )) {
+    const sharedLabels = new Set(warning.members.map((row) => String(row['project'] ?? '')));
+    warnings.push({
+      label: sharedLabels.size === 1 ? String(warning.members[0]?.['project'] ?? '') : '',
+      warning,
+    });
+  }
+  return warnings;
+}

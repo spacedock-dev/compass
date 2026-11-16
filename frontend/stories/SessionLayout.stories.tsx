@@ -203,7 +203,7 @@ function PageExample({
                 project: 'demo',
                 project_key: '/demo',
                 title: 'Synthetic layout session',
-                state: log.asking || log.gate ? 'needs_input' : idle ? 'idle' : 'working',
+                state: idle ? 'idle' : log.asking || log.gate ? 'needs_input' : 'working',
                 ...(log.resumable ? { resume_id: 's1' } : {}),
                 started_at: G - 3600,
                 rate_per_min: 1450,
@@ -921,5 +921,20 @@ export const WorkingSessionCarriesNoWaitingSign: Story = {
     await waitFor(() => expect(document.title.startsWith(WAITING_TITLE_PREFIX)).toBe(false));
     const icon = document.head.querySelector('link[data-next-favicon]');
     await expect(icon?.getAttribute('href')).toBe(RESTING_ICON);
+  },
+};
+
+export const IdleQuestionPrecedesTurnEnd: Story = {
+  render: () => <PageExample idle asking />,
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByRole('heading', {
+      level: 1,
+      name: 'Synthetic layout session',
+    });
+    const activity = canvasElement.querySelector(
+      '[data-next-session-command="activity"]',
+    ) as HTMLElement;
+    await expect(activity).toHaveTextContent(String(ASK['question']));
+    await expect(activity).not.toHaveTextContent('Turn ended');
   },
 };
