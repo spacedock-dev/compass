@@ -325,10 +325,13 @@ def report(total: dict[str, Any], elapsed: float, jobs: int) -> bool:
         for name, text, _test_id in total[key]:
             out.write(f"{'=' * 70}\n{flavour}: {name}\n{'-' * 70}\n{text}\n")
     report_retries(total)
-    serial = f", then {total['serial']} units serially" if total["serial"] else ""
-    out.write(
-        f"{'-' * 70}\nRan {total['run']} tests in {elapsed:.3f}s ({jobs} workers{serial})\n\n"
-    )
+    # Each phase's own wall time, so a slow leg says whether its workers or its serial pass cost it.
+    workers = f"{jobs} workers"
+    serial = ""
+    if total["serial"]:
+        workers += f" in {total['parallel_seconds']:.1f}s"
+        serial = f", then {total['serial']} units serially in {total['serial_seconds']:.1f}s"
+    out.write(f"{'-' * 70}\nRan {total['run']} tests in {elapsed:.3f}s ({workers}{serial})\n\n")
     extras = [
         f"{label}={len(total[key])}"
         for label, key in (
@@ -383,6 +386,8 @@ def new_total() -> dict[str, Any]:
         "durations": [],
         "by_unit": {},
         "serial": 0,
+        "parallel_seconds": 0.0,
+        "serial_seconds": 0.0,
         "retried": [],
         "failed_again": [],
         "retry_note": "",
@@ -571,9 +576,13 @@ def run(  # noqa: PLR0913 - one keyword per command-line option main() passes th
         "buffer": buffer,
     }
     total = new_total()
+    phase_started = time.perf_counter()
     jobs = run_phase(context, config, order_units(parallel), jobs, expected, total)
+    total["parallel_seconds"] = time.perf_counter() - phase_started
     total["serial"] = len(serial)
+    phase_started = time.perf_counter()
     run_phase(context, config, order_units(serial), 1, expected, total)
+    total["serial_seconds"] = time.perf_counter() - phase_started
     if retry:
         retry_failures(context, config, expected, total)
         heading = start + (f", shard {shard[0]}/{shard[1]}" if shard else "")

@@ -487,9 +487,13 @@ the job summary and as a `FLAKY-RETRY-PASSED: <test id>` line. A test that skips
 retry still fails the run. More than five failures retry nothing, because that many at once is a
 real break.
 
-A test module that measures real time sets `REAL_TIME_TESTS = True` at module level, with a
-one-line comment naming what it measures. The runner runs those modules after the parallel workers
-exit, one unit at a time.
+A test class that measures real time sets `REAL_TIME_TESTS = True` as a class attribute, with a
+one-line comment naming what it measures; a module whose classes nearly all do may set it at module
+level instead, and release a class with `REAL_TIME_TESTS = False`. A class's own value wins. The
+runner runs those units after the parallel workers exit, one at a time, and its summary line gives
+each phase's wall time. Mark the class rather than the module: on 2026-11-16 the module-wide marker
+held 2,795 units in the macOS dashboard leg's serial pass, most of them tests that timed nothing.
+Real-time waits for something that happens at once do not count as measuring.
 
 Every flake goes in the ledger, [docs/flaky-tests.md](docs/flaky-tests.md):
 

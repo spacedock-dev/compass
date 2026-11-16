@@ -709,6 +709,9 @@ class SerialPassTest(unittest.TestCase):
         undeclared = [line for line in lines if line[2:3] == ["not_declared"]]
         self.assertEqual(1, len(undeclared), lines)
         self.assertNotEqual(last[1], undeclared[0][1], lines)
+        # Each phase's own wall time is in the summary, so a leg's cost can be split between
+        # the workers and the serial pass without rerunning anything.
+        self.assertRegex(out, r"\(\d+ workers in \d+\.\ds, then 1 units serially in \d+\.\ds\)")
 
     def test_a_class_declaration_overrides_its_modules(self) -> None:
         # A module that is mostly not timed marks only its timing class, and a timed module
