@@ -34,7 +34,10 @@ repository raises no label warning. Multiple measured locations count only measu
 label fallbacks and inferred Claude worktree layouts remain unknown and say their location was
 not measured. Attention links every member by title, worktree, id and start time, and the warning
 heading opens the project. Concurrent working or waiting sessions with measured provenance and
-the same opaque checkout key keep a separate warning. Matching worktree names alone cannot
+the same opaque checkout key keep a separate warning across the whole board, including sessions
+whose root and subdirectory labels differ. A warning spanning labels opens Sessions; one confined
+to a label opens its project. Both models use the same identity-deduplicated warning members,
+so repeated rows cannot leave an orphan card or inflate its member count. Matching worktree names alone cannot
 establish checkout identity. Whitespace-only member titles and nonpositive start times disclose
 missing values; positive timestamps still render. Stops, ends and tasks stay in their session
 subjects instead of being folded into a label card, so the summary and queues agree.
@@ -44,7 +47,9 @@ owns checkout keys and inferred layouts. No golden file is changed.
 The recorded generated boards have no measured sources; the asking tests restate only their
 UI-owned location notes. Attention comparisons retain unaffected subjects and signals, while the
 restored members and location cards are held by the mounted `attention/location.test.tsx` cases
-and the `Attention/Project locations` Storybook play assertions. Queue announcements are checked
+and the `Attention/Project locations` Storybook play assertions. The recorded view comparison
+omits numeric risk-card indices because removing a duplicate warning renumbers following cards;
+its arrays still check their order. Queue announcements are checked
 against their current queue counts because the recorded counts include the retired folding.
 The on-demand project and Sessions browser proofs restate their recorded location notes without
 changing published words. Attention's browser comparison excludes the replaced location cards;
