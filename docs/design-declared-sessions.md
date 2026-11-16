@@ -33,6 +33,28 @@ Persistence cannot recover SessionStart events never received, including claims 
 upgrading from memory-only storage. Ended rows can still describe their declared parent while they
 remain on the board.
 
+## Binding events to a session (declined)
+
+The capability authenticates a harness adapter, not a session: any holder of a harness's
+capability can post lifecycle events, a parent declaration included, for any session of that
+harness. Requiring a per-session token minted at SessionStart on every later event was weighed
+and declined by the owner on 2026-11-16. What it would have cost:
+
+| Adapter | Where its events come from | What a per-session token needs |
+|---|---|---|
+| Claude Code, Codex, Gemini CLI, Droid | `event_hook.py` (three byte-identical copies), a new process per event | A token file per session under the state home, written at SessionStart and read on every later event, plus cleanup |
+| Antigravity | `agy_hook.py` and `statusline_hook.py`, two processes posting for one session | The same store, shared by both hooks |
+| OpenCode, Pi | `opencode_plugin.js` and `pi_extension.js`, long-lived in the harness process | A token held in memory and minted again whenever a dashboard restart rotates the capability |
+| The server | `http_api` event route | Minting, persistence across restarts, and a rule for sessions it never saw start |
+
+Two facts decide it. The token file would be readable by the same user who can already read the
+capability file, so any process able to forge an event today could read the token too: the change
+adds no boundary within the threat model in [Security](../SECURITY.md#launcher-parent-declarations-and-group-labels).
+And a session already running when the dashboard starts sends no SessionStart to it, so the server
+would have to either refuse that session's events, losing state the board shows today, or accept
+them unbound, which is the current boundary again. The capability stays per harness, and Security
+says so.
+
 ## Resolution and cycles
 
 Resolve after lifecycle overlays and annotation attachment, against the final rows remaining
