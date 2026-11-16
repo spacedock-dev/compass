@@ -47,6 +47,7 @@ const norm = (node: Element | null): string =>
   node ? (node.textContent ?? '').replace(/\s+/g, ' ').trim() : '';
 
 function summarize(source: Element | DocumentFragment): Summary {
+  restateRecordedLocationNotes(source);
   const root = normalizeDisclosures(source);
   return {
     header: (() => {
@@ -94,8 +95,8 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
   const template = document.createElement('template');
   template.innerHTML = legacy.sessionsHtml(payload);
   projectRecordedRowOpener(template.content, payload);
-  restateRecordedLocationNotes(template.content);
   raw?.(template.innerHTML);
+  restateRecordedLocationNotes(template.content);
   retractSessionCopies(template.content);
   const header = template.content.querySelector('.next-operations-header');
   header?.querySelector(':scope > span')?.remove();
@@ -248,7 +249,7 @@ describe('the Sessions screen reads as the legacy screen does, over generated pa
       seen.ended += (html.match(/NOW · ENDED/g) ?? []).length;
       seen.asked += (text.match(/BLOCKED · /g) ?? []).length;
       seen.drift += (text.match(/Drift · /g) ?? []).length;
-      seen.shared += (text.match(/Location not measured for/g) ?? []).length;
+      seen.shared += (html.match(/sessions share this display label/g) ?? []).length;
       seen.goalTyped += (text.match(/GOAL · YOUR WORDS|GOAL · FROM YOUR PROMPT/g) ?? []).length;
       seen.annotationsOff += (text.match(/Annotations off/g) ?? []).length;
     }

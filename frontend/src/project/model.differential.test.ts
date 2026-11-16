@@ -28,7 +28,10 @@ describe('the project model reads as the legacy model does', () => {
         const { app, legacyGroup, env, entry } = made;
         const at = `seed ${String(seed)} ${JSON.stringify(label)}`;
         const check = (name: string, left: unknown, right: unknown) => {
-          const found = firstDifference(canonical(recordedLocationNotes(left)), canonical(right));
+          const found = firstDifference(
+            canonical(recordedLocationNotes(left)),
+            canonical(recordedLocationNotes(right)),
+          );
           if (found) failures.push(`${at} ${name}: ${found}`);
         };
         try {

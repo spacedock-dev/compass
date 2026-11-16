@@ -14,7 +14,7 @@ import {
   trimmed,
   type Row,
 } from '../observed';
-import { turnEndedSentence } from './detail';
+import { sessionAsks, turnEndedSentence } from './detail';
 import { harnessLabels } from './rows';
 
 /* The session page, held to the legacy page by what a reader can read. `nextSessionView` runs unchanged
@@ -175,8 +175,20 @@ function projectRecordedTurnEnd(
       String(candidate['sid'] ?? '') === route.session &&
       (!route.harness || candidate['harness'] === route.harness),
   );
-  const sentence = row ? turnEndedSentence(row) : null;
-  if (!row || !sentence) return;
+  if (!row) return;
+  const sentence = turnEndedSentence(row);
+  if (!sentence) return;
+  if (sessionAsks(payload, row).some((ask) => trimmed(ask['question']))) {
+    const meta = root.querySelector('.next-session-detail-meta');
+    if (meta) {
+      meta.textContent = (meta.textContent ?? '')
+        .split(' · ')
+        .filter((part) => part !== String(row['state_detail'] ?? ''))
+        .join(' · ');
+      if (!meta.textContent) meta.remove();
+    }
+    return;
+  }
   const strong = root.querySelector('.next-session-current > strong');
   if (strong) strong.textContent = sentence;
   const meta = root.querySelector('.next-session-detail-meta');

@@ -183,9 +183,11 @@ function CommandSurface({
 function SessionMetadata({
   session,
   generated,
+  hasOpenRequest,
 }: {
   readonly session: Row;
   readonly generated: number | null;
+  readonly hasOpenRequest: boolean;
 }) {
   const drift = useDrift();
   const meta = sessionMeta(
@@ -194,6 +196,7 @@ function SessionMetadata({
     drift.model.entryCount,
     drift.model.windowCount,
     drift.model.entriesPartial,
+    hasOpenRequest,
   );
   return meta ? <p className="next-session-detail-meta">{meta}</p> : null;
 }
@@ -281,7 +284,11 @@ function Header({
           <SessionAge session={session} generated={generated} />
         </p>
         {!(observed.isNeeds || observed.askKnown) ? (
-          <SessionMetadata session={session} generated={generated} />
+          <SessionMetadata
+            session={session}
+            generated={generated}
+            hasOpenRequest={observed.askKnown}
+          />
         ) : null}
         <DriftPill />
         <Controls session={session} observed={observed} route={route} />
@@ -395,7 +402,11 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
           </DriftSlot>
           <FullActivity project={route.project} session={session}>
             {observed.isNeeds || observed.askKnown ? (
-              <SessionMetadata session={session} generated={generated} />
+              <SessionMetadata
+                session={session}
+                generated={generated}
+                hasOpenRequest={observed.askKnown}
+              />
             ) : null}
             <CommandSurface session={session} observed={observed} generated={generated} />
             {/* The numbered record every "#<n>" on this page names, right after CURRENT ACTIVITY. */}

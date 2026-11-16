@@ -936,5 +936,7 @@ export const IdleQuestionPrecedesTurnEnd: Story = {
     ) as HTMLElement;
     await expect(activity).toHaveTextContent(String(ASK['question']));
     await expect(activity).not.toHaveTextContent('Turn ended');
+    const metadata = canvasElement.querySelector('.next-session-detail-meta') as HTMLElement;
+    await expect(metadata).not.toHaveTextContent(/Turn ended|Run finished/);
   },
 };

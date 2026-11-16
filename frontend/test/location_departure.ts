@@ -1,8 +1,9 @@
 import type { AttentionModel, Subject } from '../src/attention/model';
 import type { Row } from '../src/observed';
 
-/* Recorded generated boards have no measured location sources. Change only their UI-owned
-   disclosures; never rewrite published session titles or evidence that happens to quote them. */
+/* Location notes now count distinct identities, unlike the recorded raw-row counts. Their model
+   tests and stories own those answers; compare every other field and published word unchanged.
+   docs/design-frontend-migration.md#held-to-recorded-answers */
 const unknownNote = (text: string) =>
   text.replace(
     /^(\d+) sessions share this display label; shared location is not established$/,
@@ -23,12 +24,16 @@ export function recordedLocationNotes<T>(value: T): T {
       nextKnown: true,
     } as T;
   return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [
-      key,
-      key === 'sharedLabelText' && typeof item === 'string'
-        ? unknownNote(item)
-        : recordedLocationNotes(item),
-    ]),
+    Object.entries(value)
+      .filter(([key]) => !['sharedLabelText', 'sharedLabelKnown'].includes(key))
+      .map(([key, item]) => [
+        key,
+        recordedLocationNotes(
+          key === 'caveats' && Array.isArray(item)
+            ? item.filter((text) => text !== 'No shared display label observed')
+            : item,
+        ),
+      ]),
   ) as T;
 }
 
@@ -36,7 +41,7 @@ export function restateRecordedLocationNotes(root: ParentNode): void {
   for (const note of root.querySelectorAll(
     '.next-operation-collision,.next-project-collision,.next-project-detail-collision',
   )) {
-    note.textContent = unknownNote(note.textContent ?? '');
+    note.remove();
   }
 }
 

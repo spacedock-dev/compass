@@ -10,16 +10,20 @@ import { fakeBackend } from '../test/storage_backends';
 import { locationBoard, locationRow, locationRows } from '../test/location_boards';
 
 function Board({
+  hash = '#n=attention',
   locations = 1,
   checkout = 'idle',
   unknown = false,
   fallbacks = false,
   subdirectory = false,
   duplicate = false,
+  mixedDuplicate = false,
 }: {
+  readonly hash?: string;
   readonly locations?: number;
   readonly subdirectory?: boolean;
   readonly duplicate?: boolean;
+  readonly mixedDuplicate?: boolean;
   readonly unknown?: boolean;
   readonly fallbacks?: boolean;
   readonly checkout?: 'idle' | 'shared' | 'distinct' | 'missing';
@@ -44,7 +48,8 @@ function Board({
     if (duplicate) {
       const row = locationRow(data, 0);
       row['project_identity_source'] = 'collector project label';
-      data['sessions'] = [row, { ...row }];
+      row['state'] = 'working';
+      data['sessions'] = [row, { ...row }, ...(mixedDuplicate ? [locationRow(data, 1)] : [])];
     }
     if (locations > 1) locationRow(data, 8)['project_key'] = 'path:other';
     if (unknown)
@@ -53,7 +58,7 @@ function Board({
     const clock = createFakeClock();
     return createShell({
       env: createFakeEnvironment({ clock }),
-      router: createRouter(fakeRouterEnvironment('#n=attention').env),
+      router: createRouter(fakeRouterEnvironment(hash).env),
       provider: () => fakeBackend(),
       events: { addEventListener: () => undefined, removeEventListener: () => undefined },
       search: '',
@@ -186,5 +191,31 @@ export const RepeatedIdentityHasNoOrphanCard: Story = {
     await within(canvasElement).findByText(/of 2 sessions carry a subject/);
     await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
     await expect(canvasElement).not.toHaveTextContent('Location not measured for 2 sessions');
+  },
+};
+
+export const RepeatedSessionDoesNotInventSharing: Story = {
+  args: { duplicate: true },
+  play: async ({ canvasElement, mount }) => {
+    for (const view of ['sessions', 'projects']) {
+      await mount(<Board key={view} hash={`#n=${view}`} duplicate />);
+      await waitFor(() => expect(canvasElement).toHaveTextContent('audits'));
+      await expect(canvasElement).not.toHaveTextContent('Location not measured');
+    }
+  },
+};
+
+export const RepeatedUnknownCountsOnceBesideMeasuredSession: Story = {
+  args: { duplicate: true, mixedDuplicate: true },
+  play: async ({ canvasElement, mount }) => {
+    for (const view of ['sessions', 'projects']) {
+      await mount(<Board key={view} hash={`#n=${view}`} duplicate mixedDuplicate />);
+      await waitFor(() =>
+        expect(canvasElement).toHaveTextContent(
+          'Location not measured for 1 session with this display label',
+        ),
+      );
+      await expect(canvasElement).not.toHaveTextContent('Location not measured for 2 sessions');
+    }
   },
 };

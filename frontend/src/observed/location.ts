@@ -11,7 +11,14 @@ export function measuredLocation(row: Row): string {
     : '';
 }
 
+function distinctSessions(rows: readonly Row[]): Row[] {
+  const unique = new Map<string, Row>();
+  for (const row of rows) if (!unique.has(sessionKey(row))) unique.set(sessionKey(row), row);
+  return [...unique.values()];
+}
+
 export function locationNote(rows: readonly Row[]): string {
+  rows = distinctSessions(rows);
   if (rows.length < 2) return '';
   const keys = new Set(rows.map(measuredLocation).filter(Boolean));
   const notes: string[] = [];
@@ -28,6 +35,7 @@ export function locationNote(rows: readonly Row[]): string {
    the unmeasured count: on a board where 25 old worktrees were deleted, every measured row read
    "Location not measured for 25 sessions", as if it were about that row. */
 export function rowLocationNote(rows: readonly Row[], row: Row): string {
+  rows = distinctSessions(rows);
   if (!measuredLocation(row)) return locationNote(rows);
   const keys = new Set(rows.map(measuredLocation).filter(Boolean));
   return keys.size > 1
@@ -36,6 +44,7 @@ export function rowLocationNote(rows: readonly Row[], row: Row): string {
 }
 
 export function unmeasuredLocationNote(rows: readonly Row[]): string {
+  rows = distinctSessions(rows);
   if (rows.length < 2) return '';
   const unknown = rows.filter((row) => !measuredLocation(row)).length;
   return unknown
@@ -101,9 +110,7 @@ export function locationWarnings(rows: readonly Row[]): LocationWarning[] {
 export function boardLocationWarnings(
   rows: readonly Row[],
 ): { label: string; warning: LocationWarning }[] {
-  const unique = new Map<string, Row>();
-  for (const row of rows) if (!unique.has(sessionKey(row))) unique.set(sessionKey(row), row);
-  const members = [...unique.values()];
+  const members = distinctSessions(rows);
   const labels = new Map<string, Row[]>();
   for (const row of members) {
     const label = String(row['project'] ?? '');

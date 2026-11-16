@@ -91,6 +91,7 @@ export function sessionMeta(
   since: number | null = null,
   /** Only the newest pages of the record are held, so `entries` is a floor. */
   partial = false,
+  hasOpenRequest = false,
 ): string {
   const parts: string[] = [];
   const ended = durationSince(generated, endedAt(session));
@@ -98,8 +99,9 @@ export function sessionMeta(
     parts.push(`ended ${ended} ago`);
   } else {
     const turnEnd = session['waiting_on_child'] ? null : turnEndedSentence(session, generated);
-    if (turnEnd) parts.push(turnEnd);
-    else if (session['state_detail']) parts.push(String(session['state_detail']));
+    if (turnEnd) {
+      if (!hasOpenRequest) parts.push(turnEnd);
+    } else if (session['state_detail']) parts.push(String(session['state_detail']));
     const state = nativeSession(session)['state'];
     if (state === 'needs_input') {
       const blocked = durationSince(generated, session['blocked_since']);

@@ -267,6 +267,35 @@ describe('the counts are read from the rows the page renders', () => {
     expect(lanes.history.map((row) => row.sid)).toEqual(['new', 'old']);
   });
 
+  it('counts a repeated session once in the shared label note on Sessions and Projects', () => {
+    const unknown = { harness: 'claude', sid: 'same', project: 'shared', state: 'idle' };
+    const measured = {
+      ...unknown,
+      sid: 'measured',
+      project_key: 'path:shared',
+      project_identity_source: 'working directory path',
+    };
+    const repeated = observe(board([unknown, { ...unknown }]));
+    expect(repeated.sessions.every((row) => !row.sharedLabelKnown)).toBe(true);
+    expect(repeated.projects[0]?.sharedLabelKnown).toBe(false);
+    const mixed = observe(board([unknown, { ...unknown }, measured]));
+    const note = 'Location not measured for 1 session with this display label';
+    expect(mixed.sessions[0]?.sharedLabelText).toBe(note);
+    expect(mixed.projects[0]?.sharedLabelText).toBe(note);
+    const otherHarness = observe(board([unknown, { ...unknown, harness: 'codex' }]));
+    expect(otherHarness.projects[0]?.sharedLabelText).toBe(
+      'Location not measured for 2 sessions with this display label',
+    );
+    const otherLocation = { ...measured, sid: 'other', project_key: 'path:other' };
+    const locations = observe(board([measured, { ...measured }, otherLocation]));
+    expect(locations.sessions[0]?.sharedLabelText).toBe(
+      '2 sessions share this display label across 2 measured locations',
+    );
+    expect(locations.projects[0]?.sharedLabelText).toBe(
+      '2 sessions share this display label across 2 measured locations',
+    );
+  });
+
   it('ranks projects needs-first and states an unmeasured shared label, but not for a blank label', () => {
     const grouped = observe(
       board([

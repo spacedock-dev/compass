@@ -30,7 +30,7 @@ const row = (sid: string, headless: boolean) => ({
   ended_at: null,
 });
 
-function Page({ hash }: { readonly hash: string }) {
+function Page({ hash, asking = false }: { readonly hash: string; readonly asking?: boolean }) {
   const [shell] = useState(() => {
     const history = fakeRouterEnvironment(hash);
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
@@ -46,6 +46,10 @@ function Page({ hash }: { readonly hash: string }) {
         url.startsWith('/api/data')
           ? json({
               generated: G,
+              ask: asking,
+              asks: asking
+                ? [{ id: 'q', harness: 'codex', session_id: 'exec', question: 'Review the run?' }]
+                : [],
               sessions: [row('exec', true), row('tui', false)],
             })
           : json({}),
@@ -113,5 +117,16 @@ export const InteractiveStillWaits: Story = {
     await expect(
       canvasElement.querySelector('[data-next-session-command="activity"]')?.textContent,
     ).not.toContain('Run finished');
+  },
+};
+
+export const OpenQuestionSuppressesFinishedMetadata: Story = {
+  render: () => <Page hash="#n=session:synthetic:codex:exec" asking />,
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByRole('heading', { level: 1, name: 'Synthetic exec' });
+    const activity = canvasElement.querySelector('[data-next-session-command="activity"]');
+    await expect(activity).toHaveTextContent('Review the run?');
+    const metadata = canvasElement.querySelector('.next-session-detail-meta') as HTMLElement;
+    await expect(metadata).not.toHaveTextContent(/turn ended|run finished/i);
   },
 };
