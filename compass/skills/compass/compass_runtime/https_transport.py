@@ -1,9 +1,8 @@
 """A bounded stdlib HTTPS exchange: one monotonic deadline from DNS to the last body byte.
 
-Shared by the daily release lookup in `update_check` and the vendor quota fetch in `quota`. The
-caller supplies the opener, which is `reach.build_reach_opener()` for both (no proxy handler that
-reads the environment or the macOS system settings, and no redirect followed), and a DNS slot of
-its own.
+Shared by the daily release lookup in `update_check`, the vendor quota fetch in `quota`, and the
+Reach nudge. Each caller supplies `reach.build_reach_opener()` (no proxy handler that reads the
+environment or the macOS system settings, and no redirect followed) and a DNS slot of its own.
 """
 
 from __future__ import annotations
@@ -160,7 +159,8 @@ def open_bounded(
 
     A non-HTTPS URL is refused before anything is resolved or connected, so a header the request
     carries never travels in clear text. The opener must not follow redirects or read ambient proxy
-    settings; `reach.build_reach_opener` builds one that does neither.
+    settings; `reach.build_reach_opener` builds one that does neither. Supply a fresh opener
+    for each exchange: the deadline handler remains installed on it.
     """
     if urllib.parse.urlsplit(request.full_url).scheme != "https":
         raise ValueError("HTTPS exchange requires an https URL")
@@ -172,6 +172,8 @@ def open_bounded(
     watchdog.start()
     try:
         with opener.open(request, timeout=_remaining(deadline)) as response:
+            # Header parsing can treat a watchdog shutdown as a clean end of headers.
+            _remaining(deadline)
             yield BoundedResponse(response, deadline)
     finally:
         watchdog.cancel()

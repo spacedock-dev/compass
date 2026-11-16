@@ -1505,8 +1505,9 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # hands it, and calls one sandboxed subprocess through `observer` --
         # deliberately through it rather than beside it, so a second model lane
         # cannot drift from the first one's flags.
-        # Off-machine nudge delivery: reaches the operator away from the desk.
+        # Off-machine delivery uses the transport leaf to bound the entire HTTPS exchange.
         "compass_runtime.reach": {
+            "compass_runtime.https_transport",
             "compass_runtime.config",
             "compass_runtime.sessions",
             "compass_runtime.state",

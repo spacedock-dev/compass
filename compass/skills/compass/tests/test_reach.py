@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import contextlib
+import http.client
 import http.server
+import io
 import json
 import os
+import socket
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -14,7 +19,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from compass_runtime import reach
+from compass_runtime import cli, reach
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
@@ -70,7 +75,17 @@ class ReachNudgeTest(unittest.TestCase):
         self.server = MockReachServer()
         self.server_thread = threading.Thread(target=poll_fast(self.server), daemon=True)
         self.server_thread.start()
-        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/webhook"
+        self.url = f"https://127.0.0.1:{self.server.server_address[1]}/webhook"
+
+        # Keep the real HTTPS opener and HTTP parser; replace only TLS setup for the local stub.
+        def connect(connection: http.client.HTTPSConnection) -> None:
+            connection.sock = socket.create_connection(
+                (connection.host, connection.port), timeout=connection.timeout
+            )
+
+        patch = mock.patch.object(http.client.HTTPSConnection, "connect", connect)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def tearDown(self) -> None:
         self.server.release.set()
@@ -263,6 +278,106 @@ class ReachNudgeTest(unittest.TestCase):
         self.assertFalse(sent)
         combined_logs = " ".join(diagnostics)
         self.assertNotIn("invalid_secret_token_12345", combined_logs)
+
+
+class ReachHTTPSSettingTest(unittest.TestCase):
+    def test_a_plain_http_setting_is_refused_from_every_configuration_source(self) -> None:
+        url = "http://example.test/private-webhook"
+        with tempfile.TemporaryDirectory() as td:
+            for source in ("argument", "environment", "file"):
+                with self.subTest(source=source):
+                    overrides: dict[str, Any] = {"state_dir": td}
+                    if source == "argument":
+                        overrides["reach_url"] = url
+                    elif source == "environment":
+                        overrides["environ"] = {"COMPASS_REACH_URL": url}
+                    else:
+                        (Path(td) / "reach_url").write_text(url)
+                    self.assertIsNone(reach.resolve_reach_url(make_config(**overrides)))
+
+    def test_a_plain_http_nudge_is_refused_before_opening_a_connection(self) -> None:
+        diagnostics: list[str] = []
+        with mock.patch.object(urllib.request.OpenerDirector, "open") as opened:
+            self.assertFalse(
+                reach.send_reach_nudge(
+                    make_config(),
+                    "http://example.test/private-webhook",
+                    1,
+                    0,
+                    diagnostic_sink=diagnostics.append,
+                )
+            )
+        opened.assert_not_called()
+        self.assertIn("HTTPS", " ".join(diagnostics))
+        self.assertNotIn("private-webhook", " ".join(diagnostics))
+
+    def test_the_command_refuses_http_and_explains_https_in_the_setting_help(self) -> None:
+        parser = cli.build_parser()
+        self.assertIn("HTTPS", parser.format_help())
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors), self.assertRaises(SystemExit) as raised:
+            parser.parse_args(["--reach-url", "http://example.test/private-webhook"])
+        self.assertEqual(2, raised.exception.code)
+        self.assertIn("HTTPS", errors.getvalue())
+        self.assertNotIn("private-webhook", errors.getvalue())
+        self.assertEqual(
+            "https://example.test/webhook",
+            parser.parse_args(["--reach-url", "https://example.test/webhook"]).reach_url,
+        )
+
+
+class ReachDeadlineTest(unittest.TestCase):
+    # Measures abandonment of a continuously dripping webhook against elapsed time.
+    REAL_TIME_TESTS = True
+
+    def test_a_webhook_dripping_headers_is_abandoned_within_the_exchange_deadline(self) -> None:
+        client, server = socket.socketpair()
+        stop = threading.Event()
+        received = threading.Event()
+
+        def drip() -> None:
+            try:
+                server.recv(4096)
+                received.set()
+                server.sendall(b"HTTP/1.1 200 OK\r\nX-Drip: ")
+                for _ in range(50):
+                    if stop.wait(0.02):
+                        return
+                    server.sendall(b" ")
+                server.sendall(b"\r\nContent-Length: 0\r\n\r\n")
+            except OSError:
+                pass
+
+        worker = threading.Thread(target=drip, daemon=True)
+        worker.start()
+        diagnostics: list[str] = []
+        began = time.monotonic()
+        try:
+            with (
+                mock.patch.object(
+                    http.client.HTTPSConnection,
+                    "connect",
+                    lambda connection: setattr(connection, "sock", client),
+                ),
+                mock.patch.object(reach, "REACH_TIMEOUT_SEC", 0.1),
+            ):
+                sent = reach.send_reach_nudge(
+                    make_config(),
+                    "https://example.test/webhook",
+                    1,
+                    0,
+                    diagnostic_sink=diagnostics.append,
+                )
+            self.assertTrue(received.is_set(), "the webhook received no POST")
+            self.assertFalse(sent)
+            self.assertLess(time.monotonic() - began, 0.7)
+            self.assertTrue(diagnostics)
+        finally:
+            stop.set()
+            client.close()
+            server.close()
+            worker.join(2)
+            self.assertFalse(worker.is_alive())
 
 
 class ReachURLFileTest(unittest.TestCase):
