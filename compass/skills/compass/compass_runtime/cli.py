@@ -299,6 +299,14 @@ def refuse_footer_with_other_options(
         )
 
 
+def https_reach_url(value: str) -> str:
+    """Keep webhook credentials off clear-text connections."""
+    url = value.strip()
+    if not url.startswith("https://"):
+        raise argparse.ArgumentTypeError("Reach requires HTTPS to protect the webhook URL")
+    return url
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The CLI surface. argparse owns --help and its own usage errors."""
     # Abbreviations are off so a removed option stays refused: `--frontend` is a unique prefix of
@@ -523,7 +531,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--reach-url",
-        help="webhook endpoint for off-machine nudges when a session needs human attention",
+        type=https_reach_url,
+        help=(
+            "HTTPS webhook endpoint for off-machine nudges when a session needs human attention; "
+            "HTTP is refused to protect the credential in the URL"
+        ),
     )
     parser.add_argument(
         "--quiet-hours",

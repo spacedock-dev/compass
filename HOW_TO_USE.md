@@ -1050,8 +1050,9 @@ then abandoned, because a pipe cannot be polled there. That path has not been me
 
 ## Reach nudges away from the desk
 
-When configured, Compass can post a scalar count to a webhook URL you provide when sessions
-need input or finish unread while you are away:
+When configured, Compass can post a scalar count to an HTTPS webhook URL you provide when
+sessions need input or finish unread while you are away. HTTP is refused because the URL
+contains a credential:
 
 ```bash
 python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --reach-url "https://ntfy.sh/my-topic"

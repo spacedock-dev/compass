@@ -255,7 +255,7 @@ see [Environment](#environment).
 
 | Option | Behavior and default |
 |---|---|
-| `--reach-url URL` | HTTP or HTTPS webhook endpoint for counts-only nudges when sessions need input or finish unread while you are away. Overrides the environment and file settings. No URL is configured by default. |
+| `--reach-url URL` | HTTPS webhook endpoint for counts-only nudges when sessions need input or finish unread while you are away. HTTP is refused to protect the credential in the URL. Overrides the environment and file settings. No URL is configured by default. |
 | `--no-reach` | Refuse off-machine reach nudges regardless of any configured URL. Does not disable other notifications, quota fetches or model calls. |
 | `--quiet-hours WINDOW` | Local 24-hour window, such as `22:00-08:00` or `13:00-14:00`. Suppresses non-ask notifications, unasked checks, workflow-condition notifications and reach nudges during the window. Conditions are still evaluated. Direct questions are exempt. Overrides environment and file settings. |
 | `--no-quiet-hours` | Disable quiet-hours suppression for this run regardless of the configured window. |
@@ -290,7 +290,7 @@ owned by the installed harness, as explained in [Security](SECURITY.md#observer-
 | `COMPASS_ALLOW_TOOL_OUTPUT` | `1` is accepted and does nothing in this release; will be removed in a later release. |
 | `SPACEDOCK_INTERNAL` | Exactly `1` marks release lookups as internal, overriding the saved internal flag. No other value does. |
 | `CI` | After ASCII whitespace trimming and ASCII case-folding, `1`, `true`, `yes` or `on` adds `; ci` to the release lookup's User-Agent; any other value adds nothing. It does not turn the check off. |
-| `COMPASS_REACH_URL` | Reach endpoint when `--reach-url` is absent; takes precedence over the `reach_url` file in the Compass home. `--no-reach` overrides all sources. |
+| `COMPASS_REACH_URL` | HTTPS Reach endpoint when `--reach-url` is absent; takes precedence over the `reach_url` file in the Compass home. `--no-reach` overrides all sources. |
 | `COMPASS_QUIET_HOURS` | Quiet-hours window when `--quiet-hours` is absent; takes precedence over the `quiet_hours` file in the Compass home. `--no-quiet-hours` overrides all sources. |
 | `CLAUDE_CONFIG_DIR` | Claude configuration root; Compass searches `projects`, `tasks` and `teams` below it. |
 | `CODEX_HOME` | Codex root; Compass searches `sessions` below it. |

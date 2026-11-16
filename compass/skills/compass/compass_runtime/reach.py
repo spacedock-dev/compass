@@ -23,6 +23,8 @@ import urllib.error
 import urllib.request
 from typing import TYPE_CHECKING, Any, Final
 
+from compass_runtime import https_transport
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
     from compass_runtime.state import RuntimeState
 
 REACH_TIMEOUT_SEC: Final[float] = 5.0
+_DNS_SLOT = threading.BoundedSemaphore(1)
 REACH_URL_ENV: Final[str] = "COMPASS_REACH_URL"
 REACH_URL_FILENAME: Final[str] = "reach_url"
 REACH_URL_MAX_BYTES: Final[int] = 2048
@@ -75,7 +78,7 @@ def resolve_reach_url(config: RuntimeConfig) -> str | None:
         candidate = _stored_reach_url(config)
     if candidate:
         url = candidate.strip()
-        if url.startswith(("http://", "https://")):
+        if url.startswith("https://"):
             return url
     return None
 
@@ -137,11 +140,14 @@ def send_reach_nudge(
     opener: urllib.request.OpenerDirector | None = None,
     diagnostic_sink: Callable[[str], None] = print,
 ) -> bool:
-    """Dispatch one nudge POST to the configured destination."""
+    """Dispatch one nudge POST to the configured destination with a fresh, single-use opener."""
     if not config.reach_enabled:
         return False
+    if not url.startswith("https://"):
+        diagnostic_sink("[reach] POST refused: HTTPS is required to protect the webhook URL")
+        return False
     payload = format_reach_payload(needs_input, finished_unread)
-    req = urllib.request.Request(  # noqa: S310 - http(s) URL validated
+    req = urllib.request.Request(  # noqa: S310 - HTTPS URL validated
         url,
         data=payload,
         headers={"Content-Type": "application/json"},
@@ -149,7 +155,7 @@ def send_reach_nudge(
     )
     op = opener or build_reach_opener()
     try:
-        with op.open(req, timeout=REACH_TIMEOUT_SEC):
+        with https_transport.open_bounded(op, req, timeout=REACH_TIMEOUT_SEC, dns_slot=_DNS_SLOT):
             return True
     except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException) as exc:
         # Never log the URL: the URL is a bearer credential

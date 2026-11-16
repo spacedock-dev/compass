@@ -236,10 +236,6 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "_stored_reach_url: NOFOLLOW, NONBLOCK and same-descriptor owner/mode/identity checks.",
     ),
-    ("compass_runtime/reach.py", "send_reach_nudge"): (
-        1,
-        "send_reach_nudge: HTTP opener.open, not a filesystem operation.",
-    ),
     ("compass_runtime/reader_checks.py", "_read"): (
         1,
         "KNOWN GAP: reader checks follow links and lack owner/identity checks despite nonblocking regular-file reads.",
