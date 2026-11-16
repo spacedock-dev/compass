@@ -1240,6 +1240,8 @@ try {
       const key = await pure(page, 'goalKey', [label]);
       await recorded(
         page,
+        // Browser proof only: label is a fixed test value serialized with JSON.stringify into the recorded fixture script.
+        // nosemgrep: javascript.lang.security.html-in-template-string
         `projectGoalEditingLabel = ${json(label)};
       document.body.insertAdjacentHTML('beforeend', '<div id="conformance-goal-host">' + projectGoalBlock({label: ${json(label)}}, projectGoal(${json(label)}), '') + '</div>');`,
       );

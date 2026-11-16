@@ -303,6 +303,8 @@ export async function startDevelopment(options = {}) {
           deadline: Math.min(deadline, Date.now() + 1000),
           signal: requests.signal,
         });
+        // This string is compared with a response, never rendered; generation is local randomBytes(16).toString('hex').
+        // nosemgrep: javascript.lang.security.html-in-template-string
         if (!document.includes(`<meta name="compass-dev-generation" content="${generation}">`))
           throw Error('Python development identity mismatch.');
         handle.ready = { origin, viteOrigin, pid: backend.pid, workerPid: worker.pid, generation };

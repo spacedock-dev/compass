@@ -731,6 +731,26 @@ class SemgrepPinTest(unittest.TestCase):
     def job(self) -> dict[str, Any]:
         return cast("dict[str, Any]", workflows()["sast.yml"]["jobs"]["semgrep"])
 
+    def test_the_scan_triages_only_frontend_test_files_and_still_blocks_new_findings(self) -> None:
+        scan = next(
+            step["run"] for step in self.job()["steps"] if step.get("name") == "Run Semgrep"
+        )
+        words = shlex.split(scan, comments=True)
+        self.assertIn("--error", words)
+        self.assertEqual(
+            "60", words[words.index("--timeout") + 1] if "--timeout" in words else None
+        )
+        self.assertEqual(
+            ["WARNING", "ERROR"],
+            [words[i + 1] for i, word in enumerate(words) if word == "--severity"],
+        )
+        self.assertEqual(
+            ["semgrep-rules", "frontend/src/**/*.test.*"],
+            [words[i + 1] for i, word in enumerate(words) if word == "--exclude"],
+        )
+        self.assertNotIn("--exclude-rule", words)
+        self.assertIn("test-only DOM fixtures", scan)
+
     def test_the_image_is_pinned_by_digest(self) -> None:
         self.assertRegex(self.job()["container"]["image"], SEMGREP_IMAGE)
 

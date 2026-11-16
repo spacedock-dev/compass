@@ -101,7 +101,10 @@ def _websocket_accept(value: str) -> str | None:
         return None
     if len(raw) != 16:
         return None
-    digest = hashlib.sha1(value.encode("ascii") + _WEBSOCKET_GUID, usedforsecurity=False).digest()
+    # RFC 6455 requires this SHA-1 handshake response, not a collision-resistant signature.
+    digest = hashlib.sha1(  # nosemgrep: python.lang.security.insecure-hash-algorithm-sha1
+        value.encode("ascii") + _WEBSOCKET_GUID, usedforsecurity=False
+    ).digest()
     return base64.b64encode(digest).decode("ascii")
 
 

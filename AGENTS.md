@@ -608,6 +608,12 @@ remote `uses` need full commit SHAs, containers need SHA-256 digests, shell `run
 `--ignore-scripts` argument, and pip
 installs use generated hashed files.
 
+The weekly and manual Semgrep scan uses a digest-pinned image and commit-pinned security rules,
+with registry lookups and metrics disabled. Every new WARNING or ERROR remains blocking.
+Frontend `*.test.*` files under `frontend/src/` are excluded because they parse test-only DOM
+fixtures and recorded HTML. Production modules, Storybook and browser proofs remain scanned;
+reviewed false positives carry rule-specific `nosemgrep` comments beside their reasons.
+
 The separate `sast.yml` workflow runs dependency audits weekly and on dependency-file pull
 requests: npm at high severity and Python exact pins against OSV, without mutating a lockfile or
 installing a Python audit tool. Its jobs have read-only tokens and no secrets. Dependabot covers
