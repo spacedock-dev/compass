@@ -180,7 +180,10 @@ function unchangedView(summary: Summary, restored: Set<string>): Summary {
       };
     })
     .filter((section) => section.items.length || section.name === 'risk');
-  return { ...summary, sections };
+  // A repeated identity now counts once, so a label shared only by repeats is no longer shared.
+  // frontend/test/location_departure.ts restates the same caveat departure for the other views.
+  const caveats = summary.caveats.filter((text) => text !== 'No shared display label observed');
+  return { ...summary, sections, caveats };
 }
 
 const CASES = 40;
