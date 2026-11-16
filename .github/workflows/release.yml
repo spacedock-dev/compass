@@ -16,8 +16,7 @@ name: Release
 #                    release may have completed in between. Both refuse a version tagged
 #                    under both spellings (`0.2.0` and `v0.2.0`). A resume needs more than
 #                    the commit's title: one parent, the release bot as committer, and a
-#                    diff of the owned manifests' version values only. Also reports
-#                    whether the release is the latest, false when a higher tag exists.
+#                    diff of the owned manifests' version values only.
 #   verify-frontend  read-only token, checkout WITHOUT persisted credentials, no key.
 #                    The only job that installs frontend dependencies and runs them.
 #                    Rebuilds the React bundle from exactly the target and compares it
@@ -135,7 +134,6 @@ jobs:
       mode: ${{ steps.resolve.outputs.mode }}
       version: ${{ steps.resolve.outputs.version }}
       target: ${{ steps.resolve.outputs.target }}
-      latest: ${{ steps.resolve.outputs.latest }}
     steps:
       - name: Checkout main with full history and tags, without credentials
         # actions/checkout@v7.0.1, pinned to an immutable SHA.
@@ -407,7 +405,6 @@ jobs:
       MODE: ${{ needs.resolve.outputs.mode }}
       VERSION: ${{ needs.resolve.outputs.version }}
       TARGET: ${{ needs.resolve.outputs.target }}
-      LATEST: ${{ needs.resolve.outputs.latest }}
       VERIFIED_FRONTEND: ${{ needs.verify-frontend.outputs.verified }}
       VERIFIED_TREE: ${{ needs.verify-tree.outputs.verified }}
     steps:
@@ -576,12 +573,12 @@ jobs:
             echo "Release $TAG already exists - nothing to publish."
             exit 0
           fi
-          # GitHub marks a new release latest unless told otherwise. resolve reports false
-          # when a higher release tag exists, which only a resume of an older tag can meet,
-          # so the badge never moves backwards. Anything but the two words is refused.
+          # Refresh here: a newer tag may have arrived since resolve or a failed attempt.
+          git fetch --tags --force origin
+          LATEST=$(python3 scripts/release_transition.py latest --tag "$TAG")
           case "$LATEST" in
             true | false) ;;
-            *) echo "::error::resolve reported no latest decision"; exit 1 ;;
+            *) echo "::error::publish reported no latest decision"; exit 1 ;;
           esac
           gh release create "$TAG" \
             --title "Compass $VERSION" \

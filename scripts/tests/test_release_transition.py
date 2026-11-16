@@ -238,25 +238,6 @@ class ResolveTest(unittest.TestCase):
                 self.resolve(tag)
             self.assertIn("0.2.0 and v0.2.0", str(caught.exception))
 
-    def test_a_fresh_release_is_the_latest(self) -> None:
-        self.fx.commit("feat: work")
-        self.fx.tag("v0.2.0")
-        result = self.resolve("v0.2.0")
-        self.assertTrue(result.latest)
-        self.assertEqual("true", result.outputs()["latest"])
-
-    def test_a_resume_is_the_latest_only_while_no_higher_release_tag_exists(self) -> None:
-        self.fx.commit("feat: work")
-        self.fx.tag("v0.2.0")
-        self.release_commit("v0.2.0", "0.2.0")
-        self.assertTrue(self.resolve("v0.2.0").latest)
-        self.fx.commit("feat: more work")
-        self.fx.tag("v0.10.0")
-        result = self.resolve("v0.2.0")
-        self.assertEqual("resume", result.mode)
-        self.assertFalse(result.latest)
-        self.assertEqual("false", result.outputs()["latest"])
-
 
 class ReleaseHoldTest(unittest.TestCase):
     """The recorded hold on cutting a release, as a guard rather than a sentence.
@@ -670,14 +651,26 @@ class CommandLineTest(unittest.TestCase):
             timeout=60,
         )
 
-    def test_resolve_prints_and_writes_the_four_job_outputs(self) -> None:
+    def test_resolve_prints_and_writes_the_three_job_outputs(self) -> None:
         output = self.fx.root / "github-output"
         result = self.cli("resolve", "--tag", "v0.2.0", "--github-output", str(output))
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            f"mode=fresh\nversion=0.2.0\ntarget={self.tip}\nlatest=true\n",
+            f"mode=fresh\nversion=0.2.0\ntarget={self.tip}\n",
             output.read_text(encoding="utf-8"),
         )
+
+    def test_a_higher_tag_pushed_after_resolve_keeps_the_older_release_from_latest(self) -> None:
+        resolved = self.cli("resolve", "--tag", "v0.2.0")
+        self.assertEqual(0, resolved.returncode, resolved.stderr)
+        current = self.cli("latest", "--tag", "v0.2.0")
+        self.assertEqual(0, current.returncode, current.stderr)
+        self.assertEqual("true", current.stdout.strip())
+        git(self.fx.origin, "tag", "v0.10.0", "main")
+        self.fx.fetch()
+        published = self.cli("latest", "--tag", "v0.2.0")
+        self.assertEqual(0, published.returncode, published.stderr)
+        self.assertEqual("false", published.stdout.strip())
 
     def test_a_hostile_tag_is_refused_before_it_reaches_any_command(self) -> None:
         marker = self.fx.root / "pwned"
