@@ -115,7 +115,7 @@ def attach(
                 state="working",
                 active=True,
                 waiting_on_child=_identity(child),
-                state_detail=f"waiting on {child[0]}:{child[1]}",
+                state_detail="waiting on a linked child session",
             )
             deadlines[key] = max(deadlines[c] for c in eligible)
         ancestor = parents.get(key)

@@ -325,6 +325,9 @@ one of these:
 - `CHECKING`: an agent has something to look at, or Compass did not see every session
 - `CONTINUES`
 
+Parent and waiting-child lines follow the same 160-character field limit as session titles;
+longer fields end with an ellipsis.
+
 Sessions are grouped by project name, not by folder. In a Spacedock workflow those values read
 `CAPTAIN NEEDED`, `FO INSPECTING` and `FO CONTINUES`.
 

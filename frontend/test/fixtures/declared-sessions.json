@@ -1,0 +1,63 @@
+{
+  "payload": {
+    "generated": 1900000000,
+    "annotate": true,
+    "sessions": [
+      {
+        "harness": "codex",
+        "sid": "child",
+        "project": "demo",
+        "title": "Check build",
+        "state": "working",
+        "active": true,
+        "headless": true,
+        "declared_parent": {
+          "harness": "claude",
+          "sid": "parent"
+        },
+        "declared_parent_state": "linked",
+        "group": "release <&> \"team\"",
+        "group_source": "parent"
+      },
+      {
+        "harness": "codex",
+        "sid": "unlinked",
+        "project": "demo",
+        "title": "Independent check",
+        "state": "idle",
+        "declared_parent": null,
+        "declared_parent_state": "not_linked",
+        "group": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx <&> \"é\"",
+        "group_source": "set"
+      },
+      {
+        "harness": "claude",
+        "sid": "parent",
+        "project": "demo",
+        "title": "Coordinate release",
+        "state": "working",
+        "active": true,
+        "waiting_on_child": {
+          "harness": "codex",
+          "sid": "child"
+        },
+        "group": "release <&> \"team\"",
+        "group_source": "set"
+      }
+    ]
+  },
+  "expected": {
+    "parent": [
+      "Group: release <&> \"team\"",
+      "Waiting on child \"Check build\""
+    ],
+    "child": [
+      "Group: release <&> \"team\" (from parent)",
+      "Child of Coordinate release"
+    ],
+    "unlinked": [
+      "Group: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx <&> \"é\"",
+      "Declared parent is not on the board; not linked."
+    ]
+  }
+}

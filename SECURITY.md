@@ -430,6 +430,9 @@ only forwards the bounded claim to the existing IPv4 loopback listener. It never
 input or history. All reading, context, drift and Live inputs retain the parent's native state,
 activity and detail;
 a display hold cannot change their facts, observer membership, completion scope or cache inputs.
+The browser restores that same native view before deriving reading wording, completion facts,
+final results and evidence of the parent's own activity. Row state and navigation retain the
+Waiting on child presentation.
 UUID hex matching ignores case. A full Claude UUID must also match a row's full resume identity
 when present; ambiguous canonical identities are refused. A prefix alone retains the board's
 existing shorter-identity boundary.

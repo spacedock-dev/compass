@@ -2087,7 +2087,7 @@ def adoption_scenarios(recorder: Recorder, scratch: Scratch) -> None:
 def drift_view_scenario(recorder: Recorder, scratch: Scratch) -> None:
     _drift_view_recording(recorder, scratch, medium=False)
     _drift_view_recording(recorder, scratch, medium=True)
-    for case in ("missing-evidence", "stale", "inaccurate", "withdrawn"):
+    for case in ("missing-evidence", "stale", "inaccurate", "withdrawn", "completed", "held"):
         _drift_view_recording(recorder, scratch, medium=True, case=case)
 
 
@@ -2115,6 +2115,15 @@ def _drift_view_recording(
         last_prompt=FIRST_PROMPT if medium else LATER_PROMPT,
         prompt_at=first_at if medium else later_at,
     )
+    completed = case in {"completed", "held"}
+    if completed:
+        row.update(
+            state="idle",
+            active=True,
+            state_detail="awaiting your message",
+            finished_at=NOW - 600,
+            last_output="The local parser checks passed.",
+        )
     entries = [
         _transcript_entry("user", FIRST_PROMPT, first_at, 0),
         _transcript_entry("assistant", "Done.", first_at + 60, 1),
@@ -2139,8 +2148,32 @@ def _drift_view_recording(
             else fact["type"] == "user_message" and fact["at"] == first_at
         )
     )
-    rig = Rig(scratch, "drift-view" + suffix, rows={"claude": [row], "codex": []})
+    child_sid = "12345678-1234-4234-8234-123456789abc"
+    children = (
+        [
+            synthetic_row(
+                "codex", child_sid, "alpha-app", title="Check build", state="working", age=5
+            )
+        ]
+        if completed
+        else []
+    )
+    rig = Rig(scratch, "drift-view" + suffix, rows={"claude": [row], "codex": children})
     try:
+        if case == "held":
+            observer = observation_module.Observation(
+                rig.application, clock=lambda: NOW, diagnostic_sink=rig.diagnostics.append
+            )
+            rig.application.overlays = observer
+            observer.submit(
+                "codex",
+                {
+                    "v": 1,
+                    "event": "session_started",
+                    "session_id": child_sid,
+                    "declared_parent": {"harness": "claude", "sid": "a1b2c3d4"},
+                },
+            )
         rig.write_transcript("a1b2c3d4", entries)
         # The store stamps its write from the wall clock, which would move the board's revision.
         with mock.patch.object(annotation_store, "time", FrozenTime()):

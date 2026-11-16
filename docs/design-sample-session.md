@@ -197,6 +197,14 @@ the same 1,884,747-byte baseline plus 440 KiB: 2,335,307 bytes, leaving 7,180 by
 measured build. No timing comparison was run for an increase of this size. The fixture
 allowance remains 250,000 bytes.
 
+On 2026-11-16, launcher-declared parent links and group labels (child sessions nested under
+their parent, "Waiting on child", the Group filter and grouping, and the native-state helper that
+keeps a child's hold out of reading and timeline derivations) raised the page built on `main` at
+`6f031ea5` (2,331,807 bytes) to 2,339,091 bytes: 7,284 bytes (0.31%), 3,784 over the bound. The
+page allowance is increased by 8 KiB, to the same 1,884,747-byte baseline plus 448 KiB:
+2,343,499 bytes, leaving 4,408 bytes above the measured build. No timing comparison was run for an
+increase of this size. The fixture allowance remains 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

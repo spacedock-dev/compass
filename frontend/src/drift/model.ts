@@ -19,7 +19,7 @@ import {
   type WorkEntry,
   type WorkSource,
 } from '../intent/work';
-import { endedAt, type Row } from '../observed';
+import { endedAt, nativeSession, type Row } from '../observed';
 import type { RecordEntry } from '../store/board';
 import { harnessLabels } from '../sessions/rows';
 import { analysisLevel, liveEstimate, type Contexts, type DriftLevel } from './level';
@@ -289,7 +289,7 @@ export function buildModel(input: ModelInput): DriftModel {
   /* "So far" while the turn is open: a running session's level can still move, and a reading made then
      covers only the work up to it, whatever the session has done since. A state the board does not publish
      claims neither. */
-  const state = session['state'];
+  const state = nativeSession(session)['state'];
   const running = typeof state === 'string' && state !== 'idle' && endedAt(session) === null;
   const pillSoFar =
     Boolean(pill) && (running || (pill?.analysis === true && shape?.scope === 'mid-flight'));

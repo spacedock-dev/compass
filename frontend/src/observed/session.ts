@@ -1,3 +1,4 @@
+import { nativeSession } from './native';
 import { nextNumber } from '../api/bootstrap';
 import { formatDuration } from '../shell/format';
 import { finishedRunAt, goalOf, landingOf, sessionStop, stopRecord, type Landing } from './landing';
@@ -169,10 +170,11 @@ export function observeSession(
     ? `${String(errors)} tool failures in a row` +
       (failures ? ` · ${String(failures)} failures this turn` : '')
     : '';
-  const stopped = state === 'idle' && (nextNumber(source['finished_at']) ?? 0) > 0;
+  const native = nativeSession(source);
+  const stopped = native['state'] === 'idle' && (nextNumber(source['finished_at']) ?? 0) > 0;
   /* A stop a harness's own record carries is named as that record's, here as in HOW IT LANDED beside
      it, so "Session facts" never says no stop was observed next to a card naming one. */
-  const recordedStop = state === 'idle' ? sessionStop(source) : null;
+  const recordedStop = native['state'] === 'idle' ? sessionStop(source) : null;
   const transcriptStop = !stopped && Boolean(recordedStop && recordedStop.kind === 'transcript');
   const outcomeKnown = ended || stopped || transcriptStop;
   const outcomePrefix = ended
@@ -212,7 +214,7 @@ export function observeSession(
         : harness['key'] !== 'cursor' && source['harness'] !== 'cursor'),
   );
   const turnReason = turnReporter
-    ? working
+    ? !ended && native['state'] === 'working'
       ? 'Turn bounds not published'
       : 'No turn in progress'
     : 'Harness does not report turn bounds';
@@ -226,7 +228,7 @@ export function observeSession(
      reading stands, minus the waiting claim. */
   const nowValue = ended
     ? 'Session reported its own end'
-    : runFinish !== null && !question
+    : runFinish !== null && !question && !source['waiting_on_child']
       ? `run finished${runAge ? ` ${runAge} ago` : ''}`
       : stateKnown
         ? doing

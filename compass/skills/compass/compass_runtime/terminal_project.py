@@ -32,6 +32,7 @@ from compass_runtime.terminal_sessions import (
 from compass_runtime.terminal_sessions import (
     format_duration,
     printable,
+    relationship_lines,
 )
 
 Row = Mapping[str, Any]
@@ -570,6 +571,11 @@ def derive(payload: Row, context: Row | None, *, label: str) -> dict[str, Any]:
                     str(row.get("title") or "").strip() or "Session title not published",
                 ),
                 "state": str(row.get("state") or "unknown"),
+                **(
+                    {"relationships": links}
+                    if (links := relationship_lines(row, records(payload.get("sessions"))))
+                    else {}
+                ),
                 "age": format_duration(age(generated, row.get("last_activity"))) or "",
                 "harness": labels.get(str(row.get("harness")), human(row.get("harness"))),
             }
@@ -639,6 +645,7 @@ def render(brief: Row, *, caller: tuple[str, str]) -> list[str]:
             f"{clip(member['state'])} · {clip(member['age']) or 'age unavailable'} · "
             f"{clip(member['title'])}"
         )
+        lines.extend(f"    {clip(line)}" for line in member.get("relationships", []))
     lines.extend(
         [
             f"Current task: {clip(brief['task'])}"

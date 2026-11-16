@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { SessionIdentity } from '../api/types';
 import { STEERING_SLOTS } from '../steering/slots';
+import { nativeSession } from '../observed';
 import type { ProjectModel } from './model';
 
 /* What the project page leaves to the steering step: the steering bar, the stage conditions, the
@@ -41,7 +42,12 @@ export function slotContext(model: ProjectModel): ProjectSlotContext {
   return {
     project: model.route.project,
     projectKey: model.projectKey,
-    focus: identity ? { ...identity, state: String(model.focus?.['state'] ?? '') } : null,
+    focus: identity
+      ? {
+          ...identity,
+          state: String(model.focus ? (nativeSession(model.focus)['state'] ?? '') : ''),
+        }
+      : null,
     sessions: identity
       ? [identity]
       : model.group.sessions.flatMap((row) =>

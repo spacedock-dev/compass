@@ -13,6 +13,7 @@ import { resumeCommand } from '../controls/resumeCommand';
 import { observe, sessionKey, type Row } from '../observed';
 import { asPayload } from '../observed/values';
 import { buildSessionsScreen, rowState } from './rows';
+import { groupLabel } from './declared';
 
 const read = (path: string): unknown =>
   JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
@@ -87,4 +88,21 @@ describe('the board against the terminal listing', () => {
     const keys = payload['sessions'] as Row[];
     expect(keys.map(sessionKey).length).toBe(keys.length);
   });
+});
+
+/* New metadata has its own hand-authored answer; the retired page's golden records stay untouched. */
+it('holds the terminal declared-parent and group words together with the board', () => {
+  const fixture = read('../../test/fixtures/declared-sessions.json') as {
+    payload: Row;
+    expected: Record<string, string[]>;
+  };
+  const screen = buildSessionsScreen(fixture.payload, observe(fixture.payload));
+  for (const row of [...screen.active, ...screen.history]) {
+    const words = [
+      groupLabel(row.source),
+      row.relations.parentText,
+      row.relations.waitingText,
+    ].filter(Boolean);
+    expect(words).toEqual(fixture.expected[row.session.sid]);
+  }
 });

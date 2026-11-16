@@ -1,6 +1,16 @@
+import { groupName, groupOf, nestRows } from './declared';
+import { RelationshipLabels } from './DeclaredRelationships';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
-import { memo, useDeferredValue, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import {
+  Fragment,
+  memo,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from 'react';
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
@@ -144,7 +154,7 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
         className={`m-0 block text-label font-semibold uppercase tracking-[.07em] [font-family:var(--mono)] ${state === 'Waiting on you' ? 'text-[var(--amber)]' : state === 'Working' ? 'text-foreground' : 'text-[var(--ink-label)]'}`}
         data-next-row-state={state}
       >
-        {state}
+        {row.relations.waitingText && state === 'Working' ? 'Waiting on child' : state}
       </span>
       <span className="next-operation-harness">{row.harnessLabel}</span>
       <RouteAnchor
@@ -168,6 +178,12 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
       {!session.titleKnown && session.promptKnown ? (
         <span className="next-operation-assignment">{`LAST PROMPT · ${session.promptText}`}</span>
       ) : null}
+      <RelationshipLabels
+        source={source}
+        relations={row.relations}
+        focusScope={`sessions-row:${row.key}`}
+        fallback={SEARCH_KEY}
+      />
       {hints.map((hint) => (
         <span
           key={hint}
@@ -310,9 +326,11 @@ const NO_HINTS: readonly string[] = [];
 const RowView = memo(function RowView({
   row,
   hints = NO_HINTS,
+  depth = 0,
 }: {
   readonly row: SessionRow;
   readonly hints?: readonly string[];
+  readonly depth?: number;
 }) {
   const { session, history } = row;
   const nowKind = 'NOW';
@@ -343,7 +361,8 @@ const RowView = memo(function RowView({
     <Card
       as="article"
       variant="session-row"
-      className={`next-operation-row next-operation-row--${session.tone}`}
+      className={`next-operation-row next-operation-row--${session.tone}${depth ? ' ml-4 w-auto border-l-2 border-l-border' : ''}`}
+      {...(depth ? { 'data-declared-depth': depth } : {})}
       data-next-harness={session.harness}
       data-next-session={session.sid}
       {...(history ? { 'data-next-operation-history': 'true' } : {})}
@@ -400,7 +419,9 @@ const Group = memo(function Group({
   empty,
   caveat,
   filter,
+  byGroup = false,
 }: {
+  readonly byGroup?: boolean;
   readonly kind: 'active' | 'history';
   readonly title: string;
   readonly label: string;
@@ -416,6 +437,11 @@ const Group = memo(function Group({
   const kept = filter?.filtered.active
     ? rows.filter((row) => filter.filtered.keys.has(row.key))
     : rows;
+  const buckets = byGroup
+    ? [...new Set(kept.map((row) => groupOf(row.source)))]
+        .sort((a, b) => (a ? (b ? a.localeCompare(b, 'en') : -1) : 1))
+        .map((group) => ({ group, rows: kept.filter((row) => groupOf(row.source) === group) }))
+    : [{ group: '', rows: kept }];
   return (
     <section
       className={`next-operation-group next-operation-group--${kind}`}
@@ -474,12 +500,22 @@ const Group = memo(function Group({
       </div>
       <div className="next-operation-rows">
         {kept.length ? (
-          kept.map((row) => (
-            <RowView
-              key={row.key}
-              row={row}
-              hints={filter?.filtered.hints.get(row.key) ?? NO_HINTS}
-            />
+          buckets.map((bucket) => (
+            <Fragment key={bucket.group}>
+              {byGroup ? (
+                <h3 className="my-2 text-label font-semibold [overflow-wrap:anywhere]">
+                  {groupName(bucket.group)}
+                </h3>
+              ) : null}
+              {nestRows(bucket.rows).map(({ row, depth }) => (
+                <RowView
+                  key={row.key}
+                  row={row}
+                  depth={depth}
+                  hints={filter?.filtered.hints.get(row.key) ?? NO_HINTS}
+                />
+              ))}
+            </Fragment>
           ))
         ) : rows.length ? (
           <p data-next-sessions-filtered-empty className="next-absence">
@@ -677,6 +713,7 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
         rows={screen.active}
         empty="No exact session has active evidence right now."
         filter={groupFilter}
+        byGroup={filters.byGroup}
       />
       <Group
         kind="history"
@@ -686,6 +723,7 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
         empty="No recent-history rows in this payload."
         caveat={RECENT_CAVEAT}
         filter={groupFilter}
+        byGroup={filters.byGroup}
       />
       <CapacityStrip />
     </section>

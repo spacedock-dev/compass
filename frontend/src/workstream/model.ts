@@ -1,3 +1,4 @@
+import { nativeSession } from '../observed/native';
 import { nextNumber } from '../api/bootstrap';
 import { clock, isRecord, records, type Row } from '../observed/values';
 
@@ -94,6 +95,7 @@ interface SessionRead {
 }
 
 function readSession(session: Row | null | undefined): SessionRead {
+  session = session ? nativeSession(session) : session;
   return {
     finishedAt: nextNumber(session?.['finished_at']),
     harness: String(session?.['harness'] || ''),

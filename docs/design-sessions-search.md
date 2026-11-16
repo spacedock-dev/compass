@@ -1,6 +1,6 @@
 # Design: finding sessions on Sessions
 
-This record owns the Find sessions toolbar on Sessions: one search field, seven filters, three presets,
+This record owns the Find sessions toolbar on Sessions: one search field, eight filters, three presets,
 and the lines that say what the filters hide. The module map belongs to
 [design-runtime-architecture.md](design-runtime-architecture.md), and what survives a board refresh
 belongs to [the reader-state record](design-reader-state.md). The code is three files under
@@ -9,7 +9,8 @@ belongs to [the reader-state record](design-reader-state.md). The code is three 
 
 Readers asked to find a session by its words, by when it was started and by project. Before the
 toolbar the board had one order, its rank: waiting sessions and exact requests first, then recorded
-drift, then activity. The toolbar narrows that board without changing the order.
+drift, then activity. The toolbar narrows that board. Linked process children follow their visible parent within each
+active/history section; Group by group adds label buckets within those sections.
 
 ## The toolbar
 
@@ -18,8 +19,9 @@ facts (ACTIVE NOW and WORKING) and before Active now. It holds:
 
 - a search field, an uncontrolled `DraftInput` with a leading search icon, a `/` hint and a Clear
   search button;
-- seven filter buttons, Date, Project, Harness, Headless, State, Drift and Goal, each opening a popover of
+- eight filter buttons, Date, Project, Group, Harness, Headless, State, Drift and Goal, each opening a popover of
   checkboxes or radios with a count beside each option;
+- a pressed button, Group by group, which groups the kept rows by their published group label;
 - three presets in a group named "Quick filters": Waiting on you, Started today and Drift recorded;
 - a chip for each filter that is on, each removed by one press, and Clear all;
 - a result line, and the guard lines described below.
@@ -27,7 +29,7 @@ facts (ACTIVE NOW and WORKING) and before Active now. It holds:
 Every change applies at once. There is no Apply button.
 
 Filtering is one pure function applied after `buildSessionsScreen`. It removes rows from both groups
-and never re-sorts them: `groupSessions` keeps its rank and lane order, and a row that moves between
+and keeps their rank and lane order before arranging declared families and optional group buckets. A row that moves between
 groups on a poll moves inside the filter. While a filter is on, each group gains a line directly after
 its header, "N of M shown", with its own Clear filters button for a reader who has scrolled away from
 the bar. M is the group's unfiltered size, so the M for Active now always equals the ACTIVE NOW figure;
@@ -63,7 +65,7 @@ rows. The sentences those states already had speak instead.
 
 Search reads what the row shows: the title as published (including the LAST PROMPT fallback), the
 goal cell's text when the goal is known, the current task where the row draws it, the project label,
-the worktree and the harness label. An active row draws the current task under its title unless it
+the worktree, group and the harness label. An active row draws the current task under its title unless it
 repeats the title; a history row does not draw it. Search also reads what a reader would have to open
 the session to see: the first prompt (skipped when it was a control message or a copied prompt), the
 latest prompt, the session's /goal, the expected outcome lines, task subjects, a current task the row
@@ -98,7 +100,7 @@ beside it; How these counts work says the number is how many sessions with that 
 filters keep. Counts are derived from the rows the screen draws and are never authored. A duplicate identity counts once per drawn row (`SessionRow.key`), the way the screen draws
 it.
 
-Option order is fixed: collator order for Project, the payload's order for Harness, and fixed lists
+Option order is fixed: collator order for Project and Group, the payload's order for Harness, and fixed lists
 for the rest. A chosen value is not moved to the top and counts never reorder a list, because either
 would move the option under the pointer on the press itself.
 
@@ -119,6 +121,7 @@ line read "Showing 12 of 12" for a filter that hides nothing; the prototype revi
 |---|---|---|
 | Date | Filter by Started (the default) or Last active. Then Any time, Last hour, Today, Yesterday, Last 7 days, or the not-published option. A checkbox, "Also show sessions with no start time" | Started: `started_at`, otherwise `first_prompt_at`, the order the session's age uses. Last active: `last_activity` |
 | Project | Exact published labels in `Intl.Collator('en')` order, the blank label after them and the empty label last. A "Find a project" field narrows a list of more than 8 | `project`, the label Sessions and Projects group on. `project_key` only for the shared-location note |
+| Group | Exact published labels in collator order, with No group last; chosen labels that left the board remain clearable | `group`; inherited labels already resolved by the producer |
 | Harness | Harnesses the payload marks `discovered`, in payload order, with payload labels | `harness`, and `payload.harnesses` |
 | Headless | Headless; Interactive or unknown | `headless === true` for Headless; every other value, including missing and null, for Interactive or unknown |
 | State | Waiting on you, Working, Idle, Ended, State not published | `rowState()` |
@@ -418,3 +421,29 @@ Some later work needs the server, and none is needed now:
 - Search over the 14-day history store, and over stored summaries.
 - A per-row git branch field.
 - A way to include sessions marked handled.
+
+## Declared families and group buckets
+
+The producer's [declared-session contract](design-declared-sessions.md) alone establishes parent
+links and group inheritance. The page never uses a title, project, headless flag or matching group to
+infer a family. A linked child names its parent with a page link. An unmatched declaration says
+"Declared parent is not on the board; not linked." A parent held working names the selected child
+as "Waiting on <title>", linking to it; a child without a title is named by its session id.
+An open question keeps its input-wait state on the row and session page; a child hold cannot
+replace input wait or an observed end.
+
+Nesting uses only the kept rows in the current section and group bucket. It never brings a hidden
+headless row back, promotes a history row into active work, or changes a counter. When the parent
+is filtered out or belongs to another section or bucket, the child still names and links to it.
+The parent's waiting line resolves against the whole payload, so a hidden child is still named.
+The session page lists all its linked children and their states, including ended children.
+
+A group appears as text, with "(from parent)" on an inherited label. No label draws no chip;
+Group's absent-value option and grouping bucket say "No group". Named options, selected chips
+and bucket headings use one formatter that quotes names and escapes embedded quotes and
+backslashes, so the literal name `No group` reads `"No group"` and cannot collide with absence.
+Group by group arranges named buckets in collator order, with No group last, separately in Active
+now and Recent history.
+Clearing filters preserves that display choice. The filter store holds both the Group selections
+and grouping choice across polls and navigation; reloading the tab resets both. Group labels are
+searchable words, separate from goal text.

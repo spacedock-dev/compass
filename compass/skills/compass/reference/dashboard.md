@@ -84,8 +84,8 @@ or model input. Goals and drift readings remain each session's own.
 The dark-only dashboard opens on **Sessions**, which keeps active work first and recent history
 below it. Its two counters show active now and working; exact requests and reported blocks are
 counted in Attention. A Find sessions bar under the counters narrows both lists: a search over
-titles, goals and prompts (`/` jumps to it, and a pasted session id finds its session), seven filters
-(Date, by when a session started or was last active; Project; Harness; Headless; State; Drift; Goal) with a
+titles, goals and prompts (`/` jumps to it, and a pasted session id finds its session), eight filters
+(Date, by when a session started or was last active; Project; Group; Harness; Headless; State; Drift; Goal) with a
 count beside each choice, and three presets: Waiting on you, Started today and Drift recorded. A
 session that publishes no start time, project or state gets a choice of its own instead of being
 counted as zero or older, and Drift never offers a "no drift" choice, because an unchecked session
@@ -215,6 +215,26 @@ Sessions, under the same focus and modifier rules. Inside a tripwire draft it ca
 
 MCP tools appear under the service being called rather than their wire name, for example
 `GitHub · list issues`. The full recorded string remains available in the row tooltip.
+
+### Reading declared families on the board
+
+Sessions places a linked child after its visible parent within the same active/history section and
+group bucket, with a "Child of" link. A parent outside the filtered set is still named on its child.
+An unmatched declaration says "Declared parent is not on the board; not linked." The parent's
+state reads "Waiting on child". Its relationship line links to the selected working child as
+`Waiting on child "title"`, even when a filter hides that child.
+An open question keeps its input-wait state on both row and session page. Open a
+parent's page to see its linked children and states; open a child to see its parent. An ended child
+remains listed while it stays on the board, but no longer holds its parent working.
+
+Group labels appear as text, with "(from parent)" when inherited. The Group filter narrows by label;
+Group by group makes label buckets within active work and recent history, with "No group" for
+unlabeled rows. Named choices, selected chips and bucket headings quote the label, so a label
+called `No group` reads `"No group"` and remains distinct from absence. Nesting never unhides a
+filtered headless child or changes the board's counts.
+Group choices and grouping survive polls and navigation for the life of the tab; reload resets them.
+The terminal session and project lists use the same group, parent and waiting words.
+
 
 ## Attention
 

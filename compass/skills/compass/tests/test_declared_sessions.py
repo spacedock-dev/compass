@@ -147,6 +147,11 @@ class ParentDeclarations(unittest.TestCase):
         self.assertIsNotNone(held["waiting_on_child"])
         return cast("dict[str, Any]", json.loads(json.dumps(held)))
 
+    def test_a_held_parent_explains_its_wait_without_a_raw_child_identity(self) -> None:
+        held = self.held(row("claude", PARENT[:8]))
+        self.assertEqual("waiting on a linked child session", held["state_detail"])
+        self.assertEqual({"harness": "claude", "sid": CHILD[:8]}, held["waiting_on_child"])
+
     def test_the_native_projection_preserves_the_parents_original_activity_and_detail(self) -> None:
         for active in (False, True):
             native = row("claude", PARENT[:8], active=active, state_detail="native idle detail")

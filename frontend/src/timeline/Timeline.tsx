@@ -1,3 +1,4 @@
+import { nativeSession } from '../observed/native';
 import { Alert } from '../ui/alert';
 import { useEffect, useMemo } from 'react';
 import { nextFiniteNumber } from '../api/bootstrap';
@@ -156,7 +157,7 @@ export function Timeline({
 
   const entryData = read.shows ? (entry?.data ?? null) : null;
   const projectData = projectEntry?.data ?? null;
-  const focusState = focus?.state ?? null;
+  const focusState = focus ? (nativeSession(focus).state ?? null) : null;
   const view = useMemo(
     () =>
       entryData

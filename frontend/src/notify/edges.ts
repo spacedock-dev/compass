@@ -1,4 +1,4 @@
-import { isRecord, type Row } from '../observed';
+import { isRecord, nativeSession, type Row } from '../observed';
 
 /* The two transitions worth interrupting a reader for, and the sentences a banner is built from. Pure:
    nothing here reads the clock, the permission or the Notification API, so the rules are testable
@@ -28,6 +28,7 @@ export interface Banner {
    notification kind, which the server drops for the idle types. The title says "has gone quiet", which is
    exactly what was observed, rather than borrowing the gate's stronger sentence. */
 export function notifyEdge(session: Row, previous: unknown): NotifyEdge | null {
+  session = nativeSession(session);
   /* Ahead of the `active` gate deliberately, and it must stay there: the idle overlay publishes
      `active:false` alongside `state:"idle"`, so gating this edge on `active` refuses the one transition it
      exists to report, on the default install, since both shipped hook manifests declare `Stop`.
@@ -64,6 +65,7 @@ function askLabel(payload: Row | null, key: unknown): string {
 }
 
 export function sessionBanner(payload: Row, session: Row, edge: NotifyEdge): Banner {
+  session = nativeSession(session);
   return {
     title: `${harnessName(payload, session['harness'])} ${edge.title}`,
     body: `[${String(session['project'])}] ${String(session['state_detail'] || edge.detail)}`,

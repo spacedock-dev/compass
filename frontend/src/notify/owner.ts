@@ -1,3 +1,4 @@
+import { nativeSession } from '../observed/native';
 import {
   asPayload,
   isRecord,
@@ -184,7 +185,8 @@ export function createNotifyOwner(deps: NotifyDeps) {
         if (now - issuedAt >= QUIET_REPEAT_MS) quietNudgedAt.delete(key);
       }
       const fire = browserOwns(payload) && host.permission() === 'granted';
-      for (const session of payloadSessionRows(payload)) {
+      for (const source of payloadSessionRows(payload)) {
+        const session = nativeSession(source);
         const key = `${String(session['harness'])}:${String(session['sid'])}`;
         const edge = notifyEdge(session, sessionStates.get(key));
         seen.set(key, session['state']);

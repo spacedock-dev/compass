@@ -139,6 +139,32 @@ class ClientContractFixtureTest(unittest.TestCase):
     def committed(self) -> dict[str, bytes]:
         return {path.name: path.read_bytes() for path in sorted(FIXTURES.glob("*.json"))}
 
+    def test_held_parent_recording_preserves_completed_reading_and_result(self) -> None:
+        def body(name: str) -> dict[str, Any]:
+            result: dict[str, Any] = json.loads(self.generated[name + ".json"])["response"]["body"]
+            return result
+
+        native = body("data-focused-drift-completed")
+        held = body("data-focused-drift-held")
+        parent = next(row for row in held["sessions"] if row["sid"] == "a1b2c3d4")
+        self.assertEqual(parent["state"], "working")
+        self.assertEqual(parent["declared_native_state"]["state"], "idle")
+        self.assertEqual(parent["waiting_on_child"]["harness"], "codex")
+        native_context = body("context-focused-drift-completed")
+        held_context = body("context-focused-drift-held")
+        self.assertEqual(
+            native_context["sources"]["work"]["drift_views"],
+            held_context["sources"]["work"]["drift_views"],
+        )
+        self.assertFalse(held_context["sources"]["work"]["drift_views"][0]["pill"]["so_far"])
+        results = [fact for fact in held_context["semantic"]["facts"] if fact["type"] == "result"]
+        self.assertTrue(results)
+        self.assertEqual(
+            results,
+            [fact for fact in native_context["semantic"]["facts"] if fact["type"] == "result"],
+        )
+        self.assertEqual(len(native["sessions"]), len(held["sessions"]))
+
     def test_capacity_previews_do_not_depend_on_the_generators_environment(self) -> None:
         with mock.patch.dict(os.environ, {"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "100000"}):
             self.assertEqual(self.generated, regen.generate())

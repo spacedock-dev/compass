@@ -1,3 +1,4 @@
+import { nativeSession } from './native';
 import { endedAt, sessionKey, trimmed, type Row } from './values';
 
 /* A label fallback carries no location evidence. The two measured sources already hide their paths
@@ -70,7 +71,7 @@ export function locationWarnings(rows: readonly Row[]): LocationWarning[] {
       !key ||
       !checkout ||
       endedAt(row) !== null ||
-      !['working', 'needs_input'].includes(String(row['state']))
+      !['working', 'needs_input'].includes(String(nativeSession(row)['state']))
     )
       continue;
     const members = checkouts.get(checkout) ?? new Map<string, Row>();
