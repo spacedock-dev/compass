@@ -456,9 +456,9 @@ binary, a static read, which in this project sits above the docs and below a cap
 `PostCompact`. That last pair is a reminder that this set
 has changed across releases, so confirm each name against the installed version at implementation time
 rather than against this document. Observing every tool call is not required merely to know that a turn
-is active and would add avoidable process or HTTP traffic. Claude now forwards both tool
-boundaries for a different reason: either can lift a live end after overlapping processes reuse
-one id. The [end-mark rule](design-needs-input.md#n-12) owns that measured exception.
+is active and would add avoidable process or HTTP traffic. The same cost keeps `PreToolUse`
+unregistered after overlapping processes were measured reusing one id: a prompt, a finished tool
+call or a Stop already lifts a live end ([the end-mark rule](design-needs-input.md#n-12)).
 
 Cost, measured: the current forwarder takes 56 ms per invocation on macOS against a closed port:
 about 13.5 ms of interpreter startup plus about 42 ms importing `urllib.request`. Process

@@ -860,7 +860,8 @@ The same rule applies to the normalized Claude, Codex and Gemini paths. Claude's
 `UserPromptSubmit`, `PostToolUse`, `SessionStart` and `Stop` therefore lift a live end,
 including its stored copy. Compass registers no `PreToolUse` hook for this: it would start a
 second process before every tool call, and a resumed turn already reaches the board through
-the events above.
+the events above. The cost is bounded: an older process that ends between a resumed prompt and
+its first tool call leaves the end mark standing until that call finishes.
 
 The [late-resume capture](captures/claude/late-session-end-after-resume-2.1.325-macos.jsonl)
 measured three headless Claude Code 2.1.325 processes sharing one id on macOS. In usable
