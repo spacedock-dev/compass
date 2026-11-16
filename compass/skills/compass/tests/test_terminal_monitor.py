@@ -481,6 +481,89 @@ class ReadinessTest(unittest.TestCase):
                     post.assert_not_called()
                     spawn.assert_not_called()
 
+    def test_a_person_repeating_a_slow_start_waits_and_reads_the_running_monitor(self) -> None:
+        # At the old readiness-only deadline the first command still owns admission.
+        for request_budget, ready_budget, release_at in ((0.4, 0.5, 4.0), (0.8, 0.2, 4.2)):
+            with self.subTest(request_budget=request_budget), tempfile.TemporaryDirectory() as home:
+                store = monitor_store.Store(home, "one")
+                store.write("run", {"sid": "one", "dashboard": [4553, 42, 100.0, "1.0.0"]})
+                clock = types.SimpleNamespace(now=0.0)
+                with contextlib.ExitStack() as owner:
+                    self.assertTrue(owner.enter_context(store.lock("command")))
+
+                    def advance(
+                        seconds: float,
+                        clock: types.SimpleNamespace = clock,
+                        release_at: float = release_at,
+                    ) -> None:
+                        clock.now += seconds
+                        if clock.now >= release_at:
+                            owner.close()
+
+                    with (
+                        mock.patch.object(monitor, "REQUEST_TIMEOUT_SEC", request_budget),
+                        mock.patch.object(monitor, "READY_SEC", ready_budget),
+                        mock.patch.object(monitor, "WORKER_WAIT_SEC", 0.1),
+                        mock.patch("time.monotonic", side_effect=lambda clock=clock: clock.now),
+                        mock.patch("time.sleep", side_effect=advance),
+                        mock.patch.object(monitor_store.Store, "running", return_value=True),
+                        mock.patch.object(
+                            client,
+                            "request",
+                            return_value=client.Reply(
+                                200,
+                                {
+                                    "state": {"on": True, "terminal": True, "disclosure": "notice"},
+                                },
+                            ),
+                        ),
+                        mock.patch.object(monitor, "spawn") as spawn,
+                        mock.patch("sys.stdout", io.StringIO()) as out,
+                        mock.patch("sys.stderr", io.StringIO()) as err,
+                    ):
+                        code = monitor.command(
+                            client.Session("claude", "one", "flag"),
+                            off=False,
+                            home=home,
+                            in_session=False,
+                        )
+                self.assertEqual((0, ""), (code, err.getvalue()))
+                self.assertIn("already running", out.getvalue())
+                spawn.assert_not_called()
+
+    def test_a_person_whose_command_stays_locked_gets_the_busy_sentence_within_the_bound(
+        self,
+    ) -> None:
+        clock = 0.0
+
+        def advance(seconds: float) -> None:
+            nonlocal clock
+            clock += seconds
+
+        with tempfile.TemporaryDirectory() as home:
+            store = monitor_store.Store(home, "one")
+            with (
+                store.lock("command") as held,
+                mock.patch.object(monitor, "REQUEST_TIMEOUT_SEC", 0.4),
+                mock.patch.object(monitor, "READY_SEC", 0.5),
+                mock.patch.object(monitor, "WORKER_WAIT_SEC", 0.1),
+                mock.patch("time.monotonic", side_effect=lambda: clock),
+                mock.patch("time.sleep", side_effect=advance),
+                mock.patch.object(client, "request") as request,
+                mock.patch("sys.stdout", io.StringIO()) as out,
+                mock.patch("sys.stderr", io.StringIO()) as err,
+            ):
+                self.assertTrue(held)
+                code = monitor.command(
+                    client.Session("claude", "one", "flag"), off=False, home=home, in_session=False
+                )
+            self.assertEqual((1, ""), (code, out.getvalue()))
+            self.assertEqual(client.sentence("monitor_busy") + "\n", err.getvalue())
+            # Two reads, two readiness waits, three cleanup waits, and handoff margin.
+            self.assertGreaterEqual(clock, 4.1)
+            self.assertLessEqual(clock, 4.15)
+            request.assert_not_called()
+
     def test_a_person_is_told_when_the_monitor_worker_is_blocked_before_its_first_lease(
         self,
     ) -> None:

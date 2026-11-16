@@ -29,6 +29,7 @@ FAILURE_SEC = 30.0
 IDLE_SEC = 7200.0
 REQUEST_TIMEOUT_SEC = client.DRIFT_REQUEST_TIMEOUT_SEC
 READY_SEC = REQUEST_TIMEOUT_SEC + 5.0
+WORKER_WAIT_SEC = 6.0
 SIDECAR_FLAG = "--monitor-sidecar"
 
 
@@ -179,7 +180,14 @@ def command(
             if not held:
                 # A competing command owns admission until readiness, rather than merely until
                 # Popen returns. Waiting here costs no dashboard request and no second worker.
-                until = time.monotonic() + READY_SEC + 2
+                # Replacement can read the old lease, stop it, look up the session, then
+                # await readiness and reap a failed child. Keep those budgets in step.
+                until = (
+                    time.monotonic()
+                    + 2 * (REQUEST_TIMEOUT_SEC + READY_SEC)
+                    + 3 * WORKER_WAIT_SEC
+                    + 2
+                )
                 while time.monotonic() < until:
                     time.sleep(0.05)
                     with store.lock("command") as retry:
@@ -435,14 +443,14 @@ def _await_start(  # noqa: C901, PLR0912 — readiness and cleanup share ownersh
             store.write("stop", {"generation": generation})
             # This is our Popen child, never a PID read from a stale file.
             with contextlib.suppress(subprocess.TimeoutExpired):
-                worker.wait(timeout=6)
+                worker.wait(timeout=WORKER_WAIT_SEC)
             if worker.poll() is None:
                 worker.terminate()
                 try:
-                    worker.wait(timeout=6)
+                    worker.wait(timeout=WORKER_WAIT_SEC)
                 except subprocess.TimeoutExpired:
                     worker.kill()
-                    worker.wait(timeout=6)
+                    worker.wait(timeout=WORKER_WAIT_SEC)
 
 
 def hold(  # noqa: C901, PLR0911, PLR0912, PLR0913 — one bounded holder state machine
