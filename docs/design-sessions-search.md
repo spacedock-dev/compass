@@ -429,6 +429,8 @@ links and group inheritance. The page never uses a title, project, headless flag
 infer a family. A linked child names its parent with a page link. An unmatched declaration says
 "Declared parent is not on the board; not linked." A parent held working names the selected child
 as "Waiting on <title>", linking to it; a child without a title is named by its session id.
+An open question keeps its input-wait state on the row and session page; a child hold cannot
+replace input wait or an observed end.
 
 Nesting uses only the kept rows in the current section and group bucket. It never brings a hidden
 headless row back, promotes a history row into active work, or changes a counter. When the parent
@@ -437,8 +439,11 @@ The parent's waiting line resolves against the whole payload, so a hidden child 
 The session page lists all its linked children and their states, including ended children.
 
 A group appears as text, with "(from parent)" on an inherited label. No label draws no chip;
-Group's absent-value option and grouping bucket say "No group". Group by group arranges named
-buckets in collator order, with No group last, separately in Active now and Recent history.
+Group's absent-value option and grouping bucket say "No group". Named options, selected chips
+and bucket headings use one formatter that quotes names and escapes embedded quotes and
+backslashes, so the literal name `No group` reads `"No group"` and cannot collide with absence.
+Group by group arranges named buckets in collator order, with No group last, separately in Active
+now and Recent history.
 Clearing filters preserves that display choice. The filter store holds both the Group selections
 and grouping choice across polls and navigation; reloading the tab resets both. Group labels are
 searchable words, separate from goal text.

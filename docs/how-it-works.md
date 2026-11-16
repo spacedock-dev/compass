@@ -184,10 +184,12 @@ links to it, or to Attention when there are several. Filters reset when you relo
 A launcher can [declare a parent and assign a group](../HOW_TO_USE.md#nest-a-launched-run-under-its-coordinator).
 Linked children follow their visible parent on Sessions and name it with a page link. A parent
 held working says "Waiting on" and links to the selected working child, even when a filter hides
-that child. An unmatched declaration says the parent is not on the board and is not linked. Open
+that child. An open question keeps its input-wait state on the row and session page.
+An unmatched declaration says the parent is not on the board and is not linked. Open
 a parent to see its linked children and their states, or a child to open its parent. Group labels
 stay separate from goals; inherited labels say "from parent". Group by group arranges the kept
-rows into label buckets within active work and recent history, with "No group" for unlabeled rows.
+rows into label buckets within active work and recent history. Named choices, chips and headings
+quote labels; unquoted "No group" means no label.
 Filters and grouping last across board refreshes and trips into a session; reloading clears them.
 
 A quiet Codex rollout can still be working while a shell-capable call has no matching output.

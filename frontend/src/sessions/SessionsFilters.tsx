@@ -828,6 +828,7 @@ export function SessionsFilters({
           <Button
             type="button"
             aria-pressed={filters.byGroup}
+            className="text-muted-foreground aria-pressed:border-[var(--accent)] aria-pressed:bg-[var(--raise)] aria-pressed:text-foreground"
             onClick={() => set({ byGroup: !filters.byGroup })}
           >
             Group by group

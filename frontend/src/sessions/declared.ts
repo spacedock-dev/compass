@@ -4,6 +4,8 @@ import type { SessionRow } from './rows';
 
 export const NOT_LINKED = 'Declared parent is not on the board; not linked.';
 export const groupOf = (source: Row | undefined): string => trimmed(source?.['group']);
+/* Quoting names reserves the unquoted absence label even when a launcher uses those exact words. */
+export const groupName = (value: string): string => (value ? JSON.stringify(value) : 'No group');
 export const groupLabel = (source: Row | undefined): string => {
   const group = groupOf(source);
   return group

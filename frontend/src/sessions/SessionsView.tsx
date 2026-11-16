@@ -1,4 +1,4 @@
-import { groupOf, nestRows } from './declared';
+import { groupName, groupOf, nestRows } from './declared';
 import { RelationshipLabels, WaitingChild } from './DeclaredRelationships';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
@@ -154,7 +154,7 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
         className={`m-0 block text-label font-semibold uppercase tracking-[.07em] [font-family:var(--mono)] ${state === 'Waiting on you' ? 'text-[var(--amber)]' : state === 'Working' ? 'text-foreground' : 'text-[var(--ink-label)]'}`}
         data-next-row-state={state}
       >
-        {row.relations.waitingText ? (
+        {row.relations.waitingText && state === 'Working' ? (
           <WaitingChild
             relations={row.relations}
             focusScope={`sessions-row:${row.key}`}
@@ -369,7 +369,7 @@ const RowView = memo(function RowView({
     <Card
       as="article"
       variant="session-row"
-      className={`next-operation-row next-operation-row--${session.tone}${depth ? ' ml-4 border-l-2 border-l-border' : ''}`}
+      className={`next-operation-row next-operation-row--${session.tone}${depth ? ' ml-4 w-auto border-l-2 border-l-border' : ''}`}
       {...(depth ? { 'data-declared-depth': depth } : {})}
       data-next-harness={session.harness}
       data-next-session={session.sid}
@@ -512,7 +512,7 @@ const Group = memo(function Group({
             <Fragment key={bucket.group}>
               {byGroup ? (
                 <h3 className="my-2 text-label font-semibold [overflow-wrap:anywhere]">
-                  {bucket.group || 'No group'}
+                  {groupName(bucket.group)}
                 </h3>
               ) : null}
               {nestRows(bucket.rows).map(({ row, depth }) => (

@@ -68,7 +68,7 @@ describe('the Group facet', () => {
       prepare({ ...EMPTY_FILTERS, group: ['gone'] }, null, true),
     );
     expect(options.find((one) => one.value === 'gone')).toMatchObject({
-      label: 'gone',
+      label: '"gone"',
       count: null,
       note: 'Not on the board now',
     });
@@ -84,4 +84,52 @@ describe('the Group facet', () => {
     expect([...(fixture.payload.sessions[1]?.group ?? '')]).toHaveLength(40);
     expect(groupLabel(fixture.payload.sessions[1])).toContain('<&> "é"');
   });
+});
+
+it('a literal No group name stays distinct from the absence in Group choices', () => {
+  const data = {
+    ...payload,
+    sessions: [
+      { harness: 'codex', sid: 'literal', project: 'demo', state: 'idle', group: 'No group' },
+      { harness: 'codex', sid: 'absent', project: 'demo', state: 'idle' },
+    ],
+  };
+  const rows = indexScreen(buildSessionsScreen(data, observe(data)));
+  const options = groupOptions(rows, prepare(EMPTY_FILTERS, null, true));
+  expect(options.find((one) => one.value === 'No group')?.label).toBe('"No group"');
+  expect(options.find((one) => one.value === '')?.label).toBe('No group');
+  expect(new Set(options.map((one) => one.label)).size).toBe(2);
+});
+
+it('a reader can find a group-only word without admitting an unrelated row', () => {
+  const data = {
+    ...payload,
+    sessions: [
+      {
+        harness: 'codex',
+        sid: 'chosen',
+        project: 'demo',
+        title: 'Build',
+        state: 'idle',
+        group: 'orchard',
+      },
+      {
+        harness: 'codex',
+        sid: 'other',
+        project: 'demo',
+        title: 'Check',
+        state: 'idle',
+        group: 'grove',
+      },
+    ],
+  };
+  const rows = indexScreen(buildSessionsScreen(data, observe(data)));
+  const result = applyFilters(
+    rows,
+    prepare({ ...EMPTY_FILTERS, query: 'orchard' }, null, true),
+    () => '',
+  );
+  expect(
+    rows.filter((one) => result.keys.has(one.row.key)).map((one) => one.row.session.sid),
+  ).toEqual(['chosen']);
 });

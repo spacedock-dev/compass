@@ -1,4 +1,4 @@
-import { groupOf } from './declared';
+import { groupOf, groupName } from './declared';
 import { unmeasuredLocationNote, measuredLocation } from '../observed/location';
 import { nextNumber } from '../api/bootstrap';
 import { isRecord, promptCopied, trimmed, type Row } from '../observed';
@@ -573,7 +573,7 @@ export function groupOptions(indexed: readonly IndexedRow[], prepared: Prepared)
   for (const value of prepared.filters.group) if (!values.includes(value)) values.push(value);
   return values.map((value) => ({
     value,
-    label: value || 'No group',
+    label: groupName(value),
     count:
       counts.get(value) ?? (indexed.some((one) => groupOf(one.row.source) === value) ? 0 : null),
     note: indexed.some((one) => groupOf(one.row.source) === value) ? '' : 'Not on the board now',
@@ -652,7 +652,7 @@ export function optionLabel(
   harnesses: readonly HarnessMeta[],
 ): string {
   if (facet === 'project') return projectLabel(value);
-  if (facet === 'group') return value || 'No group';
+  if (facet === 'group') return groupName(value);
   if (facet === 'harness') return harnesses.find((one) => one.key === value)?.label ?? value;
   if (facet === 'drift') return DRIFT_OPTIONS.find((one) => one.value === value)?.label ?? value;
   if (facet === 'goal') return GOAL_OPTIONS.find((one) => one.value === value)?.label ?? value;

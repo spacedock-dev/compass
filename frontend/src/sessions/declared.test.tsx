@@ -117,7 +117,9 @@ describe('declared process children', () => {
       'true',
     );
     expect(
-      screen.getByRole('heading', { name: fixture.payload.sessions[0]?.group ?? '' }),
+      screen.getByRole('heading', {
+        name: JSON.stringify(fixture.payload.sessions[0]?.group ?? ''),
+      }),
     ).toBeInTheDocument();
     expect(row('unlinked')).toBeNull();
   });
@@ -153,4 +155,73 @@ it('a parent sees a linked child waiting on an exact question rather than its na
   expect(screen.getByRole('region', { name: 'Linked children' }).textContent).toContain(
     'Waiting on you',
   );
+});
+
+it('a parent exact question remains its visible state while a child works', async () => {
+  const page = mountSessions({
+    data: {
+      ...fixture.payload,
+      ask: true,
+      asks: [{ id: 'parent-q', harness: 'claude', session_id: 'parent', question: 'Ship now?' }],
+    },
+  });
+  await page.settle();
+  const state = row('parent').querySelector('[data-next-row-state]');
+  expect(state).toHaveTextContent('Waiting on you');
+  expect(state).not.toHaveTextContent('Waiting on Check build');
+  await act(async () =>
+    page.router.navigate({
+      view: 'session',
+      project: 'demo',
+      harness: 'claude',
+      session: 'parent',
+    }),
+  );
+  expect(document.querySelector('[data-next-session-status]')).toHaveTextContent(
+    'State: needs input',
+  );
+  expect(document.querySelector('[data-next-session-status]')).not.toHaveTextContent(
+    'Waiting on Check build',
+  );
+  expect(screen.getAllByText('Ship now?')[0]).toBeInTheDocument();
+});
+
+it('a reader distinguishes a literal No group label in headings, choices and selected chips', async () => {
+  const page = mountSessions({
+    data: {
+      ...fixture.payload,
+      sessions: [
+        {
+          harness: 'codex',
+          sid: 'literal',
+          project: 'demo',
+          title: 'Named label',
+          state: 'idle',
+          group: 'No group',
+        },
+        {
+          harness: 'codex',
+          sid: 'absent',
+          project: 'demo',
+          title: 'No label assigned',
+          state: 'idle',
+        },
+      ],
+    },
+  });
+  await page.settle();
+  fireEvent.click(screen.getByRole('button', { name: 'Group by group' }));
+  expect(screen.getByRole('heading', { name: '"No group"' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'No group' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Group' }));
+  const popup = document.querySelector('[data-filter-popover="group"]') as HTMLElement;
+  fireEvent.click(within(popup).getByRole('checkbox', { name: /^"No group"\s*1$/ }));
+  await page.settle();
+  expect(row('literal')).not.toBeNull();
+  expect(row('absent')).toBeNull();
+  expect(screen.getByRole('button', { name: /Group: "No group"/ })).toBeInTheDocument();
+  fireEvent.click(within(popup).getByRole('checkbox', { name: /^No group\s*1$/ }));
+  await page.settle();
+  expect(row('absent')).not.toBeNull();
+  expect(screen.getByRole('button', { name: /Group:.*"No group".*No group/ })).toBeInTheDocument();
 });

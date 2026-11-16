@@ -255,7 +255,7 @@ function Header({
               />
               <span>
                 <span className="next-visually-hidden">State: </span>
-                {relations.waitingText ? (
+                {relations.waitingText && !ended && !observed.askKnown && !observed.isNeeds ? (
                   <WaitingChild
                     relations={relations}
                     focusScope={`session:${observed.harness}:${observed.sid}`}

@@ -221,13 +221,16 @@ MCP tools appear under the service being called rather than their wire name, for
 Sessions places a linked child after its visible parent within the same active/history section and
 group bucket, with a "Child of" link. A parent outside the filtered set is still named on its child.
 An unmatched declaration says "Declared parent is not on the board; not linked." The parent's
-"Waiting on" line links to the selected working child even when a filter hides that child. Open a
+"Waiting on" line links to the selected working child even when a filter hides that child.
+An open question keeps its input-wait state on both row and session page. Open a
 parent's page to see its linked children and states; open a child to see its parent. An ended child
 remains listed while it stays on the board, but no longer holds its parent working.
 
 Group labels appear as text, with "(from parent)" when inherited. The Group filter narrows by label;
 Group by group makes label buckets within active work and recent history, with "No group" for
-unlabeled rows. Nesting never unhides a filtered headless child or changes the board's counts.
+unlabeled rows. Named choices, selected chips and bucket headings quote the label, so a label
+called `No group` reads `"No group"` and remains distinct from absence. Nesting never unhides a
+filtered headless child or changes the board's counts.
 Group choices and grouping survive polls and navigation for the life of the tab; reload resets them.
 The terminal session and project lists use the same group, parent and waiting words.
 
