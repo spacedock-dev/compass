@@ -24,6 +24,11 @@ parity; mounted tests and the `Sessions/Declared children and groups` Storybook 
 filter-hidden relatives, unmatched declarations, ended children, group inheritance and link clicks.
 
 
+2026-11-16, a session page gives an owned open question priority over a turn-ended or
+run-finished sentence in current activity, matching its Sessions row. Without a question the
+completion sentence remains. `Sessions/One column page` asserts the idle question and the
+question-free turn finish; `sessions/detail.test.ts` covers both completion kinds.
+
 2026-11-15, shared display labels use measured location evidence. One measured directory or
 repository raises no label warning. Multiple measured locations count only measured members;
 label fallbacks and inferred Claude worktree layouts remain unknown and say their location was

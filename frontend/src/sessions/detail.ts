@@ -61,7 +61,12 @@ export function detailState(
 
 /* A standing exec stop names a finished run; an interactive hook stop keeps the waiting sentence.
    Neither supplies a session end. Only idle, unended rows qualify, so resumed work retires the reading. */
-export function turnEndedSentence(session: Row, generated: number | null = null): string | null {
+export function turnEndedSentence(
+  session: Row,
+  generated: number | null = null,
+  hasOpenRequest = false,
+): string | null {
+  if (hasOpenRequest) return null;
   session = nativeSession(session);
   if (session['state'] !== 'idle' || endedAt(session) !== null) return null;
   const runFinish = finishedRunAt(session);

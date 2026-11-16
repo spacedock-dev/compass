@@ -51,3 +51,11 @@ describe('a completed headless Codex run', () => {
     expect(turnEndedSentence(session)).toBe('Run finished');
   });
 });
+
+describe('an open question after a turn', () => {
+  it('keeps the current activity available for the owned question after either kind of finish', () => {
+    const session = { harness: 'codex', state: 'idle', finished_at: 9400, turn_end_at: 9400 };
+    expect(turnEndedSentence(session, 10000, true)).toBeNull();
+    expect(turnEndedSentence({ ...session, headless: true }, 10000, true)).toBeNull();
+  });
+});
