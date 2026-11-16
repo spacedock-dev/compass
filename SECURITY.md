@@ -5566,8 +5566,10 @@ When a capped match consumes the start of an adjacent credential, independent sc
 prefixed credentials, URL passwords and cued values crossing that cap. Overlapping accepted
 spans are merged so both bodies stay hidden. An admitted cued assignment stays masked even
 when its name contains a complete key shape. Contextual recognizers read the original text,
-and their masked spans are merged with credential shapes before markers are written. A key
-inside an assignment name therefore cannot disable a later command's password flag.
+and bounded derived views also check contexts made visible by earlier masking. Additional
+masked bodies map back to the original spans before the results are merged and published.
+A key inside an assignment name or a quoted setup value, including one with line breaks,
+therefore cannot disable a later command's password flag.
 Unbounded shapes, including PEM closing lines,
 use non-overlapping scans of each shape rather than repeatedly parsing already covered tails.
 Existing matches stay masked, including lowercase generic `sk-` bodies after whitespace,

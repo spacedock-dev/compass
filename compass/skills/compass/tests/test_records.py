@@ -967,6 +967,149 @@ class RedactSecretsTest(unittest.TestCase):
                 with self.subTest(value=value, template=template):
                     self.assertEqual(expected, records.mask_prose(template.format(value)))
 
+    def test_quoted_assignments_preserve_later_command_secret_masking(self) -> None:
+        value = "Synthetic" + "Command123"
+        commands = (
+            "redis-cli -a {}",
+            "ssh-keygen -N {}",
+            "ldapsearch -w {}",
+            "vault login {}",
+            "cargo login {}",
+            "aws configure set aws_secret_access_key {}",
+            "gh secret set NAME --body {}",
+        )
+        leads = (
+            "DB_PASSWORD='synthetic setup value' ",
+            'DB_PASSWORD="synthetic setup value" ',
+            "X='user:synthetic setup value@host' ",
+        )
+        for lead in leads:
+            for command in commands:
+                with self.subTest(lead=lead, command=command):
+                    self.assertNotIn(value, records.mask_prose(lead + command.format(value)))
+
+    def test_a_quoted_assignment_across_lines_keeps_later_command_secrets_private(self) -> None:
+        value = "Synthetic" + "Command123"
+        for separator in ("\n", "\r", "\r\n", "\v", "\f", "\x85", "\u2028", "\u2029"):
+            for quote in ("'", '"'):
+                with self.subTest(separator=repr(separator), quote=quote):
+                    text = "X=" + quote + "user:synthetic" + separator + "setup value@host" + quote
+                    self.assertNotIn(value, records.mask_prose(text + " redis-cli -a " + value))
+
+    def test_an_unclosed_userinfo_assignment_keeps_later_command_secrets_private(self) -> None:
+        value = "Synthetic" + "Command123"
+        for separator in (" ", "\n", "\r\n"):
+            for quote, ending in (("'", ""), ('"', ""), ("'", '"'), ('"', "'")):
+                with self.subTest(separator=repr(separator), quote=quote, ending=ending):
+                    text = "X=" + quote + "user:ordinary" + separator + "setup@host" + ending
+                    self.assertNotIn(value, records.mask_prose(text + " redis-cli -a " + value))
+
+    def test_the_generated_slice_keeps_previously_hidden_context_values_private(self) -> None:
+        # 12 prefixes x 16 contexts x 2 suffixes = 384 texts, each through four
+        # public redactors. Admission recorded from main, independently of these
+        # recognizers: all paths, prose words, or a discovered command only.
+        value = "Synthetic" + "ContextSecret123456"
+        prefixes = (
+            ("", True),
+            ("SESSION=ordinary ", True),
+            ("DB_PASSWORD='synthetic setup value' ", True),
+            ('DB_PASSWORD="synthetic setup value" ', True),
+            ("X='user:synthetic setup value@host' ", True),
+            ("X='user:synthetic\nsetup value@host' ", True),
+            ("X='user:synthetic setup value@host ", True),
+            ("env DB_PASSWORD='synthetic setup value' ", True),
+            ('sudo -u synthetic DB_PASSWORD="synthetic setup value" ', True),
+            ("printf ordinary | ", False),
+            ("ordinary\n", False),
+            ("( ", False),
+        )
+        contexts = (
+            ("redis-cli -a {}", "command"),
+            ("ssh-keygen -N {}", "command"),
+            ("ldapsearch -w {}", "command"),
+            ("vault login {}", "command"),
+            ("cargo login {}", "command"),
+            ("aws configure set aws_secret_access_key {}", "command"),
+            ("gh secret set NAME --body {}", "command"),
+            ("curl -u user:{}", "all"),
+            ("https://user:{}@host/path", "all"),
+            ("Authorization: Bearer {}", "all"),
+            ("machine host login user password {}", "all"),
+            ("https://host/?sig={}", "all"),
+            ("SESSION={}", "prose"),
+            ('SecretString: "{}"', "all"),
+            ("tool -Dspring.datasource.password={}", "all"),
+            ("tool --password {}", "all"),
+        )
+        for lead, command_seen in prefixes:
+            for template, admission in contexts:
+                for suffix in ("", "\nordinary"):
+                    text = lead + template.format(value) + suffix
+                    for name, cleaner in public_redactors().items():
+                        shown = cleaner(text)
+                        if admission == "all" or (
+                            name == "mask_prose" and (admission == "prose" or command_seen)
+                        ):
+                            with self.subTest(
+                                lead=lead, template=template, suffix=suffix, path=name
+                            ):
+                                self.assertNotIn(value, shown)
+
+    def test_incomplete_assignment_quotes_never_publish_their_values(self) -> None:
+        value = "Synthetic" + "Command123"
+        for opening in ("'", '"', "'''", '""'):
+            with self.subTest(opening=opening):
+                self.assertNotIn(value, records.mask_prose("X=" + opening + value))
+                self.assertNotIn(
+                    value,
+                    records.mask_prose("X=" + opening + " ssh-keygen -N" + value),
+                )
+        self.assertNotIn(
+            value, records.mask_prose("X='user:ordinary setup@host'\" ssh-keygen -N " + value)
+        )
+
+    def test_redacted_userinfo_does_not_hide_the_later_commands_identity(self) -> None:
+        value = "Synthetic" + "Command123"
+        text = "sudo _X=https://user:ordinary\x00setup@host\x1dcurl --proxy-user user:" + value
+        self.assertNotIn(value, records.mask_prose(text))
+
+    def test_an_inner_redaction_keeps_the_enclosing_quoted_assignment_private(self) -> None:
+        value = "Synthetic" + "Command123"
+        text = "DB_PASSWORD=\"Authorization:\x00Bearer\x00OrdinarySetup123'\x1c"
+        text += "curl --proxy-user user:" + value + '"'
+        for name, cleaner in public_redactors().items():
+            with self.subTest(path=name):
+                self.assertNotIn(value, cleaner(text))
+
+    def test_derived_command_discovery_preserves_original_assignment_names(self) -> None:
+        value = "Synthetic" + "Command123"
+        for name in ("AKIA" + "Q" * 16 + "_X", "AIza" + "R" * 35 + "_X"):
+            for setup in (
+                "https://user:ordinary\x1dsetup@host ",
+                "'Authorization:\x00Bearer\x00OrdinarySetup123\"\x1c",
+            ):
+                with self.subTest(name=name, setup=setup):
+                    text = "command " + name + "=" + setup + "gh secret set NAME --body " + value
+                    self.assertNotIn(value, records.mask_prose(text))
+
+    def test_controls_in_a_setup_value_do_not_consume_the_later_command(self) -> None:
+        value = "Synthetic" + "Command123"
+        text = "rtk proxy DB_PASSWORD=Authorization:\x00Bearer\x00OrdinarySetup123\tredis-cli -a "
+        self.assertNotIn(value, records.mask_prose(text + value + "'"))
+
+    def test_a_masked_header_keeps_its_later_userinfo_and_continued_value_private(self) -> None:
+        value = "Synthetic" + "Command123"
+        for text in ("'Authorization:p3' n " + value + "@", "Authorization:\x003\u2028" + value):
+            with self.subTest(text=text):
+                self.assertNotIn(value, records.mask_prose(text))
+
+    def test_control_normalization_retains_later_userinfo_recognition(self) -> None:
+        value = "Synthetic" + "Command123"
+        for name in ("X", "AIza" + "R" * 35 + "_X"):
+            with self.subTest(name=name):
+                text = "( " + name + "='Authorization:p3'\tssh-keygen -N " + value + "@host"
+                self.assertNotIn(value, records.mask_prose(text))
+
     def test_contextual_credentials_stay_private_after_key_shaped_leads(self) -> None:
         for name, family, form, cleaner, text, value, protected in contextual_credential_cases():
             with self.subTest(context=name, family=family, form=form, cleaner=cleaner):
