@@ -28,11 +28,12 @@ def _stock_server_uses(source: str) -> list[int]:
     """Lines that construct or subclass a stock `http.server` server."""
     lines = []
     for node in ast.walk(ast.parse(source)):
-        targets: list[ast.expr] = []
         if isinstance(node, ast.Call):
-            targets = [node.func]
+            targets, line = [node.func], node.lineno
         elif isinstance(node, ast.ClassDef):
-            targets = list(node.bases)
+            targets, line = list(node.bases), node.lineno
+        else:
+            continue
         for target in targets:
             name = (
                 target.attr
@@ -42,7 +43,7 @@ def _stock_server_uses(source: str) -> list[int]:
                 else None
             )
             if name in STOCK:
-                lines.append(node.lineno)
+                lines.append(line)
     return sorted(lines)
 
 
