@@ -1870,19 +1870,65 @@ _MASK_INVISIBLE: Final = frozenset("\u200b\u2060\u2061\u2062\u2063\u2064\ufeff\u
 _LINE_BREAKS: Final = frozenset("\n\r\x0b\x0c\x1c\x1d\x1e\x85")
 
 
+def _ordinary_key_name_spans(text: str) -> list[tuple[int, int]]:
+    # Controls and markup can split the role, `_key`, or the separator.
+    # Keep source intervals: raw and inline matches can start at different
+    # fragments of the same name after controls become spaces.
+    tags = "<" in text
+    if tags and len(text) > INLINE_MARKUP_MAX_CHARS and _INLINE_MARKUP_START_RE.search(text):
+        return []
+    markup = _markup_spans(text) if tags else []
+    hidden = list(markup)
+    hidden.extend(match.span() for match in _HIDDEN_CHARS_RE.finditer(text))
+    plain, cuts, removed = _view(text, hidden)
+    ordinary = []
+    markup_at = 0
+    for match in _KEY_ASSIGNMENT_NAME_RE.finditer(plain):
+        first = _structural_key_role_start(match)
+        if first is None or match.group("cuename").isupper():
+            continue
+        cut = bisect_right(cuts, first)
+        first += removed[cut - 1] if cut else 0
+        last = match.end("cuename")
+        cut = bisect_left(cuts, last)
+        last += removed[cut - 1] if cut else 0
+        raw_first = last
+        while (
+            raw_first
+            and text[raw_first - 1].isascii()
+            and (text[raw_first - 1].isalnum() or text[raw_first - 1] == "_")
+        ):
+            raw_first -= 1
+        raw_name = text[raw_first:last]
+        if raw_name.lower().endswith("_key") and raw_name.isupper():
+            continue
+        # A credential inside a tag/comment still needs control normalization;
+        # only the visible name fragments and their hidden characters qualify.
+        while markup_at < len(markup) and markup[markup_at][1] <= first:
+            markup_at += 1
+        while markup_at < len(markup) and markup[markup_at][0] < last:
+            tag_first, tag_last = markup[markup_at]
+            if first < tag_first:
+                ordinary.append((first, tag_first))
+            first = tag_last
+            markup_at += 1
+        if first < last:
+            ordinary.append((first, last))
+    return ordinary
+
+
 def _control_secret_matches(original: str, context: str) -> list[_SecretSpan]:
     # Replacing controls must not invent a mixed-case cue inside an exempt
-    # name. The caller retains original and uppercase evidence independently.
-    ordinary = {
-        match.start("cuename"): match.end("cuename")
-        for match in _KEY_ASSIGNMENT_NAME_RE.finditer(original)
-        if not match.group("cuename").isupper() and _structural_key_role_start(match) is not None
-    }
-    return [
-        span
-        for span in _redaction_spans(context)
-        if span.first not in ordinary or span.body_first < ordinary[span.first]
-    ]
+    # name, including in derived scans whose projected spans keep only bodies.
+    # Retain the original name controls in this same-length recognition view;
+    # the caller publishes context and retains original credential evidence.
+    parts: list[str] = []
+    at = 0
+    for first, last in _ordinary_key_name_spans(original):
+        parts.extend((context[at:first], original[first:last]))
+        at = last
+    parts.append(context[at:])
+    return _redaction_spans("".join(parts))
 
 
 def mask_prose(text: str) -> str:
@@ -2107,12 +2153,10 @@ def _safe_controls(text: str) -> str:
     # Join controls only inside structural names, after original redaction.
     parts: list[str] = []
     at = 0
-    for match in _KEY_ASSIGNMENT_NAME_RE.finditer(text):
-        first = _structural_key_role_start(match)
-        if first is not None and first >= at and not match.group("cuename").isupper():
-            parts.append(_UNSAFE_CHARS.sub(" ", text[at:first]))
-            parts.append(_UNSAFE_CHARS.sub("", text[first : match.end("cuename")]))
-            at = match.end("cuename")
+    for first, last in _ordinary_key_name_spans(text):
+        parts.append(_UNSAFE_CHARS.sub(" ", text[at:first]))
+        parts.append(_UNSAFE_CHARS.sub("", text[first:last]))
+        at = last
     parts.append(_UNSAFE_CHARS.sub(" ", text[at:]))
     return "".join(parts)
 

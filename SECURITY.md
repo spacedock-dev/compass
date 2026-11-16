@@ -5634,8 +5634,12 @@ in `api_key` or `apikey` still cues masking. Names without the `_key` separator,
 and `monkey`, do not acquire a cue. Existing uppercase cues, including fragments found in the
 original text, retain their protection. Names split by invisible characters or inline formatting
 such as `<wbr>` are also judged in the view with that formatting removed. When sanitizing controls
-in an ordinary structural name, `safe_text` joins its role component so a second pass cannot mistake
-the remaining fragment for a credential name. The value rules below still apply.
+in an ordinary structural name, `safe_text` joins its role component and `_key` suffix so a second
+pass cannot mistake the remaining fragment for a credential name. `mask_prose` keeps the original
+controls inside name fragments while recognizing credentials, including when formatting splits
+`_key` or precedes the separator. Controls inside tags and comments are sanitized independently,
+so credentials there keep their protection. Sanitizing name controls does not create a new
+credential cue. The value rules below still apply.
 
 All four public text redactors share this credential admission rule. `mask_prose` also masks every
 `NAME=value` assignment independently of credential admission, including ordinary identifiers,

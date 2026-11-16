@@ -1515,7 +1515,18 @@ class KeyAssignmentAdmissionTest(unittest.TestCase):
                             self.assertNotIn("…REDACTED", clean(text))
 
     def test_control_normalization_keeps_ordinary_key_cues_exempt_in_prose(self) -> None:
-        for name in ("s\x00ort_key", "sort\x00_key", "primary\x01_key"):
+        for name in (
+            "s\x00ort_key",
+            "sort\x00_key",
+            "primary\x01_key",
+            "s\x00o<wbr>rt_key",
+            "s\x00o\u200crt_key",
+            "s\x00ort_k<wbr>ey",
+            "s\x00ort_k\u200cey",
+            "s\x00ort_key\x00",
+            "s\x00ort_key<wbr>",
+            "s\x00ort_key\u200c",
+        ):
             for template in ("{} = column123", "{}: column123", '"{}": "column123"'):
                 for before, after in (("", ""), ("password=hello ", ""), ("", " password=hello")):
                     text = before + template.format(name) + after
@@ -1528,6 +1539,23 @@ class KeyAssignmentAdmissionTest(unittest.TestCase):
                             surface=surface,
                         ):
                             self.assertIn("column123", clean(text))
+
+    def test_a_control_before_an_uppercase_key_keeps_its_word_boundary(self) -> None:
+        self.assertEqual("s ORT_KEY=…REDACTED", records.safe_text("s\x00ORT_KEY=column123", 1000))
+
+    def test_formatting_inside_an_ordinary_key_keeps_its_own_credentials_private(self) -> None:
+        value = "Synthetic" + "Credential123"
+        for markup in ("<!-- {} -->", '<span title="{}">'):
+            for credential in ("password\x00=" + value, "--password\x00" + value):
+                text = "s" + markup.format(credential) + "ort_k<wbr>ey: column123"
+                with self.subTest(markup=markup, credential=credential):
+                    self.assertNotIn(value, records.safe_text(text, 1000))
+                    self.assertNotIn(value, records.mask_prose(text))
+
+    def test_oversized_markup_with_controls_stays_fully_masked(self) -> None:
+        text = "\x00" + "<a " * 5462 + "sort_key: column123"
+        self.assertEqual([], records._ordinary_key_name_spans(text))
+        self.assertEqual("…REDACTED", records.mask_prose(text))
 
     def test_a_long_invisible_run_keeps_an_ordinary_key_readable(self) -> None:
         for hidden in ("\u200b", "\u200c"):
