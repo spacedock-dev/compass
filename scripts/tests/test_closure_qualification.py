@@ -245,7 +245,7 @@ class RepeatedQualification(GrantFourAllowance):
                 "person_words_digest": "b" * 64,
                 "final_wanted": [],
                 "newest_final": None,
-                "prompt_digest": hashlib.sha256(captured_prompts[0].encode()).hexdigest(),
+                "prompt_digest": mark_abstention.production_prompt_digest(captured_prompts[0]),
                 "constraints": ["goal", "line_1", "line_2"],
             }
             cases.append(case)

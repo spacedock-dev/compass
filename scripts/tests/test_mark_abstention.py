@@ -1098,8 +1098,6 @@ class CodexPacketSourceTest(unittest.TestCase):
             self.freeze()
 
     def test_a_person_seals_the_exact_prompt_the_production_reader_selected(self) -> None:
-        import hashlib  # noqa: PLC0415
-
         reading = mark_abstention._reading()
         produce = reading.produce
         prompts: list[str] = []
@@ -1119,7 +1117,7 @@ class CodexPacketSourceTest(unittest.TestCase):
         self.assertEqual(len(prompts), 1)
         self.assertEqual(
             case["production_reading"]["prompt_digest"],
-            hashlib.sha256(prompts[0].encode()).hexdigest(),
+            mark_abstention.production_prompt_digest(prompts[0]),
         )
         self.assertIn("Please repair", prompts[0])
         self.assertIn("example is repaired", prompts[0])

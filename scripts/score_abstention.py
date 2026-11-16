@@ -410,7 +410,7 @@ class _Charged:
             from analyze_campaign import request_digest  # noqa: PLC0415
 
             request = request_digest(
-                prompt,
+                mark_abstention.normalized_production_prompt(prompt),
                 "codex",
                 self.codex_transport["runtime_digest"],
                 output_cap_bytes,
@@ -1205,7 +1205,7 @@ class _SourcePinnedModel:
         return bool(getattr(self.inner, "available", lambda: True)())
 
     def __call__(self, prompt: str, **kwargs: Any) -> tuple[str, str]:
-        if hashlib.sha256(prompt.encode()).hexdigest() != self.expected:
+        if mark_abstention.production_prompt_digest(prompt) != self.expected:
             raise mark_abstention.FreezeError("production-prompt-differs")
         if self.case is not None and "reviewed_export" in self.case:
             mark_abstention.revalidate_reviewed_export(
@@ -3913,6 +3913,8 @@ def prepare_codex_requests(
         if len(captured) != 1:
             raise mark_abstention.FreezeError("codex-production-prompt-unavailable")
         prompt, cap = captured[0]
+        # This inventory is compared again after approval; only the live send keeps its nonce.
+        prompt = mark_abstention.normalized_production_prompt(prompt)
         requests.append(
             {
                 "case": cid,

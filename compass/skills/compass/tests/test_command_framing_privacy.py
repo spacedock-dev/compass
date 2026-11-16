@@ -261,6 +261,11 @@ class CopiedCommandProvenanceKeepsTheCorrectFirstPrompt(copied_cases._App):
 
 
 class RestoredCommandsKeepTheirOriginalFraming(window_cases.ThePressRecoversOnlyListedWindowWords):
+    def setUp(self) -> None:
+        super().setUp()
+        # Compare recovered words and framing with the same fence entropy in both lanes.
+        self.enterContext(mock.patch.object(records, "fence_nonce", return_value="0" * 12))
+
     def command_source(self, raw: str) -> None:
         self.source["message"]["content"] = raw
         self.write([self.source])

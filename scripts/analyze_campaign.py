@@ -181,8 +181,10 @@ def request_digest(
     """Bind the final prompt and transport without retaining evidence.
 
     Codex requires its explicit transport (including effort and actual argv).
-    Existing Claude digests stay byte-for-byte unchanged. No producer runs here.
+    Prompts without a reading intent fence retain their historical digest. No producer runs here.
     """
+    import mark_abstention  # noqa: PLC0415 - share offline reading-fence normalization
+
     if producer == "codex" or codex_transport is not None:
         if producer != "codex":
             raise authority.LedgerError("Codex transport cannot authorize another producer")
@@ -195,7 +197,7 @@ def request_digest(
             raise authority.LedgerError("the Codex request lacks source or output bounds")
         return authority.digest(
             {
-                "prompt": hashlib.sha256(prompt.encode()).hexdigest(),
+                "prompt": mark_abstention.production_prompt_digest(prompt),
                 "producer": "codex",
                 "transport": codex_transport,
                 "source": source_digest,
@@ -206,7 +208,7 @@ def request_digest(
         )
     return authority.digest(
         {
-            "prompt": hashlib.sha256(prompt.encode()).hexdigest(),
+            "prompt": mark_abstention.production_prompt_digest(prompt),
             "producer": producer,
             "source": source_digest,
             "output_cap_bytes": output_cap_bytes,

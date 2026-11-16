@@ -660,7 +660,25 @@ class TheClaudeCollectorKeyBindsTheWholeSource(_Source):
             self.assertEqual("whole", self.look(wanted)["outcome"])
 
 
+class EachLiveReadingKeepsItsOwnBoundary(unittest.TestCase):
+    def test_two_live_readings_of_the_same_words_have_distinct_matching_fences(self) -> None:
+        first, _ = reading.build_prompt((), goal="Fix the queue", max_bytes=BUDGET)
+        second, _ = reading.build_prompt((), goal="Fix the queue", max_bytes=BUDGET)
+        nonces = []
+        for prompt in (first, second):
+            nonce = prompt.split('<intent id="', 1)[1].split('"', 1)[0]
+            self.assertEqual(12, len(nonce))
+            self.assertIn(f'</intent id="{nonce}">', prompt)
+            self.assertIn("<goal>\nFix the queue\n</goal>", prompt)
+            nonces.append(nonce)
+        self.assertNotEqual(*nonces)
+
+
 class _Prompt(unittest.TestCase):
+    def setUp(self) -> None:
+        # Exact prompt parity holds entropy fixed; live nonce freshness is tested separately.
+        self.enterContext(mock.patch.object(records, "fence_nonce", return_value="0" * 12))
+
     def build(self, rows: list[dict[str, Any]], lookup: Any, max_bytes: int = BUDGET) -> Any:
         # `tool_output={}` lists the check rows, as a pressed reading with a destination does.
         ledger = reading.build_ledger(rows, "claude", SID, tool_output={}, read_agent_words=True)
@@ -835,6 +853,7 @@ class AWholeReplyOnlyGoesWhereItFits(_Prompt):
 
 class OnlyTheRequestedPressReadsIt(unittest.TestCase):
     def setUp(self) -> None:
+        self.enterContext(mock.patch.object(records, "fence_nonce", return_value="0" * 12))
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.config, _ = make_runtime(state_home=temp.name, state_dir=Path(temp.name))

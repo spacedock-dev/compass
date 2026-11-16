@@ -1580,7 +1580,8 @@ class CodexReplayTest(CodexReplayTestCase):
         self.assertEqual(asked["remaining"], 2)
         self.assertEqual(len(self.model.prompts), 1)
         self.assertEqual(
-            hashlib.sha256(self.model.prompts[0].encode()).hexdigest(), asked["request_digest"]
+            levels_cases._marker().production_prompt_digest(self.model.prompts[0]),
+            asked["request_digest"],
         )
 
     def test_the_replayed_prompt_is_the_one_the_frozen_production_reader_built(self) -> None:
@@ -1589,7 +1590,7 @@ class CodexReplayTest(CodexReplayTestCase):
         self.read(case_id)
         (case,) = self.cases()
         self.assertEqual(
-            hashlib.sha256(self.model.prompts[0].encode()).hexdigest(),
+            levels_cases._marker().production_prompt_digest(self.model.prompts[0]),
             case["production_reading"]["prompt_digest"],
         )
 

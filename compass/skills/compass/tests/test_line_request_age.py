@@ -22,6 +22,7 @@ from compass_runtime import (
     project_context,
     reading,
     record_pages,
+    records,
 )
 from compass_runtime import observer as runtime_observer
 
@@ -409,6 +410,7 @@ class TheCurrentPageReceivesOnlyVerifiedRequestAges(unittest.TestCase):
 
 class AProducedReadingUsesItsVerifiedLineRequest(unittest.TestCase):
     def test_an_earlier_agent_action_is_not_published_as_the_later_lines_departure(self) -> None:
+        self.enterContext(mock.patch.object(records, "fence_nonce", return_value="0" * 12))
         with tempfile.TemporaryDirectory() as home:
             config, _state = make_runtime(state_home=home, state_dir=Path(home))
             # A failed check, which carries a line's departure on its own; a message no longer

@@ -154,6 +154,7 @@ class ThePressRecoversOnlyListedWindowWords(unittest.TestCase):
         self.assertNotIn(sample[9:], source["reader_words"])
 
     def test_http_and_direct_pressed_producer_send_the_same_recovered_words(self) -> None:
+        self.enterContext(mock.patch.object(records, "fence_nonce", return_value="0" * 12))
         self.write([self.source, {"padding": "x" * 500_000}])
         facts = [{key: value for key, value in self.facts[0].items() if key != "reader_words"}]
         prompts: list[str] = []
