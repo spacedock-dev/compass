@@ -645,7 +645,7 @@ def render(brief: Row, *, caller: tuple[str, str]) -> list[str]:
             f"{clip(member['state'])} · {clip(member['age']) or 'age unavailable'} · "
             f"{clip(member['title'])}"
         )
-        lines.extend(f"    {printable(line)}" for line in member.get("relationships", []))
+        lines.extend(f"    {clip(line)}" for line in member.get("relationships", []))
     lines.extend(
         [
             f"Current task: {clip(brief['task'])}"
