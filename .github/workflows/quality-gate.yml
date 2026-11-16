@@ -888,8 +888,10 @@ jobs:
       - name: Install pinned Chromium
         timeout-minutes: 3
         run: pnpm exec playwright install chromium
+      # Measured on 2026-11-16: this step took 4 to 5 minutes across ten runs and timed out at 5 in two
+      # of them (43820712919, 43826170856) after every assertion had passed. 8 leaves room for a slow runner.
       - name: Component assertions and offline runtime proof
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: pnpm test:stories
 
   # The frontend tests that start or read the Python runtime: `pnpm test:dev` launches server.py, the build
