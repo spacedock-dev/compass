@@ -7,6 +7,7 @@ Usage (each subcommand is one workflow step; see .github/workflows/release.yml):
     python3 scripts/release_transition.py assert-head --expected <sha>
     python3 scripts/release_transition.py assert-checkout --mode fresh --target <sha> \
         --verified <sha> --tag v0.2.0
+    python3 scripts/release_transition.py latest --tag v0.2.0
     python3 scripts/release_transition.py bump --tag v0.2.0
     python3 scripts/release_transition.py commit-bump --tag v0.2.0
     python3 scripts/release_transition.py final --mode fresh --target <sha>
@@ -86,16 +87,12 @@ class Resolution:
     target: str
     release_commit: str
     main_tip: str
-    # False when a higher release tag exists, so publishing this one must not take the
-    # "Latest" badge from it: GitHub marks a new release latest unless told otherwise.
-    latest: bool = True
 
     def outputs(self) -> dict[str, str]:
         return {
             "mode": self.mode,
             "version": self.version,
             "target": self.target,
-            "latest": "true" if self.latest else "false",
         }
 
 
@@ -289,7 +286,6 @@ def resolve(repo: Path, tag: str, main_ref: str = "origin/main") -> Resolution:
         raise ReleaseError(message)
     existing = run_git(repo, "tag", "-l", *TAG_GLOBS).split()
     check_unique_version(tag, existing)
-    latest = is_latest(tag, existing)
     log = run_git(repo, "log", "--format=%H%x09%s", main_ref)
     release_commit = find_release_commit(log, tag)
     if release_commit:
@@ -301,11 +297,9 @@ def resolve(repo: Path, tag: str, main_ref: str = "origin/main") -> Resolution:
             )
             raise ReleaseError(message)
         check_release_commit(repo, release_commit)
-        return Resolution(
-            tag, version, "resume", release_commit, release_commit, main_tip, latest=latest
-        )
+        return Resolution(tag, version, "resume", release_commit, release_commit, main_tip)
     check_monotonic(tag, existing)
-    return Resolution(tag, version, "fresh", main_tip, "", main_tip, latest=latest)
+    return Resolution(tag, version, "fresh", main_tip, "", main_tip)
 
 
 def assert_head(repo: Path, expected: str) -> None:
@@ -622,6 +616,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     resolve_cmd = command("resolve", "tag", optional=("main-ref", "github-output"))
     resolve_cmd.set_defaults(main_ref="origin/main")
+    command("latest", "tag")
     command("assert-head", "expected")
     checkout = command("assert-checkout", "mode", "target", "tag")
     # Repeated: every credential-free job that checked something out reports its own
@@ -648,6 +643,9 @@ def dispatch(args: argparse.Namespace) -> int:  # noqa: C901, PLR0912 -- one arm
                 print(f"{key}={value}")
             if args.github_output:
                 github_output(Path(args.github_output), resolution.outputs())
+        case "latest":
+            existing = run_git(repo, "tag", "-l", *TAG_GLOBS).split()
+            print("true" if is_latest(args.tag, existing) else "false")
         case "assert-head":
             assert_head(repo, args.expected)
         case "assert-checkout":

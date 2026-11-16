@@ -194,6 +194,35 @@ class ResolveTest(unittest.TestCase):
                     rt.resolve(fx.work, "v0.2.0")
                 self.assertIn("refusing to resume", str(caught.exception))
 
+    def test_a_release_with_repeated_keys_or_changed_modes_cannot_be_resumed(self) -> None:
+        for tamper in ("duplicate key", "executable mode"):
+            with self.subTest(tamper=tamper):
+                fx = Fixture(self)
+                fx.commit("feat: work")
+                fx.tag("v0.2.0")
+                rt.bump(fx.work, "0.2.0")
+                path = fx.work / MANIFESTS[1]
+                if tamper == "duplicate key":
+                    body = path.read_text(encoding="utf-8")
+                    description = json.loads(body)["description"]
+                    path.write_text(
+                        '{"description": ' + json.dumps(description) + "," + body[1:],
+                        encoding="utf-8",
+                    )
+                git(fx.work, "add", "-A")
+                if tamper == "executable mode":
+                    git(fx.work, "update-index", "--chmod=+x", MANIFESTS[1])
+                git(
+                    fx.work, "-c", f"user.name={rt.BOT_NAME}", "-c", f"user.email={rt.BOT_EMAIL}",
+                    "commit", "-q", "-m", "chore(release): v0.2.0",
+                )  # fmt: skip
+                git(fx.work, "push", "-q", "origin", "main")
+                fx.fetch()
+                with self.assertRaises(rt.ReleaseError) as caught:
+                    rt.resolve(fx.work, "v0.2.0")
+                self.assertIn(MANIFESTS[1], str(caught.exception))
+                self.assertIn("refusing to resume", str(caught.exception))
+
     def test_a_merge_commit_titled_as_a_release_is_not_resumed(self) -> None:
         # Its diff against the first parent can be the version alone while the second
         # parent brings anything, so a release commit must have exactly one parent.
@@ -237,25 +266,6 @@ class ResolveTest(unittest.TestCase):
             with self.subTest(tag=tag), self.assertRaises(rt.ReleaseError) as caught:
                 self.resolve(tag)
             self.assertIn("0.2.0 and v0.2.0", str(caught.exception))
-
-    def test_a_fresh_release_is_the_latest(self) -> None:
-        self.fx.commit("feat: work")
-        self.fx.tag("v0.2.0")
-        result = self.resolve("v0.2.0")
-        self.assertTrue(result.latest)
-        self.assertEqual("true", result.outputs()["latest"])
-
-    def test_a_resume_is_the_latest_only_while_no_higher_release_tag_exists(self) -> None:
-        self.fx.commit("feat: work")
-        self.fx.tag("v0.2.0")
-        self.release_commit("v0.2.0", "0.2.0")
-        self.assertTrue(self.resolve("v0.2.0").latest)
-        self.fx.commit("feat: more work")
-        self.fx.tag("v0.10.0")
-        result = self.resolve("v0.2.0")
-        self.assertEqual("resume", result.mode)
-        self.assertFalse(result.latest)
-        self.assertEqual("false", result.outputs()["latest"])
 
 
 class ReleaseHoldTest(unittest.TestCase):
@@ -670,14 +680,26 @@ class CommandLineTest(unittest.TestCase):
             timeout=60,
         )
 
-    def test_resolve_prints_and_writes_the_four_job_outputs(self) -> None:
+    def test_resolve_prints_and_writes_the_three_job_outputs(self) -> None:
         output = self.fx.root / "github-output"
         result = self.cli("resolve", "--tag", "v0.2.0", "--github-output", str(output))
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            f"mode=fresh\nversion=0.2.0\ntarget={self.tip}\nlatest=true\n",
+            f"mode=fresh\nversion=0.2.0\ntarget={self.tip}\n",
             output.read_text(encoding="utf-8"),
         )
+
+    def test_a_higher_tag_pushed_after_resolve_keeps_the_older_release_from_latest(self) -> None:
+        resolved = self.cli("resolve", "--tag", "v0.2.0")
+        self.assertEqual(0, resolved.returncode, resolved.stderr)
+        current = self.cli("latest", "--tag", "v0.2.0")
+        self.assertEqual(0, current.returncode, current.stderr)
+        self.assertEqual("true", current.stdout.strip())
+        git(self.fx.origin, "tag", "v0.10.0", "main")
+        self.fx.fetch()
+        published = self.cli("latest", "--tag", "v0.2.0")
+        self.assertEqual(0, published.returncode, published.stderr)
+        self.assertEqual("false", published.stdout.strip())
 
     def test_a_hostile_tag_is_refused_before_it_reaches_any_command(self) -> None:
         marker = self.fx.root / "pwned"

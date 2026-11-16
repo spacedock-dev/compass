@@ -787,7 +787,9 @@ class PublishingOrderTest(unittest.TestCase):
     def test_nothing_forces_the_bump_push_and_main_is_only_pushed_by_the_script(self) -> None:
         for command in map(code, commands("release")):
             self.assertNotIn("git push", command)
-            self.assertNotIn("--force", command)
+            for line in command.splitlines():
+                if line != "git fetch --tags --force origin":
+                    self.assertNotIn("--force", line)
 
     def test_a_resumed_release_runs_no_bump_and_pushes_no_bump(self) -> None:
         for fragment in (
@@ -838,9 +840,9 @@ class KeyJobWiringTest(unittest.TestCase):
         for channel in ("actions/cache", "download-artifact", "upload-artifact", "setup-"):
             self.assertNotIn(channel, text)
 
-    def test_the_environment_is_exactly_the_seven_resolved_values(self) -> None:
+    def test_the_environment_is_exactly_the_six_resolved_values(self) -> None:
         self.assertEqual(
-            {"TAG", "MODE", "VERSION", "TARGET", "LATEST", "VERIFIED_FRONTEND", "VERIFIED_TREE"},
+            {"TAG", "MODE", "VERSION", "TARGET", "VERIFIED_FRONTEND", "VERIFIED_TREE"},
             set(jobs()["release"]["env"]),
         )
         for step in self.release_steps():
@@ -900,15 +902,15 @@ class KeyJobWiringTest(unittest.TestCase):
         self.assertIn('--notes-file "$NOTES_FILE"', step["run"])
 
     def test_an_older_release_never_takes_the_latest_badge(self) -> None:
-        # GitHub marks a new release latest unless told otherwise, so resuming an older tag
-        # after a newer release would move the badge backwards. resolve decides, from the
-        # tags, whether a higher release exists; the create states it either way.
-        self.assertEqual(
-            "${{ steps.resolve.outputs.latest }}", jobs()["resolve"]["outputs"]["latest"]
-        )
-        self.assertEqual("${{ needs.resolve.outputs.latest }}", jobs()["release"]["env"]["LATEST"])
+        self.assertNotIn("latest", jobs()["resolve"]["outputs"])
+        self.assertNotIn("LATEST", jobs()["release"]["env"])
         step = next(s for s in self.release_steps() if "gh release create" in s.get("run", ""))
-        self.assertIn('--latest="$LATEST"', code(step["run"]))
+        body = code(step["run"])
+        fetch = body.index("git fetch --tags --force origin")
+        decision = body.index('LATEST=$(python3 scripts/release_transition.py latest --tag "$TAG")')
+        self.assertLess(fetch, decision)
+        self.assertLess(decision, body.index('gh release create "$TAG"'))
+        self.assertIn('--latest="$LATEST"', body)
 
     def test_the_commit_that_publishes_is_the_one_that_was_proven(self) -> None:
         final = next(c for c in commands("release") if "release_transition.py final" in c)

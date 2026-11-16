@@ -241,11 +241,24 @@ def check_versions(tree: Path, paths: list[str], version: str) -> None:
         raise ArchiveError(message)
 
 
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            message = f"duplicate JSON key {key!r}"
+            raise ValueError(message)
+        value[key] = item
+    return value
+
+
 def _json_at(repo: Path, rev: str, relative: str) -> dict[str, object]:
     try:
-        value = json.loads(git_bytes(repo, "cat-file", "blob", f"{rev}:{relative}"))
+        value = json.loads(
+            git_bytes(repo, "cat-file", "blob", f"{rev}:{relative}"),
+            object_pairs_hook=_unique_object,
+        )
     except (ArchiveError, ValueError) as exc:
-        message = f"{relative} is missing or not JSON at {rev[:12]}"
+        message = f"{relative} is missing or not JSON at {rev[:12]}: {exc}"
         raise ArchiveError(message) from exc
     if not isinstance(value, dict):
         message = f"{relative} is not a JSON object at {rev[:12]}"
@@ -258,12 +271,19 @@ def check_changes(repo: Path, commit: str, verified: str, allowed: list[str]) ->
     if commit != verified and git_text(repo, "rev-parse", f"{commit}^") != verified:
         message = "the release commit must be the verified commit or its direct child"
         raise ArchiveError(message)
-    changed = git_text(repo, "diff", "--name-only", verified, commit).splitlines()
+    raw = git_bytes(repo, "diff", "--raw", "-z", "--no-renames", verified, commit)
+    fields = raw.split(b"\0")[:-1]
+    changes = [(fields[i].split(), fields[i + 1].decode("utf-8")) for i in range(0, len(fields), 2)]
+    changed = [relative for _, relative in changes]
     extra = sorted(set(changed) - set(allowed))
     if extra:
         message = f"release commit changed files beyond the version manifests: {extra}"
         raise ArchiveError(message)
-    for relative in changed:
+    for metadata, relative in changes:
+        old_mode, new_mode = metadata[0].removeprefix(b":"), metadata[1]
+        if old_mode != new_mode:
+            message = f"release commit changed the file mode of {relative}"
+            raise ArchiveError(message)
         before = _json_at(repo, verified, relative)
         after = _json_at(repo, commit, relative)
         before.pop("version", None)
