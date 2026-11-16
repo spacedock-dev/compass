@@ -50,6 +50,9 @@ def _stock_server_uses(source: str) -> list[int]:
 
 
 class ATestServerBindsWithoutAReverseLookupTest(unittest.TestCase):
+    # Times how long a shutdown() takes, which must beat the stock 0.5 s poll.
+    REAL_TIME_TESTS = True
+
     def test_a_loopback_server_never_asks_the_resolver_for_its_own_name(self) -> None:
         for server_class in (support.LoopbackHTTPServer, support.ThreadingLoopbackHTTPServer):
             with (
