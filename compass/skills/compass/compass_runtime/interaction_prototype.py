@@ -29,6 +29,7 @@ from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
+from . import io as runtime_io
 from . import rooted_path
 
 if TYPE_CHECKING:
@@ -1167,10 +1168,16 @@ def _run_tmux_client(
             },
         )
     except (OSError, ValueError, OriginUnavailableError, DashboardBusyError) as exc:
-        print(f"registration failed: {type(exc).__name__}", flush=True)
+        runtime_io.diag(
+            (f"registration failed: {type(exc).__name__}"),
+            lambda message: print(message, flush=True),
+        )
         return 1
     if status != 200 or registered.get("state") != "registered":
-        print(f"registration refused: {registered.get('reason', 'unknown')}", flush=True)
+        runtime_io.diag(
+            (f"registration refused: {runtime_io.value(registered.get('reason', 'unknown'))}"),
+            lambda message: print(message, flush=True),
+        )
         return 1
     origin_id = registered.get("origin_id")
     lease_token = registered.get("lease_token")
@@ -1178,10 +1185,13 @@ def _run_tmux_client(
         print("registration failed: incomplete lease", flush=True)
         return 1
     print("Compass skill-shaped origin client", flush=True)
-    print(
-        f"registered {origin.session_name}:{origin.window_index}.{origin.pane_index} "
-        f"({origin.session_id}/{origin.window_id}/{origin.pane_id})",
-        flush=True,
+    runtime_io.diag(
+        (
+            f"registered {runtime_io.value(origin.session_name)}:"
+            f"{origin.window_index}.{origin.pane_index} "
+            f"({runtime_io.value(origin.session_id)}/{runtime_io.value(origin.window_id)}/{runtime_io.value(origin.pane_id)})"
+        ),
+        lambda message: print(message, flush=True),
     )
     renewal_count = 0
     interval = max(0.05, lease_sec / 3)
@@ -1211,7 +1221,10 @@ def _run_tmux_client(
             print("renewal stopped: dashboard disconnected", flush=True)
             return 0
         if renewed.get("state") != "renewed":
-            print(f"renewal refused: {renewed.get('reason', 'unknown')}", flush=True)
+            runtime_io.diag(
+                (f"renewal refused: {runtime_io.value(renewed.get('reason', 'unknown'))}"),
+                lambda message: print(message, flush=True),
+            )
             return 0
         renewal_count += 1
         renewed_at = time.monotonic()
@@ -1281,7 +1294,10 @@ def _run_waiting_tmux_client(config_path: Path) -> int:
         lease_sec = value["lease_sec"]
         require_session_environment = value["require_session_environment"]
     except RegistrationUnsupportedError as exc:
-        print(f"terminal registration unsupported: {exc}", flush=True)
+        runtime_io.diag(
+            (f"terminal registration unsupported: {runtime_io.value(exc)}"),
+            lambda message: print(message, flush=True),
+        )
         return 1
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
         print("registration failed: malformed client configuration", flush=True)

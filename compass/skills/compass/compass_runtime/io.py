@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO, TextIO
 from urllib.parse import quote
 
 from . import state as runtime_state
-from .terminal_sessions import printable_text
+from .terminal_sessions import printable, printable_text
 
 # The lock primitives are chosen here, once, with the module they call, rather
 # than by re-reading sys.platform per call: a test that patched sys.platform
@@ -522,6 +522,11 @@ def open_sqlite_read_only(path: str, state: RuntimeState) -> sqlite3_types.Conne
         raise
     connection.row_factory = sqlite_module.Row
     return connection
+
+
+def value(value: object) -> str:
+    """Untrusted diagnostic text as one terminal-safe line."""
+    return printable(value)
 
 
 def diag(message: str, sink: Callable[[str], object]) -> None:

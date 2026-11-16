@@ -99,7 +99,7 @@ def _body(config: RuntimeConfig, claims: Claims) -> str:
 
 def _unavailable(config: RuntimeConfig, sink: Callable[[str], None]) -> None:
     runtime_io.diag(
-        f"Compass: declaration store {store_path(config)} unavailable; "
+        f"Compass: declaration store {runtime_io.value(store_path(config))} unavailable; "
         "new parent claims are retained only in memory and may be lost on restart.",
         sink,
     )

@@ -28,7 +28,6 @@ by construction instead of by review.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import math
 import os
@@ -610,8 +609,8 @@ def save(
     try:
         runtime_io.atomic_write_owner_only(target, _payload(held), root=str(config.state_home))
     except (OSError, ValueError):
-        _report(
-            f"Compass: could not write the history store {target}; "
+        runtime_io.diag(
+            f"Compass: could not write the history store {runtime_io.value(target)}; "
             "the board will open with no memory of this run",
             diagnostic_sink,
         )
@@ -741,15 +740,6 @@ def forget(config: RuntimeConfig) -> bool:
     go must not be told there was nothing to delete.
     """
     return remove_state_file(store_path(config))
-
-
-def _report(message: str, sink: Callable[[str], object]) -> None:
-    """`io.diag`, inlined so this module stays a leaf over `config` alone."""
-    try:
-        sink(message)
-    except (OSError, ValueError):
-        with contextlib.suppress(OSError, ValueError):
-            sink(message.encode("ascii", "backslashreplace").decode("ascii"))
 
 
 class Lane:

@@ -341,7 +341,8 @@ class Leases:
                 self.step()
             except Exception as exc:  # noqa: BLE001 (the ticker outlives any one pass)
                 runtime_io.diag(
-                    f"Compass: the Live monitor ticker failed: {exc}", self._diagnostic_sink
+                    f"Compass: the Live monitor ticker failed: {runtime_io.value(exc)}",
+                    self._diagnostic_sink,
                 )
             with self._lock:
                 # Decided under the lock a start takes: a lease made now keeps this thread, and one
@@ -399,7 +400,10 @@ class Leases:
                 binary_resolver=self._binary_resolver,
             )
         except Exception as exc:  # noqa: BLE001 (one session's failure is not the board's)
-            runtime_io.diag(f"Compass: a Live monitor check failed: {exc}", self._diagnostic_sink)
+            runtime_io.diag(
+                f"Compass: a Live monitor check failed: {runtime_io.value(exc)}",
+                self._diagnostic_sink,
+            )
             with self._lock:
                 held = self._leases.get(key)
                 if held is lease:

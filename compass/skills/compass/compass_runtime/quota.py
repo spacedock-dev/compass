@@ -831,7 +831,9 @@ def fetch_usage(
     with state.usage_fetch_lock:
         state.usage_fetch_cache[vendor] = {"ts": clock(), "entries": entries}
     if note:
-        runtime_io.diag(f"[{vendor}] usage fetch: {note}", diagnostic_sink)
+        runtime_io.diag(
+            f"[{runtime_io.value(vendor)}] usage fetch: {runtime_io.value(note)}", diagnostic_sink
+        )
 
 
 def _spawn_thread(run: Callable[[], None]) -> None:

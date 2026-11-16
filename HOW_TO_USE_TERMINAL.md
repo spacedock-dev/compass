@@ -16,7 +16,8 @@ Inside Claude Code you can type an action instead, such as `/compass:compass ses
 
 Printed paths, errors and session text have terminal escapes and hidden formatting removed.
 Joined emoji and complete subdivision flags stay. This also covers `--forget` and diagnostics
-from a dashboard running in the foreground; see [terminal output handling](SECURITY.md#scope).
+from a dashboard running in the foreground. Newlines and tabs inside diagnostic paths and errors
+become spaces; report lines and indentation stay. See [terminal output handling](SECURITY.md#scope).
 
 ## Choose the command to type
 

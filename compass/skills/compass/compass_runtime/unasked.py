@@ -233,7 +233,8 @@ class Lane:
                 # not propagate either.
                 self._release(state, key)
                 runtime_io.diag(
-                    f"Compass: could not start the unasked reading for {key}: {exc}",
+                    f"Compass: could not start the unasked reading for {runtime_io.value(key)}: "
+                    f"{runtime_io.value(exc)}",
                     self.diagnostic_sink,
                 )
 
@@ -353,12 +354,15 @@ class Lane:
             self._read_and_raise(state, row, entry, now)
         except reading_policy.RefusedError as exc:
             runtime_io.diag(
-                f"Compass: an unasked check of {key} {UNCOVERED}: {exc.answer['reason']}.",
+                f"Compass: an unasked check of {runtime_io.value(key)} {UNCOVERED}: "
+                f"{runtime_io.value(exc.answer['reason'])}.",
                 self.diagnostic_sink,
             )
         except Exception as exc:  # noqa: BLE001 (a bad reading must not kill the lane)
             runtime_io.diag(
-                f"Compass: unasked reading failed for {key}: {exc}", self.diagnostic_sink
+                f"Compass: unasked reading failed for {runtime_io.value(key)}: "
+                f"{runtime_io.value(exc)}",
+                self.diagnostic_sink,
             )
         finally:
             with self._call_lock:

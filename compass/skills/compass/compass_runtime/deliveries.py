@@ -383,7 +383,7 @@ def save(
         runtime_io.atomic_write_owner_only(target, json.dumps(payload), root=str(config.state_home))
     except (OSError, ValueError, TypeError, RecursionError):
         runtime_io.diag(
-            f"Compass: could not write the delivery record {target}; "
+            f"Compass: could not write the delivery record {runtime_io.value(target)}; "
             "what became of this raise will not be readable later",
             diagnostic_sink,
         )

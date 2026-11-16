@@ -1204,7 +1204,9 @@ class Observation:
         try:
             writer.touch(self.clock())
         except Exception as exc:  # noqa: BLE001 (a status line file must not stop the worker)
-            runtime_io.diag(f"Compass: footer refresh failed: {exc}", self.diagnostic_sink)
+            runtime_io.diag(
+                f"Compass: footer refresh failed: {runtime_io.value(exc)}", self.diagnostic_sink
+            )
 
     def _sleep_for(self) -> float:
         """How long to sleep, under `_lock`.
@@ -1281,7 +1283,10 @@ class Observation:
             # needs no access to the snapshot the application owns.
             revision, _ = self.application.collect_json(show_all=False)
         except Exception as exc:  # noqa: BLE001 (a bad read must not stop the loop)
-            runtime_io.diag(f"Compass: coordinator collection failed: {exc}", self.diagnostic_sink)
+            runtime_io.diag(
+                f"Compass: coordinator collection failed: {runtime_io.value(exc)}",
+                self.diagnostic_sink,
+            )
             return
         finally:
             with self._lock:

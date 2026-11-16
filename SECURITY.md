@@ -40,7 +40,9 @@ other control character from each value before printing it. The same stripping c
 server's reply or version, the daemon log tail), and it removes a whole OSC, DCS, SOS, PM or APC
 sequence, payload included, in its 7-bit or 8-bit form. Foreground diagnostics and daemon log
 messages are cleaned before being written, including frontend asset and admission failures. Report line
-breaks, tabs and indentation stay. Invisible format characters that hide words are removed;
+breaks, tabs and indentation stay. Paths, exception text and external keys in diagnostics are
+cleaned as single-line values before interpolation, including history-write failures, so a value
+cannot insert a report line or tab. Invisible format characters that hide words are removed;
 joined emoji and complete subdivision-flag sequences stay, as defined by the
 [terminal output policy](docs/design-runtime-architecture.md#terminal-output). When you invoke the `compass` skill
 with an action word, the agent runs that operation and its output enters that session's context, so
