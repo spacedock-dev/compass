@@ -38,6 +38,7 @@ interface Summary {
 }
 
 function summarize(root: ParentNode): Summary {
+  restateRecordedLocationNotes(root);
   return {
     note: norm(root.querySelector('.next-projects-note')),
     groups: [...root.querySelectorAll('[data-next-project-group]')].map((group) => ({
@@ -82,10 +83,12 @@ async function mine(payload: unknown): Promise<Summary> {
   return result;
 }
 
-function legacy(payload: unknown): Summary {
+function legacy(payload: unknown, raw?: (html: string) => void): Summary {
   const app = loadLegacyApp();
   app.setData(payload);
-  const root = parseHtml(app.call<string>('nextProjectsView', {}));
+  const html = app.call<string>('nextProjectsView', {});
+  raw?.(html);
+  const root = parseHtml(html);
   restateRecordedLocationNotes(root);
   return summarize(root);
 }
@@ -102,13 +105,16 @@ describe('the Projects list reads as the legacy list does, over generated boards
         : seed % 2
           ? genBoard(seed)
           : genPayload(seed, { wellFormed: true });
-      const old = legacy(board);
+      let html = '';
+      const old = legacy(board, (drawn) => {
+        html = drawn;
+      });
       const now = await mine(board);
       const text = JSON.stringify(old);
       reach.active += (text.match(/"kind":"active"/g) ?? []).length;
       reach.history += (text.match(/"history":true/g) ?? []).length;
       reach.more += (text.match(/other sessions?"/g) ?? []).length;
-      reach.shared += (text.match(/Location not measured for/g) ?? []).length;
+      reach.shared += (html.match(/sessions share this display label/g) ?? []).length;
       reach.ended += (text.match(/ended/g) ?? []).length;
       if (JSON.stringify(old) !== JSON.stringify(now)) {
         const left = JSON.stringify(old);

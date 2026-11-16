@@ -25,9 +25,12 @@ filter-hidden relatives, unmatched declarations, ended children, group inheritan
 
 
 2026-11-16, a session page gives an owned open question priority over a turn-ended or
-run-finished sentence in current activity, matching its Sessions row. Without a question the
+run-finished sentence in current activity and in its metadata under Full activity, matching
+its Sessions row. While a question is open, metadata withholds a validated completion
+without falling back to state detail; unrelated state detail remains. Without a question the
 completion sentence remains. `Sessions/One-column page` asserts the idle question and the
-question-free turn finish; `sessions/detail.test.ts` covers both completion kinds.
+question-free turn finish; `Sessions/Codex finished run` covers the open-question metadata
+and question-free run finish. `sessions/detail.test.ts` covers both completion kinds.
 
 2026-11-15, shared display labels use measured location evidence. One measured directory or
 repository raises no label warning. Multiple measured locations count only measured members;
@@ -37,15 +40,25 @@ heading opens the project. Concurrent working or waiting sessions with measured 
 the same opaque checkout key keep a separate warning across the whole board, including sessions
 whose root and subdirectory labels differ. A warning spanning labels opens Sessions; one confined
 to a label opens its project. Both models use the same identity-deduplicated warning members,
-so repeated rows cannot leave an orphan card or inflate its member count. Matching worktree names alone cannot
+so repeated rows cannot leave an orphan card or inflate its member count. Sessions and
+Projects location notes, including the project filter note, also count each harness/session
+identity once. Repeating a lone session supplies no evidence of a shared label; beside a
+measured session, a repeated unmeasured session counts as one unknown. The model test
+`counts a repeated session once in the shared label note on Sessions and Projects` and
+`Attention/Project locations` play assertions hold those cases. Matching worktree names alone cannot
 establish checkout identity. Whitespace-only member titles and nonpositive start times disclose
 missing values; positive timestamps still render. Stops, ends and tasks stay in their session
 subjects instead of being folded into a label card, so the summary and queues agree.
 The terminal project brief preserves location provenance through the session-list projection
 and uses the same location disclosure. The [identity record](design-session-identity.md#checkout-evidence-is-distinct-from-repository-grouping)
 owns checkout keys and inferred layouts. No golden file is changed.
-The recorded generated boards have no measured sources; the asking tests restate only their
-UI-owned location notes. Attention comparisons retain unaffected subjects and signals, while the
+The recorded generated boards have no measured sources and include repeated identities.
+Their raw-row location notes are excluded from the model and rendered comparisons on both
+sides, along with the derived "No shared display label observed" coverage caveat. The
+dedicated model test and story assertions above hold their replacements. Reach checks still
+count shared-label cases from the raw recorded HTML.
+Published titles, row order, totals and unrelated fields remain compared. Attention
+comparisons retain unaffected subjects and signals, while the
 restored members and location cards are held by the mounted `attention/location.test.tsx` cases
 and the `Attention/Project locations` Storybook play assertions. The recorded view comparison
 omits numeric risk-card indices because removing a duplicate warning renumbers following cards;
