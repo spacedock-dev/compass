@@ -693,13 +693,8 @@ class ReduceTest(unittest.TestCase):
         self.assertEqual({"ended_at": NOW - 600}, patch)
 
     def test_activity_after_an_observed_end_leaves_the_stamp_standing(self) -> None:
-        # Deliberately NOT `finished_at`'s rule, and this is the assertion that
-        # pins the difference. A stop is a reading of a moment that later writing
-        # invalidates; an end is a fact about an id, and the id cannot write again
-        # without a `session_started`, which retires the mark at the coordinator.
-        # An end also arrives AFTER the last write — 5.581 s after the last Stop
-        # in the a1 arm of the session-end capture — so an activity guard here
-        # would be deciding on the wrong side of the very sequence it saw.
+        # A live end is retired by later lifecycle arrivals at the coordinator.
+        # Transcript activity alone may be a final flush after a normal exit.
         patch = events.reduce_overlays(
             [], now=NOW, session_activity=NOW - 5, activity_grace_sec=10.0, ended_at=NOW - 600
         )
@@ -723,10 +718,8 @@ class ReduceTest(unittest.TestCase):
         self.assertIsNone(patch["ended_at"])
 
     def test_an_idle_overlay_does_not_lift_an_observed_end(self) -> None:
-        # A `turn_stopped` is not evidence a session reopened: every tidy ending
-        # has one in front of it, and delivery is at-least-once and reorderable,
-        # so lifting on idle would erase the mark for exactly the endings this
-        # field exists to show.
+        # This overlay predates the end. The coordinator retires it on exit;
+        # the reducer must not infer a later arrival from an old idle overlay.
         ledger = [self.overlay(events.OVERLAY_IDLE, seq=1, at=NOW - 610)]
         patch = events.reduce_overlays(ledger, now=NOW, ended_at=NOW - 600)
         self.assertEqual("idle", patch["state"])

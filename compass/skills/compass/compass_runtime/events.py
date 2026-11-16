@@ -127,7 +127,8 @@ ALLOWED_FIELDS: Final = frozenset(
 # `ended_at` is when the session ID itself was observed to end, and it is a
 # separate member rather than a reading of `finished_at` because the two answer
 # different questions: a turn stopping leaves a session open and typeable, and
-# only an end says the row will never move again (DRC-4036). It is a nullable
+# only an end reports a session exit (DRC-4036). Later lifecycle activity
+# clears that observation for a reused id. It is a nullable
 # stamp and not a fourth `state` value because three page sites read `state`
 # against a closed set and fail toward the wrong answer on an unknown member
 # rather than degrading — the Safe-to-close lane silently drops the session, the
@@ -719,14 +720,9 @@ def _side_channel_patch(
         patch["finished_at"] = finished_at
     if git is not None and fresh:
         patch["dirty"], patch["changed"] = git
-    # Deliberately outside that guard, and this is the one place the two marks
-    # differ. A stop is a reading of a moment, so later writing in the tree
-    # invalidates it; an end is a fact about an id, and the id cannot write again
-    # without a `session_started`, which retires the mark at the coordinator. An
-    # end also lands AFTER the last write rather than before it — 5.581 s after
-    # the final Stop in the a1 arm of
-    # docs/captures/claude/session-end-2.1.261-macos.jsonl — so an activity guard
-    # here would be reading a normal ending as a contradiction.
+    # Live ends yield to later lifecycle arrivals in the coordinator. Transcript
+    # flushes may follow a normal end, so this reducer does not infer a resume
+    # from activity alone; the separate restored-end guard handles board downtime.
     if ended_at:
         patch["ended_at"] = ended_at
     return patch
