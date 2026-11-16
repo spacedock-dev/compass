@@ -39,7 +39,7 @@ from compass_runtime import interaction_prototype as runtime_interaction
 from compass_runtime import io as runtime_io
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     from compass_runtime.config import RuntimeConfig
     from compass_runtime.state import RuntimeState
@@ -99,6 +99,25 @@ def ensure_compass_home(config: RuntimeConfig) -> str:
 
 class StateOwnershipError(OSError):
     """A recorded dashboard cannot safely be replaced from this environment."""
+
+
+@contextlib.contextmanager
+def state_folder_lock(config: RuntimeConfig) -> Iterator[None]:
+    """Exclude cleanup and state publication in this folder, without stale holders."""
+    try:
+        ensure_compass_home(config)
+    except OSError as exc:
+        raise StateOwnershipError(f"Compass: cannot prepare lifecycle lock: {exc}") from exc
+    # Stable across every port and never unlinked: replacing a lock inode would
+    # admit a second holder. Take this before the per-port publication lock.
+    path = os.path.join(compass_home(config), "compass-lifecycle.lock")
+    with runtime_io.held_file_lock(path, wait=0) as held:
+        if held != runtime_io.LOCK_HELD:
+            raise StateOwnershipError(
+                f"Compass: could not take lifecycle lock {path} ({held}); "
+                "cleanup or dashboard startup may be in progress. Retry after it finishes."
+            )
+        yield
 
 
 def origin_path(config: RuntimeConfig, port: int) -> str:
@@ -409,7 +428,10 @@ def write_state(
     published = False
     try:
         ensure_compass_home(config)
-        with runtime_io.held_file_lock(target + ".lock", wait=0) as held:
+        with (
+            state_folder_lock(config),
+            runtime_io.held_file_lock(target + ".lock", wait=0) as held,
+        ):
             if held != runtime_io.LOCK_HELD:
                 raise StateOwnershipError(f"Compass: could not lock {target}; state left alone.")  # noqa: TRY301 - refusal must escape the recoverable write error path
             if refusal := _start_refusal(config, port):

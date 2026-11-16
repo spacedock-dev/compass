@@ -817,6 +817,158 @@ def inject_focus_capability(page: bytes, token: str) -> bytes:
     return page[:index] + meta + page[index:]
 
 
+def _forget_refused(config: RuntimeConfig, port: int) -> bool:
+    # In the family of --stop and --status rather than the family of per-run
+    # switches, because what it does is not reversible by running the next
+    # command without it. It deletes the file whether or not the store is
+    # enabled, and it adds no route: nothing over the loopback port can
+    # delete history.
+    path = history.store_path(config)
+    ends_path = ends.store_path(config)
+    annotations_path = annotation_store.store_path(config)
+    summaries_path = summary_store.store_path(config)
+    # Refused while an instance is up, because a running dashboard holds its
+    # own baseline in memory and republishes it on the next transition: the
+    # delete reported success and every record came back. The probe is the
+    # one `--status` and `--stop` already use, so it needs neither the home
+    # the dashboard was started with nor a state file. It covers the port
+    # this invocation names, including a dashboard without a state file.
+    # The folder-wide guard below covers every other status and recorded
+    # writers on other ports, without masking this known-running diagnostic.
+    if lifecycle.instance_status(config, port)["state"] in ("running", "busy"):
+        # All three files, because the refusal keeps all three (DRC-4547,
+        # DRC-4565): a reader who ran this to drop a recorded end is owed
+        # the end store's name, and one who ran it for the discard records
+        # is owed the annotation store's. A sentence naming the history
+        # store alone reads as though the rest had gone.
+        #
+        # The clauses differ because the reasons do, and the third is not
+        # the first two. The history lane would write its baseline back and
+        # the coordinator would go on publishing the ends it still holds,
+        # so those two would be undone. The annotation store would not: every
+        # mutator re-reads the file inside the lock and `refresh` picks a
+        # sweep up on the next collection, which is the deliberate opposite
+        # of `history.Lane`. What is true of it is simply that the sweep did
+        # not run, because this command refuses whole rather than in parts.
+        runtime_io.diag(
+            f"Compass: a dashboard is running on port {port} and would "
+            f"write {path} back from memory and go on publishing the ends in "
+            f"{ends_path}; the summaries in {summaries_path} and discard records "
+            f"in {annotations_path} were not "
+            "swept either, because the command refuses whole; stop it with "
+            "--stop first, then --forget",
+            print,
+        )
+        return True
+    if refusal := lifecycle.forget_refusal(config):
+        runtime_io.diag(refusal, print)
+        return True
+    return False
+
+
+def _forget_stores(config: RuntimeConfig) -> int:
+    path = history.store_path(config)
+    ends_path = ends.store_path(config)
+    annotations_path = annotation_store.store_path(config)
+    summaries_path = summary_store.store_path(config)
+    runtime_io.diag(
+        f"Compass: deleted {path}"
+        if history.forget(config)
+        else f"Compass: no history store at {path}",
+        print,
+    )
+    # The session-end store goes with it (decisions.md, DRC-4547): the
+    # command removes the machine's memory of what it observed, and an end
+    # this board saw is exactly that class. The running-instance refusal
+    # above covers it too, for a neighbouring reason: the coordinator does
+    # not republish its memory the way the history lane does, but it still
+    # holds the ends it observed and publishes them on every collection, so
+    # the delete would change the file and not the board.
+    runtime_io.diag(
+        f"Compass: deleted {ends_path}"
+        if ends.forget(config)
+        else f"Compass: no session-end store at {ends_path}",
+        print,
+    )
+    # And the records of what this machine deleted (DRC-4565). A sweep and
+    # not a delete, which is the distinction the whole command rests on:
+    # a record that Compass discarded something is its memory of an act it
+    # observed, and the words a reader typed are not -- `annotations`'
+    # docstring says `--forget` does not reach those and it still does not.
+    #
+    # Three sentences and not two, because a sweep has three answers: an
+    # unwritable store still holds every record, and reporting that as
+    # "no discard records" is the one wrong sentence this command can say.
+    # `forget` silences the store's own failure line so this one stands
+    # alone; that line is worded for a reader losing what they typed, and
+    # here nothing was written and nothing was lost.
+    swept = annotation_store.forget(config)
+    runtime_io.diag(
+        {
+            annotation_store.FORGET_SWEPT: (
+                f"Compass: removed the discard records in {annotations_path}"
+            ),
+            annotation_store.FORGET_NOTHING: (f"Compass: no discard records in {annotations_path}"),
+            annotation_store.FORGET_UNWRITABLE: (
+                f"Compass: could not write {annotations_path}, so its discard "
+                "records are still there"
+            ),
+            annotation_store.FORGET_UNTRUSTED: (
+                f"Compass: {annotations_path} could not be read, so nothing in it was "
+                "changed; move or repair that file and run --forget again"
+            ),
+        }[swept],
+        print,
+    )
+    # The digests of corrections the reader copied (DRC-4678): no text, and
+    # the machine's memory of an act, the class the discard records are in.
+    # Deleted with the other two, and the refusal above returns before it.
+    copies_path = copied_corrections.store_path(config)
+    runtime_io.diag(
+        f"Compass: deleted {copies_path}"
+        if copied_corrections.forget(config)
+        else f"Compass: no copied-correction store at {copies_path}",
+        print,
+    )
+    summary_outcome = summary_store.forget(config)
+    runtime_io.diag(
+        f"Compass: summary store {summaries_path}: {summary_outcome}",
+        print,
+    )
+    parents_forgotten = declared_parent_store.forget(config)
+    runtime_io.diag(
+        "Compass: forgot parent declarations"
+        if parents_forgotten
+        else "Compass: could not forget parent declarations; the store is unavailable",
+        print,
+    )
+    permission_forgotten = reading_policy.forget(config)
+    runtime_io.diag(
+        "Compass: forgot reading permission; unexpired spend timestamps remain"
+        if permission_forgotten
+        else "Compass: could not forget reading permission; the store is unavailable",
+        print,
+    )
+    return (
+        0 if permission_forgotten and parents_forgotten and summary_outcome != "unwritable" else 1
+    )
+
+
+def _forget(config: RuntimeConfig, port: int) -> int:
+    if _forget_refused(config, port):
+        return 1
+    try:
+        with lifecycle.state_folder_lock(config):
+            # The preflight can race publication; only this check under the shared
+            # lock authorizes deletion, and the lock covers the last consent write.
+            if _forget_refused(config, port):
+                return 1
+            return _forget_stores(config)
+    except lifecycle.StateOwnershipError as exc:
+        runtime_io.diag(f"Compass: cleanup refused ({exc}); no stores were changed.", print)
+        return 1
+
+
 def run_one_shot(
     args: argparse.Namespace,
     config: RuntimeConfig,
@@ -849,136 +1001,7 @@ def run_one_shot(
         )
         return 0
     if args.forget:
-        # In the family of --stop and --status rather than the family of per-run
-        # switches, because what it does is not reversible by running the next
-        # command without it. It deletes the file whether or not the store is
-        # enabled, and it adds no route: nothing over the loopback port can
-        # delete history.
-        path = history.store_path(config)
-        ends_path = ends.store_path(config)
-        annotations_path = annotation_store.store_path(config)
-        summaries_path = summary_store.store_path(config)
-        # Refused while an instance is up, because a running dashboard holds its
-        # own baseline in memory and republishes it on the next transition: the
-        # delete reported success and every record came back. The probe is the
-        # one `--status` and `--stop` already use, so it needs neither the home
-        # the dashboard was started with nor a state file. It covers the port
-        # this invocation names, including a dashboard without a state file.
-        # The folder-wide guard below covers every other status and recorded
-        # writers on other ports, without masking this known-running diagnostic.
-        if lifecycle.instance_status(config, args.port)["state"] in ("running", "busy"):
-            # All three files, because the refusal keeps all three (DRC-4547,
-            # DRC-4565): a reader who ran this to drop a recorded end is owed
-            # the end store's name, and one who ran it for the discard records
-            # is owed the annotation store's. A sentence naming the history
-            # store alone reads as though the rest had gone.
-            #
-            # The clauses differ because the reasons do, and the third is not
-            # the first two. The history lane would write its baseline back and
-            # the coordinator would go on publishing the ends it still holds,
-            # so those two would be undone. The annotation store would not: every
-            # mutator re-reads the file inside the lock and `refresh` picks a
-            # sweep up on the next collection, which is the deliberate opposite
-            # of `history.Lane`. What is true of it is simply that the sweep did
-            # not run, because this command refuses whole rather than in parts.
-            runtime_io.diag(
-                f"Compass: a dashboard is running on port {args.port} and would "
-                f"write {path} back from memory and go on publishing the ends in "
-                f"{ends_path}; the summaries in {summaries_path} and discard records "
-                f"in {annotations_path} were not "
-                "swept either, because the command refuses whole; stop it with "
-                "--stop first, then --forget",
-                print,
-            )
-            return 1
-        if refusal := lifecycle.forget_refusal(config):
-            runtime_io.diag(refusal, print)
-            return 1
-        runtime_io.diag(
-            f"Compass: deleted {path}"
-            if history.forget(config)
-            else f"Compass: no history store at {path}",
-            print,
-        )
-        # The session-end store goes with it (decisions.md, DRC-4547): the
-        # command removes the machine's memory of what it observed, and an end
-        # this board saw is exactly that class. The running-instance refusal
-        # above covers it too, for a neighbouring reason: the coordinator does
-        # not republish its memory the way the history lane does, but it still
-        # holds the ends it observed and publishes them on every collection, so
-        # the delete would change the file and not the board.
-        runtime_io.diag(
-            f"Compass: deleted {ends_path}"
-            if ends.forget(config)
-            else f"Compass: no session-end store at {ends_path}",
-            print,
-        )
-        # And the records of what this machine deleted (DRC-4565). A sweep and
-        # not a delete, which is the distinction the whole command rests on:
-        # a record that Compass discarded something is its memory of an act it
-        # observed, and the words a reader typed are not -- `annotations`'
-        # docstring says `--forget` does not reach those and it still does not.
-        #
-        # Three sentences and not two, because a sweep has three answers: an
-        # unwritable store still holds every record, and reporting that as
-        # "no discard records" is the one wrong sentence this command can say.
-        # `forget` silences the store's own failure line so this one stands
-        # alone; that line is worded for a reader losing what they typed, and
-        # here nothing was written and nothing was lost.
-        swept = annotation_store.forget(config)
-        runtime_io.diag(
-            {
-                annotation_store.FORGET_SWEPT: (
-                    f"Compass: removed the discard records in {annotations_path}"
-                ),
-                annotation_store.FORGET_NOTHING: (
-                    f"Compass: no discard records in {annotations_path}"
-                ),
-                annotation_store.FORGET_UNWRITABLE: (
-                    f"Compass: could not write {annotations_path}, so its discard "
-                    "records are still there"
-                ),
-                annotation_store.FORGET_UNTRUSTED: (
-                    f"Compass: {annotations_path} could not be read, so nothing in it was "
-                    "changed; move or repair that file and run --forget again"
-                ),
-            }[swept],
-            print,
-        )
-        # The digests of corrections the reader copied (DRC-4678): no text, and
-        # the machine's memory of an act, the class the discard records are in.
-        # Deleted with the other two, and the refusal above returns before it.
-        copies_path = copied_corrections.store_path(config)
-        runtime_io.diag(
-            f"Compass: deleted {copies_path}"
-            if copied_corrections.forget(config)
-            else f"Compass: no copied-correction store at {copies_path}",
-            print,
-        )
-        summary_outcome = summary_store.forget(config)
-        runtime_io.diag(
-            f"Compass: summary store {summaries_path}: {summary_outcome}",
-            print,
-        )
-        parents_forgotten = declared_parent_store.forget(config)
-        runtime_io.diag(
-            "Compass: forgot parent declarations"
-            if parents_forgotten
-            else "Compass: could not forget parent declarations; the store is unavailable",
-            print,
-        )
-        permission_forgotten = reading_policy.forget(config)
-        runtime_io.diag(
-            "Compass: forgot reading permission; unexpired spend timestamps remain"
-            if permission_forgotten
-            else "Compass: could not forget reading permission; the store is unavailable",
-            print,
-        )
-        return (
-            0
-            if permission_forgotten and parents_forgotten and summary_outcome != "unwritable"
-            else 1
-        )
+        return _forget(config, args.port)
     if args.stop:
         message, code = lifecycle.stop_instance(config, args.port)
         runtime_io.diag(message, print)

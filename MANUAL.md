@@ -224,9 +224,12 @@ a definitely absent process. Unproven writers, legacy, corrupt or unreadable rec
 cleanup, leaving every store unchanged. Run `--stop --port PORT` where the recorded dashboard runs,
 or press Ctrl+C in its foreground terminal. If it has already stopped, verify that there before
 removing only its state file and matching `.origin` file, then retry. With no state files, cleanup
-behaves as usual. Stop every dashboard sharing the folder and do not start one during cleanup;
-the check does not lock out concurrent starts. It does not erase harness transcripts or every
-Compass setting and store.
+behaves as usual. Cleanup repeats these checks under the folder's `compass-lifecycle.lock` OS lock,
+held through every store change. Dashboard state publication takes the same lock. A competing
+cleanup or startup refuses clearly; retry after the holder finishes. Killing a holder releases the
+lock, even though the lock file remains. Unavailable or unsupported locking refuses cleanup and
+state publication. Both commands must use a build with this lock; stop dashboards using older
+builds first. The command does not erase harness transcripts or every Compass setting and store.
 
 ### Workflow and event controls
 
@@ -316,6 +319,7 @@ covers instance control and the stores addressed above; it is not a complete inv
 | `compass-update-check.json` | Last attempted UTC day, plus the last successful release answer and its time. Its persistent `.lock` file serializes servers sharing one Compass home; no request is made if the lock or atomic save fails. |
 | `compass-history.json` | Bounded observation history. |
 | `compass-ends.json` | Recorded session ends from the event coordinator. |
+| `compass-lifecycle.lock` | Stable OS lock shared by cleanup and dashboard state publication in this folder. It remains after cleanup; killing a holder releases the lock. |
 | `declared-parents/claims.json` and `claims.lock` beside it | Bounded launcher parent claims and their stable writer lock. `--forget` removes claims and leaves the lock file. See the [security contract](SECURITY.md#launcher-parent-declarations-and-group-labels) for retention and failure behavior. |
 | `compass-annotations.json` | Saved reader goals, outcome lines, readings, local group labels and discard records. |
 | `compass-summaries.json` | Stored session summaries and word-free source comparison metadata. Independent of annotations; Delete summary removes one session and `--forget` deletes the store. |

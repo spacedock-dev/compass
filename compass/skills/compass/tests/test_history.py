@@ -14,6 +14,7 @@ import contextlib
 import io as std_io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -1535,6 +1536,117 @@ class ForgetPreservesStoresWhoseDashboardMayBeElsewhereTest(HistoryStoreTestCase
             code, _said = self.forget()
         self.assertEqual(0, code)
         self.assertFalse(Path(history.store_path(self.config())).exists())
+
+    def test_a_dashboard_published_after_the_first_check_preserves_every_store(self) -> None:
+        from compass_runtime import lifecycle  # noqa: PLC0415
+
+        before = self.seed_stores()
+        checked = lifecycle.forget_refusal
+        published = False
+
+        def publish_after_check(config: RuntimeConfig) -> str | None:
+            nonlocal published
+            refusal = checked(config)
+            if not published:
+                published = True
+                lifecycle.write_state(config, 9554, started=2.0)
+            return refusal
+
+        with mock.patch.object(lifecycle, "forget_refusal", side_effect=publish_after_check):
+            code, said = self.forget()
+        self.assertNotEqual(0, code)
+        self.assertIn("compass-9554.json", said)
+        for path, contents in before.items():
+            self.assertEqual(contents, path.read_bytes(), str(path))
+
+    def test_a_dashboard_cannot_publish_until_every_cleanup_operation_has_finished(self) -> None:
+        from compass_runtime import (  # noqa: PLC0415
+            annotations,
+            copied_corrections,
+            declared_parent_store,
+            ends,
+            lifecycle,
+            reading_policy,
+            summary_store,
+        )
+
+        self.seed_stores()
+        attempts = []
+
+        def during_cleanup(module: Any) -> Any:
+            original = module.forget
+
+            def attempt(config: RuntimeConfig) -> Any:
+                attempts.append(module.__name__)
+                with self.assertRaisesRegex(lifecycle.StateOwnershipError, "cleanup|lifecycle"):
+                    lifecycle.write_state(config, 9554, started=2.0)
+                self.assertFalse(Path(self.state_home, "compass-9554.json").exists())
+                return original(config)
+
+            return attempt
+
+        modules = (
+            history,
+            ends,
+            annotations,
+            copied_corrections,
+            summary_store,
+            declared_parent_store,
+            reading_policy,
+        )
+        with contextlib.ExitStack() as stack:
+            for module in modules:
+                stack.enter_context(
+                    mock.patch.object(module, "forget", side_effect=during_cleanup(module))
+                )
+            code, said = self.forget()
+        self.assertEqual(0, code, said)
+        self.assertEqual(len(modules), len(attempts))
+        self.assertTrue(lifecycle.write_state(self.config(), 9554, started=2.0))
+
+    def test_a_killed_cleanup_cannot_leave_a_lock_that_prevents_dashboard_startup(self) -> None:
+        from compass_runtime import lifecycle  # noqa: PLC0415
+
+        lock = Path(self.state_home, "compass-lifecycle.lock")
+        script = (
+            "import sys; from compass_runtime import cli, history, lifecycle; "
+            "lifecycle.instance_status = lambda *a: {'state': 'absent'}; "
+            "history.forget = lambda c: (print('deleting', flush=True), sys.stdin.read(), False)[-1]; "
+            "sys.exit(cli.main(['--forget']))"
+        )
+        child = subprocess.Popen(
+            [sys.executable, "-c", script],
+            cwd=str(Path(history.__file__).parent.parent),
+            env={**os.environ, COMPASS_HOME_ENV: self.state_home},
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            assert child.stdout is not None
+            self.assertEqual("deleting", child.stdout.readline().strip())
+            with self.assertRaisesRegex(lifecycle.StateOwnershipError, "cleanup|lifecycle"):
+                lifecycle.write_state(self.config(), 9554, started=2.0)
+        finally:
+            child.kill()
+            child.communicate(timeout=10)
+        self.assertTrue(lock.exists())
+        self.assertTrue(lifecycle.write_state(self.config(), 9554, started=2.0))
+
+    def test_cleanup_keeps_every_store_when_the_folder_lock_cannot_be_taken(self) -> None:
+        from compass_runtime import io as runtime_io  # noqa: PLC0415
+
+        before = self.seed_stores()
+        for outcome in ("busy", "denied", "unsupported", "uncreatable"):
+            with self.subTest(outcome=outcome):
+                with mock.patch.object(
+                    runtime_io, "held_file_lock", return_value=contextlib.nullcontext(outcome)
+                ):
+                    code, said = self.forget()
+                self.assertNotEqual(0, code)
+                self.assertIn("lock", said)
+                self.assertEqual(before, self.snapshot())
 
 
 class ForgetIsRefusedWhileADashboardCouldWriteItBackTest(HistoryStoreTestCase):

@@ -166,7 +166,8 @@ whether a dashboard runs.
 The server writes fifteen files, all under `~/.compass` (relocatable with `COMPASS_HOME`):
 `compass-<port>.json`, which records the running instance; `compass-<port>.json.origin`, its
 nonsecret machine, boot and namespace identity; `compass-<port>.json.lock`, its persistent state
-publication lock; `compass-<port>.log`, where a
+publication lock; `compass-lifecycle.lock`, the persistent cleanup and state publication lock;
+`compass-<port>.log`, where a
 detached server's output goes; `compass-dismissals.json`, the sessions marked handled;
 `compass-annotations.json`, the goal and expected outcome lines you typed against a session, plus a
 text-free record of any session you discarded everything for;

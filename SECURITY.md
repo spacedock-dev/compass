@@ -5035,8 +5035,12 @@ Missing ownership evidence, legacy records and unreadable state block cleanup. T
 no stores, names the state file and says to run `--stop --port PORT` where that dashboard runs, or
 press Ctrl+C in its foreground terminal. If it already stopped, verify that there before removing
 only its state file and matching `.origin` file. With no state files, the selected-port check still
-applies. Stop all dashboards sharing the folder and avoid starting one during cleanup: discovery
-and deletion do not exclude concurrent publication of a new dashboard state file.
+applies. Cleanup and dashboard state publication take the same OS lock in that folder,
+`compass-lifecycle.lock`. Cleanup checks again under the lock and holds it through every store
+change. A competing cleanup or dashboard startup refuses clearly; retry after the holder finishes.
+The lock file stays in place, but killing its holder releases the OS lock. Locking that is unavailable
+or unsupported refuses cleanup and state publication. This exclusion requires both commands to use
+a build with this lock; stop dashboards using older builds before cleanup.
 A running server holds its own history in memory and could write deleted records back on
 the next transition, so the recording lane also drops its copy when the file it read has gone.
 
