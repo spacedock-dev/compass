@@ -647,6 +647,13 @@ class AReadingNeverSearchesAnotherAccountsProjectFiles(unittest.TestCase):
                 for ancestor in (cwd.parent, *cwd.parent.parents):
                     self.assertFalse(ancestor.stat().st_mode & 0o022, str(ancestor))
 
+    def test_the_completed_state_fallback_does_not_name_the_account(self) -> None:
+        with (
+            mock.patch.object(observer, "_account", return_value=("/absent-home", "workdirs")),
+            mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": ""}),
+        ):
+            self.assertIsNone(observer.reading_workdir_root(self.state))
+
     def test_an_open_runtime_folder_uses_a_private_folder_under_state(self) -> None:
         self.runtime.chmod(0o755)
         root = observer.reading_workdir_root(self.state)

@@ -528,6 +528,8 @@ def _state_reading_root(state_dir: Path | None, home: str, name: str) -> str | N
     if parent is None:
         return None
     folder = os.path.join(parent, "reading-workdirs")
+    if _names_the_account(folder, home, name):
+        return None
     try:
         Path(folder).mkdir(mode=0o700, exist_ok=True)
         if Path(folder).is_symlink():
@@ -756,8 +758,9 @@ def claude_exec(  # noqa: PLR0913 - summary calls supply their own prompt and ti
 
     The working directory is a fresh owner-only directory, empty, so even a
     tool the flags failed to remove would find nothing of Compass's there. It
-    is made in the system temp directory, because the CLI still tells the
-    model its working directory, platform, shell, OS version and the date.
+    is rooted by reading_workdir_root, which checks privacy and account anonymity,
+    because the CLI still tells the model its working directory, platform, shell,
+    OS version and the date.
     """
     try:
         with prepare_claude_exec(
