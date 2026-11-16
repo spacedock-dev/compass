@@ -14,6 +14,8 @@ import ast
 import http.server
 import socket
 import socketserver
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -66,6 +68,24 @@ class ATestServerBindsWithoutAReverseLookupTest(unittest.TestCase):
         self.assertTrue(support.ThreadingLoopbackHTTPServer.daemon_threads)
         for base in (socketserver.ThreadingMixIn, http.server.HTTPServer):
             self.assertTrue(issubclass(support.ThreadingLoopbackHTTPServer, base))
+
+    def test_a_loopback_server_notices_shutdown_promptly_without_being_told_how(self) -> None:
+        # A stock serve_forever polls every 0.5 s, so each shutdown() waited up to that
+        # long: test_terminal_refusals stood up 24 dashboards and spent 12 s doing it.
+        for server_class in (support.LoopbackHTTPServer, support.ThreadingLoopbackHTTPServer):
+            with (
+                self.subTest(server_class=server_class.__name__),
+                server_class(("127.0.0.1", 0), http.server.BaseHTTPRequestHandler) as httpd,
+            ):
+                thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+                thread.start()
+                time.sleep(0.05)
+                started = time.monotonic()
+                httpd.shutdown()
+                elapsed = time.monotonic() - started
+                thread.join(timeout=5)
+                self.assertFalse(thread.is_alive())
+                self.assertLess(elapsed, 0.25)
 
     def test_no_test_module_stands_up_a_stock_http_server(self) -> None:
         offenders = [

@@ -400,6 +400,12 @@ class LoopbackHTTPServer(http.server.HTTPServer):
         self.server_name = str(host)
         self.server_port = int(port)
 
+    def serve_forever(self, poll_interval: float = SERVE_POLL_INTERVAL) -> None:
+        # The stock 0.5 s poll made each `shutdown()` wait up to half a second, which only
+        # callers that remembered `poll_fast` avoided: test_terminal_refusals stood up 24
+        # dashboards and spent 12 s of its 12.1 s waiting for them to stop.
+        super().serve_forever(poll_interval)
+
 
 class ThreadingLoopbackHTTPServer(socketserver.ThreadingMixIn, LoopbackHTTPServer):
     """`http.server.ThreadingHTTPServer`, bound as `LoopbackHTTPServer` binds."""
