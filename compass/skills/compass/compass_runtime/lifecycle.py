@@ -39,7 +39,7 @@ from compass_runtime import interaction_prototype as runtime_interaction
 from compass_runtime import io as runtime_io
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     from compass_runtime.config import RuntimeConfig
     from compass_runtime.state import RuntimeState
@@ -99,6 +99,25 @@ def ensure_compass_home(config: RuntimeConfig) -> str:
 
 class StateOwnershipError(OSError):
     """A recorded dashboard cannot safely be replaced from this environment."""
+
+
+@contextlib.contextmanager
+def state_folder_lock(config: RuntimeConfig) -> Iterator[None]:
+    """Exclude cleanup and state publication in this folder, without stale holders."""
+    try:
+        ensure_compass_home(config)
+    except OSError as exc:
+        raise StateOwnershipError(f"Compass: cannot prepare lifecycle lock: {exc}") from exc
+    # Stable across every port and never unlinked: replacing a lock inode would
+    # admit a second holder. Take this before the per-port publication lock.
+    path = os.path.join(compass_home(config), "compass-lifecycle.lock")
+    with runtime_io.held_file_lock(path, wait=0) as held:
+        if held != runtime_io.LOCK_HELD:
+            raise StateOwnershipError(
+                f"Compass: could not take lifecycle lock {path} ({held}); "
+                "cleanup or dashboard startup may be in progress. Retry after it finishes."
+            )
+        yield
 
 
 def origin_path(config: RuntimeConfig, port: int) -> str:
@@ -409,7 +428,10 @@ def write_state(
     published = False
     try:
         ensure_compass_home(config)
-        with runtime_io.held_file_lock(target + ".lock", wait=0) as held:
+        with (
+            state_folder_lock(config),
+            runtime_io.held_file_lock(target + ".lock", wait=0) as held,
+        ):
             if held != runtime_io.LOCK_HELD:
                 raise StateOwnershipError(f"Compass: could not lock {target}; state left alone.")  # noqa: TRY301 - refusal must escape the recoverable write error path
             if refusal := _start_refusal(config, port):
@@ -1382,6 +1404,7 @@ def serve(  # noqa: C901, PLR0915 - ordered signal, recovery, serving and shutdo
     *,
     started: float,
     announce_fd: int | None = None,
+    before_ready: Callable[[], None] | None = None,
     diagnostic_sink: Callable[[str], None] = print,
 ) -> None:
     """Announce, record, serve, and clean up after only this instance.
@@ -1390,17 +1413,6 @@ def serve(  # noqa: C901, PLR0915 - ordered signal, recovery, serving and shutdo
     first, and this listener is IPv4-only, so the literal address is the one
     that always connects.
     """
-    prototype = getattr(server, "interaction_prototype", None)
-    if prototype is not None:
-        try:
-            prototype.start(port)
-        except runtime_interaction.OriginUnavailableError as exc:
-            runtime_io.diag(
-                f"Compass: interaction bootstrap unavailable ({exc}).",
-                diagnostic_sink,
-            )
-            server.server_close()
-            return
     runtime_io.diag(f"Compass: http://127.0.0.1:{port}/", diagnostic_sink)
     observation = getattr(server, "observation", None)
     producer_stop = threading.Event()
@@ -1423,6 +1435,18 @@ def serve(  # noqa: C901, PLR0915 - ordered signal, recovery, serving and shutdo
             capabilities=observation.capabilities() if observation is not None else None,
             diagnostic_sink=diagnostic_sink,
         )
+        if published and before_ready is not None:
+            before_ready()
+        prototype = getattr(server, "interaction_prototype", None)
+        if prototype is not None:
+            try:
+                prototype.start(port)
+            except runtime_interaction.OriginUnavailableError as exc:
+                runtime_io.diag(
+                    f"Compass: interaction bootstrap unavailable ({exc}).",
+                    diagnostic_sink,
+                )
+                return
         if announce_fd is not None:
             # After write_state, so --status works the instant the parent returns.
             daemon_announce(announce_fd)

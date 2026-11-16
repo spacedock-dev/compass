@@ -555,8 +555,6 @@ class RouteSidecarGuards(unittest.TestCase):
                     cast("Any", app),
                     b"real page",
                     None,
-                    interaction_session=None,
-                    interaction_registration_file=None,
                 )
                 self.context["startup"] = captured["startup"]
                 self.write_private(self.context_path, self.context)
@@ -642,8 +640,6 @@ class RouteSidecarGuards(unittest.TestCase):
                 cast("Any", app),
                 b"page",
                 None,
-                interaction_session=None,
-                interaction_registration_file=None,
             )
             self.context["startup"] = captured["startup"]
             self.write_private(self.context_path, self.context)

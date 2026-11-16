@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest import mock
 
-from compass_runtime import cli, http_api, lifecycle
+from compass_runtime import cli, http_api, lifecycle, reading_jobs, update_check
 from compass_runtime import io as runtime_io
 
 from . import support
@@ -385,8 +385,12 @@ print(json.dumps({{
                     assert stop is not None
                     self.assertEqual(0, stop.returncode, stop.stderr.decode("utf-8", "replace"))
                     self.assertTrue(lifecycle.await_release(cfg(), port, timeout=5))
-                    self.assertEqual(
-                        [compass_home / f"compass-{port}.json.lock"], list(compass_home.iterdir())
+                    self.assertCountEqual(
+                        [
+                            compass_home / f"compass-{port}.json.lock",
+                            compass_home / "compass-lifecycle.lock",
+                        ],
+                        list(compass_home.iterdir()),
                     )
 
     def test_windows_detached_argv_preserves_an_absolute_launcher_path(self) -> None:
@@ -493,6 +497,92 @@ print(json.dumps({{
             ],
             popen.call_args.args[0],
         )
+
+
+class CleanupRefusesDashboardStartupTest(support.RuntimeTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        # cli.main's shutdown calls supervise.kill_all, which shuts the runner for the whole
+        # process; give each test its own so later modules in this worker stay open.
+        from compass_runtime import supervise  # noqa: PLC0415
+
+        patcher = mock.patch.object(supervise, "_SHUTDOWN", threading.Event())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_dashboard_reports_cleanup_contention_before_recovery_or_serving(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.dict(os.environ, {"COMPASS_HOME": tmp}),
+            runtime_io.held_file_lock(Path(tmp, "compass-lifecycle.lock"), wait=0) as held,
+            mock.patch.object(cli, "build_server") as build,
+            mock.patch.object(reading_jobs, "recover") as recover,
+            mock.patch.object(update_check, "start") as update,
+            mock.patch.object(lifecycle, "run_producer"),
+            mock.patch.object(update_check, "print_startup_hint"),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            self.assertEqual("held", held)
+            server = mock.Mock(spec=["serve_forever", "server_close"])
+            server.serve_forever.side_effect = AssertionError("served during cleanup")
+            build.return_value = server
+            self.assertEqual(1, cli.main(["--port", "9554", "--no-events"]))
+            self.assertIn("lifecycle lock", output.getvalue())
+            self.assertIn("Retry", output.getvalue())
+            recover.assert_not_called()
+            update.assert_not_called()
+            server.serve_forever.assert_not_called()
+            server.server_close.assert_called_once()
+            self.assertFalse(Path(tmp, "compass-9554.json").exists())
+
+    def test_a_dashboard_names_each_unavailable_lifecycle_lock_before_starting_work(self) -> None:
+        for outcome in ("busy", "denied", "unsupported", "uncreatable"):
+            with (
+                self.subTest(outcome=outcome),
+                tempfile.TemporaryDirectory() as tmp,
+                mock.patch.dict(os.environ, {"COMPASS_HOME": tmp}),
+                mock.patch.object(
+                    runtime_io, "held_file_lock", return_value=contextlib.nullcontext(outcome)
+                ),
+                mock.patch.object(cli, "build_server") as build,
+                mock.patch.object(reading_jobs, "recover") as recover,
+                mock.patch.object(update_check, "start") as update,
+                mock.patch.object(update_check, "print_startup_hint"),
+                contextlib.redirect_stdout(io.StringIO()) as output,
+            ):
+                server = mock.Mock(spec=["serve_forever", "server_close"])
+                build.return_value = server
+                self.assertEqual(1, cli.main(["--port", "9554", "--no-events"]))
+                self.assertIn("lifecycle lock", output.getvalue())
+                self.assertIn(outcome, output.getvalue())
+                self.assertIn("Retry", output.getvalue())
+                recover.assert_not_called()
+                update.assert_not_called()
+                server.serve_forever.assert_not_called()
+                server.server_close.assert_called_once()
+                self.assertFalse(Path(tmp, "compass-9554.json").exists())
+
+    def test_a_dashboard_can_retry_the_command_after_cleanup_releases_its_lock(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.dict(os.environ, {"COMPASS_HOME": tmp}),
+            mock.patch.object(cli, "build_server") as build,
+            mock.patch.object(lifecycle, "run_producer"),
+            mock.patch.object(update_check, "start"),
+            mock.patch.object(update_check, "print_startup_hint"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            refused = mock.Mock(spec=["serve_forever", "server_close"])
+            retried = mock.Mock(spec=["serve_forever", "server_close"])
+            build.side_effect = [refused, retried]
+            with runtime_io.held_file_lock(Path(tmp, "compass-lifecycle.lock"), wait=0) as held:
+                self.assertEqual("held", held)
+                self.assertEqual(1, cli.main(["--port", "9554", "--no-events"]))
+            self.assertEqual(0, cli.main(["--port", "9554", "--no-events"]))
+            refused.serve_forever.assert_not_called()
+            retried.serve_forever.assert_called_once()
+            retried.server_close.assert_called_once()
+            self.assertTrue(Path(tmp, "compass-lifecycle.lock").exists())
 
 
 class CompassServerTest(support.RuntimeTestCase):
