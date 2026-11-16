@@ -465,9 +465,13 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
                 self.assertEqual(403, self.request("POST", path, "proxy"))
 
     def test_transfer_encoding_is_refused_before_every_post_route(self) -> None:
-        for path in sorted(POST):
-            with self.subTest(path=path):
-                self.assertEqual(501, self.request("POST", path, "transfer"))
+        # Each refusal drains the unframed body for REJECT_DRAIN_SECONDS before closing, and at
+        # the shipped 0.25 s the forty routes spent 10 s waiting on a drain this test does not
+        # measure. The body is already in the loopback buffer, so a shorter drain still reads it.
+        with mock.patch.object(http_api._RequestHandler, "REJECT_DRAIN_SECONDS", 0.02):
+            for path in sorted(POST):
+                with self.subTest(path=path):
+                    self.assertEqual(501, self.request("POST", path, "transfer"))
 
     def test_connection_cap_is_64_and_overflow_carries_retry_after(self) -> None:
         self.assertEqual(64, http_api.CompassHTTPServer.CONNECTION_LIMIT)
