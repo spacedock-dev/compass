@@ -434,7 +434,9 @@ def _earlier(blocks: Sequence[Block], config: RuntimeConfig) -> str:
     # A title is model output over transcript text, so it is fenced like the record: words in
     # one that imitate a closing tag cannot leave the section.
     nonce = records.fence_nonce()
-    titles = [p.title.text for b in blocks for p in b.phases if p.title.text]
+    titles = [
+        records.redact_secrets(p.title.text) for b in blocks for p in b.phases if p.title.text
+    ]
     kept: list[str] = []
     used = len(prefix.encode())
     for title in reversed(titles):
@@ -549,7 +551,9 @@ _UPDATE_LEDE_SCOPE = (
 def _record(lines: Sequence[_Line]) -> str:
     """The numbered entries, fenced so an entry that imitates a closing tag stays inside."""
     return records.fenced(
-        "record", "".join(line.text for line in lines).rstrip("\n"), nonce=records.fence_nonce()
+        "record",
+        "".join(records.redact_secrets(line.text) for line in lines).rstrip("\n"),
+        nonce=records.fence_nonce(),
     )
 
 

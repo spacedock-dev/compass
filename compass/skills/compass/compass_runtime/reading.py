@@ -3370,8 +3370,9 @@ NO_LINES_RULE = (
 )
 
 
-# Escaping rather than a per-call nonce (as `goal_find` fences): with a nonce on every tag the
-# worst intent measured 12,893 > 12,800 bytes and two headers 9,821 and 9,853 > 9,728.
+# A single nonce encloses all intent fields within the byte caps, while literal
+# closers stay escaped for the inner field labels. Owner ruling 2026-11-17:
+# docs/design-reading-a-session.md#owner-ruling-2026-11-17-one-nonce-around-the-reading-intent
 _CLOSING_TAG = re.compile(r"<(?=\s*/\s*(?:goal|outcome_line))", re.IGNORECASE)
 
 
@@ -3454,14 +3455,14 @@ def _header(
         + "`detail`: one plain sentence explaining departure or unfinished work; empty otherwise. "
         "Never declare work met, complete, delivered or verified.\n\n"
     )
-    if ask_goal:
-        header += f"<goal>\n{_inert(goal_text)}\n</goal>\n"
-    # The attribute is a literal the code writes. A closing tag needs no newline, so `safe_text`
-    # collapsing one is not what keeps a value inside its tag; `_inert` is.
+    block = f"<goal>\n{_inert(records.redact_secrets(goal_text))}\n</goal>\n" if ask_goal else ""
     for k, text in enumerate(line_texts, start=1):
-        header += f'<outcome_line n="{k}">\n{_inert(text)}\n</outcome_line>\n'
-    header += "\n" + MENU_HEADING + "\n"
-    return records.redact_secrets(header)
+        block += (
+            f'<outcome_line n="{k}">\n{_inert(records.redact_secrets(text))}\n</outcome_line>\n'
+        )
+    if block:
+        header += records.fenced("intent", block.rstrip("\n"), nonce=records.fence_nonce())
+    return header + "\n" + MENU_HEADING + "\n"
 
 
 def _menu_row(index: int, row: LedgerEntry, *, whole: bool = False) -> str:

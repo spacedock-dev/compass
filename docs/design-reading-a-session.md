@@ -10365,3 +10365,29 @@ is published with `lines-no-room`. At Analyze's smallest prompt, 16,384 bytes, a
 1,000-character goal and six 800-character CJK or emoji lines read this way rather than
 leaving no packet at all. A goal the model refuses as unclear keeps `lines-no-room` on the
 lines its prompt had no room for.
+
+
+## Owner ruling 2026-11-17: one nonce around the reading intent
+
+Jared Scott approved one nonce fence around the whole goal and outcome-line block, and the
+re-recording of both SHA-256 header pins in `test_reading.py`. Each untrusted goal and outcome
+value is redacted before its literal inner closing tags are escaped and before any trusted tags
+are written. Redacting an assembled header let a trailing `password:` or `api_key=` consume a
+closing tag as its value. The outer fence keeps lookalike closers, including fullwidth forms,
+inside the untrusted block even when they do not match that literal escaping rule.
+
+A nonce on every inner tag remains rejected: the measured worst intent was 12,893 bytes against
+`INTENT_SHARE_BYTES` 12,800, and the larger measured header was 9,853 against the 9,728-byte cap.
+The single outer fence measures 12,696 bytes for a 1,000-character emoji goal and six
+240-character emoji outcomes, and 9,656 for the same outcomes with a 240-character emoji goal.
+Both caps hold without removing a field or changing the reading rules. The pins use a fixed
+12-hex-digit nonce; live headers draw a fresh nonce for each call. The enclosing fence adds
+55 bytes to a nonempty header; the tight selection-priority test receives those 55 bytes so
+it retains the same room for entries.
+
+The same value-before-boundary rule applies to goal-finding prompts, monitor turns, observer
+excerpts, Summary record lines and earlier phase titles. Each source value is redacted on its
+own before values are joined or fenced. The observer reserves the complete nonce fence before
+cutting a redacted excerpt to its UTF-8 byte allowance, so an oversized excerpt retains its
+closing boundary too. These are prompt-construction guarantees; they do not qualify a model's
+accuracy or its resistance to every instruction inside untrusted data.

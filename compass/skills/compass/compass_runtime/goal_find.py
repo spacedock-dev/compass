@@ -142,7 +142,8 @@ def build_prompt(prompts: Iterable[Prompt], *, goal_cap: int) -> str:
     """
     nonce = records.fence_nonce()
     body = "".join(
-        records.fenced("prompt", prompt.text, nonce=nonce, n=prompt.number) for prompt in prompts
+        records.fenced("prompt", records.redact_secrets(prompt.text), nonce=nonce, n=prompt.number)
+        for prompt in prompts
     )
     return (
         "You are looking for the goal of one coding session in the prompts its operator typed.\n"

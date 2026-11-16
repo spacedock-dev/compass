@@ -61,7 +61,11 @@ prints exactly `{}` and nothing else on every path including every failure path,
 that for malformed, empty and valid input alike. Irreversible actions below carries the same rule
 for the hook that matches destructive shapes.
 
-Every one of those scripts is started through `launch.py`. On a `python3` older than the floor it
+Every one of those scripts is started through `launch.py`. The hook commands start a bare
+`python3`: the harness resolves it on its own PATH, with the hook working directory in the
+watched repository, before any Compass code runs. Compass cannot guard that initial lookup;
+a relative or current-directory PATH entry may select a repository program. The launcher's
+filtered lookup below applies to `uv`, after Python has already started. On a `python3` older than the floor it
 may run `uv python find '>=3.12' --no-python-downloads --no-project --no-config --system` (two-second limit, no network,
 no download, no project or config files read and no `.venv` executed) and then start the script with the interpreter `uv` reports,
 passing the hook payload through unchanged, and a SIGTERM or SIGHUP sent to the launcher is passed on to that script (not on Windows). It adds no other traffic and reads the payload only to
