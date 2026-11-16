@@ -1064,6 +1064,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # collectors and whichever one is added next. `records` is a leaf, so
         # this stays inward.
         "compass_runtime.aggregate": {
+            "compass_runtime.declared_sessions",
             "compass_runtime.update_check",
             "compass_runtime.board_explanations",
             # Each row's small summary state; no blocks and no transcript read.
@@ -1117,6 +1118,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # The page's derivation of a reading's shape, ported for the terminal: the closed vocabularies
         # and the stored reading's validators are spelt where the reading and the CI read own them.
         "compass_runtime.drift_view": {
+            "compass_runtime.declared_sessions",
             "compass_runtime.ci_read",
             # The level names, spelt where the producer owns them.
             "compass_runtime.levels",
@@ -1189,6 +1191,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         # The CLI is the assembly point, so it may import any runtime module.
         "compass_runtime.cli": {
+            "compass_runtime.declared_parent_store",
             "compass_runtime.update_check",
             # A starting run removes Claude reading output and stderr files that a
             # hard kill left in the state directory.
@@ -1272,7 +1275,23 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # One small file per Claude session for the status line, written through the owner-only
         # writer. A leaf over `io` and `terminal_sessions`, so the module that owns collection never
         # imports it. The second edge is the one definition of what waits, shared with `--sessions`.
-        "compass_runtime.footer_lines": {"compass_runtime.io", "compass_runtime.terminal_sessions"},
+        "compass_runtime.footer_lines": {
+            "compass_runtime.declared_sessions",
+            "compass_runtime.io",
+            "compass_runtime.terminal_sessions",
+        },
+        # Launcher parent declarations: resolution and the display hold over published rows,
+        # and the owner-only store that keeps the bounded claims across a restart.
+        "compass_runtime.declared_sessions": {
+            "compass_runtime.config",
+            "compass_runtime.events",
+            "compass_runtime.terminal_sessions",
+        },
+        "compass_runtime.declared_parent_store": {
+            "compass_runtime.config",
+            "compass_runtime.events",
+            "compass_runtime.io",
+        },
         # Outstanding asks and their one-slot answer mailboxes. Imports no
         # runtime module, for the reason `stream` does not: that is what lets
         # `state` own the registry while `http_api` and `aggregate` serve from it
@@ -1842,6 +1861,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.supervise",
         },
         "compass_runtime.reading": {
+            "compass_runtime.declared_sessions",
             "compass_runtime.reading_long_progress",
             "compass_runtime.analyze_diagnostics",
             "compass_runtime.config",
@@ -1862,6 +1882,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # The live estimate (DRC-4696) replays `project_context`'s own tally and
         # counts later directions by Steer back's rule, with no model.
         "compass_runtime.live_estimate": {
+            "compass_runtime.declared_sessions",
             "compass_runtime.config",
             "compass_runtime.correction",
             # A type-only import of the checked-out head the estimate is keyed on.
@@ -1989,6 +2010,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # question and option text it stores. The register route builds the
         # `PendingAsk` and is therefore the one place that bounding can happen.
         "compass_runtime.http_api": {
+            "compass_runtime.declared_sessions",
             "compass_runtime.board_explanations",
             # Per-application focused views use the state owner's bounded cache insertion.
             "compass_runtime.state",
@@ -2069,6 +2091,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # runtime's standing threads (a reading job's thread is `reading_jobs`'). Nothing imports it except the assembly point and the
         # server that carries it.
         "compass_runtime.observation": {
+            "compass_runtime.declared_parent_store",
             "compass_runtime.irreversible",
             "compass_runtime.aggregate",
             "compass_runtime.config",
@@ -2107,6 +2130,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # Read-only project composition sits above the bounded observer,
         # Spacedock, and record readers. The HTTP route is its only caller.
         "compass_runtime.project_context": {
+            "compass_runtime.declared_sessions",
             # A recorded CI poll is bound to the folder's remote and the session's own pull request.
             "compass_runtime.ci_read",
             "compass_runtime.claude_data",
