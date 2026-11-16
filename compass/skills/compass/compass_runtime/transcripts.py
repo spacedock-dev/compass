@@ -841,7 +841,7 @@ def analyze_codex_transcript(config: RuntimeConfig, path: str) -> dict[str, Any]
         "last_tool": None,
         "last_event_ts": 0,
         "rate_limits": None,  # newest in the tail: (epoch, the raw rate_limits dict)
-        # The newest `task_complete` (a turn Codex recorded finishing; `turn_aborted` is not one)
+        # The standing `task_complete` (a turn Codex recorded finishing; `turn_aborted` is not one)
         # and the newest record that belongs to a turn, which the stop guard reads (owner,
         # 2026-11-02, `docs/design-reading-a-session.md`). Two measured shapes are not a turn's:
         # a settings change, and a command the stopped turn left running finishing after it.
@@ -864,12 +864,12 @@ def analyze_codex_transcript(config: RuntimeConfig, path: str) -> dict[str, Any]
         t = d.get("type")
         p = records.as_dict(d.get("payload"))
         _update_codex_shell_calls(pending_shell_calls, t, p, ep)
-        if ep and not _codex_non_turn_record(t, p, closed_turns):
-            info["last_turn_ts"] = max(info["last_turn_ts"], ep)
-        elif not ep and not _codex_non_turn_record(t, p, closed_turns):
-            # A turn record we cannot place in time may be newer than any stop: retire it (a later
-            # `task_complete` sets it again). Codex stamps every record measured.
+        if not _codex_non_turn_record(t, p, closed_turns):
+            # File order distinguishes a later abort even when Codex stamps it at the finish's
+            # exact time. A later dated completion can establish a standing stop again.
             info["turn_stop_ts"] = 0
+            if ep:
+                info["last_turn_ts"] = max(info["last_turn_ts"], ep)
         if t == "event_msg" and p.get("type") in ("task_complete", "turn_aborted"):
             turn = p.get("turn_id")
             if isinstance(turn, str) and turn:

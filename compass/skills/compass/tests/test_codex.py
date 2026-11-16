@@ -366,7 +366,7 @@ class CodexCollectorTest(RuntimeTestCase):
                 config, state = runtime()
                 (session,) = codex_collector.collect(config, state, now, 24, False)
 
-        self.assertEqual(("working", "running bash"), (session["state"], session["state_detail"]))
+        self.assertEqual(("working", "generating…"), (session["state"], session["state_detail"]))
         self.assertIsNone(session["last_output"])
 
     def test_nested_child_attaches_to_top_level_and_retires_on_completion(self) -> None:

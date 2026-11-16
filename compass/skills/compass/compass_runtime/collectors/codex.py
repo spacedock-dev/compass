@@ -395,7 +395,8 @@ def _session_state(
     if not working or not ((scan and scan.get("turn_start") is not None) or subagents):
         return "idle", "awaiting your message"
     in_progress = next((task for task in tasks if task["status"] == "in_progress"), None)
-    detail = sessions.working_detail(info, subagents)
+    # Only the pending-call branch can establish that a historical Codex tool is still running.
+    detail = sessions.working_detail(None, subagents)
     if in_progress:
         detail = in_progress["subject"] + "…"
     return "working", detail
@@ -412,7 +413,7 @@ def transcript_turn_end(
 
     Codex's own `task_complete` (owner, 2026-11-02), read as Claude Code's transcript stop is
     (`collectors.claude.transcript_turn_end`): for a board no Codex hook reaches and for a stop
-    from before a restart. It stands only while no turn record is newer than it (a
+    from before a restart. It stands only while no turn record follows it in the rollout (a
     `turn_aborted` is one, so an aborted turn publishes no stop), no subagent is running, and no
     other work is newer by more than the activity grace. Never written as `finished_at`.
     """

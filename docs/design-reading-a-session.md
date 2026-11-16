@@ -5052,7 +5052,9 @@ choosing option A:
   `("claude", "codex")`. One list rather than a second one for transcript stops: the two answer the
   same question, and a separate list would have let a harness be pressed at a stop that `observed_stop`
   would not read, or the reverse. A `turn_aborted` is not a stop. It is a turn record, so it retires
-  one. It stands only while no turn record is newer than it, no subagent is running, and no other
+  one. Rollout record order decides which turn activity follows a stop, even at identical
+  timestamps; the two non-turn shapes below remain exempt. It stands only while no turn record
+  follows it, no subagent is running, and no other
   work is newer than it by more than the activity grace (`transcript_turn_end` in the Codex collector).
   A hook stop, when held, still wins. A stopped Codex session is therefore read through its last turn
   whether or not a Codex hook reaches the board.
