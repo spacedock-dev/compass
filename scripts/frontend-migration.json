@@ -1495,6 +1495,16 @@
       ],
       "contract": "The saved server setting survives restarts and reopening Settings; failed writes keep the previous answer.",
       "disposition": "store-held"
+    },
+    {
+      "name": "A different-port tunnel's action refusal",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/shell/Shell.test.tsx",
+        "frontend/stories/TunnelPort.stories.tsx"
+      ],
+      "contract": "Kept for the life of the document after a POST receives 403 with tunnel-port-mismatch; refresh and route changes keep it, and only that closed refusal reason creates it.",
+      "disposition": "store-held"
     }
   ],
   "storage": [
