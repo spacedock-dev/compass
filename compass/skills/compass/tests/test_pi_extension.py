@@ -69,6 +69,19 @@ server.closeAllConnections(); await new Promise(resolve=>server.close(resolve));
             self.assertEqual(0, result.returncode, result.stderr)
             return json.loads(result.stdout)  # type: ignore[no-any-return]
 
+    @unittest.skipIf(os.name == "nt", "POSIX nofollow symlink admission")
+    def test_a_linked_capability_file_cannot_send_a_permission_event(self) -> None:
+        result = self.run_adapter("""
+const {rename,symlink}=await import('node:fs/promises');
+await rename(state,state+'.original'); await symlink(state+'.original',state);
+emit('ui_prompt_start'); await pause(100);
+const linkedMessages=messages.length;
+await unlink(state); await rename(state+'.original',state);
+emit('ui_prompt_start'); await pause(100);
+if(linkedMessages!==0) throw new Error('linked capability sent an event');
+""")
+        self.assertEqual(1, len(result["messages"]))
+
     def test_measured_pair_for_all_five_kinds_omits_native_contents(self) -> None:
         result = self.run_adapter("""
 for(const kind of ['select','confirm','input','editor','custom']) {

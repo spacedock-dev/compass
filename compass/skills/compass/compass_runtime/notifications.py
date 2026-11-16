@@ -108,15 +108,18 @@ def resolve_quiet_hours(config: RuntimeConfig) -> tuple[int, int, int, int] | No
         return None
     candidate = config.quiet_hours
     if not candidate:
-        candidate = os.environ.get(QUIET_HOURS_ENV)
+        candidate = config.environ.get(QUIET_HOURS_ENV)
     if not candidate:
         quiet_file = os.path.join(config.state_home, QUIET_HOURS_FILENAME)
-        if os.path.isfile(quiet_file):
-            try:
-                with open(quiet_file, encoding="utf-8") as f:
-                    candidate = f.read(QUIET_HOURS_MAX_BYTES)
-            except OSError:
-                candidate = None
+        try:
+            with os.fdopen(
+                runtime_io.open_regular(quiet_file, root=str(config.state_home)),
+                "r",
+                encoding="utf-8",
+            ) as handle:
+                candidate = handle.read(QUIET_HOURS_MAX_BYTES)
+        except OSError:
+            candidate = None
     return parse_quiet_hours(candidate)
 
 

@@ -196,10 +196,6 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "daemon_redirect_stdio: OS null device for detached process stdin.",
     ),
-    ("compass_runtime/notifications.py", "resolve_quiet_hours"): (
-        1,
-        "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
     ("compass_runtime/project_context.py", "frozen_codex_sources"): (
         2,
         "frozen_codex_sources: Exclusive owner-only copy inside a newly created private temporary directory.",

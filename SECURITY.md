@@ -4513,7 +4513,9 @@ marker loads use this policy too. Terminal-monitor control records and locks are
 the state home. Tripwire, monitor, long-reading marker and interaction-registration publications
 refuse an existing link, special file or foreign-owned target before replacing it. The long-reading
 publication fence checks the permission database with the same strict admission as other policy
-connections; SQLite still reopens by pathname.
+connections; SQLite still reopens by pathname. Quiet-hours files also use strict state reads,
+and the configured window comes from the server's runtime environment. OpenCode and Pi capability
+reads add `O_NOFOLLOW` where supported, retaining nonblocking opens and regular-file checks.
 
 Daemon logs tighten existing owned files to `0o600`. Annotation, observer sidecar,
 semantic history, delivery, departure and session-end saves and status-line memos use unique,
