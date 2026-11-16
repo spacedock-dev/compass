@@ -10047,8 +10047,14 @@ These are the follow-ups the review of the `glab` read found. The ruling's items
 - **`GLAB_CONFIG_DIR` is not followed.** Compass reads `glab-cli/config.yml` from `XDG_CONFIG_HOME`, else
   `%APPDATA%` on Windows or `~/.config` elsewhere when it is unset, and never from a folder `GLAB_CONFIG_DIR` names, because that variable is
   stripped from the child and honouring it for the file would let the environment pick which file decides the
-  host. A reader whose configuration lives there reads as `host-not-configured`, and the way out is in
+  host. If the usual file does not admit the host and this override is set, the read says
+  `glab-config-unusable`, and the way out is in
   `HOW_TO_USE.md`.
+- A refused or unreadable configuration publishes `glab-config-unusable`; a usable file that does
+  not name the host still publishes `host-not-configured`. One leading UTF-8 BOM is removed,
+  as yaml.v3 does, and only space and tab are trimmed around keys and values. Unicode whitespace
+  in a scalar remains part of it, so a protocol spelled `https` followed by a nonbreaking space
+  cannot admit a host. Neither failure launches glab or publishes file contents.
 - **A goal verdict names a merge request on GitLab.** The reasons `ci-passed` and `pr-created-before` said
   "the pull request" whatever the provider. The page now takes the provider from the reading's own stored CI read
   (the repository `host/group/project` of a GitLab read) and says "merge request" for it, for a reason and for a

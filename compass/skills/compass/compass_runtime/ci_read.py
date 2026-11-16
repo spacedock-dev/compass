@@ -77,6 +77,7 @@ ERROR_GLAB_SIGNED_OUT: Final = "glab-signed-out"
 ERROR_GLAB_FAILED: Final = "glab-failed"
 # A goal URL named a GitLab host that glab's configuration does not hold: nothing is launched.
 ERROR_HOST: Final = "host-not-configured"
+ERROR_GLAB_CONFIG: Final = "glab-config-unusable"
 # The harness records no folder for the session, so the pull request's head could never be matched
 # to the session's commit and nothing the read said could settle anything: nothing is launched.
 ERROR_NO_FOLDER: Final = "no-session-folder"
@@ -95,6 +96,7 @@ ERRORS: Final = (
     ERROR_GLAB_SIGNED_OUT,
     ERROR_GLAB_FAILED,
     ERROR_HOST,
+    ERROR_GLAB_CONFIG,
     ERROR_NO_FOLDER,
     ERROR_NO_COMMIT,
 )
@@ -697,7 +699,7 @@ def _redirects(key: str, value: str, host: str) -> bool:
     an allow-list: only a bare `false` style value keeps the host, because a comment, a tag or a
     value on the next line is YAML this reader does not parse.
     """
-    name, setting = key.strip().strip("'\""), value.strip().strip("'\"").lower()
+    name, setting = key.strip(" \t").strip("'\""), value.strip(" \t").strip("'\"").lower()
     if not _PLAIN_KEY.fullmatch(name):
         return True
     return (
@@ -715,23 +717,28 @@ _YAML_DISAGREES = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u2028\u2029]"
 _LINE_BREAK = re.compile("\r\n|\r|\n")
 
 
-def _glab_config_text(environ: Mapping[str, str]) -> str:
-    """glab config file text, empty when unreadable, relative or holding a control character."""
+def _glab_config_text(environ: Mapping[str, str]) -> str | None:
+    """Config text, empty when absent, or None when the file could not safely be used."""
     base = environ.get("XDG_CONFIG_HOME", "") or (
         environ.get("APPDATA", "")
         if os.name == "nt"
         else os.path.join(environ.get("HOME", ""), ".config")
     )
     if not base or not os.path.isabs(base):
-        return ""
+        return None
     try:
         raw = runtime_io.read_prefix_bytes(
             os.path.join(base, "glab-cli", "config.yml"), max_bytes=_HOSTS_FILE_BYTES, harness=True
         )
+    except FileNotFoundError:
+        return None if environ.get("GLAB_CONFIG_DIR") else ""
     except OSError:
-        return ""
-    text = raw.decode("utf-8", "replace")
-    return "" if _YAML_DISAGREES.search(text) else text
+        return None
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return None
+    return None if _YAML_DISAGREES.search(text) else text
 
 
 def glab_hosts(environ: Mapping[str, str]) -> frozenset[str]:
@@ -744,12 +751,15 @@ def glab_hosts(environ: Mapping[str, str]) -> frozenset[str]:
     absent is empty, and so is a file holding a character yaml.v3 and this reader would split on
     differently.
     """
-    text = _glab_config_text(environ)
+    return _configured_glab_hosts(_glab_config_text(environ) or "")
+
+
+def _configured_glab_hosts(text: str) -> frozenset[str]:
     hosts: set[str] = set()
     redirected: set[str] = set()
     inside, depth, current = False, 0, ""
     for line in _LINE_BREAK.split(text):
-        stripped = line.strip()
+        stripped = line.strip(" \t")
         if not stripped or stripped.startswith("#"):
             continue
         indent = len(line) - len(line.lstrip(" "))
@@ -759,14 +769,14 @@ def glab_hosts(environ: Mapping[str, str]) -> frozenset[str]:
             redirected.add(current)
             continue
         if indent == 0:
-            inside = stripped.rstrip() == "hosts:"
+            inside = stripped.rstrip(" \t") == "hosts:"
             depth = 0
             continue
         if not inside:
             continue
         depth = depth or indent
         if indent == depth and stripped.endswith(":"):
-            current = stripped[:-1].strip().strip("'\"").lower()
+            current = stripped[:-1].strip(" \t").strip("'\"").lower()
             if valid_host(current):
                 hosts.add(current)
             continue
@@ -1245,8 +1255,14 @@ def _read_gitlab(
     """
     source = os.environ if environ is None else environ
     host, _, path = binding.repository.partition("/")
-    if host not in glab_hosts(source):
-        return {**record, "error": ERROR_HOST}
+    config_text = _glab_config_text(source)
+    if config_text is None:
+        return {**record, "error": ERROR_GLAB_CONFIG}
+    if host not in _configured_glab_hosts(config_text):
+        return {
+            **record,
+            "error": ERROR_GLAB_CONFIG if source.get("GLAB_CONFIG_DIR") else ERROR_HOST,
+        }
     env = glab_environment(source)
     binary = git_status.executable("glab", env)
     if binary is None:

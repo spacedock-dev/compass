@@ -148,6 +148,7 @@
     "glab-signed-out",
     "glab-failed",
     "host-not-configured",
+    "glab-config-unusable",
     "no-session-folder",
     "no-session-commit"
   ],

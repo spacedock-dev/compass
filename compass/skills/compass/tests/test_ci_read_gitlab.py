@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, cast
 from unittest import mock
 
 from compass_runtime import ci_read, http_api, project_context, reading, supervise
+from compass_runtime import io as runtime_io
 
 from . import test_reading as base
 from .supervise_support import controlled_reap
@@ -415,7 +416,7 @@ class TheConfigurationIsReadOnlyWhereYamlAndPythonAgreeOnLines(unittest.TestCase
             with self.subTest(char=hex(ord(char))):
                 self.write(self.block(f"note: a{char}b"))
                 self.assertEqual(frozenset(), self.hosts())
-                self.assertEqual(ci_read.ERROR_HOST, read(self.stub)["error"])
+                self.assertEqual(ci_read.ERROR_GLAB_CONFIG, read(self.stub)["error"])
 
     def test_a_tab_does_not_refuse_the_file(self) -> None:
         self.write(self.block("api_protocol: https\t"))
@@ -436,6 +437,39 @@ class TheLaunchKeepsEverySafeguard(unittest.TestCase):
         self.assertEqual(REPOSITORY, record["repository"])
         self.assertIsNotNone(ci_read.validate(record))
         self.assertTrue(ci_read.green(record))
+
+    def test_a_refused_configuration_says_the_file_could_not_be_used(self) -> None:
+        self.stub.configure(CONFIG + "# refused\x00\n")
+        record = read(self.stub)
+        self.assertEqual("glab-config-unusable", record["error"])
+        self.assertEqual([], self.stub.calls)
+        self.assertIsNotNone(ci_read.validate(record))
+
+    def test_an_unreadable_configuration_says_the_file_could_not_be_used(self) -> None:
+        with mock.patch.object(runtime_io, "read_prefix_bytes", side_effect=PermissionError):
+            record = read(self.stub)
+        self.assertEqual("glab-config-unusable", record["error"])
+        self.assertEqual([], self.stub.calls)
+
+    def test_a_configuration_only_in_an_override_folder_says_the_file_could_not_be_used(
+        self,
+    ) -> None:
+        self.stub.configure(None)
+        record = read(self.stub, environ={**self.stub.environ, "GLAB_CONFIG_DIR": "/elsewhere"})
+        self.assertEqual("glab-config-unusable", record["error"])
+        self.assertEqual([], self.stub.calls)
+
+    def test_a_leading_bom_keeps_the_configured_https_host_readable(self) -> None:
+        self.stub.configure("\ufeff" + CONFIG[CONFIG.index("hosts:") :])
+        record = read(self.stub)
+        self.assertEqual("", record["error"])
+        self.assertTrue(record["head_matches"])
+        self.assertEqual(3, len(self.stub.calls))
+
+    def test_unicode_whitespace_in_a_protocol_is_not_silently_removed(self) -> None:
+        self.stub.configure(f"hosts:\n    {HOST}:\n        api_protocol: https\u00a0\n")
+        self.assertEqual(ci_read.ERROR_HOST, read(self.stub)["error"])
+        self.assertEqual([], self.stub.calls)
 
     def test_the_argv_is_a_fixed_get_of_the_merge_request_and_its_jobs(self) -> None:
         read(self.stub)
