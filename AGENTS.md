@@ -580,9 +580,11 @@ Every PR must pass the `quality-gate` required check (`.github/workflows/quality
 gated on its lane:
 
 The dashboard suite includes three security review tripwires. `test_security_primitives.py`
-walks production Python ASTs and refuses new HTTP openers, subprocess sites or raw runtime file
-operations outside its reviewed inventory. A process entry pins its module, function and argv
-shape; file entries pin the module, function and call count. Prefer the transport, `rooted_path`
+walks production Python ASTs in the runtime, top-level shipped scripts and Gemini/Droid hook
+copies, and refuses new HTTP openers, subprocess sites or raw file operations outside its reviewed
+inventory. A process entry pins its module, class-qualified lexical owner and argv shape; file
+entries pin the module, qualified owner and call count. Nested functions retain their enclosing
+owners too. Prefer the transport, `rooted_path`
 and `io` primitives. An exception needs a one-line reason and review of its executable or path,
 not just an added tuple to quiet a failure. Entries marked `KNOWN GAP` preserve pre-existing raw
 state-reader debt; they do not certify those readers as safe. Synthetic rejection tests exercise
@@ -601,8 +603,9 @@ allowlists and expected statuses in sync with SECURITY.md. A new route needs a m
 duplicate admission header is refused with 403 by the admission gate; only a defective header block
 is a 400.
 `test_workflow_caches.py` and `test_release_workflow.py` scan all workflows and local action YAML:
-remote `uses` need full commit SHAs, containers need SHA-256 digests, shell `run` blocks take
-expressions through `env`, npm installs carry an effective `--ignore-scripts` argument, and pip
+remote `uses` need full commit SHAs, containers need SHA-256 digests, shell `run` blocks and
+`actions/github-script` bodies take expressions through `env`, npm installs carry an effective
+`--ignore-scripts` argument, and pip
 installs use generated hashed files.
 
 The separate `sast.yml` workflow runs dependency audits weekly and on dependency-file pull
