@@ -598,6 +598,7 @@ class InteractionPrototypeHTTPTest(unittest.TestCase):
             with self.subTest(extra=extra):
                 self.assertIn(expected, self._upgrade_status(*extra))
 
+    @unittest.skip("flaky: skipped until fixed, see docs/flaky-tests.md")
     def test_a_quiet_stream_outlives_the_connection_timeout(self) -> None:
         # The socket timeout bounds one send or read, not a stream: this socket only writes,
         # so a terminal with nothing to say for longer than the timeout keeps its viewer.

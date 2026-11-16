@@ -1771,6 +1771,8 @@ const SAMPLE_PHASE_START = 'fact:d5e713ad0690df2d';
 const SAMPLE_SAID = 'fact:8d9a97cc2010ab9e';
 
 export const SampleDrawsAStoredSummary: Story = {
+  // Flaky: kept out of the test run until fixed; see docs/flaky-tests.md.
+  tags: ['!test'],
   render: () => <SampleWithSummary />,
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);

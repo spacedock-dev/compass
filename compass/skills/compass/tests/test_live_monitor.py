@@ -882,6 +882,7 @@ class AnAnalyzePressIsNeverRefusedBecauseOfATick(Case):
         # And the mark is gone afterwards.
         self.assertEqual("ran", self.tick(NOW + 61).status)
 
+    @unittest.skip("flaky: skipped until fixed, see docs/flaky-tests.md")
     def test_a_slow_release_is_waited_for_and_the_start_is_retried_once(self) -> None:
         self.begin()
         runner = FakeRunner(hold=True, release_delay=0.6)

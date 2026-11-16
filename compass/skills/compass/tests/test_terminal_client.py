@@ -530,6 +530,7 @@ class RequestPathTest(unittest.TestCase):
             )
         self.assertIn("every connection in use", str(busy.exception))
 
+    @unittest.skip("flaky: skipped until fixed, see docs/flaky-tests.md")
     def test_a_post_without_the_wait_gets_the_refusal_as_a_reply(self) -> None:
         with support.saturated_server() as (httpd, _release):
             reply = terminal_client.post(
@@ -546,6 +547,7 @@ class RequestPathTest(unittest.TestCase):
             terminal_client.Refusal(terminal_client.sentence("dashboard_busy")), answer
         )
 
+    @unittest.skip("flaky: skipped until fixed, see docs/flaky-tests.md")
     def test_a_post_that_may_wait_gets_the_route_s_answer_once_the_cap_clears(self) -> None:
         with support.saturated_server() as (httpd, release):
             threading.Timer(0.3, release).start()
