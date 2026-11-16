@@ -404,6 +404,15 @@ envelope's session ID selects the session whose parent claim is stored; the capa
 does not independently authenticate that session.
 A holder can already submit lifecycle events naming other sessions of that harness.
 
+Binding each lifecycle event to the session that sends it, with a per-session token minted at
+SessionStart, was considered and declined on 2026-11-16. Hooks run as separate short processes,
+so the token would have to be kept in a file under the Compass state home, readable by the same
+user who can already read the harness capability. It would stop no process that cannot already
+forge events, and it would cost a token store in every adapter plus lost events for any session
+that started before the dashboard. The boundary stays as stated above: one user's own processes,
+per harness. [The design record](docs/design-declared-sessions.md#binding-events-to-a-session-declined)
+lists the cost per adapter.
+
 Claims persist in `declared-parents/claims.json` under the Compass state home, with an owner-only
 directory and atomic owner-only writes, a stable file lock, a 512-session cap and a 256 KiB byte cap.
 The schema, identities and timestamps are validated on reload. Original retention timestamps
