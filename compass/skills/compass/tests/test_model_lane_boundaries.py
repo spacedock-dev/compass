@@ -312,6 +312,25 @@ class EveryClaudeLaneRefusesSettingsThatMoveTheCall(unittest.TestCase):
                     )
         self.assertEqual(0, len(self.runner.calls))
 
+    def test_managed_mcp_appearing_at_child_entry_keeps_the_attempt_counted(self) -> None:
+        original = observer.prepare_claude_exec
+
+        @contextlib.contextmanager
+        def prepare(*args: Any, **kwargs: Any) -> Any:
+            with original(*args, **kwargs) as prepared, self.managed_mcp("Linux", False):
+                yield prepared
+
+        model = self.reading_model(analyze=True)
+        guarded = reading_policy.GuardedModel(self.config, model, time.time, provider="claude")
+        with mock.patch.object(observer, "prepare_claude_exec", side_effect=prepare):
+            result = guarded("p", output_cap_bytes=64)
+        self.assertTrue(guarded.reserved)
+        self.assertEqual(("", "context-config-after-reserve"), result)
+        failure = runtime_reading._call_failed(guarded, result[1])
+        assert failure is not None
+        self.assertTrue(failure[1])
+        self.assertEqual([], self.runner.calls)
+
     def test_managed_mcp_refuses_goal_find_before_charging(self) -> None:
         for system in ("Darwin", "Linux"):
             for populated in (False, True):

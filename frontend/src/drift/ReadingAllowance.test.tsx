@@ -66,6 +66,7 @@ describe('the next Analyze prompt allowance', () => {
 
   it.each([
     ['context-no-room', '', 'leaves no room'],
+    ['settings-refused', 'managed-mcp', 'managed-mcp.json'],
     ['context-config', 'context-config', 'settings could not be checked'],
     ['context-dynamic', 'dynamic-policy', 'policy can change'],
   ])(

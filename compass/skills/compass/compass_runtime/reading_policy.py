@@ -1718,7 +1718,7 @@ class GuardedModel:
         raw, outcome = self.model(prompt, output_cap_bytes=output_cap_bytes)
         # A last-moment managed-policy change can stop the child after the
         # reservation. It must not inherit the initial refusal's unspent claim.
-        if outcome == "context-config":
+        if outcome in {"context-config", "settings-refused"}:
             outcome = "context-config-after-reserve"
         return raw, outcome
 

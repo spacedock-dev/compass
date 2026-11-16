@@ -17,6 +17,7 @@ const CAPACITY_FIELDS = [
   'can_lower_prompt_setting',
 ];
 const CAPACITY_REASONS = [
+  'settings-refused',
   'estimated',
   'context-config',
   'context-no-room',
@@ -26,6 +27,7 @@ const CAPACITY_REASONS = [
   'unavailable',
 ];
 const CONFIGURATION_REASONS = [
+  'managed-mcp',
   '',
   'context-config',
   'dynamic-policy',
@@ -83,6 +85,8 @@ export function allowanceText(preview: PromptCapacityPreview | null | undefined)
           : `${formatAmount(bytes / 1024)} KB`;
       return `Estimated allowance: ${amount}.`;
     }
+    case 'settings-refused':
+      return 'Claude Code cannot run this reading while managed-mcp.json is present. Ask your administrator to resolve the conflict.';
     case 'context-no-room':
       return 'The current context configuration leaves no room for this reading. Choose a larger context window.';
     case 'context-dynamic':

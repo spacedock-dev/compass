@@ -10300,11 +10300,13 @@ The owner ruled on three questions the same day, 2026-11-13, each narrower than 
 - Telemetry in the dashboard's own environment: "Drop it". It no longer unnames the Claude Code
   or the Codex destination, because neither child's environment allowlist hands it on.
 
-The managed-hooks ruling also decides two cases the boundary review left open, because each is a
-command the CLI may start beside the call that could be handed the reading's words. A Claude Code
-`managed-mcp.json` in the managed folder unnames the destination and refuses no lane. Whether a
-managed server starts under `--safe-mode --restricted --strict-mcp-config` was not measured: the
-2.1.323 binary reads that folder at a fixed system path, and the alternative was a model call.
+The managed-hooks ruling continues to unname the destination without refusing a lane for hooks.
+For managed MCP, the 2026-11-17 Linux measurement supersedes that ruling: Claude Code refuses
+`--strict-mcp-config` whenever `managed-mcp.json` is present, including an empty server map,
+before reaching the API. All Claude reading lanes therefore refuse with the settings reason
+before reserving a call. The guard covers both known Linux and macOS managed folders; only Linux
+was measured. The [capture](captures/claude/managed-mcp-strict-config-2.1.325-linux.jsonl) records
+the control and both managed-file cases.
 Codex's system files (`/etc/codex/config.toml`, `managed_config.toml` and `requirements.toml`),
 which `--ignore-user-config` leaves in force and which can define MCP servers, hooks or a model
 provider, already unnamed the destination by being present; they refuse no lane either.

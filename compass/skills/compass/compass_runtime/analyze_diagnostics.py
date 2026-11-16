@@ -27,6 +27,7 @@ INPUT_OUTCOMES = frozenset(
         "context-admission",
         "context-small-window",
         "context-config",
+        "settings-refused",
         "context-no-room",
         "context-dynamic",
         "context-compaction",
@@ -49,13 +50,21 @@ _CAPACITY_COUNTS = (
 )
 _CAPACITY_NULLABLE = ("window_tokens", "estimated_total_tokens")
 _CAPACITY_LABELS = {
-    "reason": {"allowed", "prompt-too-large", "context-no-room", "context-config", "no-route"},
+    "reason": {
+        "allowed",
+        "prompt-too-large",
+        "context-no-room",
+        "context-config",
+        "no-route",
+        "settings-refused",
+    },
     "window_source": {"documented", "configured", "unknown"},
     "estimate_method": {"utf8-bytes-div-3", "legacy-byte-cap"},
     "policy": {"analyze-context-v1"},
     "configuration_reason": {
         "",
         "context-config",
+        "managed-mcp",
         "dynamic-policy",
         "compaction-policy-conflict",
         "fallback-policy-conflict",

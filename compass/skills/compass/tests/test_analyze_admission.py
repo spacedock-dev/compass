@@ -15,7 +15,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest import mock
 
-from compass_runtime import claude_settings, observer, reading, reading_policy, supervise
+from compass_runtime import (
+    analyze_diagnostics,
+    claude_settings,
+    observer,
+    reading,
+    reading_policy,
+    supervise,
+)
 
 from .support import make_runtime
 
@@ -39,6 +46,52 @@ class AnalyzeAdmissionTest(unittest.TestCase):
     def module(self) -> Any:
         self.assertIsNotNone(importlib.util.find_spec("compass_runtime.analyze_capacity"))
         return importlib.import_module("compass_runtime.analyze_capacity")
+
+    def test_managed_mcp_refusal_survives_input_and_capacity_diagnostics(self) -> None:
+        admission = self.module().Admission(
+            "claude", self.config.claude_reading_model, "system", requested_maximum=524288
+        )
+        with mock.patch.object(
+            claude_settings, "resolve", return_value=claude_settings.Controls(refusal="managed-mcp")
+        ):
+            guarded = self.guard(lambda *_a, **_k: ("", "ok"), admit_prompt=admission)
+            self.assertEqual(("", "settings-refused"), guarded("small", output_cap_bytes=1))
+        self.assertEqual("settings-refused", guarded.analyze_diagnostic["outcome"])
+        self.assertIsNotNone(
+            analyze_diagnostics.validate(
+                {
+                    "version": 1,
+                    "input": guarded.analyze_diagnostic,
+                    "capacity": admission.measurement,
+                },
+                spent=False,
+            )
+        )
+
+    def test_managed_mcp_capacity_measurements_can_be_saved(self) -> None:
+        admission = self.module().Admission(
+            "claude", self.config.claude_reading_model, "system", requested_maximum=524288
+        )
+        with mock.patch.object(
+            claude_settings, "resolve", return_value=claude_settings.Controls(refusal="managed-mcp")
+        ):
+            self.assertEqual("settings-refused", admission("small"))
+        self.assertIsNotNone(
+            analyze_diagnostics.validate(
+                {
+                    "version": 1,
+                    "capacity": admission.measurement,
+                    "input": {
+                        "kind": "actual-input",
+                        "prompt_bytes": 5,
+                        "elapsed_ms": 0,
+                        "outcome": "context-config",
+                        "attempt_reserved": False,
+                        "model_invoked": False,
+                    },
+                }
+            )
+        )
 
     def test_actual_prompt_refusal_precedes_marker_reservation_and_spawn(self) -> None:
         model = mock.Mock(return_value=("reply", "ok"))

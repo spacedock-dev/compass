@@ -309,6 +309,16 @@ class AllowanceTest(unittest.TestCase):
                 route = {"capacity": case["capacity"]}
                 self.assertEqual(case["lines"], terminal_drift.allowance_lines(route))
 
+    def test_a_person_reads_the_managed_mcp_blocker_before_spending(self) -> None:
+        cases = json.loads(ALLOWANCE.read_text(encoding="utf-8"))["cases"]
+        case = next(
+            case for case in cases if case["name"] == "managed MCP refuses strict configuration"
+        )
+        self.assertIsNotNone(terminal_drift.capacity_preview(case["capacity"]))
+        self.assertIn(
+            "managed-mcp.json", terminal_drift.allowance_lines({"capacity": case["capacity"]})[0]
+        )
+
     def test_a_person_with_no_route_is_told_the_allowance_is_unknown(self) -> None:
         self.assertEqual(
             [

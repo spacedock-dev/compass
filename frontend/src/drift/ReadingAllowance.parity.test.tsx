@@ -33,6 +33,7 @@ describe('the allowance the terminal prints before it spends', () => {
     for (const reason of [
       'estimated',
       'context-config',
+      'settings-refused',
       'context-no-room',
       'context-dynamic',
       'context-compaction',
