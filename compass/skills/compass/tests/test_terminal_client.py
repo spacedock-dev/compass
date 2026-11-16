@@ -17,7 +17,7 @@ import tempfile
 import threading
 import time
 import unittest
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, ClassVar, Self
@@ -94,7 +94,7 @@ class FakeDashboard:
         self.answers = answers
         self._version = version
         self._health = health
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server = support.ThreadingLoopbackHTTPServer(("127.0.0.1", 0), Handler)
         self.port = self.server.server_port
 
     def health_body(self) -> dict[str, object]:

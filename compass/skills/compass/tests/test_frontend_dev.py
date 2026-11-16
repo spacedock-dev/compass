@@ -16,7 +16,7 @@ import time
 import unittest
 from contextlib import redirect_stderr, suppress
 from html.parser import HTMLParser
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -25,7 +25,7 @@ from compass_runtime import cli, http_api
 from compass_runtime import config as runtime_config
 from compass_runtime.state import build_runtime_state
 
-from .support import SERVER_PATH
+from .support import SERVER_PATH, ThreadingLoopbackHTTPServer
 
 try:
     from compass_runtime import frontend_dev
@@ -177,7 +177,7 @@ class FrontendDevelopmentTest(unittest.TestCase):
                         return
                 handler.wfile.write(b"\r\nx\r\n0\r\n\r\n")
 
-    def start_listener(self, *, bad: str = "") -> ThreadingHTTPServer:
+    def start_listener(self, *, bad: str = "") -> ThreadingLoopbackHTTPServer:
         owner = self
         stop = threading.Event()
 
@@ -229,7 +229,7 @@ class FrontendDevelopmentTest(unittest.TestCase):
                 with suppress(ConnectionError):
                     self.wfile.write(body)
 
-        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server = ThreadingLoopbackHTTPServer(("127.0.0.1", 0), Handler)
         thread = threading.Thread(
             target=lambda: server.serve_forever(poll_interval=0.01), daemon=True
         )

@@ -11,6 +11,7 @@ import atexit
 import contextlib
 import dataclasses
 import functools
+import http.server
 import importlib
 import importlib.util
 import io
@@ -19,6 +20,7 @@ import os
 import re
 import shutil
 import socket
+import socketserver
 import subprocess
 import sys
 import tempfile
@@ -379,6 +381,30 @@ idle. The interval buys responsiveness with wakeups on an otherwise idle
 selector, which is the right trade in a test and the wrong one in the daemon
 the CLI runs; the shipped serve path keeps the stock interval.
 """
+
+
+class LoopbackHTTPServer(http.server.HTTPServer):
+    """A stock `HTTPServer` that binds without reverse-resolving its address.
+
+    `HTTPServer.server_bind` calls `socket.getfqdn()` on the bind address. On the
+    hosted macOS runner that lookup has no answer for 127.0.0.1 and waits it out:
+    each test that stood up a stock server spent 35 s in the macOS dashboard
+    leg's `--slowest` report on work that takes milliseconds. This binds the way
+    `http_api.CompassHTTPServer` does, and `test_loopback_servers` refuses a test
+    that stands up a stock server instead.
+    """
+
+    def server_bind(self) -> None:
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.socket.getsockname()[:2]
+        self.server_name = str(host)
+        self.server_port = int(port)
+
+
+class ThreadingLoopbackHTTPServer(socketserver.ThreadingMixIn, LoopbackHTTPServer):
+    """`http.server.ThreadingHTTPServer`, bound as `LoopbackHTTPServer` binds."""
+
+    daemon_threads = True
 
 
 def poll_fast(httpd: Any) -> Any:

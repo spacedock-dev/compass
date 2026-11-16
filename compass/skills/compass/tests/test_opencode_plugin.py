@@ -12,7 +12,7 @@ import tempfile
 import threading
 import time
 import unittest
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 
@@ -91,7 +91,7 @@ class OpenCodePluginTest(support.RuntimeTestCase):
             def log_message(self, _format: str, *args: object) -> None:
                 pass
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server = support.ThreadingLoopbackHTTPServer(("127.0.0.1", 0), Handler)
         thread = threading.Thread(target=support.poll_fast(self.server), daemon=True)
         thread.start()
         self.addCleanup(self.server.server_close)

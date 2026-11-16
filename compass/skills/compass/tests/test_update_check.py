@@ -19,7 +19,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any, cast
 from unittest import mock
@@ -677,7 +677,7 @@ class LocalTransportTest(unittest.TestCase):
             def log_message(self, *_args: object) -> None:
                 pass
 
-        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server = support.ThreadingLoopbackHTTPServer(("127.0.0.1", 0), Handler)
         serve_until_closed(server)
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
@@ -750,7 +750,9 @@ class LocalTransportTest(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_a_closed_port_is_silent_and_not_retried(self) -> None:
-        with ThreadingHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler) as closed:
+        with support.ThreadingLoopbackHTTPServer(
+            ("127.0.0.1", 0), BaseHTTPRequestHandler
+        ) as closed:
             port = closed.server_port
         stdout, stderr = io.StringIO(), io.StringIO()
         with (

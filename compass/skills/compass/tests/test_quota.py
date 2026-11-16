@@ -23,7 +23,7 @@ import unittest
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Self
@@ -39,6 +39,7 @@ from compass_runtime.state import build_runtime_state
 from .support import (
     SERVER_PATH,
     RuntimeTestCase,
+    ThreadingLoopbackHTTPServer,
     make_server,
     poll_fast,
     runtime,
@@ -2026,7 +2027,7 @@ class VendorTransportTest(unittest.TestCase):
         self.redirect_status = 302
         self.stop = threading.Event()
         self.addCleanup(self.stop.set)
-        server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
+        server = ThreadingLoopbackHTTPServer(("127.0.0.1", 0), self._handler())
         serve_until_closed(server)
         self.addCleanup(server.shutdown)
         self.port = server.server_port

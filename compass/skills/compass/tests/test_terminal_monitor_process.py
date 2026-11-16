@@ -15,7 +15,6 @@ import threading
 import time
 import types
 import unittest
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, override
 from unittest import mock
@@ -24,7 +23,7 @@ from urllib.parse import urlparse
 from compass_runtime import http_api, live_lease, live_monitor, monitor_store, reading_policy
 from compass_runtime import terminal_client as client
 
-from .support import SERVER_PATH, make_config
+from .support import SERVER_PATH, ThreadingLoopbackHTTPServer, make_config
 
 # Measures readiness and cooperative exit of real detached subprocesses.
 REAL_TIME_TESTS = True
@@ -124,7 +123,7 @@ class ProcessTest(unittest.TestCase):
                     }
                 self.answer(answer)
 
-        class Board(ThreadingHTTPServer):
+        class Board(ThreadingLoopbackHTTPServer):
             application = types.SimpleNamespace(
                 config=config,
                 live_leases=outer.leases,

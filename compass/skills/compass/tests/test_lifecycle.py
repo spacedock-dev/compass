@@ -19,7 +19,6 @@ import tempfile
 import threading
 import time
 import unittest
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest import mock
@@ -596,7 +595,7 @@ class CompassServerTest(support.RuntimeTestCase):
             def log_message(self, *args: object) -> None:
                 pass
 
-        httpd = ThreadingHTTPServer(("127.0.0.1", 0), Other)
+        httpd = support.ThreadingLoopbackHTTPServer(("127.0.0.1", 0), Other)
         thread = threading.Thread(target=poll_fast(httpd), daemon=True)
         thread.start()
         try:

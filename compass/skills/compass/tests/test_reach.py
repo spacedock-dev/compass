@@ -18,7 +18,7 @@ from compass_runtime import reach
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
-from .support import poll_fast
+from .support import LoopbackHTTPServer, poll_fast
 
 
 def make_config(**overrides: Any) -> Any:
@@ -33,7 +33,7 @@ def make_config(**overrides: Any) -> Any:
     )
 
 
-class MockReachServer(http.server.HTTPServer):
+class MockReachServer(LoopbackHTTPServer):
     def __init__(self) -> None:
         super().__init__(("127.0.0.1", 0), _MockReachHandler)
         self.received_requests: list[dict[str, Any]] = []
