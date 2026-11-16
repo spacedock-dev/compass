@@ -417,13 +417,10 @@ class Observation:
             and not self.config.irreversible_enabled
         ):
             return "disabled"
-        with self._lock:
-            self._arrival_seq += 1
-            seq = self._arrival_seq
         event = runtime_events.parse(
             harness,
             payload,
-            arrival_seq=seq,
+            arrival_seq=0,
             config=self.config,
             now=self.clock(),
         )
@@ -434,11 +431,15 @@ class Observation:
         return self._record(event)
 
     def _record(self, event: runtime_events.Event) -> str:
-        overlay = runtime_events.overlay_for(event, config=self.config)
         key: SessionKey = (event.harness, event.sid)
         now = self.clock()
         probe_cwd: str | None = None
         with self._lock:
+            # Mint at acceptance: parsing on another handler may finish first.
+            # The sequence and lifecycle transitions must share one order.
+            self._arrival_seq += 1
+            event = dataclasses.replace(event, arrival_seq=self._arrival_seq)
+            overlay = runtime_events.overlay_for(event, config=self.config)
             self._bump(f"event.{event.event}")
             if event.pattern_id is not None and event.tool_name is not None:
                 self._command_reports.add(
@@ -640,34 +641,26 @@ class Observation:
         True when a mark was actually forgotten, so the caller can forget the
         stored copy too and only then.
 
-        Three things say that: a `session_started`, which `claude --resume <id>`
-        emits for the id it reuses, and a working or needs-input overlay, which
-        is a session doing something. A `turn_stopped` is deliberately not one of
-        them — every tidy ending has one in front of it, so lifting on idle would
-        erase the mark for exactly the endings this exists to show.
-
-        `session_started` needs the explicit path because `overlay_for` returns
-        None for it, so it reaches neither `_remember` nor `_mark_finished`.
-
-        The comparison is on EVENT stamps rather than arrival order, and that is
-        the half arrival order cannot do: a reordered delivery is precisely one
-        whose arrival order lies about causality. The a1 arm of
-        docs/captures/claude/session-end-2.1.261-macos.jsonl had its `SessionEnd`
-        land 5.581 s after the last Stop, which is longer than a short headless
-        run, so one of that run's own earlier hook POSTs arriving after the end
-        is a real ordering rather than a hypothetical.
+        Hooks have no native clock or process identity. The late-resume capture
+        requires arrival order, including a Stop delivered after SessionEnd.
+        See [N-12](docs/design-needs-input.md#n-12).
         """
-        if runtime_events.reopens_session(event):
-            at = event.timestamp
-        elif overlay is not None and overlay.kind in {
-            runtime_events.OVERLAY_WORKING,
-            runtime_events.OVERLAY_NEEDS_INPUT,
-        }:
-            at = overlay.at
-        else:
+        activity = event.event in {
+            "session_started",
+            "turn_started",
+            "turn_stopped",
+            "store_changed",
+        }
+        if not activity and not (
+            overlay is not None
+            and overlay.kind
+            in {
+                runtime_events.OVERLAY_WORKING,
+                runtime_events.OVERLAY_NEEDS_INPUT,
+            }
+        ):
             return False
-        recorded = self._ended.get(key)
-        if recorded is not None and at >= recorded:
+        if key in self._ended:
             del self._ended[key]
             return True
         return False

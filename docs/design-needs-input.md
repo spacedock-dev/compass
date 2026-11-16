@@ -822,6 +822,8 @@ already reaches `statusline_hook.py`, which reads `agent_state`
 and drops the rest, and using it needs the reducer precedence rule N-4 describes rather than an
 adapter nobody has written. Nothing is wanted from either vendor.
 
+<a id="n-12"></a>
+
 ## N-12: a session that ended and one waiting for you both said Idle
 
 N-9 separated a turn that stopped from a session still waiting on a reply. It did not separate either
@@ -839,7 +841,7 @@ a7) reports the process surviving and accepting another prompt 0.277 s later. Re
 alone the only thing separating a continuation from an ending is the event's `reason`. A separate
 probe on 2026-09-06, on the same Claude Code 2.1.261, answered the question the capture could not:
 **the prompt after a `/clear` goes to a new session id.** Two prompts either side of one `/clear`
-wrote two different transcripts. So a `session_ended` means "this session id is finished" whatever
+wrote two different transcripts. For that `/clear`, `session_ended` identifies the old id whatever
 its reason, `reason` never has to cross `events.ALLOWED_FIELDS`, and no adapter has to special-case
 a clear.
 
@@ -852,14 +854,32 @@ coverage note reports it as "unknown state", the opposite of what was observed. 
 Claude session silently, but an adapter-less harness, a session predating the server run and
 `--no-events` are all absences too, so the page never reads silence as life.
 
-**What lifts the mark, and what deliberately does not.** A `session_started` lifts it, because
-`claude --resume <id>` reuses the id; so does a working or needs-input overlay, because a session
-doing something has not ended. An idle overlay does not: every tidy ending has a `turn_stopped` in
-front of it, and lifting on idle would erase the mark for exactly the endings this exists to show.
-`session_started` needed an explicit path, since `overlay_for` returns None for it and it reaches
-neither `_remember` nor `_mark_finished`. The comparison is on event stamps rather than arrival
-order, because a reordered delivery is precisely one whose arrival order lies about causality, and
-the a1 arm's 5.581 s gap between the last stop and the end is longer than a short headless run.
+**What lifts the live mark.** Later arrival of a `session_started`, `turn_started`,
+`turn_stopped` or `store_changed` event clears it, as does a working or needs-input overlay.
+The same rule applies to the normalized Claude, Codex and Gemini paths. Claude's
+`UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionStart` and `Stop` therefore lift a
+live end, including its stored copy. `PreToolUse` is forwarded as a store-recheck hint to
+observe this boundary; it does not assert Working or Needs input.
+
+The [late-resume capture](captures/claude/late-session-end-after-resume-2.1.325-macos.jsonl)
+measured three headless Claude Code 2.1.325 processes sharing one id on macOS. In usable
+arm a1, P3's SessionEnd precedes P2's next UserPromptSubmit, Stop and SessionEnd. A Stop
+arriving after an end is thus evidence of a later observed turn and clears the mark, even
+if its prompt was missed. A normal Stop followed by SessionEnd still reads ended. Hooks
+carry no native timestamp or sending process identity, so later means arrival order,
+including when an optional envelope timestamp is older. Arrival is the order accepted after
+validation: the sequence and lifecycle transition are recorded under the same lock, so a slow
+validator cannot reserve an earlier sequence and apply its transition after a later one.
+The captured order follows process exit,
+not an OS-specific mechanism; this capture is not a Linux measurement. Arm a2 did not
+overlap because an operator hook refused P2's tool call, so it proves nothing about late ends.
+
+A late SessionEnd arriving after resumed-process activity still reads ended. Compass cannot
+distinguish it from a real ending and does not guess which process sent it. Conversely, a
+delayed old Stop or tool event can clear an end. Arrival order is an observation rule, not a
+claim to reconstruct process causality. Unrelated hints such as reconciliation do not lift it.
+After a restart, when no live mark exists, the stored mark still yields to transcript activity
+beyond the existing grace window; SessionStart explicitly removes that stored mark too.
 
 **Its retirement rule differs from N-9's, and has to.** `session_ended` pops the session's overlays,
 so straight after an end the key is in neither the collected row set nor the ledger, which is
@@ -883,8 +903,10 @@ which an end satisfies immediately.
 - **A boolean `ended`.** Null's job done by false: every harness with no adapter would publish a
   confident "did not end" over no evidence at all, which is the DRC-4101 shape one field over.
 - **Applying `finished_at`'s activity guard to the end.** A stop is a reading of a moment that later
-  writing invalidates. An end is a fact about an id, and the id cannot write again without a
-  `session_started`. An end also lands *after* the last write rather than before it, 5.581 s after
+  writing invalidates. The older ruling assumed an id could not write again without a
+  `session_started`; the late-resume capture disproves that assumption for overlapping processes.
+  Live events now lift the end by arrival order, while this reducer activity guard remains
+  rejected. An end also lands *after* the last write rather than before it, 5.581 s after
   the final stop in the a1 arm, so the guard would have read a perfectly ordinary ending as a
   contradiction.
 - **Reading an absent end as "still running".** The most tempting inference on the page and the one

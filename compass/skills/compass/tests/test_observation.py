@@ -304,29 +304,91 @@ class LedgerTest(ObservationTestCase):
         coordinator.submit("claude", self.envelope(event="input_requested"))
         self.assertEqual(0.0, coordinator.ended_at("claude", PREFIX))
 
-    def test_a_stop_after_an_end_leaves_the_mark_standing(self) -> None:
-        # A `turn_stopped` says a turn ended, not that the session reopened, and
-        # every clean ending has one in front of it.
-        coordinator = self.build()
-        coordinator.submit("claude", self.envelope(event="session_ended"))
-        self.now += 60
-        coordinator.submit("claude", self.envelope(event="turn_stopped"))
-        self.assertEqual(NOW, coordinator.ended_at("claude", PREFIX))
+    def test_later_lifecycle_activity_clears_a_live_end_for_each_harness(self) -> None:
+        for harness in ("claude", "codex", "gemini"):
+            for name in ("session_started", "turn_started", "turn_stopped", "store_changed"):
+                with self.subTest(harness=harness, event=name):
+                    coordinator = self.build()
+                    coordinator.submit(harness, self.envelope(event="session_ended"))
+                    self.now += 1
+                    older = dt.datetime.fromtimestamp(NOW - 60, tz=dt.UTC).isoformat()
+                    coordinator.submit(harness, self.envelope(event=name, timestamp=older))
+                    sid = PREFIX if harness == "claude" else SESSION
+                    self.assertEqual(0.0, coordinator.ended_at(harness, sid))
+                    self.assertNotIn((harness, sid), ends.restored(ends.load(coordinator.config)))
 
-    def test_an_event_stamped_before_the_end_does_not_lift_the_mark(self) -> None:
-        # At-least-once delivery, reordered. The a1 arm of the session-end capture
-        # had its `SessionEnd` land 5.581 s after the last Stop, which is long
-        # enough for a short headless run's own earlier hook POST to arrive after
-        # it. Arrival order cannot separate those — it is exactly what got
-        # reordered — so the lift compares the EVENT stamps instead.
+    def test_resumed_activity_in_the_capture_clears_the_end_until_the_final_exit(self) -> None:
+        # Event names/order only from usable arm a1 of the 2.1.325 late-end capture.
+        arrival_order = (
+            "SessionStart",
+            "UserPromptSubmit",
+            "Stop",
+            "SessionEnd",
+            "SessionStart",
+            "UserPromptSubmit",
+            "PreToolUse",
+            "PostToolUse",
+            "Stop",
+            "SessionStart",
+            "UserPromptSubmit",
+            "Stop",
+            "SessionEnd",
+            "UserPromptSubmit",
+            "Stop",
+            "SessionEnd",
+        )
         coordinator = self.build()
-        self.now += 60
+        for name in arrival_order:
+            self.now += 1
+            payload = event_hook.envelope(
+                {"hook_event_name": name, "session_id": SESSION}, "claude"
+            )
+            assert payload is not None, name
+            self.assertEqual("accepted", coordinator.submit("claude", payload))
+            expected = self.now if name == "SessionEnd" else 0.0
+            self.assertEqual(expected, coordinator.ended_at("claude", PREFIX), name)
+            self.assertEqual(
+                {("claude", PREFIX): expected} if expected else {},
+                ends.restored(ends.load(coordinator.config)),
+            )
+
+    def test_a_stop_accepted_after_an_end_is_ordered_after_it(self) -> None:
+        coordinator = self.build()
+        parsing = threading.Event()
+        release = threading.Event()
+        parse = events.parse
+        outcomes: list[str] = []
+
+        def delayed_parse(*args: Any, **kwargs: Any) -> Any:
+            if args[1].get("event") == "turn_stopped":
+                parsing.set()
+                release.wait(5)
+            return parse(*args, **kwargs)
+
+        with mock.patch.object(events, "parse", side_effect=delayed_parse):
+            thread = threading.Thread(
+                target=lambda: outcomes.append(
+                    coordinator.submit("claude", self.envelope(event="turn_stopped"))
+                )
+            )
+            thread.start()
+            try:
+                self.assertTrue(parsing.wait(5))
+                coordinator.submit("claude", self.envelope(event="session_ended"))
+                self.assertEqual(NOW, coordinator.ended_at("claude", PREFIX))
+            finally:
+                release.set()
+                thread.join(5)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(["accepted"], outcomes)
+        self.assertEqual(0.0, coordinator.ended_at("claude", PREFIX))
+        self.assertEqual(2, coordinator.overlays_for("claude", PREFIX)[0].arrival_seq)
+
+    def test_a_normal_stop_then_session_end_still_reads_ended(self) -> None:
+        coordinator = self.build()
+        coordinator.submit("claude", self.envelope(event="turn_stopped"))
+        self.now += 1
         coordinator.submit("claude", self.envelope(event="session_ended"))
-        # Stamped a minute before the end and delivered after it. Written through
-        # the envelope rather than poked into the map, so the parse's own
-        # plausibility filter is on the path a real reordered hook would take.
-        older = dt.datetime.fromtimestamp(NOW, tz=dt.UTC).isoformat()
-        coordinator.submit("claude", self.envelope(event="turn_started", timestamp=older))
         self.assertEqual(self.now, coordinator.ended_at("claude", PREFIX))
 
     def test_an_observed_end_is_written_to_the_end_store(self) -> None:
@@ -369,12 +431,12 @@ class LedgerTest(ObservationTestCase):
         coordinator.submit("claude", self.envelope(event="session_started"))
         self.assertEqual({}, ends.restored(ends.load(coordinator.config)))
 
-    def test_a_stop_after_an_end_leaves_the_stored_end(self) -> None:
+    def test_a_stop_after_an_end_clears_the_stored_end(self) -> None:
         coordinator = self.build()
         coordinator.submit("claude", self.envelope(event="session_ended"))
         self.now += 60
         coordinator.submit("claude", self.envelope(event="turn_stopped"))
-        self.assertEqual({("claude", PREFIX): NOW}, ends.restored(ends.load(coordinator.config)))
+        self.assertEqual({}, ends.restored(ends.load(coordinator.config)))
 
     def test_an_end_refused_at_the_cap_is_not_written(self) -> None:
         # The file mirrors what memory accepted. Writing a refused end would have

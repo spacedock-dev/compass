@@ -282,7 +282,7 @@ extension UI prompts on 0.85.1. Neither proves installation or reconstructs a wa
 **Close the loop** identifies observed stops and session ends after waiting and risk take
 precedence. The outcome vocabulary has six readings: stop or end, each with uncommitted work,
 clean git state, or unmeasured git state. A stop is not a session end, and neither tells Compass
-whether you read the result, whether commits reached a remote, or why the process ended.
+whether you read the result, whether commits reached a remote, or why the process ended. A live end mark clears when later lifecycle activity for the same id arrives, including a prompt, tool boundary, session start or Stop. Stop followed by SessionEnd still reads ended. A late SessionEnd after resumed activity also reads ended: hooks cannot identify which process sent it.
 **Coming next** groups the strongest available next action by project. Both are advisory views of
 observed records, not commands sent to a harness.
 

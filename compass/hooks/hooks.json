@@ -109,6 +109,17 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/compass/launch.py\" \"${CLAUDE_PLUGIN_ROOT}/skills/compass/event_hook.py\" claude"
+          }
+        ]
+      }
     ]
   }
 }
