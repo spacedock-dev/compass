@@ -927,7 +927,7 @@ class RedactSecretsTest(unittest.TestCase):
         self,
     ) -> None:
         value = "Synthetic" + "Value123"
-        for hidden in ("\u200b", "<wbr>", "<!-- gap -->"):
+        for hidden in ("\u200b", "<wbr>", "<!-- gap -->", '<span title="<">', "<!-- <!-- x -->"):
             for prefix in ("AKIA", "ASIA"):
                 raw = "word" + hidden + prefix + "Q" * 16 + "_K" + hidden + "EY=" + value
                 for clean in (
@@ -1437,6 +1437,129 @@ class RedactSecretsTest(unittest.TestCase):
 def _key(hidden: str = "") -> str:
     """A synthetic Anthropic-shaped key, with `hidden` struck through the middle of its body."""
     return "sk-ant-api03-" + "A" * 40 + hidden + "A" * 55
+
+
+class KeyAssignmentAdmissionTest(unittest.TestCase):
+    def test_key_assignment_values_stay_private_in_every_letter_case(self) -> None:
+        value = "Synthetic" + "Assignment123"
+        for stem in ("STRIPE", "Stripe", "stripe", "Team_Service", "cache_api"):
+            for suffix in ("KEY", "KEy", "KeY", "Key", "kEY", "kEy", "keY", "key"):
+                name = stem + "_" + suffix
+                text = name + "=" + value
+                for surface, clean in public_redactors().items():
+                    with self.subTest(name=name, surface=surface):
+                        self.assertEqual(name + "=…REDACTED", clean(text))
+
+    def test_formatting_inside_a_key_assignment_name_never_exposes_its_value(self) -> None:
+        value = "Synthetic" + "Assignment123"
+        for name in ("STRIPE_KEY", "Stripe_Key", "stripe_key", "service_kEy"):
+            for split in range(1, len(name)):
+                for hidden in ("\u200b", "\u200c", "\u2060", "\x00", "<wbr>"):
+                    text = name[:split] + hidden + name[split:] + "=" + value
+                    for surface, clean in public_redactors().items():
+                        with self.subTest(name=name, split=split, hidden=hidden, surface=surface):
+                            self.assertNotIn(value, clean(text))
+                            self.assertIn("…REDACTED", clean(text))
+
+    def test_structural_keys_remain_readable_on_surfaces_that_mask_credentials(self) -> None:
+        for name in (
+            "sort_key",
+            "primary_key",
+            "foreign_key",
+            "cache_key",
+            "partition_key",
+            "hotkey",
+            "monkey",
+            "team_sort_key",
+            "table_primary_key",
+            "Sort_Key",
+            "TEAM_CACHE_Key",
+            "cache_api_key_count",
+            "key",
+            "keyboard",
+        ):
+            text = name + "=column123"
+            for surface, clean in public_redactors().items():
+                with self.subTest(name=name, surface=surface):
+                    if surface == "mask_prose":
+                        self.assertNotIn("column123", clean(text))
+                    else:
+                        self.assertEqual(text, clean(text))
+
+    def test_formatting_does_not_turn_a_structural_key_into_a_credential_cue(self) -> None:
+        for name in (
+            "sort_key",
+            "primary_key",
+            "foreign_key",
+            "cache_key",
+            "partition_key",
+            "team_sort_key",
+        ):
+            for split in range(1, len(name)):
+                for hidden in (
+                    "\u200b",
+                    "\u200c",
+                    "\u2060",
+                    "\x00",
+                    "<wbr>",
+                    "<!-- gap -->",
+                    '<span title="<">',
+                    "<!-- <!-- x -->",
+                ):
+                    text = name[:split] + hidden + name[split:] + "=column123"
+                    for surface, clean in public_redactors().items():
+                        with self.subTest(name=name, split=split, hidden=hidden, surface=surface):
+                            if surface == "mask_prose":
+                                continue
+                            self.assertIn("column123", clean(text))
+                            self.assertNotIn("…REDACTED", clean(text))
+
+    def test_control_normalization_keeps_ordinary_key_cues_exempt_in_prose(self) -> None:
+        for name in ("s\x00ort_key", "sort\x00_key", "primary\x01_key"):
+            for template in ("{} = column123", "{}: column123", '"{}": "column123"'):
+                for before, after in (("", ""), ("password=hello ", ""), ("", " password=hello")):
+                    text = before + template.format(name) + after
+                    for surface, clean in public_redactors().items():
+                        with self.subTest(
+                            name=name,
+                            template=template,
+                            before=before,
+                            after=after,
+                            surface=surface,
+                        ):
+                            self.assertIn("column123", clean(text))
+
+    def test_a_long_invisible_run_keeps_an_ordinary_key_readable(self) -> None:
+        for hidden in ("\u200b", "\u200c"):
+            text = "so" + hidden * 20_000 + "rt_key=column123"
+            for surface, clean in public_redactors().items():
+                if surface != "mask_prose":
+                    with self.subTest(hidden=hidden, surface=surface):
+                        shown = clean(text)
+                        self.assertTrue("column123" in shown)
+                        self.assertNotIn("…REDACTED", shown)
+
+    def test_uppercase_structural_keys_keep_their_existing_protection(self) -> None:
+        for name in (
+            "SORT_KEY",
+            "PRIMARY_KEY",
+            "FOREIGN_KEY",
+            "CACHE_KEY",
+            "PARTITION_KEY",
+            "sort<wbr>_KEY",
+        ):
+            for surface, clean in public_redactors().items():
+                with self.subTest(name=name, surface=surface):
+                    self.assertEqual(name + "=…REDACTED", clean(name + "=column123"))
+
+    def test_key_cues_keep_code_references_and_short_values_readable(self) -> None:
+        for name in ("Stripe_Key", "stripe_key", "service_kEy"):
+            for value in ("None", "$VALUE", "os.environ", "next_key()", "ab"):
+                text = name + "=" + value
+                for surface, clean in public_redactors().items():
+                    if surface != "mask_prose":
+                        with self.subTest(name=name, value=value, surface=surface):
+                            self.assertEqual(text, clean(text))
 
 
 class HiddenCharactersInsideACredentialTest(unittest.TestCase):

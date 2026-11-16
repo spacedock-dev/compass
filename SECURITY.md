@@ -5625,8 +5625,21 @@ Since 2026-10-03 one shape is cued rather than shaped, beside the AWS secret. Th
 an `Authorization` or `Proxy-Authorization` value after any scheme, a `--password`, `--token`,
 `--secret` or `--api-key` flag, or a name ending
 in `password`, `passwd`, `pwd`, `token`, `secret`, `api_key` or `apikey` in any case (`DB_PASSWORD`,
-`PGPASSWORD`, `GITHUB_API_TOKEN`, `db_password`) or an upper-case `*_KEY` (`OPENAI_API_KEY`,
-`STRIPE_KEY`), before `=` or `:` with any spacing and an optional closing quote (`"password":`).
+`PGPASSWORD`, `GITHUB_API_TOKEN`, `db_password`) or a name ending in `_key` in any case
+(`STRIPE_KEY`, `Stripe_Key`, `stripe_key`), before `=` or `:` with any spacing and an optional
+closing quote (`"password":`). A non-uppercase name is an ordinary identifier when its component
+immediately before `_key` is `sort`, `primary`, `foreign`, `cache` or `partition`, compared without
+case: `sort_key`, `table_primary_key` and `Cache_Key` do not cue credential masking. A name ending
+in `api_key` or `apikey` still cues masking. Names without the `_key` separator, such as `hotkey`
+and `monkey`, do not acquire a cue. Existing uppercase cues, including fragments found in the
+original text, retain their protection. Names split by invisible characters or inline formatting
+such as `<wbr>` are also judged in the view with that formatting removed. When sanitizing controls
+in an ordinary structural name, `safe_text` joins its role component so a second pass cannot mistake
+the remaining fragment for a credential name. The value rules below still apply.
+
+All four public text redactors share this credential admission rule. `mask_prose` also masks every
+`NAME=value` assignment independently of credential admission, including ordinary identifiers,
+code references and short values. That broader prose protection remains in place.
 Authorization schemes include Basic, Digest, Token, AWS4-HMAC-SHA256, Negotiate and Bearer;
 an unknown scheme word followed by a credential-shaped value is covered too. Header names are
 case-insensitive. Header lines, quoted JSON and YAML values, curl `-H` and `--header` values,
