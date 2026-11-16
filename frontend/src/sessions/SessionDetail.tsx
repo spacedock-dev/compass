@@ -1,3 +1,5 @@
+import { declaredRelations } from './declared';
+import { RelationshipLabels, WaitingChild, LinkedChildren } from './DeclaredRelationships';
 import { Badge } from '../ui/badge';
 import { useHoldStill } from './useHoldStill';
 import { Card } from '../ui/card';
@@ -197,7 +199,11 @@ function Header({
   observed,
   route,
   generated,
+  payload,
+  sessions,
 }: {
+  readonly payload: Row;
+  readonly sessions: readonly ObservedSession[];
   readonly session: Row;
   readonly observed: ObservedSession;
   readonly route: SessionRoute;
@@ -205,6 +211,7 @@ function Header({
 }) {
   const shell = useShell();
   const titleRef = useFocusKey<HTMLHeadingElement>(shell.controls.focusLane, 'session-title');
+  const relations = declaredRelations(payload, session);
   const state = detailState(session['state']);
   const ended = endedAt(session) !== null && !observed.askKnown;
   /* An observed end retires the state word, as it does on the Sessions rows: "working" beside "ended 1s ago"
@@ -248,7 +255,14 @@ function Header({
               />
               <span>
                 <span className="next-visually-hidden">State: </span>
-                {word}
+                {relations.waitingText ? (
+                  <WaitingChild
+                    relations={relations}
+                    focusScope={`session:${observed.harness}:${observed.sid}`}
+                  />
+                ) : (
+                  word
+                )}
               </span>
             </Badge>
           </span>
@@ -273,6 +287,12 @@ function Header({
         <DriftPill />
         <Controls session={session} observed={observed} route={route} />
       </div>
+      <RelationshipLabels
+        source={session}
+        relations={relations}
+        focusScope={`session:${observed.harness}:${observed.sid}`}
+      />
+      <LinkedChildren relations={relations} sessions={sessions} />
     </header>
   );
 }
@@ -337,7 +357,14 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
       <ReadingCapBanner payload={payload} />
       <MonitorQuestion session={session} payload={payload} />
       <DriftProvider session={session} payload={payload} project={route.project}>
-        <Header session={session} observed={observed} route={route} generated={generated} />
+        <Header
+          session={session}
+          observed={observed}
+          route={route}
+          generated={generated}
+          payload={payload}
+          sessions={model.sessions}
+        />
         {observed.askKnown ? (
           <AnswerBlock
             payload={payload}

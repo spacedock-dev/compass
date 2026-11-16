@@ -32,3 +32,11 @@ describe('the filter store', () => {
     expect(heard).toBe(2);
   });
 });
+
+it('clears filters without changing how the reader grouped the rows', () => {
+  const store = filterStoreFor(controls());
+  store.set({ ...EMPTY_FILTERS, byGroup: true, group: ['release'] });
+  store.reset();
+  expect(store.get().group).toEqual([]);
+  expect(store.get().byGroup).toBe(true);
+});

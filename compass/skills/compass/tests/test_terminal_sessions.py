@@ -180,6 +180,11 @@ class ListProjectionTest(unittest.TestCase):
             projected.keys(),
         )
         allowed = {
+            "declared_parent",
+            "declared_parent_state",
+            "waiting_on_child",
+            "group",
+            "group_source",
             "harness",
             "sid",
             "project",

@@ -37,6 +37,7 @@ import {
   optionLabel,
   prepare,
   projectOptions,
+  groupOptions,
   QUERY_LIMIT,
   queryTerms,
   resultLine,
@@ -60,7 +61,7 @@ import {
 } from './filters';
 import { RouteAnchor } from './RouteAnchor';
 
-/* The Find sessions toolbar: one search field, seven filter popovers, three presets, the chips that say what is
+/* The Find sessions toolbar: one search field, eight filter popovers, three presets, the chips that say what is
    on, and the lines that say what the filters hide. It owns no state of its own beyond the "Find a project"
    narrowing: every choice is in the filter store, so a poll, a view change and a round trip through a session
    leave it as the reader left it. docs/design-sessions-search.md#the-toolbar owns the copy and the rules. */
@@ -504,6 +505,7 @@ export function SessionsFilters({
       waiting: hiddenWaiting(indexed, filtered),
       coverage: waitCoverage(indexed, board.harnesses),
       projects: projectOptions(indexed, prepared),
+      group: groupOptions(indexed, prepared),
       harnesses: harnessOptions(indexed, prepared, board.harnesses),
       state: fixedOptions(indexed, prepared, 'state'),
       drift: fixedOptions(indexed, prepared, 'drift'),
@@ -537,6 +539,7 @@ export function SessionsFilters({
     });
   const facetNames: Readonly<Record<Facet, string>> = {
     project: 'Project',
+    group: 'Group',
     harness: 'Harness',
     headless: 'Headless',
     state: 'State',
@@ -556,7 +559,15 @@ export function SessionsFilters({
         (order.indexOf(b) === -1 ? order.length : order.indexOf(b)),
     );
   };
-  for (const facet of ['project', 'harness', 'headless', 'state', 'drift', 'goal'] as const) {
+  for (const facet of [
+    'project',
+    'group',
+    'harness',
+    'headless',
+    'state',
+    'drift',
+    'goal',
+  ] as const) {
     if (!filters[facet].length) continue;
     const text = chipText(
       facetNames[facet],
@@ -805,6 +816,22 @@ export function SessionsFilters({
               </Button>
             ) : null}
           </FilterButton>
+          <FilterButton facet="group" name="Group" selected={filters.group.length}>
+            <OptionList
+              facet="group"
+              name="Group"
+              options={derived.group}
+              chosen={filters.group}
+              onToggle={(value) => toggle('group', value)}
+            />
+          </FilterButton>
+          <Button
+            type="button"
+            aria-pressed={filters.byGroup}
+            onClick={() => set({ byGroup: !filters.byGroup })}
+          >
+            Group by group
+          </Button>
           <FilterButton facet="harness" name="Harness" selected={filters.harness.length}>
             <OptionList
               facet="harness"

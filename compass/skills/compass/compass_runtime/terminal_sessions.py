@@ -40,6 +40,11 @@ _LIST_FIELDS: Final = (
     "annotate_unreadable",
 )
 _SESSION_FIELDS: Final = (
+    "declared_parent",
+    "declared_parent_state",
+    "waiting_on_child",
+    "group",
+    "group_source",
     "harness",
     "sid",
     "project",
@@ -1047,10 +1052,44 @@ def _url(port: int, entry: Entry | None) -> str:
     return f"{base}session:{route}&from=attention"
 
 
-def _entry_lines(entry: Entry) -> list[str]:
+def relationship_lines(source: Row, sources: list[Row]) -> list[str]:
+    """The page's declared relationship labels; only producer-linked identities get named."""
+
+    def target(reference: object) -> Row | None:
+        if not isinstance(reference, dict):
+            return None
+        return next((row for row in sources if _key(row) == _key(reference)), None)
+
+    def name(row: Row) -> str:
+        return _trimmed(row.get("title")) or _text(row.get("sid"))
+
+    lines = []
+    group = _trimmed(source.get("group"))
+    if group:
+        lines.append(
+            f"Group: {group}" + (" (from parent)" if source.get("group_source") == "parent" else "")
+        )
+    state = source.get("declared_parent_state")
+    parent = target(source.get("declared_parent")) if state == "linked" else None
+    if parent:
+        lines.append(f"Child of {name(parent)}")
+    elif state in ("linked", "not_linked"):
+        lines.append("Declared parent is not on the board; not linked.")
+    waiting = target(source.get("waiting_on_child"))
+    if waiting:
+        lines.append(f"Waiting on {name(waiting)}")
+    elif source.get("waiting_on_child"):
+        lines.append("Waiting on child not on the board")
+    return lines
+
+
+def _entry_lines(entry: Entry, sources: list[Row]) -> list[str]:
     who = (entry.state, entry.harness_label, entry.project)
     lines = ["  ".join(printable(part) for part in who).rstrip()]
-    detail = [f"  {printable(entry.title)}"]
+    detail = [
+        f"  {printable(entry.title)}",
+        *(f"  {printable(line)}" for line in relationship_lines(entry.source, sources)),
+    ]
     if entry.goal:
         detail.append(f"  {entry.goal_label}: {_cut(entry.goal)}")
     now = printable(entry.now)
@@ -1088,7 +1127,7 @@ def render_sessions(payload: Mapping[str, Any]) -> list[str]:
     ):
         lines.append(heading)
         for entry in entries:
-            lines.extend(_entry_lines(entry))
+            lines.extend(_entry_lines(entry, _records(payload.get("sessions"))))
         if not entries:
             lines.extend([f"  {empty}", ""])
     return lines[:-1] if lines and not lines[-1] else lines

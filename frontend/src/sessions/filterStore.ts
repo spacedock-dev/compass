@@ -18,7 +18,7 @@ function create() {
   return {
     get: (): FilterState => state,
     set,
-    reset: (): void => set(EMPTY_FILTERS),
+    reset: (): void => set(state.byGroup ? { ...EMPTY_FILTERS, byGroup: true } : EMPTY_FILTERS),
     subscribe(listener: () => void): () => void {
       listeners.add(listener);
       return () => {

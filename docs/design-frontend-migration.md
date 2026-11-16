@@ -16,6 +16,14 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-16, declared process children and local groups add relationship links, a waiting-child
+state label, a Group facet and optional label buckets to Sessions. The retired page's payloads
+carry none of these fields, so their asking tests and golden files stay unchanged. The new
+`declared-sessions.json` fixture supplies one hand-authored answer for frontend and terminal
+parity; mounted tests and the `Sessions/Declared children and groups` Storybook assertions cover
+filter-hidden relatives, unmatched declarations, ended children, group inheritance and link clicks.
+
+
 2026-11-15, shared display labels use measured location evidence. One measured directory or
 repository raises no label warning. Multiple measured locations count only measured members;
 label fallbacks and inferred Claude worktree layouts remain unknown and say their location was

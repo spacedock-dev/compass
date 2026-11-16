@@ -1,3 +1,4 @@
+import { groupOf } from './declared';
 import { unmeasuredLocationNote, measuredLocation } from '../observed/location';
 import { nextNumber } from '../api/bootstrap';
 import { isRecord, promptCopied, trimmed, type Row } from '../observed';
@@ -18,11 +19,13 @@ import { worktreeOf } from './worktree';
 
 export type DateField = 'started' | 'active';
 export type When = 'any' | 'hour' | 'today' | 'yesterday' | 'week' | 'unstamped';
-export type Facet = 'project' | 'harness' | 'headless' | 'state' | 'drift' | 'goal';
+export type Facet = 'project' | 'group' | 'harness' | 'headless' | 'state' | 'drift' | 'goal';
 export type DriftValue = 'recorded' | 'checked' | 'unchecked';
 export type GoalValue = 'saved' | 'drafted' | 'none';
 
 export interface FilterState {
+  readonly byGroup: boolean;
+  readonly group: readonly string[];
   readonly query: string;
   readonly dateField: DateField;
   readonly when: When;
@@ -36,6 +39,8 @@ export interface FilterState {
 }
 
 export const EMPTY_FILTERS: FilterState = {
+  byGroup: false,
+  group: [],
   query: '',
   dateField: 'started',
   when: 'any',
@@ -50,6 +55,7 @@ export const EMPTY_FILTERS: FilterState = {
 
 export const FACETS: readonly Facet[] = [
   'project',
+  'group',
   'harness',
   'headless',
   'state',
@@ -199,6 +205,7 @@ export function indexRow(row: SessionRow, context: SessionsContext): IndexedRow 
     field('goal', goal.known ? goal.text : ''),
     field('task', drawnTask),
     field('project', session.project),
+    field('group', groupOf(source)),
     field('worktree', worktreeOf(source)),
     field('harness', row.harnessLabel),
   ].filter((one): one is Field => one !== null);
@@ -343,6 +350,7 @@ function datePasses(indexed: IndexedRow, filters: FilterState, edges: DayEdges |
 
 export function facetValue(indexed: IndexedRow, facet: Facet): string | null {
   if (facet === 'project') return indexed.row.session.project;
+  if (facet === 'group') return groupOf(indexed.row.source);
   if (facet === 'harness') return indexed.row.session.harness;
   if (facet === 'headless') return indexed.row.source?.['headless'] === true ? 'headless' : 'other';
   if (facet === 'state') return indexed.state;
@@ -557,6 +565,22 @@ export function projectOptions(indexed: readonly IndexedRow[], prepared: Prepare
   return options;
 }
 
+export function groupOptions(indexed: readonly IndexedRow[], prepared: Prepared): Option[] {
+  const counts = facetCounts(indexed, prepared, 'group');
+  const values = [...new Set(indexed.map((one) => groupOf(one.row.source)))].sort((a, b) =>
+    a ? (b ? collator.compare(a, b) : -1) : 1,
+  );
+  for (const value of prepared.filters.group) if (!values.includes(value)) values.push(value);
+  return values.map((value) => ({
+    value,
+    label: value || 'No group',
+    count:
+      counts.get(value) ?? (indexed.some((one) => groupOf(one.row.source) === value) ? 0 : null),
+    note: indexed.some((one) => groupOf(one.row.source) === value) ? '' : 'Not on the board now',
+    disabled: false,
+  }));
+}
+
 export interface HarnessMeta {
   readonly key: string;
   readonly label: string;
@@ -628,6 +652,7 @@ export function optionLabel(
   harnesses: readonly HarnessMeta[],
 ): string {
   if (facet === 'project') return projectLabel(value);
+  if (facet === 'group') return value || 'No group';
   if (facet === 'harness') return harnesses.find((one) => one.key === value)?.label ?? value;
   if (facet === 'drift') return DRIFT_OPTIONS.find((one) => one.value === value)?.label ?? value;
   if (facet === 'goal') return GOAL_OPTIONS.find((one) => one.value === value)?.label ?? value;

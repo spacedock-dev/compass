@@ -1,3 +1,4 @@
+import { declaredRelations } from './declared';
 import { nextNumber } from '../api/bootstrap';
 import { stableProjectKey } from '../api/identity';
 import type { RouteInput } from '../router/grammar';
@@ -299,6 +300,7 @@ export interface SessionRow {
   readonly endedSince: string;
   readonly responsibility: string;
   readonly history: boolean;
+  readonly relations: ReturnType<typeof declaredRelations>;
 }
 
 export interface SessionsScreen {
@@ -383,6 +385,7 @@ export function buildSessionsScreen(
       endedSince: since ? `ended ${since} ago` : '',
       responsibility: ask ? ` · ${askResponsibility(payload, ask)}` : '',
       history,
+      relations: declaredRelations(payload, source),
     };
   };
   return {
