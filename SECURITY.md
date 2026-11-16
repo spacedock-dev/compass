@@ -5559,7 +5559,19 @@ survive, because those are the instruction and the reason the line is on the car
 visible deliberately. Someone who sees it learns their prompt history holds a live key, which is the
 only route by which it gets rotated.
 
-Each prefix shape keeps its body length, alphabet and trailing-character requirements.
+Each prefix shape keeps its body length and alphabet. Complete AWS access key IDs and Google
+API keys are masked even when a letter, digit, underscore or hyphen follows them, including a
+`_prod` suffix. The suffix remains readable. Other trailing-character requirements still apply.
+When a capped match consumes the start of an adjacent credential, independent scans retain
+prefixed credentials, URL passwords and cued values crossing that cap. Overlapping accepted
+spans are merged so both bodies stay hidden. An admitted cued assignment stays masked even
+when its name contains a complete key shape. Contextual recognizers read the original text,
+and bounded derived views also check contexts made visible by earlier masking. Additional
+masked bodies map back to the original spans before the results are merged and published.
+A key inside an assignment name or a quoted setup value, including one with line breaks,
+therefore cannot disable a later command's password flag.
+Unbounded shapes, including PEM closing lines,
+use non-overlapping scans of each shape rather than repeatedly parsing already covered tails.
 Existing matches stay masked, including lowercase generic `sk-` bodies after whitespace,
 assignment, quotes or brackets. AWS, fine-grained GitHub, `lin_api_`, `ya29.` and Anthropic
 matches at least 90 characters long keep their existing acceptance regardless of the lead.
@@ -5570,8 +5582,8 @@ their complete prefix and body shape without a case requirement. Newly admitted 
 Stripe, Slack and generic `sk-` matches require an ASCII uppercase letter or digit after
 the prefix the marker retains. Anthropic's `api03-`, `oat01-` and `ort01-` count toward
 that evidence. A complete OpenRouter `sk-or-v1-` plus 64 lowercase hexadecimal characters
-qualifies too. A preceding hyphen keeps its existing boundary behavior rather than gaining
-this additional admission.
+qualifies too. Complete Google API keys also qualify after a hyphen. Other families keep
+their existing hyphen boundary behavior.
 
 Only newly admitted glued generic `sk-` matches have an identifier safeguard: lowercase
 segments separated by hyphens or underscores stay readable even with version digits or a
@@ -5657,7 +5669,8 @@ precedent).
 The order matters as much as the coverage. Redaction runs before the bound, never after, because a
 key cut at a 140-character cap is still a hundred usable characters of key and a shape whose tail has
 fallen off no longer matches. A slice that ran first is what published a URL credential cut short of
-its `@`.
+its `@`. A strict text cap that would split a redaction marker or its retained prefix steps back
+before that prefix, including the dot in `ya29.`.
 
 Since 2026-10-05 the shared filter also checks a second view with transparent HTML inline formatting
 removed, before the credential hint check. A match masks the corresponding original span; ordinary

@@ -72,6 +72,121 @@ def tz(name: str) -> Iterator[None]:
         time.tzset()
 
 
+def public_redactors() -> dict[str, Callable[[str], str]]:
+    return {
+        "redact_secrets": records.redact_secrets,
+        "safe_text": lambda text: records.safe_text(text, 100_000),
+        "redact_clip": lambda text: records.redact_clip(text, 100_000),
+        "mask_prose": records.mask_prose,
+    }
+
+
+def contextual_credential_cases() -> Iterator[tuple[str, str, str, str, str, str, bool]]:
+    # Enumerates the contextual shape streams and the word masker branches. The
+    # public shape redactors do not promise the command-only forms mask_prose does.
+    value = "Synthetic" + "Context123456"
+    contexts = {
+        "cued assignment": ("DB_PASSWORD={}", True),
+        "generic assignment": ("SESSION={}", False),
+        "quoted assignment": ('DB_PASSWORD="{} with spaces"', True),
+        "aws secret assignment": ("aws_secret_access_key=" + "{0}" * 2, True),
+        "password flag": ("tool --password {}", True),
+        "short password flag": ("tool -p {}", False),
+        "joined password flag": ("tool -p{}", False),
+        "auth flag": ("tool --auth {}", False),
+        "cookie flag": ("curl --cookie {}", False),
+        "joined cookie flag": ("curl --cookie={}", False),
+        "npm auth flag": ("npm //host/:_authToken {}", False),
+        "redis password": ("redis-cli -a {}", False),
+        "redis joined password": ("redis-cli --pass={}", False),
+        "ssh passphrase": ("ssh-keygen -N {}", False),
+        "ldap password": ("ldapsearch -w {}", False),
+        "ldap joined password": ("ldapsearch -w{}", False),
+        "http user": ("curl -u user:{}", True),
+        "http joined user": ("curl --user=user:{}", True),
+        "http proxy user": ("curl --proxy-user user:{}", False),
+        "httpie user": ("http -a user:{}", False),
+        "url userinfo": ("https://user:{}@host/", True),
+        "quoted userinfo": ("user:{}@host", False),
+        "authorization header": ("Authorization: Bearer {}", True),
+        "proxy authorization": ("Proxy-Authorization: Basic {}", True),
+        "bare authorization": ("Authorization: {}", True),
+        "encoded authorization": ("Authorization%3A%20Basic%20{}", True),
+        "standalone scheme": ("Token {}", True),
+        "bare bearer": ("Bearer {}", True),
+        "api header": ("X-Api-Key: {}", False),
+        "cookie header": ("curl -H Cookie: {}", False),
+        "joined vendor header": ("curl --header=X-Vault-Token:{}", True),
+        "extraheader": ("git -c http.extraheader=X-Api-Key:{}", False),
+        "netrc login": ("machine host login user password {}", True),
+        "netrc default": ("default password {}", True),
+        "signed query": ("https://host/?X-Amz-Signature={}", True),
+        "html signed query": ("https://host/?a=b&amp;sig={}", True),
+        "json signed query": (r"https://host/?a=b\u0026sig={}", True),
+        "secret string": ('SecretString: "{}"', True),
+        "dotted config": ("tool -Dspring.datasource.password={}", True),
+        "literal pair": ("kubectl --from-literal name={}", False),
+        "vault login": ("vault login {}", False),
+        "cargo login": ("cargo login {}", False),
+        "aws configure": ("aws configure set aws_secret_access_key {}", False),
+        "aws ssm": ("aws ssm put-parameter --value {}", False),
+        "gh secret": ("gh secret set NAME --body {}", False),
+    }
+    contexts.update(
+        {
+            "quoted spaced userinfo": ('"user:{} with spaces@host"', False),
+            "clustered curl user": ("curl -sSu user:{}", False),
+            "wget joined user flag": ("wget --user=user:{}", False),
+            "wget short joined user": ("wget -uuser:{}", False),
+            "redis short joined password": ("redis-cli -a{}", False),
+            "ssh joined passphrase": ("ssh-keygen -N{}", False),
+            "wrapped authorization": ("Authorization:\nBasic {}", True),
+            "wrapped api header": ("X-Api-Key:\n{}", False),
+            "quoted netrc": ('machine host login user password "{} with spaces"', True),
+            "openssl pass source": ("openssl -passin pass:{}", False),
+        }
+    )
+    leads = {
+        "aws": "AKIA" + "Q" * 16,
+        "google": "AIza" + "R" * 35,
+        "github": "ghp_" + "S" * 36,
+        "slack": "xoxb-" + "T" * 24,
+    }
+    for name, (template, shared) in contexts.items():
+        secret = value if name != "aws secret assignment" else "Q" * 20
+        context = template.format(secret)
+        for family, key in leads.items():
+            for form, lead in (
+                ("name", key + "_NAME=ordinary"),
+                ("bare", key),
+                ("session", key + "_SESSION=ordinary"),
+            ):
+                for cleaner in public_redactors():
+                    command_contexts = {
+                        "clustered curl user",
+                        "wget joined user flag",
+                        "wget short joined user",
+                        "redis short joined password",
+                        "ssh joined passphrase",
+                        "redis password",
+                        "ssh passphrase",
+                        "ldap password",
+                        "ldap joined password",
+                        "http proxy user",
+                        "httpie user",
+                        "vault login",
+                        "cargo login",
+                        "aws configure",
+                        "aws ssm",
+                        "gh secret",
+                    }
+                    prose_admitted = name not in {"cookie header", "openssl pass source"} and (
+                        name not in command_contexts or (form != "bare" and family != "slack")
+                    )
+                    protected = shared or (cleaner == "mask_prose" and prose_admitted)
+                    yield name, family, form, cleaner, lead + " " + context, secret, protected
+
+
 class IsoEpochTest(unittest.TestCase):
     # 2026-01-02T03:04:05Z, chosen so every field differs and a transposition
     # cannot pass by symmetry.
@@ -772,6 +887,327 @@ class RedactSecretsTest(unittest.TestCase):
         short = "x" + "sk-ant-" + "B" * 20
         self.assertEqual("xsk-ant-…REDACTED", records.redact_secrets(short))
 
+    def test_touching_credentials_hide_both_bodies_when_a_match_caps_inside_the_next_prefix(
+        self,
+    ) -> None:
+        for length in range(251, 256):
+            for second_prefix, second_body in (("ghp_", "B" * 36), ("github_pat_", "C" * 40)):
+                raw = "rotate " + "ghp_" + "A" * length + second_prefix + second_body + " today"
+                for clean in (
+                    records.redact_secrets,
+                    lambda text: records.safe_text(text, 10_000),
+                    lambda text: records.redact_clip(text, 10_000),
+                    records.mask_prose,
+                ):
+                    with self.subTest(length=length, second=second_prefix, clean=clean):
+                        shown = clean(raw)
+                        expected = "rotate ghp_…REDACTED today"
+                        if length == 255:
+                            expected = "rotate ghp_…REDACTED" + second_prefix + "…REDACTED today"
+                        self.assertEqual(expected, shown)
+
+    def test_aws_and_google_keys_are_hidden_before_a_token_character_suffix(self) -> None:
+        for prefix, body in (("AKIA", "Q" * 16), ("ASIA", "R" * 16), ("AIza", "S" * 35)):
+            for lead in ("", " ", "x", "1", "_", "=", "(", "-"):
+                for suffix in ("_prod", "-prod", "a", "7"):
+                    raw = lead + prefix + body + suffix
+                    for clean in (
+                        records.redact_secrets,
+                        lambda text: records.safe_text(text, 10_000),
+                        lambda text: records.redact_clip(text, 10_000),
+                        records.mask_prose,
+                    ):
+                        with self.subTest(prefix=prefix, lead=lead, suffix=suffix, clean=clean):
+                            expected = lead + prefix + "…REDACTED" + suffix
+                            if clean is records.mask_prose:
+                                expected = expected.strip()
+                            self.assertEqual(expected, clean(raw))
+
+    def test_a_split_uppercase_assignment_keeps_its_value_private_after_a_hidden_boundary(
+        self,
+    ) -> None:
+        value = "Synthetic" + "Value123"
+        for hidden in ("\u200b", "<wbr>", "<!-- gap -->"):
+            for prefix in ("AKIA", "ASIA"):
+                raw = "word" + hidden + prefix + "Q" * 16 + "_K" + hidden + "EY=" + value
+                for clean in (
+                    records.redact_secrets,
+                    lambda text: records.safe_text(text, 10_000),
+                    lambda text: records.redact_clip(text, 10_000),
+                ):
+                    with self.subTest(hidden=hidden, prefix=prefix, clean=clean):
+                        self.assertNotIn(value, clean(raw))
+
+    def test_a_key_shaped_assignment_name_keeps_its_assigned_value_private(self) -> None:
+        value = "Synthetic" + "Value123"
+        for prefix, body, suffixes in (
+            ("AKIA", "Q" * 16, ("_KEY", "_PASSWORD", "_TOKEN")),
+            ("ASIA", "R" * 16, ("_KEY", "_PASSWORD", "_TOKEN")),
+            ("AIza", "S" * 35, ("_PASSWORD", "_TOKEN")),
+        ):
+            for suffix in suffixes:
+                for clean in (
+                    records.redact_secrets,
+                    lambda text: records.safe_text(text, 10_000),
+                    lambda text: records.redact_clip(text, 10_000),
+                    records.mask_prose,
+                ):
+                    with self.subTest(prefix=prefix, suffix=suffix, clean=clean):
+                        shown = clean(prefix + body + suffix + "=" + value)
+                        self.assertNotIn(value, shown)
+                        self.assertIn("REDACTED", shown)
+
+    def test_prose_values_sharing_the_marker_text_are_withheld_whole(self) -> None:
+        for value in ("Synthetic" + "REDACTED", "Synthetic" + "ED", "…" + "Synthetic123"):
+            for template, expected in (
+                ("SESSION={}", "SESSION=…REDACTED"),
+                ("tool -p {}", "tool -p …REDACTED"),
+                ("user:{}@host", "user:…REDACTED@host"),
+            ):
+                with self.subTest(value=value, template=template):
+                    self.assertEqual(expected, records.mask_prose(template.format(value)))
+
+    def test_quoted_assignments_preserve_later_command_secret_masking(self) -> None:
+        value = "Synthetic" + "Command123"
+        commands = (
+            "redis-cli -a {}",
+            "ssh-keygen -N {}",
+            "ldapsearch -w {}",
+            "vault login {}",
+            "cargo login {}",
+            "aws configure set aws_secret_access_key {}",
+            "gh secret set NAME --body {}",
+        )
+        leads = (
+            "DB_PASSWORD='synthetic setup value' ",
+            'DB_PASSWORD="synthetic setup value" ',
+            "X='user:synthetic setup value@host' ",
+        )
+        for lead in leads:
+            for command in commands:
+                with self.subTest(lead=lead, command=command):
+                    self.assertNotIn(value, records.mask_prose(lead + command.format(value)))
+
+    def test_a_quoted_assignment_across_lines_keeps_later_command_secrets_private(self) -> None:
+        value = "Synthetic" + "Command123"
+        for separator in ("\n", "\r", "\r\n", "\v", "\f", "\x85", "\u2028", "\u2029"):
+            for quote in ("'", '"'):
+                with self.subTest(separator=repr(separator), quote=quote):
+                    text = "X=" + quote + "user:synthetic" + separator + "setup value@host" + quote
+                    self.assertNotIn(value, records.mask_prose(text + " redis-cli -a " + value))
+
+    def test_an_unclosed_userinfo_assignment_keeps_later_command_secrets_private(self) -> None:
+        value = "Synthetic" + "Command123"
+        for separator in (" ", "\n", "\r\n"):
+            for quote, ending in (("'", ""), ('"', ""), ("'", '"'), ('"', "'")):
+                with self.subTest(separator=repr(separator), quote=quote, ending=ending):
+                    text = "X=" + quote + "user:ordinary" + separator + "setup@host" + ending
+                    self.assertNotIn(value, records.mask_prose(text + " redis-cli -a " + value))
+
+    def test_the_generated_slice_keeps_previously_hidden_context_values_private(self) -> None:
+        # 12 prefixes x 16 contexts x 2 suffixes = 384 texts, each through four
+        # public redactors. Admission recorded from main, independently of these
+        # recognizers: all paths, prose words, or a discovered command only.
+        value = "Synthetic" + "ContextSecret123456"
+        prefixes = (
+            ("", True),
+            ("SESSION=ordinary ", True),
+            ("DB_PASSWORD='synthetic setup value' ", True),
+            ('DB_PASSWORD="synthetic setup value" ', True),
+            ("X='user:synthetic setup value@host' ", True),
+            ("X='user:synthetic\nsetup value@host' ", True),
+            ("X='user:synthetic setup value@host ", True),
+            ("env DB_PASSWORD='synthetic setup value' ", True),
+            ('sudo -u synthetic DB_PASSWORD="synthetic setup value" ', True),
+            ("printf ordinary | ", False),
+            ("ordinary\n", False),
+            ("( ", False),
+        )
+        contexts = (
+            ("redis-cli -a {}", "command"),
+            ("ssh-keygen -N {}", "command"),
+            ("ldapsearch -w {}", "command"),
+            ("vault login {}", "command"),
+            ("cargo login {}", "command"),
+            ("aws configure set aws_secret_access_key {}", "command"),
+            ("gh secret set NAME --body {}", "command"),
+            ("curl -u user:{}", "all"),
+            ("https://user:{}@host/path", "all"),
+            ("Authorization: Bearer {}", "all"),
+            ("machine host login user password {}", "all"),
+            ("https://host/?sig={}", "all"),
+            ("SESSION={}", "prose"),
+            ('SecretString: "{}"', "all"),
+            ("tool -Dspring.datasource.password={}", "all"),
+            ("tool --password {}", "all"),
+        )
+        for lead, command_seen in prefixes:
+            for template, admission in contexts:
+                for suffix in ("", "\nordinary"):
+                    text = lead + template.format(value) + suffix
+                    for name, cleaner in public_redactors().items():
+                        shown = cleaner(text)
+                        if admission == "all" or (
+                            name == "mask_prose" and (admission == "prose" or command_seen)
+                        ):
+                            with self.subTest(
+                                lead=lead, template=template, suffix=suffix, path=name
+                            ):
+                                self.assertNotIn(value, shown)
+
+    def test_incomplete_assignment_quotes_never_publish_their_values(self) -> None:
+        value = "Synthetic" + "Command123"
+        for opening in ("'", '"', "'''", '""'):
+            with self.subTest(opening=opening):
+                self.assertNotIn(value, records.mask_prose("X=" + opening + value))
+                self.assertNotIn(
+                    value,
+                    records.mask_prose("X=" + opening + " ssh-keygen -N" + value),
+                )
+        self.assertNotIn(
+            value, records.mask_prose("X='user:ordinary setup@host'\" ssh-keygen -N " + value)
+        )
+
+    def test_redacted_userinfo_does_not_hide_the_later_commands_identity(self) -> None:
+        value = "Synthetic" + "Command123"
+        text = "sudo _X=https://user:ordinary\x00setup@host\x1dcurl --proxy-user user:" + value
+        self.assertNotIn(value, records.mask_prose(text))
+
+    def test_an_inner_redaction_keeps_the_enclosing_quoted_assignment_private(self) -> None:
+        value = "Synthetic" + "Command123"
+        text = "DB_PASSWORD=\"Authorization:\x00Bearer\x00OrdinarySetup123'\x1c"
+        text += "curl --proxy-user user:" + value + '"'
+        for name, cleaner in public_redactors().items():
+            with self.subTest(path=name):
+                self.assertNotIn(value, cleaner(text))
+
+    def test_derived_command_discovery_preserves_original_assignment_names(self) -> None:
+        value = "Synthetic" + "Command123"
+        for name in ("AKIA" + "Q" * 16 + "_X", "AIza" + "R" * 35 + "_X"):
+            for setup in (
+                "https://user:ordinary\x1dsetup@host ",
+                "'Authorization:\x00Bearer\x00OrdinarySetup123\"\x1c",
+            ):
+                with self.subTest(name=name, setup=setup):
+                    text = "command " + name + "=" + setup + "gh secret set NAME --body " + value
+                    self.assertNotIn(value, records.mask_prose(text))
+
+    def test_controls_in_a_setup_value_do_not_consume_the_later_command(self) -> None:
+        value = "Synthetic" + "Command123"
+        text = "rtk proxy DB_PASSWORD=Authorization:\x00Bearer\x00OrdinarySetup123\tredis-cli -a "
+        self.assertNotIn(value, records.mask_prose(text + value + "'"))
+
+    def test_a_masked_header_keeps_its_later_userinfo_and_continued_value_private(self) -> None:
+        value = "Synthetic" + "Command123"
+        for text in ("'Authorization:p3' n " + value + "@", "Authorization:\x003\u2028" + value):
+            with self.subTest(text=text):
+                self.assertNotIn(value, records.mask_prose(text))
+
+    def test_control_normalization_retains_later_userinfo_recognition(self) -> None:
+        value = "Synthetic" + "Command123"
+        for name in ("X", "AIza" + "R" * 35 + "_X"):
+            with self.subTest(name=name):
+                text = "( " + name + "='Authorization:p3'\tssh-keygen -N " + value + "@host"
+                self.assertNotIn(value, records.mask_prose(text))
+
+    def test_contextual_credentials_stay_private_after_key_shaped_leads(self) -> None:
+        for name, family, form, cleaner, text, value, protected in contextual_credential_cases():
+            with self.subTest(context=name, family=family, form=form, cleaner=cleaner):
+                shown = public_redactors()[cleaner](text)
+                if protected:
+                    self.assertNotIn(value, shown)
+                self.assertIn("REDACTED", shown)
+
+    def test_key_shaped_assignment_names_preserve_mask_prose_value_masking(self) -> None:
+        value = "Synthetic" + "Session123"
+        for prefix, body in (("AKIA", "Q" * 16), ("ASIA", "R" * 16), ("AIza", "S" * 35)):
+            for suffix in ("_SESSION", "_CONFIG", "_CREDENTIAL", "_prod"):
+                with self.subTest(prefix=prefix, suffix=suffix):
+                    shown = records.mask_prose(prefix + body + suffix + "=" + value)
+                    self.assertNotIn(value, shown)
+                    self.assertNotIn(body, shown)
+                    self.assertIn("REDACTED", shown)
+
+    def test_colliding_openers_cannot_hide_the_next_credential_body(self) -> None:
+        slack_body = "Synthetic" + "Slack12345"
+        google_body = "Synthetic" + "Google" + "Q" * 20
+        for first, collision, body in (
+            ("ghp_" + "A" * 250, "xoxoxb-", slack_body),
+            ("ghp_" + "A" * 249, "xoxapp-", slack_body),
+            ("sk-" + "A" * 174, "AKIAIza", google_body),
+        ):
+            for clean in (
+                records.redact_secrets,
+                lambda text: records.safe_text(text, 10_000),
+                lambda text: records.redact_clip(text, 10_000),
+                records.mask_prose,
+            ):
+                with self.subTest(collision=collision, clean=clean):
+                    shown = clean(first + collision + body)
+                    self.assertNotIn(body, shown)
+                    self.assertNotIn("A" * 32, shown)
+
+    def test_url_passwords_crossing_a_capped_value_stay_private(self) -> None:
+        password = "Synthetic" + "Url123"
+        for cue, lengths in (
+            ("TOKEN=", (400, 505, 506, 512)),
+            ("default password ", (400, 505, 506, 512)),
+            ("?sig=", (2000, 2041, 2042, 2048)),
+        ):
+            for length in lengths:
+                for clean in (
+                    records.redact_secrets,
+                    lambda text: records.safe_text(text, 10_000),
+                    lambda text: records.redact_clip(text, 10_000),
+                    records.mask_prose,
+                ):
+                    with self.subTest(cue=cue, length=length, clean=clean):
+                        raw = cue + "A" * length + "https://alice:" + password + "@example.com"
+                        shown = clean(raw)
+                        self.assertNotIn(password, shown)
+                        self.assertIn("REDACTED", shown)
+
+    def test_an_aws_secret_after_a_capped_github_token_stays_private(self) -> None:
+        body = "Q" * 40
+        raw = "github_pat_" + "A" * 75 + "aws_secret_access_key=" + body
+        for clean in (
+            records.redact_secrets,
+            lambda text: records.safe_text(text, 10_000),
+            lambda text: records.redact_clip(text, 10_000),
+            records.mask_prose,
+        ):
+            with self.subTest(clean=clean):
+                self.assertNotIn(body, clean(raw))
+
+    def test_merging_an_enclosing_assignment_hides_the_key_in_its_name_too(self) -> None:
+        value = "Synthetic" + "Value123"
+        for prefix, body in (("AKIA", "Q" * 16), ("ASIA", "R" * 16), ("AIza", "S" * 35)):
+            for formatting in ("", "<wbr>" * 20, "\u200b" * 20):
+                raw = "SERVICE_" + formatting + prefix + body + "_TOKEN=" + value
+                for clean in (
+                    records.redact_secrets,
+                    lambda text: records.safe_text(text, 10_000),
+                    lambda text: records.redact_clip(text, 10_000),
+                    records.mask_prose,
+                ):
+                    with self.subTest(prefix=prefix, formatting=formatting, clean=clean):
+                        shown = clean(raw)
+                        self.assertNotIn(body, shown)
+                        self.assertNotIn(value, shown)
+                        self.assertTrue(shown.startswith("SERVICE_"))
+
+    def test_a_second_assignment_crossing_the_first_value_cap_stays_private(self) -> None:
+        value = "Synthetic" + "Value123"
+        raw = "TOKEN=" + "A" * 505 + "/PASSWORD=" + value
+        for clean in (
+            records.redact_secrets,
+            lambda text: records.safe_text(text, 10_000),
+            lambda text: records.redact_clip(text, 10_000),
+            records.mask_prose,
+        ):
+            with self.subTest(clean=clean):
+                self.assertNotIn(value, clean(raw))
+
     def test_a_rejected_span_does_not_shield_a_later_credential(self) -> None:
         # A rejected identifier must not stop the scan before a later credential.
         line = "dask-scheduler-configuration-defaults-file-name then AKIAIOSFODNN7EXAMPLE"
@@ -1245,6 +1681,23 @@ class HiddenCharactersInsideACredentialTest(unittest.TestCase):
         for char in ("\x80", "\x85", "\x9f", "\u061c", "\u2028", "\u2029"):
             with self.subTest(code_point=f"U+{ord(char):04X}"):
                 self.assertEqual("a b", records.safe_text(f"a{char}b", 40))
+
+    def test_a_hidden_boundary_keeps_cued_values_private_even_after_a_credential_prefix(
+        self,
+    ) -> None:
+        for separator in ("\u200b", "<wbr>", "<!--gap-->"):
+            for prefix in ("AKIA_ACCESS_", "ASIA_SERVICE_"):
+                body = "Synthetic" + "Secret42"
+                raw = "word" + separator + prefix + separator + "KEY=" + body
+                for clean in (
+                    records.redact_secrets,
+                    lambda text: records.safe_text(text, 10_000),
+                    lambda text: records.redact_clip(text, 10_000),
+                ):
+                    with self.subTest(separator=separator, prefix=prefix, clean=clean):
+                        shown = clean(raw)
+                        self.assertNotIn(body, shown)
+                        self.assertIn("KEY=…REDACTED", shown)
 
 
 def mask(line: str) -> str:
@@ -3481,6 +3934,15 @@ class CutTextTest(unittest.TestCase):
         self.assertTrue(first.startswith("Use cfg_" + "q" * 200))
         self.assertLessEqual(len(first), 240)
 
+    def test_clipping_anywhere_in_a_gcloud_marker_leaves_no_partial_prefix(self) -> None:
+        raw = "ask " + "ya29." + "B" * 50 + " tail" * 20
+        for cap in range(5, 19):
+            with self.subTest(cap=cap):
+                shown, cut = records.cut_text(raw, cap, 32_768)
+                self.assertTrue(cut)
+                self.assertEqual("ask…", shown)
+                self.assertLessEqual(len(shown), cap)
+
     def test_the_kept_prefix_is_never_left_at_the_cut(self) -> None:
         for lead in range(220, 245):
             with self.subTest(lead=lead):
@@ -3493,6 +3955,70 @@ class CutTextTest(unittest.TestCase):
 class HiddenCredentialTimeTest(unittest.TestCase):
     # Measures process CPU bounds for hostile hidden-character redaction.
     REAL_TIME_TESTS = True
+
+    def test_a_million_hidden_prefix_characters_are_redacted_within_four_cpu_seconds(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        # One million characters; four CPU seconds leaves machine headroom without the old
+        # per-boundary 512-character cued-name rescan (over nine seconds locally).
+        body = "Z" * 36
+        raw = ("\u200bghp_" * 200_000) + " " + "ghp_" + body
+        started = time.process_time()
+        shown = records.redact_secrets(raw)
+        elapsed = time.process_time() - started
+        self.assertNotIn(body, shown)
+        self.assertIn("ghp_…REDACTED", shown)
+        self.assertLess(elapsed, 4.0)
+
+    def test_repeated_pem_headers_are_hidden_within_four_cpu_seconds_and_scale_linearly(
+        self,
+    ) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        elapsed = []
+        for count in (32_000, 64_000):
+            # 1.15 MB then 2.30 MB; doubling may cost at most 3x plus 0.1 CPU seconds.
+            raw = "-----BEGIN PRIVATE KEY----------END " * count + "-----"
+            started = time.process_time()
+            shown = records.redact_secrets(raw)
+            elapsed.append(time.process_time() - started)
+            self.assertEqual("-----BEGIN …REDACTED", shown)
+        self.assertLess(elapsed[1], 4.0)
+        self.assertLess(elapsed[1], elapsed[0] * 3 + 0.1)
+
+    def test_credentials_inside_long_preserved_words_and_prose_scale_linearly(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        credential = "ghp_" + "Q" * 36
+        for kind in ("assignment name", "authorization prose"):
+            with self.subTest(kind=kind):
+                elapsed = []
+                for count in (1_000, 2_000):
+                    if kind == "assignment name":
+                        raw = (
+                            "A" * (40 * count)
+                            + "_"
+                            + credential * count
+                            + "_TOKEN="
+                            + "Synthetic"
+                            + "Value123"
+                        )
+                    else:
+                        raw = (
+                            "Authorization: "
+                            + "Z" * 24
+                            + ' "hello '
+                            + (credential + " hello ") * count
+                            + '"'
+                        )
+                    started = time.process_time()
+                    shown = records.redact_secrets(raw)
+                    elapsed.append(time.process_time() - started)
+                    self.assertNotIn("Q" * 36, shown)
+                # At most 160 KB; each view has a four-CPU-second bound, and doubling
+                # must stay below 3x plus 0.1 CPU seconds (quadratic was 4x).
+                self.assertLess(elapsed[1], 4.0)
+                self.assertLess(elapsed[1], elapsed[0] * 3 + 0.1)
 
     def test_pathological_inputs_stay_linear(self) -> None:
         # Each of these is a shape that would turn a per-opener scan quadratic: unclosed comment

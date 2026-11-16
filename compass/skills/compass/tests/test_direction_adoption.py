@@ -950,6 +950,21 @@ class DirectionReviewMaskingTest(unittest.TestCase):
         self.assertTrue(text.startswith("Credential case is next."))
         return text
 
+    def test_a_quoted_setup_assignment_keeps_the_later_command_secret_out_of_review(self) -> None:
+        value = "Synthetic" + "Command123"
+        for lead in (
+            "DB_PASSWORD='synthetic setup value' ",
+            'DB_PASSWORD="synthetic setup value" ',
+            "X='user:synthetic setup value@host' ",
+        ):
+            with self.subTest(lead=lead):
+                text, clipped, fits = annotation_store.direction_review(
+                    lead + "redis-cli -a " + value, 240
+                )
+                self.assertNotIn(value, text)
+                self.assertIn(records.SECRET_MARKER, text)
+                self.assertEqual((False, True), (clipped, fits))
+
     def test_each_named_form_is_masked_after_the_first_sentence(self) -> None:
         forms = {
             "NAME=value": f"PGPASSWORD={self.SECRET}",
