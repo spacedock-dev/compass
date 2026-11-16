@@ -114,7 +114,7 @@ def _exchange(
             conn.sock = sock
             try:
                 conn.request(method, path, body=body, headers=dict(headers or {}))
-            except BrokenPipeError as error:
+            except (BrokenPipeError, ConnectionResetError) as error:
                 # The cap can close after sending a refusal but before the POST body arrives.
                 # Read that answer if present; without one, retain the send failure for retries.
                 try:

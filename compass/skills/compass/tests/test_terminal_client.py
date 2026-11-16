@@ -539,11 +539,13 @@ class RequestPathTest(unittest.TestCase):
         self.assertEqual(503, reply.status)
 
     def test_a_refusal_is_read_even_when_the_body_send_meets_a_broken_pipe(self) -> None:
-        for wait in (False, True):
-            with self.subTest(wait_when_busy=wait):
-                self.refusal_after_body_send(wait=wait)
+        # The cap closes after its refusal: a send in flight meets a broken pipe or a reset.
+        for error in (BrokenPipeError(32, "Broken pipe"), ConnectionResetError(54, "reset")):
+            for wait in (False, True):
+                with self.subTest(error=type(error).__name__, wait_when_busy=wait):
+                    self.refusal_after_body_send(wait=wait, error=error)
 
-    def refusal_after_body_send(self, *, wait: bool) -> None:
+    def refusal_after_body_send(self, *, wait: bool, error: OSError) -> None:
         refused = threading.Event()
         original_refuse = http_api.CompassHTTPServer._refuse_connection
         original_send = http.client.HTTPConnection.send
@@ -562,7 +564,7 @@ class RequestPathTest(unittest.TestCase):
                 sent_body = True
                 if not refused.wait(5):
                     raise AssertionError("the server did not send its refusal")
-                raise BrokenPipeError(32, "Broken pipe")
+                raise error
             original_send(connection, data)
 
         with (
