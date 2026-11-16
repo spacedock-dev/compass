@@ -395,7 +395,8 @@ def _session_state(
     if not working or not ((scan and scan.get("turn_start") is not None) or subagents):
         return "idle", "awaiting your message"
     in_progress = next((task for task in tasks if task["status"] == "in_progress"), None)
-    detail = sessions.working_detail(info, subagents)
+    # Only the pending-call branch can establish that a historical Codex tool is still running.
+    detail = sessions.working_detail(None, subagents)
     if in_progress:
         detail = in_progress["subject"] + "…"
     return "working", detail

@@ -94,6 +94,25 @@ class CodexInFlightTest(RuntimeTestCase):
                 self.assertEqual("working", row["state"])
                 self.assertEqual(f"running {name}", row["state_detail"])
 
+    def test_a_returned_call_reads_as_generating_or_its_plan_instead_of_running_the_tool(
+        self,
+    ) -> None:
+        for name in ("exec", "exec_command"):
+            for plan in ([], [self._plan()]):
+                with self.subTest(name=name, plan=bool(plan)):
+                    row = self._collect(
+                        [*plan, self._call(name=name), self._output(custom=name == "exec")],
+                        fresh_mtime=True,
+                    )
+                    self.assertEqual("working", row["state"])
+                    self.assertEqual(
+                        "Build project…" if plan else "generating…", row["state_detail"]
+                    )
+
+    def test_an_expired_call_with_fresh_activity_does_not_claim_the_tool_is_running(self) -> None:
+        row = self._collect([self._call()], fresh_mtime=True, cap=200)
+        self.assertEqual(("working", "generating…"), (row["state"], row["state_detail"]))
+
     def test_missing_or_invalid_bodies_cannot_extend_work(self) -> None:
         for name in ("exec", "exec_command", "shell_command", "write_stdin"):
             invalid: list[Any] = [None, {}, "", "  "]
