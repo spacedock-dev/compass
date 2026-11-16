@@ -215,7 +215,7 @@ class ReviewedExportIntakeTest(unittest.TestCase):
                 reviewed_exports=resolver,
             )
             self.assertEqual(1, len(called))
-            self.assertEqual(seal["prompt_digest"], hashlib.sha256(called[0].encode()).hexdigest())
+            self.assertEqual(seal["prompt_digest"], marking.production_prompt_digest(called[0]))
 
     def test_manifest_source_and_current_intake_code_recheck_at_last_precharge(self) -> None:
         resolver = self.resolver()

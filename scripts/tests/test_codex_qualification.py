@@ -361,8 +361,14 @@ class CodexQualificationTest(_CodexInstallationFixture):
         self.assertEqual(2, self.run_one())
         self.assertEqual(10, len(self.launches))
         self.assertEqual(
-            [r["prompt"] for r in self.requests[:10]], [r["prompt"] for r in self.launches]
+            [r["prompt"] for r in self.requests[:10]],
+            [marker.normalized_production_prompt(r["prompt"]) for r in self.launches],
         )
+        nonces = [r["prompt"].split('<intent id="', 1)[1].split('"', 1)[0] for r in self.launches]
+        self.assertEqual(10, len(set(nonces)))
+        self.assertNotIn("0" * 12, nonces)
+        for launch, nonce in zip(self.launches, nonces, strict=True):
+            self.assertIn(f'</intent id="{nonce}">', launch["prompt"])
         result = json.loads(Path(self.results).read_text())
         self.assertEqual(10, len(result["records"]["attempts"]))
         self.assertEqual(2, self.run_one(resume=True))

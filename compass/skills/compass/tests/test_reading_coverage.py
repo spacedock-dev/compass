@@ -10,7 +10,7 @@ from typing import Any, ClassVar, cast
 from unittest import mock
 
 from compass_runtime import annotations as annotation_store
-from compass_runtime import http_api, observer, project_context, reading
+from compass_runtime import http_api, observer, project_context, reading, records
 from compass_runtime import io as runtime_io
 
 from . import test_claude_checks as checks
@@ -367,6 +367,7 @@ class TheReadingCarriesMeasuredCoverage(producer.AClaudeCodeReadingProducer):
         self.assertEqual(1, got["coverage"]["unlisted"])
 
     def test_coverage_changes_no_model_prompt_before_the_frozen_pilot(self) -> None:
+        self.enterContext(mock.patch.object(records, "fence_nonce", return_value="0" * 12))
         for measurement in (None, lambda: {"tail_truncated": True, "tail_start": 100.0}):
             reading.produce(
                 cast("Any", self.config),

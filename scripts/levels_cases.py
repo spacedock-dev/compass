@@ -2068,7 +2068,7 @@ class _Pinned:
         return bool(self.model.available())
 
     def __call__(self, prompt: str, **kwargs: Any) -> tuple[str, str]:
-        if hashlib.sha256(prompt.encode("utf-8")).hexdigest() != self.request:
+        if _marker().production_prompt_digest(prompt) != self.request:
             return "", "cancelled"
         return self.model(prompt, **kwargs)  # type: ignore[no-any-return]
 
@@ -2099,7 +2099,7 @@ def _read_group(  # noqa: C901 - the gate adds one stage to each group
         spy = _Spy()
         _produce(press.config, case, spy, press.tool_output(case), clock())
         if spy.prompts:
-            request = hashlib.sha256(spy.prompts[0].encode("utf-8")).hexdigest()
+            request = _marker().production_prompt_digest(spy.prompts[0])
             approval = uuid.uuid4().hex
             asked = {
                 "case": keys[0],

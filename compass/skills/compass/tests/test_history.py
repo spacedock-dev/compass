@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 from unittest import mock
 
-from compass_runtime import history
+from compass_runtime import history, records
 from compass_runtime import sessions as runtime_sessions
 from compass_runtime.config import COMPASS_HOME_ENV, STORE_ENV_VARS
 
@@ -236,6 +236,14 @@ def run_one_shot_cli(argv: list[str], env: dict[str, str]) -> int:
         code = cli.main()
     served.assert_not_called()
     return int(code)
+
+
+class StoredAndPublishedControlsTest(unittest.TestCase):
+    def test_stored_labels_and_published_rows_remove_the_same_unsafe_characters(self) -> None:
+        characters = "".join(map(chr, range(0x110000)))
+        self.assertEqual(
+            records._UNSAFE_CHARS.findall(characters), history._UNSAFE_CHARS.findall(characters)
+        )
 
 
 class HistoryStoreTestCase(unittest.TestCase):

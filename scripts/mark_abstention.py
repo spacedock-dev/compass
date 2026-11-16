@@ -591,6 +591,33 @@ def _historical_source(
         yield path, digest
 
 
+def normalized_production_prompt(prompt: str) -> str:
+    """Canonical comparison text for offline pins, never the text sent to a model."""
+    opening = re.search(r'^<intent id="([0-9a-f]{12})">\n', prompt, re.MULTILINE)
+    menu = re.search(r"(?:^|\n)" + re.escape(_reading().MENU_HEADING) + r"\n", prompt)
+    if opening is not None and menu is not None and opening.start() < menu.start():
+        nonce = opening[1]
+        closing = f'\n</intent id="{nonce}">\n\n{_reading().MENU_HEADING}\n'
+        end = prompt.find(closing, opening.end())
+        if end < 0:
+            raise FreezeError("production-prompt-fence-differs")
+        # Only the two trusted wrapper IDs are volatile. Nested lookalikes and
+        # every source byte stay bound; the model receives the untouched prompt.
+        prompt = (
+            prompt[: opening.start()]
+            + '<intent id="000000000000">\n'
+            + prompt[opening.end() : end]
+            + closing.replace(nonce, "0" * 12, 1)
+            + prompt[end + len(closing) :]
+        )
+    return prompt
+
+
+def production_prompt_digest(prompt: str) -> str:
+    """Bind a frozen prompt's content while allowing a fresh live intent nonce."""
+    return hashlib.sha256(normalized_production_prompt(prompt).encode()).hexdigest()
+
+
 def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> dict[str, Any]:
     """Capture the actual production selection using a model-free prompt sink."""
     reading = _reading()
@@ -675,7 +702,7 @@ def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> d
     if assessment is None:
         raise FreezeError("production-prompt-unavailable")
     frozen["constraints"] = list(assessment["criteria"])
-    frozen["prompt_digest"] = hashlib.sha256(prompts[0].encode()).hexdigest()
+    frozen["prompt_digest"] = production_prompt_digest(prompts[0])
     return frozen
 
 

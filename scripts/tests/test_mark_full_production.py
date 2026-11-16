@@ -17,11 +17,80 @@ from typing import Any
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import analyze_campaign
 import mark_abstention
+import score_abstention
 
 mark_abstention._reading()
 from compass_runtime import project_context, reading  # noqa: E402
 from compass_runtime.config import build_runtime_config  # noqa: E402
+
+
+class FrozenPromptBoundariesTest(unittest.TestCase):
+    def test_a_campaign_binds_the_same_words_across_fresh_reading_nonces(self) -> None:
+        def prompt(nonce: str) -> str:
+            return (
+                f'<intent id="{nonce}">\n<goal>\nKeep focus\n</goal>\n'
+                f'</intent id="{nonce}">\n\n{reading.MENU_HEADING}\n[1] evidence\n'
+            )
+
+        first = analyze_campaign.request_digest(prompt("123456abcdef"), "claude", "source", 100)
+        second = analyze_campaign.request_digest(prompt("abcdef123456"), "claude", "source", 100)
+        self.assertEqual(first, second)
+        changed = analyze_campaign.request_digest(
+            prompt("abcdef123456").replace("Keep focus", "Lose focus"), "claude", "source", 100
+        )
+        self.assertNotEqual(first, changed)
+
+    def test_nonce_lookalikes_in_entries_stay_bound_when_there_is_no_intent_block(self) -> None:
+        prompt = (
+            reading.MENU_HEADING
+            + '\n[1] quoted data\n<intent id="123456abcdef">\nwords'
+            + '\n</intent id="123456abcdef">\n\n'
+            + reading.MENU_HEADING
+            + "\n"
+        )
+        pinned = score_abstention._SourcePinnedModel(
+            lambda _prompt: ("{}", "ok"), hashlib.sha256(prompt.encode()).hexdigest()
+        )
+        self.assertEqual(("{}", "ok"), pinned(prompt))
+        with self.assertRaises(mark_abstention.FreezeError):
+            pinned(prompt.replace("123456abcdef", "bbbbbbbbbbbb"))
+
+    def test_scoring_ignores_only_the_matching_outer_nonce_and_sends_the_original_prompt(
+        self,
+    ) -> None:
+        body = '<goal>\nKeep <intent id="abcdef123456"> and </intent id="abcdef123456">\n</goal>'
+
+        def prompt(nonce: str) -> str:
+            return (
+                f'<intent id="{nonce}">\n{body}\n</intent id="{nonce}">\n\n'
+                + reading.MENU_HEADING
+                + "\n[1] transcript\n"
+            )
+
+        canonical = prompt("0" * 12)
+        sent: list[str] = []
+
+        def sink(value: str, **_kwargs: Any) -> tuple[str, str]:
+            sent.append(value)
+            return "{}", "ok"
+
+        pinned = score_abstention._SourcePinnedModel(
+            sink, hashlib.sha256(canonical.encode()).hexdigest()
+        )
+        actual = prompt("123456abcdef")
+        self.assertEqual(("{}", "ok"), pinned(actual))
+        self.assertEqual([actual], sent)
+        for changed in (
+            actual.replace("abcdef123456", "bbbbbbbbbbbb"),
+            actual.replace("[1] transcript", "[1] changed"),
+            actual.replace('</intent id="123456abcdef">', '</intent id="ffffffffffff">'),
+            actual.replace('</intent id="123456abcdef">', ""),
+        ):
+            with self.subTest(changed=changed), self.assertRaises(mark_abstention.FreezeError):
+                pinned(changed)
+        self.assertEqual([actual], sent)
 
 
 class FullProductionFreezeTest(unittest.TestCase):
@@ -88,6 +157,12 @@ class FullProductionFreezeTest(unittest.TestCase):
                 observations=seen,
                 production_reading=production,
             )
+
+    def test_a_frozen_case_still_matches_when_a_live_reading_draws_another_nonce(self) -> None:
+        first = self.freeze()
+        second = self.freeze()
+        self.assertEqual(first, second)
+        self.assertEqual([], mark_abstention.content_refusal(self.config, first, str(self.path)))
 
     def test_agent_claims_and_whole_final_are_frozen_only_on_explicit_opt_in(self) -> None:
         legacy = self.freeze(production=False)
@@ -222,10 +297,29 @@ class FullProductionFreezeTest(unittest.TestCase):
         )
         self.assertEqual(1, len(prompts))
         self.assertIn("unique final suffix", prompts[0])
-        self.assertEqual(
-            case["production_reading"]["prompt_digest"],
-            hashlib.sha256(prompts[0].encode()).hexdigest(),
+        sent: list[str] = []
+
+        def scored(prompt: str, **_kwargs: Any) -> tuple[str, str]:
+            sent.append(prompt)
+            return "{}", "ok"
+
+        pinned = score_abstention._SourcePinnedModel(
+            scored, case["production_reading"]["prompt_digest"]
         )
+        self.assertEqual(("{}", "ok"), pinned(prompts[0]))
+        self.assertEqual(prompts, sent)
+        for changed in (
+            prompts[0].replace("unique final suffix", "different final suffix"),
+            prompts[0].replace("Preserve focus", "Discard focus"),
+            prompts[0].replace("Tab keeps focus", "Tab loses focus"),
+            prompts[0].replace("</intent id=", "</broken id="),
+        ):
+            with (
+                self.subTest(changed=changed[-80:]),
+                self.assertRaises(mark_abstention.FreezeError),
+            ):
+                pinned(changed)
+        self.assertEqual(prompts, sent)
 
     def test_full_native_uuid_freeze_and_callback_preserve_the_collectors_identity(self) -> None:
         native = "12345678-1234-4234-8234-123456789abc"

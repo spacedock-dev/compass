@@ -544,7 +544,9 @@ def build_prompt(intent: str, turns: Iterable[Turn]) -> str:
     """The one message sent: the rules, the saved goal, then each turn under a boundary."""
     nonce = records.fence_nonce()
     body = "".join(
-        records.fenced("turn", turn.text, nonce=nonce, n=turn.number, kind=turn.kind)
+        records.fenced(
+            "turn", records.redact_secrets(turn.text), nonce=nonce, n=turn.number, kind=turn.kind
+        )
         for turn in turns
     )
     goal = records.safe_text(" ".join(intent.split()), GOAL_CAP_CHARS)

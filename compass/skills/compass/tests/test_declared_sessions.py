@@ -29,6 +29,7 @@ from compass_runtime import (
     observation,
     project_context,
     reading,
+    records,
     session_summary,
     sessions,
     summary_source,
@@ -876,6 +877,7 @@ class GroupWrites(LeaseRoute):
         self.assertEqual("x" * 40, annotation_store.load(self.config)[0]["group"])
 
     def test_a_display_hold_leaves_live_inputs_and_reading_prompts_unchanged(self) -> None:
+        self.enterContext(mock.patch.object(records, "fence_nonce", return_value="0" * 12))
         application = self.app()
         native = application.collect(show_all=False, notify=False)["sessions"][0]
         native.update(

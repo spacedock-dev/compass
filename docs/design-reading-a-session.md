@@ -10365,3 +10365,48 @@ is published with `lines-no-room`. At Analyze's smallest prompt, 16,384 bytes, a
 1,000-character goal and six 800-character CJK or emoji lines read this way rather than
 leaving no packet at all. A goal the model refuses as unclear keeps `lines-no-room` on the
 lines its prompt had no room for.
+
+
+## Owner ruling 2026-11-17: one nonce around the reading intent
+
+Jared Scott approved one nonce fence around the whole goal and outcome-line block, and the
+re-recording of both SHA-256 header pins in `test_reading.py`. Each untrusted goal and outcome
+value is redacted before its literal inner closing tags are escaped and before any trusted tags
+are written. Redacting an assembled header let a trailing `password:` or `api_key=` consume a
+closing tag as its value. The outer fence keeps lookalike closers, including fullwidth forms,
+inside the untrusted block even when they do not match that literal escaping rule.
+
+A nonce on every inner tag remains rejected: the measured worst intent was 12,893 bytes against
+`INTENT_SHARE_BYTES` 12,800, and the larger measured header was 9,853 against the 9,728-byte cap.
+The single outer fence measures 12,696 bytes for a 1,000-character emoji goal and six
+240-character emoji outcomes, and 9,656 for the same outcomes with a 240-character emoji goal.
+Both caps hold without removing a field or changing the reading rules. The pins use a fixed
+12-hex-digit nonce; live headers draw a fresh nonce for each call. The enclosing fence adds
+55 bytes to a nonempty header; the tight selection-priority test receives those 55 bytes so
+it retains the same room for entries.
+
+The same value-before-boundary rule applies to goal-finding prompts, monitor turns, observer
+excerpts, Summary record lines and earlier phase titles. Each source value is redacted on its
+own before values are joined or fenced. The observer reserves the complete nonce fence before
+cutting a redacted excerpt to its UTF-8 byte allowance, so an oversized excerpt retains its
+closing boundary too. These are prompt-construction guarantees; they do not qualify a model's
+accuracy or its resistance to every instruction inside untrusted data.
+
+
+### Frozen prompt comparisons keep live nonce freshness
+
+The 2026-11-17 fix round retains a fresh nonce in every live reading, including a scored
+reading. Offline capture and the scorer normalize only the two matching outer intent IDs to
+twelve zeroes before hashing the prompt. They send the original prompt to the model. The hash
+still binds the fence structure, goal, outcome lines, transcript and any nested nonce-like text;
+a missing or mismatched outer closing boundary refuses scoring. This avoids adding a deterministic
+nonce default to production. Existing packets are not upgraded in place: their parser and prompt
+pins require a new freeze and review. Campaign request digests, the levels replay gate, and
+Codex request preparation use the same comparison text so registering and approving a request
+does not depend on the next random nonce. Prompts without an intent fence retain their historical
+digest. The request inventory is never used as the model input. The qualification test checks all ten
+submitted prompts against that inventory and requires ten distinct, nonzero live nonces.
+
+Exact prompt parity tests hold nonce entropy fixed in their fixtures so their assertions still
+compare every source byte. A separate unmocked prompt test checks that repeated live readings
+have different nonces and matching closing boundaries.

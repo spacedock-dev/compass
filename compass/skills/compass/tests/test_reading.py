@@ -2931,10 +2931,11 @@ class YourOwnWordsAreAlwaysInThePrompt(unittest.TestCase):
             for index in range(40)
         )
         ledger = reading.build_ledger(facts, "claude", "s1", tool_output={})
-        # 2,626 since 2026-10-30: the trusted header grew by the run-facts sentence's 126 bytes,
-        # and the budget keeps the same room for entries it had at 2,500.
+        # The 2026-10-30 run-facts sentence added 126 bytes to the original 2,500;
+        # the owner-approved 2026-11-17 intent fence adds 55 more. Keep the same
+        # room for entries, since this test holds their priority, not header size.
         _prompt, selection = reading.build_prompt(
-            ledger, goal="add retry", lines=["tests pass"], max_bytes=2626
+            ledger, goal="add retry", lines=["tests pass"], max_bytes=2681
         )
         chosen = [row["id"] for row in selection.entries]
         self.assertIn("pass", chosen)
@@ -2963,7 +2964,7 @@ class YourOwnWordsAreAlwaysInThePrompt(unittest.TestCase):
             [{**WORDS_FACT, "at": 1.0}, refailed, *writes], "claude", "s1", tool_output={}
         )
         _prompt, kept = reading.build_prompt(
-            crowded, goal="add retry", lines=["tests pass"], max_bytes=2626
+            crowded, goal="add retry", lines=["tests pass"], max_bytes=2681
         )
         self.assertIn("refailed", [row["id"] for row in kept.entries])
         self.assertTrue(selection.unread_checks)
@@ -3540,6 +3541,7 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
         self.assertNotIn("not_reached needs known applicability", header)
 
     def test_all_header_variants_keep_fields_security_and_final_bytes(self) -> None:
+        self.enterContext(mock.patch.object(records, "fence_nonce", return_value="0" * 12))
         words = "\U0001f600" * 240
         finals = []
         measured = []
@@ -3572,8 +3574,10 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
         self.assertEqual(56, len(finals))
         # Re-pinned on 2026-10-22 with the final-scope header above, for the same reason, and on
         # 2026-10-30 for the run-facts sentence (owner, "Judge from recorded facts", DEC-29).
+        # Re-pinned under the 2026-11-17 owner ruling for one nonce around the intent block
+        # (docs/design-reading-a-session.md#owner-ruling-2026-11-17-one-nonce-around-the-reading-intent).
         self.assertEqual(
-            "92ac7ecd06d44367f0a844eb632941178ae4097b9203f5e1f3a019db22e6b72e",
+            "c114d3f941bcdb9d97fe4e5a795de19f42c971428bebe11392680dedd447c310",
             hashlib.sha256(
                 original_product_name(
                     json.dumps(finals, ensure_ascii=False, separators=(",", ":"))
@@ -3604,6 +3608,7 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
                 self.assertLessEqual(len(full_header.encode("utf-8")), 9_728)
 
     def test_final_readings_keep_their_existing_scope_and_token_set(self) -> None:
+        self.enterContext(mock.patch.object(records, "fence_nonce", return_value="0" * 12))
         prompt, selected = reading.build_prompt(
             self.ledger,
             goal=self.goal,
@@ -3625,8 +3630,10 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
         # Re-pinned on 2026-10-22: the header now offers `goal_unclear` and says to decide it before
         # the entries, in every scope (docs/design-reading-a-session.md, DEC-26 amendment). Re-pinned
         # on 2026-10-30 for the run-facts sentence (owner, "Judge from recorded facts", DEC-29).
+        # Re-pinned under the 2026-11-17 owner ruling for one nonce around the intent block
+        # (docs/design-reading-a-session.md#owner-ruling-2026-11-17-one-nonce-around-the-reading-intent).
         self.assertEqual(
-            "73d21e4ded32a577543cc8916d6972b0fa47d6161784a7af9f0497f18c23639d",
+            "bbbf2d946fca783f4061398d1991258478f288f511fe4ebd23c69687c9226e60",
             hashlib.sha256(original_product_name(header).encode()).hexdigest(),
         )
 
