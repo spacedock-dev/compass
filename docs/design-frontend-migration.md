@@ -884,6 +884,11 @@ differences from the legacy page: the header says "Waiting for the first board."
 payload, where legacy printed zeros that read as a measured empty board, and Retry uses
 `aria-disabled` instead of `disabled` so keyboard focus survives its own removal.
 
+A POST refused because a loopback tunnel's local port differs from the listening port shows the
+fixed same-port instruction in a shell notice. It survives refresh and route changes; the
+[reader-state record](design-reader-state.md) owns its lifetime. The API client recognizes only
+403 with the closed `tunnel-port-mismatch` reason and never renders arbitrary error-body text.
+
 Copy briefing announces why it cannot copy (the project is no longer in the payload) instead of blaming
 the clipboard. The control that copies a session link, the project briefing, the "Attention updated"
 announcement and the notification control are each built in the step that owns the surface they sit on.

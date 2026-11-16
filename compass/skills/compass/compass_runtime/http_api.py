@@ -5961,7 +5961,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._refuse_transfer_coding()
             return
         if not self._local_ok():
-            self._reject(403)
+            self._post_admission_refusal()
             return
         path = urlparse(self.path).path
         # Prefix-matched, so it cannot join the exact-match table below.
@@ -6003,6 +6003,48 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reject(404)
             return
         route()
+
+    def _tunnel_port_mismatch(self) -> bool:
+        if not (
+            self._single_admission_headers()
+            and self._direct_loopback()
+            and self._development_authority_ok()
+        ):
+            return False
+        authority = (self.headers.get("Host") or "").strip(" \t")
+        origin = self.headers.get("Origin") or ""
+        try:
+            parsed = urlparse(origin)
+            port = parsed.port if parsed.port is not None else 80
+        except ValueError:
+            return False
+        # A diagnosis only, never an admission exception. Reflect no supplied authority.
+        return (
+            origin == "http://" + parsed.netloc
+            and parsed.netloc == authority
+            and "@" not in authority
+            and 0 < port <= 65535
+            and port != self.server.server_port
+        )
+
+    def _post_admission_refusal(self) -> None:
+        if not self._tunnel_port_mismatch():
+            self._reject(403)
+            return
+        self._drain_body()
+        self._send(
+            json.dumps(
+                {
+                    "ok": False,
+                    "reason": "tunnel-port-mismatch",
+                    "message": (
+                        "For an ssh -L tunnel, the local port must match the Compass server's port."
+                    ),
+                }
+            ).encode(),
+            "application/json",
+            403,
+        )
 
     def _interaction_post(self, route: str) -> None:
         prototype = self.server.interaction_prototype

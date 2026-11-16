@@ -45,8 +45,11 @@ export interface RuntimeOptions {
 export function createBoardRuntime(options: RuntimeOptions) {
   const { env, storage } = options;
   const bootstrap = readBootstrap(options.search, options.doc);
-  const client = createApiClient({ fetch: options.fetch });
   const store = createBoardStore({ now: env.clock.now });
+  const client = createApiClient({
+    fetch: options.fetch,
+    onTunnelPortMismatch: () => store.refuseTunnelPort(),
+  });
   const revisions = createRevisionMemo();
 
   interface Owned {

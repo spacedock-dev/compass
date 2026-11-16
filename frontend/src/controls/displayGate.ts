@@ -118,7 +118,8 @@ export function createDisplayGate(options: DisplayGateOptions) {
           contextsChanged ||
           current.manualRefreshing !== last.manualRefreshing ||
           current.observer !== last.observer ||
-          current.pending !== last.pending;
+          current.pending !== last.pending ||
+          current.tunnelPortMismatch !== last.tunnelPortMismatch;
         const recordsChanged = current.records !== last.records;
         last = current;
         // A poll's own fields reach the reader only through `paint`.

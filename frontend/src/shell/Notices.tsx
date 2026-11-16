@@ -136,6 +136,19 @@ export function Notices({
   const reset = historyResetReason(snapshot.data);
   return (
     <>
+      {snapshot.tunnelPortMismatch ? (
+        <Alert
+          variant="shell-notice"
+          className="next-stalled"
+          data-next-state="tunnel-port-mismatch"
+          role="status"
+        >
+          <strong>Action refused.</strong>
+          <span>
+            {"For an ssh -L tunnel, the local port must match the Compass server's port."}
+          </span>
+        </Alert>
+      ) : null}
       <StalledNotice snapshot={snapshot} now={now} retryMs={retryMs} onRetry={onRetry} />
       {reset ? <HistoryResetNotice reason={reset} /> : null}
       {selectBuildState(snapshot) === 'reload-required' ? (

@@ -67,6 +67,8 @@ export interface BoardSnapshot {
     readonly notices: ReadonlyMap<string, ModelNoticeRecord>;
   };
   readonly pending: readonly string[];
+  /** A POST refusal for this document's authority, kept until the reader opens a new origin. */
+  readonly tunnelPortMismatch: boolean;
 }
 
 const MAX_REPORTED_LISTENER_ERRORS = 10;
@@ -85,6 +87,7 @@ const INITIAL: BoardSnapshot = Object.freeze({
   records: new Map(),
   observer: { requests: [], states: new Map(), notices: new Map() },
   pending: [],
+  tunnelPortMismatch: false,
 });
 
 function sameList(a: readonly string[], b: readonly string[]): boolean {
@@ -223,6 +226,11 @@ export function createBoardStore(deps: {
     clearObserverNotices(): void {
       if (snapshot.observer.notices.size === 0) return;
       publish({ ...snapshot, observer: { ...snapshot.observer, notices: new Map() } });
+    },
+
+    refuseTunnelPort(): void {
+      if (snapshot.tunnelPortMismatch) return;
+      publish({ ...snapshot, tunnelPortMismatch: true });
     },
 
     setPending(keys: readonly string[]): void {

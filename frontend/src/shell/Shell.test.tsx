@@ -162,3 +162,52 @@ describe('an open list holds a poll paint, and closing it shows the board', () =
     choice.unmount();
   });
 });
+
+describe('an action refused through a different-port SSH tunnel', () => {
+  it('shows the same-port instruction after the refusal and keeps it through refresh and navigation', async () => {
+    const page = mountShell({
+      data: BOARD,
+      postResponse: () =>
+        new Response(
+          JSON.stringify({
+            ok: false,
+            reason: 'tunnel-port-mismatch',
+            message: "For an ssh -L tunnel, the local port must match the Compass server's port.",
+          }),
+          { status: 403 },
+        ),
+    });
+    await page.settle();
+    const sentence = "For an ssh -L tunnel, the local port must match the Compass server's port.";
+    expect(screen.queryByText(sentence)).toBeNull();
+    await act(async () => {
+      await page.shell.runtime.client.postDismiss({ harness: 'claude', sid: 'shared-sid' });
+    });
+    expect(screen.getByText(sentence)).toBeVisible();
+    await act(async () => {
+      await page.shell.runtime.refresh();
+    });
+    await page.go('#n=projects');
+    expect(screen.getByText(sentence)).toBeVisible();
+    expect(page.posts()).toBe(1);
+  });
+
+  it('does not diagnose a tunnel from unrelated errors or an untrusted message field', async () => {
+    for (const [status, response] of [
+      [403, { reason: 'forbidden', message: '<img src=x onerror=alert(1)>' }],
+      [503, { reason: 'tunnel-port-mismatch' }],
+    ] as const) {
+      const page = mountShell({
+        data: BOARD,
+        postResponse: () => new Response(JSON.stringify(response), { status }),
+      });
+      await page.settle();
+      await act(async () => {
+        await page.shell.runtime.client.postDismiss({ harness: 'claude', sid: 'shared-sid' });
+      });
+      expect(screen.queryByText(/For an ssh -L tunnel/)).toBeNull();
+      expect(document.querySelector('img[src="x"]')).toBeNull();
+      page.unmount();
+    }
+  });
+});

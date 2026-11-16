@@ -5889,7 +5889,11 @@ For an IP literal or loopback Host, a supplied Origin must be `http`, carry only
 authority, and name the same host and port as Host, and that port must be the listening port.
 `localhost` and `127.0.0.1` are different origins to a browser, so an Origin that spells the host
 differently from Host is refused, and under `--host 0.0.0.0` an Origin on another admitted
-address is refused as another site's page.
+address is refused as another site's page. A direct loopback POST whose Origin equals its loopback
+Host but names a different port remains refused with 403. Its JSON body carries the reason
+`tunnel-port-mismatch` and says "For an ssh -L tunnel, the local port must match the Compass server's
+port." The board shows that instruction after any action receives this refusal. This diagnoses the
+same-port rule; it does not relax it for tunnels.
 
 Every GET and POST must carry exactly one Host header and at most one each of Origin,
 `Sec-Fetch-Site`, `Sec-Fetch-Mode` and `Sec-Fetch-Dest`, none of them a comma-joined list. A
