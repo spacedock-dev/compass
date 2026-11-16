@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO, TextIO
 from urllib.parse import quote
 
 from . import state as runtime_state
+from .terminal_sessions import printable_text
 
 # The lock primitives are chosen here, once, with the module they call, rather
 # than by re-reading sys.platform per call: a test that patched sys.platform
@@ -524,6 +525,7 @@ def open_sqlite_read_only(path: str, state: RuntimeState) -> sqlite3_types.Conne
 
 
 def diag(message: str, sink: Callable[[str], object]) -> None:
+    message = printable_text(message)
     try:
         sink(message)
     except (OSError, ValueError):

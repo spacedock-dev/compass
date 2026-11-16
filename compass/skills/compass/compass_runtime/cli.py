@@ -765,9 +765,9 @@ def load_frontend_page() -> bytes | None:
     try:
         return frontend_page.load_frontend_page()
     except (OSError, UnicodeError, RuntimeError) as exc:
-        print(
+        runtime_io.diag(
             f"Compass: cannot load frontend assets ({type(exc).__name__}: {exc}).",
-            file=sys.stderr,
+            lambda message: print(message, file=sys.stderr),
         )
         print("Compass: reinstall the plugin to repair this build.", file=sys.stderr)
         return None
@@ -815,7 +815,10 @@ def prepare_frontend(
         dev = frontend_dev.admit(args.frontend_dev_manifest, config)
         return dataclasses.replace(config, frontend_dev=dev), frontend_dev.load_page(dev)
     except RuntimeError as exc:
-        print(f"Compass: cannot admit development frontend ({exc}).", file=sys.stderr)
+        runtime_io.diag(
+            f"Compass: cannot admit development frontend ({exc}).",
+            lambda message: print(message, file=sys.stderr),
+        )
         return config, None
 
 

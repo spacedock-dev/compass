@@ -14,6 +14,10 @@ Inside Claude Code you can type an action instead, such as `/compass:compass ses
 ([how](#ask-from-inside-a-claude-code-or-codex-session)). Every option and exit status is in
 [MANUAL.md](MANUAL.md); what is read, sent and spent is in [SECURITY.md](SECURITY.md#scope).
 
+Printed paths, errors and session text have terminal escapes and hidden formatting removed.
+Joined emoji and complete subdivision flags stay. This also covers `--forget` and diagnostics
+from a dashboard running in the foreground; see [terminal output handling](SECURITY.md#scope).
+
 ## Choose the command to type
 
 This page writes every command as `spacedock-compass`. Type the command for your copy in its place,

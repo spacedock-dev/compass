@@ -2127,6 +2127,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.io": {
             "compass_runtime.config",
             "compass_runtime.state",
+            # Diagnostics reuse the stdlib-only terminal sanitizer at the sink boundary.
+            "compass_runtime.terminal_sessions",
         },
         # Read-only project composition sits above the bounded observer,
         # Spacedock, and record readers. The HTTP route is its only caller.
