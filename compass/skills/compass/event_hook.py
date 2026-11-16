@@ -104,7 +104,6 @@ CLAUDE_EVENTS = {
     "UserPromptSubmit": "turn_started",
     "Stop": "turn_stopped",
     "PermissionRequest": "input_requested",
-    "PreToolUse": "store_changed",
     "PostToolUse": "store_changed",
     "SubagentStart": "subagent_started",
     "SubagentStop": "subagent_stopped",

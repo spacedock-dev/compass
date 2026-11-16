@@ -857,9 +857,10 @@ Claude session silently, but an adapter-less harness, a session predating the se
 **What lifts the live mark.** Later arrival of a `session_started`, `turn_started`,
 `turn_stopped` or `store_changed` event clears it, as does a working or needs-input overlay.
 The same rule applies to the normalized Claude, Codex and Gemini paths. Claude's
-`UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionStart` and `Stop` therefore lift a
-live end, including its stored copy. `PreToolUse` is forwarded as a store-recheck hint to
-observe this boundary; it does not assert Working or Needs input.
+`UserPromptSubmit`, `PostToolUse`, `SessionStart` and `Stop` therefore lift a live end,
+including its stored copy. Compass registers no `PreToolUse` hook for this: it would start a
+second process before every tool call, and a resumed turn already reaches the board through
+the events above.
 
 The [late-resume capture](captures/claude/late-session-end-after-resume-2.1.325-macos.jsonl)
 measured three headless Claude Code 2.1.325 processes sharing one id on macOS. In usable

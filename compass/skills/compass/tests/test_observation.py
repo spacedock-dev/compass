@@ -318,7 +318,8 @@ class LedgerTest(ObservationTestCase):
                     self.assertNotIn((harness, sid), ends.restored(ends.load(coordinator.config)))
 
     def test_resumed_activity_in_the_capture_clears_the_end_until_the_final_exit(self) -> None:
-        # Event names/order only from usable arm a1 of the 2.1.325 late-end capture.
+        # Event names/order only from usable arm a1 of the 2.1.325 late-end capture, less its
+        # PreToolUse: Compass registers no PreToolUse hook, so the board never receives one.
         arrival_order = (
             "SessionStart",
             "UserPromptSubmit",
@@ -326,7 +327,6 @@ class LedgerTest(ObservationTestCase):
             "SessionEnd",
             "SessionStart",
             "UserPromptSubmit",
-            "PreToolUse",
             "PostToolUse",
             "Stop",
             "SessionStart",
