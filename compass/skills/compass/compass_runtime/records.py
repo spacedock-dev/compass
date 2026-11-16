@@ -571,15 +571,16 @@ _CUT_MATCH_LONGEST: Final = 16_384
 # were struck through matches there. Every format character (Unicode category Cf, the same
 # list in Unicode 15.0 and 17.0; `HiddenCharactersInsideACredentialTest` holds it to the
 # running Python's database), the variation selectors, the combining grapheme joiner and
-# the Mongolian selectors, and every C0 and C1 control but tab, LF, VT, FF and CR. ZWNJ and
+# the Mongolian selectors and Khmer inherent vowels, the unassigned default-ignorable ranges,
+# and every C0 and C1 control but tab, LF, VT, FF and CR. ZWNJ and
 # ZWJ are here too: only a matched span changes, so the words they sit inside keep them.
 # Tabs and line breaks stay in the view, as real spaces do, because they separate words.
 _HIDDEN_CHARS_RE: Final = re.compile(
     "[\\x00-\\x08\\x0e-\\x1f\\x7f-\\x9f\\xad\\u034f\\u0600-\\u0605\\u061c\\u06dd\\u070f"
-    "\\u0890\\u0891\\u08e2\\u180b-\\u180f\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2064"
-    "\\u2066-\\u206f\\ufe00-\\ufe0f\\ufeff\\ufff9-\\ufffb\\U000110bd\\U000110cd"
+    "\\u0890\\u0891\\u08e2\\u17b4\\u17b5\\u180b-\\u180f\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2065"
+    "\\u2066-\\u206f\\ufe00-\\ufe0f\\ufeff\\ufff0-\\ufffb\\U000110bd\\U000110cd"
     "\\U00013430-\\U0001343f\\U0001bca0-\\U0001bca3\\U0001d173-\\U0001d17a"
-    "\\U000e0001\\U000e0020-\\U000e007f\\U000e0100-\\U000e01ef]+"
+    "\\U000e0000-\\U000e0fff]+"
 )
 
 
@@ -870,38 +871,46 @@ def _secret_matches(text: str) -> list[_SecretSpan]:
     return found
 
 
+_COMMENT_START_RE: Final = re.compile(r"<!|<\?|</(?=[\t\n\f\r ])")
+_COMMENT_END_RE: Final = re.compile(r"--!?>")
+
+
 def _markup_spans(text: str) -> list[tuple[int, int]]:
-    """Every supported element tag and closed HTML comment, in document order.
+    """Supported element tags and closed HTML comments, in document order.
 
-    In order because each hides the other's opener: a `<!--` in a quoted
-    attribute is not a comment, and a tag opening inside a comment is not a tag.
-    Found separately and merged, either swallowed the visible text between them,
-    and a key split there by `<wbr>` matched in neither view.
-
-    A comment is found with `find`, not a lazy regex per opener. Comments do not
-    nest, so the pass is linear with no cap on a comment's length; a bounded
-    pattern (`<!--[\\s\\S]{0,256}?-->`) costs its bound at every opener and leaves
-    a longer comment inside a key as the bypass it was meant to close. An opener
-    nothing closes is left as text and ends the search for comments.
+    A comment opener in a quoted attribute belongs to the tag; a tag opener
+    in a comment belongs to the comment. Cached lookaheads and non-nesting
+    comments keep even repeated unclosed openers linear. An unclosed comment
+    stays literal, as before, without hiding a later supported tag.
     """
     spans: list[tuple[int, int]] = []
     pos = 0
     tag = _INLINE_MARKUP_RE.search(text)
-    opener = text.find("<!--")
+    opener = _COMMENT_START_RE.search(text)
     while True:
-        # Each lookahead is kept until the cursor passes it, so a run of comments
-        # does not rescan the text up to a distant tag once per comment.
         if tag is not None and tag.start() < pos:
             tag = _INLINE_MARKUP_RE.search(text, pos)
-        if opener != -1 and opener < pos:
-            opener = text.find("<!--", pos)
-        if opener != -1 and (tag is None or opener < tag.start()):
-            close = text.find("-->", opener + 4)
-            if close == -1:
-                opener = -1
+        if opener is not None and opener.start() < pos:
+            opener = _COMMENT_START_RE.search(text, pos)
+        if opener is not None and (tag is None or opener.start() < tag.start()):
+            first = opener.start()
+            if text.startswith("<!--", first):
+                body = first + 4
+                if text.startswith(">", body):
+                    last = body + 1
+                elif text.startswith("->", body):
+                    last = body + 2
+                else:
+                    close = _COMMENT_END_RE.search(text, body)
+                    last = close.end() if close is not None else -1
+            else:
+                close_at = text.find(">", opener.end())
+                last = close_at + 1 if close_at != -1 else -1
+            if last == -1:
+                opener = None
                 continue
-            spans.append((opener, close + 3))
-            pos = close + 3
+            spans.append((first, last))
+            pos = last
         elif tag is not None:
             spans.append(tag.span())
             pos = tag.end()
@@ -1069,7 +1078,8 @@ def _inline_secret_matches(text: str) -> list[_SecretSpan]:
     if not spans:
         return []
     plain, cuts, removed = _view(text, spans)
-    if not _needs_secret_scan(plain):
+    scan = _needs_secret_scan(plain)
+    if not scan and "-u" not in plain:
         return []
 
     def original(span: _SecretSpan) -> _SecretSpan:
@@ -1093,7 +1103,10 @@ def _inline_secret_matches(text: str) -> list[_SecretSpan]:
             span.contextual,
         )
 
-    found = [original(match) for match in _secret_matches(plain)]
+    matches = _secret_matches(plain) if scan else []
+    if "-u" in plain:
+        matches.extend(_curl_secret_matches(plain))
+    found = [original(match) for match in matches]
     # Also from just after each removed span. There the view joins a key to the word or key in
     # front of it, and a key's capped body can run on into the next key's prefix.
     # Matched on a slice, because the lookbehinds read the characters in
@@ -1242,7 +1255,10 @@ def redact_clip(text: str, limit: int) -> str:
     it half written. What is lost there is the key's NAME, which is a word like
     any other word the cap cuts; the value is inside the marker either way.
     """
-    marked = redact_secrets(text)
+    return _clip_marked(redact_secrets(text), limit)
+
+
+def _clip_marked(marked: str, limit: int) -> str:
     if len(marked) <= limit:
         return marked
     # A marker that begins before the cut, or one whose kept prefix does, and so
@@ -2148,9 +2164,11 @@ def fenced(tag: str, text: str, *, nonce: str, **attributes: object) -> str:
 
 
 def _safe_controls(text: str) -> str:
-    # A second redaction follows sanitization. Turning `so<ZWSP>rt_key` into
+    # Turning `so<ZWSP>rt_key` into
     # `so rt_key` would create a new cue after the full name was exempted.
     # Join controls only inside structural names, after original redaction.
+    if "k" not in text and "K" not in text:
+        return _UNSAFE_CHARS.sub(" ", text)
     parts: list[str] = []
     at = 0
     for first, last in _ordinary_key_name_spans(text):
@@ -2195,13 +2213,29 @@ def safe_text(value: Any, limit: int) -> str:
     the cued shape were taken on another day and are not compared with it.
     """
     text = str(value or "").encode("utf-8", "replace").decode("utf-8")
-    if not _printable_ascii(text) and _UNSAFE_CHARS.search(text) is not None:
-        text = _UNSAFE_BREAKS.sub(" ", text)
-        if not _printable_ascii(text) and _UNSAFE_CHARS.search(text) is not None:
-            # Masked while the control is still there for the second view to see
-            # through. As a space it split the key, and its tail published.
-            text = _safe_controls(redact_secrets(text))
-    return redact_clip(text, limit)
+    if _printable_ascii(text) or _UNSAFE_CHARS.search(text) is None:
+        return redact_clip(text, limit)
+    text = _UNSAFE_BREAKS.sub(" ", text)
+    if _UNSAFE_CHARS.search(text) is None:
+        return redact_clip(text, limit)
+    marked = redact_secrets(text)
+    normalized = _safe_controls(marked)
+    # Space normalization admits new boundaries (`s<NUL>ORT_KEY`, `Bearer<NUL>`).
+    # Controls are already gone: ANSI logs need only the gated contextual scans,
+    # while retained joiners/markup may still split a cue beside a new space.
+    found = _secret_matches(normalized) if _needs_secret_scan(normalized) else []
+    if "-u" in normalized:
+        found.extend(_curl_secret_matches(normalized))
+    if "<" in normalized or not _printable_ascii(normalized):
+        inline = _inline_secret_matches(normalized)
+        found.extend(inline)
+        if inline:
+            view, project = _marked_view(normalized, found)
+            derived = _secret_matches(view) if _needs_secret_scan(view) else []
+            if "-u" in view:
+                derived.extend(_curl_secret_matches(view))
+            found.extend(project(derived))
+    return _clip_marked(_write_marked(normalized, found), limit)
 
 
 # Ends text `cut_text` shortened, inside the cap, so a reader sees text is missing.

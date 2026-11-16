@@ -1643,6 +1643,65 @@ class HiddenCharactersInsideACredentialTest(unittest.TestCase):
                 self.assertNotIn(survivor, published)
                 self.assertIn(records.SECRET_MARKER, published)
 
+    def test_every_html_comment_form_keeps_a_split_key_private_and_prose_intact(self) -> None:
+        for form in ("<!-->", "<!--->", "<!-- x --!>", "<!x>", "<?x>", "</ x>", "<!>"):
+            with self.subTest(form=form):
+                self.assert_masked(_key(form), "A" * 5)
+                ordinary = f"ordinary{form}words remain readable"
+                self.assertEqual(ordinary, records.redact_secrets(ordinary))
+                self.assertEqual(ordinary, records.safe_text(ordinary, 4_000))
+
+    def test_the_remaining_default_ignorables_keep_split_keys_private_and_prose_intact(
+        self,
+    ) -> None:
+        points = (
+            0x17B4,
+            0x17B5,
+            0x2065,
+            *range(0xFFF0, 0xFFF9),
+            0xE0000,
+            *range(0xE0002, 0xE0020),
+            *range(0xE0080, 0xE0100),
+            *range(0xE01F0, 0xE1000),
+        )
+        for point in points:
+            with self.subTest(code_point=hex(point)):
+                hidden = chr(point)
+                self.assert_masked(_key(hidden), "A" * 5)
+                ordinary = f"ordinary{hidden}words remain readable"
+                self.assertEqual(ordinary, records.redact_secrets(ordinary))
+                self.assertEqual(ordinary, records.safe_text(ordinary, 4_000))
+
+    def test_a_hidden_character_in_curl_or_its_user_flag_keeps_the_password_private(self) -> None:
+        password = "Synthetic" + "Password123"
+        for hidden in self.HIDDEN + self.MARKUP:
+            for command in (f"cu{hidden}rl -u", f"curl -{hidden}u", f"curl --us{hidden}er"):
+                with self.subTest(hidden=repr(hidden), command=command):
+                    self.assert_masked(f"{command} user:{password}", password)
+
+    def test_control_created_boundaries_still_keep_credentials_private(self) -> None:
+        value = "Synthetic" + "Control123456"
+        for text in (
+            "Bearer\x00" + value,
+            "curl\x00-u user:" + value,
+            "Bear\u200der\x00" + value,
+            "Bear<wbr>er\x85" + value,
+            "cu<!-->rl\x00-u user:" + value,
+        ):
+            with self.subTest(text=text):
+                self.assertNotIn(value, records.safe_text(text, 4_000))
+                self.assertIn(records.SECRET_MARKER, records.safe_text(text, 4_000))
+
+    def test_control_bearing_text_is_fully_redacted_only_once_before_it_is_bounded(self) -> None:
+        text = "\x1b[32mordinary status\x1b[0m " * 80
+        with mock.patch.object(records, "_redaction_spans", wraps=records._redaction_spans) as scan:
+            self.assertEqual(" [32mordinary status [0m " * 80, records.safe_text(text, 4_000))
+        self.assertEqual(1, scan.call_count)
+        with mock.patch.object(
+            records, "_ordinary_key_name_spans", side_effect=AssertionError("no key name")
+        ):
+            self.assertEqual(" [32mordinary status [0m " * 80, records.safe_text(text, 4_000))
+
     def test_a_hidden_character_inside_a_key_body_masks_the_whole_key(self) -> None:
         for hidden in self.HIDDEN + self.MARKUP:
             with self.subTest(hidden=repr(hidden)):
@@ -4120,6 +4179,16 @@ class HiddenCredentialTimeTest(unittest.TestCase):
         self.assertNotIn(body, shown)
         self.assertIn("ghp_…REDACTED", shown)
         self.assertLess(elapsed, 4.0)
+
+    def test_repeated_github_prefixes_with_c1_controls_stay_within_four_cpu_seconds(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        body = "Q" * 36
+        raw = ("ghp_" + chr(0x85)) * 200_000 + " " + "ghp_" + body
+        started = time.process_time()
+        shown = records.safe_text(raw, len(raw))
+        self.assertNotIn(body, shown)
+        self.assertLess(time.process_time() - started, 4.0)
 
     def test_repeated_pem_headers_are_hidden_within_four_cpu_seconds_and_scale_linearly(
         self,

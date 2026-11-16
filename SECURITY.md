@@ -5709,25 +5709,30 @@ element starts is withheld as a redaction marker, including an unfinished attrib
 does not acquire that bound. Arbitrary envelope tags, encoded markup and unseen text beyond an
 existing source extraction bound are outside this correction's claim.
 
-Since 2026-11-14 the second view also leaves out what renders as nothing: HTML comments written
-between `<!--` and `-->`, of any length; every Unicode format character (category Cf, which holds
-the zero-width joiner and non-joiner, the word joiner, the byte-order mark, the soft hyphen, the
-bidi controls and the tag characters); the variation selectors, the combining grapheme joiner and
-the Mongolian selectors; and every C0 and C1 control except tab and the line breaks LF, VT, FF and
-CR. NEL (U+0085) and U+001C to U+001E are read through like the other controls, even though Python
-splits lines on them. Before that, one of these inside a key's prefix, its cue word or its body
-published the whole key. Comments and tags are read in document order, so a comment opener inside
-an attribute is not a comment. The other comment forms an HTML parser accepts (`<!-->`, a comment
-closed by `--!>`, `<!x>`, `<?x>` and `</ x>`) are not read through. Neither comments nor these
-characters acquire the 16,384-character bound, so a long transcript with an emoji in it is read
-rather than withheld. Only a matched credential changes, so the joiners Persian, Indic scripts and
-emoji sequences are spelled with stay where they are in every other word. On a published row the
-C1 controls and the Arabic letter mark now become spaces, as the other controls and bidi marks
-already did, and they are masked before they become spaces, so the second view can still read
-through them. The Unicode line and paragraph separators now become spaces too, but as line breaks:
-they become spaces first and keep the line-break residual below. Characters that look like a space
-or a letter but are not one (a no-break space, a Hangul filler) are not removed, and neither is
-anything visible a session inserts into a key.
+Since 2026-11-14 the second view also leaves out what renders as nothing: closed HTML comments
+of any length, including `<!-->` and `<!--->`, comments closed by `-->` or `--!>`, and bogus
+comments such as `<!x>`, `<?x>`, `</ x>` and `<!>`; every Unicode format character (category Cf,
+which holds the zero-width joiner and non-joiner, the word joiner, the byte-order mark, the soft
+hyphen, the bidi controls and the tag characters); the variation selectors, the combining grapheme
+joiner, the Mongolian selectors and Khmer inherent vowels, and the remaining unassigned default-ignorable ranges
+U+2065, U+FFF0 to U+FFF8, U+E0000, U+E0002 to U+E001F, U+E0080 to U+E00FF and U+E01F0 to
+U+E0FFF; and every C0 and C1 control except tab and the line breaks LF, VT, FF and CR. The comment
+forms and additional default ignorables were added on 2026-11-17. NEL (U+0085) and U+001C to
+U+001E are read through like the other controls, even though Python splits lines on them.
+Before that, one of these inside a key's prefix, its cue word or its body published the whole key.
+Comments and tags are read in document order, so a comment opener inside an attribute is not a
+comment. Neither comments nor these characters acquire the 16,384-character bound, so a long
+transcript with an emoji in it is read rather than withheld. Only a matched credential changes,
+so the joiners Persian, Indic scripts and emoji sequences are spelled with stay where they are in
+every other word. The same view reads `curl -u` and `curl --user` through a hidden character inside
+the command or flag. On a published row the C1 controls and the Arabic letter mark become spaces,
+as the other controls and bidi marks already did, and they are masked before they become spaces,
+so the second view can still read through them. Normalized spaces also receive contextual
+recognition, including through any retained joiners or markup, without a second full redaction
+pass over the controls. The Unicode line and paragraph separators become spaces too, but as line
+breaks: they become spaces first and keep the line-break residual below. Characters that look
+like a space or a letter but are not one (a no-break space, a Hangul filler) are not removed, and
+neither is anything visible a session inserts into a key.
 
 Amended 2026-10-06: native command field boundaries are captured before the observer's
 early scrub. Each field is masked before extraction; missing closing tags remain source
@@ -5772,8 +5777,7 @@ key, and what follows is worse than nothing being published: the substitution th
 it into a space, so the head in front of it still matches and redacts while the tail behind it
 publishes beside the marker, 75 characters of key on a probe. An invisible control no longer does
 this (see the second view above); a tab or line break still does, because the shapes are tuned to
-read the space it becomes. A hidden character inside `curl` or `-u` still unmasks a `curl -u`
-password, because that form is read from the raw text only. A run longer than any key its format
+read the space it becomes. A run longer than any key its format
 issues is cut at the cap, and the characters past the cap publish. And the AWS secret access key is
 matched only when one of three spellings of its key name sits in front of the value, because a bare
 40-character base64 run cannot be told apart from a hash or a diff.
