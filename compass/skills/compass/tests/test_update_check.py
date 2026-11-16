@@ -21,7 +21,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from unittest import mock
 
 from compass_runtime import (
@@ -40,6 +40,9 @@ from compass_runtime import io as runtime_io
 from . import support
 from .support import REAL_FETCH_RELEASE, SERVER_PATH, make_config, make_runtime, serve_until_closed
 from .test_cli_version import run_main
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class DailyCheckTest(unittest.TestCase):
@@ -371,7 +374,13 @@ class StartupEntryPointTest(unittest.TestCase):
         self.enterContext(
             mock.patch.object(cli, "build_runtime", return_value=(self.config, self.state))
         )
-        self.enterContext(mock.patch.object(lifecycle, "serve"))
+        self.server = mock.Mock()
+        self.enterContext(mock.patch.object(cli, "build_server", return_value=self.server))
+
+        def ready(*_args: Any, before_ready: Callable[[], None], **_kwargs: Any) -> None:
+            before_ready()
+
+        self.enterContext(mock.patch.object(lifecycle, "serve", side_effect=ready))
 
     def test_failed_assets_or_bind_print_no_hint(self) -> None:
         for stage in ("page", "development", "bind"):
@@ -391,7 +400,9 @@ class StartupEntryPointTest(unittest.TestCase):
                 else:
                     stack.enter_context(
                         mock.patch.object(
-                            cli, "build_server", side_effect=OSError(errno.EADDRINUSE, "busy")
+                            self.server,
+                            "server_bind",
+                            side_effect=OSError(errno.EADDRINUSE, "busy"),
                         )
                     )
                 code, out, _ = run_main(*argv)
@@ -399,7 +410,7 @@ class StartupEntryPointTest(unittest.TestCase):
                 self.assertNotIn(self.hint.strip(), out)
 
     def test_foreground_start_prints_once_after_binding(self) -> None:
-        with mock.patch.object(cli, "build_server") as bind:
+        with mock.patch.object(self.server, "server_bind") as bind:
             bind.side_effect = lambda *_args, **_kwargs: self.assertNotIn(
                 self.hint.strip(), cast("io.StringIO", sys.stdout).getvalue()
             )

@@ -446,9 +446,14 @@ def write_state(
     except StateOwnershipError:
         raise
     except OSError as exc:
+        if not published:
+            raise StateOwnershipError(
+                f"Compass: cannot publish dashboard state in {config.state_home} "
+                f"({type(exc).__name__}: {exc}); refusing to serve."
+            ) from exc
         runtime_io.diag(
-            f"Compass: could not write complete state for {target} ({exc}); "
-            "recorded ownership may be unavailable after this run",
+            f"Compass: could not write origin for {target} ({type(exc).__name__}: {exc}); "
+            "the published state still blocks --forget; crash recovery may require verification",
             diagnostic_sink,
         )
         return published
@@ -1245,12 +1250,11 @@ def prepare_daemon_home(
 ) -> bool:
     """Whether the state home and log are usable. Reports why if they are not.
 
-    Explains a home that cannot be used, rather than tracebacking out of the
-    documented start command. write_state() already degrades this way for a
-    foreground run; detaching has nowhere to put its log without it.
+    Explains a home that cannot be used before detaching, while the launching
+    terminal can still receive the refusal. A detached run also needs a log.
 
-    The log is opened here too, for the same reason the socket is bound before
-    detaching: makedirs(exist_ok=True) succeeds for a directory that already
+    The log is opened here too, while the launching terminal can still receive
+    the error: makedirs(exist_ok=True) succeeds for a directory that already
     exists whatever its mode, so the likeliest bad home of all — one that exists
     and is not writable — got past the guard and raised in daemon_redirect_stdio
     (or spawn_detached) instead, after the point where a message can still reach
@@ -1265,7 +1269,7 @@ def prepare_daemon_home(
         runtime_io.diag(
             f"Compass: cannot use {compass_home(config)} for the daemon state and log "
             f"({type(exc).__name__}: {exc}). Point {runtime_config.COMPASS_HOME_ENV} at a "
-            f"writable directory, or drop --daemon to run in the foreground.",
+            "writable directory; a start without --daemon needs it too.",
             diagnostic_sink,
         )
         return False
@@ -1369,7 +1373,7 @@ def unignore_sigterm() -> None:
     `serve` installs the clean exit, but only once it reaches the state file;
     until then an inherited SIG_IGN would drop a `kill` for good (DRC-4737).
     The default action is what a launch that inherited nothing would do, and
-    before the bind there is nothing of this run's to clean up.
+    before assembly there is nothing of this run's to clean up.
     """
     if sys.platform == "win32":
         return
@@ -1413,7 +1417,6 @@ def serve(  # noqa: C901, PLR0915 - ordered signal, recovery, serving and shutdo
     first, and this listener is IPv4-only, so the literal address is the one
     that always connects.
     """
-    runtime_io.diag(f"Compass: http://127.0.0.1:{port}/", diagnostic_sink)
     observation = getattr(server, "observation", None)
     producer_stop = threading.Event()
     producer: threading.Thread | None = None
@@ -1447,9 +1450,11 @@ def serve(  # noqa: C901, PLR0915 - ordered signal, recovery, serving and shutdo
                     diagnostic_sink,
                 )
                 return
+        runtime_io.diag(f"Compass: http://127.0.0.1:{port}/", diagnostic_sink)
         if announce_fd is not None:
-            # After write_state, so --status works the instant the parent returns.
+            # After publication and binding, so readiness cannot hide a startup refusal.
             daemon_announce(announce_fd)
+            announce_fd = None
         # Started here rather than at assembly: on the daemon path serve() runs
         # after the fork, so no thread is ever created in a process about to be
         # replaced. The coordinator subsumes the producer's periodic tick, so
@@ -1514,7 +1519,7 @@ def serve(  # noqa: C901, PLR0915 - ordered signal, recovery, serving and shutdo
         # the server without carrying an application, and cleanup must not be
         # the thing that raises on the way out.
         application = getattr(server, "application", None)
-        if application is not None:
+        if application is not None and published:
             with contextlib.suppress(Exception):
                 application.state.streams.close_all()
             # And every parked ask poll. `POST /api/shutdown` declines them

@@ -4438,6 +4438,15 @@ Unknown or different provenance is preserved. Publication and removal recheck ow
 the per-port lock. The serving process can remove its own exact PID/start record on exit,
 including after an incomplete origin publication.
 
+Initial state publication is mandatory, including with `--no-events`. If the state file cannot
+be written, the dashboard exits `1` before binding, serving, recovery or shared Compass store access, naming
+the state folder and the error class. Both publication locks are released. A daemon's launching
+command reports the refusal too. This prevents a dashboard from using stores while hidden from
+`--forget` on another port. If only the later origin-sidecar write fails, the dashboard reports
+that failure and may serve: its published state file still makes `--forget` refuse cleanup.
+A clean exit removes its own record; after a crash, missing provenance requires verification
+before manual state removal, as described above.
+
 Reboot recovery assumes unique machine IDs. Two machines sharing one machine ID and one state
 folder, such as a cloned VM or image whose machine ID was not regenerated, are treated as one
 machine. A reboot of one can therefore sweep the other's older record even while that dashboard

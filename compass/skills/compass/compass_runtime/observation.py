@@ -186,6 +186,7 @@ class Observation:
         *,
         clock: Callable[[], float] = time.time,
         diagnostic_sink: Callable[[str], None] = print,
+        load_parent_claims: bool = True,
     ) -> None:
         self.application = application
         self.config: RuntimeConfig = application.config
@@ -304,10 +305,10 @@ class Observation:
         # or a row aged past `window_hours` and used again — would destroy it
         # permanently and leave the control dead for the rest of the session.
         self._focus_at: dict[SessionKey, float] = {}
-        self._parents = declared_parent_store.load(
-            self.config, now=self.clock(), diagnostic_sink=self.diagnostic_sink
-        )
+        self._parents: declared_parent_store.Claims = {}
         self._unpersisted_parents: declared_parent_store.Claims = {}
+        if load_parent_claims:
+            self.restore_parent_claims()
         # The focus command's floor and in-flight gate, on `quota`'s pattern:
         # `usage_poll_floor_sec` beside `usage_fetch_inflight`. A raise is the
         # one thing Compass does that it cannot undo and that is visible outside
@@ -1080,6 +1081,14 @@ class Observation:
                 declared_parent_store.MAX_SESSIONS, self.config.event_overlay_max_sessions
             ):
                 self._parents[key] = value
+
+    def restore_parent_claims(self) -> None:
+        """Restore before collection; CLI assembly defers this until state publication."""
+        stored = declared_parent_store.load(
+            self.config, now=self.clock(), diagnostic_sink=self.diagnostic_sink
+        )
+        with self._lock:
+            self._restore_parents(stored)
 
     def parent_declarations(self) -> dict[SessionKey, dict[str, str]]:
         """Snapshot retained claims without exposing the mutable event ledger."""

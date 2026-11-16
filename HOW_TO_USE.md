@@ -715,6 +715,10 @@ happened and no text, and is the machine's memory of something it did rather tha
 wrote. It also deletes `compass-copied-corrections.json`, the digests of corrections you copied
 from Compass, which hold no text either.
 
+A dashboard that cannot publish its initial state file refuses to start and names the state
+folder and error class. Fix that folder's write failure before retrying. If only its `.origin`
+sidecar write fails, it can still serve, and its state file still blocks cleanup.
+
 Stop every dashboard sharing the Compass folder first. Cleanup and dashboard state publication
 share a folder lock. If another cleanup or startup holds it, the competing command refuses clearly;
 retry after it finishes. A startup refused during cleanup does not recreate history through

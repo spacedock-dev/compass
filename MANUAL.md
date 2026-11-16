@@ -371,6 +371,11 @@ hours are forwarded.
 | `130` | `--drift` was interrupted with Ctrl+C. It cancels only a job positively identified as started by this invocation. After an interrupted POST it reads the board once and reports running, absent or unknown without cancelling a job it found there. After a completed job it says the reading ended. |
 | `2` | Invalid command-line syntax or rejected values/combinations, reported by the argument parser. |
 
+Startup exits `1` if the initial dashboard state file cannot be written. It names the state
+folder and error class and refuses before binding or accessing shared Compass stores; `--daemon` reports the
+same refusal to its launching command. A failure writing only the later `.origin` sidecar is
+reported but permits serving, since the published state file still blocks `--forget`.
+
 Diagnosis can exit `0` while reporting missing or unreadable stores; inspect its report.
 Forget prints separate outcomes for its stores: exit `0` alone does not prove every file was removed.
 

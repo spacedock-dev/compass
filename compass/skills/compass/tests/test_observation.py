@@ -2305,12 +2305,19 @@ class WiringTest(unittest.TestCase):
                 *,
                 interaction_prototype: Any = None,
                 injected_page_bytes: bytes | None = None,
+                bind_and_activate: bool = True,
             ) -> None:
-                del interaction_prototype
+                del interaction_prototype, bind_and_activate
                 captured["application"] = application
                 captured["coordinator"] = coordinator
                 captured["page_bytes"] = _page
                 captured["injected_page_bytes"] = injected_page_bytes
+
+            def server_bind(self) -> None:
+                pass
+
+            def server_activate(self) -> None:
+                pass
 
             def serve_forever(self) -> None:
                 raise KeyboardInterrupt
@@ -2337,12 +2344,19 @@ class WiringTest(unittest.TestCase):
                 *,
                 interaction_prototype: Any = None,
                 injected_page_bytes: bytes | None = None,
+                bind_and_activate: bool = True,
             ) -> None:
-                del interaction_prototype
+                del interaction_prototype, bind_and_activate
                 captured["application"] = application
                 captured["coordinator"] = coordinator
                 captured["page_bytes"] = _page
                 captured["injected_page_bytes"] = injected_page_bytes
+
+            def server_bind(self) -> None:
+                pass
+
+            def server_activate(self) -> None:
+                pass
 
             def serve_forever(self) -> None:
                 raise KeyboardInterrupt

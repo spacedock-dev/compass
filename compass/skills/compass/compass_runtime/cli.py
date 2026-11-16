@@ -89,12 +89,13 @@ def build_server(
     page_bytes: bytes,
     coordinator: observation.Observation | None,
 ) -> http_api.CompassHTTPServer:
-    """Keep the verified and focus-capable pages separate."""
+    """Assemble without binding until the serving process has published its state."""
     return http_api.CompassHTTPServer(
         address,
         application,
         page_bytes,
         coordinator,
+        bind_and_activate=False,
         injected_page_bytes=(
             inject_focus_capability(page_bytes, coordinator.focus_capability())
             if coordinator is not None and application.config.focus_enabled
@@ -117,6 +118,33 @@ def prepare_interaction(
         session_exists=known_sessions.__contains__,
         registration_file=registration_file,
     )
+
+
+def prepare_serving(
+    server: http_api.CompassHTTPServer,
+    application: aggregate.Application,
+    args: argparse.Namespace,
+    coordinator: observation.Observation | None,
+) -> None:
+    # Publication must precede binding and any store work, including the sweeps.
+    # Otherwise --forget on another port cannot see the process using those stores.
+    if coordinator is not None:
+        coordinator.restore_parent_claims()
+    server.server_bind()
+    server.server_activate()
+    if not args.daemon and runtime_environ().get("_COMPASS_DAEMON_CHILD") != "1":
+        # Detached runs leave their launching parent to print the hint after readiness.
+        update_check.print_startup_hint(application.config)
+    config = application.config
+    observer.sweep_claude_scratch(config)
+    observer.sweep_reading_workdirs(config)
+    if args.interaction_origin_session is not None:
+        prepare_interaction(
+            server,
+            application,
+            args.interaction_origin_session,
+            args.interaction_origin_registration_file,
+        )
 
 
 def runtime_environ(home: str | None = None) -> dict[str, str]:
@@ -1215,8 +1243,6 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
         runtime_io.diag(refusal, print)
         return 1
     lifecycle.sweep_stale_states(config)
-    observer.sweep_claude_scratch(config)
-    observer.sweep_reading_workdirs(config)
     log_file = lifecycle.log_path(config, args.port)
     if args.daemon and not lifecycle.prepare_daemon_home(config, log_file):
         # Reported already; the message has to reach the terminal that asked,
@@ -1240,11 +1266,8 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
         runtime_io.diag(message, print)
         return code
 
-    # Bind before detaching. bind_error_message() exists so a busy port gets an
-    # explanation rather than a traceback, and SKILL.md tells the agent to look
-    # for an already-running dashboard when it sees one. Forking first would
-    # send that message to a log file nobody has been told about yet, and
-    # report success.
+    # Assembly is inert. The serving process publishes before binding so every
+    # process that can use the stores is discoverable by --forget on any port.
     try:
         application = build_application(config, state, frontend_page_bytes=page_bytes)
         # Constructed inert and attached both ways: the coordinator reads the
@@ -1254,7 +1277,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
         attach_footer_lines(application, config)
         coordinator = None
         if not args.no_events:
-            coordinator = observation.Observation(application)
+            coordinator = observation.Observation(application, load_parent_claims=False)
             application.overlays = coordinator
         server = build_server(
             (args.host, args.port),
@@ -1270,8 +1293,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
     if args.daemon:
         role, fd = lifecycle.fork_daemon()
         if role == "parent":
-            # The daemon holds its own dup of the listening socket; closing
-            # this one keeps a dead daemon from leaving the port looking bound.
+            # The daemon owns the unbound socket; this parent only waits for readiness.
             with contextlib.suppress(OSError):
                 server.server_close()
             message, code = lifecycle.await_daemon(config, fd, args.port, log_file)
@@ -1281,10 +1303,6 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
             return code
         announce_fd = fd
         lifecycle.daemon_redirect_stdio(log_file)
-    elif runtime_environ().get("_COMPASS_DAEMON_CHILD") != "1":
-        # Windows respawns with stdout already pointed at the daemon log.
-        # Its waiting launcher owns the hint after readiness, as on POSIX.
-        update_check.print_startup_hint(config)
 
     try:
         lifecycle.serve(
@@ -1293,18 +1311,12 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
             args.port,
             started=started,
             announce_fd=announce_fd,
-            before_ready=(
-                lambda: prepare_interaction(
-                    server,
-                    application,
-                    args.interaction_origin_session,
-                    args.interaction_origin_registration_file,
-                )
-            )
-            if args.interaction_origin_session is not None
-            else None,
+            before_ready=lambda: prepare_serving(server, application, args, coordinator),
         )
     except lifecycle.StateOwnershipError as exc:
         runtime_io.diag(str(exc), print)
+        return 1
+    except OSError as exc:
+        runtime_io.diag(http_api.bind_error_message(exc, args.port, args.host), print)
         return 1
     return 0

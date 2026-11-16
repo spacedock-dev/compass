@@ -37,17 +37,21 @@ whose digits contain the string you asked for. That is not an off-switch a perso
 detaching and a reliable off-switch shipped together, in one change, because neither is worth
 shipping alone.
 
-## D-1: `--daemon` detaches, and the socket is bound before it does
+<a id="d-1-daemon-detaches-and-the-socket-is-bound-before-it-does"></a>
 
-On POSIX: bind the listener, then double-fork (`fork`, `setsid`, `fork`), with both parents leaving
-through `os._exit(0)` to avoid flushing inherited buffers twice.
+## D-1: Publish and bind in the serving child before announcing readiness
 
-Binding first is the load-bearing part. `bind_error_message()` exists so that a busy port produces an
-explanation instead of a traceback, and the skill tells the agent to check for an already-running
-dashboard when it sees one. A daemon that forks before it binds sends that message to a log file
-nobody has been told about yet, and reports success instead. Binding first is what keeps a busy-port
-message on the terminal that asked, instead of in a log nobody reads. That is the whole value of
-the ordering, and it is easy to get backwards because forking first *looks* more conventional.
+On POSIX the CLI assembles an unbound server, then double-forks (`fork`, `setsid`, `fork`).
+The serving child publishes its state, binds and activates the listener, then announces readiness.
+The original parent waits on the readiness pipe. If the child exits first, it prints the child's
+log tail and exits `1`, so a busy port or publication refusal still reaches the terminal that asked.
+
+Binding in the parent was the original ordering, chosen to report a busy port before detaching.
+It was replaced because initial state publication must succeed before binding or store access,
+and the state must name the actual serving child. Publishing only after binding allowed a failed
+state write to leave a serving process hidden from `--forget` on another port. Publishing the
+parent's PID first would instead leave cleanup reasoning about the wrong process. The readiness
+pipe preserves the visible failure report while allowing publication in the child before binding.
 
 `stdin` comes from `os.devnull`; `stdout` and `stderr` are `os.dup2`'d onto the log file so that
 writes from C and uncaught tracebacks land there too, not just Python-level prints.
@@ -73,8 +77,8 @@ The answer has to be matched against the child's own pid, and the first version 
 that. A dashboard already on the port answers `/api/health` perfectly well, so the parent accepted
 that as proof, reported success, and handed back a pid belonging to a process it had not started,
 while the child it spawned was dying on the bind. The `platform-tests` job on Windows caught it; the
-POSIX path was never affected, because there the bind happens in the parent before any fork. This is
-what the pid in the health payload is for, the same reason `--status` needs it (D-4). A foreign
+POSIX readiness uses a pipe held by the serving child, so another dashboard cannot announce for it.
+The health payload's pid identifies the responding process, the same reason `--status` needs it (D-4). A foreign
 answer now reports that the port is already served by a different Compass and points at `--status`.
 
 The child needs no private flag: it is an ordinary foreground run that happens to own no console. One
@@ -94,9 +98,8 @@ spelled otherwise would make the child exit 2, so either shape fails that test f
 its own default. No opt-in is forwarded; one that ever is will
 travel with `--no-observer-model`, which the derivation always carries.
 
-The Windows branch has to be checked, and the re-spawn dispatched, *before* the POSIX bind-then-fork
-path runs. Reversing that order means the parent holds the listening socket it is supposed to be
-handing to the child.
+The Windows branch re-spawns before server assembly. Only its child constructs a server and
+publishes state before binding, so the parent cannot claim the port it is handing to the child.
 
 ## D-3: One state file per port, written by every instance that binds
 
