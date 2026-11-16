@@ -174,7 +174,7 @@ def save(
         runtime_io.atomic_write_owner_only(target, json.dumps(payload), root=str(config.state_home))
     except (OSError, ValueError):
         runtime_io.diag(
-            f"Compass: could not write the dismissal store {target}; "
+            f"Compass: could not write the dismissal store {runtime_io.value(target)}; "
             "cleared sessions will come back at the next restart",
             diagnostic_sink,
         )

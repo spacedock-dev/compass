@@ -28,7 +28,7 @@ from compass_runtime import history, records
 from compass_runtime import sessions as runtime_sessions
 from compass_runtime.config import COMPASS_HOME_ENV, STORE_ENV_VARS
 
-from .support import make_config
+from .support import SERVER_PATH, make_config
 from .support import os_name as support_os_name
 
 if TYPE_CHECKING:
@@ -2235,3 +2235,34 @@ class ADirectoryAtTheStorePathOpensEmptyTest(HistoryStoreTestCase):
         self.assertEqual(["working"], [e["state"] for e in published])
         self.assertEqual(history.RESET_UNREADABLE, lane.notice())
         self.assertTrue(any("history store" in line for line in self.diagnostics))
+
+
+class ForegroundHistoryOutputTest(unittest.TestCase):
+    @unittest.skipIf(support_os_name() == "nt", "Windows filenames cannot contain these controls")
+    def test_a_failed_history_write_prints_one_readable_line_without_hidden_commands(self) -> None:
+        from compass_runtime import cli  # noqa: PLC0415
+        from compass_runtime.state import build_runtime_state  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home, "\x1b]0;PWN\x07red\u202e\u200b\U000e0061\nFORGED SUCCESS\tend")
+            root.mkdir()
+            (root / "compass-history.json").mkdir()
+            from compass_runtime.config import build_runtime_config  # noqa: PLC0415
+
+            cfg = build_runtime_config(
+                environ={"COMPASS_HOME": str(root)},
+                platform_name="linux",
+                os_name="posix",
+                launcher_path=SERVER_PATH,
+            )
+            st = build_runtime_state(cfg, started=1000.0)
+            with contextlib.redirect_stdout(std_io.StringIO()) as output:
+                app = cli.build_application(cfg, st, record_history=True)
+                self.assertIsNotNone(app.history_lane)
+                assert app.history_lane is not None
+                app.history_lane.record([loaded_row()], now=1000.0)
+            text = output.getvalue()
+            self.assertIn("compass-history.json", text)
+            self.assertNotIn("PWN", text)
+            self.assertNotRegex(text, r"[\x00-\x09\x0b-\x1f\x7f-\x9f\u202e\u200b\U000e0061]")
+            self.assertEqual(1, len(text.splitlines()))

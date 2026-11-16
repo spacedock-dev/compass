@@ -155,7 +155,7 @@ def save(
         runtime_io.atomic_write_owner_only(target, json.dumps(payload), root=str(config.state_home))
     except (OSError, ValueError, TypeError, RecursionError):
         runtime_io.diag(
-            f"Compass: could not write the session-end record {target}; "
+            f"Compass: could not write the session-end record {runtime_io.value(target)}; "
             "a session that ended will read as merely quiet after the next restart",
             diagnostic_sink,
         )

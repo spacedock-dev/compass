@@ -777,9 +777,10 @@ def load_frontend_page() -> bytes | None:
     try:
         return frontend_page.load_frontend_page()
     except (OSError, UnicodeError, RuntimeError) as exc:
-        print(
-            f"Compass: cannot load frontend assets ({type(exc).__name__}: {exc}).",
-            file=sys.stderr,
+        runtime_io.diag(
+            f"Compass: cannot load frontend assets ({type(exc).__name__}: "
+            f"{runtime_io.value(exc)}).",
+            lambda message: print(message, file=sys.stderr),
         )
         print("Compass: reinstall the plugin to repair this build.", file=sys.stderr)
         return None
@@ -827,7 +828,10 @@ def prepare_frontend(
         dev = frontend_dev.admit(args.frontend_dev_manifest, config)
         return dataclasses.replace(config, frontend_dev=dev), frontend_dev.load_page(dev)
     except RuntimeError as exc:
-        print(f"Compass: cannot admit development frontend ({exc}).", file=sys.stderr)
+        runtime_io.diag(
+            f"Compass: cannot admit development frontend ({runtime_io.value(exc)}).",
+            lambda message: print(message, file=sys.stderr),
+        )
         return config, None
 
 
@@ -896,9 +900,10 @@ def _forget_refused(config: RuntimeConfig, port: int) -> bool:
         # not run, because this command refuses whole rather than in parts.
         runtime_io.diag(
             f"Compass: a dashboard is running on port {port} and would "
-            f"write {path} back from memory and go on publishing the ends in "
-            f"{ends_path}; the summaries in {summaries_path} and discard records "
-            f"in {annotations_path} were not "
+            f"write {runtime_io.value(path)} back from memory and go on publishing the ends in "
+            f"{runtime_io.value(ends_path)}; the summaries in "
+            f"{runtime_io.value(summaries_path)} and discard records "
+            f"in {runtime_io.value(annotations_path)} were not "
             "swept either, because the command refuses whole; stop it with "
             "--stop first, then --forget",
             print,
@@ -916,9 +921,9 @@ def _forget_stores(config: RuntimeConfig) -> int:
     annotations_path = annotation_store.store_path(config)
     summaries_path = summary_store.store_path(config)
     runtime_io.diag(
-        f"Compass: deleted {path}"
+        f"Compass: deleted {runtime_io.value(path)}"
         if history.forget(config)
-        else f"Compass: no history store at {path}",
+        else f"Compass: no history store at {runtime_io.value(path)}",
         print,
     )
     # The session-end store goes with it (decisions.md, DRC-4547): the
@@ -929,9 +934,9 @@ def _forget_stores(config: RuntimeConfig) -> int:
     # holds the ends it observed and publishes them on every collection, so
     # the delete would change the file and not the board.
     runtime_io.diag(
-        f"Compass: deleted {ends_path}"
+        f"Compass: deleted {runtime_io.value(ends_path)}"
         if ends.forget(config)
-        else f"Compass: no session-end store at {ends_path}",
+        else f"Compass: no session-end store at {runtime_io.value(ends_path)}",
         print,
     )
     # And the records of what this machine deleted (DRC-4565). A sweep and
@@ -950,15 +955,18 @@ def _forget_stores(config: RuntimeConfig) -> int:
     runtime_io.diag(
         {
             annotation_store.FORGET_SWEPT: (
-                f"Compass: removed the discard records in {annotations_path}"
+                f"Compass: removed the discard records in {runtime_io.value(annotations_path)}"
             ),
-            annotation_store.FORGET_NOTHING: (f"Compass: no discard records in {annotations_path}"),
+            annotation_store.FORGET_NOTHING: (
+                f"Compass: no discard records in {runtime_io.value(annotations_path)}"
+            ),
             annotation_store.FORGET_UNWRITABLE: (
-                f"Compass: could not write {annotations_path}, so its discard "
+                f"Compass: could not write {runtime_io.value(annotations_path)}, so its discard "
                 "records are still there"
             ),
             annotation_store.FORGET_UNTRUSTED: (
-                f"Compass: {annotations_path} could not be read, so nothing in it was "
+                f"Compass: {runtime_io.value(annotations_path)} could not be read, "
+                "so nothing in it was "
                 "changed; move or repair that file and run --forget again"
             ),
         }[swept],
@@ -969,14 +977,14 @@ def _forget_stores(config: RuntimeConfig) -> int:
     # Deleted with the other two, and the refusal above returns before it.
     copies_path = copied_corrections.store_path(config)
     runtime_io.diag(
-        f"Compass: deleted {copies_path}"
+        f"Compass: deleted {runtime_io.value(copies_path)}"
         if copied_corrections.forget(config)
-        else f"Compass: no copied-correction store at {copies_path}",
+        else f"Compass: no copied-correction store at {runtime_io.value(copies_path)}",
         print,
     )
     summary_outcome = summary_store.forget(config)
     runtime_io.diag(
-        f"Compass: summary store {summaries_path}: {summary_outcome}",
+        f"Compass: summary store {runtime_io.value(summaries_path)}: {summary_outcome}",
         print,
     )
     parents_forgotten = declared_parent_store.forget(config)
@@ -1009,7 +1017,9 @@ def _forget(config: RuntimeConfig, port: int) -> int:
                 return 1
             return _forget_stores(config)
     except lifecycle.StateOwnershipError as exc:
-        runtime_io.diag(f"Compass: cleanup refused ({exc}); no stores were changed.", print)
+        runtime_io.diag(
+            f"Compass: cleanup refused ({runtime_io.value(exc)}); no stores were changed.", print
+        )
         return 1
 
 
@@ -1239,7 +1249,8 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
 
     if not runtime_io.sqlite_available():
         runtime_io.diag(
-            f"Compass: sqlite3 unavailable ({runtime_io.SQLITE_IMPORT_ERROR}) â€” OpenCode, "
+            f"Compass: sqlite3 unavailable ({runtime_io.value(runtime_io.SQLITE_IMPORT_ERROR)}) "
+            "â€” OpenCode, "
             "Cursor and Goose sessions cannot be read; Antigravity still appears "
             "but without its token rate or turn ETA. Install the sqlite3 "
             "extension for this interpreter to enable them.",
@@ -1326,7 +1337,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
             before_ready=lambda: prepare_serving(server, application, args, coordinator),
         )
     except lifecycle.StateOwnershipError as exc:
-        runtime_io.diag(str(exc), print)
+        runtime_io.diag(runtime_io.value(exc), print)
         return 1
     except OSError as exc:
         runtime_io.diag(http_api.bind_error_message(exc, args.port, args.host), print)

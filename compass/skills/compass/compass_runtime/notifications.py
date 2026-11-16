@@ -224,14 +224,18 @@ def notify_mac(
         )
         if result.returncode:
             detail = (result.stderr or result.stdout or "unknown error").strip()
-            runtime_io.diag(f"[notify] osascript failed: {detail[:300]}", diagnostic_sink)
+            runtime_io.diag(
+                f"[notify] osascript failed: {runtime_io.value(detail[:300])}", diagnostic_sink
+            )
             return deliveries.OUTCOME_REFUSED
     # A timeout is caught here too and is NOT a failure: the call did not
     # return, so whether a banner was drawn is unknown. Folding it into the
     # refused arm is the collapse this whole record exists to refuse one level
     # down, and the two were indistinguishable while this returned None.
     except subprocess.TimeoutExpired as exc:
-        runtime_io.diag(f"[notify] osascript did not return: {exc}", diagnostic_sink)
+        runtime_io.diag(
+            f"[notify] osascript did not return: {runtime_io.value(exc)}", diagnostic_sink
+        )
         return deliveries.OUTCOME_DID_NOT_RETURN
     # Separate from the non-zero return above, not folded into it. These are the
     # call never starting: a missing or unexecutable binary, or an argument the
@@ -240,7 +244,8 @@ def notify_mac(
     # never saw.
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         runtime_io.diag(
-            f"[notify] osascript did not start: {type(exc).__name__}: {exc}", diagnostic_sink
+            f"[notify] osascript did not start: {type(exc).__name__}: {runtime_io.value(exc)}",
+            diagnostic_sink,
         )
         return deliveries.OUTCOME_NOT_LAUNCHED
     return deliveries.OUTCOME_HANDED_OVER

@@ -496,4 +496,7 @@ class Lines:
         if self._said:
             return
         self._said = True
-        runtime_io.diag(f"Compass: the status line footer could not be written: {exc}", self._sink)
+        runtime_io.diag(
+            f"Compass: the status line footer could not be written: {runtime_io.value(exc)}",
+            self._sink,
+        )

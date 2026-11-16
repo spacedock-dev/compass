@@ -107,14 +107,16 @@ def state_folder_lock(config: RuntimeConfig) -> Iterator[None]:
     try:
         ensure_compass_home(config)
     except OSError as exc:
-        raise StateOwnershipError(f"Compass: cannot prepare lifecycle lock: {exc}") from exc
+        raise StateOwnershipError(
+            f"Compass: cannot prepare lifecycle lock: {runtime_io.value(exc)}"
+        ) from exc
     # Stable across every port and never unlinked: replacing a lock inode would
     # admit a second holder. Take this before the per-port publication lock.
     path = os.path.join(compass_home(config), "compass-lifecycle.lock")
     with runtime_io.held_file_lock(path, wait=0) as held:
         if held != runtime_io.LOCK_HELD:
             raise StateOwnershipError(
-                f"Compass: could not take lifecycle lock {path} ({held}); "
+                f"Compass: could not take lifecycle lock {runtime_io.value(path)} ({held}); "
                 "cleanup or dashboard startup may be in progress. Retry after it finishes."
             )
         yield
@@ -315,7 +317,7 @@ def forget_refusal(config: RuntimeConfig) -> str | None:
         return None
     except OSError:
         return (
-            f"Compass: cannot inspect {config.state_home}; nothing was changed. "
+            f"Compass: cannot inspect {runtime_io.value(config.state_home)}; nothing was changed. "
             "Stop every dashboard sharing that folder where it runs, then retry --forget."
         )
     for name in sorted(names):
@@ -336,7 +338,8 @@ def forget_refusal(config: RuntimeConfig) -> str | None:
             continue
         stop = f"--stop --port {port}" if 1 <= port <= 65535 else "--stop"
         return (
-            f"Compass: {target} may belong to a dashboard this command cannot reach; "
+            f"Compass: {runtime_io.value(target)} may belong to a dashboard "
+            "this command cannot reach; "
             f"nothing was changed. Run {stop} in the environment where that dashboard "
             "runs, or press Ctrl+C in its foreground terminal, before retrying --forget. "
             "If it has already stopped, verify it is gone there before removing only "
@@ -360,7 +363,7 @@ def start_refusal(config: RuntimeConfig, port: int) -> str | None:
         return None
     with runtime_io.held_file_lock(target + ".lock", wait=0) as held:
         if held != runtime_io.LOCK_HELD:
-            return f"Compass: could not lock {target}; state left alone."
+            return f"Compass: could not lock {runtime_io.value(target)}; state left alone."
         return _start_refusal(config, port)
 
 
@@ -433,7 +436,9 @@ def write_state(
             runtime_io.held_file_lock(target + ".lock", wait=0) as held,
         ):
             if held != runtime_io.LOCK_HELD:
-                raise StateOwnershipError(f"Compass: could not lock {target}; state left alone.")  # noqa: TRY301 - refusal must escape the recoverable write error path
+                raise StateOwnershipError(  # noqa: TRY301 - refusal must escape the recoverable write error path
+                    f"Compass: could not lock {runtime_io.value(target)}; state left alone."
+                )
             if refusal := _start_refusal(config, port):
                 raise StateOwnershipError(refusal)  # noqa: TRY301 - refusal must escape the recoverable write error path
             runtime_io.atomic_write_owner_only(target, json.dumps(payload), root=config.state_home)
@@ -448,11 +453,12 @@ def write_state(
     except OSError as exc:
         if not published:
             raise StateOwnershipError(
-                f"Compass: cannot publish dashboard state in {config.state_home} "
-                f"({type(exc).__name__}: {exc}); refusing to serve."
+                f"Compass: cannot publish dashboard state in {runtime_io.value(config.state_home)} "
+                f"({type(exc).__name__}: {runtime_io.value(exc)}); refusing to serve."
             ) from exc
         runtime_io.diag(
-            f"Compass: could not write origin for {target} ({type(exc).__name__}: {exc}); "
+            f"Compass: could not write origin for {runtime_io.value(target)} "
+            f"({type(exc).__name__}: {runtime_io.value(exc)}); "
             "the published state still blocks --forget; crash recovery may require verification",
             diagnostic_sink,
         )
@@ -1267,8 +1273,10 @@ def prepare_daemon_home(
             pass
     except OSError as exc:
         runtime_io.diag(
-            f"Compass: cannot use {compass_home(config)} for the daemon state and log "
-            f"({type(exc).__name__}: {exc}). Point {runtime_config.COMPASS_HOME_ENV} at a "
+            f"Compass: cannot use {runtime_io.value(compass_home(config))} "
+            "for the daemon state and log "
+            f"({type(exc).__name__}: {runtime_io.value(exc)}). "
+            f"Point {runtime_config.COMPASS_HOME_ENV} at a "
             "writable directory; a start without --daemon needs it too.",
             diagnostic_sink,
         )
@@ -1312,7 +1320,7 @@ def run_producer(
             application.collect_json(show_all=False)
         except Exception as exc:  # noqa: BLE001 (a bad read must not stop the loop)
             runtime_io.diag(
-                f"Compass: producer collection failed: {exc}",
+                f"Compass: producer collection failed: {runtime_io.value(exc)}",
                 application.diagnostic_sink,
             )
 
@@ -1446,7 +1454,7 @@ def serve(  # noqa: C901, PLR0915 - ordered signal, recovery, serving and shutdo
                 prototype.start(port)
             except runtime_interaction.OriginUnavailableError as exc:
                 runtime_io.diag(
-                    f"Compass: interaction bootstrap unavailable ({exc}).",
+                    f"Compass: interaction bootstrap unavailable ({runtime_io.value(exc)}).",
                     diagnostic_sink,
                 )
                 return

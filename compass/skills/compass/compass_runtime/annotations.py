@@ -816,17 +816,19 @@ def _locked_store(
     with _store_locks(config, state, wait=wait, make_home=True) as held:
         if held == _QUEUED:
             said = (
-                f"Compass: an earlier save to the annotation store {path} was still "
+                f"Compass: an earlier save to the annotation store {runtime_io.value(path)} "
+                "was still "
                 f"waiting after {wait:g}s; nothing was saved"
             )
         elif held == runtime_io.LOCK_BUSY:
             said = (
-                f"Compass: another dashboard held the annotation store {path} for {wait:g}s; "
+                f"Compass: another dashboard held the annotation store {runtime_io.value(path)} "
+                f"for {wait:g}s; "
                 "nothing was saved"
             )
         elif held == runtime_io.LOCK_DENIED:
             said = (
-                f"Compass: could not open or lock {lock_path(config)}; "
+                f"Compass: could not open or lock {runtime_io.value(lock_path(config))}; "
                 "nothing was saved to the annotation store"
             )
         else:
@@ -850,7 +852,8 @@ def _name_unlockable(config: RuntimeConfig, diagnostic_sink: Callable[[str], Non
         _UNLOCKABLE_NAMED.add(path)
     # Owner approval needed: the wording of this line.
     runtime_io.diag(
-        f"Compass: the annotation store {path} cannot be locked on this filesystem; "
+        f"Compass: the annotation store {runtime_io.value(path)} "
+        "cannot be locked on this filesystem; "
         "saves from another dashboard sharing this home may overwrite each other",
         diagnostic_sink,
     )
@@ -1858,7 +1861,7 @@ def _replace_over(tmp: str, target: str, **options: Any) -> None:
 
 def _say_unwritten(config: RuntimeConfig, diagnostic_sink: Callable[[str], None]) -> None:
     runtime_io.diag(
-        f"Compass: could not write the annotation store {store_path(config)}; "
+        f"Compass: could not write the annotation store {runtime_io.value(store_path(config))}; "
         "what you typed will be gone at the next collection",
         diagnostic_sink,
     )

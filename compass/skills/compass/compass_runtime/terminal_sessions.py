@@ -180,9 +180,17 @@ _ESCAPES = re.compile(
     "|(?:\x1b\\[|\x9b)[0-?]*[ -/]*[@-~]?"  # a CSI
     "|\x1b[ -/]*[0-~]?"  # any other two-character escape
 )
-# Bidirectional marks and embeddings, and the two line separators: none is a control character by
-# category, and all of them reorder or break what a terminal draws.
-_UNSAFE = re.compile(r"[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
+# Format characters can hide words without belonging to the control-character category.
+_UNSAFE = re.compile(
+    r"[\u00ad\u061c\u180e\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\ufff9-\ufffb]"
+)
+# Preserve subdivision flag syntax, not arbitrary invisible tag payloads.
+# The terminal output policy lives in docs/design-runtime-architecture.md#terminal-output.
+_FLAG_OR_TAG = re.compile(
+    "(\U0001f3f4[\U000e0061-\U000e007a]{2}"
+    "[\U000e0030-\U000e0039\U000e0061-\U000e007a]{1,3}\U000e007f)"
+    "|[\U000e0000-\U000e007f]"
+)
 _CONTROLS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 _LINE_CONTROLS = re.compile(r"[\x00-\x08\x0a-\x1f\x7f-\x9f]")  # `_CONTROLS` less the tab
 # What `printable_text` turns into a space inside a line. A tab is left alone, because it cannot
@@ -205,6 +213,7 @@ def printable(value: object) -> str:
     whitespace, line breaks included, becomes one space.
     """
     text = _ESCAPES.sub("", "" if value is None else str(value))
+    text = _FLAG_OR_TAG.sub(r"\1", text)
     text = _SPACES.sub(" ", text)
     return _CONTROLS.sub("", _UNSAFE.sub("", text)).strip()
 
@@ -218,6 +227,7 @@ def printable_text(value: object) -> str:
     separators become one space.
     """
     text = _CRLF.sub("\n", "" if value is None else str(value))
+    text = _FLAG_OR_TAG.sub(r"\1", text)
     return "\n".join(
         _LINE_CONTROLS.sub("", _UNSAFE.sub("", _OTHER_BLANKS.sub(" ", _ESCAPES.sub("", line))))
         for line in text.split("\n")

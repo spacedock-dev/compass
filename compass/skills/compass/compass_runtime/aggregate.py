@@ -877,7 +877,8 @@ class Application:
             return list(spec.usage(self.config, self.state, now, window_hours))
         except Exception as e:  # noqa: BLE001 — same boundary as the collector above
             runtime_io.diag(
-                f"[{spec.key}] usage error: {type(e).__name__}: {e}",
+                f"[{runtime_io.value(spec.key)}] usage error: {type(e).__name__}: "
+                f"{runtime_io.value(e)}",
                 self.diagnostic_sink,
             )
             return []
@@ -905,7 +906,8 @@ class Application:
             except Exception as e:  # noqa: BLE001 — one broken harness must not take down the rest
                 harness["error"] = f"{type(e).__name__}: {e}"
                 runtime_io.diag(
-                    f"[{spec.key}] collector error: {harness['error']}",
+                    f"[{runtime_io.value(spec.key)}] collector error: "
+                    f"{runtime_io.value(harness['error'])}",
                     self.diagnostic_sink,
                 )
             if spec.usage is None:

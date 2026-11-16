@@ -330,7 +330,8 @@ def bind_error_message(
         reachable = "127.0.0.1" if host in ("127.0.0.1", "0.0.0.0") else host  # noqa: S104
         return (
             f"Compass: port {port} is already in use. If that is a dashboard "
-            f"already running, use it: curl -s http://{reachable}:{port}/api/data. "
+            f"already running, use it: curl -s http://{runtime_io.value(reachable)}:"
+            f"{port}/api/data. "
             f"Otherwise pick another port with --port."
         )
     if exc.errno == errno.EACCES or winerror == 10013:  # WSAEACCES
@@ -341,7 +342,10 @@ def bind_error_message(
             f"held by another process, reserved by the system, or blocked by "
             f"local policy. Try another port with --port."
         )
-    return f"Compass: cannot bind {host}:{port} — {type(exc).__name__}: {exc}"
+    return (
+        f"Compass: cannot bind {runtime_io.value(host)}:{port} — "
+        f"{type(exc).__name__}: {runtime_io.value(exc)}"
+    )
 
 
 class CompassHTTPServer(ThreadingHTTPServer):
@@ -467,7 +471,8 @@ class CompassHTTPServer(ThreadingHTTPServer):
                 # hijacked, and silently dropping the guarantee is worse than
                 # a noisy one-line warning at startup.
                 runtime_io.diag(
-                    f"Compass: could not claim the port exclusively ({exc}); continuing",
+                    f"Compass: could not claim the port exclusively ({runtime_io.value(exc)}); "
+                    "continuing",
                     self.application.diagnostic_sink,
                 )
         # Deliberately NOT `super().server_bind()`. `HTTPServer.server_bind`
