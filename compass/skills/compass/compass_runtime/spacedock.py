@@ -81,7 +81,7 @@ def _settled(info: os.stat_result) -> bool:
     return time.time_ns() - info.st_mtime_ns >= RACY_STAT_NS
 
 
-SD_STAGE_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+SD_STAGE_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 
 
 SD_CYCLE_RE = re.compile(r"^(?:cycle|pass|round|c|v|p|r)\d+[a-z]?$|^(?:retry|rerun)$")

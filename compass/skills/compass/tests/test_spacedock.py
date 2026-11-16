@@ -25,6 +25,20 @@ if TYPE_CHECKING:
 
 
 class DispatchPathSpellingTest(unittest.TestCase):
+    def test_one_character_assignment_names_resolve_without_accepting_malformed_names(self) -> None:
+        # x-s.md is the installed producer's dispatch_file_path for entity x, stage s.
+        for name in ("x-s.md", "spacedock-ensign-x-s.md", "x-s-advance.md"):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    ("x", "s"),
+                    spacedock.dispatch_artifact_identity(f"/tmp/spacedock-dispatch/{name}"),
+                )
+        for name in ("-s.md", "x-.md", "x--s.md", "X-s.md", "x-S.md", "x-s_.md"):
+            with self.subTest(name=name):
+                self.assertIsNone(
+                    spacedock.dispatch_artifact_identity(f"/tmp/spacedock-dispatch/{name}")
+                )
+
     def test_the_private_tmp_spelling_names_the_same_macos_assignment(self) -> None:
         for platform in ("darwin", "linux"):
             with (
@@ -176,6 +190,15 @@ class SpacedockParserTest(unittest.TestCase):
             with self.subTest(case=label):
                 self.assertEqual([], self.frontmatter(body))
 
+    def test_a_one_character_stage_appears_in_the_workflow_strip(self) -> None:
+        config, _runtime = runtime()
+        lines = self.frontmatter("---\nstages:\n  states:\n    - name: s\n---\n")
+
+        self.assertEqual(
+            [{"name": "s", "initial": False, "terminal": False}],
+            spacedock.stage_entries(config, lines),
+        )
+
     def test_stage_names_refuse_shapes_the_scanner_cannot_model(self) -> None:
         """An unmodellable construct must render no strip, never a wrong one."""
         config, _runtime = runtime()
@@ -185,7 +208,7 @@ class SpacedockParserTest(unittest.TestCase):
             "stages absent": "state: .spacedock-state\n",
             "illegal name": "stages:\n  states:\n    - name: Intake_Bad\n",
             "flow item": "stages:\n  states:\n    - {name: intake}\n    - name: review\n",
-            "single char name": "stages:\n  states:\n    - name: x\n",
+            "trailing hyphen": "stages:\n  states:\n    - name: x-\n",
             "duplicate name": "stages:\n  states:\n    - name: review\n    - name: review\n",
         }
         for label, block in cases.items():

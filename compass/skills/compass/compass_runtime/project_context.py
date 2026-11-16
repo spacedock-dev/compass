@@ -172,7 +172,6 @@ _DISPATCH_VALUE_OPTIONS = {
     "--checklist-file",
     "--host",
     "--stage",
-    "--stamp",
     "--workflow-dir",
 }
 _CODEX_ENSIGN_TASK_RE = re.compile(r"^(?:spacedock_ensign_)?([a-z0-9][a-z0-9_-]*?)(?:_cycle\d+)?$")
@@ -1446,7 +1445,8 @@ def _dispatch_events(
             continue
         workflow_binding, slug, stage = identity
         title = slug + (f" → {stage}" if stage else " dispatched")
-        candidates = spacedock.dispatch_candidates(f"{slug}-{stage}")
+        suffix = "-advance" if stage and "--advance" in shlex.split(command_line) else ""
+        candidates = spacedock.dispatch_candidates(f"{slug}-{stage}{suffix}")
         events.append(
             {
                 "at": at,
@@ -12046,7 +12046,7 @@ def _artifact_bindings(
             continue
         if not prefix or not artifact.startswith(prefix) or not artifact.endswith(".md"):
             continue
-        stage = artifact[len(prefix) : -len(".md")]
+        stage = artifact[len(prefix) : -len(".md")].removesuffix("-advance")
         if stage and spacedock.SD_STAGE_RE.fullmatch(stage):
             bindings.add((workflow, entity, stage))
     return bindings
