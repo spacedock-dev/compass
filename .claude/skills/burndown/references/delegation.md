@@ -100,6 +100,55 @@ Each item was measured; each cost a stalled or wasted run when missed.
   with the arbiter's fix list, the original task file and the analysis file. A builder that edits
   a lower layer's file is a restack the orchestrator does, never the builder.
 
+## Keep the wall clock down
+
+A delegated run is mostly serial waiting: build, lenses, arbiter, fix round, verification, CI and
+the queue, each 15 to 40 minutes. Measured 2026-11-16 on a two-layer stack (runtime, then board):
+review was worth it, since every round found a real defect, two of them blockers. Serial waiting
+nobody needed was not worth it. These overlaps cut the remaining estimate from about 2.5 hours to about 1.25:
+
+- **Build the next layer as soon as the lower layer hands back.** Do not wait for the lower layer's
+  review. Stack the new worktree on the lower builder's commit, and restack it when the fix rounds
+  land. A fix round that keeps the published contract restacks without conflict; tell the upper
+  builder which fields are frozen.
+- **Review a stacked layer on its own diff** (`git diff <lower head>..HEAD`) while the lower layer is
+  in its fix round. Name the lower head in the lens prompt and give the runtime contract as text.
+- **Run fix rounds in parallel across layers** when they touch disjoint files. Tell each builder what
+  the other is editing.
+- **Push and open a lower layer's PR as soon as its own verification passes.** Its CI then runs
+  while the upper layers finish. Stack the upper PR on it when ready. `gh stack merge` still lands
+  them together, so a lower layer never ships without the upper layer's half of a rule.
+- **Verify a fix round by re-running the arbiter's failing regressions**, not by a fresh full pass.
+  Ask every arbiter to leave its reproductions in its probe directory as runnable tests; the fix
+  builder starts from them as its failing tests, and the orchestrator re-runs them on the fix head
+  in minutes. Run one fresh verification pass only after a fix round that adds a mechanism (a new
+  store, a new projection), where new code needs new eyes. That pass on 2026-11-16 found a blocker
+  the first round's fix had moved rather than closed: the browser still read the held state.
+- **Walk the board while CI runs**, after the push, not before it. A walk finding costs one more
+  commit on a PR whose CI is already warm.
+- **Fold a small deferred item into a fix round that is already running.** AGENTS.md's rule against
+  promotion exists because promotion buys another implement-and-CI round. When a round is running
+  anyway, a test-only gap or a few-line receipt fix costs no round, and filing it would add an issue
+  the run must then close. File what predates the change; fold what the change introduced.
+- **Measure what the builders cannot while they run.** The orchestrator has a live harness session
+  and can check facts no fixture holds. Hand the result to the next fix round as a notes file. On
+  2026-11-16 that check found that Claude Code exports `CLAUDE_CODE_SESSION_ID` to its Bash
+  commands and Codex exports `CODEX_THREAD_ID` to its shell commands, which replaced a documented
+  procedure that only worked if the reader looked the id up by hand.
+- **Watch CI with one waiter.** Use `gh pr checks <n> --watch --interval 90` per PR, in the
+  background, rather than a polling loop. The previous run's loops exhausted the 5,000-per-hour
+  GitHub API limit and blocked the closeout for an hour.
+
+Measured stage times on that run (Codex `gpt-6.1-sol` high building, `gpt-6-astra` high arbitrating):
+
+| Stage | Time |
+|---|---|
+| Runtime builder, L | 38 min |
+| Board builder, L | 35 min |
+| Lens | 5 to 20 min |
+| Arbiter | 12 to 15 min |
+| Fix round | 10 to 30 min |
+
 ## When the stages disagree
 
 Two lenses can pull in opposite directions (one wants fewer symlinks followed, one found a real
