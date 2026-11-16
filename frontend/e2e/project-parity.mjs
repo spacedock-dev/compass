@@ -229,6 +229,20 @@ async function freeze(opened, holder) {
   await opened.page.route('**/api/stream', (route) => route.abort('failed'));
 }
 
+/* The command-opener departure uses the same snapshot projection as recordedCommandOpener.ts.
+   Keep it local: that Vitest helper imports extensionless application modules Node cannot resolve.
+   docs/design-frontend-migration.md#held-to-recorded-answers owns the wording departure. */
+function restateLiveOpenerValue(value) {
+  if (typeof value === 'string')
+    return value.replaceAll('No name: the session opened with a command', 'Title not published');
+  if (Array.isArray(value)) return value.map(restateLiveOpenerValue);
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, restateLiveOpenerValue(item)]),
+    );
+  return value;
+}
+
 /* The first place two readings differ, each taken in its stored form, so a live reading and a recorded one meet
    as the same kind of data. */
 function firstDifference(left, right) {
@@ -309,7 +323,7 @@ try {
     const key = `${name} | ${fragment} | ${digestOf([holder.body, holder.contexts, args])}`;
     const project = decodeURIComponent(fragment.split(':')[1] || '');
     return {
-      mine,
+      mine: restateLiveOpenerValue(mine),
       old: projectWordDeviation(
         recordedLocationNotes(golden.observe(key), holder.body, project),
         projectGlossEnabled(holder.body, project),
@@ -1459,7 +1473,16 @@ try {
             assert.equal(mine.toggle['padding-left'], '0px');
             assert.match(mine.toggle['font-family'], /mono/i);
           }
-          assert.equal(firstDifference(old, mine), null, `${width}px ${tab}`);
+          // The shell lost its two 1px side borders in 715033e2; the recorded panel was narrower.
+          // docs/design-frontend-migration.md#held-to-recorded-answers keeps the other style facts exact.
+          const expected = {
+            ...old,
+            panelWidth: old.panelWidth + 2,
+            ...(old.toggle && {
+              toggle: { ...old.toggle, width: `${Number.parseFloat(old.toggle.width) + 2}px` },
+            }),
+          };
+          assert.equal(firstDifference(expected, mine), null, `${width}px ${tab}`);
           results[`${width}:${tab}`] = {
             inset: mine.panel['padding-left'],
             tabsMargin: mine.tabs['margin-top'],

@@ -42,8 +42,8 @@ restored members and location cards are held by the mounted `attention/location.
 and the `Attention/Project locations` Storybook play assertions. Queue announcements are checked
 against their current queue counts because the recorded counts include the retired folding.
 The on-demand project and Sessions browser proofs restate their recorded location notes without
-changing published words. Attention's browser comparison excludes the replaced location cards;
-its unchanged queues still compare, and the new cards' exact routes are asserted in Storybook.
+changing published words, including an empty display label with null project members. Attention's browser comparison excludes
+the replaced location cards; its unchanged queues still compare, and the new cards' exact routes are asserted in Storybook.
 
 
 2026-11-14, the Intent boxes collapse the store's wider set of invisible characters. `records.safe_text`
@@ -194,6 +194,14 @@ project and activity lists and the waiting panel say the same, because every sur
 the same thing for it. The generated differential tests restate the phrase on the recorded side for exactly the
 rows marked `first_prompt_control` (`frontend/test/recordedCommandOpener.ts`), including the one coverage
 caveat that lists each distinct reason a title is missing. Golden files are unchanged.
+The on-demand project browser proof mirrors `restateLiveOpenerValue` on its snapshot copy for the
+same phrase, including generated project-list rows. Every other word remains compared.
+
+The session-page redesign in `715033e2` also removed the app shell's one-pixel border on each
+side. The project browser proof adds those two pixels to the recorded panel and full-width
+workstream-toggle widths at 375 and 1280 px, for Now and Course, while keeping the recorded
+inset, content offset, tab margins and other workstream-toggle styles exact. The golden files retain the bordered shell's measurements.
+
 
 2026-10-21, departure cards and Steer back read as the redesign draws them
 ([the amendment](design-reading-a-session.md#amended-2026-10-21-departure-cards-and-steer-back-read-as-the-design-does)):
