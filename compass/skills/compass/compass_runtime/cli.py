@@ -135,8 +135,9 @@ def prepare_serving(
     if not args.daemon and runtime_environ().get("_COMPASS_DAEMON_CHILD") != "1":
         # Detached runs leave their launching parent to print the hint after readiness.
         update_check.print_startup_hint(application.config)
-    observer.sweep_claude_scratch(application.config)
-    observer.sweep_reading_workdirs(application.config)
+    config = application.config
+    observer.sweep_claude_scratch(config)
+    observer.sweep_reading_workdirs(config)
     if args.interaction_origin_session is not None:
         prepare_interaction(
             server,
