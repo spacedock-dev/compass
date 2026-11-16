@@ -112,6 +112,7 @@ class GluedCredentialTest(unittest.TestCase):
                         "sk-ant-ort01-",
                         "AKIA",
                         "ASIA",
+                        "AIza",
                         "github_pat_",
                         "lin_api_",
                         "ya29.",

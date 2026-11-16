@@ -5562,8 +5562,11 @@ only route by which it gets rotated.
 Each prefix shape keeps its body length and alphabet. Complete AWS access key IDs and Google
 API keys are masked even when a letter, digit, underscore or hyphen follows them, including a
 `_prod` suffix. The suffix remains readable. Other trailing-character requirements still apply.
-When a capped match consumes the start of an adjacent credential, overlapping accepted matches
-are merged so the second body stays hidden too.
+When a capped match consumes the start of an adjacent credential, independent scans retain
+prefixed credentials, URL passwords and cued values crossing that cap. Overlapping accepted
+spans are merged so both bodies stay hidden. An admitted cued assignment stays masked even
+when its name contains a complete key shape. Unbounded shapes, including PEM closing lines,
+use non-overlapping scans of each shape rather than repeatedly parsing already covered tails.
 Existing matches stay masked, including lowercase generic `sk-` bodies after whitespace,
 assignment, quotes or brackets. AWS, fine-grained GitHub, `lin_api_`, `ya29.` and Anthropic
 matches at least 90 characters long keep their existing acceptance regardless of the lead.
@@ -5574,8 +5577,8 @@ their complete prefix and body shape without a case requirement. Newly admitted 
 Stripe, Slack and generic `sk-` matches require an ASCII uppercase letter or digit after
 the prefix the marker retains. Anthropic's `api03-`, `oat01-` and `ort01-` count toward
 that evidence. A complete OpenRouter `sk-or-v1-` plus 64 lowercase hexadecimal characters
-qualifies too. A preceding hyphen keeps its existing boundary behavior rather than gaining
-this additional admission.
+qualifies too. Complete Google API keys also qualify after a hyphen. Other families keep
+their existing hyphen boundary behavior.
 
 Only newly admitted glued generic `sk-` matches have an identifier safeguard: lowercase
 segments separated by hyphens or underscores stay readable even with version digits or a

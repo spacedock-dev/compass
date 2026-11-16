@@ -793,16 +793,134 @@ class RedactSecretsTest(unittest.TestCase):
 
     def test_aws_and_google_keys_are_hidden_before_a_token_character_suffix(self) -> None:
         for prefix, body in (("AKIA", "Q" * 16), ("ASIA", "R" * 16), ("AIza", "S" * 35)):
-            leads: tuple[str, ...] = ("", " ", "x", "1", "_", "=", "(")
-            if prefix != "AIza":
-                leads += ("-",)
-            for lead in leads:
+            for lead in ("", " ", "x", "1", "_", "=", "(", "-"):
                 for suffix in ("_prod", "-prod", "a", "7"):
                     raw = lead + prefix + body + suffix
-                    with self.subTest(prefix=prefix, lead=lead, suffix=suffix):
-                        self.assertEqual(
-                            lead + prefix + "…REDACTED" + suffix, records.redact_secrets(raw)
-                        )
+                    for clean in (
+                        records.redact_secrets,
+                        lambda text: records.safe_text(text, 10_000),
+                        lambda text: records.redact_clip(text, 10_000),
+                        records.mask_prose,
+                    ):
+                        with self.subTest(prefix=prefix, lead=lead, suffix=suffix, clean=clean):
+                            expected = lead + prefix + "…REDACTED" + suffix
+                            if clean is records.mask_prose:
+                                expected = expected.strip()
+                            self.assertEqual(expected, clean(raw))
+
+    def test_a_split_uppercase_assignment_keeps_its_value_private_after_a_hidden_boundary(
+        self,
+    ) -> None:
+        value = "Synthetic" + "Value123"
+        for hidden in ("\u200b", "<wbr>", "<!-- gap -->"):
+            for prefix in ("AKIA", "ASIA"):
+                raw = "word" + hidden + prefix + "Q" * 16 + "_K" + hidden + "EY=" + value
+                for clean in (
+                    records.redact_secrets,
+                    lambda text: records.safe_text(text, 10_000),
+                    lambda text: records.redact_clip(text, 10_000),
+                ):
+                    with self.subTest(hidden=hidden, prefix=prefix, clean=clean):
+                        self.assertNotIn(value, clean(raw))
+
+    def test_a_key_shaped_assignment_name_keeps_its_assigned_value_private(self) -> None:
+        value = "Synthetic" + "Value123"
+        for prefix, body, suffixes in (
+            ("AKIA", "Q" * 16, ("_KEY", "_PASSWORD", "_TOKEN")),
+            ("ASIA", "R" * 16, ("_KEY", "_PASSWORD", "_TOKEN")),
+            ("AIza", "S" * 35, ("_PASSWORD", "_TOKEN")),
+        ):
+            for suffix in suffixes:
+                for clean in (
+                    records.redact_secrets,
+                    lambda text: records.safe_text(text, 10_000),
+                    lambda text: records.redact_clip(text, 10_000),
+                    records.mask_prose,
+                ):
+                    with self.subTest(prefix=prefix, suffix=suffix, clean=clean):
+                        shown = clean(prefix + body + suffix + "=" + value)
+                        self.assertNotIn(value, shown)
+                        self.assertIn("REDACTED", shown)
+
+    def test_colliding_openers_cannot_hide_the_next_credential_body(self) -> None:
+        slack_body = "Synthetic" + "Slack12345"
+        google_body = "Synthetic" + "Google" + "Q" * 20
+        for first, collision, body in (
+            ("ghp_" + "A" * 250, "xoxoxb-", slack_body),
+            ("ghp_" + "A" * 249, "xoxapp-", slack_body),
+            ("sk-" + "A" * 174, "AKIAIza", google_body),
+        ):
+            for clean in (
+                records.redact_secrets,
+                lambda text: records.safe_text(text, 10_000),
+                lambda text: records.redact_clip(text, 10_000),
+                records.mask_prose,
+            ):
+                with self.subTest(collision=collision, clean=clean):
+                    shown = clean(first + collision + body)
+                    self.assertNotIn(body, shown)
+                    self.assertNotIn("A" * 32, shown)
+
+    def test_url_passwords_crossing_a_capped_value_stay_private(self) -> None:
+        password = "Synthetic" + "Url123"
+        for cue, lengths in (
+            ("TOKEN=", (400, 505, 506, 512)),
+            ("default password ", (400, 505, 506, 512)),
+            ("?sig=", (2000, 2041, 2042, 2048)),
+        ):
+            for length in lengths:
+                for clean in (
+                    records.redact_secrets,
+                    lambda text: records.safe_text(text, 10_000),
+                    lambda text: records.redact_clip(text, 10_000),
+                    records.mask_prose,
+                ):
+                    with self.subTest(cue=cue, length=length, clean=clean):
+                        raw = cue + "A" * length + "https://alice:" + password + "@example.com"
+                        shown = clean(raw)
+                        self.assertNotIn(password, shown)
+                        self.assertIn("REDACTED", shown)
+
+    def test_an_aws_secret_after_a_capped_github_token_stays_private(self) -> None:
+        body = "Q" * 40
+        raw = "github_pat_" + "A" * 75 + "aws_secret_access_key=" + body
+        for clean in (
+            records.redact_secrets,
+            lambda text: records.safe_text(text, 10_000),
+            lambda text: records.redact_clip(text, 10_000),
+            records.mask_prose,
+        ):
+            with self.subTest(clean=clean):
+                self.assertNotIn(body, clean(raw))
+
+    def test_merging_an_enclosing_assignment_hides_the_key_in_its_name_too(self) -> None:
+        value = "Synthetic" + "Value123"
+        for prefix, body in (("AKIA", "Q" * 16), ("ASIA", "R" * 16), ("AIza", "S" * 35)):
+            for formatting in ("", "<wbr>" * 20, "\u200b" * 20):
+                raw = "SERVICE_" + formatting + prefix + body + "_TOKEN=" + value
+                for clean in (
+                    records.redact_secrets,
+                    lambda text: records.safe_text(text, 10_000),
+                    lambda text: records.redact_clip(text, 10_000),
+                    records.mask_prose,
+                ):
+                    with self.subTest(prefix=prefix, formatting=formatting, clean=clean):
+                        shown = clean(raw)
+                        self.assertNotIn(body, shown)
+                        self.assertNotIn(value, shown)
+                        self.assertTrue(shown.startswith("SERVICE_"))
+
+    def test_a_second_assignment_crossing_the_first_value_cap_stays_private(self) -> None:
+        value = "Synthetic" + "Value123"
+        raw = "TOKEN=" + "A" * 505 + "/PASSWORD=" + value
+        for clean in (
+            records.redact_secrets,
+            lambda text: records.safe_text(text, 10_000),
+            lambda text: records.redact_clip(text, 10_000),
+            records.mask_prose,
+        ):
+            with self.subTest(clean=clean):
+                self.assertNotIn(value, clean(raw))
 
     def test_a_rejected_span_does_not_shield_a_later_credential(self) -> None:
         # A rejected identifier must not stop the scan before a later credential.
@@ -3565,6 +3683,56 @@ class HiddenCredentialTimeTest(unittest.TestCase):
         self.assertNotIn(body, shown)
         self.assertIn("ghp_…REDACTED", shown)
         self.assertLess(elapsed, 4.0)
+
+    def test_repeated_pem_headers_are_hidden_within_four_cpu_seconds_and_scale_linearly(
+        self,
+    ) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        elapsed = []
+        for count in (32_000, 64_000):
+            # 1.15 MB then 2.30 MB; doubling may cost at most 3x plus 0.1 CPU seconds.
+            raw = "-----BEGIN PRIVATE KEY----------END " * count + "-----"
+            started = time.process_time()
+            shown = records.redact_secrets(raw)
+            elapsed.append(time.process_time() - started)
+            self.assertEqual("-----BEGIN …REDACTED", shown)
+        self.assertLess(elapsed[1], 4.0)
+        self.assertLess(elapsed[1], elapsed[0] * 3 + 0.1)
+
+    def test_credentials_inside_long_preserved_words_and_prose_scale_linearly(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        credential = "ghp_" + "Q" * 36
+        for kind in ("assignment name", "authorization prose"):
+            with self.subTest(kind=kind):
+                elapsed = []
+                for count in (1_000, 2_000):
+                    if kind == "assignment name":
+                        raw = (
+                            "A" * (40 * count)
+                            + "_"
+                            + credential * count
+                            + "_TOKEN="
+                            + "Synthetic"
+                            + "Value123"
+                        )
+                    else:
+                        raw = (
+                            "Authorization: "
+                            + "Z" * 24
+                            + ' "hello '
+                            + (credential + " hello ") * count
+                            + '"'
+                        )
+                    started = time.process_time()
+                    shown = records.redact_secrets(raw)
+                    elapsed.append(time.process_time() - started)
+                    self.assertNotIn("Q" * 36, shown)
+                # At most 160 KB; each view has a four-CPU-second bound, and doubling
+                # must stay below 3x plus 0.1 CPU seconds (quadratic was 4x).
+                self.assertLess(elapsed[1], 4.0)
+                self.assertLess(elapsed[1], elapsed[0] * 3 + 0.1)
 
     def test_pathological_inputs_stay_linear(self) -> None:
         # Each of these is a shape that would turn a per-opener scan quadratic: unclosed comment

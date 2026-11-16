@@ -386,6 +386,30 @@ _PREFIX_SECRET_RE: Final = re.compile(
         if anchored or name == "pem"
     )
 )
+# Prefixes have bounded bodies; their openers may overlap. PEM keeps its
+# ordinary non-overlapping stream: reparsing its unbounded closing line at each
+# nested header cost 16.7 CPU seconds on 2.30 MB of repeated headers.
+_OVERLAP_PREFIX_RE: Final = re.compile(
+    "|".join(f"(?P<{name}>{pattern})" for name, _, anchored, pattern in _SECRET_SHAPES if anchored)
+)
+# Header alternatives share precedence: the bare-header fallback must not
+# reinterpret a scheme that the complete header grammar has already admitted.
+_CAPPED_CONTEXT_NAMES: Final = frozenset({"aws_secret", "netrc", "querysig", "cued"})
+_AUTH_SECRET_NAMES: Final = frozenset({"authorization", "authbare", "authencoded", "authscheme"})
+_OVERLAP_CONTEXT_RES: Final = (
+    re.compile(
+        "|".join(
+            f"(?P<{name}>{pattern})"
+            for name, _, _, pattern in _SECRET_SHAPES
+            if name in _AUTH_SECRET_NAMES
+        )
+    ),
+    *(
+        re.compile(f"(?P<{name}>{pattern})")
+        for name, _, anchored, pattern in _SECRET_SHAPES
+        if not anchored and name not in _AUTH_SECRET_NAMES
+    ),
+)
 _TOKEN_CHARS: Final = frozenset(string.ascii_letters + string.digits + "_-")
 
 # A cued shape keeps everything but the last N characters of its match, because
@@ -476,8 +500,9 @@ _SECRET_OPENERS: Final = (
     "-----BEGIN ",
     "ya29.",
 )
-_SECRET_OPENER_RE: Final = re.compile("|".join(re.escape(value) for value in _SECRET_OPENERS))
-_SECRET_MAX_OPENER: Final = max(map(len, _SECRET_OPENERS))
+_SECRET_OPENER_RE: Final = re.compile(
+    "(?=" + "|".join(re.escape(value) for value in _SECRET_OPENERS) + ")"
+)
 _SECRET_HINTS: Final = (
     *_SECRET_OPENERS,
     # A pre-signed URL's signature parameter, in the spellings the vendors use.
@@ -682,16 +707,15 @@ def _mark_secret(match: re.Match[str]) -> str | None:
     anchored = name in _SECRET_ANCHORED and (unambiguous is None or len(body) < unambiguous)
     previous = match.string[match.start() - 1] if match.start() else ""
     if anchored and previous and previous in _TOKEN_CHARS:
-        # Only relax baseline rejections at letter/digit/underscore leads.
-        # Hyphens retain their baseline meaning, and accepted matches never
-        # encounter the stricter evidence or identifier checks below.
+        # Complete Google keys admit hyphens too; the other families retain
+        # their existing hyphen boundary and glued-identifier safeguards.
         payload = body[_SECRET_KEEP[name] :]
         evidence = bool(_SECRET_CHARACTER_EVIDENCE.search(payload))
         if name == "openai":
             evidence = bool(_OPENROUTER_BODY.fullmatch(payload)) or (
                 evidence and not _OPENAI_GLUED_IDENTIFIER.fullmatch(payload)
             )
-        if previous == "-" or not (name in _SECRET_DISTINCTIVE or evidence):
+        if (previous == "-" and name != "google") or not (name in _SECRET_DISTINCTIVE or evidence):
             return None
     if name == "cued":
         if not _cued_value_is_secret(match):
@@ -764,29 +788,42 @@ def _redact_scan(text: str) -> str:
     return _write_marked(text, _secret_matches(text))
 
 
-def _secret_matches(text: str) -> list[tuple[int, int, str]]:
-    """`_redact_scan`'s accepted matches, as (start, end, marked replacement), left to right."""
-    found: list[tuple[int, int, str]] = []
-    pos = 0
-    while (match := _SECRET_RE.search(text, pos)) is not None:
-        marked = _mark_secret(match)
-        if marked is None:
-            # A rejected identifier can enclose an admitted credential prefix.
-            pos = match.start() + 1
-            continue
-        found.append((match.start(), match.end(), marked))
-        # A capped body can consume the next credential's prefix. Look inside
-        # accepted spans as well, but only at literal openers, with bounded
-        # prefixed patterns rather than rescanning unbounded cue/value shapes.
-        for opener in _SECRET_OPENER_RE.finditer(
-            text, match.start() + 1, match.end() + _SECRET_MAX_OPENER - 1
-        ):
-            if opener.start() >= match.end():
-                break
-            nested = _PREFIX_SECRET_RE.match(text, opener.start())
-            if nested is not None and (replacement := _mark_secret(nested)) is not None:
-                found.append((nested.start(), nested.end(), replacement))
-        pos = match.end()
+class _SecretSpan(NamedTuple):
+    first: int
+    last: int
+    head: str
+    tail: str
+    body_first: int
+    body_last: int
+
+
+def _secret_span(first: int, last: int, marked: str) -> _SecretSpan:
+    head = marked[: marked.index(_SECRET_MARKER)]
+    tail = marked[marked.rindex(_SECRET_MARKER) + len(_SECRET_MARKER) :]
+    return _SecretSpan(first, last, head, tail, first + len(head), last - len(tail))
+
+
+def _secret_matches(text: str) -> list[_SecretSpan]:
+    """Accepted full and masked-body spans, merged by `_write_marked`."""
+    found: list[_SecretSpan] = []
+    for opener in _SECRET_OPENER_RE.finditer(text):
+        nested = _OVERLAP_PREFIX_RE.match(text, opener.start())
+        if nested is not None and (replacement := _mark_secret(nested)) is not None:
+            found.append(_secret_span(nested.start(), nested.end(), replacement))
+    # Independent streams retain a cue enclosing a prefix and non-prefix
+    # credentials crossing another shape's cap. Restart rejected candidates as
+    # before, while accepted unbounded spans are traversed only once per shape.
+    for pattern in _OVERLAP_CONTEXT_RES:
+        pos = 0
+        while (match := pattern.search(text, pos)) is not None:
+            marked = _mark_secret(match)
+            if marked is not None:
+                found.append(_secret_span(match.start(), match.end(), marked))
+            pos = (
+                match.end()
+                if marked is not None and match.lastgroup not in _CAPPED_CONTEXT_NAMES
+                else match.start() + 1
+            )
     return found
 
 
@@ -856,28 +893,36 @@ def _view(text: str, spans: list[tuple[int, int]]) -> tuple[str, list[int], list
     return "".join(parts), cuts, removed
 
 
-def _write_marked(text: str, found: list[tuple[int, int, str]]) -> str:
-    """`text` with each (start, end, marked) replacement written in, overlaps merged."""
-    found.sort()
-    # Overlapping matches become one: the first one's words before its marker, the
-    # furthest-reaching one's words after. `index` and `rindex` find the inserted marker even
-    # when the text already held one; a wrong split drops words, never a credential.
-    merged: list[list[Any]] = []
-    for start, end, marked in found:
-        if merged and start < merged[-1][1]:
-            group = merged[-1]
-            if end > group[1]:
-                group[1] = end
-                group[3] = marked[marked.rindex(_SECRET_MARKER) + len(_SECRET_MARKER) :]
+def _write_marked(text: str, found: list[_SecretSpan]) -> str:
+    """Replace overlapping matches without restoring a body from another match's head or tail."""
+    found.sort(key=lambda span: (span.first, span.last))
+    # Track the outermost masked body coordinates, not copies of the preserved
+    # text. A cue name or authorization tail can be unbounded; comparing its
+    # unchanged words at every nested key made aggregate merge work quadratic.
+    merged: list[tuple[int, int, _SecretSpan, _SecretSpan]] = []
+    for span in found:
+        if merged and span.first < merged[-1][1]:
+            first, last, left, right = merged[-1]
+            if span.body_first < left.body_first:
+                left = span
+            if span.body_last > right.body_last:
+                right = span
+            merged[-1] = (first, max(last, span.last), left, right)
         else:
-            head = marked[: marked.index(_SECRET_MARKER)]
-            tail = marked[marked.rindex(_SECRET_MARKER) + len(_SECRET_MARKER) :]
-            merged.append([start, end, head, tail])
+            merged.append((span.first, span.last, span, span))
     out: list[str] = []
     cursor = 0
-    for start, end, head, tail in merged:
-        out.extend((text[cursor:start], head, _SECRET_MARKER, tail))
-        cursor = end
+    for _, last, left, right in merged:
+        out.extend(
+            (
+                text[cursor : left.first],
+                left.head,
+                _SECRET_MARKER,
+                right.tail,
+                text[right.last : last],
+            )
+        )
+        cursor = last
     out.append(text[cursor:])
     return "".join(out)
 
@@ -906,14 +951,27 @@ def _redact_inline_markup(text: str) -> str:
     if not _needs_secret_scan(plain):
         return text
 
-    def original(first: int, last: int, marked: str) -> tuple[int, int, str]:
-        start_cut = bisect_right(cuts, first)
-        end_cut = bisect_left(cuts, last)
-        start = first + (removed[start_cut - 1] if start_cut else 0)
-        end = last + (removed[end_cut - 1] if end_cut else 0)
-        return start, end, marked
+    def original(span: _SecretSpan) -> _SecretSpan:
+        def start(first: int) -> int:
+            cut = bisect_right(cuts, first)
+            return first + (removed[cut - 1] if cut else 0)
 
-    found = [original(*match) for match in _secret_matches(plain)]
+        def end(last: int) -> int:
+            cut = bisect_left(cuts, last)
+            return last + (removed[cut - 1] if cut else 0)
+
+        # Body coordinates need their own mapping: formatting removed inside
+        # a kept prefix or tail changes their distance from the full span ends.
+        return _SecretSpan(
+            start(span.first),
+            end(span.last),
+            span.head,
+            span.tail,
+            start(span.body_first),
+            end(span.body_last),
+        )
+
+    found = [original(match) for match in _secret_matches(plain)]
     # Also from just after each removed span. There the view joins a key to the word or key in
     # front of it, and a key's capped body can run on into the next key's prefix.
     # Matched on a slice, because the lookbehinds read the characters in
@@ -924,18 +982,20 @@ def _redact_inline_markup(text: str) -> str:
     for cut in cuts:
         if plain.startswith(_SECRET_OPENERS, cut):
             piece = plain[cut : cut + _CUT_MATCH_CHARS]
-            matcher = _PREFIX_SECRET_RE
-            match = matcher.match(piece)
-            # A cued name can start with a token prefix (AKIA_ACCESS_KEY).
-            # Its delimiter is necessary, so this C substring check skips no
-            # candidate while avoiding a regex rescan of long rejected names.
-            if match is None and ("=" in piece or ":" in piece):
-                matcher = _SECRET_RE
+            # Prefix-shaped cue names need both candidates, even when the
+            # prefix matches. Without a delimiter no contextual shape can open
+            # here; avoiding that rescan keeps the million-hidden-prefix bound.
+            matchers: tuple[re.Pattern[str], ...] = (_PREFIX_SECRET_RE,)
+            if "=" in piece or ":" in piece:
+                matchers += _OVERLAP_CONTEXT_RES
+            for matcher in matchers:
                 match = matcher.match(piece)
-            if match is not None and match.end() == _CUT_MATCH_CHARS:
-                match = matcher.match(plain[cut : cut + _CUT_MATCH_LONGEST])
-            if match is not None and (marked := _mark_secret(match)) is not None:
-                found.append(original(cut + match.start(), cut + match.end(), marked))
+                if match is not None and match.end() == _CUT_MATCH_CHARS:
+                    match = matcher.match(plain[cut : cut + _CUT_MATCH_LONGEST])
+                if match is not None and (marked := _mark_secret(match)) is not None:
+                    found.append(
+                        original(_secret_span(cut + match.start(), cut + match.end(), marked))
+                    )
     if not found:
         return text
     # The raw text's own matches, beside the view's. Written back alone, a view match that ran
