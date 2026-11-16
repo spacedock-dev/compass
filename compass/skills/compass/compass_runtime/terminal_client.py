@@ -47,6 +47,10 @@ DEFAULT_PORT = 4553
 # person runs.
 MAX_CANDIDATES: Final = 8
 HEALTH_TIMEOUT_SEC: Final = 1.0
+# A dashboard this command starts gets this long to start, then a probe of each candidate port
+# with the longer timeout below. The Live monitor's command-lock wait adds both.
+START_TIMEOUT_SEC: Final = 30.0
+STARTED_PROBE_SEC: Final = 2.0
 REQUEST_TIMEOUT_SEC: Final = 5.0
 # On 2026-11-07, a cold list of 3,700+ sessions took 4.8 s and the first client read
 # hit the five-second limit. Allow collection time while keeping a whole-exchange bound.
@@ -976,7 +980,7 @@ def version_guard(
 def start_daemon(
     port: int,
     *,
-    timeout: float = 30.0,
+    timeout: float = START_TIMEOUT_SEC,
     no_update_check: bool = False,
     server_options: ServerOptions | None = None,
 ) -> Refusal | None:
@@ -1080,7 +1084,7 @@ def ensure_dashboard(  # noqa: PLR0913 — explicit startup policy, never ambien
         refused = launch(DEFAULT_PORT if port is None else port)
         if isinstance(refused, Refusal):
             return refused
-        found = find_dashboard(home, port=port, timeout=2.0)
+        found = find_dashboard(home, port=port, timeout=STARTED_PROBE_SEC)
         if found is None:
             return Refusal(sentence("start_failed_in_session" if in_session else "start_failed"))
         if isinstance(found, Dashboard):
