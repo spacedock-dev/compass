@@ -1,3 +1,4 @@
+import { nativeSession } from './native';
 import { nextNumber } from '../api/bootstrap';
 import { locationWarnings, rowLocationNote } from './location';
 import {
@@ -164,11 +165,11 @@ export function observe(input: unknown): Observed {
   sessions.forEach((session, index) => {
     // A waiting session has one primary category; its risk evidence stays on the session.
     if (session.isNeeds || session.askKnown) return;
-    const source = sources[index] as Row;
+    const source = nativeSession(sources[index] as Row);
     const finished = (nextNumber(source['finished_at']) ?? 0) > 0;
     const attributed =
       !session.isEnded &&
-      ((finished && (session.isWorking || source['active'] === true)) ||
+      ((finished && (source['state'] === 'working' || source['active'] === true)) ||
         (!finished &&
           (typeof source['dirty'] === 'boolean' || Number.isInteger(source['changed']))));
     const outcomeKnown = session.outcomeKnown;
@@ -192,7 +193,12 @@ export function observe(input: unknown): Observed {
       );
     } else if (session.stuckKnown) {
       risks.push(sessionRisk(session, 'loop', 'Stuck signal', session.stuckText));
-    } else if (session.isWorking && isRecord(source['turn']) && source['turn']['long'] === true) {
+    } else if (
+      !session.isEnded &&
+      source['state'] === 'working' &&
+      isRecord(source['turn']) &&
+      source['turn']['long'] === true
+    ) {
       risks.push(sessionRisk(session, 'long-turn', 'Long working turn', session.turnText));
     } else {
       const delegated = delegatedWork(source, generated);
@@ -270,7 +276,8 @@ export function observe(input: unknown): Observed {
       !needKeys.has(sessionKey(session)) &&
       !riskKeys.has(sessionKey(session)) &&
       (session.isEnded ||
-        (session.isQuiet && (nextNumber((sources[index] as Row)['finished_at']) ?? 0) > 0)),
+        (nativeSession(sources[index] as Row)['state'] === 'idle' &&
+          (nextNumber((sources[index] as Row)['finished_at']) ?? 0) > 0)),
   );
   const subjectKeys = new Set([...needs, ...atRisk, ...close].map(sessionKey));
   const other = sessions.filter((session) => !subjectKeys.has(sessionKey(session)));

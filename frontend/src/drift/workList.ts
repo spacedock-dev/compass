@@ -1,3 +1,4 @@
+import { nativeSession } from '../observed/native';
 import { nextNumber } from '../api/bootstrap';
 import {
   conflictCandidates,
@@ -402,6 +403,7 @@ export function lastTurn(
   session: Row,
   entries: readonly WorkEntry[],
 ): { readonly from: number; readonly to: number } | null {
+  session = nativeSession(session);
   if (!READING_TURN_STOP_HARNESSES.includes(String(session['harness'] || ''))) return null;
   if (endedAt(session) !== null) return null;
   const found = sessionStop(session);

@@ -1,3 +1,4 @@
+import { nativeSession } from '../observed/native';
 /* The semantic model the timeline reads, and the lane registry and event selection it derives from it.
 
    THIS FILE IS THE ONE ADAPTER between the project context payload (`GET /api/project-context`, its
@@ -495,7 +496,7 @@ export interface RegistryInput {
 export function buildRegistry(input: RegistryInput): Registry {
   const { model } = input;
   const delegations = input.delegations ?? [];
-  const focus = input.focus ?? null;
+  const focus = input.focus ? nativeSession(input.focus) : null;
   const { facts, workItems: items, heads, relations } = model;
 
   const namedOrigins = (input.origins?.length ?? 0) > 0;

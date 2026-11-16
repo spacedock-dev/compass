@@ -67,6 +67,16 @@ normalize before their field projections discard the snapshot. Native active idl
 remain active: inventing `active=False` changed observer membership. A declaration cannot change
 reading scope or facts, footer inputs, or buy an automatic model call.
 
+The browser's `observed/native.ts` owns the matching `nativeSession` projection. Reading pills,
+Analyze hints, last-turn bounds, completion facts, footer token scope, attention signals, checkout
+concurrency warnings, idle-owner recommendations, notification edges and workstream evidence read
+the native view. Project slots normalize before narrowing focus to identity and state; the timeline
+also normalizes a full focus row before deciding whether final output is a result. Display state
+still owns row badges, active/history grouping, filters, navigation, state counts and the current
+activity line. A held parent keeps its Waiting on child presentation beside its unchanged reading.
+Real-server native/held recordings hold browser/Python parity, and a Storybook press applies the
+hold while preserving the reading wording and the final result on Decisions.
+
 ## Group storage and model isolation
 
 Keep group on the annotation entry, outside intent revisions. A group-only record has no

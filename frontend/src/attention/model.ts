@@ -6,6 +6,7 @@ import {
   exactAskOwner,
   gapNames,
   isRecord,
+  nativeSession,
   payloadAskRows,
   payloadSessionRows,
   sessionKey,
@@ -359,6 +360,7 @@ function loopSignal(session: Row, sourceIndex: number): Signal | null {
 }
 
 function longTurnSignal(session: Row, sourceIndex: number): Signal | null {
+  session = nativeSession(session);
   const turn = session['turn'];
   if (session['state'] === 'working' && isRecord(turn) && turn['long'] === true) {
     return { kind: 'long-turn', section: 'risk', sourceIndex, detail: { session } };
@@ -467,6 +469,7 @@ function quotaSignalCompare(left: Signal, right: Signal): number {
 }
 
 function attributionSignal(session: Row, sourceIndex: number): Signal | null {
+  session = nativeSession(session);
   const finishedAt = nextNumber(session['finished_at']);
   const validFinishedAt = finishedAt !== null && finishedAt > 0;
   const publishedGit =
@@ -490,6 +493,7 @@ function attributionSignal(session: Row, sourceIndex: number): Signal | null {
 }
 
 function stopSignal(session: Row, sourceIndex: number): Signal | null {
+  session = nativeSession(session);
   const ended = endedAt(session);
   const finishedAt = session['finished_at'];
   const finished = typeof finishedAt === 'number' && Number.isFinite(finishedAt) && finishedAt > 0;

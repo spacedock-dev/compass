@@ -150,7 +150,7 @@ function CommandSurface({
     : observed.isEnded
       ? 'session ended'
       : observed.state;
-  const turnEnd = turnEndedSentence(session, generated);
+  const turnEnd = session['waiting_on_child'] ? null : turnEndedSentence(session, generated);
   return (
     <div className="next-session-command-surface" aria-label="Session command surface">
       <Card

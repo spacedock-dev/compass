@@ -1,3 +1,4 @@
+import { nativeSession } from '../observed/native';
 import { ageSeconds } from '../observed/values';
 import { formatDuration } from '../shell/format';
 import { humanLabel, scopeLabel, sessKey, workingSessions, type ProjectGroup } from './group';
@@ -386,8 +387,9 @@ export function commandAttention(env: RecoveryEnv): AttentionItem[] {
     );
   }
 
-  const idle = env.group.sessions.filter((session) => session['state'] === 'idle');
-  const stale = env.group.sessions.filter((session) => {
+  const native = env.group.sessions.map(nativeSession);
+  const idle = native.filter((session) => session['state'] === 'idle');
+  const stale = native.filter((session) => {
     const seconds = age(env, session['last_activity']);
     return session['state'] !== 'idle' && seconds !== null && seconds >= PROJECT_STALLED_SEC;
   });

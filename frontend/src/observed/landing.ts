@@ -1,3 +1,4 @@
+import { nativeSession } from './native';
 import { nextNumber } from '../api/bootstrap';
 import {
   clock,
@@ -105,6 +106,7 @@ export function sessionStop(source: Row | null | undefined): SessionStop | null 
 /* Exec can resume. Only its standing rollout stop supports a finished-run reading; a hook alone
    does not establish it, and this never supplies the session end that final readings require. */
 export function finishedRunAt(source: Row): number | null {
+  source = nativeSession(source);
   if (
     source['harness'] !== 'codex' ||
     source['headless'] !== true ||
@@ -139,6 +141,7 @@ export function landingOf(
   ended: boolean,
   stopped: SessionStop | boolean | null,
 ): Landing {
+  source = nativeSession(source);
   const idle = source['state'] === 'idle';
   const endKind: EndKind = ended
     ? 'session-end'
@@ -198,6 +201,7 @@ export function landingOf(
    stop or end is read the same way up to its last recorded entry (owner, 2026-10-20, and 2026-11-02 for
    Codex), and says that too. */
 export function readHint(source: Row): string {
+  source = nativeSession(source);
   const ended = endedAt(source) !== null;
   const stopped = source['state'] === 'idle' ? sessionStop(source) : null;
   const kind = landingOf(source, ended, stopped).endKind;

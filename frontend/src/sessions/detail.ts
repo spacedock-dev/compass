@@ -7,6 +7,7 @@ import {
   finishedRunAt,
   gapNames,
   isRecord,
+  nativeSession,
   isScanOnly,
   payloadAskRows,
   records,
@@ -61,6 +62,7 @@ export function detailState(
 /* A standing exec stop names a finished run; an interactive hook stop keeps the waiting sentence.
    Neither supplies a session end. Only idle, unended rows qualify, so resumed work retires the reading. */
 export function turnEndedSentence(session: Row, generated: number | null = null): string | null {
+  session = nativeSession(session);
   if (session['state'] !== 'idle' || endedAt(session) !== null) return null;
   const runFinish = finishedRunAt(session);
   if (runFinish !== null) {
@@ -90,10 +92,10 @@ export function sessionMeta(
   if (ended !== null) {
     parts.push(`ended ${ended} ago`);
   } else {
-    const turnEnd = turnEndedSentence(session, generated);
+    const turnEnd = session['waiting_on_child'] ? null : turnEndedSentence(session, generated);
     if (turnEnd) parts.push(turnEnd);
     else if (session['state_detail']) parts.push(String(session['state_detail']));
-    const state = session['state'];
+    const state = nativeSession(session)['state'];
     if (state === 'needs_input') {
       const blocked = durationSince(generated, session['blocked_since']);
       if (blocked !== null) parts.push(`blocked ${blocked}`);
@@ -370,6 +372,7 @@ export interface Footer {
 /* The turn's tokens while it runs, the session's otherwise, and the other where the preferred one was not
    published. Nothing where neither was: a zero would be a default and not a count. */
 export function sessionFooter(session: Row): Footer | null {
+  session = nativeSession(session);
   const sessionTotal = nextNumber(session['session_output_tokens']);
   const turnTotal = nextNumber(session['turn_output_tokens']);
   let source: 'turn' | 'session' = session['state'] === 'working' ? 'turn' : 'session';

@@ -52,3 +52,5 @@ export {
   type Pair,
   type Row,
 } from './values';
+
+export { nativeSession } from './native';

@@ -188,6 +188,20 @@
     },
     {
       "method": "GET",
+      "name": "context-focused-drift-completed",
+      "route": "/api/project-context",
+      "sha256": "34cedca5a161cb376d0f64bc126f4f0461ce85f33418301fb2edc0c40f9e7533",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "context-focused-drift-held",
+      "route": "/api/project-context",
+      "sha256": "45fa652e27c470eeeec2f74257a2d8e4b6d9d6bd2e432624032c0279c8438aca",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "name": "context-focused-drift-inaccurate",
       "route": "/api/project-context",
       "sha256": "d94cb076733c9587290b62f135b57c2874b345f7648b160047cde4b6334e334a",
@@ -366,6 +380,20 @@
       "name": "data-focused-drift",
       "route": "/api/data",
       "sha256": "660035c733d08b5779627e9f41c189b862241bc9683952645b736200ad938d2a",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-focused-drift-completed",
+      "route": "/api/data",
+      "sha256": "c4970e6e43e18ab018450dda3616fb37f0c14652f63724fe4acb79c6c6af964c",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-focused-drift-held",
+      "route": "/api/data",
+      "sha256": "bf634522e0edf3afad23d1219d2fed0ffe83e7d8169f6268dfb512e0f556228f",
       "status": 200
     },
     {
