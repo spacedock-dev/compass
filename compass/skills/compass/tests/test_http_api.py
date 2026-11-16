@@ -4323,16 +4323,23 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
                 *,
                 interaction_prototype: Any = None,
                 injected_page_bytes: bytes | None = None,
+                bind_and_activate: bool = True,
             ) -> None:
                 # The coordinator and optional page ride along with the address
                 # and required page. Accepted and ignored here: this test
                 # characterizes the bind address and the required page bytes,
                 # and a double that refused either would fail for an unrelated
                 # reason.
-                del interaction_prototype
+                del interaction_prototype, bind_and_activate
                 captured_addresses.append(address)
                 captured_raw_pages.append(page_bytes)
                 captured_pages.append(injected_page_bytes or page_bytes)
+
+            def server_bind(self) -> None:
+                pass
+
+            def server_activate(self) -> None:
+                pass
 
             def serve_forever(self) -> None:
                 raise StopServingError

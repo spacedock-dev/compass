@@ -372,6 +372,7 @@ class CompassHTTPServer(ThreadingHTTPServer):
         *,
         interaction_prototype: InteractionPrototype | None = None,
         injected_page_bytes: bytes | None = None,
+        bind_and_activate: bool = True,
     ) -> None:
         self.application = application
         # Authentication material only; pages and transcript bytes are never cached.
@@ -397,7 +398,7 @@ class CompassHTTPServer(ThreadingHTTPServer):
         self.bound_host = address[0]
         self.connection_slots = threading.BoundedSemaphore(self.CONNECTION_LIMIT)
         self.interaction_stream_slots = threading.BoundedSemaphore(self.INTERACTION_STREAM_LIMIT)
-        super().__init__(address, _RequestHandler)
+        super().__init__(address, _RequestHandler, bind_and_activate=bind_and_activate)
 
     def process_request(self, request: Any, client_address: Any) -> None:
         # Refused on the accept thread rather than queued: a waiting connection would hold

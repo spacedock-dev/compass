@@ -523,7 +523,9 @@ class CleanupRefusesDashboardStartupTest(support.RuntimeTestCase):
             contextlib.redirect_stdout(io.StringIO()) as output,
         ):
             self.assertEqual("held", held)
-            server = mock.Mock(spec=["serve_forever", "server_close"])
+            server = mock.Mock(
+                spec=["serve_forever", "server_close", "server_bind", "server_activate"]
+            )
             server.serve_forever.side_effect = AssertionError("served during cleanup")
             build.return_value = server
             self.assertEqual(1, cli.main(["--port", "9554", "--no-events"]))
@@ -550,7 +552,9 @@ class CleanupRefusesDashboardStartupTest(support.RuntimeTestCase):
                 mock.patch.object(update_check, "print_startup_hint"),
                 contextlib.redirect_stdout(io.StringIO()) as output,
             ):
-                server = mock.Mock(spec=["serve_forever", "server_close"])
+                server = mock.Mock(
+                    spec=["serve_forever", "server_close", "server_bind", "server_activate"]
+                )
                 build.return_value = server
                 self.assertEqual(1, cli.main(["--port", "9554", "--no-events"]))
                 self.assertIn("lifecycle lock", output.getvalue())
@@ -572,8 +576,12 @@ class CleanupRefusesDashboardStartupTest(support.RuntimeTestCase):
             mock.patch.object(update_check, "print_startup_hint"),
             contextlib.redirect_stdout(io.StringIO()),
         ):
-            refused = mock.Mock(spec=["serve_forever", "server_close"])
-            retried = mock.Mock(spec=["serve_forever", "server_close"])
+            refused = mock.Mock(
+                spec=["serve_forever", "server_close", "server_bind", "server_activate"]
+            )
+            retried = mock.Mock(
+                spec=["serve_forever", "server_close", "server_bind", "server_activate"]
+            )
             build.side_effect = [refused, retried]
             with runtime_io.held_file_lock(Path(tmp, "compass-lifecycle.lock"), wait=0) as held:
                 self.assertEqual("held", held)
@@ -622,16 +630,18 @@ class CompassServerTest(support.RuntimeTestCase):
             Path(lifecycle.state_path(cfg(), 4553)).write_text("[1,2]", encoding="utf-8")
             self.assertIsNone(lifecycle.read_state(cfg(), 4553))
 
-    def test_write_state_reports_and_survives_an_unwritable_home(self) -> None:
-        # A dashboard that cannot write its state file still serves; --status
-        # just cannot see it. This must never be fatal.
+    def test_a_dashboard_refuses_a_state_folder_it_cannot_write(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             blocker = os.path.join(tmp, "home")
             Path(blocker).write_text("not a directory", encoding="utf-8")
-            with mock.patch.dict(os.environ, {"COMPASS_HOME": blocker}):
-                with mock.patch.object(runtime_io, "diag") as diag:
-                    lifecycle.write_state(cfg(), 4553, started=SERVER_STARTED)
-                self.assertTrue(diag.called)
+            with (
+                mock.patch.dict(os.environ, {"COMPASS_HOME": blocker}),
+                self.assertRaisesRegex(
+                    lifecycle.StateOwnershipError, "NotADirectoryError"
+                ) as caught,
+            ):
+                lifecycle.write_state(cfg(), 4553, started=SERVER_STARTED)
+            self.assertIn(blocker, str(caught.exception))
 
     def test_probe_port_classifies_compass_foreign_and_closed(self) -> None:
         httpd = make_server()
@@ -1345,8 +1355,8 @@ class CompassServerTest(support.RuntimeTestCase):
     def test_daemon_explains_a_home_it_cannot_create_instead_of_tracebacking(self) -> None:
         # COMPASS_HOME is user-facing in README, SKILL.md, SECURITY.md and
         # COMPATIBILITY.md, so pointing it somewhere unusable is an ordinary
-        # mistake. write_state() already degrades for a foreground run; without
-        # this guard only --daemon crashed, and with a raw traceback.
+        # mistake. Report this before detaching so the launching terminal sees
+        # why no daemon can start, rather than a raw traceback in its log.
         with tempfile.TemporaryDirectory() as tmp:
             not_a_dir = os.path.join(tmp, "occupied")
             Path(not_a_dir).write_text("", encoding="utf-8")
@@ -1652,7 +1662,7 @@ class DaemonLifecycleTest(unittest.TestCase):
                 self._run(*flags, "--stop", env=env)
 
     def test_a_busy_port_still_explains_itself_under_daemon(self) -> None:
-        """D-1's promise: binding happens before detaching, so this message
+        """The daemon's readiness wait must carry a bind refusal back, so this message
         reaches the terminal that asked for it and not just a log file."""
         httpd = make_server()
         # Closes the listener when the loop exits, so the reaping --stop below

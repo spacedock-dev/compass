@@ -9,6 +9,7 @@ import io
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -18,7 +19,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest import mock
 
-from compass_runtime import cli, lifecycle, terminal_client, terminal_monitor
+from compass_runtime import (
+    cli,
+    declared_parent_store,
+    http_api,
+    lifecycle,
+    observer,
+    terminal_client,
+    terminal_monitor,
+    update_check,
+)
 from compass_runtime import io as runtime_io
 
 from .support import SERVER_PATH, cfg, make_server
@@ -29,6 +39,237 @@ if TYPE_CHECKING:
 
 LOCAL = {"machine": "machine-a", "boot": "boot-a", "network": "net-a", "process": "pid-a"}
 REMOTE = {**LOCAL, "network": "net-b", "process": "pid-b"}
+
+
+class FailedPublicationTest(unittest.TestCase):
+    # Refusing the primary write must happen before bind, recovery or observation.
+    def test_an_unrecorded_dashboard_refuses_before_binding_or_changing_stores(self) -> None:
+        for switches in ([], ["--no-events"]):
+            with (
+                self.subTest(switches=switches),
+                tempfile.TemporaryDirectory() as home,
+                mock.patch.dict(os.environ, {"COMPASS_HOME": home}),
+            ):
+                port = closed_port()
+                store = Path(home, "compass-history.json")
+                store.write_bytes(b"private history")
+                attempts: list[str] = []
+                publish = runtime_io.atomic_write_owner_only
+
+                def fail_state(
+                    target: str,
+                    content: bytes | str,
+                    *,
+                    chosen_port: int = port,
+                    writes: list[str] = attempts,
+                    atomic: Callable[..., None] = publish,
+                    **kwargs: object,
+                ) -> None:
+                    if target == str(Path(home, f"compass-{chosen_port}.json")):
+                        writes.append(target)
+                        raise PermissionError("state denied")
+                    atomic(target, content, **kwargs)
+
+                with (
+                    mock.patch.object(
+                        runtime_io, "atomic_write_owner_only", side_effect=fail_state
+                    ),
+                    mock.patch.object(
+                        socket.socket, "bind", side_effect=OSError("bind was reached")
+                    ) as bind,
+                    mock.patch.object(
+                        http_api.CompassHTTPServer,
+                        "serve_forever",
+                        side_effect=AssertionError("served"),
+                    ),
+                    mock.patch.object(observer, "sweep_claude_scratch") as scratch,
+                    mock.patch.object(observer, "sweep_reading_workdirs") as workdirs,
+                    mock.patch.object(update_check, "print_startup_hint") as hint,
+                    mock.patch.object(declared_parent_store, "load", return_value={}) as parents,
+                    contextlib.redirect_stdout(io.StringIO()) as output,
+                ):
+                    code = cli.main(["--port", str(port), "--no-update-check", *switches])
+                self.assertEqual([str(Path(home, f"compass-{port}.json"))], attempts)
+                self.assertEqual(1, code)
+                self.assertIn(home, output.getvalue())
+                self.assertIn("PermissionError", output.getvalue())
+                bind.assert_not_called()
+                scratch.assert_not_called()
+                workdirs.assert_not_called()
+                hint.assert_not_called()
+                parents.assert_not_called()
+                self.assertEqual(b"private history", store.read_bytes())
+                # A new lock holder and the real cleanup must be admitted after refusal.
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(0, cli.main(["--forget", "--port", str(closed_port())]))
+                self.assertFalse(store.exists())
+
+    def test_a_failed_state_write_never_reaches_the_serving_loop(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            config = dataclasses.replace(cfg(), state_home=home, state_dir=Path(home))
+            server = make_server()
+            with (
+                mock.patch.object(
+                    runtime_io, "atomic_write_owner_only", side_effect=OSError("full")
+                ),
+                mock.patch.object(server, "serve_forever", side_effect=AssertionError("served")),
+                self.assertRaisesRegex(lifecycle.StateOwnershipError, "OSError"),
+            ):
+                lifecycle.serve(config, server, server.server_port, started=1.0)
+            self.assertEqual(-1, server.fileno())
+            with (
+                lifecycle.state_folder_lock(config),
+                runtime_io.held_file_lock(
+                    lifecycle.state_path(config, server.server_port) + ".lock", wait=0
+                ) as held,
+            ):
+                self.assertEqual(runtime_io.LOCK_HELD, held)
+                self.assertIsNone(lifecycle.forget_refusal(config))
+
+    def test_a_started_dashboard_restores_its_saved_parent_claims(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as home,
+            mock.patch.dict(os.environ, {"COMPASS_HOME": home}),
+        ):
+            port = closed_port()
+            parent = {"harness": "claude", "sid": "abcdef12-3456-7890-abcd-ef1234567890"}
+            key = ("claude", "12345678")
+            self.assertIsNotNone(
+                declared_parent_store.record(
+                    cfg(), key, parent, now=time.time(), diagnostic_sink=lambda _: None
+                )
+            )
+            seen: list[dict[tuple[str, str], dict[str, str]]] = []
+
+            def read_parents(server: http_api.CompassHTTPServer) -> None:
+                self.assertTrue(Path(home, f"compass-{port}.json").exists())
+                assert server.observation is not None
+                seen.append(server.observation.parent_declarations())
+                raise KeyboardInterrupt
+
+            with (
+                mock.patch.object(
+                    http_api.CompassHTTPServer,
+                    "serve_forever",
+                    autospec=True,
+                    side_effect=read_parents,
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.suppress(KeyboardInterrupt),
+            ):
+                cli.main(["--port", str(port), "--no-update-check"])
+            self.assertEqual([{key: parent}], seen)
+
+    _FAIL_WRITE = """
+import sys
+sys.path.insert(0, sys.argv[1])
+from compass_runtime import cli, io
+publish = io.atomic_write_owner_only
+def write(target, content, **kwargs):
+    if target.endswith(sys.argv[2]):
+        raise PermissionError("synthetic publication refusal")
+    return publish(target, content, **kwargs)
+io.atomic_write_owner_only = write
+raise SystemExit(cli.main(sys.argv[3:]))
+"""
+
+    @unittest.skipIf(os.name == "nt", "POSIX fork and readiness pipe")
+    def test_the_daemon_launcher_reports_a_state_publication_refusal(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            port = closed_port()
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    self._FAIL_WRITE,
+                    str(SERVER_PATH.parent),
+                    f"compass-{port}.json",
+                    "--daemon",
+                    "--port",
+                    str(port),
+                    "--no-update-check",
+                ],
+                env={**os.environ, "COMPASS_HOME": home},
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if result.returncode == 0:
+                subprocess.run(
+                    [sys.executable, str(SERVER_PATH), "--stop", "--port", str(port)],
+                    env={**os.environ, "COMPASS_HOME": home},
+                    capture_output=True,
+                    timeout=30,
+                    check=False,
+                )
+            self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+            self.assertIn(home, result.stdout)
+            self.assertIn("PermissionError", result.stdout)
+            self.assertIn("before it began serving", result.stdout)
+            self.assertEqual("closed", lifecycle.probe_port(port)[0])
+            self.assertFalse(Path(home, f"compass-{port}.json").exists())
+
+    def test_a_dashboard_with_no_origin_sidecar_still_blocks_forget_on_another_port(self) -> None:
+        for switches in ([], ["--no-events"]):
+            with self.subTest(switches=switches), tempfile.TemporaryDirectory() as home:
+                port = closed_port()
+                env = {**os.environ, "COMPASS_HOME": home}
+                store = Path(home, "compass-history.json")
+                store.write_bytes(b"private history")
+                with Path(home, "child-output.log").open("w+") as output:
+                    proc = subprocess.Popen(
+                        [
+                            sys.executable,
+                            "-c",
+                            self._FAIL_WRITE,
+                            str(SERVER_PATH.parent),
+                            ".origin",
+                            "--port",
+                            str(port),
+                            "--no-update-check",
+                            *switches,
+                        ],
+                        env=env,
+                        stdout=output,
+                        stderr=output,
+                    )
+                    try:
+                        deadline = time.monotonic() + 30
+                        while time.monotonic() < deadline:
+                            if lifecycle.probe_port(port, timeout=0.2)[0] == "compass":
+                                break
+                            if proc.poll() is not None:
+                                break
+                            time.sleep(0.05)
+                        self.assertEqual("compass", lifecycle.probe_port(port)[0])
+                        self.assertTrue(Path(home, f"compass-{port}.json").exists())
+                        self.assertFalse(Path(home, f"compass-{port}.json.origin").exists())
+                        result = subprocess.run(
+                            [
+                                sys.executable,
+                                str(SERVER_PATH),
+                                "--forget",
+                                "--port",
+                                str(closed_port()),
+                            ],
+                            env=env,
+                            capture_output=True,
+                            text=True,
+                            timeout=30,
+                            check=False,
+                        )
+                        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                        self.assertIn(f"compass-{port}.json", result.stdout)
+                        self.assertEqual(b"private history", store.read_bytes())
+                    finally:
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=15)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                            proc.wait(timeout=15)
+                self.assertFalse(Path(home, f"compass-{port}.json").exists())
 
 
 class StateOwnershipTest(unittest.TestCase):
