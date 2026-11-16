@@ -234,6 +234,7 @@
           "command_reports": null,
           "consumption": null,
           "copied_prompts": [],
+          "declared_native_state": null,
           "declared_parent": null,
           "declared_parent_state": null,
           "delegated_last_activity_at": null,
@@ -392,6 +393,7 @@
           "command_reports": null,
           "consumption": null,
           "copied_prompts": [],
+          "declared_native_state": null,
           "declared_parent": null,
           "declared_parent_state": null,
           "delegated_last_activity_at": null,
@@ -550,6 +552,7 @@
           "command_reports": null,
           "consumption": null,
           "copied_prompts": [],
+          "declared_native_state": null,
           "declared_parent": null,
           "declared_parent_state": null,
           "delegated_last_activity_at": null,
@@ -692,7 +695,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "23533",
+      "Content-Length": "23626",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.2"

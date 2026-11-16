@@ -397,7 +397,23 @@ forwarder accepts only its known harness tokens and a bounded UUID (or Claude's 
 published key). The server validates it again and resolves it only against rows this board
 already publishes. Unknown parents, self-links and cycle members publish `not_linked`. No
 parent is inferred from timing, folders, titles or process ancestry. A resume without the variable
-keeps the earlier declaration in this dashboard run; restarting the dashboard forgets it.
+keeps the earlier declaration.
+
+A declaration carries exactly the trust of the existing per-harness event capability. The
+envelope's session ID selects the session whose parent claim is stored; the capability
+does not independently authenticate that session.
+A holder can already submit lifecycle events naming other sessions of that harness.
+
+Claims persist in `declared-parents/claims.json` under the Compass state home, with an owner-only
+directory and atomic owner-only writes, a stable file lock, a 512-session cap and a 256 KiB byte cap.
+The schema, identities and timestamps are validated on reload. Original retention timestamps
+survive restart; loading cannot renew a working deadline. Once current visibility is known,
+absent claims expire after the configured activity window without an event. Visible claims remain
+until they leave that window and expire. A corrupt, unreadable or unsafe store is refused rather
+than overwritten. Failed writes are diagnosed; received claims can remain in memory for this run,
+but may be lost on restart. `--no-events` neither loads nor saves claims. `--forget` removes them
+while preserving user-authored groups. Persistence cannot recover SessionStart events never
+received, including claims lost before upgrading from the memory-only implementation.
 
 A forged or mistaken link can nest one of the user's own rows under another and hold an otherwise
 idle parent Working while a linked child works. The hold ends when the child is idle, finished or
@@ -409,14 +425,19 @@ id. A chain cannot extend the underlying child's deadline.
 The declaration cannot read the parent's transcript, change its goal, inherit its goal or alter
 any drift reading. It grants no model access and makes no outbound network request; the hook
 only forwards the bounded claim to the existing IPv4 loopback listener. It never becomes model
-input or history. Automatic drift candidates retain the parent's native idle state; a display hold
-does not count as a state transition for that scheduler or change a reading's scope. Claude's published prefix retains the same possible collision as annotations;
-there is no stronger identity guarantee than the row the board already publishes.
+input or history. All reading, context, drift and Live inputs retain the parent's native state,
+activity and detail;
+a display hold cannot change their facts, observer membership, completion scope or cache inputs.
+UUID hex matching ignores case. A full Claude UUID must also match a row's full resume identity
+when present; ambiguous canonical identities are refused. A prefix alone retains the board's
+existing shorter-identity boundary.
 
 `POST /api/annotate` also accepts a local display `group`, at most 40 characters before masking.
 It uses the existing annotation availability and HTTP admission guards, type checks before masking, applies the annotation
 unsafe-character and credential rules, and stores the label beside intent without changing an
-intent revision, goal or reading window. An empty string clears the own label. Without one, a
+intent revision, goal or reading window. Group-only entries have lower retention priority than
+entries with intent; a label save that would evict another session's goal or reading is refused
+at either the session or byte cap. An empty string clears the own label. Without one, a
 linked child inherits the nearest labelled ancestor's group. Labels never enter drift, summary,
 Live monitor or other model prompts and cause no outbound request. `--set-group` provides the
 same write to launcher scripts and prints only a save receipt. `--no-annotations` refuses writes

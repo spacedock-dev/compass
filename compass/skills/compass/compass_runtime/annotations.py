@@ -1557,10 +1557,11 @@ def _eviction_rank(entry: Annotation) -> tuple[int, float]:
     Two keys and not one, because age alone gets it backwards (DRC-4565). A
     discard record is stamped at the moment of the act, which is later than
     every entry typed before it, so oldest-first would keep a record of a
-    deletion and evict words the reader still has. Words outrank a record of
-    their absence, and within each group the least recently written goes first.
+    deletion and evict words the reader still has. Intent outranks a display-only
+    label, which outranks a record of absence;
+    within each group the least recently written goes first.
     """
-    return (1 if entry["revisions"] or entry.get("group") else 0, _last_written(entry))
+    return (2 if entry["revisions"] else 1 if entry.get("group") else 0, _last_written(entry))
 
 
 def _bounded(entries: Iterable[Annotation], limit: int) -> tuple[Annotation, ...]:
@@ -1633,6 +1634,7 @@ def _kept(
     written = [entry for entry in ordered if (entry["harness"], entry["sid"]) == keep]
     others = [entry for entry in ordered if (entry["harness"], entry["sid"]) != keep]
     limit = max(0, config.annotation_max_sessions - len(written))
+    omitted = others[:-limit] if limit else others[:]
     others = others[-limit:] if limit else []
     sizes = [len(json.dumps(_on_disk(entry))) for entry in others]
     fixed = [len(json.dumps(_on_disk(entry))) for entry in written]
@@ -1645,8 +1647,15 @@ def _kept(
         count -= 1
         total -= sizes[dropped] + (2 if count > 0 else 0)
         dropped += 1
-    if keep is not None and total > config.annotation_read_cap_bytes:
-        return None
+    if keep is not None:
+        # A pinned display-only write must not buy space with another session's intent.
+        removed = [*omitted, *others[:dropped]]
+        if total > config.annotation_read_cap_bytes or any(
+            _eviction_rank(entry)[0] > _eviction_rank(target)[0]
+            for entry in removed
+            for target in written
+        ):
+            return None
     return tuple(sorted([*others[dropped:], *written], key=_eviction_rank))
 
 
@@ -1872,6 +1881,7 @@ def _commit(
     entries: Iterable[Annotation],
     *,
     diagnostic_sink: Callable[[str], None],
+    preserve_intent: bool = False,
 ) -> str:
     """Write one mutator's result: trimmed, the written entry kept, the refused kept raw.
 
@@ -1883,6 +1893,13 @@ def _commit(
     kept = _kept(config, entries, keep=key, raw=raw)
     if kept is None:
         return OUTCOME_UNWRITABLE
+    if preserve_intent:
+        kept_keys = {(entry["harness"], entry["sid"]) for entry in kept}
+        if any(
+            entry["revisions"] and (entry["harness"], entry["sid"]) not in kept_keys
+            for entry in store.entries
+        ):
+            return OUTCOME_UNWRITABLE
     _cache(state, kept)
     if not store.writable:
         _say_unwritten(config, diagnostic_sink)
@@ -2875,7 +2892,9 @@ def set_group(
         others = [entry for entry in store.entries if (entry["harness"], entry["sid"]) != key]
         if label or updated["revisions"] or is_discarded(updated):
             others.append(updated)
-        return _commit(config, state, store, key, others, diagnostic_sink=diagnostic_sink)
+        return _commit(
+            config, state, store, key, others, diagnostic_sink=diagnostic_sink, preserve_intent=True
+        )
 
 
 # One keyword per field a save may carry, each independent; bundling them would

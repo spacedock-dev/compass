@@ -327,7 +327,7 @@ def declared_parent(environ: Any) -> dict[str, str] | None:
     pattern = r"[0-9a-fA-F]{8}|" + uuid if harness == "claude" else uuid
     if not separator or harness not in EVENTS_BY_HARNESS or re.fullmatch(pattern, sid) is None:
         return None
-    return {"harness": harness, "sid": sid}
+    return {"harness": harness, "sid": sid.lower()}
 
 
 def process_uid() -> int | None:

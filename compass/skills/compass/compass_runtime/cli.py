@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from compass_runtime import (
     aggregate,
     copied_corrections,
+    declared_parent_store,
     deliveries,
     diagnostics,
     ends,
@@ -955,6 +956,13 @@ def run_one_shot(
             f"Compass: summary store {summaries_path}: {summary_outcome}",
             print,
         )
+        parents_forgotten = declared_parent_store.forget(config)
+        runtime_io.diag(
+            "Compass: forgot parent declarations"
+            if parents_forgotten
+            else "Compass: could not forget parent declarations; the store is unavailable",
+            print,
+        )
         permission_forgotten = reading_policy.forget(config)
         runtime_io.diag(
             "Compass: forgot reading permission; unexpired spend timestamps remain"
@@ -962,7 +970,11 @@ def run_one_shot(
             else "Compass: could not forget reading permission; the store is unavailable",
             print,
         )
-        return 0 if permission_forgotten and summary_outcome != "unwritable" else 1
+        return (
+            0
+            if permission_forgotten and parents_forgotten and summary_outcome != "unwritable"
+            else 1
+        )
     if args.stop:
         message, code = lifecycle.stop_instance(config, args.port)
         runtime_io.diag(message, print)

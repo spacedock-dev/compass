@@ -57,7 +57,20 @@ an input wait. `waiting_on_child: {harness, sid}` names the most recently active
 ascending harness and sid break ties. It is null when no hold applies. Idle, finished or ended
 children cannot hold a parent. Each hold lasts at most the child's activity plus the existing
 900-second tool-in-flight ceiling; chained links do not renew it. A resume without the variable
-preserves the claim in this dashboard run. A dashboard restart forgets declarations.
+preserves the claim. Received declarations persist across restarts in a private, locked store,
+up to 512 claims and 256 KiB. Once row visibility is known, absent claims expire after the activity
+window without an event; loading preserves their original timestamps and renews no working hold.
+A failed write is diagnosed and may leave only an in-memory claim for this run. Unreadable,
+corrupt or unsafe storage is refused. `--forget` removes claims but keeps user-authored groups;
+`--no-events` neither loads nor saves claims. Events never received cannot be recovered, including
+claims lost before upgrading from memory-only storage. Codex noninteractive runs can silently
+skip untrusted hooks, so their SessionStart must be trusted before launch.
+
+UUID hex matching ignores case, keeps the matched row's published identity, and refuses ambiguous
+matches. A full Claude UUID must match the full resume identity when the row has one. A held
+parent also publishes `declared_native_state: {state, active, state_detail}`, its actual pre-hold
+values, or null without a hold. Reading, context, Live and drift consumers restore that snapshot
+before deriving their inputs; it grants no source access.
 
 `--set-group LABEL --session HARNESS:SESSION_ID` saves a local display label, at most 40
 characters, using `/api/annotate` and the goal-save admission guards. Empty LABEL clears it. The row's

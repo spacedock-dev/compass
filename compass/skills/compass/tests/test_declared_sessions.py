@@ -3,33 +3,44 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import dataclasses
 import io
+import json
 import tempfile
 import time
 import unittest
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 from unittest import mock
 
 import event_hook
 from compass_runtime import (
     aggregate,
+    cli,
     declared_sessions,
+    dismissals,
+    drift_view,
+    events,
+    footer_lines,
     http_api,
     live_monitor,
     observation,
+    project_context,
     reading,
     session_summary,
     sessions,
     summary_source,
     terminal_client,
+    terminal_sessions,
 )
 from compass_runtime import annotations as annotation_store
 
 from . import test_live_monitor as monitor_tests
 from . import test_session_summary as summary_tests
 from .support import make_runtime
+from .test_annotations import AReadingIsKeptBesideTheWordsItReadTest
 from .test_claude_checks import SHORT as REAL_SHORT
 from .test_claude_checks import SID as REAL_SID
 from .test_events_ingress import FakeApplication
@@ -68,6 +79,329 @@ class ParentDeclarations(unittest.TestCase):
         declared_sessions.attach(
             rows, self.source.parent_declarations(), config=self.config, now=now
         )
+
+    def test_a_group_only_save_cannot_evict_another_sessions_goal_or_reading(self) -> None:
+        for bound in ("sessions", "bytes"):
+            with self.subTest(bound=bound), tempfile.TemporaryDirectory() as home:
+                config = dataclasses.replace(self.config, state_home=home)
+                annotation_store.annotate(
+                    config, self.state, "claude", PARENT[:8], goal="Keep intent", now=NOW
+                )
+                annotation_store.record_reading(
+                    config,
+                    self.state,
+                    "claude",
+                    PARENT[:8],
+                    assessment=AReadingIsKeptBesideTheWordsItReadTest._assessment(read_at=NOW),
+                )
+                before = annotation_store.load(config)
+                self.assertIsNotNone(before[0].get("assessment"))
+                if bound == "sessions":
+                    config = dataclasses.replace(config, annotation_max_sessions=1)
+                else:
+                    config = dataclasses.replace(
+                        config,
+                        annotation_read_cap_bytes=Path(annotation_store.store_path(config))
+                        .stat()
+                        .st_size
+                        + 10,
+                    )
+                result = annotation_store.annotate(
+                    config, self.state, "claude", CHILD[:8], group="Worker", now=NOW + 1
+                )
+                self.assertEqual(annotation_store.OUTCOME_UNWRITABLE, result)
+                self.assertEqual(before, annotation_store.load(config))
+
+    def test_adding_a_group_to_existing_intent_cannot_evict_another_sessions_reading(self) -> None:
+        annotation_store.annotate(
+            self.config, self.state, "claude", PARENT[:8], goal="Keep intent", now=NOW
+        )
+        annotation_store.record_reading(
+            self.config,
+            self.state,
+            "claude",
+            PARENT[:8],
+            assessment=AReadingIsKeptBesideTheWordsItReadTest._assessment(read_at=NOW),
+        )
+        annotation_store.annotate(
+            self.config, self.state, "claude", CHILD[:8], goal="Worker goal", now=NOW + 1
+        )
+        before = annotation_store.load(self.config)
+        config = dataclasses.replace(
+            self.config,
+            annotation_read_cap_bytes=Path(annotation_store.store_path(self.config)).stat().st_size
+            + 10,
+        )
+        self.assertEqual(
+            annotation_store.OUTCOME_UNWRITABLE,
+            annotation_store.annotate(
+                config, self.state, "claude", CHILD[:8], group="Worker", now=NOW + 2
+            ),
+        )
+        self.assertEqual(before, annotation_store.load(config))
+
+    def held(self, parent: dict[str, Any]) -> dict[str, Any]:
+        held = copy.deepcopy(parent)
+        self.declare(CHILD, {"harness": "claude", "sid": str(parent["sid"])})
+        self.attach([held, row("claude", CHILD[:8], state="working")])
+        self.assertIsNotNone(held["waiting_on_child"])
+        return cast("dict[str, Any]", json.loads(json.dumps(held)))
+
+    def test_the_native_projection_preserves_the_parents_original_activity_and_detail(self) -> None:
+        for active in (False, True):
+            native = row("claude", PARENT[:8], active=active, state_detail="native idle detail")
+            restored = declared_sessions.model_row(self.held(native))
+            for key in ("state", "active", "state_detail"):
+                self.assertEqual(native[key], restored[key])
+            self.assertEqual(restored, declared_sessions.model_row(restored))
+
+    def test_a_child_display_hold_leaves_interactive_and_live_reading_facts_unchanged(self) -> None:
+        native = row(
+            "claude",
+            PARENT[:8],
+            acquisition="event",
+            finished_at=NOW - 10,
+            last_activity=NOW - 10,
+            last_output="The local parser checks passed.",
+        )
+        held = self.held(native)
+        facts = []
+        for current in (native, held):
+            with tempfile.TemporaryDirectory() as home:
+                config, state = make_runtime(state_home=home, state_dir=Path(home))
+                app = SimpleNamespace(config=config, state=state, clock=lambda: NOW)
+                context = http_api._session_context(app, current)
+                facts.append(context["semantic"]["facts"])
+        self.assertTrue(any(f["type"] == "result" for f in facts[0]))
+        self.assertEqual(facts[0], facts[1])
+
+    def test_a_display_hold_does_not_change_project_observer_membership_or_footer_inputs(
+        self,
+    ) -> None:
+        for active in (False, True):
+            native = row("claude", PARENT[:8], active=active, acquisition="scan")
+            held = self.held(native)
+            contexts = []
+            for current in (native, held):
+                with tempfile.TemporaryDirectory() as home:
+                    config, state = make_runtime(state_home=home, state_dir=Path(home))
+                    contexts.append(
+                        project_context.collect(config, state, [current], "project", now=NOW)
+                    )
+            self.assertEqual(contexts[0], contexts[1])
+            self.assertEqual(
+                footer_lines._projection_inputs({}, native),
+                footer_lines._projection_inputs({}, held),
+            )
+
+    def test_a_completed_reading_stays_completed_while_its_session_waits_on_a_child(self) -> None:
+        fixtures = Path(__file__).resolve().parents[4] / "frontend/test/fixtures/client-contract"
+        payload = json.loads((fixtures / "data-focused-drift-medium.json").read_text())["response"][
+            "body"
+        ]
+        context = json.loads((fixtures / "context-focused-drift-medium.json").read_text())[
+            "response"
+        ]["body"]
+        native = payload["sessions"][0]
+        native.update(state="idle", ended_at=None)
+        held = self.held(native)
+        before = drift_view.derive(native, payload, context)
+        self.assertIsNotNone(before["pill"])
+        self.assertFalse(before["pill"]["so_far"])
+        self.assertEqual(before, drift_view.derive(held, payload, context))
+        app = SimpleNamespace(config=self.config, state=self.state, diagnostic_sink=lambda _: None)
+        with mock.patch.object(
+            http_api, "_record_page", return_value={"state": "ok", "entries": []}
+        ):
+            views = [
+                http_api._with_drift_view(
+                    app,
+                    context,
+                    {**payload, "sessions": [current]},
+                    (native["harness"], native["sid"]),
+                    native["project"],
+                    b"test",
+                )
+                for current in (native, held)
+            ]
+        self.assertEqual(views[0], views[1])
+        self.assertEqual(1, len(self.state.drift_view_cache))
+
+    def test_mixed_case_uuid_declarations_and_group_selectors_resolve_to_existing_published_row(
+        self,
+    ) -> None:
+        for harness in ("claude", "codex"):
+            for upper in (False, True):
+                published = PARENT[:8] if harness == "claude" else PARENT
+                published = published.upper() if upper else published
+                for selector in (
+                    PARENT.upper(),
+                    PARENT.lower(),
+                    *([PARENT[:8].upper()] if harness == "claude" else []),
+                ):
+                    with self.subTest(harness=harness, published=published, selector=selector):
+                        claim = events.parent_declaration({"harness": harness, "sid": selector})
+                        assert claim is not None
+                        self.assertEqual(selector.lower(), claim["sid"])
+                        target = row(
+                            harness, published, resume_id=PARENT.upper() if upper else PARENT
+                        )
+                        child = row("claude", "F2345678")
+                        declared_sessions.attach(
+                            [target, child],
+                            {("claude", "f2345678"): claim},
+                            config=self.config,
+                            now=NOW,
+                        )
+                        self.assertEqual(
+                            {"harness": harness, "sid": published}, child["declared_parent"]
+                        )
+                        self.assertTrue(terminal_sessions.names(target, selector))
+                        resolved = terminal_client.resolve_session(
+                            harness + ":" + selector, {}, None, action="group"
+                        )
+                        assert isinstance(resolved, terminal_client.Session)
+                        self.assertEqual(selector.lower(), resolved.sid)
+        self.assertFalse(terminal_sessions.names(row("codex", PARENT), PARENT[:8]))
+        collision = row("claude", PARENT[:8], resume_id=PARENT[:9] + "0000-0000-0000-000000000000")
+        child = row("claude", CHILD[:8])
+        declared_sessions.attach(
+            [collision, child],
+            {("claude", CHILD[:8]): {"harness": "claude", "sid": PARENT}},
+            config=self.config,
+            now=NOW,
+        )
+        self.assertEqual("not_linked", child["declared_parent_state"])
+        for duplicate in ("parent", "child"):
+            rows = [row("claude", PARENT[:8]), row("claude", "a2345678")]
+            rows.append(
+                row("claude", (PARENT[:8] if duplicate == "parent" else "a2345678").upper())
+            )
+            declared_sessions.attach(
+                rows,
+                {("claude", "a2345678"): {"harness": "claude", "sid": PARENT}},
+                config=self.config,
+                now=NOW,
+            )
+            self.assertTrue(all(r["declared_parent"] is None for r in rows))
+        forwarded = event_hook.declared_parent(
+            {"COMPASS_PARENT_SESSION": "claude:" + PARENT.upper()}
+        )
+        assert forwarded is not None
+        self.assertEqual(PARENT, forwarded["sid"])
+
+    def test_a_dashboard_restart_preserves_a_running_childs_declared_parent_and_inherited_group(
+        self,
+    ) -> None:
+        self.declare(CHILD, {"harness": "claude", "sid": PARENT})
+        restarted = observation.Observation(FakeApplication(self.config), clock=lambda: NOW + 10)  # type: ignore[arg-type]
+        rows = [
+            row("claude", PARENT[:8], group="Coordinator", group_source="set"),
+            row("claude", CHILD[:8], state="working"),
+        ]
+        declared_sessions.attach(
+            rows, restarted.parent_declarations(), config=self.config, now=NOW + 10
+        )
+        self.assertEqual("linked", rows[1]["declared_parent_state"])
+        self.assertEqual("Coordinator", rows[1]["group"])
+        self.assertEqual("working", rows[0]["state"])
+        restarted.submit(
+            "claude",
+            {
+                "v": 1,
+                "event": "turn_started",
+                "session_id": CHILD,
+                "declared_parent": {"harness": "codex", "sid": PARENT},
+            },
+        )
+        self.assertEqual(
+            "claude", restarted.parent_declarations()[("claude", CHILD[:8])]["harness"]
+        )
+
+    def test_a_grandchild_cannot_extend_its_ancestors_working_deadline(self) -> None:
+        grandchild = "87654321-3456-7890-abcd-ef1234567890"
+        self.declare(CHILD, {"harness": "claude", "sid": PARENT})
+        self.declare(grandchild, {"harness": "claude", "sid": CHILD})
+        deadline = NOW + self.config.claude_tool_in_flight_max_sec
+        for intermediate_activity in (NOW - 100, NOW + 20):
+            rows = [
+                row("claude", PARENT[:8]),
+                row("claude", CHILD[:8], own_activity=intermediate_activity),
+                row("claude", grandchild[:8], state="working", own_activity=NOW),
+            ]
+            for now, held in ((NOW, True), (deadline - 1, True), (deadline, False)):
+                rows = json.loads(json.dumps(rows))
+                self.attach(rows, now)
+                self.assertEqual(
+                    [held, held, False], [r["waiting_on_child"] is not None for r in rows]
+                )
+                self.assertEqual(
+                    ["working", "working"] if held else ["idle", "idle"],
+                    [r["state"] for r in rows[:2]],
+                )
+
+    def test_a_dismissed_parent_cannot_receive_a_declared_link_or_hold(self) -> None:
+        app = aggregate.Application(
+            self.config,
+            self.state,
+            (
+                aggregate.HarnessSpec(
+                    "claude",
+                    "Claude",
+                    lambda *_: True,
+                    lambda *_: [
+                        row("claude", PARENT[:8], last_activity=NOW - 1),
+                        row("claude", CHILD[:8], state="working"),
+                    ],
+                ),
+            ),
+            native_notifier=lambda _: "",
+            popup_notifier=lambda *_: None,
+            diagnostic_sink=lambda _: None,
+            clock=lambda: NOW,
+        )
+        app.overlays = self.source
+        self.declare(CHILD, {"harness": "claude", "sid": PARENT})
+        self.assertTrue(dismissals.dismiss(self.config, self.state, "claude", PARENT[:8], now=NOW))
+        rows = app.collect(show_all=False, notify=False)["sessions"]
+        self.assertEqual([CHILD[:8]], [r["sid"] for r in rows])
+        self.assertEqual("not_linked", rows[0]["declared_parent_state"])
+        self.assertIsNone(rows[0]["declared_parent"])
+
+    def test_setting_a_group_requires_an_explicit_selector_even_inside_a_session(self) -> None:
+        with (
+            mock.patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": PARENT}),
+            mock.patch.object(
+                terminal_client, "ensure_dashboard", side_effect=AssertionError("must not discover")
+            ),
+            contextlib.redirect_stderr(io.StringIO()) as error,
+        ):
+            self.assertEqual(1, terminal_client.run_group("Owner", None))
+        self.assertIn("explicit --session", error.getvalue())
+
+    def test_group_dispatch_preserves_the_selected_port_and_rejects_unrelated_options(self) -> None:
+        with mock.patch.object(terminal_client, "run_group", return_value=0) as run:
+            self.assertEqual(
+                0,
+                cli.main(
+                    [
+                        "--set-group",
+                        "Owner",
+                        "--session",
+                        "claude:" + PARENT,
+                        "--port",
+                        "4601",
+                        "--no-update-check",
+                    ]
+                ),
+            )
+        self.assertEqual(4601, run.call_args.kwargs["port"])
+        for option in ("--drift", "--goal", "--sessions", "--summary", "--all", "--stop"):
+            self.assertIsNone(
+                terminal_client.parse_group_args(
+                    ["--set-group", "Owner", "--session", "claude:" + PARENT, option]
+                )
+            )
 
     def test_group_only_record_can_be_reloaded_given_intent_and_cleared(self) -> None:
         saved = annotation_store.annotate(
@@ -484,6 +818,116 @@ class GroupWrites(LeaseRoute):
             )
             self.assertEqual((0, ""), (code, err))
             self.assertNotIn("group", self.entry())
+
+    def test_group_receipt_reports_the_servers_normalized_empty_label_as_cleared(self) -> None:
+        with self.serving() as port:
+            code, out, err = self.command(
+                port, "--set-group", "\u202e", "--session", "claude:" + REAL_SID
+            )
+            self.assertEqual((0, ""), (code, err))
+            self.assertEqual("Group cleared.\n", out)
+            self.assertIsNone(self.entry().get("group"))
+            status, payload = self.call(
+                port,
+                "POST",
+                "/api/annotate",
+                {"harness": "claude", "sid": REAL_SHORT, "group": "\u202e"},
+            )
+            self.assertEqual(200, status)
+            self.assertIsNone(payload["saved_group"])
+
+    def test_group_writes_honor_annotation_availability_and_length_limits(self) -> None:
+        application = self.app()
+        with self.serving(application) as port:
+            labels: tuple[Any, ...] = ("x" * 41, 42, {}, None)
+            for group in labels:
+                status, _ = self.call(
+                    port,
+                    "POST",
+                    "/api/annotate",
+                    {"harness": "claude", "sid": REAL_SHORT, "group": group},
+                )
+                self.assertEqual(400, status)
+            self.assertEqual(
+                200,
+                self.call(
+                    port,
+                    "POST",
+                    "/api/annotate",
+                    {"harness": "claude", "sid": REAL_SHORT, "group": "x" * 40},
+                )[0],
+            )
+        application.config = dataclasses.replace(self.config, annotations_enabled=False)
+        with self.serving(application) as port:
+            self.assertEqual(
+                503,
+                self.call(
+                    port,
+                    "POST",
+                    "/api/annotate",
+                    {"harness": "claude", "sid": REAL_SHORT, "group": "Owner"},
+                )[0],
+            )
+        self.assertEqual("x" * 40, annotation_store.load(self.config)[0]["group"])
+
+    def test_a_display_hold_leaves_live_inputs_and_reading_prompts_unchanged(self) -> None:
+        application = self.app()
+        native = application.collect(show_all=False, notify=False)["sessions"][0]
+        native.update(
+            state="idle",
+            active=True,
+            state_detail="native detail",
+            finished_at=application.clock() - 10,
+        )
+        held = copy.deepcopy(native)
+        declared_sessions.attach(
+            [held, row("claude", CHILD[:8], state="working", own_activity=application.clock())],
+            {("claude", CHILD[:8]): {"harness": "claude", "sid": REAL_SID}},
+            config=self.config,
+            now=application.clock(),
+        )
+        held = json.loads(json.dumps(held))
+        self.assertIsNotNone(held["waiting_on_child"])
+        before = http_api._lease_inputs(application, "claude", REAL_SHORT, native)
+        after = http_api._lease_inputs(application, "claude", REAL_SHORT, held)
+        self.assertIsNotNone(before)
+        self.assertEqual(before, after)
+        prompts: list[str] = []
+
+        def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+            del output_cap_bytes
+            prompts.append(prompt)
+            return "{}", "ok"
+
+        results = []
+        for source in (native, held):
+            current = {**source, "finished_at": NOW - 10}
+            facts = [
+                {
+                    "fact_id": "f1",
+                    "type": "user_message",
+                    "at": NOW - 11,
+                    "reader_words": "Ship parser",
+                    "summary": "Ship parser",
+                    "evidence": {"source": "root transcript", "confidence": "exact"},
+                    "source_session": {"harness": "claude", "sid": REAL_SHORT},
+                }
+            ]
+            results.append(
+                reading.produce(
+                    self.config,
+                    current,
+                    [{"n": 1, "at": NOW - 20, "goal": "Ship parser", "lines": ()}],
+                    facts,
+                    now=NOW,
+                    stamp_text="now",
+                    model=model,
+                    admit_turn_stop=True,
+                )
+            )
+        self.assertEqual(results[0], results[1])
+        self.assertEqual(2, len(prompts), results)
+        self.assertEqual(prompts[0], prompts[1])
 
     def test_group_stays_out_of_summary_sources_and_the_live_monitor_model_call(self) -> None:
         marker = "LOCAL_GROUP_SENTINEL"

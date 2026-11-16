@@ -1205,7 +1205,15 @@ def resolve_session(  # noqa: PLR0911 - one exit per way the caller is named or 
         match = _SESSION_FLAG.fullmatch(flag)
         if match is None:
             return Unresolved(sentence("bad_session_flag"))
-        return Session(match.group(1), match.group(2), "flag")
+        sid = match.group(2)
+        if action == "group" and (
+            re.fullmatch(
+                r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?",
+                sid,
+            )
+        ):
+            sid = sid.lower()
+        return Session(match.group(1), sid, "flag")
     # A caller that already read stdin passes what it read, so stdin is never read twice.
     status_line = payload if payload is not None else read_status_line(stdin)
     value = status_line.get("session_id") if status_line is not None else None
@@ -1235,6 +1243,7 @@ def unresolved_caller(reason: str, action: str | None) -> Unresolved:
         "monitor": "no Live monitor was started or stopped",
         "project": "no project brief was read",
         "goal": "no goal was read or changed",
+        "group": "no group was changed",
         "summary": "no summary was read or requested",
     }
     return Unresolved(sentence(reason + "_for_action", action=action, outcome=outcomes[action]))

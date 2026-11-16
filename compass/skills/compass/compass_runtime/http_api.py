@@ -29,6 +29,7 @@ from compass_runtime import (
     compass_turns,
     copied_corrections,
     correction,
+    declared_sessions,
     departures,
     dismissals,
     drift_view,
@@ -977,7 +978,7 @@ def _with_drift_view(
         # must not rebuild an unchanged reading, and a new dependency must enter this projection.
         session = {
             key: value
-            for key, value in matching[0].items()
+            for key, value in declared_sessions.model_row(matching[0]).items()
             if key.startswith("annotation_")
             or key
             in {
@@ -3297,6 +3298,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # zero is a discard that found nothing and null is an arm that is not a discard.
             "removed": receipt.get("removed_revisions"),
         }
+        if "group" in payload:
+            answer["saved_group"] = annotation_store.group_text(payload["group"]) or None
         self._send(json.dumps(answer, separators=(",", ":")).encode(), "application/json")
 
     def _annotation_outcome(

@@ -117,12 +117,12 @@ import time
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
+from compass_runtime import declared_parent_store, irreversible
 from compass_runtime import ends as runtime_ends
 from compass_runtime import events as runtime_events
 from compass_runtime import focus as runtime_focus
 from compass_runtime import git_status as runtime_git
 from compass_runtime import io as runtime_io
-from compass_runtime import irreversible
 from compass_runtime import probe as runtime_probe
 
 if TYPE_CHECKING:
@@ -304,7 +304,10 @@ class Observation:
         # or a row aged past `window_hours` and used again — would destroy it
         # permanently and leave the control dead for the rest of the session.
         self._focus_at: dict[SessionKey, float] = {}
-        self._parents: dict[SessionKey, tuple[dict[str, str], float]] = {}
+        self._parents = declared_parent_store.load(
+            self.config, now=self.clock(), diagnostic_sink=self.diagnostic_sink
+        )
+        self._unpersisted_parents: declared_parent_store.Claims = {}
         # The focus command's floor and in-flight gate, on `quota`'s pattern:
         # `usage_poll_floor_sec` beside `usage_fetch_inflight`. A raise is the
         # one thing Compass does that it cannot undo and that is visible outside
@@ -1020,21 +1023,53 @@ class Observation:
             }
 
     def _mark_parent(self, key: SessionKey, event: runtime_events.Event, now: float) -> None:
+        key = (key[0], key[1].lower())
         if event.declared_parent is not None and (
-            key in self._parents or len(self._parents) < self.config.event_overlay_max_sessions
+            key in self._parents
+            or len(self._parents)
+            < min(declared_parent_store.MAX_SESSIONS, self.config.event_overlay_max_sessions)
         ):
             self._parents[key] = (event.declared_parent, now)
         elif key in self._parents:
             parent, _ = self._parents[key]
             self._parents[key] = (parent, now)
+        else:
+            return
+        stored = declared_parent_store.record(
+            self.config, key, event.declared_parent, now=now, diagnostic_sink=self.diagnostic_sink
+        )
+        if stored is None:
+            self._unpersisted_parents[key] = self._parents[key]
+        else:
+            self._unpersisted_parents.pop(key, None)
+            self._restore_parents(stored)
 
     def _prune_parents(self, keys: set[SessionKey], now: float) -> None:
+        keys = {(h, sid.lower()) for h, sid in keys}
         for key, (_, at) in list(self._parents.items()):
             if key not in keys and now - at >= self.config.focus_target_ttl_sec:
                 del self._parents[key]
+        stored = declared_parent_store.prune(
+            self.config, keys, now=now, diagnostic_sink=self.diagnostic_sink
+        )
+        self._unpersisted_parents = {
+            key: value for key, value in self._unpersisted_parents.items() if key in self._parents
+        }
+        if stored is not None:
+            self._restore_parents(stored)
+
+    def _restore_parents(self, stored: declared_parent_store.Claims) -> None:
+        self._parents = dict(stored)
+        for key, value in self._unpersisted_parents.items():
+            if key in stored and stored[key][1] >= value[1]:
+                continue
+            if key in self._parents or len(self._parents) < min(
+                declared_parent_store.MAX_SESSIONS, self.config.event_overlay_max_sessions
+            ):
+                self._parents[key] = value
 
     def parent_declarations(self) -> dict[SessionKey, dict[str, str]]:
-        """Snapshot this run's claims without exposing the mutable event ledger."""
+        """Snapshot retained claims without exposing the mutable event ledger."""
         with self._lock:
             return {key: dict(parent) for key, (parent, _) in self._parents.items()}
 

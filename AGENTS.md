@@ -45,6 +45,7 @@ compass/                           # plugin root: Claude Code, Codex, Antigravit
         ├── compass_runtime/       # importable dashboard runtime package
         │                           # per-module map: docs/design-runtime-architecture.md
         │   ├── entry.py            # what server.py runs: terminal_client's short operations, else cli.main
+        │   ├── declared_parent_store.py # private bounded launcher claims and visibility-aware expiry
         │   ├── terminal_client.py  # stdlib-only client for the loopback API and terminal operations
         │   ├── loopback_transport.py # whole-exchange deadlines for client and lifecycle probes
         │   ├── terminal_monitor.py # detached per-session terminal lease holder

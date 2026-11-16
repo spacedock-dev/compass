@@ -57,6 +57,7 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NotRequired, TypedDi
 from . import (
     analyze_diagnostics,
     ci_read,
+    declared_sessions,
     observer,
     reading_long_progress,
     records,
@@ -2680,8 +2681,8 @@ def end_kind(row: Mapping[str, Any]) -> str:
     exactly the rows a mid-flight reading exists for, while the card beside it
     said the session was working.
     """
-    # A launcher hold changes display state only; no child can change this session's scope.
-    idle = row.get("state") == "idle" or row.get("waiting_on_child") is not None
+    row = declared_sessions.model_row(row)
+    idle = row.get("state") == "idle"
     ended = _number(row.get("ended_at"))
     if ended is not None and ended > 0:
         return "session-end"
@@ -7389,6 +7390,7 @@ def produce(  # noqa: C901, PLR0911, PLR0913, PLR0915 - ordered gates and measur
     record that was never read withholds before the ledger, since an empty
     ledger would say it was read and held nothing.
     """
+    row = declared_sessions.model_row(row)
     capture = analyze_diagnostics.Capture(on_diagnostic)
     goal, lines, scope, withheld = _readable(
         config,

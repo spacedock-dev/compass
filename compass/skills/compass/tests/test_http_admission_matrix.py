@@ -415,6 +415,23 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
                         save.assert_not_called()
                     save.reset_mock()
 
+    def test_a_group_write_cannot_accompany_an_intent_control_action(self) -> None:
+        for control in (
+            {"clear": True},
+            {"adopt": "latest-prompt"},
+            {"add_direction": "f1"},
+            {"not_accurate": True, "read_at": 100.0},
+            {"settle_through": 100.0},
+        ):
+            with (
+                self.subTest(control=control),
+                mock.patch.object(annotation_store, "annotate") as save,
+            ):
+                self.assertFalse(http_api._annotation_body_refused(control))
+                body = {"harness": "claude", "sid": "aaaaaaaa", "group": "Local team", **control}
+                self.assertEqual(400, self.request("POST", "/api/annotate", "local", body))
+                save.assert_not_called()
+
     def test_duplicate_host_is_refused_on_every_route(self) -> None:
         self.check_class("duplicate")
 

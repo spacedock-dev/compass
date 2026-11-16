@@ -423,7 +423,7 @@ def parent_declaration(value: Any) -> dict[str, str] | None:
     pattern = r"[0-9a-fA-F]{8}|" + uuid if harness == "claude" else uuid
     if re.fullmatch(pattern, sid) is None:
         return None
-    return {"harness": harness, "sid": sid}
+    return {"harness": harness, "sid": sid.lower()}
 
 
 def _identify(harness: str, payload: Mapping[str, Any]) -> tuple[str, str, str] | Rejected:

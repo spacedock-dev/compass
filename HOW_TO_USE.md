@@ -1102,34 +1102,64 @@ security contact is in [SECURITY.md](SECURITY.md).
 ## Nest a launched run under its coordinator
 
 Install the lifecycle hooks for each child harness and keep Compass running. A declaration links
-only to a parent already visible on that board. It does not create a row. Find the coordinator's
-published harness and session id in `/api/data`, or keep the `session_id` from its SessionStart
-hook input. Claude Code also accepts `--session-id UUID`, so a launcher can choose and retain the
-coordinator's UUID before starting it. This avoids guessing an environment variable. A full
-Claude UUID resolves to the row's eight-character key.
-
-After [choosing the installed copy](#find-the-copy-your-commands-will-run), this shell example sets
-the visible coordinator's group and launches two independent children under it. Replace the UUID
-with that coordinator's actual id. The children keep their own goals and readings.
+only to a parent already visible on that board; it creates no row. From a Claude Code
+coordinator's shell commands, `CLAUDE_CODE_SESSION_ID` names that coordinator (measured on
+Claude Code 2.1.325). After [choosing the installed copy](#find-the-copy-your-commands-will-run):
 
 ```bash
-COORDINATOR_SID=abcdef12-3456-7890-abcd-ef1234567890
+COORDINATOR_SID="$CLAUDE_CODE_SESSION_ID"
 python3 "$SKILL/launch.py" "$SKILL/server.py" --set-group 'Parser team' \
   --session "claude:$COORDINATOR_SID"
-COMPASS_PARENT_SESSION="claude:$COORDINATOR_SID" codex exec 'Review the parser tests'
-COMPASS_PARENT_SESSION="claude:$COORDINATOR_SID" claude -p 'Review the parser documentation'
+COMPASS_PARENT_SESSION="claude:$CLAUDE_CODE_SESSION_ID" codex exec 'Review the parser tests'
+COMPASS_PARENT_SESSION="claude:$CLAUDE_CODE_SESSION_ID" claude -p 'Review the parser documentation'
 ```
 
+From a Codex coordinator's shell commands, `CODEX_THREAD_ID` names its own session
+(measured on Codex 0.169.0):
+
+```bash
+python3 "$SKILL/launch.py" "$SKILL/server.py" --set-group 'Parser team' \
+  --session "codex:$CODEX_THREAD_ID"
+COMPASS_PARENT_SESSION="codex:$CODEX_THREAD_ID" codex exec 'Review the parser tests'
+COMPASS_PARENT_SESSION="codex:$CODEX_THREAD_ID" claude -p 'Review the parser documentation'
+```
+
+Codex noninteractive runs silently skip untrusted hooks, with no skip warning in the measured
+build. [Approve Codex lifecycle hooks](#approve-codex-lifecycle-hooks) before launching workers.
+The variable cannot declare a parent if the child's SessionStart hook never runs.
+
+Outside those coordinator shells, use the published harness and session id in `/api/data`, keep
+`session_id` from the coordinator's SessionStart hook input, or choose its UUID before starting
+Claude Code with `--session-id UUID`. Full Claude UUIDs resolve to eight-character board keys;
+UUID hex matching ignores case and keeps the published identity. An ambiguous match is refused.
+The children keep their own goals and readings.
+
 The label is local display metadata, at most 40 characters, and never part of a model prompt.
-A linked child with no own label inherits it. To clear an own label and restore inheritance:
+A linked child with no own label inherits it. To clear the Claude coordinator's own label and
+restore inheritance (use `codex:$CODEX_THREAD_ID` for the Codex coordinator):
 
 ```bash
 python3 "$SKILL/launch.py" "$SKILL/server.py" --set-group "" \
   --session "claude:$COORDINATOR_SID"
 ```
 
-The write works through a pipe and checks annotation availability just as a goal save does. It fails
-when annotations are disabled. Parent declarations arrive only at SessionStart, survive a resume
-that omits the variable, and last for the dashboard run. An unknown or expired parent remains
-unlinked; self-links and cycles are refused. The [security contract](SECURITY.md#launcher-parent-declarations-and-group-labels)
-states the activity ceiling and the limits of a declaration.
+The write works through a pipe and fails when annotations are disabled. Its receipt describes
+the normalized label, including a clear when all characters are removed by masking.
+Parent declarations arrive only at SessionStart and survive a resume that omits the variable.
+Received claims persist across dashboard restarts, under the bounds, expiry and failure rules in
+the [security contract](SECURITY.md#launcher-parent-declarations-and-group-labels). `--forget`
+removes them while retaining user-authored groups; `--no-events` neither loads nor saves them.
+Persistence cannot recover a SessionStart never received, including a claim lost on a restart
+before upgrading from the memory-only implementation. An unknown or expired parent remains
+unlinked; self-links and cycles are refused.
+
+## Approve Codex lifecycle hooks
+
+Start Codex interactively with the same hook sources enabled. Its startup review offers
+Review hooks and Trust all and continue. Inspect the commands before trusting those sources;
+Continue without trusting leaves the hooks unable to run. This is separate from approval of
+model tool calls. A noninteractive child cannot answer that startup review.
+
+Codex also exposes `--dangerously-bypass-hook-trust` for an invocation whose automation already
+vets its hook sources. The isolated offline measurement used that switch to confirm that a
+trusted SessionStart forwards the parent variable; it did not change the account's saved trust.

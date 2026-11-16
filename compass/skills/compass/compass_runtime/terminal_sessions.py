@@ -1153,12 +1153,17 @@ def render_waiting(
 
 def names(row: Mapping[str, Any], sid: str) -> bool:
     """Match the native id before considering a shortened Claude board key."""
-    if row.get("sid") == sid:
+    harness = row.get("harness", "claude")
+    identity = row.get("sid")
+    if harness in {"claude", "codex", "gemini", "droid"}:
+        sid = sid.lower()
+        identity = identity.lower() if isinstance(identity, str) else identity
+    if identity == sid:
         return True
-    prefix = claude_sid(sid) if row.get("harness", "claude") == "claude" else None
+    prefix = claude_sid(sid) if harness == "claude" else None
     if prefix is None or prefix == sid:
         return False
     resume = row.get("resume_id")
     if isinstance(resume, str) and resume:
-        return resume == sid
-    return row.get("sid") == prefix
+        return resume.lower() == sid
+    return identity == prefix

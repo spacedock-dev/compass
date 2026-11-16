@@ -80,6 +80,7 @@ DECLARED_SESSION_FIELDS = frozenset(
         "declared_parent",
         "declared_parent_state",
         "waiting_on_child",
+        "declared_native_state",
         "group",
         "group_source",
         "started_at",

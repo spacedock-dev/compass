@@ -191,5 +191,8 @@ def set_group(label: str, *, named: Session, board: Board, out: TextIO, err: Tex
     except terminal_drift.Lost:
         print("Compass did not confirm the group save. Read the board before retrying.", file=err)
         return 1
-    print("Group saved." if label.strip() else "Group cleared.", file=out)
+    if "saved_group" not in answer:
+        print("Group saved; this dashboard did not report the normalized label.", file=out)
+    else:
+        print("Group saved." if answer["saved_group"] else "Group cleared.", file=out)
     return 0

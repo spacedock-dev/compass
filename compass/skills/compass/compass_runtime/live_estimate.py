@@ -32,6 +32,8 @@ import threading
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any
 
+from compass_runtime import declared_sessions
+
 from . import correction, levels
 from . import project_context as pc
 
@@ -158,6 +160,7 @@ def for_session(
     `facts` is the session's published record, read for its later directions
     only; `floor` is `annotations.direction_floor` for the saved words.
     """
+    row = declared_sessions.model_row(row)
     harness, sid = str(row.get("harness") or ""), str(row.get("sid") or "")
     intent = saved_intent(row)
     revision = row.get("annotation_revision")

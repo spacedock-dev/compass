@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from typing import TYPE_CHECKING, Any
 
-from compass_runtime import events
+from compass_runtime import events, terminal_sessions
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -23,6 +23,7 @@ def published() -> dict[str, Any]:
         "declared_parent": None,
         "declared_parent_state": None,
         "waiting_on_child": None,
+        "declared_native_state": None,
         "group": None,
         "group_source": None,
     }
@@ -31,8 +32,9 @@ def published() -> dict[str, Any]:
 def model_row(row: Mapping[str, Any]) -> dict[str, Any]:
     """Display declarations cannot create an automatic reading or change its inputs."""
     native = dict(row)
-    if native.get("waiting_on_child") is not None:
-        native.update(state="idle", active=False, state_detail=None)
+    snapshot = native.get("declared_native_state")
+    if isinstance(snapshot, dict):
+        native.update({key: snapshot[key] for key in ("state", "active", "state_detail")})
     for name in published():
         native.pop(name, None)
     return native
@@ -82,23 +84,10 @@ def attach(
     config: RuntimeConfig,
     now: float,
 ) -> None:
+    for row in rows:
+        row.update(model_row(row))
     by_key = {(str(row["harness"]), str(row["sid"])): row for row in rows}
-    parents: dict[Key, Key] = {}
-    for key, row in by_key.items():
-        own_group = row.get("group") if row.get("group_source") == "set" else None
-        row.update(published())
-        if own_group:
-            row.update(group=own_group, group_source="set")
-        claim = declarations.get(key)
-        if claim is None:
-            continue
-        row["declared_parent_state"] = "not_linked"
-        harness, sid = claim["harness"], claim["sid"]
-        normalized = events.normalize_session_id(harness, sid)
-        parent = (harness, normalized or sid)
-        if normalized is not None and parent in by_key and parent != key:
-            parents[key] = parent
-    parents = _acyclic(parents)
+    parents = _resolve_parents(by_key, declarations)
     children: dict[Key, list[Key]] = defaultdict(list)
     for child, parent in parents.items():
         by_key[child].update(declared_parent=_identity(parent), declared_parent_state="linked")
@@ -119,6 +108,9 @@ def attach(
         ]
         if eligible and row["state"] == "idle" and not row.get("ended_at"):
             child = min(eligible, key=lambda c: (-_activity(by_key[c]), c))
+            row["declared_native_state"] = {
+                name: row.get(name) for name in ("state", "active", "state_detail")
+            }
             row.update(
                 state="working",
                 active=True,
@@ -142,3 +134,35 @@ def _inherit_groups(
         row = by_key[key]
         if ancestor is not None and not row["group"] and by_key[ancestor]["group"]:
             row.update(group=by_key[ancestor]["group"], group_source="parent")
+
+
+def _resolve_parents(
+    by_key: dict[Key, dict[str, Any]], declarations: Mapping[Key, dict[str, str]]
+) -> dict[Key, Key]:
+    canonical: dict[Key, list[Key]] = defaultdict(list)
+    for key in by_key:
+        normalized = events.normalize_session_id(*key)
+        if normalized is not None:
+            canonical[(key[0], normalized.lower())].append(key)
+    claims = {(h, sid.lower()): claim for (h, sid), claim in declarations.items()}
+    parents: dict[Key, Key] = {}
+    for key, row in by_key.items():
+        own_group = row.get("group") if row.get("group_source") == "set" else None
+        row.update(published())
+        if own_group:
+            row.update(group=own_group, group_source="set")
+        normalized_child = events.normalize_session_id(*key)
+        child_key = (key[0], (normalized_child or key[1]).lower())
+        claim = claims.get(child_key)
+        if claim is None:
+            continue
+        row["declared_parent_state"] = "not_linked"
+        harness, sid = claim["harness"], claim["sid"]
+        normalized = events.normalize_session_id(harness, sid)
+        candidates = canonical.get((harness, (normalized or sid).lower()), [])
+        if len(canonical.get(child_key, [])) != 1 or len(candidates) != 1:
+            continue
+        parent = candidates[0]
+        if parent != key and terminal_sessions.names(by_key[parent], sid):
+            parents[key] = parent
+    return _acyclic(parents)

@@ -2938,3 +2938,46 @@ class TheLiveMonitorIsSaidToCallAModelTest(unittest.TestCase):
             "turned off or the session ends, under its caps.",
             text,
         )
+
+
+class LauncherDeclarationContractTest(unittest.TestCase):
+    def test_the_launcher_examples_use_measured_coordinator_identities_and_retain_hook_trust_guidance(
+        self,
+    ) -> None:
+        root = SERVER_PATH.parents[3]
+        how = (root / "HOW_TO_USE.md").read_text(encoding="utf-8")
+        section = how.split("## Nest a launched run under its coordinator", 1)[1]
+        for text in (
+            'COMPASS_PARENT_SESSION="claude:$CLAUDE_CODE_SESSION_ID"',
+            'COMPASS_PARENT_SESSION="codex:$CODEX_THREAD_ID"',
+            "2.1.325",
+            "0.169.0",
+            "silently skip untrusted hooks",
+            "#approve-codex-lifecycle-hooks",
+        ):
+            self.assertIn(text, section)
+        self.assertIn("## Approve Codex lifecycle hooks", how)
+        security = (
+            (root / "SECURITY.md")
+            .read_text(encoding="utf-8")
+            .split("## Launcher parent declarations and group labels", 1)[1]
+            .split("\n## ", 1)[0]
+        )
+        for text in (
+            "existing per-harness event capability",
+            "does not independently authenticate that session",
+            "512",
+            "256 KiB",
+            "--forget",
+            "--no-events",
+            "memory",
+        ):
+            self.assertIn(text, security)
+        for relative in (
+            "MANUAL.md",
+            "compass/skills/compass/reference/dashboard.md",
+            "docs/design-declared-sessions.md",
+        ):
+            doc = (root / relative).read_text(encoding="utf-8")
+            self.assertNotIn("restart forgets declarations", doc)
+            self.assertNotIn("Declarations are forgotten when the dashboard restarts", doc)

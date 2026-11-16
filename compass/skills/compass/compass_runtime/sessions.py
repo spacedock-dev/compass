@@ -663,6 +663,7 @@ def base_session(harness: str, sid: Any, project: str) -> Session:
         "declared_parent": None,
         "declared_parent_state": None,
         "waiting_on_child": None,
+        "declared_native_state": None,
         "group": None,
         "group_source": None,
         # The first timestamp in the session transcript, but only when this

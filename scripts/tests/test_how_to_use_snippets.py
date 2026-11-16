@@ -34,10 +34,14 @@ class AReaderChoosesTheInstalledCopyTest(unittest.TestCase):
         self.bin = self.home / "bin"
         self.bin.mkdir()
         self.calls = self.home / "calls.jsonl"
+        self.parents = self.home / "parents.jsonl"
         # An allowlist of environment variables keeps inherited harness identities,
         # relocated stores and Python startup customizations out of these shells.
         self.env = {
             "COORDINATOR_SID": "abcdef12-3456-7890-abcd-ef1234567890",
+            "CLAUDE_CODE_SESSION_ID": "abcdef12-3456-7890-abcd-ef1234567890",
+            "CODEX_THREAD_ID": "fedcba98-3456-7890-abcd-ef1234567890",
+            "PARENT_CALLS": str(self.parents),
             "HOME": str(self.home),
             "PATH": str(self.bin) + os.pathsep + os.defpath,
             "SNIPPET_CALLS": str(self.calls),
@@ -50,7 +54,9 @@ class AReaderChoosesTheInstalledCopyTest(unittest.TestCase):
                 f"#!{sys.executable}\n"
                 "import json, os, sys\n"
                 "with open(os.environ['SNIPPET_CALLS'], 'a') as out:\n"
-                "    out.write(json.dumps(sys.argv) + '\\n')\n",
+                "    out.write(json.dumps(sys.argv) + '\\n')\n"
+                "with open(os.environ['PARENT_CALLS'], 'a') as out:\n"
+                "    out.write(json.dumps({'parent': os.environ.get('COMPASS_PARENT_SESSION')}) + '\\n')\n",
                 encoding="utf-8",
             )
             stub.chmod(0o755)
@@ -85,6 +91,32 @@ class AReaderChoosesTheInstalledCopyTest(unittest.TestCase):
         if not self.calls.exists():
             return []
         return [json.loads(line) for line in self.calls.read_text().splitlines()]
+
+    def test_launcher_snippets_forward_the_measured_coordinators_identity(self) -> None:
+        chosen = self.install(".codex/plugins/cache", "active build")
+        source = (ROOT / "HOW_TO_USE.md").read_text(encoding="utf-8")
+        section = source.split("## Nest a launched run under its coordinator", 1)[1]
+        blocks = re.findall(r"^```bash\n(.*?)^```", section, re.MULTILINE | re.DOTALL)
+        for harness, variable in (
+            ("claude", "CLAUDE_CODE_SESSION_ID"),
+            ("codex", "CODEX_THREAD_ID"),
+        ):
+            examples = [
+                block
+                for block in blocks
+                if 'COMPASS_PARENT_SESSION="' + harness + ":$" + variable + '"' in block
+            ]
+            self.assertTrue(examples, harness)
+            for block in examples:
+                self.env["SKILL"] = str(chosen)
+                result = self.run_snippet(block)
+                self.assertEqual(0, result.returncode, result.stderr)
+                forwarded = [
+                    json.loads(line)["parent"] for line in self.parents.read_text().splitlines()
+                ]
+                self.assertTrue(forwarded)
+                self.assertEqual({harness + ":" + self.env[variable]}, set(forwarded))
+                self.parents.unlink()
 
     def test_a_reader_runs_the_chosen_copy_regardless_of_cache_discovery_order(self) -> None:
         # A return to find | head -1 launches the wrong version in one of the orders.
@@ -210,6 +242,12 @@ class AReaderChoosesTheInstalledCopyTest(unittest.TestCase):
                                     "Parser team",
                                     "--session",
                                     "claude:" + self.env["COORDINATOR_SID"],
+                                ],
+                                [
+                                    "--set-group",
+                                    "Parser team",
+                                    "--session",
+                                    "codex:" + self.env["CODEX_THREAD_ID"],
                                 ],
                                 [
                                     "--set-group",

@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, Final, NamedTuple, cast
 from . import (
     ci_read,
     claude_data,
+    declared_sessions,
     entry_numbers,
     events,
     observer,
@@ -13739,6 +13740,7 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
     read back to its window start instead of from the 400,000-byte tail, and the result's
     `sources.message_reach` says how far that got once the project cap has been applied.
     """
+    sessions = [declared_sessions.model_row(row) for row in sessions]
     analysis_sessions, omitted, scope, surrounding_active = _analysis_context_sessions(
         sessions, project, focus
     )
