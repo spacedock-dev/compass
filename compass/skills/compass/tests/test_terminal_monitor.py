@@ -483,7 +483,12 @@ class ReadinessTest(unittest.TestCase):
 
     def test_a_person_repeating_a_slow_start_waits_and_reads_the_running_monitor(self) -> None:
         # At the old readiness-only deadline the first command still owns admission.
-        for request_budget, ready_budget, release_at in ((0.4, 0.5, 4.0), (0.8, 0.2, 4.2)):
+        # The third case releases only after the replacement budgets, inside dashboard discovery.
+        for request_budget, ready_budget, release_at in (
+            (0.4, 0.5, 4.0),
+            (0.8, 0.2, 4.2),
+            (0.4, 0.5, 4.8),
+        ):
             with self.subTest(request_budget=request_budget), tempfile.TemporaryDirectory() as home:
                 store = monitor_store.Store(home, "one")
                 store.write("run", {"sid": "one", "dashboard": [4553, 42, 100.0, "1.0.0"]})
@@ -504,6 +509,7 @@ class ReadinessTest(unittest.TestCase):
                         mock.patch.object(monitor, "REQUEST_TIMEOUT_SEC", request_budget),
                         mock.patch.object(monitor, "READY_SEC", ready_budget),
                         mock.patch.object(monitor, "WORKER_WAIT_SEC", 0.1),
+                        mock.patch.object(monitor, "DISCOVERY_SEC", 1.0),
                         mock.patch("time.monotonic", side_effect=lambda clock=clock: clock.now),
                         mock.patch("time.sleep", side_effect=advance),
                         mock.patch.object(monitor_store.Store, "running", return_value=True),
@@ -531,6 +537,13 @@ class ReadinessTest(unittest.TestCase):
                 self.assertIn("already running", out.getvalue())
                 spawn.assert_not_called()
 
+    def test_the_lock_wait_covers_dashboard_discovery_and_startup(self) -> None:
+        self.assertEqual(
+            client.MAX_CANDIDATES * (client.HEALTH_TIMEOUT_SEC + client.STARTED_PROBE_SEC)
+            + client.START_TIMEOUT_SEC,
+            monitor.DISCOVERY_SEC,
+        )
+
     def test_a_person_whose_command_stays_locked_gets_the_busy_sentence_within_the_bound(
         self,
     ) -> None:
@@ -547,6 +560,7 @@ class ReadinessTest(unittest.TestCase):
                 mock.patch.object(monitor, "REQUEST_TIMEOUT_SEC", 0.4),
                 mock.patch.object(monitor, "READY_SEC", 0.5),
                 mock.patch.object(monitor, "WORKER_WAIT_SEC", 0.1),
+                mock.patch.object(monitor, "DISCOVERY_SEC", 1.0),
                 mock.patch("time.monotonic", side_effect=lambda: clock),
                 mock.patch("time.sleep", side_effect=advance),
                 mock.patch.object(client, "request") as request,
@@ -559,9 +573,9 @@ class ReadinessTest(unittest.TestCase):
                 )
             self.assertEqual((1, ""), (code, out.getvalue()))
             self.assertEqual(client.sentence("monitor_busy") + "\n", err.getvalue())
-            # Two reads, two readiness waits, three cleanup waits, and handoff margin.
-            self.assertGreaterEqual(clock, 4.1)
-            self.assertLessEqual(clock, 4.15)
+            # Discovery, two reads, two readiness waits, three cleanup waits, and handoff margin.
+            self.assertGreaterEqual(clock, 5.1)
+            self.assertLessEqual(clock, 5.15)
             request.assert_not_called()
 
     def test_a_person_is_told_when_the_monitor_worker_is_blocked_before_its_first_lease(

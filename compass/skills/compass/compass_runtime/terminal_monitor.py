@@ -30,6 +30,11 @@ IDLE_SEC = 7200.0
 REQUEST_TIMEOUT_SEC = client.DRIFT_REQUEST_TIMEOUT_SEC
 READY_SEC = REQUEST_TIMEOUT_SEC + 5.0
 WORKER_WAIT_SEC = 6.0
+# Finding no dashboard, starting one and finding it again, as `client.ensure_dashboard` bounds it.
+DISCOVERY_SEC = (
+    client.MAX_CANDIDATES * (client.HEALTH_TIMEOUT_SEC + client.STARTED_PROBE_SEC)
+    + client.START_TIMEOUT_SEC
+)
 SIDECAR_FLAG = "--monitor-sidecar"
 
 
@@ -180,10 +185,11 @@ def command(
             if not held:
                 # A competing command owns admission until readiness, rather than merely until
                 # Popen returns. Waiting here costs no dashboard request and no second worker.
-                # Replacement can read the old lease, stop it, look up the session, then
-                # await readiness and reap a failed child. Keep those budgets in step.
+                # The first command may find or start the dashboard, read the old lease, stop it,
+                # look up the session, await readiness and reap a failed child. Keep in step.
                 until = (
                     time.monotonic()
+                    + DISCOVERY_SEC
                     + 2 * (REQUEST_TIMEOUT_SEC + READY_SEC)
                     + 3 * WORKER_WAIT_SEC
                     + 2
