@@ -17,6 +17,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -1298,6 +1299,16 @@ class AFallbackProjectLabelIsNotAPathTest(HistoryStoreTestCase):
 
 
 class ForgetPreservesStoresWhoseDashboardMayBeElsewhereTest(HistoryStoreTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        # cli.main's shutdown calls supervise.kill_all, which shuts the runner for the whole
+        # process; give each test its own so later modules in this worker stay open.
+        from compass_runtime import supervise  # noqa: PLC0415
+
+        patcher = mock.patch.object(supervise, "_SHUTDOWN", threading.Event())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     LOCAL: ClassVar[dict[str, str]] = {
         "machine": "machine-a",
         "boot": "boot-a",

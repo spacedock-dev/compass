@@ -500,6 +500,16 @@ print(json.dumps({{
 
 
 class CleanupRefusesDashboardStartupTest(support.RuntimeTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        # cli.main's shutdown calls supervise.kill_all, which shuts the runner for the whole
+        # process; give each test its own so later modules in this worker stay open.
+        from compass_runtime import supervise  # noqa: PLC0415
+
+        patcher = mock.patch.object(supervise, "_SHUTDOWN", threading.Event())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_a_dashboard_reports_cleanup_contention_before_recovery_or_serving(self) -> None:
         with (
             tempfile.TemporaryDirectory() as tmp,
