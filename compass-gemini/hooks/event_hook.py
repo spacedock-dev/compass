@@ -36,17 +36,19 @@ guessing would post one harness's events to the other's route.
 
 ## What it sends, and what it refuses to send
 
-Only the twelve allowlisted envelope fields, built field by field from the native
+Only the allowlisted envelope fields, built field by field from the native
 payload. The prompt, the tool name, the tool input and output, and every other
 native field are dropped here rather than at the server, so they are never put
 on a socket at all.
 
-Three of the twelve are terminal identity, and they ride `SessionStart` alone. A
+Three are terminal identity, and they ride `SessionStart` alone. A
 hook can see what the dashboard never can: `events.ALLOWED_FIELDS` carries no pid,
 tty or terminal identity and no collector reads one, but a hook is a child of the
 harness and its environment says which tmux pane it is in. What is read is the
-tmux socket NAME and `TMUX_PANE`, from the environment, and nothing else. No
-ancestry walk, no controlling terminal, no `ps`: those belong to the Apple Event
+tmux socket NAME and `TMUX_PANE`, from the environment, and no other terminal
+identity. SessionStart also reads the explicit launcher claim
+COMPASS_PARENT_SESSION; it never infers a parent. No ancestry walk, no
+controlling terminal, no `ps`: those belong to the Apple Event
 case `SECURITY.md` does not name yet, and `docs/captures/README.md` measured
 `hook_ms` at 200.8 to 524.8 ms dominated by exactly those calls.
 
@@ -315,6 +317,19 @@ def tmux_identity(environ: Any, uid: int | None) -> dict[str, str]:
     return {"tmux_socket": name, "tmux_pane": pane, "tmux_server": server}
 
 
+def declared_parent(environ: Any) -> dict[str, str] | None:
+    """A bounded launcher claim, never a process-tree inference."""
+    raw = environ.get("COMPASS_PARENT_SESSION")
+    if not isinstance(raw, str) or len(raw) > 80:
+        return None
+    harness, separator, sid = raw.partition(":")
+    uuid = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    pattern = r"[0-9a-fA-F]{8}|" + uuid if harness == "claude" else uuid
+    if not separator or harness not in EVENTS_BY_HARNESS or re.fullmatch(pattern, sid) is None:
+        return None
+    return {"harness": harness, "sid": sid}
+
+
 def process_uid() -> int | None:
     """This process's uid, or None where the platform has none (Windows)."""
     getuid = getattr(os, "getuid", None)
@@ -564,6 +579,9 @@ def envelope(
         if isinstance(value, str) and value.strip():
             event[field] = value.strip()
     if name == IDENTITY_EVENT:
+        parent = declared_parent(os.environ if environ is None else environ)
+        if parent is not None:
+            event["declared_parent"] = parent
         event.update(
             tmux_identity(
                 os.environ if environ is None else environ,

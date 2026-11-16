@@ -37,13 +37,14 @@ class AReaderChoosesTheInstalledCopyTest(unittest.TestCase):
         # An allowlist of environment variables keeps inherited harness identities,
         # relocated stores and Python startup customizations out of these shells.
         self.env = {
+            "COORDINATOR_SID": "abcdef12-3456-7890-abcd-ef1234567890",
             "HOME": str(self.home),
             "PATH": str(self.bin) + os.pathsep + os.defpath,
             "SNIPPET_CALLS": str(self.calls),
         }
         python = self.bin / "python3"
         python.symlink_to(sys.executable)
-        for command in ("pi", "codex"):
+        for command in ("pi", "codex", "claude"):
             stub = self.bin / command
             stub.write_text(
                 f"#!{sys.executable}\n"
@@ -175,6 +176,10 @@ class AReaderChoosesTheInstalledCopyTest(unittest.TestCase):
                 for call in calls:
                     if Path(call[0]).name == "pi":
                         self.assertEqual(["-e", str(chosen / "pi_extension.js")], call[1:])
+                    elif Path(call[0]).name == "claude":
+                        self.assertEqual(["-p", "Review the parser documentation"], call[1:])
+                    elif Path(call[0]).name == "codex" and call[1:2] == ["exec"]:
+                        self.assertEqual(["exec", "Review the parser tests"], call[1:])
                     elif Path(call[0]).name == "codex":
                         self.assertEqual(
                             [
@@ -200,6 +205,18 @@ class AReaderChoosesTheInstalledCopyTest(unittest.TestCase):
                                 ["--sessions", "waiting"],
                                 ["--port", "4601", "--status"],
                                 ["--port", "4553", "--stop"],
+                                [
+                                    "--set-group",
+                                    "Parser team",
+                                    "--session",
+                                    "claude:" + self.env["COORDINATOR_SID"],
+                                ],
+                                [
+                                    "--set-group",
+                                    "",
+                                    "--session",
+                                    "claude:" + self.env["COORDINATOR_SID"],
+                                ],
                             ],
                         )
                 if "opencode_plugin.js" in snippet:

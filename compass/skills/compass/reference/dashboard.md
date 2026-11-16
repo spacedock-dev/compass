@@ -43,6 +43,29 @@ Pi relocation: `PI_CODING_AGENT_SESSION_DIR` is an authoritative direct session-
 | **Working** (blue) | Actively generating | transcript/subagent/DB activity within the last 90s; detail = in-progress task's activeForm, else running subagents, else `thinking` where the harness can see the model holding the turn with no tool call open, else last tool, else `generating…`. Claude also keeps an unanswered non-input call in the current step Working as `running <tool>` for at most 900 seconds from that call. A foreground builder still running after 15 minutes can therefore read Idle. Only the newest assistant message id qualifies; parallel calls sharing it may remain pending independently. A later assistant message, a human prompt, compaction, a validated Stop or an interruption ends this foreground wait. Injected task notifications, system reminders and hook feedback do not end it. Codex also keeps a shell-capable call (`exec`, `exec_command`, `shell_command` or `write_stdin`) Working as `running <tool>` for up to 900 seconds from the call while its turn is open. The bounded rollout tail must contain the call and no matching output; parallel calls retire independently. The tool name is shown without inferring shell commands from JavaScript. A killed process with no recorded end can read Working until the cap; a still-running process past the cap falls back to the usual activity rules. A new turn, a genuine user message, a recorded finish or an interruption clears pending calls. Injected context and subagent notifications preserve them. Custom `exec` needs nonblank JavaScript input; direct function calls need JSON-object arguments with a nonblank `cmd` or `command`, or an integer `session_id` for `write_stdin`. An observed session end or a remembered Stop that still stands makes the row idle and inactive, even with a pending call. In headless sessions only, outstanding background Agent/Task subagents and explicit Bash calls with `run_in_background: true` acknowledged by a parent-owned tool result in the current turn read `waiting on 1 background task` or `waiting on N background tasks`, for at most 900 seconds from the newest qualifying outstanding launch. These background tasks can make the parent's Stop yield; a later interruption or new user prompt retires their wait. A recorded task completion ends its wait. Ordinary shell `&` jobs and calls automatically moved to the background do not qualify. Interactive sessions and sessions whose entrypoint is unknown keep the usual background activity and Stop rules. Each cap is independent, an input request still wins, and an observed session end ends both waits. A session killed mid-tool without an observed end (SIGKILL) can read Working until the 900-second cap instead of the usual 90-second activity window; this is an accepted limit. Every other measured ending sent SessionEnd. Pi also has exceptions to recency in both directions; see its store bullet above |
 | **Idle** (gray) | Turn ended | anything else — "awaiting your message" from the harness, which the board replaces with how long ago the session was last active. A Claude Code session whose transcript records no finished turn says "last turn not recorded as finished" instead, since it may still be mid-turn. Two situations wear the one word: a turn that ended and nobody read the result, and a session still waiting on a reply that never came. Only a turn-end event tells them apart, so only the four harnesses with turn-end hooks can — Claude Code, Codex, Gemini CLI and Antigravity, and only with their hooks installed. On the other six the row says the answer cannot be known there, rather than guessing at it: it carries `Read by scanning: no turn end can be observed here`, in the session cell and again on the session page, so a quiet row is read as nothing observed recently and not as a turn that finished |
 
+## Launcher declarations
+
+A launcher can set `COMPASS_PARENT_SESSION=HARNESS:SESSION_ID` on a child before its SessionStart
+hook runs. The hook accepts `claude`, `codex`, `gemini` or `droid`, with a full UUID or, for
+Claude, the published eight-character key. No parent is inferred. `/api/data` publishes
+`declared_parent: {harness, sid}` with the matched parent's published identity and
+`declared_parent_state: "linked"`. Without a declaration both are null. An unmatched parent,
+self-link or cycle member has a null parent and state `"not_linked"`.
+
+A linked working child can keep an otherwise idle, non-ended parent Working, without overriding
+an input wait. `waiting_on_child: {harness, sid}` names the most recently active eligible child;
+ascending harness and sid break ties. It is null when no hold applies. Idle, finished or ended
+children cannot hold a parent. Each hold lasts at most the child's activity plus the existing
+900-second tool-in-flight ceiling; chained links do not renew it. A resume without the variable
+preserves the claim in this dashboard run. A dashboard restart forgets declarations.
+
+`--set-group LABEL --session HARNESS:SESSION_ID` saves a local display label, at most 40
+characters, using `/api/annotate` and the goal-save admission guards. Empty LABEL clears it. The row's
+`group` is the effective string or null; `group_source` is `"set"`, `"parent"` for inheritance
+from a linked labelled ancestor, or null. Own labels win. `--no-annotations` reads no labels and
+refuses saves, so there are no labels to inherit. Labels and parent metadata never enter history
+or model input. Goals and drift readings remain each session's own.
+
 ## Dashboard views
 
 The dark-only dashboard opens on **Sessions**, which keeps active work first and recent history

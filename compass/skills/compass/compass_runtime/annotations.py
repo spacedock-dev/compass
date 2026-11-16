@@ -69,6 +69,7 @@ SCHEMA_VERSION = 2
 # What a stored key may occupy. Wide enough for a full UUID session id, which is
 # the identity this store binds on, and far narrower than the read cap.
 KEY_CAP_CHARS = 64
+GROUP_CAP_CHARS = 40
 
 # The absence sentences, in one place. Three issues render them and the shared
 # contract's first rule is that an absent value states its reason rather than
@@ -583,6 +584,7 @@ class Annotation(TypedDict):
     harness: str
     sid: str
     revisions: tuple[Revision, ...]
+    group: NotRequired[str]
     # Opt-in long-job identity. Missing means legacy; None means malformed,
     # never permission to remint an identity over an unreadable marker.
     long_incarnation: NotRequired[str | None]
@@ -1418,9 +1420,11 @@ def _entry(
     ]
     _drop_unbound_request_ages(parsed, harness, sid)
     kept = tuple(sorted(parsed, key=lambda rev: rev["n"])[-revision_cap:]) if revision_cap else ()
+    group = group_text(value.get("group"))
     if not kept:
-        return _discard_record(value, harness, sid)
+        return _group_record(value, harness, sid, group)
     entry: Annotation = {"harness": harness, "sid": sid, "revisions": kept}
+    _group_on(entry, group)
     settled = _settlement(value.get("settled"))
     if settled is not None:
         entry["settled"] = settled
@@ -1556,7 +1560,7 @@ def _eviction_rank(entry: Annotation) -> tuple[int, float]:
     deletion and evict words the reader still has. Words outrank a record of
     their absence, and within each group the least recently written goes first.
     """
-    return (1 if entry["revisions"] else 0, _last_written(entry))
+    return (1 if entry["revisions"] or entry.get("group") else 0, _last_written(entry))
 
 
 def _bounded(entries: Iterable[Annotation], limit: int) -> tuple[Annotation, ...]:
@@ -2225,6 +2229,7 @@ def _carried(existing: Annotation, updated: Annotation) -> Annotation:
     # are the new reading's to decide (`_departures_cleared`), so they do too.
     fresh = "assessment" in updated
     for name in (
+        "group",
         "long_incarnation",
         "long_receipts",
         "settled",
@@ -2799,6 +2804,80 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
         )
 
 
+def group_text(value: Any) -> str | None:
+    """Same masking as intent, with a short input cap and no silent truncation."""
+    if not isinstance(value, str) or len(value) > GROUP_CAP_CHARS:
+        return None
+    return records.safe_text(value, GROUP_CAP_CHARS).strip()
+
+
+def _group_record(
+    value: dict[str, Any], harness: str, sid: str, group: str | None
+) -> Annotation | None:
+    discarded = _discard_record(value, harness, sid)
+    if not group:
+        return discarded
+    entry: Annotation = discarded or {"harness": harness, "sid": sid, "revisions": ()}
+    entry["group"] = group
+    if at := reading.valid_prompt_time(value.get("written")):
+        entry["written"] = at
+    return entry
+
+
+def _group_on(entry: Annotation, group: str | None) -> None:
+    entry.pop("group", None)
+    if group:
+        entry["group"] = group
+
+
+def _carry_group(existing: Annotation | None, updated: Annotation, group: Any) -> None:
+    _group_on(
+        updated,
+        group_text(group) if group is not None else existing.get("group") if existing else None,
+    )
+
+
+def published_group(entry: Annotation | None) -> dict[str, Any]:
+    label = entry.get("group") if entry else None
+    return {"group": label or None, "group_source": "set" if label else None}
+
+
+def set_group(
+    config: RuntimeConfig,
+    state: RuntimeState,
+    harness: Any,
+    sid: Any,
+    *,
+    group: Any,
+    now: float | None = None,
+    diagnostic_sink: Callable[[str], None] = print,
+) -> str:
+    """Save local display metadata without minting or changing any intent revision."""
+    key = _key(harness, sid)
+    label = group_text(group)
+    if not config.annotations_enabled or not all(key) or label is None:
+        return OUTCOME_REFUSED
+    with _locked_store(config, state, diagnostic_sink) as store:
+        refused = _unwritten(store, key)
+        if store is None or refused:
+            return refused
+        existing = find(store.entries, *key)
+        if (existing.get("group", "") if existing else "") == label:
+            _cache(state, _bounded(store.entries, config.annotation_max_sessions))
+            return OUTCOME_UNCHANGED
+        updated: Annotation = (
+            deepcopy(existing) if existing else {"harness": key[0], "sid": key[1], "revisions": ()}
+        )
+        updated.pop("group", None)
+        if label:
+            updated["group"] = label
+        updated["written"] = time.time() if now is None else now
+        others = [entry for entry in store.entries if (entry["harness"], entry["sid"]) != key]
+        if label or updated["revisions"] or is_discarded(updated):
+            others.append(updated)
+        return _commit(config, state, store, key, others, diagnostic_sink=diagnostic_sink)
+
+
 # One keyword per field a save may carry, each independent; bundling them would
 # hide which one a caller left alone.
 def annotate(  # noqa: PLR0913
@@ -2807,6 +2886,7 @@ def annotate(  # noqa: PLR0913
     harness: Any,
     sid: Any,
     *,
+    group: Any = None,
     goal: Any = None,
     output: Any = None,
     lines: Any = None,
@@ -2843,6 +2923,12 @@ def annotate(  # noqa: PLR0913
     save keeps the start the reading already had (docs/design-reading-a-session.md,
     "Amended 2026-10-21 (owner): editing the goal keeps the reading's start").
     """
+    if group is not None and group_text(group) is None:
+        return OUTCOME_REFUSED
+    if group is not None and goal is None and output is None and lines is None:
+        return set_group(
+            config, state, harness, sid, group=group, now=now, diagnostic_sink=diagnostic_sink
+        )
     if reason is not None:
         reason.clear()
     legacy = lines is None and isinstance(output, str)
@@ -2867,6 +2953,7 @@ def annotate(  # noqa: PLR0913
         state,
         (harness, sid),
         goal=goal,
+        group=group,
         lines=lines,
         now=now,
         adoption=options,
@@ -3184,6 +3271,7 @@ def _annotate(  # noqa: PLR0913
     state: RuntimeState,
     identity: tuple[Any, Any],
     *,
+    group: Any = None,
     goal: Any = None,
     lines: Any = None,
     now: float | None = None,
@@ -3247,7 +3335,7 @@ def _annotate(  # noqa: PLR0913
         existing = find(current, *key)
         base_lines = (
             existing["revisions"][-1]["lines"]
-            if existing is not None and not is_discarded(existing)
+            if existing is not None and existing["revisions"] and not is_discarded(existing)
             else ()
         )
         added = _with_entry(base_lines, entry_line, options.get("replace"))
@@ -3261,7 +3349,7 @@ def _annotate(  # noqa: PLR0913
         ):
             return OUTCOME_REFUSED
         through = options.get("settle_through")
-        if existing is not None and not is_discarded(existing):
+        if existing is not None and existing["revisions"] and not is_discarded(existing):
             last = existing["revisions"][-1]
             if new_goal is None:
                 source_fields = _provenance(last) or {}
@@ -3281,7 +3369,11 @@ def _annotate(  # noqa: PLR0913
                 and (_provenance(last) or {}) == source_fields
                 and not restart
             )
-            if unchanged and through is None:
+            if (
+                unchanged
+                and through is None
+                and (group is None or group_text(group) == existing.get("group", ""))
+            ):
                 # Unchanged text is not a new request, so it mints no revision.
                 # The cache is still refreshed from the load above: two
                 # dashboards share this file, and returning early with a stale
@@ -3344,6 +3436,7 @@ def _annotate(  # noqa: PLR0913
                     },
                 ),
             }
+        _carry_group(existing, updated, group)
         if through is not None:
             # In the same write as the revision it rests on (DRC-4682): two
             # requests could interleave with another tab, and `settle` alone
@@ -3574,11 +3667,12 @@ def clear(
         existing = find(current, *key)
         others = tuple(e for e in current if (e["harness"], e["sid"]) != key)
         removed = 0
-        if existing is None:
+        if existing is None or (not existing["revisions"] and not is_discarded(existing)):
             kept: list[Annotation] = list(others)
         elif is_discarded(existing):
             # Already recorded, and the stamp does not move: the record says
             # when the words went, and a second press deleted nothing.
+            _group_on(existing, None)
             kept = [*others, existing]
         elif expected_revision is not None and expected_revision != existing["revisions"][-1]["n"]:
             # The newer words go into this process's copy, so the reply's
@@ -3600,6 +3694,20 @@ def clear(
         if receipt is not None and outcome == OUTCOME_STORED:
             receipt["removed_revisions"] = removed
         return outcome
+
+
+def _forget_discard(entry: Annotation) -> Annotation | None:
+    if not is_discarded(entry):
+        return entry
+    if not entry.get("group"):
+        return None
+    return {
+        "harness": entry["harness"],
+        "sid": entry["sid"],
+        "revisions": (),
+        "group": entry["group"],
+        "written": entry.get("written") or entry["discarded"],
+    }
 
 
 def forget(config: RuntimeConfig) -> str:
@@ -3641,8 +3749,10 @@ def forget(config: RuntimeConfig) -> str:
             # would keep only what it could parse, which is nothing.
             return FORGET_UNWRITABLE if store is None else FORGET_UNTRUSTED
         entries = store.entries
-        kept = tuple(entry for entry in entries if not is_discarded(entry))
-        if len(kept) == len(entries):
+        kept = tuple(
+            replacement for entry in entries if (replacement := _forget_discard(entry)) is not None
+        )
+        if not any(is_discarded(entry) for entry in entries):
             return FORGET_NOTHING
         if not store.writable:
             return FORGET_UNWRITABLE

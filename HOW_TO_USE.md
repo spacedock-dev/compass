@@ -1098,3 +1098,38 @@ explains the legacy cleanup exception and the shared-machine-ID limit on reboot 
 
 Anything that looks like a defect rather than a configuration problem belongs in an issue. The
 security contact is in [SECURITY.md](SECURITY.md).
+
+## Nest a launched run under its coordinator
+
+Install the lifecycle hooks for each child harness and keep Compass running. A declaration links
+only to a parent already visible on that board. It does not create a row. Find the coordinator's
+published harness and session id in `/api/data`, or keep the `session_id` from its SessionStart
+hook input. Claude Code also accepts `--session-id UUID`, so a launcher can choose and retain the
+coordinator's UUID before starting it. This avoids guessing an environment variable. A full
+Claude UUID resolves to the row's eight-character key.
+
+After [choosing the installed copy](#find-the-copy-your-commands-will-run), this shell example sets
+the visible coordinator's group and launches two independent children under it. Replace the UUID
+with that coordinator's actual id. The children keep their own goals and readings.
+
+```bash
+COORDINATOR_SID=abcdef12-3456-7890-abcd-ef1234567890
+python3 "$SKILL/launch.py" "$SKILL/server.py" --set-group 'Parser team' \
+  --session "claude:$COORDINATOR_SID"
+COMPASS_PARENT_SESSION="claude:$COORDINATOR_SID" codex exec 'Review the parser tests'
+COMPASS_PARENT_SESSION="claude:$COORDINATOR_SID" claude -p 'Review the parser documentation'
+```
+
+The label is local display metadata, at most 40 characters, and never part of a model prompt.
+A linked child with no own label inherits it. To clear an own label and restore inheritance:
+
+```bash
+python3 "$SKILL/launch.py" "$SKILL/server.py" --set-group "" \
+  --session "claude:$COORDINATOR_SID"
+```
+
+The write works through a pipe and checks annotation availability just as a goal save does. It fails
+when annotations are disabled. Parent declarations arrive only at SessionStart, survive a resume
+that omits the variable, and last for the dashboard run. An unknown or expired parent remains
+unlinked; self-links and cycles are refused. The [security contract](SECURITY.md#launcher-parent-declarations-and-group-labels)
+states the activity ceiling and the limits of a declaration.

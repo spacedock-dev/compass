@@ -181,7 +181,17 @@ def _annotation_body_refused(payload: dict[str, Any]) -> bool:
     # (`annotations.mark_not_accurate` checks it against the reading it holds).
     marked, read_at = payload.get("not_accurate"), payload.get("read_at")
     return (
-        any(value is not None and not isinstance(value, str) for value in texts)
+        (
+            "group" in payload
+            and (
+                annotation_store.group_text(payload["group"]) is None
+                or any(
+                    key in payload
+                    for key in ("clear", "adopt", "add_direction", "not_accurate", "settle_through")
+                )
+            )
+        )
+        or any(value is not None and not isinstance(value, str) for value in texts)
         or (
             "not_accurate" in payload
             and (
@@ -3403,12 +3413,15 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 harness,
                 sid,
                 goal=goal,
+                group=payload.get("group"),
                 output=output,
                 lines=payload.get("lines"),
                 expected_revision=payload.get("expected_revision"),
                 origins=payload.get("origins"),
                 now=now,
-                window_start=self._typed_window_start(harness, sid, now),
+                window_start=self._typed_window_start(harness, sid, now)
+                if any(k in payload for k in ("goal", "output", "lines"))
+                else None,
                 read_from_now=payload.get("read_from_now") is True,
                 receipt=receipt,
                 reason=reason,

@@ -184,7 +184,11 @@ class TerminalActionsMatchTheClientTest(unittest.TestCase):
 
     # The client answers these for a status line and for a person at a shell. Neither is a
     # question to put to a session, so the skill offers no action for them.
-    NOT_ACTIONS = ("--footer", "--version")
+    NOT_ACTIONS = (
+        "--footer",
+        "--version",
+        "--set-group",  # Launcher writes need a label and explicit target, not an action word.
+    )
     LAUNCHER = 'python3 "<skill-dir>/launch.py" "<skill-dir>/server.py"'
 
     def test_a_person_only_preapproves_reading_the_goal_and_keeps_writes_out_of_the_skill(
@@ -1139,6 +1143,7 @@ class EventEnvelopeEnumerationTest(unittest.TestCase):
         12: "twelve",
         13: "thirteen",
         14: "fourteen",
+        15: "fifteen",
     }
 
     def test_the_documented_envelope_width_is_the_allowlist_the_code_enforces(self) -> None:

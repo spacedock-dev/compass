@@ -2680,7 +2680,8 @@ def end_kind(row: Mapping[str, Any]) -> str:
     exactly the rows a mid-flight reading exists for, while the card beside it
     said the session was working.
     """
-    idle = row.get("state") == "idle"
+    # A launcher hold changes display state only; no child can change this session's scope.
+    idle = row.get("state") == "idle" or row.get("waiting_on_child") is not None
     ended = _number(row.get("ended_at"))
     if ended is not None and ended > 0:
         return "session-end"

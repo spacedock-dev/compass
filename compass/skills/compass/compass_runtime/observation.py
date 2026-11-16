@@ -304,6 +304,7 @@ class Observation:
         # or a row aged past `window_hours` and used again — would destroy it
         # permanently and leave the control dead for the rest of the session.
         self._focus_at: dict[SessionKey, float] = {}
+        self._parents: dict[SessionKey, tuple[dict[str, str], float]] = {}
         # The focus command's floor and in-flight gate, on `quota`'s pattern:
         # `usage_poll_floor_sec` beside `usage_fetch_inflight`. A raise is the
         # one thing Compass does that it cannot undo and that is visible outside
@@ -468,6 +469,7 @@ class Observation:
             # a transcript the collection's own guard already reads.
             if self._lift_ended(key, event, overlay) or runtime_events.reopens_session(event):
                 self._end_ops.append(("lift", key, 0.0))
+            self._mark_parent(key, event, now)
             self._mark_focus(key, event)
             self._dirty[event.harness] = self._dirty.get(event.harness, 0) + 1
             if overlay is not None and overlay.kind == runtime_events.OVERLAY_NEEDS_INPUT:
@@ -1017,6 +1019,25 @@ class Observation:
                 if name.startswith(("reject.", "overlay.", "pending.")) or name == "retired"
             }
 
+    def _mark_parent(self, key: SessionKey, event: runtime_events.Event, now: float) -> None:
+        if event.declared_parent is not None and (
+            key in self._parents or len(self._parents) < self.config.event_overlay_max_sessions
+        ):
+            self._parents[key] = (event.declared_parent, now)
+        elif key in self._parents:
+            parent, _ = self._parents[key]
+            self._parents[key] = (parent, now)
+
+    def _prune_parents(self, keys: set[SessionKey], now: float) -> None:
+        for key, (_, at) in list(self._parents.items()):
+            if key not in keys and now - at >= self.config.focus_target_ttl_sec:
+                del self._parents[key]
+
+    def parent_declarations(self) -> dict[SessionKey, dict[str, str]]:
+        """Snapshot this run's claims without exposing the mutable event ledger."""
+        with self._lock:
+            return {key: dict(parent) for key, (parent, _) in self._parents.items()}
+
     def note_rows(self, keys: set[SessionKey]) -> None:
         """Tell the ledger which rows a collection actually produced.
 
@@ -1060,6 +1081,7 @@ class Observation:
             for key in [k for k, at in self._focus_at.items() if now - at >= ttl]:
                 del self._focus[key]
                 del self._focus_at[key]
+            self._prune_parents(keys, now)
             for key in list(self._overlays):
                 if key in keys:
                     self._pending.pop(key, None)

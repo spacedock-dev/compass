@@ -365,42 +365,42 @@
       "method": "GET",
       "name": "data-focused-drift",
       "route": "/api/data",
-      "sha256": "6aa0dbd454d399404b2fc76b4089c4df50ed93ffc9da3cb21d2a2f12c9e5e5b6",
+      "sha256": "ca8d376b086f43ed191c34f2c256077442c854f4957c909fb861cdd0d707a6d3",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-focused-drift-inaccurate",
       "route": "/api/data",
-      "sha256": "094044a0f7e208145e90146e9c172add2a41d771c78e4872aeef5f7cee31d6ac",
+      "sha256": "caa38f36cde23bb0466becff3a032cecf650ba895bcd303f9acf30e45bdce9b7",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-focused-drift-medium",
       "route": "/api/data",
-      "sha256": "88383953742f91b1619716cd73840caaeb3de2227e07cab7e04bdb3a111c0818",
+      "sha256": "ccb443106d3101b74035819ddc4d64bfe3de2dfe9d1d51378efa33e253c5d980",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-focused-drift-missing-evidence",
       "route": "/api/data",
-      "sha256": "6f8c2047d55df0152baee906176862ec253d39f21f82e61d388937ebf5508aab",
+      "sha256": "b36f7c0ce218b0726f64a0672adf5cf07577d293e6d43583c6c563ddf941ef6e",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-focused-drift-stale",
       "route": "/api/data",
-      "sha256": "eb9e676ad0122451af67b2be7000a19dbcdebaafff7202a7417e5b432e2e4375",
+      "sha256": "c43d7095ccc73af0c27fde510d78a37c8ab3e2d00779a4e8c47f7cd5f04916c3",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-focused-drift-withdrawn",
       "route": "/api/data",
-      "sha256": "062a4d5290b21aa0985888da22ede5eca470a45e7a9acc48c1a9f6a8410027e9",
+      "sha256": "284d595f382bd234dd007d79f402539b1e77592917d004f5102235bb2cf9349f",
       "status": 200
     },
     {
@@ -421,98 +421,98 @@
       "method": "GET",
       "name": "data-healthy",
       "route": "/api/data",
-      "sha256": "cd630c2706976b606593271d33629cb8b5162aa49a798b44813b400be4d52f07",
+      "sha256": "d2f67ef93a1f09dbb421b90099e856d9d3d65337a5bbb0da0f259e037bb52339",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-identity-collisions",
       "route": "/api/data",
-      "sha256": "5a38cf7b75c3131e70bd1b18199f31ea26ca9bba6a42ceffb0ee185fb0a997ed",
+      "sha256": "3bc8d47baa4e54b317c427e6953348d77c051c34a9666d8ce270ae2c511e71b0",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-live-row",
       "route": "/api/data",
-      "sha256": "e08345338961b04c82288ac9dd19f83be67dc8f73473e20074ba39d824feabe7",
+      "sha256": "9b25fc88db818abb9e783de11121b4dc96b374175e33b8d81ba73d63a068b13a",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-restarted-build",
       "route": "/api/data",
-      "sha256": "0e1d44c16e0bb98fdfcf4e90933ecf58a4b81e1b656d8611029d8cc8111c2730",
+      "sha256": "c532a7ae5282fddcd819eca468cf6f47c375d981a099ab3596f76ab270374270",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-session-states",
       "route": "/api/data",
-      "sha256": "45b9abaa9fc359bb7d64954a93b1b6f9bfd6edba9f1a243c5e3e6e48b47b3a41",
+      "sha256": "ba190f9c63b4e426a0ce24a8e8228407e6b820ce59c40dcd9c628914d943ce91",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-shared-explanations",
       "route": "/api/data",
-      "sha256": "2350b67de4d8f21187b5147293793dffbbf57f961b6b08cd4c45e5a5136bef52",
+      "sha256": "399f25b898948a2492add1a78cf55c4c12c61cf71de913e7ebe5bec3311fcf30",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-show-all",
       "route": "/api/data",
-      "sha256": "7b4b19e1a98e7fcd0be17206487013fc8caf27997d66f0c28305db85c22a432c",
+      "sha256": "6ea94e275d96e28e56a36cda4be16402f3c5f18c0b0492969ddafd76ac58faf3",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-task-preview-whole",
       "route": "/api/data",
-      "sha256": "0d57ace2cbb5c262350631575fadc8d97e74615986c9e46c38190114840852f6",
+      "sha256": "85144a7eddc174062258b8a4ede571b36c2b63ce0bb7d3b264b9522364f82b2c",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-task-preview-xml",
       "route": "/api/data",
-      "sha256": "2f374618bc9bdaec8fe30e925310a464d8857474942e13a7221b67993c8d364c",
+      "sha256": "bbbb7457fc304adf4807dcf0c74d1c4b0d07a7c1d48f0134a656905bb1ce8251",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-terminal-project",
       "route": "/api/data",
-      "sha256": "a5dc3065d332b9ecb8bf26a1635858f2826635118026ebec234840362e0c255c",
+      "sha256": "5db4be57770534f558375d22ea170e8135e017d6dedc5d7b8ca77c001c03c18f",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-terminal-project-fo",
       "route": "/api/data",
-      "sha256": "4396261dc4dfad714df470a86deb920da43e67b0aa179bb0bd7cc52b22f2f3f4",
+      "sha256": "9e6b27967f1f3cf16e9c49cbfb64581987a007df1be1e023ed346560bf5b2de6",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-unasked-dormant",
       "route": "/api/data",
-      "sha256": "0971f4531de71a7dddee605d33dc0c5cea5834e69ba8d0f73f13ef9d3b14a78f",
+      "sha256": "51505f2e4bd6cd818ddf252bdd09ac90c06f61852849374b0f4f744ab322f587",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-unasked-regranted",
       "route": "/api/data",
-      "sha256": "68e9b70b6f98381ec66ef263ae4860d0235bc99eeba9938513eef4b7e2348caf",
+      "sha256": "5a01b0e9af693602f3c38cd6fcdcf7cdc946e8df89e9904e276d5679ffeb8281",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-unasked-revoked",
       "route": "/api/data",
-      "sha256": "b7bde0ad0500647adbfc9250eea13f0c02788ebc3e8151b64b94e637f022c37e",
+      "sha256": "da6d70a563aaa3a67c3c356967d87246ff414e2385ee94fa5b0c45a3a98fc6fa",
       "status": 200
     },
     {
@@ -834,7 +834,7 @@
       "method": "GET",
       "name": "session-shared-explanations",
       "route": "/api/session",
-      "sha256": "21ddc212db2eb4f6a7d393511a755bf54259dcb9c4c298f2d3d80926e26c5be7",
+      "sha256": "82fc51524d85d45733c3de5e999d012e64ea23c07a8428545b7a185f7a9271cb",
       "status": 200
     },
     {

@@ -12,6 +12,7 @@ These older rules cannot protect a dashboard in another namespace sharing the st
 
 | Flag / URL | Effect |
 |---|---|
+| `--set-group LABEL` | Save a local display group for an explicit `--session HARNESS:SESSION_ID`; an empty string clears it. At most 40 characters. Uses the goal-save admission guards and works in a launcher pipe. It changes no intent revision and calls no model. Unavailable under `--no-annotations`. |
 | `--no-update-check` | Refuse daily release lookups for this run. The saved Turn off daily update checks checkbox in Settings also stops them across restarts. Checks are on by default; either switch turns them off. |
 | `--internal` [on/off] | With no value, show the effective internal-use marker and exit. `on` or `off` saves it in the Compass home; `SPACEDOCK_INTERNAL=1` overrides a saved off. A development build alone is not internal. |
 | `--frontend-dev-manifest PATH` | Contributor-only ticket for an owned Vite child, requiring a foreground server on `127.0.0.1`. Startup validates isolated fixture roots and a fresh child handshake; models, quota fetching and native actions are disabled. Diagnose/forget refuse this mode. Ordinary installed launches use the packaged page. |
