@@ -2286,14 +2286,16 @@ The argv, every flag checked against `claude --help` on 2.1.280, run without a s
   `hooks` key in any managed source Compass reads (the managed file, a drop-in, the cached remote
   settings) leaves the destination unnamed, unless the same source sets `disableAllHooks: true`.
   It refuses no lane: a reading then runs under the same terms as any other unnamed destination
-  (owner ruling 2026-11-13, "Unname, don't refuse"). A managed MCP file (`managed-mcp.json` in
-  the managed folder) is treated the same way: its servers are commands that could be handed the
-  call's words, so while it exists the destination names nothing and no lane is refused for it.
-  Whether a managed server starts under these flags is not measured. The 2.1.323 binary reads the
-  managed folder at a fixed system path, so a test file there needs root, and settling it another
-  way would need a model call. Its strings suggest the CLI refuses `--strict-mcp-config` outright
-  while a readable managed MCP file exists, so the call would fail before any server starts, but
-  that is a reading of the binary, not a measurement.
+  (owner ruling 2026-11-13, "Unname, don't refuse"). Managed MCP is different: Claude Code
+  2.1.325 on Linux was measured on 2026-11-17 to refuse `--strict-mcp-config` before any API
+  call whenever a readable `managed-mcp.json` exists, even with an empty `mcpServers` map.
+  The [capture](docs/captures/claude/managed-mcp-strict-config-2.1.325-linux.jsonl) records the
+  absent-file control reaching invalid-key handling and both present-file arms refusing.
+  Compass therefore refuses every Claude lane before reserving or charging a call, with
+  `settings-refused`, while this file is present in `/etc/claude-code/` on Linux or
+  `/Library/Application Support/ClaudeCode/` on macOS. The macOS path uses the same conservative
+  guard; this capture measured Linux. The destination remains unnamed while the file exists.
+
 - `--tools ""`: the built-in tool set is empty.
 - `--strict-mcp-config --mcp-config '{"mcpServers":{}}'`: no MCP server from anywhere.
 - `--disable-slash-commands`, `--no-chrome`, and `--no-session-persistence`, so no session is saved

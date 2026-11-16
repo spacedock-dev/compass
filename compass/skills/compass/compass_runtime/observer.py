@@ -711,6 +711,8 @@ def claude_lane_refusal(model: str, *, analyze: bool = False) -> str:
     it from `available` too, so a refused press is not charged. Analyze refuses on all of
     `claude_settings.resolve`; the others on what moves the call (`claude_settings.lane_refusal`).
     """
+    if claude_settings.managed_mcp_present():
+        return SETTINGS_REFUSED
     if analyze:
         return "context-config" if claude_settings.resolve(model).refusal else ""
     return "context-config" if claude_settings.lane_refusal(model) else ""
@@ -825,8 +827,8 @@ class PreparedClaude:
         environment = claude_environment(os.environ, analyze=self.analyze)
         # Re-read immediately before launching. This narrows, but cannot remove,
         # the file-mutation/remote-refresh race inside the external CLI.
-        if not self.analyze and claude_lane_refusal(self.model):
-            return "", "context-config"
+        if refusal := claude_lane_refusal(self.model, analyze=self.analyze):
+            return "", refusal
         if self.analyze:
             controls = claude_settings.resolve(self.model, environ=environment)
             capacity = reading_capacity.assess(
@@ -1049,8 +1051,8 @@ def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller 
             selected_model = validator(config.claude_reading_model if model is None else model)
         except ValueError as error:
             raise ClaudePreparationError("unavailable") from error
-        if claude_lane_refusal(selected_model, analyze=analyze):
-            raise ClaudePreparationError("context-config")
+        if refusal := claude_lane_refusal(selected_model, analyze=analyze):
+            raise ClaudePreparationError(refusal)
         try:
             binary = binary_resolver("claude")
             # Rooted, not `os.path.isabs`, which keeps a driveless Windows root at 3.12.

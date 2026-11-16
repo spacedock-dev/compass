@@ -32,7 +32,12 @@ _FALSE: Final = frozenset({"", "0", "false", "no", "off"})
 _CANONICAL_MODEL: Final = re.compile(r"claude-(?:sonnet|opus|haiku)-[0-9]+(?:-[0-9]+)?")
 type Deployment = Literal["direct", "gateway", "cloud", "unknown"]
 type Refusal = Literal[
-    "", "context-config", "dynamic-policy", "compaction-policy-conflict", "fallback-policy-conflict"
+    "",
+    "context-config",
+    "dynamic-policy",
+    "compaction-policy-conflict",
+    "fallback-policy-conflict",
+    "managed-mcp",
 ]
 
 
@@ -62,6 +67,17 @@ def present(path: Path) -> bool:
     except OSError as exc:
         raise SettingsError from exc
     return True
+
+
+def managed_mcp_present(*, root: Path | None = None, system: str | None = None) -> bool:
+    """The managed file that makes strict MCP configuration unusable, including an empty file."""
+    folder = MANAGED_DIRS.get(system or platform.system())
+    if folder is None:
+        return False
+    try:
+        return present(under(MANAGED_ROOT if root is None else root, f"{folder}/managed-mcp.json"))
+    except SettingsError:
+        return True
 
 
 def account(environ: Mapping[str, str]) -> tuple[str, str]:
@@ -544,6 +560,8 @@ def resolve(
     Known applicable dynamic sources refuse; no helper or network call runs here.
     """
     env = os.environ if environ is None else environ
+    if managed_mcp_present(root=root, system=system):
+        return Controls(refusal="managed-mcp")
     # WSL can inherit Windows policy that this reader cannot inspect.
     # Destination's historical environment interpretation remains unchanged.
     if env.get("WSL_DISTRO_NAME") or env.get("WSL_INTEROP"):
@@ -626,7 +644,7 @@ def lane_refusal(
     if name not in MANAGED_DIRS or env.get("WSL_DISTRO_NAME") or env.get("WSL_INTEROP"):
         return ""
     refusal = resolve(model, environ=env, root=root, system=name).refusal
-    if refusal == "context-config":
+    if refusal in {"context-config", "managed-mcp"}:
         return refusal
     try:
         sources = documents(env, root or Path("/"), name, managed_root=_managed_root(root))

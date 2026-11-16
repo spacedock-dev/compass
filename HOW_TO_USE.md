@@ -779,6 +779,9 @@ To find the setting:
 Metrics export on its own (`CLAUDE_CODE_ENABLE_TELEMETRY` with an OTLP endpoint) does not stop a
 check. These stop it without any of the keys above:
 
+- `managed-mcp.json` in `/Library/Application Support/ClaudeCode/` on macOS or
+  `/etc/claude-code/` on Linux, even when its `mcpServers` map is empty: Claude Code refuses
+  the strict MCP configuration every reading uses, so Compass stops before charging;
 - a configuration profile for Claude Code under `/Library/Managed Preferences` on macOS, which
   Compass cannot read;
 - `CLAUDE_CODE_MANAGED_SETTINGS_PATH` set in the dashboard's environment;

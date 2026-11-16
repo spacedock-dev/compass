@@ -12,6 +12,7 @@ import dataclasses
 import hashlib
 import json
 import os
+import platform
 import stat
 import subprocess
 import sys
@@ -23,6 +24,7 @@ from typing import Any
 from unittest import mock
 
 from compass_runtime import (
+    claude_settings,
     live_estimate,
     live_monitor,
     reading,
@@ -724,6 +726,44 @@ class RefusalsPrecedeEverything(Case):
         self.assertEqual([], self.runner.calls)
         self.assertEqual(0, reading_policy.monitor_status(self.config, now=NOW + 2)["used"])
         self.assertEqual({}, reading_policy.status(self.config, now=NOW + 2)["notices"])
+
+    def test_managed_mcp_refuses_the_live_monitor_before_reserving_a_check(self) -> None:
+        self.begin()
+        at = NOW + 1
+        for system in ("Darwin", "Linux"):
+            for populated in (False, True):
+                with self.subTest(system=system, populated=populated):
+                    target = (
+                        self.home
+                        / claude_settings.MANAGED_DIRS[system].lstrip("/")
+                        / "managed-mcp.json"
+                    )
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(
+                        json.dumps(
+                            {"mcpServers": {"probe": {"command": "/bin/true"}} if populated else {}}
+                        )
+                    )
+                    with (
+                        mock.patch.object(claude_settings, "MANAGED_ROOT", self.home),
+                        mock.patch.object(platform, "system", return_value=system),
+                        mock.patch.object(
+                            reading_policy,
+                            "reserve_monitor",
+                            side_effect=AssertionError("managed MCP reached the charge"),
+                        ) as reserve,
+                    ):
+                        refused = self.tick(at)
+                    self.assertEqual(
+                        ("refused", "settings-refused"), (refused.status, refused.reason)
+                    )
+                    reserve.assert_not_called()
+                    self.assertEqual(
+                        0, reading_policy.monitor_status(self.config, now=NOW + 2)["used"]
+                    )
+                    self.assertEqual(0, len(self.runner.calls))
+                    target.unlink()
+                    at += 60
 
     def test_no_observer_model_refuses_every_check(self) -> None:
         off = dataclasses.replace(self.config, model_calls_disabled=True)

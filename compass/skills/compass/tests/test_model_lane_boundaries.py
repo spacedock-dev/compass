@@ -7,6 +7,7 @@ watches the runner it would spawn with, so a lane that skips the shared check tu
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import inspect
 import json
@@ -25,6 +26,8 @@ from typing import Any, ClassVar
 from unittest import mock
 
 from compass_runtime import (
+    analyze_capacity,
+    claude_settings,
     goal_find,
     live_monitor,
     observer,
@@ -262,6 +265,111 @@ class EveryClaudeLaneRefusesSettingsThatMoveTheCall(unittest.TestCase):
                 status = self.reading_model(analyze=analyze)("p", output_cap_bytes=64)[1]
                 self.assertEqual("context-config", status)
         self.assertEqual([], self.runner.calls)
+
+    @contextlib.contextmanager
+    def managed_mcp(self, system: str, populated: bool) -> Any:
+        root = self.folder / "managed"
+        target = root / claude_settings.MANAGED_DIRS[system].lstrip("/") / "managed-mcp.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps({"mcpServers": {"probe": {"command": "/bin/true"}} if populated else {}})
+        )
+        try:
+            with (
+                mock.patch.object(claude_settings, "MANAGED_ROOT", root),
+                mock.patch.object(platform, "system", return_value=system),
+            ):
+                yield
+        finally:
+            target.unlink()
+
+    def test_managed_mcp_refuses_analyze_before_reserving_an_attempt(self) -> None:
+        for system in ("Darwin", "Linux"):
+            for populated in (False, True):
+                with (
+                    self.subTest(system=system, populated=populated),
+                    self.managed_mcp(system, populated),
+                ):
+                    model = self.reading_model(analyze=True)
+                    guarded = reading_policy.GuardedModel(
+                        self.config, model, time.time, provider="claude"
+                    )
+                    self.assertEqual(
+                        ("", observer.SETTINGS_REFUSED), guarded("p", output_cap_bytes=64)
+                    )
+                    self.assertFalse(guarded.reserved)
+                    self.assertIn(
+                        "managed-mcp.json", runtime_reading.WITHHELD[observer.SETTINGS_REFUSED]
+                    )
+                    capacity, controls = analyze_capacity._assess(
+                        "p",
+                        provider="claude",
+                        model=self.config.claude_reading_model,
+                        system_prompt="s",
+                    )
+                    self.assertEqual(
+                        observer.SETTINGS_REFUSED, analyze_capacity._refusal(capacity, controls)
+                    )
+        self.assertEqual(0, len(self.runner.calls))
+
+    def test_managed_mcp_refuses_goal_find_before_charging(self) -> None:
+        for system in ("Darwin", "Linux"):
+            for populated in (False, True):
+                with (
+                    self.subTest(system=system, populated=populated),
+                    self.managed_mcp(system, populated),
+                ):
+                    guarded = reading_policy.GuardedModel(
+                        self.config, self.reading_model(analyze=False), time.time, provider="claude"
+                    )
+                    result = goal_find.find(
+                        [goal_find.Prompt(1, "f1", 0.0, None, "ship the parser")],
+                        guarded,
+                        goal_cap=200,
+                    )
+                    self.assertEqual(goal_find.WHY_SETTINGS_REFUSED, result.why)
+                    self.assertFalse(result.called)
+                    self.assertFalse(guarded.reserved)
+        self.assertEqual(0, len(self.runner.calls))
+
+    def test_managed_mcp_refuses_unasked_checks_before_any_reservation(self) -> None:
+        for system in ("Darwin", "Linux"):
+            for populated in (False, True):
+                with (
+                    self.subTest(system=system, populated=populated),
+                    self.managed_mcp(system, populated),
+                ):
+                    model = self.reading_model(analyze=False)
+                    self.assertEqual(observer.SETTINGS_REFUSED, model.settings_refusal())
+                    guarded = reading_policy.GuardedModel(
+                        self.config, model, time.time, provider="claude", unasked=True
+                    )
+                    self.assertEqual(
+                        ("", observer.SETTINGS_REFUSED), guarded("p", output_cap_bytes=64)
+                    )
+                    self.assertFalse(guarded.reserved)
+        self.assertEqual(0, len(self.runner.calls))
+
+    def test_managed_mcp_refuses_summaries_before_the_charge(self) -> None:
+        for system in ("Darwin", "Linux"):
+            for populated in (False, True):
+                with (
+                    self.subTest(system=system, populated=populated),
+                    self.managed_mcp(system, populated),
+                ):
+                    application = SimpleNamespace(config=self.config, clock=time.time)
+                    job = summary_jobs.Job("j1", "claude", "s1", time.time(), "", 0, 1)
+                    model = summary_jobs.ClaudeSummaryModel(application, job)
+                    self.assertEqual(observer.SETTINGS_REFUSED, model.settings_refusal())
+                    guarded = summary_jobs.GuardedSummaryModel(application, job, model)
+                    with (
+                        mock.patch.object(summary_jobs, "_eligible", return_value=""),
+                        mock.patch.object(reading_policy, "reserve_summary") as reserve,
+                        mock.patch.object(model, "available", return_value=True),
+                    ):
+                        self.assertEqual(("", "unavailable"), guarded("p", output_cap_bytes=64))
+                    self.assertEqual(observer.SETTINGS_REFUSED, job.reason)
+                    reserve.assert_not_called()
 
 
 class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):

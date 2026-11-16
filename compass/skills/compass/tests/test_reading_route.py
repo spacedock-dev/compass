@@ -643,10 +643,7 @@ class WhereToolOutputWouldGoIsNamedOrItIsNotSent(unittest.TestCase):
         self.assertEqual("", route["destination"])
         self.assertIn("is not sent", route["tool_output"])
 
-    def test_a_managed_mcp_file_names_nothing_and_refuses_no_lane(self) -> None:
-        # A managed MCP server is a command the CLI may start beside the call, which can be
-        # handed the reading's words: the owner's 2026-11-13 ruling for managed hooks, "Unname,
-        # don't refuse", applies to it too.
+    def test_a_managed_mcp_file_names_nothing_and_refuses_the_reading(self) -> None:
         for system, folder in (
             ("Darwin", "/Library/Application Support/ClaudeCode"),
             ("Linux", "/etc/claude-code"),
@@ -655,7 +652,7 @@ class WhereToolOutputWouldGoIsNamedOrItIsNotSent(unittest.TestCase):
                 self._write(f"{folder}/managed-mcp.json", json.dumps({"mcpServers": {}}))
                 self.assertEqual("", self._claude({}, system=system))
                 self.assertEqual(
-                    "",
+                    "managed-mcp",
                     claude_settings.lane_refusal(
                         "claude-sonnet-5-5",
                         environ={"HOME": "/Users/r", "USER": "r"},

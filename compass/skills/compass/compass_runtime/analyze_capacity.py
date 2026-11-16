@@ -40,6 +40,7 @@ def _assess(
 def _refusal(capacity: reading_capacity.Capacity, controls: claude_settings.Controls) -> str | None:
     if controls.refusal:
         return {
+            "managed-mcp": "settings-refused",
             "dynamic-policy": "context-dynamic",
             "compaction-policy-conflict": "context-compaction",
             "fallback-policy-conflict": "context-fallback",
