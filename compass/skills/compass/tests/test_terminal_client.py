@@ -26,6 +26,7 @@ from unittest import mock
 from compass_runtime import (
     cli,
     entry,
+    http_api,
     lifecycle,
     loopback_transport,
     terminal_client,
@@ -530,13 +531,88 @@ class RequestPathTest(unittest.TestCase):
             )
         self.assertIn("every connection in use", str(busy.exception))
 
-    @unittest.skip("flaky: skipped until fixed, see docs/flaky-tests.md")
     def test_a_post_without_the_wait_gets_the_refusal_as_a_reply(self) -> None:
         with support.saturated_server() as (httpd, _release):
             reply = terminal_client.post(
                 httpd.server_port, "/api/live-monitor", {"action": "stop"}, timeout=2.0
             )
         self.assertEqual(503, reply.status)
+
+    def test_a_refusal_is_read_even_when_the_body_send_meets_a_broken_pipe(self) -> None:
+        # The cap closes after its refusal: a send in flight meets a broken pipe or a reset.
+        for error in (BrokenPipeError(32, "Broken pipe"), ConnectionResetError(54, "reset")):
+            for wait in (False, True):
+                with self.subTest(error=type(error).__name__, wait_when_busy=wait):
+                    self.refusal_after_body_send(wait=wait, error=error)
+
+    def refusal_after_body_send(self, *, wait: bool, error: OSError) -> None:
+        refused = threading.Event()
+        original_refuse = http_api.CompassHTTPServer._refuse_connection
+        original_send = http.client.HTTPConnection.send
+        sent_body = False
+        body = b'{"action": "stop"}'
+
+        def refuse(server: Any, request: Any) -> None:
+            original_refuse(server, request)
+            refused.set()
+            if wait:
+                release()
+
+        def send(connection: Any, data: Any) -> None:
+            nonlocal sent_body
+            if data == body and not sent_body:
+                sent_body = True
+                if not refused.wait(5):
+                    raise AssertionError("the server did not send its refusal")
+                raise error
+            original_send(connection, data)
+
+        with (
+            support.saturated_server() as (httpd, release),
+            mock.patch.object(http_api.CompassHTTPServer, "_refuse_connection", refuse),
+            mock.patch.object(http.client.HTTPConnection, "send", send),
+        ):
+            reply = terminal_client.post(
+                httpd.server_port,
+                "/api/no-such-route",
+                {"action": "stop"},
+                timeout=5,
+                wait_when_busy=wait,
+            )
+        self.assertEqual(404 if wait else 503, reply.status)
+
+    def test_a_broken_body_send_without_an_http_answer_still_says_unreachable(self) -> None:
+        for error in (
+            http.client.RemoteDisconnected("closed"),
+            http.client.BadStatusLine("invalid"),
+        ):
+            with (
+                self.subTest(error=type(error).__name__),
+                FakeDashboard() as fake,
+                mock.patch.object(
+                    http.client.HTTPConnection, "request", side_effect=BrokenPipeError(32, "pipe")
+                ),
+                mock.patch.object(http.client.HTTPConnection, "getresponse", side_effect=error),
+                self.assertRaises(terminal_client.DashboardUnreachable) as unreachable,
+            ):
+                terminal_client.post(fake.port, "/api/x", {})
+            self.assertIsInstance(unreachable.exception.__cause__, BrokenPipeError)
+
+    def test_a_refusals_reason_survives_a_broken_body_send(self) -> None:
+        original_send = http.client.HTTPConnection.send
+
+        def send(connection: Any, data: Any) -> None:
+            original_send(connection, data)
+            if data == b"{}":
+                raise BrokenPipeError(32, "Broken pipe")
+
+        with (
+            FakeDashboard(answers={"/api/x": (403, {}, b'{"reason":"not allowed"}')}) as fake,
+            mock.patch.object(http.client.HTTPConnection, "send", send),
+        ):
+            reply = terminal_client.post(fake.port, "/api/x", {})
+        self.assertEqual(403, reply.status)
+        self.assertEqual({"reason": "not allowed"}, reply.data)
 
     def test_a_dashboard_still_at_its_cap_is_said_to_be_busy(self) -> None:
         # Not "nothing there": a terminal command that read it that way would start a second
@@ -547,7 +623,6 @@ class RequestPathTest(unittest.TestCase):
             terminal_client.Refusal(terminal_client.sentence("dashboard_busy")), answer
         )
 
-    @unittest.skip("flaky: skipped until fixed, see docs/flaky-tests.md")
     def test_a_post_that_may_wait_gets_the_route_s_answer_once_the_cap_clears(self) -> None:
         with support.saturated_server() as (httpd, release):
             threading.Timer(0.3, release).start()
