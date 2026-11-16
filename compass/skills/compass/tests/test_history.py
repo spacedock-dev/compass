@@ -1295,6 +1295,248 @@ class AFallbackProjectLabelIsNotAPathTest(HistoryStoreTestCase):
                 self.assertEqual(expected, record["project"])
 
 
+class ForgetPreservesStoresWhoseDashboardMayBeElsewhereTest(HistoryStoreTestCase):
+    LOCAL: ClassVar[dict[str, str]] = {
+        "machine": "machine-a",
+        "boot": "boot-a",
+        "network": "net-a",
+        "process": "pid-a",
+    }
+
+    def record_dashboard(self, port: int, environment: dict[str, str] | None) -> Path:
+        path = Path(self.state_home, f"compass-{port}.json")
+        state = {"state_format": 1, "pid": 4242, "started": 1.0, "port": port}
+        path.write_text(json.dumps(state), encoding="utf-8")
+        Path(str(path) + ".origin").write_text(
+            json.dumps({**state, "environment": environment}), encoding="utf-8"
+        )
+        return path
+
+    def seed_stores(self) -> dict[Path, bytes]:
+        # Every cleanup target must survive a refusal, including consent settings.
+        for name in (
+            "compass-history.json",
+            "compass-ends.json",
+            "compass-annotations.json",
+            "compass-summaries.json",
+            "compass-copied-corrections.json",
+            "declared-parents/claims.json",
+        ):
+            path = Path(self.state_home, name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('{"keep": true}', encoding="utf-8")
+        from compass_runtime import reading_policy  # noqa: PLC0415
+
+        reading_policy.set_consent(self.config(), True, now=1_000.0)
+        reading_policy.reserve(self.config(), now=1_000.0)
+        history.record(self.config(), [loaded_row()], now=1_000.0)
+        return self.snapshot()
+
+    def snapshot(self) -> dict[Path, bytes]:
+        return {p: p.read_bytes() for p in Path(self.state_home).rglob("*") if p.is_file()}
+
+    def forget(self) -> tuple[int, str]:
+        from compass_runtime import cli  # noqa: PLC0415
+
+        with (
+            mock.patch.dict(os.environ, {COMPASS_HOME_ENV: self.state_home}),
+            no_instance(),
+            contextlib.redirect_stdout(std_io.StringIO()) as output,
+            contextlib.redirect_stderr(output),
+        ):
+            code = cli.main(["--forget"])
+        return code, output.getvalue()
+
+    def test_forget_keeps_every_store_when_a_dashboard_may_be_in_another_environment(self) -> None:
+        from compass_runtime import lifecycle  # noqa: PLC0415
+
+        for port in (4553, 9554):
+            for dimension in ("machine", "network", "process"):
+                with self.subTest(port=port, dimension=dimension):
+                    path = self.record_dashboard(port, {**self.LOCAL, dimension: "elsewhere"})
+                    before = self.seed_stores()
+                    with (
+                        mock.patch.object(
+                            lifecycle, "environment_identity", return_value=self.LOCAL
+                        ),
+                        mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
+                    ):
+                        code, said = self.forget()
+                    self.assertNotEqual(0, code)
+                    self.assertEqual(before, self.snapshot())
+                    self.assertIn(str(path), said)
+                    self.assertIn(f"--stop --port {port}", said)
+                    self.assertIn("where", said)
+                    path.unlink()
+                    Path(str(path) + ".origin").unlink()
+
+    def test_forget_names_every_preserved_store_when_the_selected_dashboard_is_running_or_busy(
+        self,
+    ) -> None:
+        from compass_runtime import cli, lifecycle  # noqa: PLC0415
+
+        self.record_dashboard(4553, self.LOCAL)
+        for status in ("running", "busy"):
+            with self.subTest(status=status):
+                before = self.seed_stores()
+                with (
+                    mock.patch.dict(os.environ, {COMPASS_HOME_ENV: self.state_home}),
+                    mock.patch.object(lifecycle, "environment_identity", return_value=self.LOCAL),
+                    mock.patch.object(lifecycle, "_state_process_exists", return_value=True),
+                    mock.patch.object(
+                        lifecycle,
+                        "instance_status",
+                        return_value={
+                            "state": status,
+                            "port": 4553,
+                            "pid": 4242,
+                            "started": 1.0,
+                            "log": "",
+                        },
+                    ),
+                    contextlib.redirect_stdout(std_io.StringIO()) as output,
+                    contextlib.redirect_stderr(output),
+                ):
+                    code = cli.main(["--forget"])
+                self.assertNotEqual(0, code)
+                self.assertEqual(before, self.snapshot())
+                said = output.getvalue()
+                for name in (
+                    "compass-history.json",
+                    "compass-ends.json",
+                    "compass-annotations.json",
+                    "compass-summaries.json",
+                ):
+                    self.assertIn(str(Path(self.state_home, name)), said)
+                self.assertIn("running on port 4553", said)
+                self.assertIn("--stop", said)
+
+    def test_forget_keeps_stores_when_the_local_writer_is_live_or_its_death_is_unknown(
+        self,
+    ) -> None:
+        from compass_runtime import lifecycle  # noqa: PLC0415
+
+        path = self.record_dashboard(9554, self.LOCAL)
+        for exists in (True, None):
+            with self.subTest(exists=exists):
+                before = self.seed_stores()
+                with (
+                    mock.patch.object(lifecycle, "environment_identity", return_value=self.LOCAL),
+                    mock.patch.object(lifecycle, "_state_process_exists", return_value=exists),
+                ):
+                    code, said = self.forget()
+                self.assertNotEqual(0, code)
+                self.assertEqual(before, self.snapshot())
+                self.assertIn(str(path), said)
+
+    def test_forget_keeps_stores_when_the_state_or_its_origin_cannot_prove_ownership(self) -> None:
+        from compass_runtime import lifecycle  # noqa: PLC0415
+
+        for damage in ("legacy", "corrupt", "missing origin", "unknown environment", "mismatch"):
+            with self.subTest(damage=damage):
+                path = self.record_dashboard(9554, self.LOCAL)
+                origin = Path(str(path) + ".origin")
+                if damage == "legacy":
+                    path.write_text('{"pid": 4242, "port": 9554, "started": 1}', encoding="utf-8")
+                    origin.unlink()
+                elif damage == "corrupt":
+                    path.write_text("{", encoding="utf-8")
+                elif damage == "missing origin":
+                    origin.unlink()
+                elif damage == "unknown environment":
+                    self.record_dashboard(9554, None)
+                else:
+                    origin.write_text(origin.read_text().replace("4242", "4243"), encoding="utf-8")
+                before = self.seed_stores()
+                with (
+                    mock.patch.object(lifecycle, "environment_identity", return_value=self.LOCAL),
+                    mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
+                ):
+                    code, said = self.forget()
+                self.assertNotEqual(0, code)
+                self.assertEqual(before, self.snapshot())
+                self.assertIn(str(path), said)
+
+    def test_forget_keeps_stores_when_the_folder_cannot_be_inspected(self) -> None:
+        before = self.seed_stores()
+        listdir = os.listdir
+
+        def deny_state_home(path: str) -> list[str]:
+            if path == self.state_home:
+                raise PermissionError("state folder is unavailable")
+            return listdir(path)
+
+        with mock.patch.object(os, "listdir", side_effect=deny_state_home):
+            code, said = self.forget()
+        self.assertNotEqual(0, code)
+        self.assertEqual(before, self.snapshot())
+        self.assertIn(self.state_home, said)
+        self.assertIn("Stop every dashboard", said)
+
+    def test_forget_does_not_apply_local_reboot_cleanup_to_another_environment(self) -> None:
+        from compass_runtime import lifecycle  # noqa: PLC0415
+
+        path = self.record_dashboard(9554, {**self.LOCAL, "boot": "old-boot", "network": "other"})
+        before = self.seed_stores()
+        with (
+            mock.patch.object(lifecycle, "environment_identity", return_value=self.LOCAL),
+            mock.patch.object(lifecycle, "boot_started", return_value=2_000.0),
+            mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
+        ):
+            code, said = self.forget()
+        self.assertNotEqual(0, code)
+        self.assertEqual(before, self.snapshot())
+        self.assertIn(str(path), said)
+
+    def test_forget_keeps_stores_when_the_snapshot_writer_is_live_during_origin_replacement(
+        self,
+    ) -> None:
+        from compass_runtime import lifecycle  # noqa: PLC0415
+
+        path = self.record_dashboard(9554, self.LOCAL)
+        before = self.seed_stores()
+        read = lifecycle._read_record
+        switched = False
+
+        def replace_origin(config: RuntimeConfig, target: str) -> dict[str, Any] | None:
+            nonlocal switched
+            result = read(config, target)
+            if target == str(path) + ".origin" and not switched:
+                switched = True
+                self.record_dashboard(9554, {**self.LOCAL, "boot": "old", "network": "other"})
+            return result
+
+        with (
+            mock.patch.object(lifecycle, "_read_record", side_effect=replace_origin),
+            mock.patch.object(lifecycle, "environment_identity", return_value=self.LOCAL),
+            mock.patch.object(lifecycle, "boot_started", return_value=2_000.0),
+            mock.patch.object(lifecycle, "_state_process_exists", return_value=True),
+        ):
+            code, said = self.forget()
+        self.assertNotEqual(0, code)
+        self.assertIn(str(path), said)
+        # The live snapshot writer independently requires refusal; this does not
+        # establish exclusion of a competing publication after a dead writer's read.
+        before.pop(Path(str(path) + ".origin"))
+        after = self.snapshot()
+        after.pop(Path(str(path) + ".origin"))
+        self.assertEqual(before, after)
+
+    def test_forget_deletes_history_when_every_recorded_writer_is_proven_dead_here(self) -> None:
+        from compass_runtime import lifecycle  # noqa: PLC0415
+
+        for port in (4553, 9554):
+            self.record_dashboard(port, self.LOCAL)
+        self.seed_stores()
+        with (
+            mock.patch.object(lifecycle, "environment_identity", return_value=self.LOCAL),
+            mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
+        ):
+            code, _said = self.forget()
+        self.assertEqual(0, code)
+        self.assertFalse(Path(history.store_path(self.config())).exists())
+
+
 class ForgetIsRefusedWhileADashboardCouldWriteItBackTest(HistoryStoreTestCase):
     """M-2: the delete has to survive the dashboard it is issued under.
 

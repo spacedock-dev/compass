@@ -863,8 +863,9 @@ def run_one_shot(
         # delete reported success and every record came back. The probe is the
         # one `--status` and `--stop` already use, so it needs neither the home
         # the dashboard was started with nor a state file. It covers the port
-        # this invocation names and cannot see an instance on another one, which
-        # is why the lane also drops a baseline whose file has gone.
+        # this invocation names, including a dashboard without a state file.
+        # The folder-wide guard below covers every other status and recorded
+        # writers on other ports, without masking this known-running diagnostic.
         if lifecycle.instance_status(config, args.port)["state"] in ("running", "busy"):
             # All three files, because the refusal keeps all three (DRC-4547,
             # DRC-4565): a reader who ran this to drop a recorded end is owed
@@ -889,6 +890,9 @@ def run_one_shot(
                 "--stop first, then --forget",
                 print,
             )
+            return 1
+        if refusal := lifecycle.forget_refusal(config):
+            runtime_io.diag(refusal, print)
             return 1
         runtime_io.diag(
             f"Compass: deleted {path}"

@@ -715,14 +715,18 @@ happened and no text, and is the machine's memory of something it did rather tha
 wrote. It also deletes `compass-copied-corrections.json`, the digests of corrections you copied
 from Compass, which hold no text either.
 
-Stop the dashboard first if one is running. `--forget` refuses while an instance answers on the port
-it names, because a running server keeps its own copy of the history in memory and writes the
-deleted records back on its next observation, so the delete would report success and be undone a
-few seconds later. The refusal is for the whole command rather than for that one store, so the
-discard records and stored summaries are still there afterwards too, and the message names all four
-files. It finds the
-instance with the same probe `--status` and `--stop` use, so `--stop` and then `--forget` is the
-whole procedure.
+Stop every dashboard sharing the Compass folder first, and do not start one during cleanup.
+`--forget` refuses while an instance answers on the selected port, naming all four stores it
+preserved. A running server keeps history in memory and would write deleted records back on its
+next observation.
+
+It also checks every dashboard state file in the folder, including other ports and environments.
+If Compass cannot prove a recorded writer is gone, the command refuses, leaves every store
+unchanged and names that state file. Run `--stop --port PORT` where that dashboard runs, or press
+Ctrl+C in its foreground terminal. Stopping only the selected local port does not stop a dashboard
+in another environment. If the recorded dashboard has already stopped, verify it is gone there
+before removing only its state file and matching `.origin` file, then retry `--forget`.
+[MANUAL.md](MANUAL.md#history-and-annotations) describes the proof required for cleanup.
 
 ## When Claude Code settings stop a check
 

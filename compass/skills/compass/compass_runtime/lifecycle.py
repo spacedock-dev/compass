@@ -238,7 +238,13 @@ def _windows_state_process_exists(pid: int) -> bool | None:
         return False if waited == 0 else True if waited == 0x102 else None
 
 
-def state_gone(config: RuntimeConfig, port: int, state: dict[str, Any] | None) -> bool:
+def state_gone(
+    config: RuntimeConfig,
+    port: int,
+    state: dict[str, Any] | None,
+    *,
+    allow_reboot: bool = True,
+) -> bool:
     """Prove the writer gone before applying local pid absence to shared state."""
     origin = _read_record(config, origin_path(config, port))
     if state is None or origin is None:
@@ -273,11 +279,51 @@ def state_gone(config: RuntimeConfig, port: int, state: dict[str, Any] | None) -
     ):
         return False
     if here["boot"] != there["boot"]:
+        if not allow_reboot:
+            return False
         # Machine IDs are assumed unique. Clones sharing one ID and state folder
         # are treated as one machine, the stated limit of automatic reboot recovery.
         boot_start = boot_started()
         return boot_start is not None and started < boot_start
     return here == there and _state_process_exists(pid) is False
+
+
+def forget_refusal(config: RuntimeConfig) -> str | None:
+    """Require proof that every recorded writer is gone before deleting shared stores."""
+    try:
+        names = os.listdir(compass_home(config))
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return (
+            f"Compass: cannot inspect {config.state_home}; nothing was changed. "
+            "Stop every dashboard sharing that folder where it runs, then retry --forget."
+        )
+    for name in sorted(names):
+        if not (name.startswith("compass-") and name.endswith(".json")):
+            continue
+        number = name[len("compass-") : -len(".json")]
+        if not (number.isascii() and number.isdecimal()):
+            continue
+        target = os.path.join(compass_home(config), name)
+        port = int(number) if len(number) <= 5 else 0
+        # Even reboot cleanup's unique-machine-ID assumption is too weak for
+        # deletion of shared stores: another namespace's pid is never local proof.
+        if (
+            name == f"compass-{port}.json"
+            and 1 <= port <= 65535
+            and state_gone(config, port, read_state(config, port), allow_reboot=False)
+        ):
+            continue
+        stop = f"--stop --port {port}" if 1 <= port <= 65535 else "--stop"
+        return (
+            f"Compass: {target} may belong to a dashboard this command cannot reach; "
+            f"nothing was changed. Run {stop} in the environment where that dashboard "
+            "runs, or press Ctrl+C in its foreground terminal, before retrying --forget. "
+            "If it has already stopped, verify it is gone there before removing only "
+            "that state file and its matching .origin file."
+        )
+    return None
 
 
 def legacy_state(config: RuntimeConfig, port: int, state: dict[str, Any] | None) -> bool:
