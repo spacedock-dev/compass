@@ -532,6 +532,9 @@ class SessionListRouteTest(RuntimeTestCase):
         }
         before = json.dumps(payload).encode()
         with self.serving(payload) as (httpd, collect_board):
+            # Serialization must not depend on the gap between these requests.
+            # Snapshot expiry has its own advancing-clock test in test_snapshot.
+            httpd.application.clock = lambda: 1000.0
             with mock.patch.object(httpd.application, "request_usage_fetch") as fetch:
                 status, body = self.get(httpd.server_port, "/api/sessions?usage=1&all=1")
                 fetch.assert_not_called()

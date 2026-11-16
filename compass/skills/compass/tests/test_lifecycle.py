@@ -2417,10 +2417,13 @@ raise SystemExit(cli.main(sys.argv[4:]))
 
 
 _HANGUP_DAEMON = """
-import sys, threading, time
+import signal, sys, threading, time
 sys.path.insert(0, sys.argv[1])
 from compass_runtime import lifecycle, supervise
 
+# A foreground terminal delivers these signals; nohup survival is tested separately.
+signal.signal(signal.SIGHUP, signal.SIG_DFL)
+signal.signal(signal.SIGQUIT, signal.SIG_DFL)
 lifecycle._register_sigterm_exit()
 cli_pid, done = sys.argv[2], sys.argv[3]
 script = "import os, time; open(%r, 'w').write(str(os.getpid())); time.sleep(120)" % cli_pid
@@ -2453,7 +2456,7 @@ class ATerminalHangupStillCleansUpTest(unittest.TestCase):
             with contextlib.suppress(OSError):
                 os.kill(pid, signal.SIGKILL)
 
-    def _hang_up(self, sig: int) -> None:
+    def _hang_up(self, sig: int, inherited: int) -> None:
         home = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, home, True)
         cli_pid, done = home / "cli.pid", home / "done"
@@ -2467,7 +2470,9 @@ class ATerminalHangupStillCleansUpTest(unittest.TestCase):
                 str(done),
             ],
             start_new_session=True,
+            preexec_fn=lambda: signal.signal(sig, inherited),  # noqa: PLW1509
         )
+        self.addCleanup(daemon.wait)
         self.addCleanup(daemon.kill)
         deadline = time.monotonic() + 60
         while not (cli_pid.exists() and cli_pid.read_text()) and time.monotonic() < deadline:
@@ -2484,10 +2489,14 @@ class ATerminalHangupStillCleansUpTest(unittest.TestCase):
         self.assertFalse(support.process_alive(pid), "the CLI outlived the hangup")
 
     def test_a_hangup_to_a_foreground_daemons_group_kills_the_cli(self) -> None:
-        self._hang_up(signal.SIGHUP)
+        for inherited in (signal.SIG_DFL, signal.SIG_IGN):
+            with self.subTest(inherited=inherited):
+                self._hang_up(signal.SIGHUP, inherited)
 
     def test_a_quit_from_the_terminal_kills_the_cli(self) -> None:
-        self._hang_up(signal.SIGQUIT)
+        for inherited in (signal.SIG_DFL, signal.SIG_IGN):
+            with self.subTest(inherited=inherited):
+                self._hang_up(signal.SIGQUIT, inherited)
 
 
 class EveryOptOutReachesTheWindowsChildTest(unittest.TestCase):
