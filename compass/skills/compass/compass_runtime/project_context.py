@@ -1277,9 +1277,9 @@ def _subagent_tasks(arguments: dict[str, Any]) -> list[str]:
 
 def _dispatch_artifact(text: str) -> str:
     for directory in spacedock.dispatch_directories():
-        pattern = re.escape(directory + "/spacedock-ensign-") + r"[A-Za-z0-9][A-Za-z0-9._-]*\.md"
+        pattern = re.escape(directory + "/") + r"[A-Za-z0-9][A-Za-z0-9._-]*\.md"
         match = re.search(pattern, text)
-        if match is not None:
+        if match is not None and spacedock.dispatch_artifact_identity(match.group(0)) is not None:
             return match.group(0)
     return ""
 
@@ -11424,12 +11424,11 @@ def _codex_dispatch_artifact(task_name: str) -> tuple[str, str, str, str] | None
     match = _CODEX_ENSIGN_TASK_RE.fullmatch(task_name)
     if match is None:
         return None
-    stem = match.group(1).replace("_", "-")
     artifact = next(
         (
             candidate
-            for directory in spacedock.dispatch_directories()
-            if _read_dispatch_artifact(candidate := f"{directory}/spacedock-ensign-{stem}.md")
+            for candidate in spacedock.dispatch_candidates(task_name)
+            if _read_dispatch_artifact(candidate)
         ),
         "",
     )

@@ -2513,6 +2513,36 @@ class DispatchSecurityTest(unittest.TestCase):
         )
         self.assertEqual(str(self.artifact), project_context._dispatch_artifact(str(self.artifact)))
 
+    def test_a_semantic_dispatch_places_the_project_worker_and_names_its_assignment(self) -> None:
+        # Basenames captured on this machine; no captured prompt content is used.
+        for name in (
+            "task-implementation.md",
+            "thing-implementation-advance.md",
+            "d25aaac3-cd52-444a-a3e5-dfc783843984-task-implementation.md",
+        ):
+            with self.subTest(name=name):
+                artifact = self.directory / name
+                artifact.write_text(
+                    "You are working on: Keep the project worker placed\n"
+                    "spacedock dispatch show-stage-def --workflow-dir /repo/.spacedock/explore\n",
+                    encoding="utf-8",
+                )
+                artifact.chmod(0o600)
+                entity = "thing" if name.startswith("thing-") else "task"
+                self.assertEqual(
+                    (entity, "implementation"), spacedock.dispatch_artifact_identity(str(artifact))
+                )
+                self.assertEqual(
+                    str(artifact), project_context._dispatch_artifact("Read " + str(artifact))
+                )
+                self.assertEqual(
+                    (str(artifact), "/repo/.spacedock/explore", entity, "implementation"),
+                    project_context._codex_dispatch_artifact(
+                        "spacedock_ensign_" + name[:-3].replace("-", "_")
+                    ),
+                )
+                artifact.unlink()
+
     def test_real_symlink_cannot_redirect_the_read(self) -> None:
         target = self.root / "private.md"
         self.artifact.replace(target)

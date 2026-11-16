@@ -36,7 +36,7 @@ _CHILD_LIFECYCLE_BYTES = 128 * 1024
 _CHILD_LIFECYCLE_EVENT_CAP = 12
 _CHILD_ASSIGNMENT_CAP = 140
 _ENSIGN_AGENT_PATH_RE = re.compile(
-    r"^/root/spacedock_ensign_([a-z0-9][a-z0-9_]*?)(?:_cycle[0-9]+)?$"
+    r"^/root/(?:[a-z0-9_]+/)*spacedock_ensign_([a-z0-9][a-z0-9_]*?)(?:_cycle[0-9]+)?$"
 )
 
 
@@ -257,14 +257,19 @@ def _ensign_dispatch_metadata(agent_path: str) -> tuple[str, str, str, str]:
     match = _ENSIGN_AGENT_PATH_RE.fullmatch(agent_path)
     if match is None or not match.group(1):
         return "", "", "", ""
+    candidates = spacedock.dispatch_candidates(agent_path.rsplit("/", 1)[-1])
+    source_bytes = next(
+        (raw for artifact in candidates if (raw := spacedock.read_dispatch_artifact(artifact))), b""
+    )
     slug = match.group(1).replace("_", "-")
-    artifact = f"{spacedock.DISPATCH_DIRECTORY}/spacedock-ensign-{slug}.md"
+    slug = re.sub(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}-", "", slug)
+    slug = slug.removesuffix("-advance")
     title = ""
     stage = ""
     workflow = ""
     # The shared reader owns every check on the shared directory; the line bounds below are this
     # collector's own, kept as they were when it opened the file itself.
-    source = io.BytesIO(spacedock.read_dispatch_artifact(artifact))
+    source = io.BytesIO(source_bytes)
     for _ in range(40):
         chunk = source.readline(2048)
         if not chunk:

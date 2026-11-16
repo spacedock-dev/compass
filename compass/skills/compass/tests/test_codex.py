@@ -1662,6 +1662,42 @@ class CodexDispatchArtifactSecurityTest(unittest.TestCase):
             self.metadata(),
         )
 
+    def test_a_nested_worker_keeps_its_place_from_a_semantic_dispatch_in_the_runtime_directory(
+        self,
+    ) -> None:
+        # Names captured from /private/tmp/spacedock-dispatch and local Codex rollouts.
+        # Contents are synthetic; the nested parent is the captured skill_wiring_commander path.
+        for name in (
+            "task-implementation.md",
+            "thing-implementation-advance.md",
+            "d25aaac3-cd52-444a-a3e5-dfc783843984-task-implementation.md",
+        ):
+            with self.subTest(name=name):
+                artifact = self.directory / name
+                artifact.write_text(
+                    "You are working on: Keep the worker placed\nStage: implementation\n"
+                    "spacedock dispatch show-stage-def --workflow-dir /repo/.spacedock/explore\n",
+                    encoding="utf-8",
+                )
+                artifact.chmod(0o600)
+                task = "spacedock_ensign_" + name[:-3].replace("-", "_")
+                with (
+                    mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.root)}),
+                    mock.patch.object(spacedock, "DISPATCH_DIRECTORY", str(self.root / "legacy")),
+                ):
+                    self.assertEqual(
+                        (
+                            "Keep the worker placed",
+                            "thing" if name.startswith("thing-") else "task",
+                            "implementation",
+                            os.path.realpath("/repo/.spacedock/explore"),
+                        ),
+                        codex_collector._ensign_dispatch_metadata(
+                            "/root/skill_wiring_commander/" + task
+                        ),
+                    )
+                artifact.unlink()
+
     def test_line_reads_keep_their_forty_line_and_per_line_bounds(self) -> None:
         # A 2,048-byte read splits a long line, and only forty reads are made, so a title
         # written after them is never seen: the same bounds the line reader always had.

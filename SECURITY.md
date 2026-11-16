@@ -4277,9 +4277,11 @@ Markdown file, and a transcript-sized allowance would let a planted artifact for
 the Codex collector both call it, and the entry is opened with `O_NONBLOCK` so a planted named pipe
 is refused instead of stalling collection. It also refuses a directory with any group or world write
 bit, sticky or not, and an entry with more than one hard link, both checked on the opened
-descriptors. The Codex collector reads only the legacy `/tmp` path
-(on macOS that is `/private/tmp`), takes at most the first 40 lines of 2,048 bytes each from what
-the reader returns, and keeps a title, a stage and a workflow directory from them.
+descriptors. Both consumers check the runtime directory before the legacy `/tmp` path
+(on macOS that is `/private/tmp`) and accept semantic dispatch names, including session UUID
+prefixes and advance handoffs, as well as legacy `spacedock-ensign-` names. The Codex collector
+takes at most the first 40 lines of 2,048 bytes each from what the reader returns, and keeps
+a title, a stage and a workflow directory from them.
 
 `SPACEDOCK_BIN`, when set, must be a full path; otherwise discovery resolves `spacedock` on the PATH
 elements that are full paths (walked by hand on Windows, never the current folder) and also
