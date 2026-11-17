@@ -129,9 +129,7 @@ def validate(value: Any) -> dict[str, Any] | None:
 
 def _read(path: Path) -> dict[str, Any] | None:
     try:
-        if path.is_symlink() or path.parent.is_symlink():
-            return None
-        with path.open("rb") as handle:
+        with os.fdopen(runtime_io.open_regular(path, root=str(path.parent.parent)), "rb") as handle:
             raw = handle.read(MAX_MARKER_BYTES + 1)
         if len(raw) > MAX_MARKER_BYTES:
             return None
@@ -165,21 +163,9 @@ def _write(path: Path, marker: dict[str, Any]) -> None:
     payload = reading_long_jobs.canonical(checked).encode("utf-8")
     if len(payload) > MAX_MARKER_BYTES:
         raise ValueError("Marker size bound")
-    temporary = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
-    fd = os.open(
-        temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600
-    )
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-        # A failed directory sync still withholds execution even after rename.
-        sync_directory(path.parent)
-    finally:
-        with contextlib.suppress(OSError):
-            temporary.unlink()
+    runtime_io.atomic_write_owner_only(str(path), payload, sync=True, root=str(path.parent.parent))
+    # A failed directory sync still withholds execution even after rename.
+    sync_directory(path.parent)
 
 
 @contextlib.contextmanager

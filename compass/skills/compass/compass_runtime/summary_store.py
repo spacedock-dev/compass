@@ -350,7 +350,7 @@ def load(config: RuntimeConfig) -> Store:
     """Read and redact the whole closed schema, or report unavailable without a partial read."""
     path = store_path(config)
     try:
-        with open(path, "rb") as handle:
+        with os.fdopen(runtime_io.open_regular(path, root=str(config.state_home)), "rb") as handle:
             info = os.fstat(handle.fileno())
             key = (
                 info.st_dev,

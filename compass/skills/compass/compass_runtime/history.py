@@ -512,7 +512,7 @@ def load(config: RuntimeConfig) -> tuple[tuple[Observation, ...], str | None]:
     path = store_path(config)
     cap = config.history_max_bytes
     try:
-        with open(path, "rb") as handle:
+        with os.fdopen(runtime_io.open_regular(path, root=str(config.state_home)), "rb") as handle:
             raw = handle.read(cap + 1)
     except FileNotFoundError:
         return (), None

@@ -34,7 +34,7 @@ async function capability(port) {
     // Nonblocking open plus a regular-file check rejects a FIFO masquerading as
     // state; a bounded read also contains concurrent growth after stat.
     file = await open(stateFile,
-      constants.O_RDONLY | (constants.O_NONBLOCK || 0));
+      constants.O_RDONLY | (constants.O_NONBLOCK || 0) | (constants.O_NOFOLLOW || 0));
     const stat = await file.stat();
     if(!stat.isFile() || stat.size > 65536) return null;
     const buffer = Buffer.alloc(65537);

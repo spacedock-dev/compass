@@ -128,6 +128,18 @@ class OpenCodePluginTest(support.RuntimeTestCase):
         observed["elapsed"] = time.monotonic() - started
         return observed
 
+    @unittest.skipIf(os.name == "nt", "POSIX nofollow symlink admission")
+    def test_a_linked_capability_file_cannot_send_a_permission_event(self) -> None:
+        target = self.home / "another-file"
+        self.state.rename(target)
+        self.state.symlink_to(target)
+        self.run_plugin([{"event": native("permission.asked")}])
+        self.assertEqual([], self.records)
+        self.state.unlink()
+        self.state.write_text(target.read_text())
+        self.run_plugin([{"event": native("permission.asked")}])
+        self.assertEqual(1, len(self.records))
+
     def test_a_parent_permission_wait_clears_only_after_its_last_answer(self) -> None:
         result = self.run_plugin(
             [

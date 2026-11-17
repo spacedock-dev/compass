@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import tempfile
 import threading
 import unittest
@@ -70,13 +71,15 @@ class APersonKeepsTheirSummary(_SummaryCase):
         marker = summary_jobs._marker(self.config, "claude", "s1")
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text('{"id":"mine","state":"running","destination":"模型"}', encoding="utf-8")
-        read_text = Path.read_text
+        fdopen = os.fdopen
 
-        def locale_read(path: Path, encoding: str | None = None, **kwargs: Any) -> str:
-            return read_text(path, encoding=encoding or "ascii", **kwargs)
+        def locale_read(fd: int, mode: str = "r", **kwargs: Any) -> Any:
+            if "b" not in mode:
+                kwargs.setdefault("encoding", "ascii")
+            return fdopen(fd, mode, **kwargs)
 
         with (
-            mock.patch.object(Path, "read_text", locale_read),
+            mock.patch.object(os, "fdopen", locale_read),
             mock.patch.object(summary_jobs, "_publish"),
         ):
             self.assertTrue(summary_jobs.cancel(application, "claude", "s1", expected_job="mine"))

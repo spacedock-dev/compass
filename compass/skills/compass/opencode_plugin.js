@@ -29,7 +29,7 @@ async function capability(port) {
     // A FIFO at this local path must not leave a read queued forever in the host.
     file = await open(
       stateFile,
-      constants.O_RDONLY | (constants.O_NONBLOCK || 0),
+      constants.O_RDONLY | (constants.O_NONBLOCK || 0) | (constants.O_NOFOLLOW || 0),
     );
     if (!(await file.stat()).isFile()) return null;
     const buffer = Buffer.alloc(65537);

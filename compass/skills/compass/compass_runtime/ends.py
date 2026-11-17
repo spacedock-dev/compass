@@ -123,7 +123,9 @@ def load(config: RuntimeConfig) -> tuple[End, ...]:
     every row then reads exactly as it did before this store existed.
     """
     try:
-        with open(store_path(config), "rb") as handle:
+        with os.fdopen(
+            runtime_io.open_regular(store_path(config), root=str(config.state_home)), "rb"
+        ) as handle:
             raw = handle.read(config.end_read_cap_bytes + 1)
         if len(raw) > config.end_read_cap_bytes:
             return ()

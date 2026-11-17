@@ -239,7 +239,7 @@ def load(config: RuntimeConfig) -> tuple[Check, ...]:
 
 def _load_at(config: RuntimeConfig, path: str) -> tuple[Check, ...]:
     try:
-        with open(path, "rb") as handle:
+        with os.fdopen(runtime_io.open_regular(path, root=str(config.state_home)), "rb") as handle:
             raw = handle.read(config.departure_read_cap_bytes + 1)
         if len(raw) > config.departure_read_cap_bytes:
             return ()

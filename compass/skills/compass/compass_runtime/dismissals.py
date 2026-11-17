@@ -129,7 +129,9 @@ def load(config: RuntimeConfig) -> tuple[Dismissal, ...]:
         return ()
     cap = config.dismissal_read_cap_bytes
     try:
-        with open(store_path(config), "rb") as handle:
+        with os.fdopen(
+            runtime_io.open_regular(store_path(config), root=str(config.state_home)), "rb"
+        ) as handle:
             raw = handle.read(cap + 1)
         if len(raw) > cap:
             return ()

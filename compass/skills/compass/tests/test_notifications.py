@@ -2116,6 +2116,32 @@ class ApplicationPopupTest(unittest.TestCase):
 
 
 class QuietHoursTest(RuntimeTestCase):
+    @unittest.skipIf(os.name == "nt", "POSIX nofollow symlink admission")
+    def test_a_linked_quiet_hours_file_leaves_notifications_unmuted(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home)
+            target = root / "another-file"
+            target.write_text("22:00-08:00", encoding="utf-8")
+            path = root / "quiet_hours"
+            path.symlink_to(target)
+            config = make_config(state_home=home, state_dir=root, environ={})
+            self.assertIsNone(notifications.resolve_quiet_hours(config))
+            path.unlink()
+            path.write_text("22:00-08:00", encoding="utf-8")
+            self.assertEqual((22, 0, 8, 0), notifications.resolve_quiet_hours(config))
+
+    def test_quiet_hours_use_the_runtime_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            config = make_config(
+                state_home=home,
+                state_dir=Path(home),
+                environ={"COMPASS_QUIET_HOURS": "13:00-15:00"},
+            )
+            with mock.patch.dict(os.environ, {"COMPASS_QUIET_HOURS": "22:00-08:00"}):
+                self.assertEqual((13, 0, 15, 0), notifications.resolve_quiet_hours(config))
+                config = dataclasses.replace(config, environ={})
+                self.assertIsNone(notifications.resolve_quiet_hours(config))
+
     def test_parse_quiet_hours(self) -> None:
         self.assertEqual((22, 0, 8, 0), notifications.parse_quiet_hours("22:00-08:00"))
         self.assertEqual((13, 30, 15, 45), notifications.parse_quiet_hours("13:30-15:45"))

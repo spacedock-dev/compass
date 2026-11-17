@@ -1155,7 +1155,7 @@ class AFirstCollectionWaitsForABusyStoreTest(_SharedHomeCase):
 # it marks the window the handle is open and nothing after it.
 _REFRESH_HOLDING_READ = textwrap.dedent(
     """
-    import builtins, os, sys, time
+    import os, sys, time
     from pathlib import Path
     sys.path.insert(0, sys.argv[1])
     from compass_runtime import annotations as store
@@ -1183,11 +1183,14 @@ _REFRESH_HOLDING_READ = textwrap.dedent(
             os.unlink(marker)
             self.handle.close()
 
-    def held_open(path, *args, **kwargs):
-        handle = builtins.open(path, *args, **kwargs)
-        return Held(handle) if os.fspath(path) == store.store_path(config) else handle
+    real_fdopen = os.fdopen
 
-    store.open = held_open
+    def held_fdopen(fd, *args, **kwargs):
+        handle = real_fdopen(fd, *args, **kwargs)
+        info, expected = os.fstat(fd), os.stat(store.store_path(config))
+        return Held(handle) if (info.st_dev, info.st_ino) == (expected.st_dev, expected.st_ino) else handle
+
+    store.os.fdopen = held_fdopen
     entries = store.refresh(config, state)
     print("read", len(entries), flush=True)
     """
