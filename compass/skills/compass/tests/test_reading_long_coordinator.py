@@ -742,3 +742,28 @@ class ActualLongCoordinatorTest(unittest.TestCase):
             )
             or {},
         )
+
+
+class TransportReasonTest(unittest.TestCase):
+    @staticmethod
+    def _diagnostic(outcome: str, *, attempt_reserved: bool) -> dict[str, Any]:
+        measured = {"outcome": outcome, "attempt_reserved": attempt_reserved}
+        return {"observations": [{"observation": {"diagnostic": {"input": measured}}}]}
+
+    def test_a_reading_refused_by_settings_before_any_charge_says_so(self) -> None:
+        # managed-mcp.json can appear after admission and before the pass reserves its call.
+        refused = self._diagnostic("settings-refused", attempt_reserved=False)
+        for provider in ("claude", "codex"):
+            with self.subTest(provider=provider):
+                self.assertEqual(
+                    reading.WITHHELD_SETTINGS_REFUSED,
+                    coordinator._transport_reason(provider, False, refused),
+                )
+
+    def test_a_settings_refusal_after_earlier_charged_passes_stays_incomplete(self) -> None:
+        # An uncharged late pass must not describe the earlier charged passes as unspent.
+        refused = self._diagnostic("settings-refused", attempt_reserved=False)
+        self.assertEqual(
+            reading.WITHHELD_LONG_INCOMPLETE,
+            coordinator._transport_reason("claude", True, refused),
+        )

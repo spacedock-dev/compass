@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2341751,
+    "bytes": 2342095,
     "file": "react.html",
-    "sha256": "5c371a09587a213883e2be92988e0ad0986e3056bb0d560cb8a4e747c73120df"
+    "sha256": "123370ad520813f8a6a569c0b11abb6386344c27cd0120909e490e62b4181294"
   },
   "format": 1,
   "frontend": "react",
@@ -323,7 +323,7 @@
       },
       {
         "file": "frontend/src/api/promptCapacity.ts",
-        "sha256": "4fbd8e2840a95e00fa017b861f5e1c389fcf6700b7602189e4cc0f806f26936c"
+        "sha256": "7b12f2053d7498c144a988799180ca5ec99d19c111c59e68f71b9dfbff12bc03"
       },
       {
         "file": "frontend/src/api/readings.ts",
@@ -335,7 +335,7 @@
       },
       {
         "file": "frontend/src/api/types.ts",
-        "sha256": "d10b39896e158ef050a600b967f6e499abc0a131c73e9debe6cc782a9968fc63"
+        "sha256": "454fa11368ac22da34be02aa2fe600a209b9c0e865be4c77ec598b064d90ec00"
       },
       {
         "file": "frontend/src/attention/AttentionAnnouncer.tsx",
@@ -795,7 +795,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "9f477ffd21eecfc0473e5621458d405ac58beacff9fde4208361e7a60640b84d"
+        "sha256": "0341d8585c07611b43f1830f29f2d4918ae1520fea204ca9b44a6f7c76c9f7d7"
       },
       {
         "file": "frontend/src/drift/shape.ts",

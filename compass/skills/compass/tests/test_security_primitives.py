@@ -197,6 +197,10 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "daemon_redirect_stdio: OS null device for detached process stdin.",
     ),
+    ("compass_runtime/observer.py", "_state_reading_root"): (
+        1,
+        "_state_reading_root: mkdir under a canonical parent verified by _private_reading_parent; rejects links and verifies 0700 user ownership afterward without chmod.",
+    ),
     ("compass_runtime/project_context.py", "frozen_codex_sources"): (
         2,
         "frozen_codex_sources: Exclusive owner-only copy inside a newly created private temporary directory.",

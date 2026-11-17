@@ -8,6 +8,7 @@ import inspect
 import itertools
 import json
 import os
+import platform
 import shutil
 import socket
 import subprocess
@@ -1998,7 +1999,9 @@ class ClaudeExecTest(unittest.TestCase):
         _command, kwargs, observed = seen[0]
         cwd = Path(kwargs["cwd"])
         self.assertNotEqual(config.state_dir, cwd, "the store directory is not a scratch cwd")
-        self.assertEqual(Path(tempfile.gettempdir()).resolve(), cwd.parent.resolve())
+        root = observer.reading_workdir_root(config.state_dir)
+        self.assertIsNotNone(root)
+        self.assertEqual(Path(str(root)).resolve(), cwd.parent.resolve())
         self.assertTrue(observed["cwd_exists"])
         if os.name != "nt":  # POSIX permission bits; Windows uses ACLs
             self.assertEqual(0o700, observed["cwd_mode"])
@@ -2019,36 +2022,36 @@ class ClaudeExecTest(unittest.TestCase):
         self.assertFalse(cwd.exists(), "the working directory outlived the call")
 
     @unittest.skipIf(os.name == "nt", "the account and /tmp rules are POSIX")
-    def test_a_tmpdir_under_home_falls_back_to_tmp(self) -> None:
-        # Sent F2: TMPDIR under home (direnv, Nix shells, ~/tmp) put the home
-        # path and user name in the environment block the CLI sends.
+    def test_a_tmpdir_under_home_refuses_instead_of_using_shared_tmp(self) -> None:
+        # TMPDIR under home would expose the account; /tmp would expose shim discovery.
         fake_home = Path(tempfile.mkdtemp(), "Users", "alicequux")
         under = fake_home / "tmp"
         under.mkdir(parents=True)
         with (
             mock.patch.object(observer, "_account", return_value=(str(fake_home), "alicequux")),
+            mock.patch.object(platform, "system", return_value="Darwin"),
             mock.patch.object(tempfile, "tempdir", str(under)),
         ):
             seen, _text, status, _config = self._run()
-        self.assertEqual("ok", status)
-        cwd = Path(seen[0][1]["cwd"]).resolve()
-        self.assertEqual(Path("/tmp").resolve(), cwd.parent)
+        self.assertEqual("failed", status)
+        self.assertEqual([], seen)
 
     @unittest.skipIf(os.name == "nt", "the account and /tmp rules are POSIX")
-    def test_a_temp_path_naming_the_user_falls_back_to_tmp(self) -> None:
+    def test_a_temp_path_naming_the_user_refuses_instead_of_using_shared_tmp(self) -> None:
         named = Path(tempfile.mkdtemp(), "scratch-alicequux")
         named.mkdir()
         with (
             mock.patch.object(
                 observer, "_account", return_value=("/nonexistent-home", "alicequux")
             ),
+            mock.patch.object(platform, "system", return_value="Darwin"),
             mock.patch.object(tempfile, "tempdir", str(named)),
         ):
             seen, _text, _status, _config = self._run()
-        self.assertEqual(Path("/tmp").resolve(), Path(seen[0][1]["cwd"]).resolve().parent)
+        self.assertEqual([], seen)
 
     @unittest.skipIf(os.name == "nt", "the account and /tmp rules are POSIX")
-    def test_a_tmpdir_under_home_spelled_in_another_case_falls_back_to_tmp(self) -> None:
+    def test_a_tmpdir_under_home_spelled_in_another_case_refuses(self) -> None:
         # Review N1: on a case-insensitive volume `/Users/ALICE/...` is the
         # home, and the CLI canonicalises the case before naming it. The name
         # here is short, so only the home test can catch it.
@@ -2060,14 +2063,15 @@ class ClaudeExecTest(unittest.TestCase):
             self.skipTest("this volume is case-sensitive")
         with (
             mock.patch.object(observer, "_account", return_value=(str(fake_home), "q")),
+            mock.patch.object(platform, "system", return_value="Darwin"),
             mock.patch.object(tempfile, "tempdir", str(upper)),
         ):
             seen, _text, status, _config = self._run()
-        self.assertEqual("ok", status)
-        self.assertEqual(Path("/tmp").resolve(), Path(seen[0][1]["cwd"]).resolve().parent)
+        self.assertEqual("failed", status)
+        self.assertEqual([], seen)
 
     @unittest.skipIf(os.name == "nt", "the account and /tmp rules are POSIX")
-    def test_a_temp_path_naming_the_user_in_another_case_falls_back_to_tmp(self) -> None:
+    def test_a_temp_path_naming_the_user_in_another_case_refuses(self) -> None:
         # Review N1: the CLI sent `/private/tmp/<USER>-cgverify` and the name
         # test, being case-sensitive, let it through.
         named = Path(tempfile.mkdtemp(), "ALICEQUUX-scratch")
@@ -2076,10 +2080,11 @@ class ClaudeExecTest(unittest.TestCase):
             mock.patch.object(
                 observer, "_account", return_value=("/nonexistent-home", "alicequux")
             ),
+            mock.patch.object(platform, "system", return_value="Darwin"),
             mock.patch.object(tempfile, "tempdir", str(named)),
         ):
             seen, _text, _status, _config = self._run()
-        self.assertEqual(Path("/tmp").resolve(), Path(seen[0][1]["cwd"]).resolve().parent)
+        self.assertEqual([], seen)
 
     @unittest.skipIf(os.name == "nt", "the account and /tmp rules are POSIX")
     def test_no_temp_location_outside_home_refuses_before_anything_runs(self) -> None:
@@ -2087,8 +2092,8 @@ class ClaudeExecTest(unittest.TestCase):
         (fake_home / "tmp").mkdir(parents=True)
         with (
             mock.patch.object(observer, "_account", return_value=(str(fake_home), "alicequux")),
+            mock.patch.object(platform, "system", return_value="Darwin"),
             mock.patch.object(tempfile, "tempdir", str(fake_home / "tmp")),
-            mock.patch.object(observer, "READING_FALLBACK_TMP", str(fake_home / "tmp")),
         ):
             seen, text, status, config = self._run()
         self.assertEqual(("", "failed"), (text, status))

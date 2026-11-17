@@ -269,6 +269,7 @@ _CAPACITY_FIELDS: Final = frozenset(
     }
 )
 _CAPACITY_REASONS: Final = (
+    "settings-refused",
     "estimated",
     "context-config",
     "context-no-room",
@@ -278,6 +279,7 @@ _CAPACITY_REASONS: Final = (
     "unavailable",
 )
 _CONFIGURATION_REASONS: Final = (
+    "managed-mcp",
     "",
     "context-config",
     "dynamic-policy",
@@ -287,6 +289,10 @@ _CONFIGURATION_REASONS: Final = (
 _SAFE_INTEGER: Final = 2**53 - 1
 _ALLOWANCE_HEAD: Final = "Next Analyze prompt: "
 _ALLOWANCE_TEXT: Final[dict[str, str]] = {
+    "settings-refused": (
+        "Claude Code cannot run this reading while managed-mcp.json is present. "
+        "Ask your administrator to resolve the conflict."
+    ),
     "context-no-room": (
         "The current context configuration leaves no room for this reading. "
         "Choose a larger context window."

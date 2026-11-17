@@ -84,6 +84,7 @@ class LongDiagnosticsTest(unittest.TestCase):
             "invalid-reply": "unknown",
             "factory-refused": "call-refused",
             "intent-changed": "context-changed",
+            "settings-refused": "context-changed",
             "permission-changed": "permission-changed",
             "cancelled": "cancelled",
             "closed": "shutdown",

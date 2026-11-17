@@ -173,6 +173,7 @@ describe('the Settings screen', () => {
 
   it.each([
     ['context-no-room', '', /leaves no room/],
+    ['settings-refused', 'managed-mcp', /managed-mcp.json/],
     ['context-dynamic', 'dynamic-policy', /policy can change when it starts/],
     ['context-config', 'context-config', /context settings could not be checked/],
     ['context-compaction', 'compaction-policy-conflict', /compaction/],

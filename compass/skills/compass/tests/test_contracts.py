@@ -1863,6 +1863,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.supervise",
         },
         "compass_runtime.reading": {
+            # Analyze refuses managed MCP before reserving a model call.
+            "compass_runtime.claude_settings",
             "compass_runtime.declared_sessions",
             "compass_runtime.reading_long_progress",
             "compass_runtime.analyze_diagnostics",

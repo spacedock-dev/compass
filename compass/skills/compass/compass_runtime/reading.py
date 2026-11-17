@@ -57,6 +57,7 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NotRequired, TypedDi
 from . import (
     analyze_diagnostics,
     ci_read,
+    claude_settings,
     declared_sessions,
     observer,
     reading_long_progress,
@@ -818,7 +819,8 @@ WITHHELD = {
     WITHHELD_SETTINGS_REFUSED: (
         "Nothing was sent to the model, and no reading was counted. The CLI's settings could "
         "send the call somewhere Compass cannot name or run a helper command, or its sign-in "
-        "or working folder could not be verified, so Compass did not start it."
+        "or working folder could not be verified, so Compass did not start it. "
+        "The managed-mcp.json file also prevents Claude Code from starting a reading."
     ),
     WITHHELD_CONTEXT_CHANGED: (
         "The attempt was counted, but the model did not start because its configuration "
@@ -7981,7 +7983,7 @@ class CodexReadingModel:
         An unverified `CODEX_HOME`, or no owner-only folder to run in: asked before the charge,
         and said as its own reason, because Codex is installed and "not found" would be false.
         """
-        return observer.SETTINGS_REFUSED if observer.codex_refusal()[0] else ""
+        return observer.SETTINGS_REFUSED if observer.codex_refusal(self.config.state_dir)[0] else ""
 
 
 class ClaudeReadingModel:
@@ -8035,9 +8037,10 @@ class ClaudeReadingModel:
         """`observer.SETTINGS_REFUSED` when the shared settings check refuses this lane, or "".
 
         Asked by `GuardedModel` before its charge, for goal find and the unasked lane. Analyze
-        answers "" here: its admission names its own reason, and its launch checks again.
+        normally answers "" here: its admission names its own reason. Managed MCP refuses
+        here too, because the CLI cannot start with strict MCP configuration.
         """
-        if self.analyze:
+        if self.analyze and not claude_settings.managed_mcp_present():
             return ""
         refused = observer.claude_lane_refusal(self.config.claude_reading_model)
         return observer.SETTINGS_REFUSED if refused else ""

@@ -139,10 +139,9 @@ CODEX_MANAGED_FILES = (
     "/etc/codex/config.toml",
     "/etc/codex/requirements.toml",
 )
-# Claude Code's managed MCP servers, in the managed folder. Whether one starts under the flags a
-# reading passes was not measured: the 2.1.323 binary reads the folder at a fixed system path, so
-# a test file there needs root. Its present file unnames the destination and refuses no lane, the
-# owner's 2026-11-13 ruling for managed hooks ("Unname, don't refuse"); SECURITY.md records it.
+# Claude Code 2.1.325 refuses --strict-mcp-config before the API whenever this file exists,
+# even with an empty server map: docs/captures/claude/managed-mcp-strict-config-2.1.325-linux.jsonl.
+# Unlike managed hooks, its presence refuses every Claude lane before a charge.
 CLAUDE_MANAGED_MCP = "managed-mcp.json"
 CODEX_MANAGED_PREFERENCES = "com.openai.codex.plist"
 MANAGED_PREFERENCES_DIR = "/Library/Managed Preferences"

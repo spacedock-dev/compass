@@ -113,3 +113,27 @@ export const AnOlderServerLeavesTheNextAllowanceUnknown: Story = {
     await expect(await within(card).findByRole('button', { name: 'Analyze drift' })).toBeVisible();
   },
 };
+
+export const ManagedMcpExplainsWhyTheReadingCannotRun: Story = {
+  args: {
+    scenario: {
+      route: {
+        ...ROUTE,
+        capacity: {
+          ...PREVIEW,
+          maximum_prompt_bytes: 0,
+          reason: 'settings-refused',
+          configuration_reason: 'managed-mcp',
+          can_lower_prompt_setting: false,
+        },
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const allowance = card.querySelector('[data-next-reading-allowance]');
+    await expect(allowance).toHaveTextContent('managed-mcp.json');
+    await expect(allowance).toHaveTextContent('cannot run this reading');
+    await expect(allowance).not.toHaveTextContent(/Allowance unknown|0 KB|0 bytes/);
+  },
+};

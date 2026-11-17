@@ -779,6 +779,9 @@ To find the setting:
 Metrics export on its own (`CLAUDE_CODE_ENABLE_TELEMETRY` with an OTLP endpoint) does not stop a
 check. These stop it without any of the keys above:
 
+- `managed-mcp.json` in `/Library/Application Support/ClaudeCode/` on macOS or
+  `/etc/claude-code/` on Linux, even when its `mcpServers` map is empty: Claude Code refuses
+  the strict MCP configuration every reading uses, so Compass stops before charging;
 - a configuration profile for Claude Code under `/Library/Managed Preferences` on macOS, which
   Compass cannot read;
 - `CLAUDE_CODE_MANAGED_SETTINGS_PATH` set in the dashboard's environment;
@@ -798,8 +801,9 @@ When Codex reads the session, Find goal and unasked checks stop for two other re
 `CODEX_HOME` that is not a folder you own and only you can write to, or that sits inside a folder
 another account can write to (a sticky folder such as `/tmp` is fine), because that folder chooses
 the account the call signs in as. The other is no private folder for the call to run in: Compass makes
-one in your temporary folder, or in `/tmp` when the temporary folder is inside your home folder or
-names your account, and stops when neither will do. Find goal names both causes in one sentence,
+one under your private `$XDG_RUNTIME_DIR` on Linux, or under the Compass state directory when
+that path does not name your account. On macOS it uses the private system temporary folder.
+Shared ancestors, including `/tmp`, and paths naming your account are refused. Find goal names both causes in one sentence,
 so check each.
 
 If the setting is yours to change, change it and press again. Compass reads these files before every

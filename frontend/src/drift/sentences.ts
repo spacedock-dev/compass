@@ -9,7 +9,7 @@
    their refusal with it. It names the common causes and points at HOW_TO_USE.md for the rest, because the
    check refuses on more than a sentence can list. */
 export const CLAUDE_SETTINGS_LOOK =
-  'Check the Claude Code settings your organization manages (for example apiKeyHelper, a login gateway, or telemetry that logs prompts or replies) and the folder CLAUDE_CONFIG_DIR names. How to use Compass lists every cause under When Claude Code settings stop a check.';
+  'Check the Claude Code settings your organization manages (for example apiKeyHelper, a login gateway, or telemetry that logs prompts or replies) and the folder CLAUDE_CONFIG_DIR names. Claude Code also refuses readings while its managed-mcp.json file exists. How to use Compass lists every cause under When Claude Code settings stop a check.';
 
 export const DEPARTURE = 'departure';
 export const CONSISTENT = 'consistent with the evidence read';

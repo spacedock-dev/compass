@@ -157,7 +157,7 @@ describe('the note each end is shown with', () => {
 
   it('points at the settings the check reads', () => {
     expect(CLAUDE_SETTINGS_LOOK).toBe(
-      'Check the Claude Code settings your organization manages (for example apiKeyHelper, a login gateway, or telemetry that logs prompts or replies) and the folder CLAUDE_CONFIG_DIR names. How to use Compass lists every cause under When Claude Code settings stop a check.',
+      'Check the Claude Code settings your organization manages (for example apiKeyHelper, a login gateway, or telemetry that logs prompts or replies) and the folder CLAUDE_CONFIG_DIR names. Claude Code also refuses readings while its managed-mcp.json file exists. How to use Compass lists every cause under When Claude Code settings stop a check.',
     );
   });
 });

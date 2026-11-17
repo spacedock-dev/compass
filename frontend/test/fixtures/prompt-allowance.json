@@ -551,6 +551,28 @@
         "Next Analyze prompt: Estimated allowance: 512 bytes.",
         "These estimates do not confirm model availability or that a prompt will fit. An assembled prompt above this allowance is refused before a model call; it is not automatically shortened."
       ]
+    },
+    {
+      "name": "managed MCP refuses strict configuration",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 0,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "managed-mcp",
+        "reason": "settings-refused",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Claude Code cannot run this reading while managed-mcp.json is present. Ask your administrator to resolve the conflict."
+      ]
     }
   ]
 }

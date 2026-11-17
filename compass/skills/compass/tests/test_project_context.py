@@ -640,7 +640,12 @@ class ProjectContextTest(unittest.TestCase):
             kwargs["before_call"]()
             return "ship the parser", "ok"
 
-        with mock.patch.object(observer, "codex_exec", side_effect=execute_goal):
+        # The preflight checks the machine's temp folder, which a sandbox's TMPDIR can make
+        # name the account; this test is about the notice, not where the call would run.
+        with (
+            mock.patch.object(observer, "codex_refusal", return_value=("", "/unused")),
+            mock.patch.object(observer, "codex_exec", side_effect=execute_goal),
+        ):
             on = self.collect(model_consent=True)
             again = self.collect(model_consent=True)
         self.assertTrue(on["observer_model"]["enabled"])

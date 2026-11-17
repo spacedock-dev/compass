@@ -89,6 +89,7 @@ _STOP_CAUSES = {
     "final-call-failed": set(),
     "call-refused": {"refused", "factory-refused", "reservation-refused", "daily-cap"},
     "context-changed": {
+        "settings-refused",
         "context-changed",
         "intent-changed",
         "invalid-context",

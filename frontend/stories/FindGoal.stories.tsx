@@ -470,7 +470,7 @@ export const ClaudeCodeSettingsStopTheSearch: Story = {
     await userEvent.click(await view.findByRole('button', { name: 'Find goal' }));
     await waitFor(() => expect(note(card)).toBe(FIND_GOAL_SETTINGS_REFUSED));
     await expect(note(card)).toBe(
-      'Compass did not look for a goal, because your Claude Code settings could send your prompts somewhere Compass cannot name. Nothing was sent or charged. Check the Claude Code settings your organization manages (for example apiKeyHelper, a login gateway, or telemetry that logs prompts or replies) and the folder CLAUDE_CONFIG_DIR names. How to use Compass lists every cause under When Claude Code settings stop a check.',
+      'Compass did not look for a goal, because your Claude Code settings could send your prompts somewhere Compass cannot name. Nothing was sent or charged. Check the Claude Code settings your organization manages (for example apiKeyHelper, a login gateway, or telemetry that logs prompts or replies) and the folder CLAUDE_CONFIG_DIR names. Claude Code also refuses readings while its managed-mcp.json file exists. How to use Compass lists every cause under When Claude Code settings stop a check.',
     );
     await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(before);
     await expect(card.querySelector('[data-next-goal-detected]')).toBeNull();

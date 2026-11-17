@@ -378,12 +378,14 @@ export interface PromptCapacityPreview {
   readonly fit_verified: false;
   readonly policy_verified: false;
   readonly configuration_reason:
+    | 'managed-mcp'
     | ''
     | 'context-config'
     | 'dynamic-policy'
     | 'compaction-policy-conflict'
     | 'fallback-policy-conflict';
   readonly reason:
+    | 'settings-refused'
     | 'estimated'
     | 'context-config'
     | 'context-no-room'

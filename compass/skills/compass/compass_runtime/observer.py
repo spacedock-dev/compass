@@ -21,6 +21,7 @@ import contextlib
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import stat
@@ -29,6 +30,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from . import (
@@ -233,7 +235,7 @@ def codex_binary(name: str) -> str | None:
     return rooted_path.which(name)
 
 
-def codex_refusal() -> tuple[str, str]:
+def codex_refusal(state_dir: Path | None = None) -> tuple[str, str]:
     """Why a Codex call cannot start on this machine now, or "" and the folder to work in.
 
     Asked by `codex_exec`, by a goal line before its notice, and, before a reading is
@@ -246,19 +248,19 @@ def codex_refusal() -> tuple[str, str]:
     if os.environ.get("CODEX_HOME") and "CODEX_HOME" not in codex_environment(os.environ):
         return "failed", ""
     # Codex tells the model its working directory, and `--sandbox read-only` still lets it read
-    # there, so the call runs in an empty owner-only folder that names neither the account nor
-    # the state directory, as a Claude Code reading does (`reading_workdir_root`).
-    root = reading_workdir_root()
+    # there, so the call runs in an empty owner-only folder that does not name the account,
+    # as a Claude Code reading does (`reading_workdir_root`).
+    root = reading_workdir_root(state_dir)
     return ("failed", "") if root is None else ("", root)
 
 
-def _codex_preflight(binary: str | None) -> tuple[str, str]:
+def _codex_preflight(binary: str | None, state_dir: Path) -> tuple[str, str]:
     """A refusal status before anything is created, or "" and the folder to work in."""
     # Rooted, not `os.path.isabs`: on Windows a driveless root is absolute to `isabs` and
     # still resolves against the current drive.
     if not binary or not rooted(binary):
         return "unavailable", ""
-    return codex_refusal()
+    return codex_refusal(state_dir)
 
 
 def codex_exec(
@@ -290,7 +292,7 @@ def codex_exec(
     first can cut a recognizable credential into a fragment the scrub misses.
     """
     binary = binary_resolver("codex")
-    refusal, root = _codex_preflight(binary)
+    refusal, root = _codex_preflight(binary, config.state_dir)
     if refusal or not binary:
         return "", refusal
     runtime_io.ensure_owner_dir(str(config.state_dir), root=str(config.state_dir))
@@ -420,9 +422,6 @@ _CLAUDE_SESSION_MARKERS = frozenset(
 )
 
 
-READING_FALLBACK_TMP = "/tmp"  # noqa: S108 - an owner-only directory is made inside it
-
-
 def _account() -> tuple[str, str]:
     """The account's home and name, from the password database rather than `HOME`."""
     import pwd  # noqa: PLC0415 - POSIX only; the caller never reaches this on Windows
@@ -472,15 +471,37 @@ CLAUDE_WORKDIR_PREFIX: Final = "reading-claude-cwd-"
 CODEX_WORKDIR_PREFIX: Final = "reading-codex-cwd-"
 
 
-def reading_workdir_root() -> str | None:
-    """Where a Claude Code reading's working directory is made, or None to refuse.
+def _private_reading_parent(path: str, *, owner_only: bool) -> str | None:
+    # Shims search above cwd for executable project configuration. A sticky parent still
+    # lets another account plant a new config name, unlike the config-folder identity check.
+    if not path or not os.path.isabs(path):
+        return None
+    real = Path(os.path.realpath(path))
+    uid = os.getuid()
+    try:
+        for folder in (real, *real.parents):
+            info = folder.stat()
+            if (
+                not stat.S_ISDIR(info.st_mode)
+                or info.st_uid not in {0, uid}
+                or info.st_mode & 0o022
+            ):
+                return None
+        leaf = real.stat()
+        if owner_only and (leaf.st_uid != uid or stat.S_IMODE(leaf.st_mode) != 0o700):
+            return None
+    except OSError:
+        return None
+    return str(real)
 
-    The CLI names its working directory to the model (measured on 2.1.283), so
-    the location must name neither the account's home nor its user name. The
-    system temp directory first, `READING_FALLBACK_TMP` when `TMPDIR` points
-    under home or at a path naming the user (review, Sent F2), and nothing
-    when both do. On Windows the temp directory is inside the profile and no
-    fallback is tried; SECURITY.md says so.
+
+def reading_workdir_root(state_dir: Path | None = None) -> str | None:
+    """An unnamed, trusted parent for the empty cwd, or None to refuse.
+
+    Linux shims must never search /tmp's project files. Prefer a private runtime directory,
+    then a private child of state, retaining the account-name refusal even for that fallback.
+    macOS keeps its private system temp directory, but no shared /tmp fallback. Windows
+    retains its profile temp behavior; SECURITY.md owns that disclosure.
     """
     if os.name == "nt":
         return tempfile.gettempdir()
@@ -490,10 +511,32 @@ def reading_workdir_root() -> str | None:
         return None
     if not home or os.path.realpath(home) == os.path.abspath(os.sep) or not name:
         return None
-    for candidate in (tempfile.gettempdir(), READING_FALLBACK_TMP):
-        if os.path.isdir(candidate) and not _names_the_account(candidate, home, name):
-            return os.path.realpath(candidate)
-    return None
+    if platform.system() != "Linux":
+        candidate = _private_reading_parent(tempfile.gettempdir(), owner_only=True)
+        return candidate if candidate and not _names_the_account(candidate, home, name) else None
+    candidate = _private_reading_parent(os.environ.get("XDG_RUNTIME_DIR", ""), owner_only=True)
+    if candidate and not _names_the_account(candidate, home, name):
+        return candidate
+    return _state_reading_root(state_dir, home, name)
+
+
+def _state_reading_root(state_dir: Path | None, home: str, name: str) -> str | None:
+    if state_dir is None or _names_the_account(str(state_dir), home, name):
+        return None
+    # Check before creating anything: ensure_owner_dir alone permits shared ancestors.
+    parent = _private_reading_parent(str(state_dir), owner_only=True)
+    if parent is None:
+        return None
+    folder = os.path.join(parent, "reading-workdirs")
+    if _names_the_account(folder, home, name):
+        return None
+    try:
+        Path(folder).mkdir(mode=0o700, exist_ok=True)
+        if Path(folder).is_symlink():
+            return None
+    except OSError:
+        return None
+    return _private_reading_parent(folder, owner_only=True)
 
 
 # What a model CLI child may inherit from the daemon: an allowlist, because a denylist misses
@@ -670,6 +713,8 @@ def claude_lane_refusal(model: str, *, analyze: bool = False) -> str:
     it from `available` too, so a refused press is not charged. Analyze refuses on all of
     `claude_settings.resolve`; the others on what moves the call (`claude_settings.lane_refusal`).
     """
+    if claude_settings.managed_mcp_present():
+        return SETTINGS_REFUSED
     if analyze:
         return "context-config" if claude_settings.resolve(model).refusal else ""
     return "context-config" if claude_settings.lane_refusal(model) else ""
@@ -713,8 +758,9 @@ def claude_exec(  # noqa: PLR0913 - summary calls supply their own prompt and ti
 
     The working directory is a fresh owner-only directory, empty, so even a
     tool the flags failed to remove would find nothing of Compass's there. It
-    is made in the system temp directory, because the CLI still tells the
-    model its working directory, platform, shell, OS version and the date.
+    is rooted by reading_workdir_root, which checks privacy and account anonymity,
+    because the CLI still tells the model its working directory, platform, shell,
+    OS version and the date.
     """
     try:
         with prepare_claude_exec(
@@ -784,8 +830,8 @@ class PreparedClaude:
         environment = claude_environment(os.environ, analyze=self.analyze)
         # Re-read immediately before launching. This narrows, but cannot remove,
         # the file-mutation/remote-refresh race inside the external CLI.
-        if not self.analyze and claude_lane_refusal(self.model):
-            return "", "context-config"
+        if refusal := claude_lane_refusal(self.model, analyze=self.analyze):
+            return "", refusal
         if self.analyze:
             controls = claude_settings.resolve(self.model, environ=environment)
             capacity = reading_capacity.assess(
@@ -1008,14 +1054,14 @@ def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller 
             selected_model = validator(config.claude_reading_model if model is None else model)
         except ValueError as error:
             raise ClaudePreparationError("unavailable") from error
-        if claude_lane_refusal(selected_model, analyze=analyze):
-            raise ClaudePreparationError("context-config")
+        if refusal := claude_lane_refusal(selected_model, analyze=analyze):
+            raise ClaudePreparationError(refusal)
         try:
             binary = binary_resolver("claude")
             # Rooted, not `os.path.isabs`, which keeps a driveless Windows root at 3.12.
             if not binary or not rooted(binary):
                 raise ClaudePreparationError("unavailable")
-            root = reading_workdir_root()
+            root = reading_workdir_root(config.state_dir)
             if root is None:
                 raise ClaudePreparationError("failed")
             runtime_io.ensure_owner_dir(str(config.state_dir), root=str(config.state_dir))
@@ -1115,7 +1161,7 @@ def sweep_reading_workdirs(config: RuntimeConfig, *, now: float | None = None) -
     """Remove the empty call folders a hard kill left under `reading_workdir_root`.
 
     Every call removes its own folder on every path it returns by; a SIGKILL or a power loss runs
-    none. The root is shared (`/tmp` among the candidates), so only what a call here makes goes:
+    none. The root can hold another instance's calls, so only what a call here makes goes:
     a real directory, not a link, with one of the two prefixes, owned by this account with mode
     0700, older than `reading_workdir_stale_sec`, so a call in flight in another instance keeps
     its folder. `os.rmdir` removes only an empty one and never follows a link. Windows has no
@@ -1123,7 +1169,7 @@ def sweep_reading_workdirs(config: RuntimeConfig, *, now: float | None = None) -
     """
     if os.name == "nt":
         return 0
-    root = reading_workdir_root()
+    root = reading_workdir_root(config.state_dir)
     if root is None:
         return 0
     cutoff = (time.time() if now is None else now) - reading_workdir_stale_sec(config)
@@ -1281,7 +1327,7 @@ class CodexGoalModel:
             .decode("utf-8", "ignore")
         )
         prompt = prefix + records.fenced("transcript_excerpt", excerpt, nonce=nonce)
-        if codex_refusal()[0]:
+        if codex_refusal(self.config.state_dir)[0]:
             # This machine's set-up refuses the call, which "failed" would misstate.
             self.status = SETTINGS_REFUSED
             return None

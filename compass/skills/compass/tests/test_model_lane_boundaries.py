@@ -7,10 +7,12 @@ watches the runner it would spawn with, so a lane that skips the shared check tu
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import inspect
 import json
 import os
+import platform
 import shutil
 import stat
 import subprocess
@@ -24,6 +26,8 @@ from typing import Any, ClassVar
 from unittest import mock
 
 from compass_runtime import (
+    analyze_capacity,
+    claude_settings,
     goal_find,
     live_monitor,
     observer,
@@ -262,6 +266,130 @@ class EveryClaudeLaneRefusesSettingsThatMoveTheCall(unittest.TestCase):
                 self.assertEqual("context-config", status)
         self.assertEqual([], self.runner.calls)
 
+    @contextlib.contextmanager
+    def managed_mcp(self, system: str, populated: bool) -> Any:
+        root = self.folder / "managed"
+        target = root / claude_settings.MANAGED_DIRS[system].lstrip("/") / "managed-mcp.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps({"mcpServers": {"probe": {"command": "/bin/true"}} if populated else {}})
+        )
+        try:
+            with (
+                mock.patch.object(claude_settings, "MANAGED_ROOT", root),
+                mock.patch.object(platform, "system", return_value=system),
+            ):
+                yield
+        finally:
+            target.unlink()
+
+    def test_managed_mcp_refuses_analyze_before_reserving_an_attempt(self) -> None:
+        for system in ("Darwin", "Linux"):
+            for populated in (False, True):
+                with (
+                    self.subTest(system=system, populated=populated),
+                    self.managed_mcp(system, populated),
+                ):
+                    model = self.reading_model(analyze=True)
+                    guarded = reading_policy.GuardedModel(
+                        self.config, model, time.time, provider="claude"
+                    )
+                    self.assertEqual(
+                        ("", observer.SETTINGS_REFUSED), guarded("p", output_cap_bytes=64)
+                    )
+                    self.assertFalse(guarded.reserved)
+                    self.assertIn(
+                        "managed-mcp.json", runtime_reading.WITHHELD[observer.SETTINGS_REFUSED]
+                    )
+                    capacity, controls = analyze_capacity._assess(
+                        "p",
+                        provider="claude",
+                        model=self.config.claude_reading_model,
+                        system_prompt="s",
+                    )
+                    self.assertEqual(
+                        observer.SETTINGS_REFUSED, analyze_capacity._refusal(capacity, controls)
+                    )
+        self.assertEqual(0, len(self.runner.calls))
+
+    def test_managed_mcp_appearing_at_child_entry_keeps_the_attempt_counted(self) -> None:
+        original = observer.prepare_claude_exec
+
+        @contextlib.contextmanager
+        def prepare(*args: Any, **kwargs: Any) -> Any:
+            with original(*args, **kwargs) as prepared, self.managed_mcp("Linux", False):
+                yield prepared
+
+        model = self.reading_model(analyze=True)
+        guarded = reading_policy.GuardedModel(self.config, model, time.time, provider="claude")
+        with mock.patch.object(observer, "prepare_claude_exec", side_effect=prepare):
+            result = guarded("p", output_cap_bytes=64)
+        self.assertTrue(guarded.reserved)
+        self.assertEqual(("", "context-config-after-reserve"), result)
+        failure = runtime_reading._call_failed(guarded, result[1])
+        assert failure is not None
+        self.assertTrue(failure[1])
+        self.assertEqual([], self.runner.calls)
+
+    def test_managed_mcp_refuses_goal_find_before_charging(self) -> None:
+        for system in ("Darwin", "Linux"):
+            for populated in (False, True):
+                with (
+                    self.subTest(system=system, populated=populated),
+                    self.managed_mcp(system, populated),
+                ):
+                    guarded = reading_policy.GuardedModel(
+                        self.config, self.reading_model(analyze=False), time.time, provider="claude"
+                    )
+                    result = goal_find.find(
+                        [goal_find.Prompt(1, "f1", 0.0, None, "ship the parser")],
+                        guarded,
+                        goal_cap=200,
+                    )
+                    self.assertEqual(goal_find.WHY_SETTINGS_REFUSED, result.why)
+                    self.assertFalse(result.called)
+                    self.assertFalse(guarded.reserved)
+        self.assertEqual(0, len(self.runner.calls))
+
+    def test_managed_mcp_refuses_unasked_checks_before_any_reservation(self) -> None:
+        for system in ("Darwin", "Linux"):
+            for populated in (False, True):
+                with (
+                    self.subTest(system=system, populated=populated),
+                    self.managed_mcp(system, populated),
+                ):
+                    model = self.reading_model(analyze=False)
+                    self.assertEqual(observer.SETTINGS_REFUSED, model.settings_refusal())
+                    guarded = reading_policy.GuardedModel(
+                        self.config, model, time.time, provider="claude", unasked=True
+                    )
+                    self.assertEqual(
+                        ("", observer.SETTINGS_REFUSED), guarded("p", output_cap_bytes=64)
+                    )
+                    self.assertFalse(guarded.reserved)
+        self.assertEqual(0, len(self.runner.calls))
+
+    def test_managed_mcp_refuses_summaries_before_the_charge(self) -> None:
+        for system in ("Darwin", "Linux"):
+            for populated in (False, True):
+                with (
+                    self.subTest(system=system, populated=populated),
+                    self.managed_mcp(system, populated),
+                ):
+                    application = SimpleNamespace(config=self.config, clock=time.time)
+                    job = summary_jobs.Job("j1", "claude", "s1", time.time(), "", 0, 1)
+                    model = summary_jobs.ClaudeSummaryModel(application, job)
+                    self.assertEqual(observer.SETTINGS_REFUSED, model.settings_refusal())
+                    guarded = summary_jobs.GuardedSummaryModel(application, job, model)
+                    with (
+                        mock.patch.object(summary_jobs, "_eligible", return_value=""),
+                        mock.patch.object(reading_policy, "reserve_summary") as reserve,
+                        mock.patch.object(model, "available", return_value=True),
+                    ):
+                        self.assertEqual(("", "unavailable"), guarded("p", output_cap_bytes=64))
+                    self.assertEqual(observer.SETTINGS_REFUSED, job.reason)
+                    reserve.assert_not_called()
+
 
 class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
     def setUp(self) -> None:
@@ -286,7 +414,7 @@ class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
         self.assertEqual([], seen["entries"])
         if sys.platform != "win32":
             self.assertEqual(0o700, seen["mode"])
-        root = observer.reading_workdir_root()
+        root = observer.reading_workdir_root(self.config.state_dir)
         self.assertIsNotNone(root)
         self.assertEqual(os.path.realpath(str(root)), os.path.dirname(os.path.realpath(cwd)))
         self.assertNotEqual(os.path.realpath(self.config.state_dir), os.path.realpath(cwd))
@@ -498,6 +626,76 @@ class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
         ):
             with self.subTest(dropped=name):
                 self.assertNotIn(name, child)
+
+
+@POSIX_ONLY
+class AReadingNeverSearchesAnotherAccountsProjectFiles(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(dir=os.environ.get("XDG_RUNTIME_DIR") or Path.home()))
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.runtime = self.root / "runtime"
+        self.runtime.mkdir(mode=0o700)
+        self.state = self.root / "state"
+        self.state.mkdir(mode=0o700)
+        for patcher in (
+            mock.patch.object(platform, "system", return_value="Linux"),
+            mock.patch.object(observer, "_account", return_value=("/absent-home", "accountquux")),
+            mock.patch.object(os.path, "expanduser", return_value="/absent-home"),
+            mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.runtime)}),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_linux_readings_use_the_private_runtime_folder_for_both_clis(self) -> None:
+        config = dataclasses.replace(make_config(), state_dir=self.state)
+        runner = _Spawns()
+        for call in (observer.claude_exec, observer.codex_exec):
+            with self.subTest(cli=call.__name__):
+                self.assertEqual(
+                    "ok",
+                    call(
+                        config,
+                        "p",
+                        output_cap_bytes=64,
+                        runner=runner,
+                        binary_resolver=lambda name: "/usr/bin/" + name,
+                    )[1],
+                )
+                cwd = Path(runner.calls[-1][1]["cwd"])
+                self.assertEqual(self.runtime.resolve(), cwd.parent)
+                for ancestor in (cwd.parent, *cwd.parent.parents):
+                    self.assertFalse(ancestor.stat().st_mode & 0o022, str(ancestor))
+
+    def test_the_completed_state_fallback_does_not_name_the_account(self) -> None:
+        with (
+            mock.patch.object(observer, "_account", return_value=("/absent-home", "workdirs")),
+            mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": ""}),
+        ):
+            self.assertIsNone(observer.reading_workdir_root(self.state))
+
+    def test_an_open_runtime_folder_uses_a_private_folder_under_state(self) -> None:
+        self.runtime.chmod(0o755)
+        root = observer.reading_workdir_root(self.state)
+        self.assertEqual(str((self.state / "reading-workdirs").resolve()), root)
+        self.assertEqual(0o700, stat.S_IMODE(Path(str(root)).stat().st_mode))
+
+    def test_a_runtime_folder_owned_by_another_account_is_not_used(self) -> None:
+        with mock.patch.object(os, "getuid", return_value=os.getuid() + 1):
+            self.assertIsNone(observer.reading_workdir_root(self.state))
+
+    def test_a_shared_ancestor_refuses_even_when_it_has_the_sticky_bit(self) -> None:
+        self.root.chmod(0o1777)
+        self.assertIsNone(observer.reading_workdir_root(self.state))
+
+    def test_a_private_linux_folder_that_names_the_account_is_refused(self) -> None:
+        with mock.patch.object(observer, "_account", return_value=(str(self.root), "accountquux")):
+            self.assertIsNone(observer.reading_workdir_root(self.state))
+
+    def test_an_existing_open_state_work_folder_is_refused_without_changing_it(self) -> None:
+        (self.state / "reading-workdirs").mkdir(mode=0o755)
+        with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": "relative"}):
+            self.assertIsNone(observer.reading_workdir_root(self.state))
+        self.assertEqual(0o755, stat.S_IMODE((self.state / "reading-workdirs").stat().st_mode))
 
 
 @POSIX_ONLY
