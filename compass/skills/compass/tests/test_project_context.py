@@ -1452,6 +1452,36 @@ class ProjectContextTest(unittest.TestCase):
                 self.assertEqual("task-1", events[-1]["entity"])
                 self.assertEqual("validation", events[-1]["stage"])
 
+    def test_a_later_command_on_the_line_cannot_mark_an_earlier_dispatch_advanced(self) -> None:
+        for tail in (
+            ' && printf "%s" --advance',
+            ' ; printf "%s" --advance',
+            " && spacedock dispatch build --workflow-dir /probe task-2 --stage validation --advance",
+        ):
+            with self.subTest(tail=tail):
+                prepared = project_context._dispatch_events(
+                    "spacedock dispatch build --workflow-dir /probe task-1 --stage validation"
+                    + tail,
+                    at=1.0,
+                    result=None,
+                    harness="pi",
+                    sid="first-officer",
+                )
+                events = project_context._bind_dispatch_artifacts(
+                    [
+                        *prepared,
+                        {
+                            "at": 2.0,
+                            "kind": "task_started",
+                            "source": "worker",
+                            "dispatch_artifact": (
+                                "/tmp/spacedock-dispatch/spacedock-ensign-task-1-validation.md"
+                            ),
+                        },
+                    ]
+                )
+                self.assertEqual("/probe", events[-1].get("workflow_binding"))
+
     def test_stamping_a_dispatch_preserves_the_following_assignment_flags(self) -> None:
         for assignment in (
             "--entity-path /probe/entities/task-1.md --stamp --stage validation",

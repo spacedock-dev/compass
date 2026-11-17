@@ -1225,7 +1225,8 @@ def _record_timestamp(record: dict[str, Any]) -> float | None:
     return records.parse_ts(record.get("timestamp") or message_ts or _reader_stamp(record) or "")
 
 
-def _dispatch_identity(command_line: str) -> tuple[str, str, str] | None:
+def _dispatch_tokens(command_line: str) -> list[str] | None:
+    """The dispatch's own arguments: those before the first shell command boundary."""
     match = _DISPATCH_BUILD_RE.match(command_line)
     if match is None:
         return None
@@ -1233,7 +1234,23 @@ def _dispatch_identity(command_line: str) -> tuple[str, str, str] | None:
         tokens = shlex.split(match.group(1) or "")
     except ValueError:
         return None
-    return _dispatch_argument_identity(tokens)
+    index = 0
+    while index < len(tokens):
+        part = tokens[index]
+        if part in {"|", "&&", ";"} or part.startswith((">", "1>", "2>")):
+            return tokens[:index]
+        index += 2 if part in _DISPATCH_VALUE_OPTIONS else 1
+    return tokens
+
+
+def _dispatch_identity(command_line: str) -> tuple[str, str, str] | None:
+    tokens = _dispatch_tokens(command_line)
+    return None if tokens is None else _dispatch_argument_identity(tokens)
+
+
+def _dispatch_advances(command_line: str) -> bool:
+    # Only this dispatch's own flags: a later `&& ... --advance` names another worker's file.
+    return "--advance" in (_dispatch_tokens(command_line) or [])
 
 
 def _dispatch_argument_identity(tokens: list[str]) -> tuple[str, str, str] | None:
@@ -1243,8 +1260,6 @@ def _dispatch_argument_identity(tokens: list[str]) -> tuple[str, str, str] | Non
     index = 0
     while index < len(tokens):
         part = tokens[index]
-        if part in {"|", "&&", ";"} or part.startswith((">", "1>", "2>")):
-            break
         if part in _DISPATCH_VALUE_OPTIONS:
             value = tokens[index + 1] if index + 1 < len(tokens) else ""
             if part == "--stage" and spacedock.SD_STAGE_RE.fullmatch(value):
@@ -1445,7 +1460,7 @@ def _dispatch_events(
             continue
         workflow_binding, slug, stage = identity
         title = slug + (f" → {stage}" if stage else " dispatched")
-        suffix = "-advance" if stage and "--advance" in shlex.split(command_line) else ""
+        suffix = "-advance" if stage and _dispatch_advances(command_line) else ""
         candidates = spacedock.dispatch_candidates(f"{slug}-{stage}{suffix}")
         events.append(
             {
