@@ -13,6 +13,7 @@ import json
 import os
 import re
 import stat as stat_module
+import sys
 import time
 from typing import TYPE_CHECKING, Any, TypeGuard
 
@@ -80,7 +81,7 @@ def _settled(info: os.stat_result) -> bool:
     return time.time_ns() - info.st_mtime_ns >= RACY_STAT_NS
 
 
-SD_STAGE_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+SD_STAGE_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 
 
 SD_CYCLE_RE = re.compile(r"^(?:cycle|pass|round|c|v|p|r)\d+[a-z]?$|^(?:retry|rerun)$")
@@ -100,10 +101,14 @@ _DISPATCH_FILE_PREFIX = "spacedock-ensign-"
 
 def dispatch_directories() -> tuple[str, ...]:
     """The dispatch directories in lookup order: the private runtime one first, when set."""
+    directories = [DISPATCH_DIRECTORY]
+    # macOS /tmp is an OS alias; keep the dispatch folder itself under O_NOFOLLOW.
+    if sys.platform == "darwin" and DISPATCH_DIRECTORY.startswith("/tmp/"):  # noqa: S108
+        directories.append("/private" + DISPATCH_DIRECTORY)
     runtime = os.environ.get("XDG_RUNTIME_DIR", "")
     if runtime and os.path.isabs(runtime):
-        return (os.path.join(runtime, "spacedock-dispatch"), DISPATCH_DIRECTORY)
-    return (DISPATCH_DIRECTORY,)
+        directories.insert(0, os.path.join(runtime, "spacedock-dispatch"))
+    return tuple(dict.fromkeys(directories))
 
 
 def dispatch_artifact_identity(artifact: str) -> tuple[str, str] | None:

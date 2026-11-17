@@ -167,12 +167,11 @@ _SEMANTIC_FACT_TYPES = {
     "command_run": "tool_report",
 }
 _DISPATCH_BUILD_RE = re.compile(r"^\s*spacedock\s+dispatch\s+build(?:\s+(.*))?$", re.IGNORECASE)
-_DISPATCH_FILE_PREFIX = f"{spacedock.DISPATCH_DIRECTORY}/spacedock-ensign-"
 _DISPATCH_VALUE_OPTIONS = {
+    "--entity-path",
     "--checklist-file",
     "--host",
     "--stage",
-    "--stamp",
     "--workflow-dir",
 }
 _CODEX_ENSIGN_TASK_RE = re.compile(r"^(?:spacedock_ensign_)?([a-z0-9][a-z0-9_-]*?)(?:_cycle\d+)?$")
@@ -1226,7 +1225,8 @@ def _record_timestamp(record: dict[str, Any]) -> float | None:
     return records.parse_ts(record.get("timestamp") or message_ts or _reader_stamp(record) or "")
 
 
-def _dispatch_identity(command_line: str) -> tuple[str, str, str] | None:
+def _dispatch_tokens(command_line: str) -> list[str] | None:
+    """The dispatch's own arguments: those before the first shell command boundary."""
     match = _DISPATCH_BUILD_RE.match(command_line)
     if match is None:
         return None
@@ -1234,20 +1234,42 @@ def _dispatch_identity(command_line: str) -> tuple[str, str, str] | None:
         tokens = shlex.split(match.group(1) or "")
     except ValueError:
         return None
+    index = 0
+    while index < len(tokens):
+        part = tokens[index]
+        if part in {"|", "&&", ";"} or part.startswith((">", "1>", "2>")):
+            return tokens[:index]
+        index += 2 if part in _DISPATCH_VALUE_OPTIONS else 1
+    return tokens
+
+
+def _dispatch_identity(command_line: str) -> tuple[str, str, str] | None:
+    tokens = _dispatch_tokens(command_line)
+    return None if tokens is None else _dispatch_argument_identity(tokens)
+
+
+def _dispatch_advances(command_line: str) -> bool:
+    # Only this dispatch's own flags: a later `&& ... --advance` names another worker's file.
+    return "--advance" in (_dispatch_tokens(command_line) or [])
+
+
+def _dispatch_argument_identity(tokens: list[str]) -> tuple[str, str, str] | None:
     slug = ""
     stage = ""
     workflow_binding = ""
     index = 0
     while index < len(tokens):
         part = tokens[index]
-        if part in {"|", "&&", ";"} or part.startswith((">", "1>", "2>")):
-            break
         if part in _DISPATCH_VALUE_OPTIONS:
             value = tokens[index + 1] if index + 1 < len(tokens) else ""
             if part == "--stage" and spacedock.SD_STAGE_RE.fullmatch(value):
                 stage = value
             elif part == "--workflow-dir":
                 workflow_binding = value
+            elif part == "--entity-path":
+                candidate = os.path.basename(value).removesuffix(".md")
+                if spacedock.SD_STAGE_RE.fullmatch(candidate):
+                    slug = candidate
             index += 2
             continue
         if part.startswith("-"):
@@ -1438,6 +1460,8 @@ def _dispatch_events(
             continue
         workflow_binding, slug, stage = identity
         title = slug + (f" → {stage}" if stage else " dispatched")
+        suffix = "-advance" if stage and _dispatch_advances(command_line) else ""
+        candidates = spacedock.dispatch_candidates(f"{slug}-{stage}{suffix}")
         events.append(
             {
                 "at": at,
@@ -1451,8 +1475,11 @@ def _dispatch_events(
                 "entity": slug,
                 "workflow_binding": workflow_binding,
                 "stage": stage,
-                "dispatch_artifact": (f"{_DISPATCH_FILE_PREFIX}{slug}-{stage}.md" if stage else ""),
-                "dispatch_artifact_prefix": f"{_DISPATCH_FILE_PREFIX}{slug}-",
+                "dispatch_artifact": candidates[0] if stage and candidates else "",
+                "dispatch_artifacts": list(candidates) if stage else [],
+                "dispatch_artifact_prefixes": (
+                    [path.removesuffix(".md") for path in candidates] if not stage else []
+                ),
                 "succeeded": result.get("succeeded") if result is not None else None,
             }
         )
@@ -12016,8 +12043,11 @@ def _prepared_dispatches(events: list[dict[str, Any]]) -> list[tuple[str, str, s
         workflow = str(event.get("workflow_binding") or "")
         entity = str(event.get("entity") or "")
         stage = str(event.get("stage") or "")
-        if workflow and entity and (artifact or prefix):
-            prepared.append((artifact, prefix, workflow, entity, stage))
+        if workflow and entity:
+            artifacts = {artifact, *event.get("dispatch_artifacts", [])} - {""}
+            prefixes = {prefix, *event.get("dispatch_artifact_prefixes", [])} - {""}
+            prepared.extend((path, "", workflow, entity, stage) for path in artifacts)
+            prepared.extend(("", path, workflow, entity, stage) for path in prefixes)
     return prepared
 
 
@@ -12029,9 +12059,9 @@ def _artifact_bindings(
         if exact and artifact == exact:
             bindings.add((workflow, entity, prepared_stage))
             continue
-        if not artifact.startswith(prefix) or not artifact.endswith(".md"):
+        if not prefix or not artifact.startswith(prefix) or not artifact.endswith(".md"):
             continue
-        stage = artifact[len(prefix) : -len(".md")]
+        stage = artifact[len(prefix) : -len(".md")].removesuffix("-advance")
         if stage and spacedock.SD_STAGE_RE.fullmatch(stage):
             bindings.add((workflow, entity, stage))
     return bindings

@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import sys
 import tempfile
 import time
 import unittest
@@ -21,6 +22,63 @@ from .support import (
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+
+class DispatchPathSpellingTest(unittest.TestCase):
+    def test_one_character_assignment_names_resolve_without_accepting_malformed_names(self) -> None:
+        # x-s.md is the installed producer's dispatch_file_path for entity x, stage s.
+        for name in ("x-s.md", "spacedock-ensign-x-s.md", "x-s-advance.md"):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    ("x", "s"),
+                    spacedock.dispatch_artifact_identity(f"/tmp/spacedock-dispatch/{name}"),
+                )
+        for name in ("-s.md", "x-.md", "x--s.md", "X-s.md", "x-S.md", "x-s_.md"):
+            with self.subTest(name=name):
+                self.assertIsNone(
+                    spacedock.dispatch_artifact_identity(f"/tmp/spacedock-dispatch/{name}")
+                )
+
+    def test_the_private_tmp_spelling_names_the_same_macos_assignment(self) -> None:
+        for platform in ("darwin", "linux"):
+            with (
+                self.subTest(platform=platform),
+                mock.patch.object(sys, "platform", platform),
+                mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": ""}),
+            ):
+                self.assertEqual(
+                    ("task-1", "implementation") if platform == "darwin" else None,
+                    spacedock.dispatch_artifact_identity(
+                        "/private/tmp/spacedock-dispatch/task-1-implementation.md"
+                    ),
+                )
+
+    @unittest.skipUnless(os.path.realpath("/tmp") == "/private/tmp", "macOS tmp alias")
+    def test_the_private_tmp_assignment_is_read_with_the_same_refusals(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
+            root = Path(temporary)
+            directory = root / "spacedock-dispatch"
+            directory.mkdir(mode=0o700)
+            artifact = directory / "task-1-implementation.md"
+            artifact.write_bytes(b"Assignment")
+            artifact.chmod(0o600)
+            alias = str(artifact).replace("/tmp/", "/private/tmp/", 1)
+            with mock.patch.object(spacedock, "DISPATCH_DIRECTORY", str(directory)):
+                self.assertEqual(b"Assignment", spacedock.read_dispatch_artifact(alias))
+                artifact.chmod(0o666)
+                self.assertEqual(b"", spacedock.read_dispatch_artifact(alias))
+                artifact.chmod(0o600)
+                target = root / "target.md"
+                artifact.rename(target)
+                artifact.symlink_to(target)
+                self.assertEqual(b"", spacedock.read_dispatch_artifact(alias))
+                artifact.unlink()
+                artifact.write_bytes(b"Assignment")
+                artifact.chmod(0o600)
+                destination = root / "elsewhere"
+                directory.rename(destination)
+                directory.symlink_to(destination, target_is_directory=True)
+                self.assertEqual(b"", spacedock.read_dispatch_artifact(alias))
 
 
 class SpacedockParserTest(unittest.TestCase):
@@ -132,6 +190,15 @@ class SpacedockParserTest(unittest.TestCase):
             with self.subTest(case=label):
                 self.assertEqual([], self.frontmatter(body))
 
+    def test_a_one_character_stage_appears_in_the_workflow_strip(self) -> None:
+        config, _runtime = runtime()
+        lines = self.frontmatter("---\nstages:\n  states:\n    - name: s\n---\n")
+
+        self.assertEqual(
+            [{"name": "s", "initial": False, "terminal": False}],
+            spacedock.stage_entries(config, lines),
+        )
+
     def test_stage_names_refuse_shapes_the_scanner_cannot_model(self) -> None:
         """An unmodellable construct must render no strip, never a wrong one."""
         config, _runtime = runtime()
@@ -141,7 +208,7 @@ class SpacedockParserTest(unittest.TestCase):
             "stages absent": "state: .spacedock-state\n",
             "illegal name": "stages:\n  states:\n    - name: Intake_Bad\n",
             "flow item": "stages:\n  states:\n    - {name: intake}\n    - name: review\n",
-            "single char name": "stages:\n  states:\n    - name: x\n",
+            "trailing hyphen": "stages:\n  states:\n    - name: x-\n",
             "duplicate name": "stages:\n  states:\n    - name: review\n    - name: review\n",
         }
         for label, block in cases.items():
