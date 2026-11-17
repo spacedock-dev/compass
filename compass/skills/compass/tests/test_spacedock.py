@@ -37,6 +37,15 @@ class SpacedockParserTest(unittest.TestCase):
         "closed",
     ]
 
+    def test_a_merged_dispatch_name_keeps_only_the_entity_slug(self) -> None:
+        # Captured merged-dispatch name: Spacedock prefixes the run's UUID to the entity.
+        self.assertEqual(
+            ("task", "implementation"),
+            spacedock.dispatch_artifact_identity(
+                "/tmp/spacedock-dispatch/d25aaac3-cd52-444a-a3e5-dfc783843984-task-implementation.md"
+            ),
+        )
+
     def frontmatter(self, body: str) -> list[str]:
         config, _runtime = runtime()
         lines: list[str] = spacedock.frontmatter_lines(config, body)
