@@ -218,7 +218,8 @@ class RouteTest(IngressTestCase):
 
     def test_a_non_local_request_never_reaches_the_route(self) -> None:
         handler: Any = http_api._RequestHandler.__new__(http_api._RequestHandler)
-        handler.headers = {"Content-Length": "0"}
+        handler.headers = http.client.HTTPMessage()
+        handler.headers["Content-Length"] = "0"
         handler.path = "/api/events/claude"
         handler.rfile = io.BytesIO(b"")
         handler.server = SimpleNamespace(observation=self.coordinator)
