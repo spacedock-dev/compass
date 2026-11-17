@@ -10,9 +10,11 @@ overview. Execution also needs the corresponding writes, `sync-project`, and a
 `linear-deep-dive` skill (`recce-dev:linear-deep-dive` or
 `anthropic-skills:linear-deep-dive`). GitHub runs require none of these Linear capabilities.
 
-The default project is **Cargento: Compass in the Terminal** (team `DRC`):
+The default project is **Compass in the Terminal: follow-ups** (team `DRC`):
+<https://linear.app/recce/project/compass-in-the-terminal-follow-ups-483314ef42e4/overview>.
+It holds what was still open when **Cargento: Compass in the Terminal** closed:
 <https://linear.app/recce/project/cargento-compass-in-the-terminal-404cbf9cbce6/overview>.
-The earlier **Cargento: Actions Front and Center** project is complete:
+That project and the earlier **Cargento: Actions Front and Center** are complete:
 <https://linear.app/recce/project/cargento-actions-front-and-center-eed1852b11e6/overview>.
 Use `--project` to choose another named project. A milestone name present in both is ambiguous:
 ask which project. An issue identifies its own project and ignores `--project`.

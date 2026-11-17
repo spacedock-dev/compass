@@ -55,7 +55,7 @@ other tracker.
   caller's own words ("act as a coordinator and delegate to Codex and agy") means the same. It
   combines with every flag above; `--models` then names Codex and AGY models.
 - A milestone name uses the selected tracker's project/repository. The Linear adapter retains
-  Compass in the Terminal as its default project after Linear has been selected.
+  Compass in the Terminal: follow-ups as its default project after Linear has been selected.
 
 Examples:
 
