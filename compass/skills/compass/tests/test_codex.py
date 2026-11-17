@@ -1662,6 +1662,40 @@ class CodexDispatchArtifactSecurityTest(unittest.TestCase):
             self.metadata(),
         )
 
+    def test_a_nested_worker_keeps_its_place_from_a_semantic_dispatch_in_the_runtime_directory(
+        self,
+    ) -> None:
+        # Spacedock 0.28 dispatch build --host codex emitted this name and basename.
+        # Rollouts record /root/<worker> and nested /root/<parent>/<worker> paths;
+        # underscore normalization follows their recorded task-name spelling.
+        artifact = self.directory / "task-1-implementation.md"
+        artifact.write_text(
+            "You are working on: Keep the worker placed\nStage: implementation\n"
+            "spacedock dispatch show-stage-def --workflow-dir /repo/.spacedock/explore\n",
+            encoding="utf-8",
+        )
+        artifact.chmod(0o600)
+        for agent_path in (
+            "/root/task-1-implementation",
+            "/root/task_1_implementation",
+            "/root/skill_wiring_commander/task_1_implementation",
+            "/root/task-1-implementation/task_1_implementation",
+        ):
+            with (
+                self.subTest(agent_path=agent_path),
+                mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.root)}),
+                mock.patch.object(spacedock, "DISPATCH_DIRECTORY", str(self.root / "legacy")),
+            ):
+                self.assertEqual(
+                    (
+                        "Keep the worker placed",
+                        "task-1",
+                        "implementation",
+                        os.path.realpath("/repo/.spacedock/explore"),
+                    ),
+                    codex_collector._ensign_dispatch_metadata(agent_path),
+                )
+
     def test_line_reads_keep_their_forty_line_and_per_line_bounds(self) -> None:
         # A 2,048-byte read splits a long line, and only forty reads are made, so a title
         # written after them is never seen: the same bounds the line reader always had.

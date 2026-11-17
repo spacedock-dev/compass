@@ -107,21 +107,35 @@ def dispatch_directories() -> tuple[str, ...]:
 
 
 def dispatch_artifact_identity(artifact: str) -> tuple[str, str] | None:
-    """The (entity, stage) an exact ``spacedock-ensign-<entity>-<stage>.md`` path names, or None."""
+    """The (entity, stage) a semantic or legacy dispatch path names, or None."""
     directory, name = os.path.split(artifact)
-    if (
-        directory not in dispatch_directories()
-        or not name.startswith(_DISPATCH_FILE_PREFIX)
-        or not name.endswith(".md")
-    ):
+    if directory not in dispatch_directories() or not name.endswith(".md"):
         return None
-    name = name[len(_DISPATCH_FILE_PREFIX) : -len(".md")]
+    name = name[: -len(".md")].removeprefix(_DISPATCH_FILE_PREFIX)
+    # Merged dispatches prefix the session UUID; -advance is a handoff, not a stage.
+    name = re.sub(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}-", "", name)
+    name = name.removesuffix("-advance")
     slug, separator, stage = name.rpartition("-")
     if not separator or not SD_STAGE_RE.fullmatch(slug):
         return None
     if not SD_STAGE_RE.fullmatch(stage):
         return None
     return slug, stage
+
+
+def dispatch_candidates(task_name: str) -> tuple[str, ...]:
+    """Exact semantic and legacy candidates for one Codex worker's final path component."""
+    match = re.fullmatch(
+        r"(?:spacedock_ensign_)?([a-z0-9][a-z0-9_-]*?)(?:_cycle[0-9]+)?", task_name
+    )
+    if match is None:
+        return ()
+    stem = match.group(1).replace("_", "-")
+    return tuple(
+        f"{directory}/{prefix}{stem}.md"
+        for directory in dispatch_directories()
+        for prefix in ("", _DISPATCH_FILE_PREFIX)
+    )
 
 
 def read_dispatch_artifact(artifact: str) -> bytes:

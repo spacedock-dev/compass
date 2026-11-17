@@ -91,7 +91,11 @@ class CurrentCiAcquisitionTest(unittest.TestCase):
                 git_status, "executable", side_effect=lambda name, _env: "/owned/" + name
             ),
             mock.patch.object(git_status, "_executable", return_value="/owned/git"),
-            mock.patch.object(ci_read, "glab_hosts", return_value=frozenset({"gitlab.com"})),
+            mock.patch.object(
+                ci_read,
+                "_glab_config_text",
+                return_value="hosts:\n  gitlab.com:\n    api_protocol: https\n",
+            ),
             mock.patch.object(ci_read, "scan_records", side_effect=AssertionError("legacy scan")),
         ):
             return reading_ci_acquire.acquire(

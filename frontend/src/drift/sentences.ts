@@ -272,6 +272,8 @@ export const CI_READ_ERRORS: Readonly<Record<string, string>> = {
   'glab-missing': 'the glab command was not found on this machine',
   'glab-signed-out': 'glab is not signed in, so run glab auth login to let Compass read them',
   'glab-failed': 'glab failed',
+  'glab-config-unusable':
+    'glab’s config file could not be used; it was refused, unreadable, or GLAB_CONFIG_DIR points elsewhere',
   'host-not-configured': 'glab’s own configuration does not name that GitLab host',
   'no-session-folder':
     'no folder is known for this session, so the pull request’s commit could not be matched to it',

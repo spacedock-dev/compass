@@ -3250,10 +3250,14 @@ The launch keeps these bounds, each pinned by `test_ci_read`, and by `test_ci_re
   block holds a quoted key spelling one of them as well as a line this reader cannot place a key in (a
   tab, a flow mapping or sequence, a complex key, a tag, a block scalar), and an anchor, alias or merge key anywhere under `hosts:` leaves no host read, as does a file holding a control character other than tab, CR and LF, or U+0085, U+2028 or U+2029 (lines split on CRLF, CR and LF only, so this reader and glab agree where a line ends). `GLAB_CONFIG_DIR` is not followed: the file is read from
   `XDG_CONFIG_HOME` when set, otherwise `%APPDATA%` on Windows or `~/.config` elsewhere, so a configuration that lives only under a
-  folder that variable names reads as `host-not-configured` ([HOW_TO_USE.md](HOW_TO_USE.md#read-a-gitlab-merge-requests-pipeline) gives the way out). A pipeline counts only when
+  folder that variable names reads as `glab-config-unusable` ([HOW_TO_USE.md](HOW_TO_USE.md#read-a-gitlab-merge-requests-pipeline) gives the way out). A pipeline counts only when
   it ran the merge request's head, which is the session's commit; a merged-results pipeline settles
   nothing. A goal URL that names any
-  other host starts no `glab` and says so beside the reading. Only a goal URL binds a merge request:
+  other host starts no `glab` and says so beside the reading. A refused or unreadable config file
+  says it could not be used, including when anchors, aliases or merge keys prevent Compass from
+  interpreting `hosts:` safely. One leading UTF-8 BOM
+  is removed before parsing; only space and tab are trimmed around keys and values, so other
+  Unicode whitespace remains part of a scalar. Only a goal URL binds a merge request:
   what Claude Code writes for one is not measured
   ([the capture note](docs/captures/claude/gitlab-merge-request-read-unmeasured.md)).
   GitLab has no required-checks list, so a job allowed to fail counts as neither a pass nor a
@@ -4277,9 +4281,11 @@ Markdown file, and a transcript-sized allowance would let a planted artifact for
 the Codex collector both call it, and the entry is opened with `O_NONBLOCK` so a planted named pipe
 is refused instead of stalling collection. It also refuses a directory with any group or world write
 bit, sticky or not, and an entry with more than one hard link, both checked on the opened
-descriptors. The Codex collector reads only the legacy `/tmp` path
-(on macOS that is `/private/tmp`), takes at most the first 40 lines of 2,048 bytes each from what
-the reader returns, and keeps a title, a stage and a workflow directory from them.
+descriptors. Both consumers check the runtime directory before the legacy `/tmp` path
+(on macOS that is `/private/tmp`) and accept semantic dispatch names, including session UUID
+prefixes and advance handoffs, as well as legacy `spacedock-ensign-` names. The Codex collector
+takes at most the first 40 lines of 2,048 bytes each from what the reader returns, and keeps
+a title, a stage and a workflow directory from them.
 
 `SPACEDOCK_BIN`, when set, must be a full path; otherwise discovery resolves `spacedock` on the PATH
 elements that are full paths (walked by hand on Windows, never the current folder) and also

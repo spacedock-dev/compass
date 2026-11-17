@@ -174,6 +174,26 @@ export const AGitlabHostGlabDoesNotNameSaysSo: Story = {
   },
 };
 
+export const AGitlabConfigurationThatCouldNotBeUsedSaysSo: Story = {
+  ...read(
+    record({
+      repository: GITLAB,
+      error: 'glab-config-unusable',
+      head: '',
+      head_matches: false,
+      counts: { pass: 0, fail: 0, pending: 0, skipping: 0, cancel: 0 },
+      checks: [],
+    }),
+  ),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await expect(node).toHaveAttribute('data-next-ci-read-state', 'failed');
+    await expect(node).toHaveTextContent(
+      'Merge request checks were not read from GitLab: glab’s config file could not be used; it was refused, unreadable, or GLAB_CONFIG_DIR points elsewhere.',
+    );
+  },
+};
+
 export const ChecksOnAMovedHeadCannotCarryALine: Story = {
   ...citing(record({ head: OTHER, head_matches: false })),
   play: async ({ canvasElement }) => {

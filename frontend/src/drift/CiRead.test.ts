@@ -60,6 +60,12 @@ describe('the pull request check read, as the card says it', () => {
     expect(unlisted.lines[0]).toContain('does not name that GitLab host');
   });
 
+  it('says the config file could not be used when a GitLab read refused it', () => {
+    expect(ciReadReason('glab-config-unusable', 'GitLab')).toBe(
+      'glab’s config file could not be used; it was refused, unreadable, or GLAB_CONFIG_DIR points elsewhere',
+    );
+  });
+
   it('names glab, never gh, when a GitLab read comes back in a shape Compass does not read', () => {
     expect(ciReadReason('unreadable-output', 'GitLab')).toContain('glab');
     expect(ciReadReason('unreadable-output', 'GitLab')).not.toMatch(/\bgh\b/);

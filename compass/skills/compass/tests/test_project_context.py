@@ -2513,6 +2513,38 @@ class DispatchSecurityTest(unittest.TestCase):
         )
         self.assertEqual(str(self.artifact), project_context._dispatch_artifact(str(self.artifact)))
 
+    def test_a_semantic_dispatch_places_the_project_worker_and_names_its_assignment(self) -> None:
+        # Captured from spacedock dispatch build --host codex, including --advance.
+        for name in ("task-1-implementation.md", "task-1-implementation-advance.md"):
+            with self.subTest(name=name):
+                artifact = self.directory / name
+                artifact.write_text(
+                    "You are working on: Keep the project worker placed\n"
+                    "spacedock dispatch show-stage-def --workflow-dir /repo/.spacedock/explore\n",
+                    encoding="utf-8",
+                )
+                artifact.chmod(0o600)
+                self.assertEqual(
+                    ("task-1", "implementation"),
+                    spacedock.dispatch_artifact_identity(str(artifact)),
+                )
+                self.assertEqual(
+                    str(artifact), project_context._dispatch_artifact("Read " + str(artifact))
+                )
+                for task in (name[:-3], name[:-3].replace("-", "_")):
+                    self.assertEqual(
+                        (str(artifact), "/repo/.spacedock/explore", "task-1", "implementation"),
+                        project_context._codex_dispatch_artifact(task),
+                    )
+                artifact.unlink()
+
+    def test_a_dispatch_mention_after_unrelated_notes_still_places_the_worker(self) -> None:
+        artifact = str(self.directory / "task-1-implementation.md")
+        self.assertEqual(
+            artifact,
+            project_context._dispatch_artifact(f"See {self.directory}/notes.md then {artifact}"),
+        )
+
     def test_real_symlink_cannot_redirect_the_read(self) -> None:
         target = self.root / "private.md"
         self.artifact.replace(target)
