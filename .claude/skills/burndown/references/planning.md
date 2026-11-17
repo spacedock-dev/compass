@@ -14,6 +14,11 @@ Record stale descriptions, incomplete reconciliations and metadata changes as **
 them only after the plan is approved, never under `--plan`. Report unavailable reads rather than
 inventing an empty result.
 
+Unless the run is `--plan`, start the [run ledger](cleanup.md#the-run-ledger) now, before the first
+write, and add a line for every worktree, branch, ref, port, process and monitor as it is created.
+An orphan adopted from an earlier run goes in the ledger when it is adopted, since this run now
+owns its teardown.
+
 ## 2. Plan: group, order, estimate, choose models
 
 Read each open issue's `blockedBy`, labels, estimate and Scope (the files and views it names), and
