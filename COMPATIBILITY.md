@@ -237,4 +237,14 @@ agy plugin validate ./compass
      found no cross-PR drift in SECURITY.md, HOW_TO_USE.md or the design records, and changed
      nothing but this stamp. -->
 
-<!-- docs-synced-through: e64c30b2 (2026-11-16) -->
+<!-- Reconciled e64c30b2..f7365090: launcher-declared families and local groups; session endings,
+     open questions and shared-checkout labels; serialized cleanup and mandatory state publication;
+     redaction, prompt fences and terminal-safe diagnostics; CI timing and structural security gates;
+     HTTPS Reach deadlines, strict state I/O and earlier HTTP admission; private model working
+     folders and the measured Linux managed-MCP refusal; release publication checks; and
+     Spacedock's runtime dispatch paths and exact assignment binding. This pass corrected event
+     persistence and state-file lists, cleanup's parent-claim and group-label effects, group
+     selectors and piped writes, the waiting-child sentence and the runtime dispatch grammar.
+     It also corrected older Codex-only unasked-reader and settings-default claims. -->
+
+<!-- docs-synced-through: f7365090 (2026-11-17) -->
