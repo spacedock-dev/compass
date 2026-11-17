@@ -226,6 +226,7 @@ class RouteTest(IngressTestCase):
         handler._local_ok = lambda **_kw: False
         handler._drain_body = lambda: None
         refused: list[int] = []
+        handler._send = lambda _body, _ctype, code=200, **_k: refused.append(code)
         handler.send_error = lambda code, *_a, **_k: refused.append(code)
         handler.do_POST()
         self.assertEqual([403], refused)
