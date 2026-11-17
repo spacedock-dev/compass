@@ -8400,9 +8400,18 @@ class SummaryStoreHTTPTest(unittest.TestCase):
                 _replace_headers(handler.headers, headers)
                 with mock.patch.object(self.store, "delete") as delete:
                     handler.do_POST()
-                    handler._reject.assert_called_once_with(403)
+                    if handler._reject.called:
+                        handler._reject.assert_called_once_with(403)
+                    else:
+                        self.assertEqual(403, handler._send.call_args.kwargs["code"])
+                        self.assertEqual(
+                            "admission-refused",
+                            json.loads(handler._send.call_args.args[0])["reason"],
+                        )
                     delete.assert_not_called()
-                    self.assertEqual(0, handler.rfile.tell())
+                    self.assertEqual(
+                        0 if handler._reject.called else len(b"invalid JSON"), handler.rfile.tell()
+                    )
 
 
 class SummaryJobHTTPTest(unittest.TestCase):
@@ -8701,7 +8710,13 @@ class SummaryJobHTTPTest(unittest.TestCase):
                     mock.patch.object(self.store, "load", side_effect=AssertionError("store read")),
                 ):
                     handler.do_POST()
-                handler._reject.assert_called_once_with(403)
+                if handler._reject.called:
+                    handler._reject.assert_called_once_with(403)
+                else:
+                    self.assertEqual(403, handler._send.call_args.kwargs["code"])
+                    self.assertEqual(
+                        "admission-refused", json.loads(handler._send.call_args.args[0])["reason"]
+                    )
             handler = self.handler(path)
             handler.client_address = ("192.0.2.1", 9999)
             with mock.patch.object(handler, "_read_body", side_effect=AssertionError("body read")):

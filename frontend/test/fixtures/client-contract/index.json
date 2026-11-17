@@ -57,7 +57,7 @@
       "method": "POST",
       "name": "annotate-forbidden-origin",
       "route": "/api/annotate",
-      "sha256": "e68b1ecca6cf4e3523af6ff23dd37aa03125062bd2b826c0ac46da60f6d923ea",
+      "sha256": "aa0ac7613d974f0858116afc18f784bf252362703c824672d7c96a3721eab4df",
       "status": 403
     },
     {
@@ -568,7 +568,7 @@
       "method": "POST",
       "name": "direction-forbidden-origin",
       "route": "/api/direction",
-      "sha256": "834565ce30bcc2bdba75a8f28e1502c48065e19f9866074d817b06d5cb7021a1",
+      "sha256": "147ee9b001ddf6222c4dc5dae2a93c7bb3fcbba6a8e222753a3e8ce6b3612d5c",
       "status": 403
     },
     {
@@ -638,14 +638,14 @@
       "method": "POST",
       "name": "focus-forbidden-capability",
       "route": "/api/focus",
-      "sha256": "069cca8ab32ec28c014faf1a3a2ccdafef3342908ab08cad7058f5e30a904ff1",
+      "sha256": "e0acdd35677ce165fbdf22fcd210209e55f1dc2d76f490dd59966dc89acb3b60",
       "status": 403
     },
     {
       "method": "POST",
       "name": "focus-missing-capability",
       "route": "/api/focus",
-      "sha256": "fae9c80bb7976913c17052d0d2d940c99e0c6a85598d3359ef567247a48da24a",
+      "sha256": "0c7bb2c61bfd87c22c056710a2fe84446c11958b9f917050922c874c781653ae",
       "status": 403
     },
     {
@@ -736,7 +736,7 @@
       "method": "POST",
       "name": "reading-forbidden-origin",
       "route": "/api/reading",
-      "sha256": "47657ac72e6690aef69ec751ebec020bfc1a6d06538bc918e0635acb75ef5f0a",
+      "sha256": "9815fb09d239596ed5a6aea204458e870c2d3a6e2a1ad894217ae66dc30cfded",
       "status": 403
     },
     {

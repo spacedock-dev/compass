@@ -296,9 +296,33 @@ describe('POST /api/focus', () => {
     expect(JSON.parse(String(sent.calls[0]?.init?.body))).toEqual(identity);
     expect((await outcome(() => json({ focused: false }))).result).toBe('declined');
     expect((await outcome(() => json({}, { status: 429 }))).result).toBe('throttled');
-    expect((await outcome(() => json({}, { status: 403 }))).result).toBe('stale');
+    expect(
+      (await outcome(() => json({ reason: 'stale-capability' }, { status: 403 }))).result,
+    ).toBe('stale');
     expect((await outcome(() => json({}, { status: 503 }))).result).toBe('failed');
     expect((await outcome(() => new Response('<html>', { status: 200 }))).result).toBe('failed');
+  });
+
+  it.each([
+    [
+      'tunnel-port-mismatch',
+      "For an ssh -L tunnel, the local port must match the Compass server's port.",
+    ],
+    [
+      'admission-refused',
+      'Compass refused this request: board actions require direct loopback access from the same origin.',
+    ],
+  ])('tells the reader the %s refusal without calling it a restart', async (reason, message) => {
+    expect((await outcome(() => json({ reason, message }, { status: 403 }))).result).toEqual({
+      state: 'refused',
+      message,
+    });
+  });
+
+  it('does not diagnose a restart from an older unstructured refusal', async () => {
+    expect(
+      (await outcome(() => new Response('<h1>Forbidden</h1>', { status: 403 }))).result,
+    ).toEqual({ state: 'refused', message: 'Raise refused by Compass.' });
   });
 
   it('does not retry a network failure', async () => {

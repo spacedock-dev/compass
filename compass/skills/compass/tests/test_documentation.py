@@ -2636,7 +2636,7 @@ class FocusCommandContractDocumentationTest(unittest.TestCase):
         # Every status the route can answer with, and 404 is not among them.
         self.assertEqual(
             ["503", "403", "413", "429"],
-            sorted(set(re.findall(r"_reject\((\d{3})\)", handler)), key=handler.index),
+            sorted(set(re.findall(r"(?:_reject\(|code=)(\d{3})", handler)), key=handler.index),
         )
         self.assertLess(handler.index("focus_authorized"), handler.index("claim_focus"))
         self.assertLess(handler.index("claim_focus"), handler.index("focus_target"))
@@ -2770,9 +2770,10 @@ class FocusCommandContractDocumentationTest(unittest.TestCase):
         )
         handler = source[source.index("def _focus(self)") : source.index("def do_POST(self)")]
         self.assertIn('{"focused": focused}', handler)
-        for echoed in ("target", "tty", "pane", "socket", "reason"):
+        for echoed in ("target", "tty", "pane", "socket"):
             with self.subTest(field=echoed):
                 self.assertNotIn(f'"{echoed}":', handler)
+        self.assertIn('"reason": "stale-capability"', handler)
 
 
 class ReaderStateInventoryTest(unittest.TestCase):

@@ -41,7 +41,7 @@ interface Held<S> {
    subscriber is told when the entry lapses, since no render is otherwise due.
    It is armed by `activate` and dropped by `deactivate`, which is what lets
    StrictMode's effect, cleanup, effect leave exactly one. */
-export function createKeyedState<S extends string>(options: KeyedStateOptions) {
+export function createKeyedState<S>(options: KeyedStateOptions) {
   const { clock, ttlMs, limit } = options;
   const entries = new Map<string, Held<S>>();
   const listeners = new Set<() => void>();
@@ -133,4 +133,4 @@ export function createKeyedState<S extends string>(options: KeyedStateOptions) {
   };
 }
 
-export type KeyedState<S extends string> = ReturnType<typeof createKeyedState<S>>;
+export type KeyedState<S> = ReturnType<typeof createKeyedState<S>>;

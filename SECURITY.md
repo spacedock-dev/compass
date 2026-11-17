@@ -1418,6 +1418,12 @@ from a local process that never fetched the board. The absence of per-user isola
 exposure of the whole server rather than something this feature introduces or repairs, and Known and
 accepted below says so in the same words.
 
+A refused focus capability answers 403 with JSON reason `stale-capability`, so the page asks for
+a reload only for that refusal. POST admission refusals answer 403 with `admission-refused`
+and a fixed sentence about direct loopback and same-origin access, or `tunnel-port-mismatch`
+with the matching-port sentence. Admission runs first; neither refusal echoes supplied headers.
+Older clients still receive 403, and successful focus replies keep their single boolean.
+
 A rate ceiling and an in-flight gate, so a repeated or looped request cannot repeat the raise. The
 route's check order is deliberately **not** the one `POST /api/events/<harness>` uses, and the
 difference is the security property rather than an inconsistency. That route answers an unsupported

@@ -289,6 +289,27 @@ describe('terminal raise', () => {
     expect(view.getByRole('button').getAttribute('data-raise-state')).toBe(outcome);
   });
 
+  it('keeps the server refusal beside the pressed row across a remount', async () => {
+    const message =
+      'Compass refused this request: board actions require direct loopback access from the same origin.';
+    const { view, kit, rerender } = mount(<RaiseControl harness="claude" sid="s-1" focusable />, {
+      focus: async () => ({ state: 'refused', message }),
+    });
+    fireEvent.click(view.getByRole('button'));
+    await flush();
+    expect(kit.announced.at(-1)?.text).toBe(message);
+    rerender(<div />);
+    rerender(<RaiseControl harness="claude" sid="s-1" focusable />);
+    expect(view.getByRole('button').getAttribute('data-raise-state')).toBe('refused');
+    expect(view.getByText(message).textContent).not.toContain('restarted');
+    expect(view.getByRole('button').getAttribute('aria-describedby')).toBe(
+      view.getByText(message).id,
+    );
+    act(() => kit.clock.advance(CUE_TTL_MS));
+    expect(view.queryByText(message)).toBeNull();
+    expect(view.getByRole('button').hasAttribute('aria-describedby')).toBe(false);
+  });
+
   it('says nothing and leaves no cue when the runtime reports the feature unavailable', async () => {
     const harness = raiseHarness('unavailable');
     const { view, kit } = mount(<RaiseControl harness="claude" sid="s-1" focusable />, {

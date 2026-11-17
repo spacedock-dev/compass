@@ -899,6 +899,7 @@ class RouteTest(unittest.TestCase):
         )
         handler.server = SimpleNamespace(application=application, observation=coordinator)
         handler._local_ok = lambda **_kw: True
+        handler._loopback_resource_ok = lambda: True
         self.sent: list[tuple[bytes, str]] = []
         self.rejected: list[int] = []
         handler._send = lambda payload_bytes, kind, **_k: self.sent.append((payload_bytes, kind))
@@ -993,7 +994,8 @@ class RouteTest(unittest.TestCase):
             handler.do_POST()
             outcomes.append((tuple(self.rejected), tuple(self.sent)))
         self.assertEqual(outcomes[0], outcomes[1])
-        self.assertEqual((403,), outcomes[0][0])
+        self.assertEqual((), outcomes[0][0])
+        self.assertEqual("stale-capability", json.loads(outcomes[0][1][0][0])["reason"])
 
     def test_a_harness_capability_is_not_a_focus_capability(self) -> None:
         # The per-harness tokens are derived by HMAC, so the token that would
@@ -1006,7 +1008,8 @@ class RouteTest(unittest.TestCase):
         )
         handler.headers["X-Compass-Capability"] = coordinator.capability("claude")
         handler.do_POST()
-        self.assertEqual([403], self.rejected)
+        self.assertEqual([], self.rejected)
+        self.assertEqual("stale-capability", json.loads(self.sent[0][0])["reason"])
         self.assertNotIn(coordinator.focus_capability(), coordinator.capabilities().values())
 
     def test_a_looped_request_is_refused_by_the_ceiling(self) -> None:

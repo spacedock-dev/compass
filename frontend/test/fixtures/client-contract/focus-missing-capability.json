@@ -15,15 +15,16 @@
     "query": ""
   },
   "response": {
-    "error_page": {
-      "contains": [
-        "Error code: 403",
-        "Error response"
-      ],
-      "kind": "python-http-server"
+    "body": {
+      "message": "Raise refused: the dashboard restarted. Reload the page.",
+      "ok": false,
+      "reason": "stale-capability"
     },
     "headers": {
-      "Content-Type": "text/html;charset=utf-8"
+      "Cache-Control": "no-store",
+      "Content-Length": "114",
+      "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
+      "Content-Type": "application/json"
     },
     "status": 403
   }

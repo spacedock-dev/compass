@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2340627,
+    "bytes": 2341751,
     "file": "react.html",
-    "sha256": "e7b12dc3b75378aface297225676689e1f8f5ddc5cdf6daacd2ab330627ac6d8"
+    "sha256": "5c371a09587a213883e2be92988e0ad0986e3056bb0d560cb8a4e747c73120df"
   },
   "format": 1,
   "frontend": "react",
@@ -283,7 +283,7 @@
       },
       {
         "file": "frontend/src/api/client.ts",
-        "sha256": "74ca80b8a5c4550857ff2c1fe925895d5fd9ca4c1f5508e26b24bd56f4d4ad93"
+        "sha256": "7c2278f888105edd6dc39e397ce4ba252f375e0223866297e0838258b12a2481"
       },
       {
         "file": "frontend/src/api/explanations.ts",
@@ -335,7 +335,7 @@
       },
       {
         "file": "frontend/src/api/types.ts",
-        "sha256": "58ba3e32fd8bbc0076b3093fbdb5b4fc370c48a47c8cca5ef4eefbb5e5bac4c2"
+        "sha256": "d10b39896e158ef050a600b967f6e499abc0a131c73e9debe6cc782a9968fc63"
       },
       {
         "file": "frontend/src/attention/AttentionAnnouncer.tsx",
@@ -447,7 +447,7 @@
       },
       {
         "file": "frontend/src/controls/RaiseControl.tsx",
-        "sha256": "1e518bff398b19d8d98f0181a4694e541d09b9fa2c34320f8d95d5cd00a2f5c1"
+        "sha256": "fbc7f564c0a7deb7504ad8dbb291122ef19731eb923986eed9d9034d1a4fdc4c"
       },
       {
         "file": "frontend/src/controls/briefingUnavailable.ts",
@@ -483,11 +483,11 @@
       },
       {
         "file": "frontend/src/controls/keyedState.ts",
-        "sha256": "7607b930dfb28b1616dffe6c41a8688f99eb41ceedb1625e8e078c50278fb01c"
+        "sha256": "a41ea3ef29263a1d646e91ab5dc6576af10f3e657f6acd0e652c06cd9d8e14c6"
       },
       {
         "file": "frontend/src/controls/kit.ts",
-        "sha256": "822a9a573cd9e740c8149b92c87eaa4f8bad0da104c24429141788428426abc7"
+        "sha256": "4cb101bff172537436157ff7407fca3b502f85acaa82711df602d9ca0656247a"
       },
       {
         "file": "frontend/src/controls/popoverEscape.ts",
@@ -1735,7 +1735,7 @@
       },
       {
         "file": "frontend/src/ui/button.tsx",
-        "sha256": "c99d522d9b489c7a1ed797bbbdda25337c0e125f94fe9081eab8ba9ddec0b65c"
+        "sha256": "8f73fe821d5ab5219a8ca7215204148533c265ba21ab9db23658dc20096c8ef2"
       },
       {
         "file": "frontend/src/ui/card.tsx",
