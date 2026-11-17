@@ -597,8 +597,8 @@ dynamic-import analysis.
 `test_http_admission_matrix.py` derives routes from the HTTP dispatch dictionaries and prefix
 handlers, including terminal operations and the WebSocket, and holds every route to navigation,
 same-site cross-port, duplicate-Host and allowed-name LAN requests. Cross-port GETs exercise both
-no-cors subresources without Origin and CORS requests with Origin. Discard requests pass body
-validation before testing admission; every loopback-only POST also gets a forwarding-header row.
+no-cors subresources without Origin and CORS requests with Origin. Reading POSTs test admission
+before body validation and availability; every loopback-only POST also gets a forwarding-header row.
 Keep its explicit board-read
 allowlists and expected statuses in sync with SECURITY.md. A new route needs a matrix row. A
 duplicate admission header is refused with 403 by the admission gate; only a defective header block

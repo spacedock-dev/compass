@@ -356,6 +356,11 @@ class CompassHTTPServer(ThreadingHTTPServer):
     interpreter without either one answering with the other's data.
     """
 
+    # Pending accepts are separate from the 64 active handlers below. A 150-hook raw-socket
+    # burst on macOS/Python 3.12 delivered 49/150 at backlog 5 and 150/150 at 256.
+    # Hooks do not retry, so leave room for a full burst before an accept runs.
+    request_queue_size = 256
+
     # Every connection costs a thread and a descriptor for as long as it lives. Most of the
     # long-lived ones are bounded already: 8 SSE streams (`stream_max_clients`),
     # INTERACTION_STREAM_LIMIT terminal sockets, and one browser's 6-socket pool per origin.
@@ -2658,7 +2663,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
         The operator triggers it by clicking "observe" on a session card.
         Strictly same-origin: the route answers only loopback requests.
         """
-        if not self._loopback_read_ok():
+        # Unlike a read, this GET writes. An old browser's cross-site image carries neither
+        # Origin nor fetch metadata; a same-origin fetch must identify itself here.
+        if not self._loopback_read_ok() or not (
+            self.headers.get("Origin")
+            or (self.headers.get("Sec-Fetch-Site") or "").lower() == "same-origin"
+        ):
             self.send_error(403)
             return
         query = parse_qs(url.query)
@@ -3477,6 +3487,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
         the press is asserted rather than assumed, and nothing on render,
         poll, reconnect, resume, focus change or revision save carries it.
         """
+        # Admission precedes availability reads: a remote peer learns neither body validity
+        # nor whether a reading provider or its store is enabled.
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            return 403
         config = self.server.application.config
         # Pause model calls also stops goal summaries, which need neither the
         # annotation store nor a qualified reading provider, so an off is
@@ -3499,9 +3513,6 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # provider opens the route; which one may run is the route's
             # question, answered below from the harness.
             (not available, 503),
-            # A lured navigation reads nothing back, but it would still spend
-            # the reader's capacity, which is the harm this route carries.
-            (self._is_document_navigation() or not self._loopback_resource_ok(), 403),
             (payload.get("observer_model") != 1, 400),
             (payload.get("press") is not True, 400),
         )
@@ -3565,6 +3576,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         )
 
     def _reading_long_discard(self) -> None:
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
         application = self.server.application
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -3650,6 +3664,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         for `_focus`'s ruling: a harness name is public and a session id is
         not, so a 404 here would be an existence oracle.
         """
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
         application = self.server.application
         config = application.config
         try:
@@ -3669,7 +3686,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     def _reading_dispatch(self, payload: dict[str, Any]) -> None:
         application = self.server.application
-        if not reading_long_preview.valid_ingress(payload) or (
+        refusal: int | None
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            refusal = 403
+        elif not reading_long_preview.valid_ingress(payload) or (
             "typed_action" in payload
             and (
                 payload["typed_action"] not in ("drift", "drift again")
@@ -3677,12 +3697,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 or payload.get("mode") == "long"
             )
         ):
-            self._reject(400)
-            return
-        refusal = self._reading_refusal(
-            payload,
-            off=payload.get("consent") in ("off", "on") or payload.get("ci_read") in ("off", "on"),
-        )
+            refusal = 400
+        else:
+            refusal = self._reading_refusal(
+                payload,
+                off=payload.get("consent") in ("off", "on")
+                or payload.get("ci_read") in ("off", "on"),
+            )
         if refusal is not None:
             self._reject(refusal)
             return
@@ -4020,6 +4041,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         and reserves nothing, and it never waits for the reap: the job's own
         thread does that.
         """
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
         config = self.server.application.config
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -4229,6 +4253,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         charge is the model seam's (`reading_policy.GuardedModel`), the same one Analyze pays at.
         An unknown session answers as a session with no prompts does, for `_focus`'s reason.
         """
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
         config = self.server.application.config
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -5934,7 +5961,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._refuse_transfer_coding()
             return
         if not self._local_ok():
-            self._reject(403)
+            self._post_admission_refusal()
             return
         path = urlparse(self.path).path
         # Prefix-matched, so it cannot join the exact-match table below.
@@ -5976,6 +6003,48 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reject(404)
             return
         route()
+
+    def _tunnel_port_mismatch(self) -> bool:
+        if not (
+            self._single_admission_headers()
+            and self._direct_loopback()
+            and self._development_authority_ok()
+        ):
+            return False
+        authority = (self.headers.get("Host") or "").strip(" \t")
+        origin = self.headers.get("Origin") or ""
+        try:
+            parsed = urlparse(origin)
+            port = parsed.port if parsed.port is not None else 80
+        except ValueError:
+            return False
+        # A diagnosis only, never an admission exception. Reflect no supplied authority.
+        return (
+            origin == "http://" + parsed.netloc
+            and parsed.netloc == authority
+            and "@" not in authority
+            and 0 < port <= 65535
+            and port != self.server.server_port
+        )
+
+    def _post_admission_refusal(self) -> None:
+        if not self._tunnel_port_mismatch():
+            self._reject(403)
+            return
+        self._drain_body()
+        self._send(
+            json.dumps(
+                {
+                    "ok": False,
+                    "reason": "tunnel-port-mismatch",
+                    "message": (
+                        "For an ssh -L tunnel, the local port must match the Compass server's port."
+                    ),
+                }
+            ).encode(),
+            "application/json",
+            403,
+        )
 
     def _interaction_post(self, route: str) -> None:
         prototype = self.server.interaction_prototype

@@ -367,7 +367,10 @@ The posture rests on two invariants:
    block and records the answer as a sidecar under `~/.compass/observer/`, again Compass's own
    state and never a harness store. It answers only a loopback request that carries no proxy
    forwarding header and refuses a document or frame navigation, so a non-default bind does not
-   widen it. Its two components are the harness key and the session id, and
+   widen it. It also requires an admitted Origin or `Sec-Fetch-Site: same-origin`; a GET with
+   neither is refused before reading a transcript or writing a sidecar. Older browsers that send
+   neither on cross-site images cannot trigger it. A direct client must supply the board's Origin.
+   Its two components are the harness key and the session id, and
    both must match `[A-Za-z0-9._-]{1,128}` before either reaches a path. `records.safe_text`
    bounds a string and strips control characters, and passes a separator straight through, so the
    grammar is what keeps the write inside that directory rather than the join. The file holds
@@ -5886,7 +5889,11 @@ For an IP literal or loopback Host, a supplied Origin must be `http`, carry only
 authority, and name the same host and port as Host, and that port must be the listening port.
 `localhost` and `127.0.0.1` are different origins to a browser, so an Origin that spells the host
 differently from Host is refused, and under `--host 0.0.0.0` an Origin on another admitted
-address is refused as another site's page.
+address is refused as another site's page. A direct loopback POST whose Origin equals its loopback
+Host but names a different port remains refused with 403. Its JSON body carries the reason
+`tunnel-port-mismatch` and says "For an ssh -L tunnel, the local port must match the Compass server's
+port." The board shows that instruction after any action receives this refusal. This diagnoses the
+same-port rule; it does not relax it for tunnels.
 
 Every GET and POST must carry exactly one Host header and at most one each of Origin,
 `Sec-Fetch-Site`, `Sec-Fetch-Mode` and `Sec-Fetch-Dest`, none of them a comma-joined list. A
@@ -5894,6 +5901,10 @@ repeated or combined value is refused with 403 on every bind, with or without `-
 because the gate reads the first copy and a proxy may act on the last. A header line the parser
 cannot read, such as one with whitespace before its colon, is refused with 400 and the connection
 closed, because the parser stops there and every header after it would go unseen.
+
+Reading POST routes refuse navigation and non-loopback or forwarded requests with 403 before
+checking body size, JSON validity or reading availability. Those refusals disclose neither the
+body's validity nor whether readings are enabled.
 
 Loopback-only routes require both a loopback TCP peer and a loopback Host authority: a
 `LOCAL_HOSTS` name (`localhost`, `127.0.0.1`, `::1`) or a loopback IP. An allowed DNS name never
@@ -5915,8 +5926,9 @@ response before routing, for GET and POST alike; other methods have no route. Th
 admission refusal, like an untrusted Host, rather than a separate request-parser error.
 
 A POST body is framed by Content-Length alone. A POST carrying `Transfer-Encoding` is refused with
-501 before routing and its connection is closed. Every connection holds a handler thread, so the
-server serves at most 64 at once and answers the next with a 503 carrying `Retry-After: 1` and
+501 before routing and its connection is closed. The listener requests a backlog of 256 pending
+connections to absorb hook bursts; the operating system may cap it. This is separate from active
+handlers. Every accepted connection holds a handler thread, so the server serves at most 64 at once and answers the next with a 503 carrying `Retry-After: 1` and
 closes it rather than queuing it. The MCP server's poll and the `--status`, `--stop` and terminal
 health probes wait that refusal out within their own timeouts rather than reading it as an answer;
 a probe that never gets past it says the dashboard is busy and stops nothing. The terminal Live

@@ -275,6 +275,16 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
         self.httpd.server_close()
         self.thread.join(2)
 
+    @staticmethod
+    def tunnel_headers(port: int, kind: str) -> list[tuple[str, str]]:
+        local_port = 1 if port == 65535 else port + 1
+        origin = f"http://127.0.0.1:{local_port}"
+        extra = {
+            "tunnel-proxy": [("Forwarded", "for=192.0.2.10")],
+            "tunnel-duplicate": [("Origin", origin)],
+        }.get(kind, [])
+        return [("Host", f"127.0.0.1:{local_port}"), ("Origin", origin), *extra]
+
     def request(self, method: str, path: str, kind: str, payload: Any = None) -> int:
         port = self.httpd.server_port
         headers = [("Host", f"127.0.0.1:{port}")]
@@ -312,6 +322,8 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
         if kind == "cross-port-cors" or (kind == "cross-port" and method == "POST"):
             # CORS requests carry Origin; no-cors script/image GETs need not.
             headers += [("Origin", f"http://127.0.0.1:{1 if port == 65535 else port + 1}")]
+        if kind.startswith("tunnel"):
+            headers = self.tunnel_headers(port, kind)
         if kind == "lan":
             headers = [("Host", "board.example"), ("Origin", "https://board.example")]
         if path == "/api/interaction/stream":
@@ -331,9 +343,9 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
 
         body = json.dumps(VALID_DISCARD).encode() if path == "/api/reading-long-discard" else b"[]"
         if payload is not None:
-            body = json.dumps(payload).encode()
+            body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
         # Peer injection changes only the address the real socket handler sees; binding stays
-        # loopback. Discard must pass validation before it can exercise its admission guard.
+        # loopback; the request still crosses the real parser and dispatch gates.
         try:
             with (
                 mock.patch.object(http_api._RequestHandler, "__init__", handler),
@@ -346,7 +358,7 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
                 conn.endheaders(body if method == "POST" else None)
                 response = conn.getresponse()
                 if path != "/api/stream":
-                    response.read()
+                    self.last_body = response.read()
                 return response.status
         finally:
             conn.close()
@@ -384,6 +396,53 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
         for path in sorted(GET):
             with self.subTest(path=path):
                 self.assertEqual(403, self.request("GET", path, "cross-port-cors"))
+
+    def test_unadmitted_reading_posts_reveal_neither_body_validity_nor_availability(self) -> None:
+        paths = (
+            "/api/reading",
+            "/api/reading/cancel",
+            "/api/reading-long-discard",
+            "/api/goal/find",
+        )
+        config = self.httpd.application.config
+        for available in (True, False):
+            self.httpd.application.config = dataclasses.replace(
+                config, annotations_enabled=available, annotation_body_cap_bytes=512
+            )
+            with mock.patch.object(annotation_store, "any_reading_enabled", return_value=available):
+                for path in paths:
+                    for kind in ("lan", "proxy", "navigation"):
+                        for body in (
+                            b"{",
+                            b"[]",
+                            b"{}",
+                            b"x" * 513,
+                            VALID_DISCARD,
+                            {"mode": "long"},
+                            {"plan_binding": "bad"},
+                            {"typed_action": "summary"},
+                        ):
+                            with self.subTest(path=path, kind=kind, body=body, available=available):
+                                self.assertEqual(403, self.request("POST", path, kind, body))
+
+    def test_an_observation_without_origin_or_fetch_metadata_is_refused(self) -> None:
+        self.assertEqual(403, self.request("GET", "/api/observe", "local"))
+
+    def test_a_different_port_tunnel_explains_why_every_action_is_refused(self) -> None:
+        sentence = "For an ssh -L tunnel, the local port must match the Compass server's port."
+        for path in sorted(POST):
+            with self.subTest(path=path):
+                self.assertEqual(403, self.request("POST", path, "tunnel"))
+                self.assertIn(sentence.encode(), self.last_body)
+                self.assertEqual(
+                    {"ok": False, "reason": "tunnel-port-mismatch", "message": sentence},
+                    json.loads(self.last_body),
+                )
+        for kind in ("tunnel-proxy", "tunnel-duplicate", "cross-port", "lan"):
+            with self.subTest(kind=kind):
+                # A different local service or a forwarding proxy earns no tunnel diagnosis.
+                self.assertEqual(403, self.request("POST", "/api/reading", kind))
+                self.assertNotIn(b"tunnel-port-mismatch", self.last_body)
 
     def test_valid_discard_rejects_lan_and_forwarding(self) -> None:
         self.assertTrue(http_api._RequestHandler._valid_long_discard(VALID_DISCARD))

@@ -23,6 +23,7 @@ export interface TestShellOptions {
   readonly streamSupported?: boolean;
   /** The run's terminal-raise capability, which the served document carries in a meta tag. */
   readonly focusCapability?: string;
+  readonly postResponse?: () => Response;
 }
 
 export const flush = async (turns = 12): Promise<void> => {
@@ -42,6 +43,8 @@ export function mountShell(options: TestShellOptions = {}) {
   };
   const fetch: FetchLike = (url, init) => {
     backend.requests.push({ method: init?.method ?? 'GET', url });
+    if (init?.method === 'POST' && options.postResponse)
+      return Promise.resolve(options.postResponse());
     if (url.startsWith('/api/session-record')) {
       const session = new URLSearchParams(url.split('?')[1]).get('session') ?? ':';
       const split = session.indexOf(':');

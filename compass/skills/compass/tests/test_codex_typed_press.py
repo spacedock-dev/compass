@@ -10,6 +10,7 @@ timestamp, and nothing typed after it.
 from __future__ import annotations
 
 import copy
+import email.message
 import json
 import tempfile
 import unittest
@@ -250,6 +251,11 @@ class ACodexPressRouteTest(CodexTypedPressCase):
         handler._send = mock.Mock()
         handler._reject = mock.Mock()
         handler._reading_refusal = mock.Mock(return_value=None)
+        handler.headers = email.message.Message()
+        handler.headers["Host"] = "127.0.0.1:12345"
+        handler.client_address = ("127.0.0.1", 12346)
+        handler.path = "/api/reading"
+        handler.command = "POST"
 
         def reading_press(*_args: object) -> None:
             if starts:

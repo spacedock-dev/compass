@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2339767,
+    "bytes": 2340627,
     "file": "react.html",
-    "sha256": "25e9b1b32bea18fe97f7e0b903d512d111e9f8fb9cbb0c8f7c40b32a0b794d90"
+    "sha256": "e7b12dc3b75378aface297225676689e1f8f5ddc5cdf6daacd2ab330627ac6d8"
   },
   "format": 1,
   "frontend": "react",
@@ -283,7 +283,7 @@
       },
       {
         "file": "frontend/src/api/client.ts",
-        "sha256": "581852804031ec97fc3d21a9f156362a3c3677cea38c5abe5884b53eed4a4970"
+        "sha256": "74ca80b8a5c4550857ff2c1fe925895d5fd9ca4c1f5508e26b24bd56f4d4ad93"
       },
       {
         "file": "frontend/src/api/explanations.ts",
@@ -459,7 +459,7 @@
       },
       {
         "file": "frontend/src/controls/displayGate.ts",
-        "sha256": "2ee9dccf507aaf2a8a54891932eb12dcd1069eb9d5f3034418ce5dc061137028"
+        "sha256": "67f4980c65e9ac89093812f3dba3731e7e9fda7d89a1923c8dac5b5270aa7400"
       },
       {
         "file": "frontend/src/controls/fieldMemory.ts",
@@ -1387,7 +1387,7 @@
       },
       {
         "file": "frontend/src/shell/Notices.tsx",
-        "sha256": "62e5be731adfcd34127f41b5b52c106ce1772dd263080f8c74719a37fcf89760"
+        "sha256": "c8a914a9ec70357ee07713d1f140a1e69c020e41b1e8c2499789383ac472ec41"
       },
       {
         "file": "frontend/src/shell/Page.tsx",
@@ -1443,7 +1443,7 @@
       },
       {
         "file": "frontend/src/shell/testing.tsx",
-        "sha256": "09d28875bb07b3a9ca5d3f880168a272db062c112e2c125574b7c6351880482f"
+        "sha256": "85d6a063bd3753890b7d6abee9e6f0f307df821d3e8c089c99ef3819f3f03789"
       },
       {
         "file": "frontend/src/shell/title.ts",
@@ -1551,7 +1551,7 @@
       },
       {
         "file": "frontend/src/store/board.ts",
-        "sha256": "29a68a9372d5d0c7763c4bf2694b74505fd51dd429334a6062fe10071bed3dc4"
+        "sha256": "df9daa8586629c268ff7bf3cc4e632d29fc5c9456a07e6f2dc642ce94cf95fb1"
       },
       {
         "file": "frontend/src/store/commit-gate.ts",
@@ -1711,7 +1711,7 @@
       },
       {
         "file": "frontend/src/transport/runtime.ts",
-        "sha256": "1578faed923c7c4e8023ba4e8b575e367838cfd43257e9f79bf35386fede9251"
+        "sha256": "23ab8405814805842ef563e7b7e17c625bc3c2ed5d008986766d4202174b51c4"
       },
       {
         "file": "frontend/src/transport/testing.ts",

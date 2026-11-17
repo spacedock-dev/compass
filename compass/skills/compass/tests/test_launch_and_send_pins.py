@@ -266,7 +266,10 @@ class _Journey(_App):
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
         try:
             body = None if payload is None else json.dumps(payload).encode()
-            conn.request(method, path, body=body, headers={"Content-Type": "application/json"})
+            headers = {"Content-Type": "application/json"}
+            if path.startswith("/api/observe?"):
+                headers["Origin"] = f"http://127.0.0.1:{port}"
+            conn.request(method, path, body=body, headers=headers)
             response = conn.getresponse()
             raw = response.read()
         finally:

@@ -585,6 +585,10 @@ ssh -L 4553:127.0.0.1:4553 you@the-agent-machine
 python3 -m webbrowser -t http://127.0.0.1:4553/
 ```
 
+Keep both ports in `ssh -L` equal to the server's `--port`. For an ssh -L tunnel, the local port
+must match the Compass server's port. A different local port can load the board, but actions are
+refused with 403; the board shows that sentence when an action is refused this way.
+
 That gets a remote board over a channel that already authenticates you, with the dashboard still
 bound to loopback. Reach for `--host` when there is no ssh to be had, such as a container publishing
 a port or a VM whose host browser cannot see its loopback:

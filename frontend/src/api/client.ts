@@ -151,17 +151,20 @@ export interface SessionRecordQuery {
   readonly signal?: AbortSignal;
 }
 
-export function createApiClient(deps: { readonly fetch: FetchLike }) {
+export function createApiClient(deps: {
+  readonly fetch: FetchLike;
+  readonly onTunnelPortMismatch?: () => void;
+}) {
   const get = <T>(path: string, signal: AbortSignal | undefined, readRevision = false) =>
     settle<T>(() => fetchBounded(deps.fetch, path, undefined, signal), signal, readRevision);
 
-  const post = <T>(
+  const post = async <T>(
     path: string,
     body: unknown,
     signal?: AbortSignal,
     headers: Record<string, string> = {},
-  ) =>
-    settle<T>(
+  ) => {
+    const result = await settle<T>(
       () =>
         fetchBounded(
           deps.fetch,
@@ -176,6 +179,16 @@ export function createApiClient(deps: { readonly fetch: FetchLike }) {
       signal,
       false,
     );
+
+    if (
+      result.kind === 'http-error' &&
+      result.status === 403 &&
+      isRecord(result.body) &&
+      result.body['reason'] === 'tunnel-port-mismatch'
+    )
+      deps.onTunnelPortMismatch?.();
+    return result;
+  };
 
   return {
     /** The one route that reads `X-Compass-Revision`. */
