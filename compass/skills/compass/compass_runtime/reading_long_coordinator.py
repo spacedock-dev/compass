@@ -177,7 +177,7 @@ def _transport_reason(provider: str, spent: bool, diagnostic: dict[str, Any] | N
                 else reading.WITHHELD_CODEX_FAILED
             )
         if (
-            outcome.startswith("context-")
+            (outcome.startswith("context-") or outcome == reading.WITHHELD_SETTINGS_REFUSED)
             and outcome in reading.WITHHELD
             and (not spent or measured["attempt_reserved"])
         ):
