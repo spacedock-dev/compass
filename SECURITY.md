@@ -125,8 +125,10 @@ The posture rests on two invariants:
 2. Read-only against harness stores. They are opened read-only and never written. The mutating
    endpoints change Compass's own state. These mutate only in memory: `POST /api/notify` updates needs-input state, and
    `POST /api/usage` stores a quota figure a harness published to its own status-line command.
-   `POST /api/events/<harness>` also mutates in memory only, behind the capability described under
-   Known and accepted, and so do `POST /api/ask`, `POST /api/answer` and `POST /api/ask/withdraw`,
+   `POST /api/events/<harness>` updates lifecycle state behind the capability described under
+   Known and accepted. It also persists session ends and
+   [launcher parent claims](#launcher-parent-declarations-and-group-labels) in Compass's own stores.
+   `POST /api/ask`, `POST /api/answer` and `POST /api/ask/withdraw` mutate only in memory,
    which register a question a session asked, record the option the reader chose, and drop a question
    whose asker has stopped waiting for it, all three described under The ask lane. So does
    `POST /api/lane`, which records that a dashboard tab has a working notification lane in it: one
@@ -4429,8 +4431,8 @@ how hard, to anyone who can read the notification stream. That is stated here ra
 
 ## Process lifecycle: written paths, and `/api/shutdown`
 
-The server writes fifteen files, all under `~/.compass` (relocatable with `COMPASS_HOME`,
-authoritative when nonblank): `compass-<port>.json`, recording the running instance (`pid`, `port`,
+Server state under `~/.compass` (relocatable with `COMPASS_HOME`, authoritative when nonblank)
+includes: `compass-<port>.json`, recording the running instance (`pid`, `port`,
 `started`, `log`, `python`, `state_format`); `compass-<port>.json.origin`, a nonsecret record tied to that
 instance's pid, port and start time; `compass-<port>.json.lock`, the persistent OS lock used to
 serialize state publication and removal; `compass-lifecycle.lock`, the persistent OS lock shared
@@ -4439,8 +4441,11 @@ output goes; `compass-dismissals.json`, the sessions the reader marked handled, 
 Dismissals below; `observer/<harness>_<sid>.json`, the sidecar `GET /api/observe` records when a
 reader opens that panel for a session, named in invariant 2 above; `compass-history.json`, the
 history of what this server observed, described in Local history above;
-`compass-annotations.json`, the typed or explicitly adopted goal, typed expected outcome lines and readings taken against
+`compass-annotations.json`, local group labels, the typed or explicitly adopted goal, typed expected outcome lines and readings taken against
 them, named in invariant 2 above and turned off by `--no-annotations`;
+`declared-parents/claims.json` and its stable `claims.lock`, the
+[launcher parent claims](#launcher-parent-declarations-and-group-labels), removed by `--forget`
+while the lock remains;
 `compass-deliveries.json`, what became of each notification this board raised, described in
 Delivery records below; `compass-departures.json`, what an unasked reading raised, described in
 Unasked readings below and written only with that feature switched on; `compass-ends.json`, the
@@ -4451,8 +4456,8 @@ above, which holds one line and is removed when the switch goes back on; and
 prototype below and not reached by `--forget`; and `compass-typed-presses.json`, the ids of the
 typed `/compass:compass drift` commands a press from inside a session started a reading on, owner-only
 and described in the drift action's row of What can reach into a session above, which `--forget`
-keeps because it guards the spend as the spend timestamps do. One forwarder writes a
-sixteenth, in the same directory and named in invariant 2 above:
+keeps because it guards the spend as the spend timestamps do. One forwarder also writes a file
+per conversation, in the same directory and named in invariant 2 above:
 `statusline_hook.py` keeps `statusline-<harness>-<session>.json` per conversation, holding a
 normalized state name and a timestamp, so a status line that fires many times a turn posts once. The directory is created `0o700` because the log can carry local paths: uncaught
 tracebacks land there, not just Python-level prints. Nothing ever removes or rotates the log. A

@@ -98,7 +98,7 @@ The unasked reading lane raises through the SERVER side of this same lane and re
 outcome, so everything above about a server-side raise applies to a departure. The browser half does
 not: the page raises on edges it computes from the payload, and a departure is not one of them, so on
 Linux and Windows a departure reaches the delivery record and no banner. It also needs a working
-`codex` CLI on the machine, which is the dependency a reader-requested reading already has, and it is
+Claude Code or Codex CLI for the session's selected reader, as a reader-requested reading does, and it is
 off by default on every platform.
 
 The operator-cockpit prototype's terminal registration is unsupported on native Windows. Its

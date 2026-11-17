@@ -428,7 +428,7 @@ The producer's [declared-session contract](design-declared-sessions.md) alone es
 links and group inheritance. The page never uses a title, project, headless flag or matching group to
 infer a family. A linked child names its parent with a page link. An unmatched declaration says
 "Declared parent is not on the board; not linked." A parent held working names the selected child
-as "Waiting on <title>", linking to it; a child without a title is named by its session id.
+as `Waiting on child "title"`, linking to it; a child without a title is named by its session id.
 An open question keeps its input-wait state on the row and session page; a child hold cannot
 replace input wait or an observed end.
 
