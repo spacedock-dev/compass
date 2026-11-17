@@ -12,7 +12,9 @@ A research or Verification issue may close on its findings/verdict as the planni
 
 Tear down what the landing finished, scoped to what this run started: its review servers, worktrees
 (before their branches), and subagents. Keep the stack's worktree until the whole stack has merged.
-Never bind, stop or kill a dashboard the run did not start.
+Never bind, stop or kill a dashboard the run did not start. The [cleanup pass](cleanup.md) owns
+how: the run ledger that proves what this run started, the safety checks, and, at closeout, the
+census of older leftovers and the questions that ask the owner which of those to remove.
 
 Then refetch the milestone (issues move outside this session), recompute the plan, and continue. A
 changed plan needs approval as the Invocation section sets out.

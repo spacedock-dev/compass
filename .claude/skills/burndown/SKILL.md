@@ -77,6 +77,7 @@ burndown "Long session coverage" --tracker github --repo spacedock-dev/compass -
 | Planning and issue understanding | [Planning, steps 1–3](references/planning.md) | Scope inventory, grouping, dependencies, estimates, review tiers, stage models and issue analysis |
 | An approved group is ready to build | [Delivery, steps 4–5](references/delivery.md) | TDD, visual walks, reviews, stacks, CI, merges and parallel-work rules |
 | After each landing and at closeout | [Reconciliation, steps 6–7](references/reconciliation.md) | Receipts, discoveries, cleanup, replanning and completion |
+| Run start (the ledger), closeout, and any stop | [Cleanup pass](references/cleanup.md) | The run ledger, this run's teardown, the census of older leftovers and the cleanup questions to the owner |
 | An issue has `## Design reference` | [Design-reference rules](references/design-reference.md) | Required design reads and markup constraints |
 | `--delegate`, from planning on | [Delegation mode](references/delegation.md) | Who runs each stage, live model choice, Codex and AGY dispatch mechanics |
 
@@ -119,7 +120,8 @@ head after local green, the plan changes beyond its authorization, a chosen stag
 fails, or the run exceeds its estimate by half.
 
 On stopping, report written tracker/git changes and every branch, worktree, stack, PR, server and
-subagent this run started. Between landings, report current-head checks, read-back issue states,
+subagent this run started, then run the [cleanup pass](references/cleanup.md) on what it no longer
+needs. Between landings, report current-head checks, read-back issue states,
 receipts and live background work. Stop before an operation whose required capability is missing.
 
 ## Shared prerequisites and boundaries
