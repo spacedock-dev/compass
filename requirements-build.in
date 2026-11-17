@@ -6,4 +6,4 @@
 # Nothing installs this file. requirements-build.txt is generated from it with every dependency
 # pinned and held to its sha256 hashes; its header says how. Regenerate it after any edit here.
 setuptools==84.2.1
-Cython==3.3.0
+Cython==3.3.1
