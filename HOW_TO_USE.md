@@ -717,7 +717,8 @@ session, any reading made against them, and that session's summary, go when you 
 session's words on its session page. The one thing it takes out of that store is the record of a discard, which holds when the act
 happened and no text, and is the machine's memory of something it did rather than anything you
 wrote. It also deletes `compass-copied-corrections.json`, the digests of corrections you copied
-from Compass, which hold no text either.
+from Compass, which hold no text either. Received launcher parent declarations go too, but the
+group labels you typed stay. The declarations' stable lock file remains.
 
 A dashboard that cannot publish its initial state file refuses to start and names the state
 folder and error class. Fix that folder's write failure before retrying. If only its `.origin`
@@ -729,9 +730,9 @@ retry after it finishes. A startup refused during cleanup does not recreate hist
 interaction discovery. Killing a holder releases the lock, so a leftover lock file needs no manual
 removal. This requires both commands to use a build with the lock; stop dashboards using older
 builds first.
-`--forget` refuses while an instance answers on the selected port, naming all four stores it
-preserved. A running server keeps history in memory and would write deleted records back on its
-next observation.
+`--forget` refuses while an instance answers on the selected port, naming the history, end,
+summary and annotation stores it preserved. A running server keeps history in memory and would
+write deleted records back on its next observation.
 
 It also checks every dashboard state file in the folder, including other ports and environments.
 If Compass cannot prove a recorded writer is gone, the command refuses, leaves every store
@@ -874,7 +875,7 @@ Each flag belongs to the dashboard process, so changing one means restarting.
 | `--no-git` | The end-of-session git probe and the read of a project's check scripts. No git command runs inside any repository |
 | `--no-ci-read` | Reading a pull request's or merge request's CI checks from GitHub or GitLab when you press Analyze drift. No `gh` or `glab` command runs, and the page's switch for it is held off |
 | `--no-history` | The local history of what the server observed. Nothing is written, and an existing store is not read back |
-| `--no-annotations` | The goal and expected outcome lines you typed against a session. Nothing is shown or saved, and the page offers no field |
+| `--no-annotations` | Saved goals, expected outcome lines, readings and local group labels. Nothing is shown or saved, and the page offers no field |
 | `--no-focus` | Raising a session's terminal. No focus command runs, no terminal identity is recorded, and the page is offered no raise control. `--no-events` turns it off as well |
 | `--no-observer-model` | Every model call, including goal summaries, session summaries, reader-requested analyses and unasked checks. It overrides `--unasked-readings` for both Claude Code and Codex |
 | `--no-reach` | Off-machine reach nudges. Outbound webhook nudges are disabled for this run |

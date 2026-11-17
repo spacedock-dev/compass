@@ -163,14 +163,17 @@ If permissions block `--status` or `--stop`, it prints "Compass's connection to 
 blocked by a sandbox or permissions." and exits non-zero without changing anything or claiming
 whether a dashboard runs.
 
-The server writes sixteen files, all under `~/.compass` (relocatable with `COMPASS_HOME`):
+Server state under `~/.compass` (relocatable with `COMPASS_HOME`) includes:
 `compass-<port>.json`, which records the running instance; `compass-<port>.json.origin`, its
 nonsecret machine, boot and namespace identity; `compass-<port>.json.lock`, its persistent state
 publication lock; `compass-lifecycle.lock`, the persistent cleanup and state publication lock;
 `compass-<port>.log`, where a
 detached server's output goes; `compass-dismissals.json`, the sessions marked handled;
-`compass-annotations.json`, the goal and expected outcome lines you typed against a session, plus a
+`compass-annotations.json`, local group labels, the goal and expected outcome lines you typed against a session, plus a
 text-free record of any session you discarded everything for;
+`declared-parents/claims.json` and its stable `claims.lock`, the received launcher parent claims
+described in the [dashboard reference](reference/dashboard.md#launcher-declarations). `--forget`
+removes claims and leaves the lock;
 `compass-deliveries.json`, what became of each notification the board raised;
 `compass-departures.json`, what an unasked reading raised, written only with `--unasked-readings`;
 `compass-ends.json`, the session ends the board observed, so a session that finished still reads as
@@ -182,9 +185,10 @@ observed doing, bounded to a 24-hour window across at most 20 projects;
 `observer/<harness>_<sid>.json`, the sidecar an observer panel records when a reader opens one;
 `compass-typed-presses.json`, the ids of the typed `drift` commands a press from inside a session
 started a reading on, and nothing else; and
-`compass-history.json`, the history of what the server observed, kept for up to 14 days. A store
+`compass-history.json`, the history of what the server observed, kept for up to 14 days. A history store
 that cannot be read is discarded rather than repaired, the board starts empty, and the header names
-which reset it was; a settings file that cannot be read reads as the defaults instead. If you
+which reset it was; other stores have their own refusal rules. A settings file that cannot be read
+restores default reading limits and disables daily update checks. If you
 wire up Antigravity's status line, `statusline_hook.py` keeps one small memo per conversation in the
 same directory so a status line that fires many times a turn posts once.
 
