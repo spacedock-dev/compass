@@ -419,6 +419,14 @@ class MapSeriesTest(unittest.TestCase):
     def test_factory_exception_keeps_completed_pass_and_never_invoked_ranges(self) -> None:
         self._factory_failure_after_one_pass(OSError("private factory detail"), "factory-failed")
 
+    def test_a_context_change_refused_after_a_charged_pass_keeps_its_own_cause(self) -> None:
+        self._factory_failure_after_one_pass(
+            reading_policy.RefusedError(
+                cast("reading_policy.Status", {"reason": "context-changed"})
+            ),
+            "context-changed",
+        )
+
     def test_factory_refusal_keeps_completed_pass_without_a_called_observation(self) -> None:
         # Deliberately incomplete status: only the refusal reason is consumed by this boundary.
         self._factory_failure_after_one_pass(

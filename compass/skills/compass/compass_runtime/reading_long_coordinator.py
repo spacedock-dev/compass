@@ -136,6 +136,9 @@ def _outcome(
     if supervise.closed() or cause == "closed":
         return (reading.WITHHELD_INTERRUPTED if spent else reading.WITHHELD_STOPPING), "interrupted"
     cause = reading.long_stop_reason(job) or cause
+    if cause == "context-changed":
+        # Spend-neutral wording, so it is safe whether or not earlier passes were charged.
+        return reading.WITHHELD_LONG_CONTEXT_CHANGED, "withheld"
     if cause not in (
         "unresolved",
         "coverage-unresolved",

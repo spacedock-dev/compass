@@ -178,6 +178,7 @@ _MAP_REASONS = {
     "cancelled",
     "job-deadline",
     "factory-refused",
+    "context-changed",
     "factory-failed",
     "unresolved",
     "passes-ended",
