@@ -369,6 +369,27 @@ class LongExecutionTest(unittest.TestCase):
         with self.assertRaises(policy.RefusedError):
             self.module.guard(self.config, foreign, 1)
 
+    def test_an_uncharged_marker_slot_refuses_as_slot_unavailable_not_a_context_change(
+        self,
+    ) -> None:
+        with self.assertRaises(policy.RefusedError) as caught:
+            self.module._require_slot(self.config, self.active.owner, 1, None)
+        self.assertEqual("slot-unavailable", caught.exception.answer["reason"])
+
+    def test_a_missing_job_header_refuses_as_header_unavailable_not_a_context_change(self) -> None:
+        headerless = mock.Mock(wraps=jobs, live_header=lambda _job: None)
+        with (
+            mock.patch.object(self.module, "jobs", headerless),
+            self.assertRaises(policy.RefusedError) as caught,
+        ):
+            self.guard()
+        self.assertEqual("header-unavailable", caught.exception.answer["reason"])
+
+    def test_a_frozen_source_that_moved_still_refuses_as_a_context_change(self) -> None:
+        with self.assertRaises(policy.RefusedError) as caught:
+            self.guard(source_current=lambda: False)
+        self.assertEqual("context-changed", caught.exception.answer["reason"])
+
     def test_wrapped_real_supervisor_keeps_output_limits_and_late_cancel_handover(self) -> None:
         group = mock.Mock()
         group._over_limit.return_value = False

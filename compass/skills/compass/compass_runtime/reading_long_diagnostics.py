@@ -111,9 +111,13 @@ _STOP_CAUSES = {
         "accounting-unknown",
         "receipt-unresolved",
         "retirement-unresolved",
+        "slot-unavailable",
+        "marker-incomplete",
     },
     "cleanup-unresolved": {"unstopped", "cleanup-unresolved"},
-    "unknown": set(),
+    # Internal faults. Listed so the closed vocabulary is documented; stop_reason falls
+    # through to unknown for them, and they must never read as a change the reader made.
+    "unknown": {"probe-failed", "header-unavailable", "identity-mismatch"},
 }
 
 
@@ -179,6 +183,10 @@ _MAP_REASONS = {
     "job-deadline",
     "factory-refused",
     "context-changed",
+    "intent-changed",
+    "permission-changed",
+    "run-disabled",
+    "model-calls-paused",
     "factory-failed",
     "unresolved",
     "passes-ended",

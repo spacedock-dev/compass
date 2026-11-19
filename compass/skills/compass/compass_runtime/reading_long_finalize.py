@@ -390,11 +390,12 @@ def completed(  # noqa: PLR0913, PLR0911 - ordered closed publication gates and 
     acknowledged = False
     try:
         if type(context) is not reading_long_context.Context:
-            return Finalized(reason="context-changed")
+            return Finalized(reason="probe-failed")
         with reading_long_markers.publication_lock(config):
             marker = _terminal(config, context.active)
             if marker is None or marker["state"] != "completed":
-                return Finalized(reason="context-changed")
+                # A marker the reader never touched, so not a change to the context they started.
+                return Finalized(reason="marker-incomplete")
             inspected = reading_long_inspection.inspect(config, marker["job_id"], now=now)
             if inspected.exact is None:
                 return Finalized(reason="accounting-unknown")

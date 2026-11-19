@@ -94,8 +94,9 @@ class TerminalContextTest(unittest.TestCase):
             self.active,
             owner=dataclasses.replace(self.active.owner, process=object()),
         )
+        # No context at all is a caller fault, not a change the reader made.
+        self.assertEqual("probe-failed", self.check(context=None))
         for context in (
-            None,
             dataclasses.replace(self.context, active=foreign),
             dataclasses.replace(self.context, scope_sha256="b" * 64),
         ):

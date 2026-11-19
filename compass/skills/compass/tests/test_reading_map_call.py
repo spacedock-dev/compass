@@ -248,6 +248,21 @@ class MapInvocationTest(unittest.TestCase):
         self.assertEqual("error", result.diagnostic["input"]["outcome"])
         self.assertNotIn("private transport detail", repr(result))
 
+    def test_a_map_pass_refused_at_invocation_for_a_changed_context_keeps_that_reason(self) -> None:
+        self.failure = reading_policy.RefusedError(
+            cast("reading_policy.Status", {"reason": "context-changed"})
+        )
+        result = self.invoke()
+        self.assertEqual(("refused", "context-changed"), (result.state, result.reason))
+
+    def test_a_map_pass_refused_for_an_unknown_reason_reports_plain_refused(self) -> None:
+        self.failure = reading_policy.RefusedError(
+            cast("reading_policy.Status", {"reason": "PRIVATE_MAP_REASON"})
+        )
+        result = self.invoke()
+        self.assertEqual(("refused", "refused"), (result.state, result.reason))
+        self.assertNotIn("PRIVATE_MAP_REASON", repr(result))
+
     def test_a_late_context_refusal_keeps_initial_capacity_and_charge(self) -> None:
         self.status = "context-config"
         self.raw = ""

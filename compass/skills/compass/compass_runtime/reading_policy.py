@@ -1499,6 +1499,26 @@ class RefusedError(Exception):
         self.answer = answer
 
 
+# The only refusal reasons a long reading carries out of a refused call or construction.
+# Closed on purpose: any other reason (quota, consent, deadline, marker faults) is private
+# or already has its own outcome, and stays a plain "refused".
+LONG_REFUSAL_CAUSES = frozenset(
+    {
+        "context-changed",
+        "intent-changed",
+        "permission-changed",
+        "run-disabled",
+        "model-calls-paused",
+    }
+)
+
+
+def long_refusal_cause(refusal: RefusedError) -> str:
+    """The allow-listed reason a refusal carries, or "" when it is not one a reader can see."""
+    reason = refusal.answer.get("reason")
+    return reason if isinstance(reason, str) and reason in LONG_REFUSAL_CAUSES else ""
+
+
 class PromptPermit(Protocol):
     """Reservation authority for this invocation, independent of historical charges."""
 
@@ -1586,6 +1606,8 @@ class GuardedModel:
         self.cancelled = cancelled
         # Passed through, so the refusal names the CLI this press would have used.
         self.unavailable_reason: str | None = getattr(model, "unavailable_reason", None)
+        # The allow-listed cause of the last invocation-time refusal, "" when there was none.
+        self.refusal_cause = ""
 
     def failure_reason(self) -> str:
         """The wrapped model's own account of its last failed call, or "" for none."""
@@ -1657,8 +1679,9 @@ class GuardedModel:
         outcome = "error"
         try:
             raw, status = self._call(prompt, output_cap_bytes=output_cap_bytes)
-        except RefusedError:
+        except RefusedError as refusal:
             outcome = "refused"
+            self.refusal_cause = long_refusal_cause(refusal)
             raise
         else:
             outcome = status if status in analyze_diagnostics.INPUT_OUTCOMES else "error"

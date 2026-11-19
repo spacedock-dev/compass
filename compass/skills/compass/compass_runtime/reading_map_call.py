@@ -169,16 +169,18 @@ def call_packet(
 ) -> tuple[str, str, reading_maps.MapReply | None]:
     """Call an already measured exact packet once; no preparation measurements are invented."""
     refusal = False
+    refused_for = ""
     try:
         raw, status = model(packet.prompt, output_cap_bytes=reading.REPLY_CAP_BYTES)
-    except reading_policy.RefusedError:
+    except reading_policy.RefusedError as refused:
         raw, status, refusal = "", "refused", True
+        refused_for = reading_policy.long_refusal_cause(refused)
     except Exception:  # noqa: BLE001 - transport failures become a closed local outcome
         raw, status = "", "error"
     finally:
         capture.called(model)
     if refusal:
-        return "refused", "refused", None
+        return "refused", refused_for or "refused", None
     if status != "ok":
         return (
             "model-failed",

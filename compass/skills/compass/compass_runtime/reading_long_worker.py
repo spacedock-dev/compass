@@ -212,7 +212,8 @@ class _Passes:
                 # not a receipt. Do not try further positions against that refusal.
                 self.progress["evidence"].update(ended=ordinal, current=None)
                 accepted = self.publish()
-                self.reason = self.reason or "refused"
+                carried = self.current_model.refusal_cause if self.current_model else ""
+                self.reason = self.reason or carried or "refused"
             return accepted  # No marker slot exists before its fresh reservation.
         method = reading_long_markers.settle if event["ended"] else reading_long_markers.observe
         if not method(

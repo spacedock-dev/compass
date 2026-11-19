@@ -535,10 +535,12 @@ def run(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - ordered prepare/cal
     if (stopped := _stopped(stop_reason)) is not None:
         return result(stopped, stopped)
     refusal = False
+    refused_for = ""
     try:
         raw, status = model(packet.prompt, output_cap_bytes=slot.reply_bytes)
-    except reading_policy.RefusedError:
+    except reading_policy.RefusedError as refused:
         raw, status, refusal = "", "refused", True
+        refused_for = reading_policy.long_refusal_cause(refused)
     except Exception:  # noqa: BLE001 - no raw transport text or automatic retry
         raw, status = "", "error"
     finally:
@@ -549,7 +551,7 @@ def run(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - ordered prepare/cal
     if (stopped := _stopped(stop_reason)) is not None:
         return result(stopped, stopped)
     if refusal:
-        return result("refused", "refused")
+        return result("refused", refused_for or "refused")
     if status != "ok":
         return result(
             "model-failed", status if status in analyze_diagnostics.INPUT_OUTCOMES else "error"

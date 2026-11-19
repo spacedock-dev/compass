@@ -497,6 +497,28 @@ class GuardedNativeWorkerTest(unittest.TestCase):
         self.assertEqual([], self.calls)
         self.assertEqual([], self.ci_calls)
 
+    def test_a_map_pass_refused_at_its_call_for_a_pause_keeps_the_reader_visible_cause(
+        self,
+    ) -> None:
+        self.make_case()
+        real_guard = reading_long_execution.guard
+
+        def guard(*args: Any, **kwargs: Any) -> Any:
+            model = real_guard(*args, **kwargs)
+
+            def refused(*_a: Any, **_k: Any) -> Any:
+                raise reading_policy.RefusedError(
+                    reading_policy._answer(reason="model-calls-paused")
+                )
+
+            object.__setattr__(model, "_call", refused)
+            return model
+
+        with mock.patch.object(reading_long_execution, "guard", side_effect=guard):
+            result = self.run_worker()
+        self.assertEqual("model-calls-paused", result.reason)
+        self.assertEqual([], self.calls)
+
     def test_pause_after_reservation_retains_charge_and_no_adapter(self) -> None:
         self.make_case()
         observe = reading_long_markers.observe

@@ -353,7 +353,7 @@ class LongCoordinatorTest(unittest.TestCase):
         self.assertIsNotNone(markers.load(self.config, job.id))
         self.assertNotIn("long_diagnostic", self.entry())
 
-    def test_resource_or_permission_stop_is_not_overwritten_by_earlier_provider_failure(
+    def test_a_resource_or_deadline_stop_is_not_overwritten_by_earlier_provider_failure(
         self,
     ) -> None:
         started = self.admitted()
@@ -374,13 +374,44 @@ class LongCoordinatorTest(unittest.TestCase):
                 }
             ]
         }
-        for cause in ("prepare-time", "permission-changed", "intent-changed", "job-deadline"):
+        for cause in ("prepare-time", "job-deadline"):
             with self.subTest(cause=cause):
                 reason, outcome = coordinator._outcome(
                     started, inspected, cause, diagnostic, reading.WITHHELD_CLAUDE_TIMED_OUT
                 )
                 self.assertEqual(reading.WITHHELD_LONG_INCOMPLETE, reason)
                 self.assertEqual("withheld", outcome)
+
+    def test_a_permission_or_intent_stop_names_its_cause_over_an_earlier_provider_failure(
+        self,
+    ) -> None:
+        started = self.admitted()
+        inspected = inspection.inspect(
+            self.config, started.context.active.job.id, now=self.app.clock()
+        )
+        failed = {
+            "observations": [
+                {
+                    "observation": {
+                        "diagnostic": {"input": {"outcome": "error", "attempt_reserved": True}}
+                    }
+                }
+            ]
+        }
+        expected = {
+            "permission-changed": reading.WITHHELD_LONG_PERMISSION_CHANGED,
+            "model-calls-paused": reading.WITHHELD_LONG_PERMISSION_CHANGED,
+            "run-disabled": reading.WITHHELD_LONG_PERMISSION_CHANGED,
+            "intent-changed": reading.WITHHELD_LONG_INTENT_CHANGED,
+        }
+        for cause, key in expected.items():
+            with self.subTest(cause=cause):
+                self.assertEqual(
+                    (key, "withheld"),
+                    coordinator._outcome(
+                        started, inspected, cause, failed, reading.WITHHELD_CLAUDE_TIMED_OUT
+                    ),
+                )
 
     def test_thread_start_failure_finalizes_known_zero_while_still_owning_slot(self) -> None:
         started = self.admitted()
@@ -448,7 +479,9 @@ class LongCoordinatorTest(unittest.TestCase):
             thread.join(timeout=30)
         self.assertFalse(thread.is_alive())
         self.assertFalse(reading.job_cancelled(started.context.active.job))
-        self.assertEqual(reading.WITHHELD["long-incomplete"], self.entry()["withheld"])
+        self.assertEqual(
+            reading.WITHHELD[reading.WITHHELD_LONG_PERMISSION_CHANGED], self.entry()["withheld"]
+        )
         self.assertEqual(0, self.diagnostic()["accounting"]["totals"]["calls"])
 
     def test_clear_during_preparation_preserves_marker_and_never_recreates_annotation(self) -> None:
@@ -469,6 +502,10 @@ class LongCoordinatorTest(unittest.TestCase):
         self.assertNotIn("long_diagnostic", self.entry())
         self.assertIsNotNone(markers.load(self.config, started.context.active.job.id))
         self.assertIsNone(reading.job(self.config, self.fixture.key))
+
+
+# The final pass is built for the plan's last ordinal, after the one map pass of this fixture.
+FINAL_ORDINAL = 17
 
 
 class ActualLongCoordinatorTest(unittest.TestCase):
@@ -493,6 +530,40 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         assert diagnostic is not None
         self.assertEqual("context-changed", diagnostic["stop_reason"])
         self.assertEqual(0, diagnostic["accounting"]["totals"]["calls"])
+
+    def test_a_reading_whose_goal_is_edited_after_a_charged_pass_says_so_and_keeps_the_count(
+        self,
+    ) -> None:
+        saved = self.actual_case(context_changes_at=FINAL_ORDINAL, stop_latch="intent-changed")
+        self.assertEqual(reading.WITHHELD[reading.WITHHELD_LONG_INTENT_CHANGED], saved["withheld"])
+        diagnostic = saved["long_diagnostic"]
+        assert diagnostic is not None
+        self.assertEqual("context-changed", diagnostic["stop_reason"])
+        self.assertEqual(1, diagnostic["accounting"]["totals"]["calls"])
+
+    def test_a_reading_paused_after_a_charged_pass_says_so_and_keeps_the_count(self) -> None:
+        saved = self.actual_case(context_changes_at=FINAL_ORDINAL, stop_latch="permission-changed")
+        self.assertEqual(
+            reading.WITHHELD[reading.WITHHELD_LONG_PERMISSION_CHANGED], saved["withheld"]
+        )
+        diagnostic = saved["long_diagnostic"]
+        assert diagnostic is not None
+        self.assertEqual("permission-changed", diagnostic["stop_reason"])
+        self.assertEqual(1, diagnostic["accounting"]["totals"]["calls"])
+
+    def test_a_final_pass_refused_at_its_call_for_a_changed_context_says_so_after_charged_evidence(
+        self,
+    ) -> None:
+        saved = self.actual_case(context_changes_at=FINAL_ORDINAL, refuse_call="context-changed")
+        self.assertEqual(reading.WITHHELD[reading.WITHHELD_LONG_CONTEXT_CHANGED], saved["withheld"])
+        diagnostic = saved["long_diagnostic"]
+        assert diagnostic is not None
+        self.assertEqual("context-changed", diagnostic["stop_reason"])
+        self.assertEqual(1, diagnostic["accounting"]["totals"]["calls"])
+
+    def test_a_final_pass_refused_at_its_call_for_a_daily_cap_stays_incomplete(self) -> None:
+        saved = self.actual_case(context_changes_at=FINAL_ORDINAL, refuse_call="daily-cap")
+        self.assertEqual(reading.WITHHELD[reading.WITHHELD_LONG_INCOMPLETE], saved["withheld"])
 
     def test_advancing_real_clock_publishes_after_two_actual_owned_calls(self) -> None:
         saved = self.actual_case(advancing=True)
@@ -591,6 +662,8 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         advancing: bool = False,
         retained: str = "",
         context_changes_at: int = 0,
+        stop_latch: str = "",
+        refuse_call: str = "",
     ) -> annotation_store.Annotation:
         fixture = worker_tests.GuardedNativeWorkerTest()
         fixture.setUp()
@@ -629,6 +702,24 @@ class ActualLongCoordinatorTest(unittest.TestCase):
 
         def guard(*args: Any, **kwargs: Any) -> Any:
             if args[2] == context_changes_at:
+                if refuse_call:
+                    # Built fine, then refused at the call itself, before any reservation.
+                    model = real_guard(*args, **kwargs)
+
+                    def refused(*_a: Any, **_k: Any) -> Any:
+                        raise policy.RefusedError(policy._answer(reason=refuse_call))
+
+                    object.__setattr__(model, "_call", refused)
+                    return model
+                if stop_latch:
+                    # What Clear, an edit or Pause do while a reading runs: latch first, so the
+                    # real gate refuses with the reader's cause rather than a hand-raised one.
+                    job = started.context.active.job
+                    stopped, _ = reading.stop_long_job(
+                        fixture.config, f"claude:{fixture.row['sid']}", job, reason=stop_latch
+                    )
+                    self.assertTrue(stopped)
+                    return real_guard(*args, **kwargs)
                 raise policy.RefusedError(policy._answer(reason="context-changed"))
             return real_guard(*args, **kwargs)
 
@@ -690,8 +781,9 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         count = 0 if unstopped == "ci" else 1 if timed_out or unstopped == "evidence" else 2
         guards = count
         if context_changes_at:
-            count = context_changes_at - 1
-            guards = context_changes_at
+            # The one map pass is ordinal 1; the final pass takes the plan's last ordinal.
+            count = 0 if context_changes_at == 1 else 1
+            guards = count + 1
         if timed_out:
             self.assertEqual(
                 reading.WITHHELD_CLAUDE_TIMED_OUT,
@@ -790,18 +882,30 @@ class TransportReasonTest(unittest.TestCase):
                     coordinator._transport_reason(provider, False, refused),
                 )
 
-    def test_a_settings_refusal_after_earlier_charged_passes_stays_incomplete(self) -> None:
+    def test_a_settings_refusal_after_earlier_charged_passes_names_the_settings_without_claiming_nothing_spent(
+        self,
+    ) -> None:
         # An uncharged late pass must not describe the earlier charged passes as unspent.
         refused = self._diagnostic("settings-refused", attempt_reserved=False)
         self.assertEqual(
-            reading.WITHHELD_LONG_INCOMPLETE,
+            reading.WITHHELD_LONG_SETTINGS_REFUSED,
             coordinator._transport_reason("claude", True, refused),
         )
+        sentence = reading.WITHHELD[reading.WITHHELD_LONG_SETTINGS_REFUSED].lower()
+        for phrase in ("nothing was sent", "no reading was counted", "no attempt"):
+            self.assertNotIn(phrase, sentence)
 
 
 class ContextChangedOutcomeTest(unittest.TestCase):
     @staticmethod
-    def _decide(*, calls: int, cancelled: bool = False, closed: bool = False) -> tuple[str, str]:
+    def _decide(
+        *,
+        calls: int,
+        cancelled: bool = False,
+        closed: bool = False,
+        cause: str = "context-changed",
+        latch: str = "",
+    ) -> tuple[str, str]:
         job = types.SimpleNamespace(cancelled_after_close=False)
         started = types.SimpleNamespace(
             context=types.SimpleNamespace(active=types.SimpleNamespace(job=job))
@@ -809,10 +913,56 @@ class ContextChangedOutcomeTest(unittest.TestCase):
         inspected = types.SimpleNamespace(exact=types.SimpleNamespace(calls=calls))
         with (
             mock.patch.object(reading, "job_cancelled", return_value=cancelled),
-            mock.patch.object(reading, "long_stop_reason", return_value=""),
+            mock.patch.object(reading, "long_stop_reason", return_value=latch),
             mock.patch.object(supervise, "closed", return_value=closed),
         ):
-            return coordinator._outcome(started, inspected, "context-changed")  # type: ignore[arg-type]
+            return coordinator._outcome(started, inspected, cause)  # type: ignore[arg-type]
+
+    def test_an_intent_change_after_charged_passes_says_the_lines_changed_and_claims_nothing_unspent(
+        self,
+    ) -> None:
+        for calls in (0, 3):
+            for latch in ("", "intent-changed"):
+                with self.subTest(calls=calls, latch=latch):
+                    self.assertEqual(
+                        (reading.WITHHELD_LONG_INTENT_CHANGED, "withheld"),
+                        self._decide(calls=calls, cause="intent-changed", latch=latch),
+                    )
+
+    def test_paused_disabled_or_changed_permission_names_it_whether_latched_or_checked(
+        self,
+    ) -> None:
+        for cause in ("permission-changed", "model-calls-paused", "run-disabled"):
+            for calls in (0, 3):
+                for latch in ("", "permission-changed"):
+                    with self.subTest(cause=cause, calls=calls, latch=latch):
+                        self.assertEqual(
+                            (reading.WITHHELD_LONG_PERMISSION_CHANGED, "withheld"),
+                            self._decide(calls=calls, cause=cause, latch=latch),
+                        )
+
+    def test_no_long_stop_sentence_claims_nothing_was_sent_or_counted(self) -> None:
+        for key in (
+            *reading.LONG_STOP_WITHHELD.values(),
+            reading.WITHHELD_LONG_SETTINGS_REFUSED,
+        ):
+            with self.subTest(key=key):
+                sentence = reading.WITHHELD[key].lower()
+                for phrase in ("nothing", "no attempt", "no reading was counted", "unspent"):
+                    self.assertNotIn(phrase, sentence)
+                self.assertIn("any recorded calls remain counted", sentence)
+
+    def test_a_cancel_or_stop_still_wins_over_a_permission_or_intent_stop(self) -> None:
+        for cause in ("intent-changed", "permission-changed", "run-disabled"):
+            with self.subTest(cause=cause):
+                self.assertEqual(
+                    (reading.WITHHELD_CANCELLED, "cancelled"),
+                    self._decide(calls=2, cancelled=True, cause=cause),
+                )
+                self.assertEqual(
+                    (reading.WITHHELD_INTERRUPTED, "interrupted"),
+                    self._decide(calls=2, closed=True, cause=cause),
+                )
 
     def test_a_context_change_after_charged_passes_never_claims_nothing_was_spent(self) -> None:
         for calls in (0, 3):
