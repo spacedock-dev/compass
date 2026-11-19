@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+import types
 import unittest
 from typing import TYPE_CHECKING, Any
 from unittest import mock
@@ -483,6 +484,16 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         self.assertEqual(reading.RESULT_UNVERIFIABLE, assessment["criteria"]["goal"]["result"])
         self.assertEqual(reading.RESULT_DEPARTURE, assessment["criteria"]["line_1"]["result"])
 
+    def test_a_reading_whose_context_changes_before_its_first_pass_says_the_context_changed(
+        self,
+    ) -> None:
+        saved = self.actual_case(context_changes_at=1)
+        self.assertEqual(reading.WITHHELD[reading.WITHHELD_LONG_CONTEXT_CHANGED], saved["withheld"])
+        diagnostic = saved["long_diagnostic"]
+        assert diagnostic is not None
+        self.assertEqual("context-changed", diagnostic["stop_reason"])
+        self.assertEqual(0, diagnostic["accounting"]["totals"]["calls"])
+
     def test_advancing_real_clock_publishes_after_two_actual_owned_calls(self) -> None:
         saved = self.actual_case(advancing=True)
         self.assertIn("assessment", saved)
@@ -572,13 +583,14 @@ class ActualLongCoordinatorTest(unittest.TestCase):
     def test_unstopped_owned_ci_never_reaches_model_factory_or_charge(self) -> None:
         self.actual_case(unstopped="ci")
 
-    def actual_case(
+    def actual_case(  # noqa: C901, PLR0915 - one harness shared by every actual-run scenario
         self,
         *,
         timed_out: bool = False,
         unstopped: str = "",
         advancing: bool = False,
         retained: str = "",
+        context_changes_at: int = 0,
     ) -> annotation_store.Annotation:
         fixture = worker_tests.GuardedNativeWorkerTest()
         fixture.setUp()
@@ -613,6 +625,13 @@ class ActualLongCoordinatorTest(unittest.TestCase):
             clock=advancing_clock(fixture.now) if advancing else lambda: fixture.now,
         )
         popen = subprocess.Popen
+        real_guard = execution.guard
+
+        def guard(*args: Any, **kwargs: Any) -> Any:
+            if args[2] == context_changes_at:
+                raise policy.RefusedError(policy._answer(reason="context-changed"))
+            return real_guard(*args, **kwargs)
+
         calls: list[list[str]] = []
         ci_calls: list[list[str]] = []
         uncertain: list[supervise.Group] = []
@@ -662,13 +681,17 @@ class ActualLongCoordinatorTest(unittest.TestCase):
             mock.patch.object(supervise.Group, "_wait_group", quiescence)
             if unstopped
             else contextlib.nullcontext(),
-            mock.patch.object(execution, "guard", wraps=execution.guard) as factory,
+            mock.patch.object(execution, "guard", side_effect=guard) as factory,
             mock.patch.object(markers, "reserve", wraps=markers.reserve) as reserve,
         ):
             thread = coordinator.launch(app, started, binary_resolver=lambda name: f"/owned/{name}")
             thread.join(45)
         self.assertFalse(thread.is_alive())
         count = 0 if unstopped == "ci" else 1 if timed_out or unstopped == "evidence" else 2
+        guards = count
+        if context_changes_at:
+            count = context_changes_at - 1
+            guards = context_changes_at
         if timed_out:
             self.assertEqual(
                 reading.WITHHELD_CLAUDE_TIMED_OUT,
@@ -676,12 +699,19 @@ class ActualLongCoordinatorTest(unittest.TestCase):
                 withheld.call_args.args[2],
             )
         self.assertEqual(count, len(calls), [call.args[2] for call in withheld.call_args_list])
-        self.assertEqual(count, factory.call_count)
+        self.assertEqual(guards, factory.call_count)
         self.assertEqual(count, reserve.call_count)
         if unstopped:
             self.assertEqual(1 if unstopped == "ci" else 0, len(ci_calls))
             self.assert_unstopped(fixture, started, uncertain[0], count)
             return entry
+        if context_changes_at:
+            # No pass ran, so no reading is counted and assert_saved's one-reading rule is moot.
+            refused = annotation_store.find(
+                annotation_store.load(fixture.config), "claude", fixture.row["sid"]
+            )
+            assert refused is not None
+            return refused
         self.assertTrue(started.context.active.job.group.cleanup_complete())
         return self.assert_saved(fixture, started, count, retained)
 
@@ -766,4 +796,36 @@ class TransportReasonTest(unittest.TestCase):
         self.assertEqual(
             reading.WITHHELD_LONG_INCOMPLETE,
             coordinator._transport_reason("claude", True, refused),
+        )
+
+
+class ContextChangedOutcomeTest(unittest.TestCase):
+    @staticmethod
+    def _decide(*, calls: int, cancelled: bool = False, closed: bool = False) -> tuple[str, str]:
+        job = types.SimpleNamespace(cancelled_after_close=False)
+        started = types.SimpleNamespace(
+            context=types.SimpleNamespace(active=types.SimpleNamespace(job=job))
+        )
+        inspected = types.SimpleNamespace(exact=types.SimpleNamespace(calls=calls))
+        with (
+            mock.patch.object(reading, "job_cancelled", return_value=cancelled),
+            mock.patch.object(reading, "long_stop_reason", return_value=""),
+            mock.patch.object(supervise, "closed", return_value=closed),
+        ):
+            return coordinator._outcome(started, inspected, "context-changed")  # type: ignore[arg-type]
+
+    def test_a_context_change_after_charged_passes_never_claims_nothing_was_spent(self) -> None:
+        for calls in (0, 3):
+            with self.subTest(calls=calls):
+                self.assertEqual(
+                    (reading.WITHHELD_LONG_CONTEXT_CHANGED, "withheld"), self._decide(calls=calls)
+                )
+        self.assertNotIn("nothing", reading.WITHHELD[reading.WITHHELD_LONG_CONTEXT_CHANGED].lower())
+
+    def test_a_cancel_or_stop_still_wins_over_a_context_change(self) -> None:
+        self.assertEqual(
+            (reading.WITHHELD_CANCELLED, "cancelled"), self._decide(calls=2, cancelled=True)
+        )
+        self.assertEqual(
+            (reading.WITHHELD_INTERRUPTED, "interrupted"), self._decide(calls=2, closed=True)
         )

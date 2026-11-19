@@ -260,6 +260,11 @@ def _codex_preflight(binary: str | None, state_dir: Path) -> tuple[str, str]:
     # still resolves against the current drive.
     if not binary or not rooted(binary):
         return "unavailable", ""
+    # Before the work folder is chosen, for the same reason as `prepare_claude_exec`.
+    try:
+        runtime_io.ensure_owner_dir(str(state_dir), root=str(state_dir))
+    except OSError:
+        return "failed", ""
     return codex_refusal(state_dir)
 
 
@@ -295,7 +300,6 @@ def codex_exec(
     refusal, root = _codex_preflight(binary, config.state_dir)
     if refusal or not binary:
         return "", refusal
-    runtime_io.ensure_owner_dir(str(config.state_dir), root=str(config.state_dir))
     output_path = ""
     workdir = ""
     try:
@@ -1061,10 +1065,12 @@ def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller 
             # Rooted, not `os.path.isabs`, which keeps a driveless Windows root at 3.12.
             if not binary or not rooted(binary):
                 raise ClaudePreparationError("unavailable")
+            # Before the work folder is chosen: without a runtime folder it falls back to a
+            # folder under state, and that fallback refuses a state folder that does not exist.
+            runtime_io.ensure_owner_dir(str(config.state_dir), root=str(config.state_dir))
             root = reading_workdir_root(config.state_dir)
             if root is None:
                 raise ClaudePreparationError("failed")
-            runtime_io.ensure_owner_dir(str(config.state_dir), root=str(config.state_dir))
             workdir = tempfile.mkdtemp(prefix=CLAUDE_WORKDIR_PREFIX, dir=root)
             descriptor, output_path = tempfile.mkstemp(
                 prefix=CLAUDE_SCRATCH_PREFIX, suffix=".txt", dir=config.state_dir

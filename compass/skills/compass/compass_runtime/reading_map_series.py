@@ -138,7 +138,10 @@ def _construct_model(
 ) -> tuple[Callable[..., tuple[str, str]] | None, str]:
     try:
         return factory(ordinal), ""
-    except reading_policy.RefusedError:
+    except reading_policy.RefusedError as refusal:
+        # Only the one closed guard reason is named; any other reason stays private.
+        if refusal.answer.get("reason") == "context-changed":
+            return None, "context-changed"
         return None, "factory-refused"
     except Exception:  # noqa: BLE001 - construction cannot discard earlier charged passes
         return None, "factory-failed"
