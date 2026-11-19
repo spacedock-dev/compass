@@ -153,6 +153,16 @@ class GuardedFinalWorkerTest(unittest.TestCase):
         self.assertEqual([], self.prompts)
         self.assertIsNone(result.assessment)
 
+    def test_a_mapped_snapshot_of_another_job_is_an_identity_fault_not_a_context_change(
+        self,
+    ) -> None:
+        self.maps()
+        self.mapped = replace(self.mapped, job_id="f" * 32)
+        result = self.finish()
+        self.assertEqual("identity-mismatch", result.reason)
+        self.assertNotEqual("context-changed", result.diagnostic["stop_reason"])
+        self.assertEqual([], self.prompts)
+
     def test_final_reply_parse_failure_keeps_real_prompt_and_charge(self) -> None:
         self.maps()
         self.bad_reply = True

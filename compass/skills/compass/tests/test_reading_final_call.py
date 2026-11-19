@@ -447,6 +447,37 @@ class FinalCallTest(unittest.TestCase):
         self.assertFalse(result.snapshots[-1]["input"]["model_invoked"])
         self.assertNotIn("private late refusal", repr(result))
 
+    def refuse_at_invocation(self, reason: str) -> Any:
+        self.prepare()
+
+        def refuse() -> None:
+            raise reading_policy.RefusedError(cast("reading_policy.Status", {"reason": reason}))
+
+        self.before_invoke = refuse
+        return self.invoke()
+
+    def test_a_final_call_refused_at_invocation_for_a_changed_context_reports_that_reason(
+        self,
+    ) -> None:
+        result = self.refuse_at_invocation("context-changed")
+        self.assertEqual(("refused", "context-changed"), (result.state, result.reason))
+        self.assertEqual([], self.calls)
+
+    def test_a_final_call_refused_at_invocation_for_an_edited_goal_reports_that_reason(
+        self,
+    ) -> None:
+        result = self.refuse_at_invocation("intent-changed")
+        self.assertEqual(("refused", "intent-changed"), (result.state, result.reason))
+
+    def test_a_final_call_refused_at_invocation_by_a_pause_reports_that_reason(self) -> None:
+        result = self.refuse_at_invocation("model-calls-paused")
+        self.assertEqual(("refused", "model-calls-paused"), (result.state, result.reason))
+
+    def test_an_unknown_invocation_refusal_reason_still_reports_plain_refused(self) -> None:
+        result = self.refuse_at_invocation("PRIVATE_INVOCATION_REASON")
+        self.assertEqual(("refused", "refused"), (result.state, result.reason))
+        self.assertNotIn("PRIVATE_INVOCATION_REASON", repr(result))
+
     def test_no_stored_reading_enters_prompt_and_recorded_owner_receives_all_facts(self) -> None:
         self.row["assessment"] = {"detail": "STORED_READING_CANARY"}
         self.prepare()

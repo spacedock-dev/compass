@@ -136,9 +136,10 @@ def _outcome(
     if supervise.closed() or cause == "closed":
         return (reading.WITHHELD_INTERRUPTED if spent else reading.WITHHELD_STOPPING), "interrupted"
     cause = reading.long_stop_reason(job) or cause
-    if cause == "context-changed":
+    if cause in reading.LONG_STOP_WITHHELD:
         # Spend-neutral wording, so it is safe whether or not earlier passes were charged.
-        return reading.WITHHELD_LONG_CONTEXT_CHANGED, "withheld"
+        # It stays above `withheld_reason`: an earlier provider failure must not rename the stop.
+        return reading.LONG_STOP_WITHHELD[cause], "withheld"
     if cause not in (
         "unresolved",
         "coverage-unresolved",
@@ -152,6 +153,8 @@ def _outcome(
         "refused",
         "oversized",
         "unavailable",
+        # The final pass reports a settings refusal as its own cause, not as model-failed.
+        "settings-refused",
     ):
         return reading.WITHHELD_LONG_INCOMPLETE, "withheld"
     if withheld_reason in reading.WITHHELD:
@@ -185,6 +188,10 @@ def _transport_reason(provider: str, spent: bool, diagnostic: dict[str, Any] | N
             and (not spent or measured["attempt_reserved"])
         ):
             return outcome
+        if outcome == reading.WITHHELD_SETTINGS_REFUSED:
+            # Earlier passes were charged, so the short sentence ("nothing was sent") would be
+            # false; this one still names the cause.
+            return reading.WITHHELD_LONG_SETTINGS_REFUSED
     return reading.WITHHELD_LONG_INCOMPLETE
 
 

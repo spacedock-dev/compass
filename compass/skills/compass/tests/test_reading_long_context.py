@@ -268,6 +268,41 @@ class ActiveContextTest(unittest.TestCase):
         reading.cancel_job(self.config, self.key, self.active.job.id, now=101)
         self.assertEqual("cancelled", self.check())
 
+    def test_a_failing_probe_closes_the_checkpoint_as_a_fault_not_a_context_change(self) -> None:
+        checkpoint = self.module.Checkpoint(self.config, self.context)
+        with mock.patch.object(self.module, "check", side_effect=OSError("PRIVATE")):
+            self.assertTrue(checkpoint(force=True))
+        self.assertEqual("probe-failed", checkpoint.reason)
+
+    def test_a_malformed_context_is_a_probe_fault_not_a_context_change(self) -> None:
+        self.assertEqual("probe-failed", self.module.check(self.config, object()))
+        self.assertEqual("probe-failed", self.module.check_publication(self.config, object()))
+
+    def test_a_missing_job_header_is_a_fault_and_a_changed_route_is_a_real_change(self) -> None:
+        # Only this module's read is hidden: the marker and permission reads share live_header.
+        headerless = mock.Mock(wraps=jobs, live_header=lambda _job: None)
+        with mock.patch.object(self.module, "jobs", headerless):
+            self.assertEqual("header-unavailable", self.check())
+        with mock.patch.object(self.module, "describe", return_value=None):
+            self.assertEqual("context-changed", self.check())
+
+    def test_a_failed_terminal_probe_is_a_fault_not_a_context_change(self) -> None:
+        with mock.patch.object(self.module, "_terminal_reason", side_effect=OSError("PRIVATE")):
+            self.assertEqual(
+                "probe-failed", self.module.check_publication(self.config, self.context)
+            )
+
+    def test_a_terminal_read_without_a_job_header_is_a_fault(self) -> None:
+        with (
+            mock.patch.object(self.module, "_terminal_reason", return_value=""),
+            mock.patch.object(
+                self.module, "jobs", mock.Mock(wraps=jobs, live_header=lambda _job: None)
+            ),
+        ):
+            self.assertEqual(
+                "header-unavailable", self.module.check_publication(self.config, self.context)
+            )
+
     def test_sealed_ui_job_is_no_longer_an_execution_context(self) -> None:
         reading.seal_job(self.active.job)
         self.assertEqual("context-changed", self.check())

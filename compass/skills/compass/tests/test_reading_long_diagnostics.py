@@ -8,11 +8,13 @@ import importlib.util
 import json
 import unittest
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
 from compass_runtime import (
     reading_long_diagnostics,
     reading_long_inspection,
+    reading_map_series,
+    reading_policy,
     reading_source_collect,
     reading_source_inventory,
     reading_source_stream,
@@ -91,6 +93,11 @@ class LongDiagnosticsTest(unittest.TestCase):
             "job-deadline": "job-deadline",
             "persistence-unresolved": "accounting-unresolved",
             "unstopped": "cleanup-unresolved",
+            "slot-unavailable": "accounting-unresolved",
+            "marker-incomplete": "accounting-unresolved",
+            "probe-failed": "unknown",
+            "header-unavailable": "unknown",
+            "identity-mismatch": "unknown",
             "PRIVATE timeout happened at /private/session": "unknown",
             "PREPARE-TIME": "unknown",
         }
@@ -104,6 +111,54 @@ class LongDiagnosticsTest(unittest.TestCase):
                 self.assertNotIn("PRIVATE", json.dumps(value))
         for success in ("", "ok", "resolved", "complete", "passes-ended"):
             self.assertIsNone(reading_long_diagnostics.stop_reason(success))
+
+    def test_every_cause_a_refused_construction_or_call_can_carry_derives_without_falling_back(
+        self,
+    ) -> None:
+        # A reason missing from the map vocabulary is silently relabelled preparation-failed.
+        fixture = self.series()
+        series = fixture.run_series()
+        expected = {
+            "context-changed": "context-changed",
+            "intent-changed": "context-changed",
+            "permission-changed": "permission-changed",
+            "model-calls-paused": "permission-changed",
+            "run-disabled": "permission-changed",
+            "probe-failed": "unknown",
+            "header-unavailable": "unknown",
+            "slot-unavailable": "accounting-unresolved",
+        }
+        self.assertEqual(
+            set(expected),
+            set(reading_policy.LONG_REFUSAL_CAUSES | reading_policy.LONG_FAULT_CAUSES),
+        )
+        for cause, category in expected.items():
+            with self.subTest(cause=cause):
+
+                def factory(_ordinal: int, cause: str = cause) -> Any:
+                    raise reading_policy.RefusedError(
+                        cast("reading_policy.Status", {"reason": cause})
+                    )
+
+                model, carried = reading_map_series._construct_model(factory, 1)
+                self.assertIsNone(model)
+                self.assertEqual(cause, carried)
+                value = reading_long_diagnostics.derive(
+                    plan=fixture.declared, series=replace(series, reason=carried)
+                )
+                self.assertEqual(cause, value["maps"]["reason"])
+                self.assertEqual(category, reading_long_diagnostics.stop_reason(carried))
+        for private in ("PRIVATE_REASON", "daily-cap"):
+
+            def refuse(_ordinal: int, private: str = private) -> Any:
+                raise reading_policy.RefusedError(
+                    cast("reading_policy.Status", {"reason": private})
+                )
+
+            self.assertEqual(
+                (None, "factory-refused"),
+                reading_map_series._construct_model(refuse, 1),
+            )
 
     def test_ambiguous_call_failure_requires_the_actual_call_stage(self) -> None:
         for reason in (

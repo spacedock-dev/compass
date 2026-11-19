@@ -756,6 +756,10 @@ WITHHELD_INTERRUPTED = "interrupted"
 WITHHELD_LONG_INTERRUPTED = "long-interrupted"
 WITHHELD_LONG_INCOMPLETE = "long-incomplete"
 WITHHELD_LONG_CONTEXT_CHANGED = "long-context-changed"
+WITHHELD_LONG_INTENT_CHANGED = "long-intent-changed"
+WITHHELD_LONG_PERMISSION_CHANGED = "long-permission-changed"
+WITHHELD_LONG_SETTINGS_REFUSED = "long-settings-refused"
+WITHHELD_LONG_FAULT = "long-fault"
 WITHHELD_UNSTOPPED = "unstopped"
 WITHHELD_JOB_UNRECORDED = "job-unrecorded"
 WITHHELD_STOPPING = "stopping"
@@ -961,6 +965,33 @@ WITHHELD = {
         "Long analysis stopped because the context it started with changed, or could no longer "
         "be confirmed, while it ran, so it did not produce a new result. Any recorded calls "
         "remain counted, and a fresh press is the only retry."
+    ),
+    # The three below are spend-neutral for the same reason as the one above. A long
+    # reading names the stop it was given, and its other sentences either say nothing
+    # was spent (true only before the first charge) or say nothing about the cause.
+    WITHHELD_LONG_INTENT_CHANGED: (
+        "Long analysis stopped because the goal or outcome lines it was reading against were "
+        "edited or cleared, or could no longer be confirmed, while it ran, so it did not "
+        "produce a new result. Any recorded calls remain counted, and a fresh press is the "
+        "only retry."
+    ),
+    WITHHELD_LONG_PERMISSION_CHANGED: (
+        "Long analysis stopped because model calls were paused or turned off, or their "
+        "permission changed, while it ran, so it did not produce a new result. Any recorded "
+        "calls remain counted, and a fresh press is the only retry."
+    ),
+    # Used only once earlier passes were charged; before that, the sentence that says
+    # nothing was sent is the true one (`reading_long_coordinator._transport_reason`).
+    WITHHELD_LONG_SETTINGS_REFUSED: (
+        "Long analysis stopped because the model CLI's settings were refused or could not be "
+        "verified before a pass started, so it did not produce a new result. Any recorded "
+        "calls remain counted, and a fresh press is the only retry."
+    ),
+    # An internal fault, not a change the reader made and not a coverage gap.
+    WITHHELD_LONG_FAULT: (
+        "Long analysis stopped because Compass could not confirm its own progress while it "
+        "ran, so it did not produce a new result. Any recorded calls remain counted, and a "
+        "fresh press is the only retry."
     ),
     WITHHELD_LONG_INCOMPLETE: (
         "Long analysis could not cover the saved work well enough to produce a new result. "
@@ -7657,6 +7688,26 @@ def _left_out(
         and (at <= 0 or (at >= since and (until is None or at <= until)))
     )
 
+
+# The stop causes a long reading names in its own words, by the raw reason the stop carries.
+# Spend-neutral sentences only: the stop may follow charged passes.
+LONG_STOP_WITHHELD = {
+    "context-changed": WITHHELD_LONG_CONTEXT_CHANGED,
+    "intent-changed": WITHHELD_LONG_INTENT_CHANGED,
+    "permission-changed": WITHHELD_LONG_PERMISSION_CHANGED,
+    "model-calls-paused": WITHHELD_LONG_PERMISSION_CHANGED,
+    "run-disabled": WITHHELD_LONG_PERMISSION_CHANGED,
+    **dict.fromkeys(
+        (
+            "probe-failed",
+            "header-unavailable",
+            "identity-mismatch",
+            "slot-unavailable",
+            "marker-incomplete",
+        ),
+        WITHHELD_LONG_FAULT,
+    ),
+}
 
 # The exec statuses that name their own cause, and whether each spent.
 _STATUS_FAILURES = {

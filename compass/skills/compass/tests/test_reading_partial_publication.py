@@ -219,6 +219,21 @@ class PartialPublicationTest(unittest.TestCase):
         self.assertFalse(self.publish(long_diagnostic=diagnostic).acknowledged)
         self.assertFalse(self.publish(on_a_check={"line_2"}).acknowledged)
 
+    def test_a_malformed_context_is_reported_as_a_probe_fault_not_a_context_change(self) -> None:
+        outcome = self.publish(context=object())
+        self.assertFalse(outcome.acknowledged)
+        self.assertEqual("probe-failed", outcome.reason)
+
+    def test_a_marker_that_is_not_completed_is_reported_as_incomplete_not_a_context_change(
+        self,
+    ) -> None:
+        foreign = dataclasses.replace(
+            self.active, owner=dataclasses.replace(self.active.owner, owner="f" * 32)
+        )
+        outcome = self.publish(context=dataclasses.replace(self.context, active=foreign))
+        self.assertFalse(outcome.acknowledged)
+        self.assertEqual("marker-incomplete", outcome.reason)
+
     def test_partial_obeys_permission_source_and_locked_target_gates(self) -> None:
         self.assertFalse(self.publish(source_current=lambda: False).acknowledged)
         reading_policy.set_consent(self.config, False, now=201)

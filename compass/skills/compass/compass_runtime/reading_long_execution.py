@@ -59,7 +59,8 @@ def _require_slot(
         else None
     )
     if slot is None or slot["state"] != "charged" or slot["request"] != request:
-        _refuse("context-changed")
+        # An accounting fault, not something the reader changed.
+        _refuse("slot-unavailable")
 
 
 def resolver(binary_resolver: Any) -> Any:
@@ -105,7 +106,7 @@ def guard(  # noqa: C901, PLR0913 - bounded per-slot callbacks share the fresh p
     active, route = context.active, context.route
     header = jobs.live_header(active.owner.live)
     if header is None:
-        _refuse("context-changed")
+        _refuse("header-unavailable")
     plan = header["plan"]
     if type(ordinal) is not int or not 1 <= ordinal <= plan["max_calls"]:
         raise ValueError("Invalid long-pass ordinal")

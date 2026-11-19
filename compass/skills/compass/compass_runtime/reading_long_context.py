@@ -156,18 +156,23 @@ def check_after_call(config: RuntimeConfig, context: Context) -> str:
     return _check(config, context, after_call=True)
 
 
-def _check(config: RuntimeConfig, context: Context, *, after_call: bool) -> str:
+def _check(  # noqa: PLR0911 - ordered closed gates, one distinct reason each
+    config: RuntimeConfig, context: Context, *, after_call: bool
+) -> str:
     if (
         type(context) is not Context
         or type(context.active) is not control.Active
         or type(context.route) is not Route
     ):
-        return "context-changed"
+        return "probe-failed"
     active = context.active
     if reason := _live_reason(config, context):
         return reason
     header = jobs.live_header(active.owner.live)
-    if header is None or describe(config, context.route.harness) != context.route:
+    if header is None:
+        # A missing header is an internal fault; only a differing route is a change the reader made.
+        return "header-unavailable"
+    if describe(config, context.route.harness) != context.route:
         return "context-changed"
     publication = header["publication"]
     target = annotation_store.LongTarget(publication["incarnation"], publication["revision"])
@@ -221,7 +226,7 @@ class Checkpoint:
                     self.reason = checker(self.config, self.context)
                     self._next = now + 0.25
             except Exception:  # noqa: BLE001 - failed preparation probes close the source reader
-                self.reason = "context-changed"
+                self.reason = "probe-failed"
         return bool(self.reason)
 
 
@@ -261,7 +266,9 @@ def _publication_deadline(live: jobs.LiveJob, job_ms: int) -> str:
     return "job-deadline" if (now - start) * 1000 > job_ms else ""
 
 
-def check_publication(config: RuntimeConfig, context: Context) -> str:
+def check_publication(  # noqa: PLR0911 - ordered closed gates, one distinct reason each
+    config: RuntimeConfig, context: Context
+) -> str:
     """Read terminal context; this is not permission or a publication transaction.
 
     The caller must already have sealed the current UI job through seal_job's
@@ -282,11 +289,13 @@ def check_publication(config: RuntimeConfig, context: Context) -> str:
             or type(context.active) is not control.Active
             or type(context.route) is not Route
         ):
-            return "context-changed"
+            return "probe-failed"
         if reason := _terminal_reason(config, context):
             return reason
         header = jobs.live_header(context.active.owner.live)
-        if header is None or describe(config, context.route.harness) != context.route:
+        if header is None:
+            return "header-unavailable"
+        if describe(config, context.route.harness) != context.route:
             return "context-changed"
         publication = header["publication"]
         target = annotation_store.LongTarget(publication["incarnation"], publication["revision"])
@@ -300,4 +309,4 @@ def check_publication(config: RuntimeConfig, context: Context) -> str:
             context.active.owner.live, header["plan"]["limits"]["job_ms"]
         )
     except Exception:  # noqa: BLE001 - failed terminal probes cannot certify publication
-        return "context-changed"
+        return "probe-failed"

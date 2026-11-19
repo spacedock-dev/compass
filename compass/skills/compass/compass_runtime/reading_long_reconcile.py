@@ -250,7 +250,8 @@ def finish(  # noqa: C901, PLR0912, PLR0913, PLR0915 - one closed final-call lif
         or tuple(stream.cursor.frozen for stream in inventory.streams)
         != tuple(stream.frozen for stream in mapped.snapshot.streams)
     ):
-        reason = "context-changed"
+        # Handoff invariants between the map and final passes, not something the reader changed.
+        reason = "identity-mismatch"
     if native is None or series is None or budget is None:
         reason = reason or "map-unavailable"
     result = None
