@@ -1513,10 +1513,16 @@ LONG_REFUSAL_CAUSES = frozenset(
 )
 
 
+# Internal faults a refusal can also carry. They are not changes the reader made, but a
+# refusal that drops them publishes as a plain call refusal, which names neither.
+LONG_FAULT_CAUSES = frozenset({"probe-failed", "header-unavailable", "slot-unavailable"})
+
+
 def long_refusal_cause(refusal: RefusedError) -> str:
     """The allow-listed reason a refusal carries, or "" when it is not one a reader can see."""
     reason = refusal.answer.get("reason")
-    return reason if isinstance(reason, str) and reason in LONG_REFUSAL_CAUSES else ""
+    allowed = LONG_REFUSAL_CAUSES | LONG_FAULT_CAUSES
+    return reason if isinstance(reason, str) and reason in allowed else ""
 
 
 class PromptPermit(Protocol):

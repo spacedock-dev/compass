@@ -20,6 +20,7 @@ from compass_runtime import (
     reading_ci_acquire,
     reading_long_context,
     reading_long_control,
+    reading_long_diagnostics,
     reading_long_execution,
     reading_long_inspection,
     reading_long_jobs,
@@ -518,6 +519,43 @@ class GuardedNativeWorkerTest(unittest.TestCase):
             result = self.run_worker()
         self.assertEqual("model-calls-paused", result.reason)
         self.assertEqual([], self.calls)
+
+    def _refuse_map_pass(self, reason: str, *, at_call: bool) -> reading_long_worker.Mapped:
+        self.make_case()
+        real_guard = reading_long_execution.guard
+
+        def refusal() -> reading_policy.RefusedError:
+            return reading_policy.RefusedError(reading_policy._answer(reason=reason))
+
+        def guard(*args: Any, **kwargs: Any) -> Any:
+            if not at_call:
+                raise refusal()
+            model = real_guard(*args, **kwargs)
+
+            def refused(*_a: Any, **_k: Any) -> Any:
+                raise refusal()
+
+            object.__setattr__(model, "_call", refused)
+            return model
+
+        with mock.patch.object(reading_long_execution, "guard", side_effect=guard):
+            return self.run_worker()
+
+    def test_an_internal_fault_refused_at_construction_or_call_publishes_as_a_fault_not_a_refusal(
+        self,
+    ) -> None:
+        categories = {
+            "probe-failed": "unknown",
+            "header-unavailable": "unknown",
+            "slot-unavailable": "accounting-unresolved",
+        }
+        for reason, category in categories.items():
+            for at_call in (False, True):
+                with self.subTest(reason=reason, at_call=at_call):
+                    self.setUp()
+                    result = self._refuse_map_pass(reason, at_call=at_call)
+                    self.assertEqual(reason, result.reason)
+                    self.assertEqual(category, reading_long_diagnostics.stop_reason(result.reason))
 
     def test_pause_after_reservation_retains_charge_and_no_adapter(self) -> None:
         self.make_case()

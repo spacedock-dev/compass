@@ -531,7 +531,7 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         self.assertEqual("context-changed", diagnostic["stop_reason"])
         self.assertEqual(0, diagnostic["accounting"]["totals"]["calls"])
 
-    def test_a_reading_whose_goal_is_edited_after_a_charged_pass_says_so_and_keeps_the_count(
+    def test_a_reading_whose_target_could_not_be_confirmed_after_a_charged_pass_says_so_and_keeps_the_count(
         self,
     ) -> None:
         saved = self.actual_case(context_changes_at=FINAL_ORDINAL, stop_latch="intent-changed")
@@ -540,6 +540,24 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         assert diagnostic is not None
         self.assertEqual("context-changed", diagnostic["stop_reason"])
         self.assertEqual(1, diagnostic["accounting"]["totals"]["calls"])
+
+    def test_a_real_goal_edit_after_a_charged_pass_stores_nothing_against_the_new_revision(
+        self,
+    ) -> None:
+        saved = self.actual_case(context_changes_at=FINAL_ORDINAL, target_change="edit")
+        self.assertEqual(2, len(saved["revisions"]))
+        self.assertEqual("Changed", saved["revisions"][-1]["goal"])
+        for key in ("withheld", "long_diagnostic", "assessment"):
+            self.assertNotIn(key, saved)
+        self.assertEqual(0, annotation_store.published(saved)["reading_count"])
+
+    def test_a_real_clear_after_a_charged_pass_stores_nothing_against_the_discarded_entry(
+        self,
+    ) -> None:
+        saved = self.actual_case(context_changes_at=FINAL_ORDINAL, target_change="clear")
+        self.assertEqual((), saved["revisions"])
+        for key in ("withheld", "long_diagnostic", "assessment"):
+            self.assertNotIn(key, saved)
 
     def test_a_reading_paused_after_a_charged_pass_says_so_and_keeps_the_count(self) -> None:
         saved = self.actual_case(context_changes_at=FINAL_ORDINAL, stop_latch="permission-changed")
@@ -564,6 +582,24 @@ class ActualLongCoordinatorTest(unittest.TestCase):
     def test_a_final_pass_refused_at_its_call_for_a_daily_cap_stays_incomplete(self) -> None:
         saved = self.actual_case(context_changes_at=FINAL_ORDINAL, refuse_call="daily-cap")
         self.assertEqual(reading.WITHHELD[reading.WITHHELD_LONG_INCOMPLETE], saved["withheld"])
+
+    def test_settings_refused_on_the_final_pass_names_the_settings_after_charged_evidence(
+        self,
+    ) -> None:
+        saved = self.actual_case(context_changes_at=FINAL_ORDINAL, preflight="settings-refused")
+        self.assertEqual(
+            reading.WITHHELD[reading.WITHHELD_LONG_SETTINGS_REFUSED], saved["withheld"]
+        )
+        diagnostic = saved["long_diagnostic"]
+        assert diagnostic is not None
+        self.assertEqual(1, diagnostic["accounting"]["totals"]["calls"])
+
+    def test_settings_refused_before_any_charge_says_nothing_was_sent(self) -> None:
+        saved = self.actual_case(context_changes_at=1, preflight="settings-refused")
+        self.assertEqual(reading.WITHHELD[reading.WITHHELD_SETTINGS_REFUSED], saved["withheld"])
+        diagnostic = saved["long_diagnostic"]
+        assert diagnostic is not None
+        self.assertEqual(0, diagnostic["accounting"]["totals"]["calls"])
 
     def test_advancing_real_clock_publishes_after_two_actual_owned_calls(self) -> None:
         saved = self.actual_case(advancing=True)
@@ -654,7 +690,7 @@ class ActualLongCoordinatorTest(unittest.TestCase):
     def test_unstopped_owned_ci_never_reaches_model_factory_or_charge(self) -> None:
         self.actual_case(unstopped="ci")
 
-    def actual_case(  # noqa: C901, PLR0915 - one harness shared by every actual-run scenario
+    def actual_case(  # noqa: C901, PLR0913, PLR0915 - one harness shared by every actual-run scenario
         self,
         *,
         timed_out: bool = False,
@@ -664,6 +700,8 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         context_changes_at: int = 0,
         stop_latch: str = "",
         refuse_call: str = "",
+        preflight: str = "",
+        target_change: str = "",
     ) -> annotation_store.Annotation:
         fixture = worker_tests.GuardedNativeWorkerTest()
         fixture.setUp()
@@ -702,6 +740,11 @@ class ActualLongCoordinatorTest(unittest.TestCase):
 
         def guard(*args: Any, **kwargs: Any) -> Any:
             if args[2] == context_changes_at:
+                if preflight:
+                    # The guard's own pre-reservation check refuses, as a managed-mcp.json would.
+                    model = real_guard(*args, **kwargs)
+                    object.__setattr__(model, "_preflight", lambda: preflight)
+                    return model
                 if refuse_call:
                     # Built fine, then refused at the call itself, before any reservation.
                     model = real_guard(*args, **kwargs)
@@ -711,6 +754,26 @@ class ActualLongCoordinatorTest(unittest.TestCase):
 
                     object.__setattr__(model, "_call", refused)
                     return model
+                if target_change:
+                    # What the real Edit and Clear routes do: change the stored target, then latch.
+                    sid = fixture.row["sid"]
+                    if target_change == "edit":
+                        annotation_store.annotate(
+                            fixture.config,
+                            fixture.env.state,
+                            "claude",
+                            sid,
+                            goal="Changed",
+                            now=fixture.now,
+                        )
+                    else:
+                        annotation_store.clear(fixture.config, fixture.env.state, "claude", sid)
+                    job = started.context.active.job
+                    stopped, _ = reading.stop_long_job(
+                        fixture.config, f"claude:{sid}", job, reason="intent-changed"
+                    )
+                    self.assertTrue(stopped)
+                    return real_guard(*args, **kwargs)
                 if stop_latch:
                     # What Clear, an edit or Pause do while a reading runs: latch first, so the
                     # real gate refuses with the reader's cause rather than a hand-raised one.
@@ -940,6 +1003,23 @@ class ContextChangedOutcomeTest(unittest.TestCase):
                             (reading.WITHHELD_LONG_PERMISSION_CHANGED, "withheld"),
                             self._decide(calls=calls, cause=cause, latch=latch),
                         )
+
+    def test_an_internal_fault_says_compass_could_not_confirm_its_progress_whether_or_not_spent(
+        self,
+    ) -> None:
+        for cause in (
+            "probe-failed",
+            "header-unavailable",
+            "identity-mismatch",
+            "slot-unavailable",
+            "marker-incomplete",
+        ):
+            for calls in (0, 3):
+                with self.subTest(cause=cause, calls=calls):
+                    self.assertEqual(
+                        (reading.WITHHELD_LONG_FAULT, "withheld"),
+                        self._decide(calls=calls, cause=cause),
+                    )
 
     def test_no_long_stop_sentence_claims_nothing_was_sent_or_counted(self) -> None:
         for key in (

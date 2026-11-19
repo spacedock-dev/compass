@@ -759,6 +759,7 @@ WITHHELD_LONG_CONTEXT_CHANGED = "long-context-changed"
 WITHHELD_LONG_INTENT_CHANGED = "long-intent-changed"
 WITHHELD_LONG_PERMISSION_CHANGED = "long-permission-changed"
 WITHHELD_LONG_SETTINGS_REFUSED = "long-settings-refused"
+WITHHELD_LONG_FAULT = "long-fault"
 WITHHELD_UNSTOPPED = "unstopped"
 WITHHELD_JOB_UNRECORDED = "job-unrecorded"
 WITHHELD_STOPPING = "stopping"
@@ -985,6 +986,12 @@ WITHHELD = {
         "Long analysis stopped because the model CLI's settings were refused or could not be "
         "verified before a pass started, so it did not produce a new result. Any recorded "
         "calls remain counted, and a fresh press is the only retry."
+    ),
+    # An internal fault, not a change the reader made and not a coverage gap.
+    WITHHELD_LONG_FAULT: (
+        "Long analysis stopped because Compass could not confirm its own progress while it "
+        "ran, so it did not produce a new result. Any recorded calls remain counted, and a "
+        "fresh press is the only retry."
     ),
     WITHHELD_LONG_INCOMPLETE: (
         "Long analysis could not cover the saved work well enough to produce a new result. "
@@ -7690,6 +7697,16 @@ LONG_STOP_WITHHELD = {
     "permission-changed": WITHHELD_LONG_PERMISSION_CHANGED,
     "model-calls-paused": WITHHELD_LONG_PERMISSION_CHANGED,
     "run-disabled": WITHHELD_LONG_PERMISSION_CHANGED,
+    **dict.fromkeys(
+        (
+            "probe-failed",
+            "header-unavailable",
+            "identity-mismatch",
+            "slot-unavailable",
+            "marker-incomplete",
+        ),
+        WITHHELD_LONG_FAULT,
+    ),
 }
 
 # The exec statuses that name their own cause, and whether each spent.

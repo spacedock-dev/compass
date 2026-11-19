@@ -153,6 +153,8 @@ def _outcome(
         "refused",
         "oversized",
         "unavailable",
+        # The final pass reports a settings refusal as its own cause, not as model-failed.
+        "settings-refused",
     ):
         return reading.WITHHELD_LONG_INCOMPLETE, "withheld"
     if withheld_reason in reading.WITHHELD:

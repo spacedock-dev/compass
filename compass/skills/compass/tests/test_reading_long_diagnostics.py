@@ -124,8 +124,14 @@ class LongDiagnosticsTest(unittest.TestCase):
             "permission-changed": "permission-changed",
             "model-calls-paused": "permission-changed",
             "run-disabled": "permission-changed",
+            "probe-failed": "unknown",
+            "header-unavailable": "unknown",
+            "slot-unavailable": "accounting-unresolved",
         }
-        self.assertEqual(set(expected), set(reading_policy.LONG_REFUSAL_CAUSES))
+        self.assertEqual(
+            set(expected),
+            set(reading_policy.LONG_REFUSAL_CAUSES | reading_policy.LONG_FAULT_CAUSES),
+        )
         for cause, category in expected.items():
             with self.subTest(cause=cause):
 
