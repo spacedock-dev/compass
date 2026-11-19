@@ -688,6 +688,16 @@ class AReadingNeverSearchesAnotherAccountsProjectFiles(unittest.TestCase):
                 for folder in (state, state / "reading-workdirs"):
                     self.assertEqual(0o700, stat.S_IMODE(folder.stat().st_mode), str(folder))
 
+    def test_a_first_codex_reading_is_not_refused_before_its_state_folder_exists(self) -> None:
+        # The pre-check a reading asks before it is charged chooses the same folder, so it
+        # must create state too, or a first reading is published as settings-refused.
+        state = self.root / "fresh-codex-refusal"
+        with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": ""}):
+            refusal, root = observer.codex_refusal(state)
+        self.assertEqual("", refusal)
+        self.assertEqual((state / "reading-workdirs").resolve(), Path(root))
+        self.assertEqual(0o700, stat.S_IMODE(state.stat().st_mode))
+
     def test_the_completed_state_fallback_does_not_name_the_account(self) -> None:
         with (
             mock.patch.object(observer, "_account", return_value=("/absent-home", "workdirs")),

@@ -958,9 +958,9 @@ WITHHELD = {
     # Spend-neutral on purpose: a pass that never started may follow charged
     # ones, and an uncharged late pass must not describe those as unspent.
     WITHHELD_LONG_CONTEXT_CHANGED: (
-        "Long analysis stopped because the model route or permission it started with changed "
-        "while it ran, so it did not produce a new result. Any recorded calls remain counted, "
-        "and a fresh press is the only retry."
+        "Long analysis stopped because the context it started with changed, or could no longer "
+        "be confirmed, while it ran, so it did not produce a new result. Any recorded calls "
+        "remain counted, and a fresh press is the only retry."
     ),
     WITHHELD_LONG_INCOMPLETE: (
         "Long analysis could not cover the saved work well enough to produce a new result. "

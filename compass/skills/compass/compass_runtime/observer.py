@@ -251,20 +251,23 @@ def codex_refusal(state_dir: Path | None = None) -> tuple[str, str]:
     # there, so the call runs in an empty owner-only folder that does not name the account,
     # as a Claude Code reading does (`reading_workdir_root`).
     root = reading_workdir_root(state_dir)
+    # Without a runtime folder the root falls back under state, which must exist to be checked.
+    # Created only then, so a platform whose root is elsewhere touches nothing here.
+    if root is None and state_dir is not None and not state_dir.exists():
+        try:
+            runtime_io.ensure_owner_dir(str(state_dir), root=str(state_dir))
+        except OSError:
+            return "failed", ""
+        root = reading_workdir_root(state_dir)
     return ("failed", "") if root is None else ("", root)
 
 
 def _codex_preflight(binary: str | None, state_dir: Path) -> tuple[str, str]:
-    """A refusal status before anything is created, or "" and the folder to work in."""
+    """A refusal status, or "" and the folder to work in; a missing binary creates nothing."""
     # Rooted, not `os.path.isabs`: on Windows a driveless root is absolute to `isabs` and
     # still resolves against the current drive.
     if not binary or not rooted(binary):
         return "unavailable", ""
-    # Before the work folder is chosen, for the same reason as `prepare_claude_exec`.
-    try:
-        runtime_io.ensure_owner_dir(str(state_dir), root=str(state_dir))
-    except OSError:
-        return "failed", ""
     return codex_refusal(state_dir)
 
 
@@ -300,6 +303,7 @@ def codex_exec(
     refusal, root = _codex_preflight(binary, config.state_dir)
     if refusal or not binary:
         return "", refusal
+    runtime_io.ensure_owner_dir(str(config.state_dir), root=str(config.state_dir))
     output_path = ""
     workdir = ""
     try:
@@ -527,7 +531,7 @@ def reading_workdir_root(state_dir: Path | None = None) -> str | None:
 def _state_reading_root(state_dir: Path | None, home: str, name: str) -> str | None:
     if state_dir is None or _names_the_account(str(state_dir), home, name):
         return None
-    # Check before creating anything: ensure_owner_dir alone permits shared ancestors.
+    # Check state before creating the child folder: ensure_owner_dir alone permits shared ancestors.
     parent = _private_reading_parent(str(state_dir), owner_only=True)
     if parent is None:
         return None

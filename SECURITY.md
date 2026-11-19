@@ -2498,7 +2498,8 @@ Because the working directory is sent, the process runs in a fresh owner-only (0
 directory whose canonical path names neither the account's home nor its user name
 (`observer.reading_workdir_root`). On Linux its parent is `$XDG_RUNTIME_DIR` when that is an
 existing user-owned 0700 folder. Otherwise Compass uses a 0700 `reading-workdirs` folder under
-its state directory, only when that path also passes the account-name rule. A state directory
+its state directory, only when that path also passes the account-name rule; a state directory
+that does not exist yet is created owner-only first, and the checks below then run on it. A state directory
 under the account's home therefore cannot provide this fallback: without a safe unnamed runtime
 folder the call is refused. Every ancestor must be owned by this account or root and have no
 group or other write bits. A sticky shared directory such as `/tmp` is refused too, because
