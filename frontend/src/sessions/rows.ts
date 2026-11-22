@@ -301,6 +301,7 @@ export interface SessionRow {
   readonly responsibility: string;
   readonly history: boolean;
   readonly worthALook: string | undefined;
+  readonly showOutcome: boolean;
   readonly relations: ReturnType<typeof declaredRelations>;
 }
 
@@ -320,6 +321,7 @@ export function groupSessions(
   model: Observed,
   sources: ReadonlyMap<string, Row>,
   context: SessionsContext,
+  evidenceRows: ReadonlySet<ObservedSession>,
 ): { active: ObservedSession[]; history: ObservedSession[] } {
   const ordered = [...model.active, ...model.history];
   const rank = (session: ObservedSession) =>
@@ -330,8 +332,16 @@ export function groupSessions(
         : 2;
   const active = ordered.filter((session) => session.isActive || rank(session) < 2);
   const activeKeys = new Set(active.map(sessionKey));
+  const activeRows = new Set(active);
   active.sort((left, right) => rank(left) - rank(right));
-  return { active, history: ordered.filter((session) => !activeKeys.has(sessionKey(session))) };
+  return {
+    active,
+    history: ordered.filter(
+      (session) =>
+        !activeRows.has(session) &&
+        (!activeKeys.has(sessionKey(session)) || evidenceRows.has(session)),
+    ),
+  };
 }
 
 export function buildSessionsScreen(
@@ -345,7 +355,24 @@ export function buildSessionsScreen(
   const sources = new Map(rows.map((session) => [sessionKey(session), session] as const));
   const asks = operationsAsks(payload, rows);
   const labels = harnessLabels(payload);
-  const groups = groupSessions(model, sources, context);
+  const flaggedRows = [...(worthALook?.keys() ?? [])];
+  const covered = new Set(flaggedRows.map(sessionKey));
+  const dirtyOutcomes = new Set<ObservedSession>();
+  for (const session of [...model.active, ...model.history]) {
+    if (session.outcomeIcon !== 'worth-a-look') continue;
+    const key = sessionKey(session);
+    if (covered.has(key)) continue;
+    covered.add(key);
+    dirtyOutcomes.add(session);
+  }
+  // An active copy may hide a history copy of the same identity. Keep the occurrence that supplies
+  // the flag or the dirty-end fact, so a stronger signal can still be traced to its row.
+  const groups = groupSessions(
+    model,
+    sources,
+    context,
+    new Set([...flaggedRows, ...dirtyOutcomes]),
+  );
   const projectKeys = new Map<string, string>();
   const projectKey = (project: string): string => {
     let key = projectKeys.get(project);
@@ -386,6 +413,9 @@ export function buildSessionsScreen(
       drift: driftMark(source, context),
       endedSince: since ? `ended ${since} ago` : '',
       worthALook: worthALook?.get(session),
+      showOutcome:
+        session.outcomeKnown &&
+        (session.outcomeIcon !== 'worth-a-look' || dirtyOutcomes.has(session)),
       responsibility: ask ? ` · ${askResponsibility(payload, ask)}` : '',
       history,
       relations: declaredRelations(payload, source),

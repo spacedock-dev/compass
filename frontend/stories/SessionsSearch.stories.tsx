@@ -28,6 +28,7 @@ interface Rig {
   readonly clock: FakeClock;
   readonly live: { -readonly [K in keyof FixtureOptions]: FixtureOptions[K] } & {
     generated: number;
+    flagPoll?: boolean;
   };
 }
 
@@ -47,7 +48,7 @@ function Board({
   readonly annotate?: boolean;
   readonly showAll?: boolean;
   readonly rowExamples?: boolean;
-  readonly flagBoard?: 'mixed' | 'empty';
+  readonly flagBoard?: 'mixed' | 'empty' | 'failed';
   readonly hash?: string;
 }) {
   const [shell] = useState(() => {
@@ -70,8 +71,24 @@ function Board({
                 flagBoard === 'mixed'
                   ? worthALookBoard()
                   : flagBoard === 'empty'
-                    ? { sessions: [] }
-                    : sessionsSearchPayload({ ...live }),
+                    ? {
+                        sessions: live.flagPoll
+                          ? worthALookBoard().sessions.filter(({ sid }) => sid === 'clean-end')
+                          : [],
+                      }
+                    : flagBoard === 'failed'
+                      ? {
+                          sessions: [],
+                          harnesses: [
+                            {
+                              key: 'claude',
+                              label: 'Claude Code',
+                              discovered: true,
+                              error: 'Read failed',
+                            },
+                          ],
+                        }
+                      : sessionsSearchPayload({ ...live }),
               )
             : json({}),
         ),
@@ -110,7 +127,18 @@ export const WorthALook: Story = {
     if (!flag) throw new Error('Missing the flag line');
     await expect(tile).toBeVisible();
     await expect(flag).toBeVisible();
-    await expect(flag.querySelector('svg[data-icon="worth-a-look"]')).toBeVisible();
+    const glyph = flag.querySelector('svg[data-icon="worth-a-look"]');
+    if (!glyph) throw new Error('Missing the warning glyph');
+    await expect(glyph).toBeVisible();
+    for (const width of [1280, 390]) {
+      await atWidth(width, async () => {
+        const box = glyph.getBoundingClientRect();
+        const css = getComputedStyle(glyph);
+        await expect(Math.abs(box.width - box.height)).toBeLessThan(0.2);
+        await expect(css.flexShrink).toBe('0');
+        await expect(parseFloat(css.top)).toBeGreaterThan(0);
+      });
+    }
     await expect(dirty.querySelectorAll('svg[data-icon="worth-a-look"]')).toHaveLength(1);
     for (const line of canvasElement.querySelectorAll('[data-next-row-worth-a-look]')) {
       const colors = paintedColors(line);
@@ -124,14 +152,29 @@ export const WorthALook: Story = {
       await expect(canvas.getByRole('link', { name: `Open session ${name}` })).toBeVisible();
     }
     await expect(canvas.queryByText('Off course', { exact: true })).toBeNull();
+    const pressedMark = () => toggle.querySelector('svg[data-icon="check"]');
+    await expect(pressedMark()).toBeNull();
     await userEvent.click(toggle);
     const rows = () => canvasElement.querySelectorAll('article.next-operation-row');
     await waitFor(() => expect(rows()).toHaveLength(9));
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(pressedMark()).toBeVisible();
     for (const name of ['drift-high', 'gate', 'clean-end']) {
       await expect(canvas.queryByRole('link', { name: `Open session ${name}` })).toBeNull();
     }
+    await userEvent.click(canvas.getByRole('button', { name: 'Remove Worth a look' }));
+    await waitFor(() => expect(rows()).toHaveLength(18));
     await userEvent.click(toggle);
+    await userEvent.click(canvas.getByRole('button', { name: 'Clear all' }));
+    await waitFor(() => expect(rows()).toHaveLength(18));
+
+    await userEvent.click(canvas.getByRole('button', { name: 'Waiting on you' }));
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    const scoped = canvas.getByRole('button', { name: 'Worth a look 9 on this board' });
+    await userEvent.click(scoped);
+    await waitFor(() => expect(rows()).toHaveLength(0));
+    await expect(scoped).toBeVisible();
+    await userEvent.click(canvas.getByRole('button', { name: 'Clear all' }));
     await waitFor(() => expect(rows()).toHaveLength(18));
   },
 };
@@ -140,9 +183,28 @@ export const WorthALookEmptyBoard: Story = {
   args: { flagBoard: 'empty' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(await canvas.findByRole('button', { name: 'Worth a look 0' })).toBeVisible();
+    const toggle = await canvas.findByRole('button', { name: 'Worth a look 0' });
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toBeDisabled();
+    await userEvent.click(toggle);
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
     await expect(canvasElement.querySelector('[data-next-row-worth-a-look]')).toBeNull();
     await expect(canvas.getByText('No recent-history rows in this payload.')).toBeVisible();
+    await poll({ flagPoll: true });
+    await expect(await canvas.findByRole('link', { name: 'Open session clean-end' })).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  },
+};
+
+export const WorthALookUnreadBoard: Story = {
+  args: { flagBoard: 'failed' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByRole('button', { name: 'Worth a look unavailable' }),
+    ).toBeDisabled();
+    await expect(canvas.getByText(/Claude Code: Harness source could not be read/)).toBeVisible();
+    await expect(canvas.queryByRole('button', { name: 'Worth a look 0' })).toBeNull();
   },
 };
 

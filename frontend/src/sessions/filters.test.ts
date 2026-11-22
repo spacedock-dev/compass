@@ -65,7 +65,7 @@ it('filters for the flag independently from a row’s State', () => {
   );
   const flagged = prepare({ ...EMPTY_FILTERS, worthALookOnly: true }, GENERATED, false);
   const result = applyFilters(indexed, flagged, () => '');
-  expect(result.shown).toBe(selection?.counts.worthALook);
+  expect(result.shown).toBe(selection?.counts?.worthALook);
   expect(result.active).toBe(true);
   expect(hasChoices(flagged.filters)).toBe(true);
   expect(fixedOptions(indexed, flagged, 'state').map(({ value }) => value)).not.toContain(

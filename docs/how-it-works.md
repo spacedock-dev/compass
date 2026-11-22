@@ -195,8 +195,11 @@ blank. Open the session page to see the progress reading and any live estimate t
 supports.
 
 A Worth a look flag explains a reported risk or an end with uncommitted work. Use the
-counted Worth a look button to show those rows. The count covers all sessions on the
-loaded board. A progress reading by itself leaves the count unchanged.
+counted Worth a look button to show those rows. The count covers flagged sessions across
+the loaded board, including rows hidden by other filters. If every discovered session
+source fails to load and there are no rows to count, the count reads "unavailable".
+Remove the Worth a look chip or use Clear all to reset the filter. A progress reading
+by itself leaves the count unchanged.
 
 An unmatched declaration says the parent is not on the board and is not linked. Open
 a parent to see its linked children and their states, or a child to open its parent. Group labels

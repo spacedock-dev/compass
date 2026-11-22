@@ -341,12 +341,15 @@ into a reassuring state.
 
 Keep the population of each count visible in its wording. The header pill and Working now
 card count Working sessions. The Needs you badge counts Waiting on you plus Worth a look
-from the rows that render. Worth a look uses published risk signals or dirty ends. A reading
-against the goal supplies no attention count. The shared selector gives a waiting session one
-place in the badge even when other risk evidence exists. It flags the measured members of a
-shared-label collision and keeps location gaps and harness-level quota windows off the session
-count. The dirty-end reason names changed git entries when a count was published. The
-[Sessions counters amendment](design-next-ui.md#amended-2026-11-22-owner-sessions-counters)
+from the rows that render. Worth a look uses published risks and dirty ends. A reading
+against the goal supplies no attention count. The shared selector reads the evidence across copies
+of the same session and gives a waiting session one place in the badge. A waiting session with a
+dirty end keeps one plain outcome on the row. A clean git probe at end leaves independent risks in
+Worth a look. The dirty-end reason names changed git entries when the board has a count. The selector flags measured
+members of a shared-label collision. Worth a look also receives quota notices with their harness and
+window, outside the session count. Checkout warnings retain their measured members at board scope
+alongside location gaps. If all discovered session sources fail and supply no rows, the session
+counts are unavailable. The [Sessions counters amendment](design-next-ui.md#amended-2026-11-22-owner-sessions-counters)
 bounds the change to NUI-16. The terminal follows the same terms when its slice lands.
 
 ## Rejected alternatives

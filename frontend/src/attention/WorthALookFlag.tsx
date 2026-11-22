@@ -4,10 +4,10 @@ import { Icon } from '../ui/icons';
 export function WorthALookFlag({ reason }: { readonly reason: string }) {
   return (
     <span
-      className="mt-1 flex items-baseline gap-1.5 text-label font-semibold text-[var(--progress-off-course)]"
+      className="mt-1 flex items-baseline gap-1.5 text-label font-semibold text-[var(--worth-a-look)]"
       data-next-row-worth-a-look
     >
-      <Icon name="worth-a-look" className="relative top-[.15em]" />
+      <Icon name="worth-a-look" className="relative top-[.15em] shrink-0" />
       <span>{`${SESSION_ROW_WORDS.worthALook}: ${reason}`}</span>
     </span>
   );

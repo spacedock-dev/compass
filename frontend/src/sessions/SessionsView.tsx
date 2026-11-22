@@ -26,6 +26,7 @@ import {
   announcement,
   applyFilters,
   EMPTY_FILTERS,
+  filtersActive,
   groupEmptyLine,
   harnessMeta,
   indexScreen,
@@ -81,7 +82,7 @@ function StatusLegend() {
         {SESSION_LEGEND.map(([word, icon]) => (
           <li
             key={word}
-            className={`inline-flex items-center gap-2${icon === 'worth-a-look' ? ' text-[var(--progress-off-course)]' : ''}`}
+            className={`inline-flex items-center gap-2${icon === 'worth-a-look' ? ' text-[var(--worth-a-look)]' : ''}`}
           >
             <Icon name={icon} />
             {word}
@@ -258,25 +259,25 @@ const RowView = memo(function RowView({
 }) {
   const { session, history } = row;
   const nowKind = 'NOW';
-  const hasDirtyEndFlag = session.outcomeIcon === 'worth-a-look' && row.worthALook;
-  const outcome =
-    session.outcomeKnown && !hasDirtyEndFlag ? (
-      <span className={`next-operation-outcome next-operation-outcome--${session.tone}`}>
-        {session.outcomeIcon === 'ended' ? (
-          <Icon name={session.outcomeIcon} className="mr-1 inline-block align-text-bottom" />
-        ) : null}
-        {session.outcomeText}
-        <span
-          className={
-            session.gitKnown
-              ? 'next-operation-outcome'
-              : 'next-operation-outcome next-operation-outcome--unknown'
-          }
-        >
-          {session.gitText}
-        </span>
+  const outcomeTone =
+    session.outcomeIcon === 'worth-a-look' ? '' : ` next-operation-outcome--${session.tone}`;
+  const outcome = row.showOutcome ? (
+    <span className={`next-operation-outcome${outcomeTone}`}>
+      {session.outcomeIcon === 'ended' ? (
+        <Icon name={session.outcomeIcon} className="mr-1 inline-block align-text-bottom" />
+      ) : null}
+      {session.outcomeText}
+      <span
+        className={
+          session.gitKnown
+            ? 'next-operation-outcome'
+            : 'next-operation-outcome next-operation-outcome--unknown'
+        }
+      >
+        {session.gitText}
       </span>
-    ) : null;
+    </span>
+  ) : null;
   const now = (
     <ObservedFact
       kind="now"
@@ -596,6 +597,11 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
   const groupFilter = useMemo(() => ({ filtered, onClear: actions.clearAll }), [filtered, actions]);
   if (!screen || !board) return null;
   const canAnalyze = analysisAvailable(data as unknown as Row);
+  const worthALookCount = attention?.counts?.worthALook;
+  const otherFilters = filtersActive({
+    ...prepared,
+    filters: { ...prepared.filters, worthALookOnly: false },
+  });
   return (
     <section className="next-operations" data-next-view-body="sessions">
       <header className="next-operations-header">
@@ -625,16 +631,21 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
           </section>
         ))}
       </section>
-      {attention ? (
+      {Array.isArray(data?.sessions) ? (
         <Button
           type="button"
-          className="mt-3 aria-pressed:bg-accent"
+          className="mt-3 gap-1.5 aria-pressed:bg-accent"
           aria-pressed={filters.worthALookOnly}
+          disabled={(worthALookCount === undefined || !indexed.length) && !filters.worthALookOnly}
           onClick={() =>
             actions.change({ ...filters, worthALookOnly: !filters.worthALookOnly }, 'press')
           }
         >
-          {SESSION_ROW_WORDS.worthALook} {attention.counts.worthALook}
+          {filters.worthALookOnly ? <Icon name="check" /> : null}
+          {SESSION_ROW_WORDS.worthALook}{' '}
+          {worthALookCount === undefined
+            ? 'unavailable'
+            : `${String(worthALookCount)}${otherFilters ? ' on this board' : ''}`}
         </Button>
       ) : null}
       {/* No toolbar over an empty board: the existing sentences say why there is nothing to find. */}

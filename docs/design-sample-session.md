@@ -247,6 +247,12 @@ filter raised the restacked page from 2,356,931 bytes at `98130e04` to 2,360,587
 allowance rises by 3 KiB to the same baseline plus 467 KiB, or 2,362,955 bytes, leaving
 2,368 bytes to spare. The fixture allowance stays at 250,000 bytes.
 
+On 2026-11-23, the Worth a look follow-up brought the restacked page from 2,360,587 to
+2,362,371 bytes on Node 26.10.0. The 1,784-byte increase left 584 bytes under the previous
+bound. The follow-up's 2 KiB allowance increase brings the bound to the same baseline plus
+469 KiB, or 2,365,003 bytes, leaving 2,632 bytes above the measured build. The fixture
+allowance stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

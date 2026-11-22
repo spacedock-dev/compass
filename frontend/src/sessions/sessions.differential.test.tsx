@@ -9,6 +9,8 @@ import { retractSessionCopies } from '../../test/sessionCopyDeviation';
 import { projectRecordedRowOpener } from '../../test/recordedCommandOpener';
 import { maskRevisionWords } from '../../test/revisionWordDeviation';
 import { maskSessionRowPresentation } from '../../test/sessionRowDeviation';
+import { attentionSelectionFor } from '../attention/select';
+import { sessionKey } from '../observed';
 
 /* The Sessions screen, held to the legacy page by what a reader can read. The legacy `nextSessionsView`
    runs unchanged over a generated payload and this screen renders the same payload in the real shell;
@@ -67,11 +69,8 @@ const DEVIATIONS = {
 
 function summarize(source: Element | DocumentFragment): Summary {
   restateRecordedLocationNotes(source);
-  // The flag and the dirty-end outcome it replaces have their own reason and membership proofs.
+  // The flag has its own reason and membership proofs.
   source.querySelectorAll('[data-next-row-worth-a-look]').forEach((flag) => flag.remove());
-  for (const outcome of source.querySelectorAll('.next-operation-outcome--bad')) {
-    if (outcome.textContent?.includes('Session ended with uncommitted work')) outcome.remove();
-  }
   const root = normalizeDisclosures(source);
   return {
     header: (() => {
@@ -123,6 +122,25 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
   restateRecordedLocationNotes(template.content);
   retractSessionCopies(template.content);
   DEVIATIONS.outcomeMarks(template.content);
+  // A flagged dirty end moved from Now to the flag. Keep all other recorded outcomes in the comparison.
+  const selection = attentionSelectionFor(payload as object);
+  const moved = new Set(
+    [...(selection?.worthALook.keys() ?? [])]
+      .filter((session) => session.outcomeIcon === 'worth-a-look')
+      .map(sessionKey),
+  );
+  for (const row of template.content.querySelectorAll<HTMLElement>('article[data-next-session]')) {
+    if (
+      !moved.has(
+        sessionKey({ harness: row.dataset['nextHarness'], sid: row.dataset['nextSession'] }),
+      )
+    )
+      continue;
+    for (const outcome of row.querySelectorAll('.next-operation-outcome--bad')) {
+      if (outcome.firstChild?.textContent?.trim() === 'Session ended with uncommitted work')
+        outcome.remove();
+    }
+  }
   DEVIATIONS.liveMarks(template.content);
   DEVIATIONS.rowPresentation(template.content, true);
   const header = template.content.querySelector('.next-operations-header');
