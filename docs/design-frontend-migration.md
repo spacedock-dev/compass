@@ -16,6 +16,13 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-23, Sessions replaces its operations heading, drift orientation and two fleet counters with
+a greeting, one state summary and the At a glance cards. The Sessions differential masks the old
+heading and fleet block and still compares the groups, rows and links. The observed-model
+differential masks the retired ACTIVE NOW and WORKING counters and still compares exact requests and
+reported blocks. The Sessions At A Glance and Status Tiles With Blank Progress stories cover the
+reader-facing changes. The recorded answers stay fixed.
+
 2026-11-23, Needs you writes out waiting, end, stop and turn ages using the displayed payload's
 clock. Older observations use the reader's clock or a short date. Absolute starts and scheduled
 resets include the date and year when the payload has no usable clock. Impossible ages are

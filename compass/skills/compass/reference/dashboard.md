@@ -90,9 +90,10 @@ or model input. Goals and drift readings remain each session's own.
 
 ## Dashboard views
 
-The light dashboard opens on **Sessions**, which keeps active work first and recent history
-below it. Its two counters show active now and working; exact requests and reported blocks are
-counted in Needs you. A Find sessions bar under the counters narrows both lists: a search over
+The light dashboard opens on **Sessions** with a greeting and a summary of the board. The
+**At a glance** cards count Waiting on you, Working now and Worth a look. Waiting on you and
+Worth a look open **Needs you**. Working now selects Working and takes you to the list. Below the
+cards, active work comes before recent history. A Find sessions bar narrows both groups with a search over
 titles, goals and prompts (`/` jumps to it, and a pasted session id finds its session), eight filters
 (Date, by when a session started or was last active; Project; Group; Harness; Headless; State; Drift; Goal) with a
 count beside each choice, and three presets: Waiting on you, Started today and Drift recorded. A
@@ -103,14 +104,11 @@ interactive Claude Code and Codex runs, unknown entrypoints and other harnesses.
 only rollout source `exec` as headless and `cli` as interactive. A quiet headless Codex row with a
 standing recorded turn stop says "run finished" with its age on the list and session page. New work
 withdraws that reading; it does not declare a session end. Neither
-option is selected by default, so all sessions show. The counters keep counting the whole board.
+option is selected by default, so all sessions show. At a glance keeps counting the whole board.
 When the filters hide a
 session that is waiting on you, a warning under the bar says so and offers to open it (or, for several,
 to see them on Needs you) or to clear the filters. Filters last for the tab, across refreshes and trips into a session and back; a reload
-clears them, and they are never saved or put in the URL. The Sessions orientation stays visible after a session has been checked.
-It explains how to open a session. The history and filter count explanations open in place. Where annotations
-are on, the store is readable and a reading route names a provider, it explains how to set a goal and
-analyze drift, adding that no session has been checked while that is true. **Projects**, one
+clears them, and they are never saved or put in the URL. The history and filter count explanations open in place. **Projects**, one
 click away, groups sessions by the label their harness publishes. **Goal history** lists every
 current board session and retained annotation/discard record once, including sessions without a
 project or a goal. It labels the typed goal and each expected outcome line, cached deterministic goal, and each
