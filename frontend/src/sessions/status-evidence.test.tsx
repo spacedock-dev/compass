@@ -79,7 +79,7 @@ it('draws only the statuses and outcomes that a Sessions row has evidence for', 
   expect.soft(row('transcript')).not.toHaveTextContent('no turn end can be observed here');
   expect.soft(state('ended')).toHaveAccessibleName('Ended');
   expect.soft(state('ended')?.querySelector('[data-icon="ended"]')).toBeInTheDocument();
-  expect.soft(state('ended-with-request')).toHaveTextContent('Ended');
+  expect.soft(state('ended-with-request')).toHaveAccessibleName('Ended');
   expect
     .soft(state('ended-with-request')?.querySelector('[data-icon="ended"]'))
     .toBeInTheDocument();

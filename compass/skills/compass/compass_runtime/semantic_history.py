@@ -77,7 +77,7 @@ def _redact_history(value: Any) -> Any:
     return value
 
 
-def _read(config: RuntimeConfig) -> dict[str, Any]:
+def _read(config: RuntimeConfig, *, repair: bool = True) -> dict[str, Any]:
     try:
         with os.fdopen(
             runtime_io.open_regular(store_path(config), root=str(config.state_home)), "rb"
@@ -93,7 +93,7 @@ def _read(config: RuntimeConfig) -> dict[str, Any]:
     redacted = dict(_redact_history(value))
     # A read may be the only event after an upgrade; do not leave recognized
     # credentials at rest until an unrelated history update happens to arrive.
-    if redacted != value and not _write(config, redacted):
+    if repair and redacted != value and not _write(config, redacted):
         logging.getLogger(__name__).warning(
             "Could not persist semantic-history redaction; will retry on the next read"
         )
@@ -132,19 +132,34 @@ def reconcile_project(
         return
     with state.semantic_history_lock:
         payload = _read(config)
-        projects = payload["projects"]
-        prior = projects.get(project, {})
-        existing = prior.get("events", []) if isinstance(prior, dict) else []
-        changed = False
-        for alias in aliases:
-            legacy = projects.pop(alias, None) if alias != project else None
-            if isinstance(legacy, dict):
-                existing = _merge(existing, legacy.get("events", []))
-                changed = True
-        if changed:
-            # Merged coverage was not measured under this key. Earn it again.
-            projects[project] = {"events": existing, "cursors": {}, "source_scans": {}}
+        if _reconcile(payload["projects"], project, aliases):
             _write(config, payload)
+
+
+def preview_project(
+    config: RuntimeConfig, state: RuntimeState, project: str, aliases: Iterable[str]
+) -> dict[str, Any]:
+    """The focused reader's starting history, with redaction and alias merge in memory."""
+    with state.semantic_history_lock:
+        projects = _read(config, repair=False)["projects"]
+    _reconcile(projects, project, aliases)
+    prior = projects.get(project)
+    return prior if isinstance(prior, dict) else {}
+
+
+def _reconcile(projects: dict[str, Any], project: str, aliases: Iterable[str]) -> bool:
+    prior = projects.get(project, {})
+    existing = prior.get("events", []) if isinstance(prior, dict) else []
+    changed = False
+    for alias in aliases:
+        legacy = projects.pop(alias, None) if alias != project else None
+        if isinstance(legacy, dict):
+            existing = _merge(existing, legacy.get("events", []))
+            changed = True
+    if changed:
+        # Merged coverage was not measured under this key. Earn it again.
+        projects[project] = {"events": existing, "cursors": {}, "source_scans": {}}
+    return changed
 
 
 def _write(config: RuntimeConfig, payload: dict[str, Any]) -> bool:
@@ -181,14 +196,16 @@ def backfill_plan(
     signature: Mapping[str, Any],
     *,
     full_max_bytes: int,
+    preview: dict[str, Any] | None = None,
 ) -> tuple[int, str | None]:
     """The allowance and retained coverage an incremental read must preserve."""
-    with state.semantic_history_lock:
-        payload = _read(config)
-    project_row = payload.get("projects", {}).get(project, {})
-    scans = project_row.get("source_scans", {}) if isinstance(project_row, dict) else {}
+    if preview is None:
+        with state.semantic_history_lock:
+            prior_project = _read(config)["projects"].get(project)
+        preview = prior_project if isinstance(prior_project, dict) else {}
+    scans = preview.get("source_scans", {})
     prior = scans.get(source_identity) if isinstance(scans, dict) else None
-    retained = project_row.get("events", []) if isinstance(project_row, dict) else []
+    retained = preview.get("events", [])
     if not (
         isinstance(prior, dict)
         and prior.get("schema") == BACKFILL_SCHEMA_VERSION
@@ -640,7 +657,7 @@ def _attach_relations(events: list[dict[str, Any]], relations: object) -> list[d
     return events
 
 
-def update(
+def update(  # noqa: PLR0913 - preview takes the same merge inputs as a persistent update
     config: RuntimeConfig,
     state: RuntimeState,
     project: str,
@@ -650,8 +667,9 @@ def update(
     *,
     now: float | None = None,
     source_scans: Mapping[str, Mapping[str, Any]] | None = None,
+    preview: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Merge current source-backed meaning into the durable bounded history."""
+    """Merge source-backed meaning into bounded history, in memory for a board preview."""
     facts = semantic.get("facts")
     work_rows = semantic.get("work_items")
     work_items = (
@@ -679,12 +697,13 @@ def update(
     if isinstance(now, (int, float)):
         incoming.extend(_assignment_events(assignments, observed_at=float(now)))
     with state.semantic_history_lock:
-        payload = _read(config)
+        payload = _read(config) if preview is None else {"projects": {}}
         projects = payload["projects"]
-        prior = projects.get(project)
-        existing = prior.get("events", []) if isinstance(prior, dict) else []
-        _bind_final_output_events([*(existing if isinstance(existing, list) else []), *incoming])
-        merged = _redact_history(_merge(existing if isinstance(existing, list) else [], incoming))
+        prior = projects.get(project) if preview is None else preview
+        raw_events = prior.get("events") if isinstance(prior, dict) else None
+        existing = raw_events if isinstance(raw_events, list) else []
+        _bind_final_output_events([*existing, *incoming])
+        merged = _redact_history(_merge(existing, incoming))
         if isinstance(now, (int, float)):
             floor = float(now) - HISTORY_WINDOW_SEC
             merged = [event for event in merged if float(event.get("at") or 0) >= floor]
@@ -697,6 +716,13 @@ def update(
                     "at": event.get("at"),
                     "event_id": event.get("event_id"),
                 }
+        if preview is not None:
+            return {
+                "events": merged,
+                "cursors": cursors,
+                "persisted": False,
+                "window_sec": HISTORY_WINDOW_SEC,
+            }
         projects[project] = {
             "events": merged,
             "cursors": cursors,
@@ -704,7 +730,7 @@ def update(
             "source_scans": _retained_scans(
                 prior if isinstance(prior, dict) else {},
                 source_scans,
-                existing if isinstance(existing, list) else [],
+                existing,
                 incoming,
                 merged,
             ),

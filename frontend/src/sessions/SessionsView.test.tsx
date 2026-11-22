@@ -272,6 +272,38 @@ describe('the groups', () => {
     expect(absence.querySelector('svg')).toBeNull();
   });
 
+  it('uses saved goals and actual attempts for progress absence', async () => {
+    const draft = { first_prompt: 'Draft the release notes', first_prompt_at: NOW - 30 };
+    const cases = [
+      ['draft', draft, 'No goal yet'],
+      ['discarded', { ...draft, annotation_discarded_at: NOW - 20 }, 'No goal yet'],
+      [
+        'codex-draft',
+        { harness: 'codex', title: 'Draft the release notes', prompt_states_work: true },
+        'No goal yet',
+      ],
+      ['completed', { annotation_goal: 'Ship it', departure_checked: true }, null],
+      ['attempted', { annotation_goal: 'Ship it', annotation_reading_count: 1 }, null],
+      ['unchecked', { annotation_goal: 'Ship it' }, 'Not checked yet'],
+      ['withheld', { ...assessed, stored_progress: 'withheld' }, null],
+      ['checked', { ...assessed, stored_progress: 'checked' }, null],
+    ] as const;
+    await open(
+      board(
+        cases.map(([sid, fields]) => ({ harness: 'claude', sid, state: 'working', ...fields })),
+        { annotate: true },
+      ),
+    );
+    for (const [sid, , expected] of cases) {
+      const row = document.querySelector(`article[data-next-session="${sid}"]`);
+      expect(row).toBeInTheDocument();
+      expect
+        .soft(row?.querySelector('[data-next-row-progress-absence]')?.textContent ?? null)
+        .toBe(expected);
+      expect(row?.querySelector('[data-variant="progress"]')).toBeNull();
+    }
+  });
+
   it('keeps State not published in the line below the title', async () => {
     await open(
       board([{ harness: 'claude', sid: 'unpublished', title: 'Unmeasured', state: 'idle' }]),

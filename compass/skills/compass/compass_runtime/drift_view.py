@@ -1884,15 +1884,15 @@ def stored_progress(
     session = declared_sessions.model_row(session)
     _, parts = _read(session, payload, context, record)
     analysis, stale = _stored_analysis(session, parts, context)
-    if analysis is None or stale is not None or parts.drafted:
+    if stale is not None:
         return "out_of_date"
+    if analysis is None or parts.drafted or levels.REASON_READING_MALFORMED in analysis["reasons"]:
+        return "withheld"
     level, reasons = analysis["level"], analysis["reasons"]
-    if levels.REASON_READING_MALFORMED in reasons:
-        return "out_of_date"
     if levels.REASON_GOAL_UNCLEAR in reasons:
         return "goal_unclear"
     if level in _LEVEL_SCALE:
-        return str(level)
+        return "checked" if level == levels.NONE_OR_LOW else str(level)
     raw = _get(parts.annotation, "assessment")
     criteria = _get(raw, "criteria")
     if (
@@ -1903,7 +1903,7 @@ def stored_progress(
         )
         and not (parts.shape and parts.shape.departures)
     ):
-        return "out_of_date"
+        return "withheld"
     return levels.NOT_ENOUGH if levels.REASON_SCAN_INCOMPLETE in reasons else "cant_tell"
 
 

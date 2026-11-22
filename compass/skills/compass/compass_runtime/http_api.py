@@ -579,28 +579,7 @@ def _latest_revision(entry: annotation_store.Annotation | None) -> int:
     return entry["revisions"][-1]["n"] if entry and entry["revisions"] else 0
 
 
-def _with_message_ordinals(
-    application: Any, result: dict[str, Any], focus: tuple[str, str]
-) -> dict[str, Any]:
-    """The focused session's message facts, each carrying its fixed number.
-
-    The checks and files carry theirs from the tally. Both are published for the focused session
-    only, which is the one whose page numbers its list. Copies, because the facts can be shared with
-    a cache.
-    """
-    semantic = result.get("semantic")
-    if not isinstance(semantic, dict) or not isinstance(semantic.get("facts"), list):
-        return result
-    path = runtime_observer.resolve_transcript(
-        application.config, application.state, focus[0], focus[1]
-    )
-    if not path:
-        return result
-    index = entry_numbers.message_index(application.config, application.state, path, *focus)
-    if index is None:
-        return result
-    facts = entry_numbers.with_message_ordinals(index, semantic["facts"])
-    return {**result, "semantic": {**semantic, "facts": facts}}
+_with_message_ordinals = focused_reading.with_message_ordinals
 
 
 # The longest question a cut count may claim. The stdio server reads one frame of
@@ -1049,11 +1028,7 @@ def _with_levels(
     sources: dict[str, Any] = raw_sources if isinstance(raw_sources, dict) else {}
     raw_work = sources.get("work")
     work: dict[str, Any] = dict(raw_work) if isinstance(raw_work, dict) else {}
-    request_sources = _request_sources(application, row, _facts_of(context), entry) if entry else []
-    work["line_requests"] = _line_requests(entry, request_sources, row)
-    work["analysis_levels"] = _analysis_levels(
-        application, context, row, entry, floor, request_sources=request_sources
-    )
+    work.update(focused_reading.stored_work(application, context, row, entry))
     transcript = runtime_observer.resolve_transcript(config, application.state, harness, sid)
     if transcript:
         live = live_estimate.for_session(

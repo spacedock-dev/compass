@@ -230,6 +230,11 @@ The 3,460-byte increase (0.15%) exceeded the previous bound by 2,984 bytes. The 
 rises by 3 KiB to the same baseline plus 463 KiB, or 2,358,859 bytes, leaving 88 bytes above
 the build. The fixture allowance stays at 250,000 bytes.
 
+On 2026-11-23, the corrected Sessions absence words, row facts and tooltip target brought
+the page to 2,359,323 bytes on Node 26.10.0, 552 bytes above the previous build and 464 bytes
+above its allowance. The allowance rises by 1 KiB to the same baseline plus 464 KiB, or
+2,359,883 bytes, with 560 bytes to spare. The fixture allowance stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

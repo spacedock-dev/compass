@@ -10,7 +10,6 @@ const table = JSON.parse(
 
 for (const [key, family] of [
   ['row|wide|next-operation-row--want', 'Inter, system-ui, -apple-system, sans-serif'],
-  ['state|wide|', 'ui-monospace, monospace'],
 ]) {
   const recorded = table.instances[key];
   const row = { key, ...recorded, chrome: { ...recorded.chrome, 'font-family': family } };
@@ -29,6 +28,66 @@ for (const [key, family] of [
     }
   });
 }
+
+test('measures the Session header status badge and checks its approved chrome', () => {
+  const dom = new JSDOM(`
+    <header data-next-session-status>
+      <span data-slot="badge" data-variant="status"><span>State:</span>Quiet</span>
+    </header>
+    <span data-slot="badge" data-variant="status">Elsewhere</span>
+  `);
+  const badge = dom.window.document.querySelector('header [data-slot="badge"]');
+  const chrome = {
+    ...table.instances['state|wide|'].chrome,
+    color: 'rgb(82, 96, 109)',
+    'border-top': '1px solid rgb(123, 135, 148)',
+    'border-right': '1px solid rgb(123, 135, 148)',
+    'border-bottom': '1px solid rgb(123, 135, 148)',
+    'border-left': '1px solid rgb(123, 135, 148)',
+    'font-family': 'Inter, system-ui, -apple-system, sans-serif',
+    'font-weight': '500',
+  };
+  badge.getBoundingClientRect = () => ({ width: 50 });
+  dom.window.Range.prototype.getBoundingClientRect = () => ({ width: 32 });
+  const saved = {
+    document: globalThis.document,
+    getComputedStyle: globalThis.getComputedStyle,
+    innerWidth: globalThis.innerWidth,
+  };
+  Object.assign(globalThis, {
+    document: dom.window.document,
+    getComputedStyle: (element) =>
+      element === badge
+        ? {
+            getPropertyValue: (name) => chrome[name],
+            paddingLeft: '8px',
+            paddingRight: '8px',
+            borderLeftWidth: '1px',
+            borderRightWidth: '1px',
+          }
+        : dom.window.getComputedStyle(element),
+    innerWidth: 1280,
+  });
+  try {
+    const rows = measureSessionChrome();
+    assert.deepEqual(
+      rows.map((row) => row.key),
+      ['state|wide|'],
+    );
+    assert.deepEqual(sessionChromeDifferences(rows, table.instances), []);
+    const [row] = rows;
+    for (const change of [
+      { ...row, chrome: { ...row.chrome, 'font-family': 'Georgia, serif' } },
+      { ...row, chrome: { ...row.chrome, 'font-size': '12px' } },
+      { ...row, inlineSize: { ...row.inlineSize, ratio: 1.5 } },
+    ]) {
+      assert.equal(sessionChromeDifferences([change], table.instances).length, 1);
+    }
+  } finally {
+    Object.assign(globalThis, saved);
+    dom.window.close();
+  }
+});
 
 test('a collapsed delivery surface fails the recorded width gate', () => {
   const dom = new JSDOM(

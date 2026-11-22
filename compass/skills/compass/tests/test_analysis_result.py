@@ -17,9 +17,10 @@ import http.client
 import json
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import patch
 
 from compass_runtime import annotations as annotation_store
-from compass_runtime import history, http_api, levels
+from compass_runtime import events, focused_reading, history, http_api, levels, semantic_history
 from compass_runtime import reading as runtime_reading
 
 from .support import make_server, serve_until_closed
@@ -352,10 +353,226 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
         (row,) = [row for row in board["sessions"] if row["sid"] == SHORT]
         return cast("str | None", row["stored_progress"])
 
+    def departure(self) -> dict[str, Any]:
+        self.session.write(str(Path(self.session.cwd) / "unrelated.py"))
+        cite = next(f["fact_id"] for f in self.facts_now() if f["subject"] == "write")
+        through = START.timestamp() + self.session.seconds
+        return _reading(
+            {
+                "goal": {
+                    "result": runtime_reading.RESULT_DEPARTURE,
+                    "cites": [cite],
+                    "why": runtime_reading.WHY_RECORDED_WRITE,
+                }
+            },
+            window_start=START.timestamp(),
+            revision_read_at=START.timestamp(),
+            read_at=through + 1,
+            evidence_through=through,
+        )
+
+    def test_cold_board_withholds_departure_when_focus_recovers_an_unsettled_direction(
+        self,
+    ) -> None:
+        self.save_goal(lines=())
+        self.session.prompt("Actually make the unrelated change first.")
+        for _ in range(64):
+            self.session._entry("assistant", [{"type": "text", "text": "x" * 8192}])
+        self.record(self.departure())
+        with self.serving() as port:
+            cold = self.board_progress(self.get(port, "/api/data"))
+            (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+            self.now += self.config.collect_memo_sec + 1
+            warm = self.board_progress(self.get(port, "/api/data"))
+        self.assertEqual(1, view["unsettled_count"])
+        self.assertIsNone(view["pill"])
+        self.assertIsNone(view["stale"])
+        self.assertEqual("withheld", cold)
+        self.assertEqual(cold, warm)
+
+    def test_the_board_revalidates_without_a_network_call_or_a_store_write(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.app()
+        store = Path(annotation_store.store_path(self.config))
+        before = store.read_bytes()
+        semantic_store = Path(semantic_history.store_path(self.config))
+        self.assertFalse(semantic_store.exists())
+        with (
+            patch("socket.socket.connect") as connect,
+            patch("socket.socket.connect_ex") as connect_ex,
+            patch("socket.getaddrinfo") as resolve,
+            patch("subprocess.Popen") as process,
+        ):
+            board = json.loads(app.collect_json(show_all=True)[1])
+        self.assertEqual(levels.MEDIUM, self.board_progress(board))
+        for call in (connect, connect_ex, resolve, process):
+            call.assert_not_called()
+        self.assertEqual(before, store.read_bytes())
+        self.assertFalse(semantic_store.exists())
+        self.assertNotIn("stored_progress", events.PATCHABLE)
+        self.assertNotIn("stored_progress", history.OBSERVATION_FIELDS)
+        self.assertNotIn(
+            "stored_progress", json.dumps(http_api._session_context(app, board["sessions"][0]))
+        )
+
     def test_the_board_distinguishes_a_saved_goal_without_a_reading(self) -> None:
         self.save_goal()
         with self.serving() as port:
             self.assertIsNone(self.board_progress(self.get(port, "/api/data")))
+
+    def test_board_distinguishes_stale_withheld_and_checked_without_departure(self) -> None:
+        self.save_goal(lines=())
+        check = self.passing_check()
+        assessment = _reading(
+            {"goal": {"result": runtime_reading.RESULT_CONSISTENT, "cites": [check]}},
+            window_start=START.timestamp(),
+            revision_read_at=START.timestamp(),
+        )
+        self.record(assessment)
+        with self.serving() as port:
+            self.assertEqual("checked", self.board_progress(self.get(port, "/api/data")))
+            self.mark()
+            self.now += self.config.collect_memo_sec + 1
+            self.assertEqual("withheld", self.board_progress(self.get(port, "/api/data")))
+            (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+            self.assertIsNone(view["analysis"])
+            self.assertIsNone(view["stale"])
+            self.mark(on=False)
+            self.save_goal()
+            self.now += self.config.collect_memo_sec + 1
+            self.assertEqual("out_of_date", self.board_progress(self.get(port, "/api/data")))
+
+    def test_board_progress_admission_and_absence_reasons(self) -> None:
+        self.save_goal(lines=())
+        check = self.passing_check()
+        self.record(
+            _reading({"goal": {"result": runtime_reading.RESULT_CONSISTENT, "cites": [check]}})
+        )
+        app = self.app()
+        board = app.collect(show_all=True)
+        (row,) = board["sessions"]
+        raw = row["annotation_assessment"]
+        for label, changes, expected in (
+            ("Codex", {"harness": "codex"}, None),
+            ("withdrawn", {"annotation_assessment": {**raw, "scope": "withdrawn"}}, "out_of_date"),
+            ("marked inaccurate", {"annotation_not_accurate": True}, "withheld"),
+            ("superseded", {"annotation_revision": 2}, "out_of_date"),
+            (
+                "schema refused",
+                {
+                    "annotation_assessment": None,
+                    "annotation_reading_refused": True,
+                },
+                "withheld",
+            ),
+        ):
+            with (
+                self.subTest(label=label),
+                patch.object(annotation_store, "active") as open_store,
+            ):
+                self.assertEqual(
+                    expected,
+                    focused_reading.published(app, board, {**row, **changes})["stored_progress"],
+                )
+                open_store.assert_not_called()
+
+        for label, report, complete, expected in (
+            (
+                "vague goal",
+                {"result": runtime_reading.RESULT_GOAL_UNCLEAR, "cites": []},
+                True,
+                "goal_unclear",
+            ),
+            (
+                "incomplete scan",
+                {"result": runtime_reading.RESULT_CONSISTENT, "cites": [check]},
+                False,
+                "not_enough",
+            ),
+        ):
+            with (
+                self.subTest(label=label),
+                patch.object(levels, "scan_complete", return_value=complete),
+            ):
+                self.record(_reading({"goal": report}))
+                self.now += self.config.collect_memo_sec + 1
+                self.assertEqual(
+                    expected, self.board_progress(json.loads(app.collect_json(show_all=True)[1]))
+                )
+
+    def test_board_withholds_when_the_record_cannot_be_read(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.app()
+        for page in (OSError("read failed"), {"state": "unavailable", "entries": []}):
+            self.now += self.config.collect_memo_sec + 1
+            with (
+                self.subTest(page=page),
+                patch.object(focused_reading, "record_page") as read,
+            ):
+                if isinstance(page, Exception):
+                    read.side_effect = page
+                else:
+                    read.return_value = page
+                self.assertEqual(
+                    "withheld", self.board_progress(json.loads(app.collect_json(show_all=True)[1]))
+                )
+        board = app.collect(show_all=True)
+        (row,) = board["sessions"]
+        self.path.unlink()
+        self.assertEqual("withheld", focused_reading.published(app, board, row)["stored_progress"])
+
+    def test_board_abstains_if_transcript_changes_after_record_page(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        read = focused_reading.record_page
+
+        def append_after_read(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            page = read(*args, **kwargs)
+            self.session.prompt("Actually change the goal.")
+            self.session.save(self.path)
+            return page
+
+        with patch.object(focused_reading, "record_page", side_effect=append_after_read):
+            board = json.loads(self.app().collect_json(show_all=True)[1])
+        self.assertEqual("withheld", self.board_progress(board))
+
+    def test_the_board_withholds_if_focused_scope_needs_more_than_its_local_read(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.app()
+        board = app.collect(show_all=False)
+        (row,) = board["sessions"]
+        self.assertEqual(
+            levels.MEDIUM, focused_reading.published(app, board, row)["stored_progress"]
+        )
+        for label, fields in (
+            ("active project peer", {"active": True}),
+            ("ambiguous project label", {"active": False, "project_key": "another-location"}),
+        ):
+            peer = {**row, "sid": "peer", "harness": "codex", **fields}
+            with self.subTest(label=label), patch.object(focused_reading, "record_page") as read:
+                scoped = {**board, "sessions": [row, peer]}
+                self.assertEqual(
+                    "withheld", focused_reading.published(app, scoped, row)["stored_progress"]
+                )
+                read.assert_not_called()
+        with (
+            patch.object(focused_reading, "BOARD_TRANSCRIPT_MAX_BYTES", 0),
+            patch.object(focused_reading, "record_page") as read,
+        ):
+            self.assertEqual(
+                "withheld", focused_reading.published(app, board, row)["stored_progress"]
+            )
+            read.assert_not_called()
+        older = {**row, "active": False}
+        with patch.object(focused_reading, "record_page") as read:
+            older_board = {**board, "sessions": [older], "show_all": True}
+            self.assertEqual(
+                "withheld", focused_reading.published(app, older_board, older)["stored_progress"]
+            )
+            read.assert_not_called()
 
     def test_the_board_revalidates_a_stored_departure_before_the_session_opens(self) -> None:
         self.save_goal(lines=())
@@ -376,8 +593,9 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
         )
         with self.serving() as port:
             self.assertEqual(levels.MEDIUM, self.board_progress(self.get(port, "/api/data")))
-            (focused,) = self.get(port, FOCUSED)["sources"]["work"]["analysis_levels"]
-            self.assertEqual(levels.MEDIUM, focused["level"])
+            (focused,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+            self.assertEqual(levels.MEDIUM, focused["pill"]["level"])
+            self.assertEqual("analysis", focused["pill"]["source"])
 
     def test_the_board_names_off_course_when_a_departure_has_a_current_failed_check(self) -> None:
         self.save_goal(lines=())
@@ -409,7 +627,7 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
             )
         )
         with self.serving() as port:
-            self.assertEqual("out_of_date", self.board_progress(self.get(port, "/api/data")))
+            self.assertEqual("withheld", self.board_progress(self.get(port, "/api/data")))
 
     def test_it_follows_the_record_and_is_never_written(self) -> None:
         self.save_goal()

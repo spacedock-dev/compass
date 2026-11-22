@@ -24,6 +24,10 @@ to set aside the old Drift mark, the new pill or absence, and the state presenta
 title and harness order and still compares groups, row order, facts and links. The Sessions
 stories hold placement, contrast, the visible legend and the keyboard tooltip. Terminal
 grouping keeps its shared recorded answers. Terminal row wording follows in DRC-5510.
+The row reserves Not checked yet for a saved goal with no recorded check, and puts the
+assignment and location notice on separate lines. The status story checks the 44 px tooltip
+target around its 40 px artwork. The browser proof for the Session header keeps its recorded
+badge geometry and checks the approved Inter face, weight and light palette colors.
 
 2026-11-22, status, navigation and activity marks use Phosphor Bold SVGs. The Sessions and
 Project comparisons mask the retired text marks at their render sites and compare the surrounding

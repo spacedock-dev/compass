@@ -28,6 +28,10 @@ if TYPE_CHECKING:
     from .aggregate import Application
 
 
+# Board polls can revalidate a small record with the same evidence as the focused view.
+BOARD_TRANSCRIPT_MAX_BYTES = 1024 * 1024
+
+
 def record_page(
     application: Any,
     matching: list[dict[str, Any]],
@@ -195,6 +199,43 @@ def facts_of(context: dict[str, Any]) -> list[Any]:
     return list(facts) if isinstance(facts, list) else []
 
 
+def with_message_ordinals(
+    application: Any, context: dict[str, Any], focus: tuple[str, str]
+) -> dict[str, Any]:
+    """Number copies of the focused session's message facts, which may be cached."""
+    semantic = context.get("semantic")
+    if not isinstance(semantic, dict) or not isinstance(semantic.get("facts"), list):
+        return context
+    path = runtime_observer.resolve_transcript(application.config, application.state, *focus)
+    if not path:
+        return context
+    index = entry_numbers.message_index(application.config, application.state, path, *focus)
+    if index is None:
+        return context
+    facts = entry_numbers.with_message_ordinals(index, semantic["facts"])
+    return {**context, "semantic": {**semantic, "facts": facts}}
+
+
+def stored_work(
+    application: Any,
+    context: dict[str, Any],
+    row: dict[str, Any],
+    entry: annotation_store.Annotation | None,
+) -> dict[str, Any]:
+    requests = request_sources(application, row, facts_of(context), entry) if entry else []
+    return {
+        "line_requests": line_requests(entry, requests, row),
+        "analysis_levels": analysis_levels(
+            application,
+            context,
+            row,
+            entry,
+            annotation_store.direction_floor(entry, row),
+            request_sources=requests,
+        ),
+    }
+
+
 def _stored_progress(
     application: Application,
     payload: dict[str, Any],
@@ -204,37 +245,44 @@ def _stored_progress(
     """Read the stored result on the same local record the focused view uses."""
     config, state = application.config, application.state
     harness, sid = row["harness"], row["sid"]
+    rows = payload["sessions"]
+    label = str(row.get("project") or "")
+    project = str(row.get("project_key") or label)
+    # The page opens a shared display label under the label itself. That can
+    # bring in another history bucket even if the other location is quiet.
+    if (
+        not project
+        or len(project) > config.ask_project_cap_chars
+        or any(
+            peer.get("project") == label and str(peer.get("project_key") or label) != project
+            for peer in rows
+        )
+    ):
+        return "withheld"
     path = runtime_observer.resolve_transcript(config, state, harness, sid)
     stamp = runtime_project_context.transcript_stamp(path) if path else None
-    if not path or stamp is None:
-        return "out_of_date"
+    if not path or stamp is None or stamp[2] > BOARD_TRANSCRIPT_MAX_BYTES:
+        return "withheld"
     context = runtime_project_context.collect(
         config,
         state,
-        [row],
-        str(row.get("project_key") or row.get("project") or ""),
+        rows,
+        project,
         focus=(harness, sid),
         now=payload["generated"],
         read_only=True,
     )
-    context = copied_corrections.mark(context, [row])
+    if not context:
+        return "withheld"
+    context = copied_corrections.mark(context, rows)
     context = compass_turns.mark(config, state, context, [row])
-    requests = request_sources(application, row, facts_of(context), entry)
-    work = context["sources"]["work"]
-    work["line_requests"] = line_requests(entry, requests, row)
-    work["analysis_levels"] = analysis_levels(
-        application,
-        context,
-        row,
-        entry,
-        annotation_store.direction_floor(entry, row),
-        request_sources=requests,
-    )
+    context = with_message_ordinals(application, context, (harness, sid))
+    context["sources"]["work"].update(stored_work(application, context, row, entry))
     page = record_page(
         application, [row], harness, sid, cursor_key=b"", limit=record_pages.PAGE_SIZE, before=None
     )
     if page["state"] != "ok" or runtime_project_context.transcript_stamp(path) != stamp:
-        return "out_of_date"
+        return "withheld"
     # The focused view reads a board decoded from JSON. In this pre-serialization row,
     # annotations still hold tuples (for example, the stored criteria's citations).
     board_row: dict[str, Any] = json.loads(json.dumps(row))
@@ -245,31 +293,54 @@ def published(
     application: Application, payload: dict[str, Any], row: dict[str, Any]
 ) -> dict[str, str | None]:
     """Only a current saved assessment asks the board to open any evidence."""
-    result = None
+    return {"stored_progress": _progress_for_row(application, payload, row)}
+
+
+def _progress_for_row(
+    application: Application, payload: dict[str, Any], row: dict[str, Any]
+) -> str | None:
+    if payload.get("annotate") is not True or row["harness"] not in live_estimate.HARNESSES:
+        return None
     raw = row.get("annotation_assessment")
-    if payload.get("annotate") is True and row["harness"] in live_estimate.HARNESSES:
-        if isinstance(raw, dict):
-            result = "out_of_date"
-            entry = annotation_store.find(
-                annotation_store.active(application.config, application.state),
-                row["harness"],
-                row["sid"],
-            )
-            if (
-                entry
-                and not payload.get("annotate_unreadable")
-                and not row.get("annotation_not_accurate")
-                and raw.get("scope") != runtime_reading.SCOPE_WITHDRAWN
-                and raw.get("revision_read") == row.get("annotation_revision")
-                and entry.get("assessment") == raw
-            ):
-                try:
-                    result = _stored_progress(application, payload, row, entry)
-                except Exception as exc:  # noqa: BLE001 - a failed revalidation cannot cost the board
-                    runtime_io.diag(
-                        f"Compass: stored progress could not be read ({exc.__class__.__name__}).",
-                        application.diagnostic_sink,
-                    )
-        elif row.get("annotation_reading_refused"):
-            result = "out_of_date"
-    return {"stored_progress": result}
+    if not isinstance(raw, dict):
+        return "withheld" if row.get("annotation_reading_refused") else None
+    revision = row.get("annotation_revision")
+    revision_read = raw.get("revision_read")
+    if payload.get("annotate_unreadable") or row.get("annotation_not_accurate"):
+        return "withheld"
+    if raw.get("scope") == runtime_reading.SCOPE_WITHDRAWN:
+        return "out_of_date"
+    if revision is None or revision_read != revision:
+        return "out_of_date" if revision is not None and revision_read is not None else "withheld"
+    return _revalidate(application, payload, row, raw, revision)
+
+
+def _revalidate(
+    application: Application,
+    payload: dict[str, Any],
+    row: dict[str, Any],
+    raw: dict[str, Any],
+    revision: int,
+) -> str:
+    config, state = application.config, application.state
+    identity = (row["harness"], row["sid"])
+    try:
+        entry = annotation_store.find(annotation_store.active(config, state), *identity)
+        if (
+            not entry
+            or entry.get("not_accurate")
+            or not entry["revisions"]
+            or entry["revisions"][-1]["n"] != revision
+            or entry.get("assessment") != raw
+        ):
+            return "withheld"
+        result = _stored_progress(application, payload, row, entry)
+        current = annotation_store.find(annotation_store.active(config, state), *identity)
+    except Exception as exc:  # noqa: BLE001 - a failed revalidation cannot cost the board
+        runtime_io.diag(
+            f"Compass: stored progress could not be read ({exc.__class__.__name__}).",
+            application.diagnostic_sink,
+        )
+        return "withheld"
+    else:
+        return result if current == entry else "withheld"

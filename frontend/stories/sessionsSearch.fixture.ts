@@ -183,6 +183,9 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
       first_prompt_at: local(0, 10, 2),
       annotation_goal: 'Ship the 2.4 changelog',
       annotation_revision: 1,
+      ...(options.progressPills
+        ? { project_key: 'k-rc-other', instruction: { label: 'asked', text: 'Fix queue' } }
+        : {}),
     },
     {
       harness: 'codex',
@@ -194,6 +197,7 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
       worktree: 'parser-fix',
       state: 'working',
       state_detail: 'running tests',
+      ...(options.progressPills ? { prompt_states_work: true } : {}),
       first_prompt_at: local(-1, 16, 2),
       last_activity: local(0, 11, 58),
     },

@@ -22,9 +22,17 @@ export const Quiet: Story = {
   play: async ({ canvasElement }) => {
     const tile = within(canvasElement).getByRole('img', { name: 'Quiet' });
     await expect(tile).toBeVisible();
-    await expect(tile.querySelector('svg[data-icon="quiet"]')).toBeVisible();
-    const { width, height, borderRadius } = getComputedStyle(tile);
-    await expect([width, height, borderRadius]).toEqual(['40px', '40px', '12px']);
+    const glyph = tile.querySelector('svg[data-icon="quiet"]');
+    await expect(glyph).toBeVisible();
+    const { width, height } = tile.getBoundingClientRect();
+    await expect(width).toBeGreaterThanOrEqual(44);
+    await expect(height).toBeGreaterThanOrEqual(44);
+    const artwork = getComputedStyle(glyph?.parentElement as HTMLElement);
+    await expect([artwork.width, artwork.height, artwork.borderRadius]).toEqual([
+      '40px',
+      '40px',
+      '12px',
+    ]);
     await userEvent.tab();
     await expect(tile).toHaveFocus();
     await expect(await within(document.body).findByRole('tooltip')).toHaveTextContent(/^Quiet$/);

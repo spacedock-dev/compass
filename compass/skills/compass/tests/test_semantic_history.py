@@ -66,6 +66,14 @@ class SemanticHistoryTest(unittest.TestCase):
         legacy = json.loads(path.read_text())
         legacy["projects"]["project"]["events"][0]["fact"] = fact
         path.write_text(json.dumps(legacy))
+        legacy_bytes = path.read_bytes()
+        preview = semantic_history.preview_project(
+            self.config, build_runtime_state(self.config, started=106), "canonical", ("project",)
+        )
+        with self.subTest(boundary="board preview of a legacy alias"):
+            self.assertEqual("person:captain", preview["events"][0]["fact"]["by"])
+            self.assertNotIn(secret, json.dumps(preview))
+            self.assertEqual(legacy_bytes, path.read_bytes())
         restarted = semantic_history.read(
             self.config, build_runtime_state(self.config, started=106), "project"
         )

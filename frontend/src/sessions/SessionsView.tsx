@@ -12,7 +12,7 @@ import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 're
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
-import { gapNames, isRecord, sessionStateLimit, type Row } from '../observed';
+import { gapNames, isRecord, sessionStateLimit, trimmed, type Row } from '../observed';
 import { nextNumber } from '../api/bootstrap';
 import { selectObserved } from '../observed/select';
 import { selectHarnessSources } from '../store/selectors';
@@ -174,7 +174,7 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
           </span>
         ) : null}
         {!session.titleKnown && session.promptKnown ? (
-          <span className="next-operation-assignment">{`LAST PROMPT · ${session.promptText}`}</span>
+          <span className="next-operation-assignment block">{`LAST PROMPT · ${session.promptText}`}</span>
         ) : null}
         <RelationshipLabels
           source={source}
@@ -193,10 +193,10 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
           </span>
         ))}
         {assignment ? (
-          <span className="next-operation-assignment">{`Current task · ${assignment}`}</span>
+          <span className="next-operation-assignment block">{`Current task · ${assignment}`}</span>
         ) : null}
         {session.sharedLabelKnown ? (
-          <span className="next-operation-collision" title={DUPLICATE_LABEL_LIMIT}>
+          <span className="next-operation-collision block" title={DUPLICATE_LABEL_LIMIT}>
             {session.sharedLabelText}
           </span>
         ) : null}
@@ -254,8 +254,22 @@ const PROGRESS_ABSENCES = {
   out_of_date: SESSION_ROW_WORDS.outOfDate,
 } as const;
 
+function progressAbsence(source: Row, result: unknown): string | null {
+  if (typeof result === 'string' && Object.hasOwn(PROGRESS_ABSENCES, result)) {
+    return PROGRESS_ABSENCES[result as keyof typeof PROGRESS_ABSENCES];
+  }
+  if (result != null || source['annotation_assessment'] || source['annotation_reading_refused']) {
+    return null;
+  }
+  if (!trimmed(source['annotation_goal'])) return SESSION_ROW_WORDS.noGoalYet;
+  const checked =
+    source['departure_checked'] === true ||
+    (nextNumber(source['annotation_reading_count']) ?? 0) > 0;
+  return checked ? null : SESSION_ROW_WORDS.notCheckedYet;
+}
+
 function Progress({ row, enabled }: { readonly row: SessionRow; readonly enabled: boolean }) {
-  const { source, session, goal } = row;
+  const { source, session } = row;
   if (!enabled || !source || (session.harness !== 'claude' && session.harness !== 'codex')) {
     return null;
   }
@@ -281,14 +295,7 @@ function Progress({ row, enabled }: { readonly row: SessionRow; readonly enabled
       </span>
     );
   }
-  const absence =
-    typeof result === 'string' && Object.hasOwn(PROGRESS_ABSENCES, result)
-      ? PROGRESS_ABSENCES[result as keyof typeof PROGRESS_ABSENCES]
-      : result == null && !raw
-        ? goal.known
-          ? SESSION_ROW_WORDS.notCheckedYet
-          : SESSION_ROW_WORDS.noGoalYet
-        : null;
+  const absence = progressAbsence(source, result);
   return absence ? (
     <span
       className={`${PROGRESS_SLOT} [font-family:var(--sans)] text-label text-muted-foreground`}

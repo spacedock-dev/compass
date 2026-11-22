@@ -114,13 +114,21 @@ export const StatusLegend: Story = {
       const tile = within(row).getByRole('img', { name });
       await expect(within(row).getAllByRole('img')).toHaveLength(1);
       await expect(tile).toBeVisible();
+      const { width, height } = tile.getBoundingClientRect();
+      await expect(width).toBeGreaterThanOrEqual(44);
+      await expect(height).toBeGreaterThanOrEqual(44);
       const css = getComputedStyle(tile);
-      await expect([css.width, css.height, css.borderRadius]).toEqual(['40px', '40px', '12px']);
       await expect(css.fontFamily).toContain('Inter');
       await expect(css.textTransform).toBe('none');
       await expect(tile.textContent).toBe('');
       const glyph = tile.querySelector('svg');
       if (!glyph) throw new Error(`Missing glyph for ${name}`);
+      const artwork = getComputedStyle(glyph.parentElement as HTMLElement);
+      await expect([artwork.width, artwork.height, artwork.borderRadius]).toEqual([
+        '40px',
+        '40px',
+        '12px',
+      ]);
       const colors = paintedColors(glyph);
       if (!colors) throw new Error(`Missing painted colours for ${name}`);
       await expect(contrastOf(colors.foreground, colors.background)).toBeGreaterThanOrEqual(3);
@@ -202,9 +210,31 @@ export const StatusTilesAndProgressPills: Story = {
     }
     const codex = rowOf(canvasElement, 'C');
     await expect(codex?.querySelector('[data-slot="badge"]')).toBeNull();
+    await expect(codex?.querySelector('[data-next-row-progress-absence]')).toHaveTextContent(
+      'No goal yet',
+    );
     const absence = rowOf(canvasElement, 'B')?.querySelector('[data-next-row-progress-absence]');
     await expect(absence).toHaveTextContent('Not checked yet');
     await expect(absence?.querySelector('svg')).toBeNull();
+    const checked = rowOf(canvasElement, 'K');
+    await expect(checked?.querySelector('[data-next-row-progress-absence]')).toBeNull();
+  },
+};
+
+export const AssignmentAndLocation: Story = {
+  args: { progressPills: true },
+  play: async ({ canvasElement }) => {
+    await ready(canvasElement);
+    const row = rowOf(canvasElement, 'B');
+    if (!row) throw new Error('Missing Changelog row');
+    const assignment = within(row).getByText('Current task · Fix queue');
+    const location = within(row).getByText(/share this display label across/);
+    await expect(assignment.parentElement?.innerText).toContain(
+      `${assignment.textContent}\n${location.textContent}`,
+    );
+    await expect(location.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      assignment.getBoundingClientRect().bottom,
+    );
   },
 };
 

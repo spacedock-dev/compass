@@ -24,16 +24,15 @@ export function StatusTile({
         tabIndex={0}
         aria-label={state}
         data-next-row-state={state}
-        className={cn(
-          'relative z-[1] inline-flex size-10 shrink-0 items-center justify-center rounded-status-tile [font-family:var(--sans)] normal-case outline-offset-2 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring',
-          TINTS[state],
-        )}
+        className="relative z-[1] -m-0.5 inline-flex size-11 shrink-0 items-center justify-center [font-family:var(--sans)] normal-case outline-offset-2 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring"
       >
-        <Icon
-          name={SESSION_STATE_ICONS[state]}
-          className={cn('next-status-icon', live && 'motion-safe:animate-status-tile-pulse')}
-          size={20}
-        />
+        <span className={cn('grid size-10 place-items-center rounded-status-tile', TINTS[state])}>
+          <Icon
+            name={SESSION_STATE_ICONS[state]}
+            className={cn('next-status-icon', live && 'motion-safe:animate-status-tile-pulse')}
+            size={20}
+          />
+        </span>
       </TooltipTrigger>
       <TooltipContent>{state}</TooltipContent>
     </Tooltip>
