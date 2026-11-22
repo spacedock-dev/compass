@@ -1,6 +1,7 @@
 import { act, fireEvent, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { attentionBoard } from '../../test/attention_boards';
+import { projectStatusBoard } from '../../test/project_boards';
 import { mountShell } from '../shell/testing';
 
 /* The Attention screen's own behaviour in the real shell: what it says before and without a board, what
@@ -68,6 +69,18 @@ describe('before a board, and without one', () => {
 });
 
 describe('the four queues', () => {
+  it('counts a scan-only idle session without a turn end in the unclassified remainder', async () => {
+    await open({
+      ...projectStatusBoard,
+      sessions: projectStatusBoard.sessions
+        .filter((row) => row.sid === 'scan')
+        .map((row) => ({ ...row, harness: 'goose' })),
+    });
+    expect(
+      screen.getByText('The other 1: 1 in no counted state; of these, 0 partially read.'),
+    ).toBeInTheDocument();
+  });
+
   it('shows three rows of a longer queue and the rest on request, and the request is the reader’s', async () => {
     await open();
     expect(rows('needs')).toHaveLength(5);

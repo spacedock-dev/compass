@@ -37,6 +37,7 @@ import { goldenFor } from './support/golden.mjs';
 import { unchangedAttentionLocations } from './support/location-deviations.mjs';
 import { focusedLabel, openPage, REPOSITORY, tabTo } from './support/browser.mjs';
 import { PRODUCTION } from './support/world.mjs';
+import { omitAttentionQuietSubtotals } from '../test/recordedSessionStatus.ts';
 
 const golden = goldenFor('attention-parity');
 const patience = (ms) => (process.env.CI ? ms * 3 : ms);
@@ -437,10 +438,12 @@ try {
       assert.ok(counters[0].includes('EXACT REQUESTS'));
       assert.ok(counters[1].includes('REPORTED BLOCKS'));
       const recorded = golden.observe('the screen, collapsed');
-      assert.deepEqual(
-        unchangedAttentionLocations(clockless(mine)),
-        unchangedAttentionLocations(recorded),
-      );
+      const unchangedAttention = (summary) =>
+        unchangedAttentionLocations({
+          ...summary,
+          brief: omitAttentionQuietSubtotals(summary.brief),
+        });
+      assert.deepEqual(unchangedAttention(clockless(mine)), unchangedAttention(recorded));
       arms.collapsed = mine.sections.map((section) => [section.name, section.items.length]);
       assert.ok(
         mine.sections.some((section) => section.items.some((item) => item.hidden)),
@@ -449,10 +452,7 @@ try {
       for (const name of ['needs', 'next']) await sectionToggle(react.page, name).click();
       const mineOpen = await settled(react.page, readAttention);
       const recordedOpen = golden.observe('the screen, every section expanded');
-      assert.deepEqual(
-        unchangedAttentionLocations(clockless(mineOpen)),
-        unchangedAttentionLocations(recordedOpen),
-      );
+      assert.deepEqual(unchangedAttention(clockless(mineOpen)), unchangedAttention(recordedOpen));
       assert.ok(
         mineOpen.sections
           .find((section) => section.name === 'needs')

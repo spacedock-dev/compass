@@ -947,6 +947,19 @@ export const IdleQuestionPrecedesTurnEnd: Story = {
   },
 };
 
+export const EndedWithAnOpenQuestion: Story = {
+  render: () => <PageExample idle ended asking />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const answer = await canvas.findByRole('button', { name: 'Yes, run it' });
+    const status = canvasElement.querySelector('.next-session-state');
+    await expect(status).toBeVisible();
+    await expect(status).toHaveTextContent('State: Ended');
+    await expect(answer).toBeVisible();
+    await expect(answer).toBeEnabled();
+  },
+};
+
 export const HelperActivity: Story = {
   render: () => {
     const helpers = sessionSubagents(

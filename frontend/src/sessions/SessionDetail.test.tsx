@@ -489,12 +489,21 @@ describe('answering a held request', () => {
     );
   });
 
-  it('says a session holding a request needs input, and one that ended without a request is ended', async () => {
-    await open(board([{ ...ONE, state: 'idle', ended_at: NOW - 30 }], { ask: true, asks: [ASK] }));
-    expect(document.querySelector('.next-session-state')?.textContent).toBe(
-      'State: Waiting on you',
+  it('names the reported end and lets the reader answer a question still published for that session', async () => {
+    const page = await open(
+      board([{ ...ONE, state: 'idle', ended_at: NOW - 30 }], { ask: true, asks: [ASK] }),
     );
-    document.body.innerHTML = '';
+    expect.soft(document.querySelector('.next-session-state')?.textContent).toBe('State: Ended');
+    const question = within(
+      document.querySelector('[data-next-session-section="ask"]') as HTMLElement,
+    );
+    expect(question.getByText(ASK.question)).toBeInTheDocument();
+    fireEvent.click(question.getByRole('button', { name: 'Yes' }));
+    await page.settle();
+    expect(page.posts().map((post) => post.body)).toEqual([{ id: ASK.id, index: 0 }]);
+  });
+
+  it('names the reported end and its age when no question is published', async () => {
     await open(board([{ ...ONE, state: 'working', ended_at: NOW - 30 }]));
     expect(document.querySelector('.next-session-state')?.textContent).toBe('State: Ended');
     expect(document.querySelector('.next-session-detail-meta')?.textContent).toContain(

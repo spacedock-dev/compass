@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import declared from '../../test/fixtures/declared-sessions.json';
+import { projectStatusBoard } from '../../test/project_boards';
 import { delegatedWork, finishedRunAt, observe, pageTitleOf, readHint, sessionStop } from './index';
 
 /* What the model says, written out, so the differential test against the legacy file is not the only
@@ -63,6 +65,23 @@ describe('identity is the harness and the sid together', () => {
 });
 
 describe('an end is only what was observed', () => {
+  it('counts only the observed stop as Quiet and still puts it in the close-the-loop queue', () => {
+    const model = observe(projectStatusBoard);
+    expect.soft(model.totals.quiet).toBe(1);
+    expect(model.coverage.observed).toBe(
+      '1 of 3 sessions carry a subject: 0 waiting on you · 0 at risk · 1 to close the loop.',
+    );
+    expect(model.coverage.quiet).toBe(
+      'The other 2: 1 moving · 1 in no counted state; of these, 0 partially read.',
+    );
+  });
+
+  it('counts only the working child as moving when its parent is waiting on it', () => {
+    expect(observe(declared.payload).coverage.quiet).toBe(
+      'The other 3: 1 moving · 2 in no counted state; of these, 0 partially read.',
+    );
+  });
+
   it('retires the state word on a session with an end stamp, and leaves a session without one in the state it published', () => {
     const model = observe(
       board([
@@ -242,7 +261,7 @@ describe('the counts are read from the rows the page renders', () => {
       running: 1,
       needs: 1,
       ended: 1,
-      quiet: 1,
+      quiet: 0,
       subagents: 2,
     });
     expect(model.counters.map((counter) => [counter.label, counter.value])).toEqual([

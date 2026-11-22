@@ -1,5 +1,6 @@
 import { act } from '@testing-library/react';
 import { withoutCodexRecordedStops } from '../../test/codexRecordedStop';
+import { omitAttentionQuietSubtotals } from '../../test/recordedSessionStatus';
 import { describe, expect, it } from 'vitest';
 import { genPayload } from '../observed/generate.test.helper';
 import { mountShell } from '../shell/testing';
@@ -102,7 +103,7 @@ function summarize(root: ParentNode): Summary {
   const projectsLink = attention.querySelector('.next-attention-projects-link');
   return {
     heading: norm(attention.querySelector('.next-attention-heading')),
-    brief: norm(attention.querySelector('.next-attention-brief > p')),
+    brief: omitAttentionQuietSubtotals(norm(attention.querySelector('.next-attention-brief > p'))),
     empty: norm(attention.querySelector('.next-attention-empty')) || null,
     coverageRows: [...attention.querySelectorAll('[data-next-coverage-harness]')].map(
       (row) =>

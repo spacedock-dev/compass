@@ -17,6 +17,7 @@ const evidence = {
   live: { state: 'working', active: true },
   lapsed: { state: 'working', active: false },
   ended: { ended_at: at - 100 },
+  'ended-with-request': { state: 'idle', ended_at: at - 100 },
   'dirty-end': { ended_at: at - 100, dirty: true },
   waiting: { state: 'idle' },
   unpublished: {},
@@ -24,7 +25,16 @@ const evidence = {
 const data = {
   generated: at,
   ask: true,
-  asks: [{ id: 'held', harness: 'claude', session_id: 'waiting', question: 'Continue?' }],
+  asks: [
+    { id: 'held', harness: 'claude', session_id: 'waiting', question: 'Continue?' },
+    {
+      id: 'ended-request',
+      harness: 'claude',
+      session_id: 'ended-with-request',
+      question: 'Approve the result?',
+      options: ['Approve', 'Decline'],
+    },
+  ],
   sessions: Object.entries(evidence).map(([sid, fields]) => ({
     sid,
     title: sid,
@@ -65,6 +75,12 @@ it('draws only the statuses and outcomes that a Sessions row has evidence for', 
   expect.soft(row('transcript')).not.toHaveTextContent('no turn end can be observed here');
   expect.soft(state('ended')).toHaveTextContent('Ended');
   expect.soft(state('ended')?.querySelector('[data-icon="ended"]')).toBeInTheDocument();
+  expect.soft(state('ended-with-request')).toHaveTextContent('Ended');
+  expect
+    .soft(state('ended-with-request')?.querySelector('[data-icon="ended"]'))
+    .toBeInTheDocument();
+  expect.soft(row('ended-with-request').querySelector('[data-icon="waiting"]')).toBeNull();
+  expect.soft(row('ended-with-request')).toHaveTextContent('Approve the result?');
   expect
     .soft(row('dirty-end').querySelector('.next-operation-outcome [data-icon="worth-a-look"]'))
     .toBeInTheDocument();

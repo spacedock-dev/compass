@@ -26,12 +26,23 @@ comparison maps recorded Idle to Quiet for the rows with a turn stop and to Stat
 the four rows without one. The activity proofs retain the hollow and marked circle distinction.
 The browser title's attention cue keeps its text. The recorded answers stay fixed.
 
-The Projects list and project header count Quiet only when the member's own state is Quiet.
-An idle row without a recorded turn end contributes to `in no counted state`. The recorded
-web comparisons omit those two subtotals and still compare the total and the other counts.
-The terminal-brief comparison expects the new web subtotals for its idle rows, which publish
-no turn end. `Projects Quiet Rollup` in Storybook checks both web surfaces using a recorded
-stop and a scan-only idle row in the same project.
+2026-11-23, reported ends take precedence over open questions in the Sessions row and the session
+header. The published question still has its answer controls. The session header's request test
+expects Ended when both are published and sends an answer. `Ended With An Open Question` in
+Storybook shows the Ended label beside the enabled answer controls.
+
+The Projects list and project header tally each member's displayed state. The
+`omitProjectStateSubtotals` comparison keeps the total and the count of reported ends. It
+omits the working, waiting, quiet and unclassified subtotals because declared child waits,
+exact requests and idle rows without turn ends move between those buckets. The terminal-brief
+comparison expects the revised web subtotals for its idle rows, which publish no turn end.
+`Projects Quiet Rollup` and `Project Displayed State Rollup` in Storybook check both web surfaces.
+
+Attention's coverage requires the same state evidence. `omitAttentionQuietSubtotals` masks
+only the quiet and unclassified subtotals in the recorded comparisons. The observed-model
+comparison also omits the board-wide Quiet total. A mounted test and `Attention Quiet Coverage`
+prove the scan-only absence, and the mixed-board model test counts a recorded turn stop as
+Quiet while preserving its Close the loop classification.
 
 Raise now diagnoses a restarted dashboard only from an explicit `stale-capability` refusal.
 Other 403 replies keep the server's refusal sentence, with a generic refusal for older HTML

@@ -16,14 +16,14 @@ function Example({
   parentQuestion = false,
   childTitle = 'Check build',
   plan = false,
-  statusRollup = false,
+  board,
 }: {
   readonly hash?: string;
   readonly childQuestion?: boolean;
   readonly parentQuestion?: boolean;
   readonly childTitle?: string;
   readonly plan?: boolean;
-  readonly statusRollup?: boolean;
+  readonly board?: Record<string, unknown>;
 }) {
   const [shell] = useState(() =>
     createShell({
@@ -101,7 +101,7 @@ function Example({
                         state: 'idle',
                       },
                     ],
-                    ...(statusRollup ? projectStatusBoard : {}),
+                    ...board,
                   }
                 : {},
             ),
@@ -473,7 +473,7 @@ export const ProjectsMemberAlignment: Story = {
 };
 
 export const ProjectsQuietRollup: Story = {
-  args: { hash: '#n=projects', statusRollup: true },
+  args: { hash: '#n=projects', board: projectStatusBoard },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const scan = await canvas.findByRole('button', { name: /Scan-only session/ });
@@ -487,6 +487,62 @@ export const ProjectsQuietRollup: Story = {
     await expect(canvas.getByText(counts)).toBeVisible();
     await userEvent.click(canvas.getByText('rollup', { selector: 'strong' }));
     await expect(await canvas.findByText(counts, { selector: 'p' })).toBeVisible();
+  },
+};
+
+export const AttentionQuietCoverage: Story = {
+  args: { hash: '#n=attention', board: projectStatusBoard },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByText(
+        'The other 2: 1 moving · 1 in no counted state; of these, 0 partially read.',
+      ),
+    ).toBeVisible();
+    const close = canvasElement.querySelector<HTMLElement>('[data-next-attention-section="close"]');
+    if (!close) throw new Error('Expected the close-the-loop queue');
+    await expect(
+      within(close).getByRole('link', { name: 'Stop observed; git state not measured' }),
+    ).toHaveAttribute('href', '#n=session:rollup:claude:stopped');
+  },
+};
+
+export const ProjectDisplayedStateRollup: Story = {
+  args: {
+    hash: '#n=projects',
+    board: {
+      ...fixture.payload,
+      ask: true,
+      asks: [{ id: 'q', harness: 'claude', session_id: 'stopped', question: 'Review the result?' }],
+      sessions: [
+        ...fixture.payload.sessions,
+        {
+          sid: 'stopped',
+          title: 'Review the result',
+          project: 'demo',
+          harness: 'claude',
+          state: 'idle',
+          finished_at: fixture.payload.generated - 10,
+        },
+      ],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const counts = '4 sessions · 1 working · 1 waiting on you · 2 in no counted state';
+    const checkParent = async (parent: HTMLElement) => {
+      await expect(within(parent).getByText('Waiting on child "Check build"')).toBeVisible();
+      await expect(within(parent).queryByRole('img')).toBeNull();
+    };
+    const request = await canvas.findByRole('button', { name: /Review the result/ });
+    await expect(within(request).getByRole('img', { name: 'Waiting on you' })).toBeVisible();
+    await checkParent(row(canvasElement, 'parent'));
+    await expect(canvas.getByText(counts)).toBeVisible();
+    await userEvent.click(canvas.getByText('demo', { selector: 'strong' }));
+    await expect(await canvas.findByText(counts, { selector: 'p' })).toBeVisible();
+    const parent = canvasElement.querySelector<HTMLElement>('[data-next-going-on="parent"]');
+    if (!parent) throw new Error('Expected the parent activity row');
+    await checkParent(parent);
   },
 };
 

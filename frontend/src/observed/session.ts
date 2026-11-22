@@ -330,9 +330,9 @@ const SCAN_ONLY_LINE = 'Read by scanning: no turn end can be observed here';
 export function sessionState(
   session: ObservedSession,
 ): 'Ended' | 'Waiting on you' | 'Working' | 'Quiet' | 'Waiting on child' | 'State not published' {
-  if (session.askKnown) return 'Waiting on you';
+  // A reported end sets the lifecycle label. The request keeps its own answer controls.
   if (session.isEnded) return 'Ended';
-  if (session.isNeeds) return 'Waiting on you';
+  if (session.askKnown || session.isNeeds) return 'Waiting on you';
   if (session.childWait) return 'Waiting on child';
   if (session.isWorking) return 'Working';
   return session.isQuiet && session.landing.endKind === 'turn-stop'

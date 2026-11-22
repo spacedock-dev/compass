@@ -1,9 +1,26 @@
-/* The project rollups now require a recorded stop for Quiet. Keep the other counts in the
-   recorded comparisons. ProjectsQuietRollup asserts the two counts that can move. */
-export function omitQuietRollup(text: string): string {
+/* 2026-11-23, docs/design-frontend-migration.md#held-to-recorded-answers
+   The project rollups now use the displayed member states. Keep the total and the reported ends
+   in the recorded comparisons. ProjectsQuietRollup and ProjectDisplayedStateRollup assert the
+   subtotals that moved. */
+export function omitProjectStateSubtotals(text: string): string {
   return text.replace(
-    /(\d+ sessions?(?: · \d+ (?:working|waiting on you|ended))*)(?: · \d+ (?:quiet|in no counted state))+/g,
-    '$1',
+    /(\d+ sessions?)((?: · \d+ (?:working|waiting on you|ended|quiet|in no counted state))+)/g,
+    (_line, total: string, subtotals: string) =>
+      total + (subtotals.match(/ · \d+ ended/)?.[0] ?? ''),
+  );
+}
+
+/* Quiet requires a turn end. The retired page and its fixtures have no declared child waits,
+   so the moving count can still be compared. Keep the set size and the partial-read count too. */
+export function omitAttentionQuietSubtotals(text: string): string {
+  return text.replace(
+    /(The other \d+: )([^;]+)(; of these, \d+ partially read\.)/g,
+    (_line, intro: string, counts: string, suffix: string) => {
+      const kept = counts
+        .split(' · ')
+        .filter((word) => !/^\d+ (?:quiet|in no counted state)$/.test(word));
+      return intro + (kept.join(' · ') || 'none') + suffix;
+    },
   );
 }
 

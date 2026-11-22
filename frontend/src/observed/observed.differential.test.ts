@@ -1,4 +1,8 @@
-import { omitQuietRollup, recordedSessionStatus } from '../../test/recordedSessionStatus';
+import {
+  omitAttentionQuietSubtotals,
+  omitProjectStateSubtotals,
+  recordedSessionStatus,
+} from '../../test/recordedSessionStatus';
 import { recordedLocationNotes } from '../../test/location_departure';
 import { describe, expect, it } from 'vitest';
 import { instructionSourceDeviation } from '../../test/projectWordDeviation';
@@ -31,7 +35,7 @@ function withoutHistory(input: Record<string, unknown>): Record<string, unknown>
   const projects = (model['projects'] as Record<string, unknown>[]).map((project) => {
     const countLine = project['countLine'] as string;
     return Object.fromEntries(
-      Object.entries({ ...project, countLine: omitQuietRollup(countLine) }).filter(
+      Object.entries({ ...project, countLine: omitProjectStateSubtotals(countLine) }).filter(
         ([key]) => !(PROJECT_HISTORY_KEYS as readonly string[]).includes(key),
       ),
     );
@@ -40,8 +44,12 @@ function withoutHistory(input: Record<string, unknown>): Record<string, unknown>
     (rows as Record<string, unknown>[]).map((project) =>
       projects.find((candidate) => candidate['key'] === project['key']),
     );
+  const { quiet: _quietTotal, ...totals } = model['totals'] as Record<string, number>;
+  const coverage = model['coverage'] as Record<string, unknown>;
   return {
     ...model,
+    totals,
+    coverage: { ...coverage, quiet: omitAttentionQuietSubtotals(coverage['quiet'] as string) },
     // Location cards are proven by their distinct linked members, not the recorded duplicate counts.
     boardRisks: (model['boardRisks'] as Record<string, unknown>[]).filter(
       (risk) => !['collision', 'checkout'].includes(String(risk['kind'])),

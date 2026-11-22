@@ -12,7 +12,7 @@ import { genBoard, genContext, parityBoard, scenarios } from './generate.test.he
 import { sessKey, stableKey } from './group';
 import { parseHtml } from './legacy.test.helper';
 import { restateLiveOpener } from '../../test/recordedCommandOpener';
-import { omitQuietRollup } from '../../test/recordedSessionStatus';
+import { omitProjectStateSubtotals } from '../../test/recordedSessionStatus';
 import { memoKey } from '../storage';
 import { mountProject } from './testing';
 
@@ -53,7 +53,7 @@ function summarize(source: Element | DocumentFragment, tab: string): Summary {
   maskProjectStatusPresentation(article, source.nodeType === Node.DOCUMENT_FRAGMENT_NODE);
   const header = article.querySelector('.next-project-detail-header');
   const count = header?.querySelector('.next-project-detail-count');
-  if (count) count.textContent = omitQuietRollup(norm(count));
+  if (count) count.textContent = omitProjectStateSubtotals(norm(count));
   const tree = article.querySelector('nav.next-cockpit-scope-tree');
   const strip = article.querySelector('.next-cockpit-recovery');
   const panel =

@@ -43,7 +43,7 @@ import { openPage } from './support/browser.mjs';
 import { goldenFor, jsonSafe, normalise } from './support/golden.mjs';
 import { recordedLocationNotes } from './support/location-deviations.mjs';
 import { recordedName } from '../test/recorded-name.ts';
-import { omitQuietRollup } from '../test/recordedSessionStatus.ts';
+import { omitProjectStateSubtotals } from '../test/recordedSessionStatus.ts';
 import {
   instrumentResources,
   recordClipboard,
@@ -360,12 +360,12 @@ function omitProjectStatusCounts(record) {
       ...record,
       groups: record.groups.map((group) => ({
         ...group,
-        rows: group.rows.map((row) => ({ ...row, text: omitQuietRollup(row.text) })),
+        rows: group.rows.map((row) => ({ ...row, text: omitProjectStateSubtotals(row.text) })),
       })),
     };
   }
   return typeof record.header === 'string'
-    ? { ...record, header: omitQuietRollup(record.header) }
+    ? { ...record, header: omitProjectStateSubtotals(record.header) }
     : record;
 }
 

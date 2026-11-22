@@ -37,16 +37,16 @@ export function observeProject(
   risky: readonly ObservedSession[],
 ): ObservedProject {
   const needs = sessions.filter((session) => session.isNeeds || session.askKnown);
-  const nativeNeeds = sessions.filter((session) => session.isNeeds).length;
   const working = sessions.filter((session) => session.isWorking);
   const ended = sessions.filter((session) => session.isEnded);
-  const quiet = sessions.filter((session) => sessionState(session) === 'Quiet');
+  const states = sessions.map(sessionState);
   const counts = [`${String(sessions.length)} ${sessions.length === 1 ? 'session' : 'sessions'}`];
-  if (working.length) counts.push(`${String(working.length)} working`);
-  if (nativeNeeds) counts.push(`${String(nativeNeeds)} waiting on you`);
-  if (ended.length) counts.push(`${String(ended.length)} ended`);
-  if (quiet.length) counts.push(`${String(quiet.length)} quiet`);
-  const other = sessions.length - working.length - nativeNeeds - ended.length - quiet.length;
+  let other = states.length;
+  for (const state of ['Working', 'Waiting on you', 'Ended', 'Quiet']) {
+    const count = states.filter((member) => member === state).length;
+    if (count) counts.push(`${String(count)} ${state.toLowerCase()}`);
+    other -= count;
+  }
   if (other) counts.push(`${String(other)} in no counted state`);
   const goals = sources.flatMap((source) => {
     const goal = goalOf(source);
