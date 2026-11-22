@@ -16,6 +16,16 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+**2026-11-23, session technical tabs.** The retired `sessions__detail` recording puts
+command-shape reports, notifications and How it landed in the activity column. The reader finds
+them under Reports now. The session layout stories assert the tab placement and the existing
+report tests still assert the words and limits. The `drift__workList` builder still owns the
+activity rows and their words. The added Evidence tab opens that same Activity log through the
+numbered citations and does not change the recorded rows. The monitor and master pause left the
+Drift settings header disclosure. The reading's inline What is sent keeps the same producer
+sentences, with byte sizes shown in KB, while the copy in AI use and privacy shows exact bytes.
+
+
 2026-11-23, Sessions uses sentence case for column, row and goal-source labels. The Sessions
 differential restates the recorded labels in sentence case and still compares the row content,
 order and links. The search story checks that an ID match names the source without repeating

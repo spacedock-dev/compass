@@ -2902,7 +2902,7 @@ class TheLiveMonitorIsSaidToCallAModelTest(unittest.TestCase):
             "last holder leaving or lapsing",
             "hidden tab cannot drive checks",
             "session end",
-            "Pause model calls",
+            "Pause all AI use",
             "`--no-observer-model`",
             "browser holders also stop at their consent deadline or No",
         ):
@@ -2928,7 +2928,7 @@ class TheLiveMonitorIsSaidToCallAModelTest(unittest.TestCase):
         self.assertIn("the Live monitor", self._text("docs/promise-map.md"))
         self.assertRegex(
             self._text("docs/promise-map.md"),
-            r"Pause model calls stops Analyze drift, goal summaries, session summaries and the Live monitor",
+            r"Pause all AI use stops Analyze drift, goal summaries, session summaries and the Live monitor",
         )
 
     def test_a_person_knows_when_terminal_monitoring_spends_with_nobody_watching(self) -> None:

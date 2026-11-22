@@ -278,6 +278,10 @@ On 2026-11-23, the Session's inline technical details and Activity log filters b
 packaged page to 2,405,367 bytes on the pinned Node 26.10.0. The page bound rises by the
 measured 25,888 bytes. The fixture bound stays at 250,000 bytes.
 
+On 2026-11-23, the inline session technical tabs brought the page from 2,405,367 bytes
+at `35977ce8` to 2,417,291 bytes, an increase of 11,924 bytes (0.50%). The page bound
+is the measured 2,417,291 bytes. The fixture allowance stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

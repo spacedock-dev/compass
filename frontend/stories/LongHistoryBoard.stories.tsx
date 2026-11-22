@@ -1,6 +1,6 @@
 import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, waitFor, within, userEvent } from 'storybook/test';
+import { expect, waitFor, within } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import type { Shell } from '../src/shell/context';
 import { App } from '../src/App';

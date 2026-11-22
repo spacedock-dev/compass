@@ -101,7 +101,7 @@ is not counted as a message you sent or offered as a goal, but the agent's answe
 reading, a line says it is Compass's reading of this session, written by a model, shown as data. A
 stored reading costs nothing. With none, `drift` asks for one, and `drift again` asks for a new one,
 under the [spend rule in SECURITY.md](SECURITY.md#drift-commands-and-typed-consent): each is one
-Analyze press against the page's daily limit, Pause model calls stops it, and the marked skill
+Analyze press against the page's daily limit, Pause all AI use stops it, and the marked skill
 path needs your typed command once. That rule also states the accepted local-process exposure
 and the measured `/loop` refusal and unmeasured cron limit. Inside the session the command stops about 100 seconds
 after it starts; a longer reading keeps running, and typing `/compass:compass drift` again collects it without spending. The
@@ -627,12 +627,12 @@ destinations cannot be detected.
 When a session that ran with `/goal` ends on Claude Code's own "goal met" verdict, or a Codex session's agent marks its goal complete, the Drift card says so as the harness's claim, with the time and, for Claude Code, the reason it gave. Once you analyze, Compass checks that claim against the files it wrote and the checks it ran, and says whether the record agrees, disputes it or cannot confirm it. A file the claim names that a later command deleted or moved away is a dispute, and the card names the file and the time. When the reason puts text in quotes that a check Compass recorded printed, the card names that check by its number, and still says it could not confirm the claim: output that holds a phrase is not a pass. Compass looks only at the last lines of a check that ran alone in its call, never at an `echo` or a file you read, and a quoted name of a remote CI job is left to the pull request's own checks. The claim never changes the drift level and never counts as a passing check.
 When Claude Code gives up on a `/goal` it judged unreachable, the goal is over, and the Drift card says so as the harness's claim with the time and the reason it gave. Compass has not checked that claim, and it changes no level. Above the Goal field, the Goal card says what became of an earlier `/goal` (replaced, met or given up, with the time) and, when you cleared it, "Your /goal was cleared" with the time. It never repeats the earlier goal's words, and it stays quiet while Compass is offering your newer `/goal`.
 
-Use **Pause model calls** on a session page, under **Drift settings** at the top of the Drift card (it is also in the **What is sent** popover), to pause every model call. While paused, **Resume model calls** stands beside Drift settings. A Claude Code session is read by Claude
+Use **Pause all AI use** in **Settings** or under **Show technical details**, **AI use and privacy** on a session page. Both controls apply to every session. Use **Resume AI use** to resume. Settings keeps the **Summaries** switch below the pause switch and shows it as paused during a pause. A Claude Code session is read by Claude
 Code when `claude` is on the dashboard's PATH, and by Codex when it is not; every other session is
 read by Codex, or by Claude Code on a machine without Codex. Checks spend the capacity of whichever
 reads. **What is sent**, under the button and, once there is a result, in the card's footer, opens a short list naming it, and with neither installed that reason takes
-the button's place and says no analysis can run. Pause model calls stops readings and goal
-summaries and session summaries until **Resume model calls**. Compass stops sending session text
+the button's place and says no analysis can run. Pause all AI use stops readings and goal
+summaries and session summaries until **Resume AI use**. Compass stops sending session text
 to Claude Code or Codex, so it uses none of your tokens, and stays paused until you resume.
 An off saved before an upgrade stays paused. **Turn off summaries** stops session summaries alone;
 while paused, that control stays disabled with "Model calls are paused" beside it. Pause and Resume
@@ -640,8 +640,8 @@ keep its saved answer, so summaries resume exactly as you left them. **Delete su
 says what it removes before the second, and reports the deletion with its time; it removes one
 session's saved summary, but it lasts until that finished session is opened again: opening it makes
 a new summary and sends its text once more, unless summaries are turned off or model calls are paused.
-For a native Claude Code session that needs several prompts, open **Long analysis options**,
-review the route, saved intent and limits, then press **Start long analysis**. Opening the preview
+For a native Claude Code session that needs several prompts, open **Check settings** under **Show technical details**, then **Long check for very long sessions**.
+Review the route, saved intent and limits, then press **Start long analysis**. Opening the preview
 reads no transcript bodies, fetches no CI checks and reserves no calls. Its source size and
 allowance are estimates; Start checks them again. Ordinary **Analyze drift** remains a separate
 one-call action. Each reserved call in a long analysis counts against the same daily allowance.
@@ -651,7 +651,7 @@ accounting report what actually ran, not that maximum.
 If Start first saves a drafted goal, that press runs no analysis. Refresh the long preview,
 review the saved intent and reading window, then press **Start long analysis** again.
 
-Cancel requests a stop for that job; Pause model calls stops further calls and stays paused until you resume.
+Cancel requests a stop for that job; Pause all AI use stops further calls and stays paused until you resume.
 Neither a reload nor a failure starts another analysis. If an attempt is withheld, fails or is
 cancelled, the previous reading stays visible with the latest outcome beside it. A partial
 reading may replace it with supported local departures and Can't tell for the rest; it is not
@@ -659,7 +659,7 @@ an all-clear for the session. Refresh the preview before another explicit Start.
 [long-analysis limits and data handling](SECURITY.md#long-analysis) describe what may be sent
 more than once and what remains unknown.
 
-Open **Unfinished long analysis records** to inspect this session's recovery metadata, including
+Open **Unfinished long checks** to inspect this session's recovery metadata, including
 while model calls are paused. **Refresh recovery records** reads it again; neither action starts
 recovery or resumes analysis. A recorded state does not prove whether its process is alive.
 **Check and discard superseded record** asks the server to verify eligibility again. It removes
@@ -678,7 +678,7 @@ command, result, last 180 characters of output, written paths, every other comma
 and exit status (with its output only when the reading runs on Claude Code itself), the repository and
 number of a pull request the session created and the names of skills it used. The notice names tool output too.
 `--observer-model`, `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted and do
-nothing in this release; they will be removed in a later release. Pause model calls or
+nothing in this release; they will be removed in a later release. Pause all AI use or
 `--no-observer-model` stops these calls.
 
 The Live monitor repeats on a cadence while you view the session. With its switch on, a Claude Code session page asks
@@ -698,7 +698,7 @@ start. It checks only after new work and asks no 20-minute question.
 has the procedure; [MANUAL.md](MANUAL.md) lists what else ends it.
 
 `--forget` also stores model calls as paused and session summaries as off, without resetting
-either rolling spend budget. Readings and goal summaries wait for **Resume model calls**, and
+either rolling spend budget. Readings and goal summaries wait for **Resume AI use**, and
 session summaries also wait for **Turn summaries on**. It deletes the local history store, the session-end store and the stored
 session summaries, removes the records of any session you discarded everything for, and exits. It belongs with `--status` and `--stop` rather
 than in the table below, because what it does is not undone by running the next command without it:

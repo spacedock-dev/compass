@@ -80,10 +80,10 @@ Cited includes entries linked from readings and summaries. The log says how many
 the filter hides. Entries marked "Before reading window" fall outside the progress check for
 your current goal.
 
-On a Claude Code session, open Drift settings in the Drift card to find the Live monitor switch.
+On a Claude Code session, open **Show technical details** and select **AI use and privacy** to find the **Live monitor** switch.
 It says "Checks progress about once a minute while you watch". With it on, Compass asks
 Haiku, through your Claude Code, about once a minute while you view the page where the latest turns
-are heading, and shows the answer labeled Live monitor · Haiku. The monitor's own accuracy check has
+are heading. Its source is labeled Live monitor · Haiku in AI use and privacy. The monitor's own accuracy check has
 not been run yet. Until an answer arrives, or while the monitor is paused or has reached its limit,
 the card shows an estimate built from the session's checks and file paths. After 20 minutes the
 browser asks whether you still want it, and drops that browser holder if nobody answers.
@@ -118,7 +118,7 @@ Code session, turning on the Live monitor, or setting an endpoint URL.
 | Traffic | When | What is sent, and to whom | How to stop it |
 |---|---|---|---|
 | Quota reading | On by default | Your login token to your vendor, so the page can show quota windows. No session content. The Anthropic login covers any harness signed in to the same Claude subscription; Cursor is read on macOS only. | The switch in the page, or `--no-usage` |
-| Model calls | When you press a button that needs one, open a finished Claude Code session, or turn on the Live monitor | Session content, through the Claude Code or Codex CLI already on your machine, signed in as you | Pause model calls, or `--no-observer-model` |
+| Model calls | When you press a button that needs one, open a finished Claude Code session, or turn on the Live monitor | Session content, through the Claude Code or Codex CLI already on your machine, signed in as you | Pause all AI use, or `--no-observer-model` |
 | CI checks | When you press Analyze drift on a session tied to a pull request (or a GitLab merge request your goal names by its URL, on a host `glab` already knows), in a session whose folder is known | The repository and the pull request number, or the branch name, through your own `gh` or `glab`. The checks it reads go on to the reading model. Where GitHub names the required checks, only those count. | The switch beside the notice, `--no-ci-read`, or anything that stops model calls |
 | Release lookup | On by default; after server start and at most once per UTC day per Compass home | Only a `compass/<version> (<os>; <arch>[; ci][; internal])` User-Agent beyond urllib's standard headers to spacedock.md, with no query string. The route counts the lookup itself from its headers. The site counts checks in PostHog without an IP and in Plausible with the caller's IP and user agent; CI-marked checks are not counted. Plausible stores neither and derives approximate location from the address. No identifier or session content. | Turn off daily update checks in Settings, or `--no-update-check` |
 | Reach nudges | Only after you set an endpoint URL | Counts only, such as how many sessions are waiting on you, to the endpoint you set | Leave the URL unset, or `--no-reach` |
@@ -155,9 +155,9 @@ Compass shows what each kind of call sends and where the first time it runs, and
 destination or the kind of content changes. Session summaries run without asking first; the notice
 appears beside them.
 
-To stop model calls, press Pause model calls in the page, run `--pause-model-calls` from a shell or
+To stop model calls, press Pause all AI use in the page, run `--pause-model-calls` from a shell or
 invoke the skill's `pause` action: it stops all of them, the Live monitor
-included, until you press Resume model calls on the page. `--no-observer-model` does the same for a whole run.
+included, until you press Resume AI use on the page. `--no-observer-model` does the same for a whole run.
 Turn off summaries stops session summaries only. Checks that read sessions without a press stay off
 unless you start Compass with `--unasked-readings`.
 
