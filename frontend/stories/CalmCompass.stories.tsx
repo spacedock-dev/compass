@@ -496,8 +496,10 @@ export const StyleGuide: Story = {
     await expect(progress).toHaveAttribute('data-slot', 'button');
     await expect(progress.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
     await expect(pieces.getByRole('button', { name: 'Check progress unavailable' })).toBeDisabled();
-    const card = pieces.getByRole('heading', { name: 'Card' }).closest('[data-slot="card"]');
-    await expect(card).toHaveStyle({
+    const componentCard = pieces
+      .getByRole('heading', { name: 'Card' })
+      .closest('[data-slot="card"]');
+    await expect(componentCard).toHaveStyle({
       borderLeftWidth: '1px',
       borderRadius: '16px',
       boxShadow: 'none',
