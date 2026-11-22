@@ -497,14 +497,13 @@ export const AttentionQuietCoverage: Story = {
     const canvas = within(canvasElement);
     await expect(
       await canvas.findByText(
-        'The other 2: 1 moving · 1 in no counted state; of these, 0 partially read.',
+        '0 waiting on you · 0 worth a look · 0 ready to wrap up. 1 with limited state evidence.',
       ),
     ).toBeVisible();
-    const close = canvasElement.querySelector<HTMLElement>('[data-next-attention-section="close"]');
-    if (!close) throw new Error('Expected the close-the-loop queue');
-    await expect(
-      within(close).getByRole('link', { name: 'Stop observed; git state not measured' }),
-    ).toHaveAttribute('href', '#n=session:rollup:claude:stopped');
+    await expect(canvas.getByRole('status', { name: 'Working sessions' })).toHaveTextContent(
+      '1 session working',
+    );
+    await expect(canvas.queryByRole('heading', { name: /^Ready to wrap up/ })).toBeNull();
   },
 };
 
