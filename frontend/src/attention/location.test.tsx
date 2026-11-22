@@ -260,7 +260,7 @@ describe('a label is interpreted by measured locations', () => {
       else delete data['generated'];
       const page = mountShell({ hash: '#n=attention', data });
       await page.settle();
-      const card = document.querySelector('[data-next-board-risk="collision"]') as HTMLElement;
+      expect(measuredCards()).toHaveLength(2);
       for (const [index, start] of starts.entries()) {
         const date = start.toLocaleDateString(undefined, {
           month: 'short',
@@ -270,7 +270,7 @@ describe('a label is interpreted by measured locations', () => {
         const time = start.toLocaleTimeString(undefined, { timeStyle: 'short' });
         const words = hasClock ? `at ${time}` : `on ${date} at ${time}`;
         expect(
-          within(card).getByRole('link', { name: new RegExp(`Audit ${index} ·`) }),
+          screen.getByRole('link', { name: new RegExp(`Audit ${index} ·`) }),
         ).toHaveTextContent(`Start time ${words}`);
       }
     },
@@ -279,7 +279,11 @@ describe('a label is interpreted by measured locations', () => {
   it('a person sees clean ends and tasks separately from shared-label flags', async () => {
     const data = locationBoard();
     for (const row of locationRows(data).slice(0, 3)) row['finished_at'] = 1899999999;
-    Object.assign(locationRow(data, 3), { ended_at: 1899999999, dirty: false });
+    Object.assign(locationRow(data, 3), {
+      ended_at: 1899999999,
+      dirty: false,
+      project: 'Clean end',
+    });
     locationRow(data, 4)['tasks'] = [{ status: 'in_progress', subject: 'Inspect the next target' }];
     // Keep a real label warning present while checking it cannot own stops or tasks.
     locationRow(data, 8)['project_key'] = 'path:other';

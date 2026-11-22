@@ -88,11 +88,7 @@ it('explains what disappears from session history when annotations are off', asy
     board([{ harness: 'claude', sid: 'a', project: 'p', state: 'idle' }], { annotate: false }),
   );
   fireEvent.click(screen.getByRole('button', { name: GLOSSARY.howSessionHistoryWorks.plain }));
-  expect(
-    screen.getByText(
-      'Annotations are off, so goals cannot be typed and progress pills are not shown.',
-    ),
-  ).toBeVisible();
+  expect(screen.getByText('Annotations are off, so goals cannot be typed.')).toBeVisible();
 });
 
 describe('what the screen says when it has nothing to draw', () => {

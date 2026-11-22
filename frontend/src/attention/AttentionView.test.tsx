@@ -234,7 +234,7 @@ describe('published times on the board', () => {
     await open({
       generated,
       sessions: [
-        { ...session, sid: 't', state: 'needs_input' },
+        { ...session, sid: 't', state: 'idle' },
         {
           ...session,
           sid: 't',
