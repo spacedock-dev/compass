@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2377735,
+    "bytes": 2379479,
     "file": "react.html",
-    "sha256": "acf7a175308d4ca5608d4f92996a366617e6caf0877ffece8aa22cf1fce1ea38"
+    "sha256": "cfed3a03bc1b3c3211d97e101e27c3222549c39a9d6fdc458d385a048b13f00d"
   },
   "format": 1,
   "frontend": "react",
@@ -811,7 +811,7 @@
       },
       {
         "file": "frontend/src/intent/PromptSelect.tsx",
-        "sha256": "1bfceebcaf0125a2ed372a6c505383cd90bc1341b45b702a59b1526902b753a1"
+        "sha256": "9b2f89d2f2726a8e4598efefce2e22541870a0e8ddabea9acb9915903e4cc107"
       },
       {
         "file": "frontend/src/intent/annotation.ts",
@@ -943,7 +943,7 @@
       },
       {
         "file": "frontend/src/observed/index.ts",
-        "sha256": "a729c54a48c977e0b9103b6600e81eaedc0d639d6a35f1d6aab84d0fad2c1b9f"
+        "sha256": "3fe6537276809ef470c2461e3867f67dd50db31b446c14f8aef7d4a6a8457474"
       },
       {
         "file": "frontend/src/observed/landing.ts",
@@ -975,7 +975,7 @@
       },
       {
         "file": "frontend/src/observed/session.ts",
-        "sha256": "a149f8a662735c95790c76e2df4a69780c8de4d485a48f68b5db075762f1cb24"
+        "sha256": "2137ffc44e42dbea19698e100b84da1610403c4fe0559e829d54c761e429ba0b"
       },
       {
         "file": "frontend/src/observed/values.ts",
@@ -1159,7 +1159,7 @@
       },
       {
         "file": "frontend/src/sessions/DeclaredRelationships.tsx",
-        "sha256": "0cdbbff3c8bda9ae05315bf7d6521ac68948e27c45e0ba1b253f0f7f872f7f2e"
+        "sha256": "59746268adeb67599b60708246f079372756e567043aa2e563a0c438b7a60a15"
       },
       {
         "file": "frontend/src/sessions/DepartureParts.tsx",
@@ -1191,15 +1191,15 @@
       },
       {
         "file": "frontend/src/sessions/SessionsFilters.tsx",
-        "sha256": "74dd5f78a445211dd024d69b7ae590cad014967916ff60e6ea1758e6cca07581"
+        "sha256": "90d54acfef48d8f4e6bedc6a82844f2c68a9210d82c797f0d2c32a66b67809e8"
       },
       {
         "file": "frontend/src/sessions/SessionsGlance.tsx",
-        "sha256": "c77a71e818d3cb824d7529df95edd976ba7069e97ced5cd85688ad2b8577bb6c"
+        "sha256": "a4cec950f9d35ef544f581027b8cc7cbab14a7f22cf71f018909a6666f48a2c1"
       },
       {
         "file": "frontend/src/sessions/SessionsView.tsx",
-        "sha256": "124b909566bf572962d9f787a385036631894306334082eb83ba021a341fc4cd"
+        "sha256": "68d066e37f187fb21dd9130c68c222a34d5afcc9709a57e862c0340a330e8021"
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",
@@ -1215,7 +1215,7 @@
       },
       {
         "file": "frontend/src/sessions/declared.ts",
-        "sha256": "18b550358cb862adb5a883d652633576dc9a77958700874655b6d46b817fa70a"
+        "sha256": "148947a817bdcc35ed76f5670151caab3fb0101b4cce4409a80f2fcd3630cde3"
       },
       {
         "file": "frontend/src/sessions/detail.ts",
@@ -1227,7 +1227,7 @@
       },
       {
         "file": "frontend/src/sessions/filters.ts",
-        "sha256": "7dffac79bda03865c9480c445ca2c0a85dbb51a00d756bef32bdfe89322f8aa7"
+        "sha256": "8e11274155d0208ea2084d0d17f065a1f0b84420e036e28d50df537d6a487ed6"
       },
       {
         "file": "frontend/src/sessions/fullActivityKey.ts",
@@ -1255,11 +1255,11 @@
       },
       {
         "file": "frontend/src/sessions/rows.ts",
-        "sha256": "05bf256a92cb72931202fdb93dbe3a4f0fd7e878a5bc6ab8035815401fe8a37f"
+        "sha256": "8474d374caf49d31a4633857959e44f7c1d0814321de34eac4b57254d946b449"
       },
       {
         "file": "frontend/src/sessions/sessions.css",
-        "sha256": "8b700b81a1fbeb156cc859c3e64f345d214fb0cf620702e7b57f8adbf76f72e2"
+        "sha256": "e294e9bf47eb8affd40327f4c46f4650b1640dc54d9974ce6e8b1e6ff4fdce90"
       },
       {
         "file": "frontend/src/sessions/steadyOutline.ts",
@@ -1299,7 +1299,7 @@
       },
       {
         "file": "frontend/src/sessions/worktree.ts",
-        "sha256": "bb3ff06d45dce44a6b3b20f05e59e0832bd64f95b771fe312a52e9940c27b179"
+        "sha256": "38e2dfcccf5821fbf93c77e0b11ee22afa6dc54b7e1ef29358f420ae1ab26e31"
       },
       {
         "file": "frontend/src/settings/SettingsView.tsx",

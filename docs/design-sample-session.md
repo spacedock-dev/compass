@@ -270,6 +270,10 @@ On 2026-11-23, the Sessions status tabs, inline filters, and evidence-based coun
 2,372,971 to 2,377,735 bytes on Node 26.10.0. The allowance rises by 4,764 bytes to
 2,377,735 bytes. The fixture allowance stays at 250,000 bytes.
 
+On 2026-11-23, preserving published wording while auditing the Sessions page brought the page from
+2,377,735 to 2,379,479 bytes on Node 26.10.0. The allowance rises by 1,744 bytes to
+2,379,479 bytes. The fixture allowance stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.
