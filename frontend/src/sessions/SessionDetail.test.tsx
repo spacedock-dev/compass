@@ -483,15 +483,17 @@ describe('answering a held request', () => {
     );
     await open(data, { hash: '#n=session:p:claude:one' });
     expect(document.querySelector('[data-next-session-section="ask"]')).toBeNull();
-    expect(document.querySelector('.next-session-state')?.textContent).toBe('State: idle');
+    expect(document.querySelector('.next-session-state')?.textContent).toBe('State: Quiet');
   });
 
   it('says a session holding a request needs input, and one that ended without a request is ended', async () => {
     await open(board([{ ...ONE, state: 'idle', ended_at: NOW - 30 }], { ask: true, asks: [ASK] }));
-    expect(document.querySelector('.next-session-state')?.textContent).toBe('State: needs input');
+    expect(document.querySelector('.next-session-state')?.textContent).toBe(
+      'State: Waiting on you',
+    );
     document.body.innerHTML = '';
     await open(board([{ ...ONE, state: 'working', ended_at: NOW - 30 }]));
-    expect(document.querySelector('.next-session-state')?.textContent).toBe('State: ended');
+    expect(document.querySelector('.next-session-state')?.textContent).toBe('State: Ended');
     expect(document.querySelector('.next-session-detail-meta')?.textContent).toContain(
       'ended 30s ago',
     );

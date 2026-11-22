@@ -1,4 +1,5 @@
 import { buttonVariants } from '../ui/button';
+import { Icon } from '../ui/icons';
 import { cn } from '../lib/utils';
 import { fragmentForRoute, sessionHome, type Route, type TopLevelView } from '../router/grammar';
 import type { PayloadData } from '../api/types';
@@ -32,9 +33,7 @@ export function Breadcrumb({ route }: { readonly route: Route }) {
     </a>
   );
   const separator = (
-    <span className="next-breadcrumb-current-separator" aria-hidden="true">
-      {' › '}
-    </span>
+    <Icon name="caret-right" className="next-breadcrumb-current-separator shrink-0" />
   );
   let trail;
   if (route.view === 'project') {
@@ -81,7 +80,7 @@ export function Breadcrumb({ route }: { readonly route: Route }) {
       trail = (
         <>
           {projects}
-          <span aria-hidden="true">{' › '}</span>
+          <Icon name="caret-right" />
           <a
             data-slot="button-link"
             className={cn('next-crumb', buttonVariants({ variant: 'native' }))}

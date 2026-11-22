@@ -105,6 +105,9 @@ export const LinkedChildrenAndWait: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByRole('link', { name: 'Waiting on child "Check build"' });
+    const parentStatus = row(canvasElement, 'parent').querySelector('[data-next-row-state]');
+    await expect(parentStatus).toHaveTextContent('Waiting on child');
+    await expect(parentStatus?.querySelector('svg')).toBeNull();
     await expect(row(canvasElement, 'child')).toHaveAttribute('data-declared-depth', '1');
     const active = [
       ...canvasElement.querySelectorAll('[data-next-operation-group="active"] article'),
@@ -247,7 +250,7 @@ export const ParentQuestionOutranksChildWait: Story = {
     );
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-session-status]')).toHaveTextContent(
-        'State: needs input',
+        'State: Waiting on you',
       ),
     );
     await expect(canvasElement.querySelector('[data-next-session-status]')).not.toHaveTextContent(

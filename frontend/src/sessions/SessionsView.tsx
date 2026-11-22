@@ -1,3 +1,4 @@
+import { Icon, SESSION_STATE_ICONS } from '../ui/icons';
 import { groupName, groupOf, nestRows } from './declared';
 import { RelationshipLabels } from './DeclaredRelationships';
 import { Card } from '../ui/card';
@@ -76,22 +77,26 @@ import './sessions.css';
    model read from the rows being drawn, so the fleet facts, the groups and the header cannot disagree.
    Nothing here fetches, polls or acts; a row's controls act only when pressed. */
 
-export function StatusDot({
-  label,
-  className,
-  filled = true,
-}: {
-  readonly label: string;
-  readonly className?: string;
-  readonly filled?: boolean;
-}) {
+const SESSION_LEGEND = [
+  ...Object.entries(SESSION_STATE_ICONS),
+  ['Worth a look', 'worth-a-look'],
+] as const;
+
+function StatusLegend() {
   return (
-    <span
-      className={className ? `next-status-dot ${className}` : 'next-status-dot'}
-      aria-label={label}
-    >
-      {filled ? '●' : '○'}
-    </span>
+    <section className="mt-3 text-label text-muted-foreground">
+      <h2 id="sessions-icon-legend" className="font-semibold">
+        What the icons mean
+      </h2>
+      <ul aria-labelledby="sessions-icon-legend" className="flex flex-wrap gap-x-4 gap-y-1">
+        {SESSION_LEGEND.map(([word, icon]) => (
+          <li key={word} className="inline-flex items-center gap-2">
+            <Icon name={icon} />
+            {word}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -147,14 +152,21 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
   const { session, source, history } = row;
   const assignment = history ? '' : assignmentOf(source);
   const names = source ? gapNames(source) : [];
-  const state = rowState(session);
+  const publishedState = rowState(session);
+  const state =
+    row.relations.waitingText && publishedState === 'Working' ? 'Waiting on child' : publishedState;
+  const statusIcon =
+    state === 'State not published' || state === 'Waiting on child'
+      ? null
+      : SESSION_STATE_ICONS[state];
   return (
     <span className="next-operation-identity">
       <span
-        className={`m-0 block text-label font-semibold uppercase tracking-[.07em] [font-family:var(--mono)] ${state === 'Waiting on you' ? 'text-[var(--amber)]' : state === 'Working' ? 'text-foreground' : 'text-[var(--ink-label)]'}`}
+        className={`m-0 flex items-center gap-2 text-label font-semibold ${state === 'Waiting on you' ? 'text-[var(--amber)]' : state === 'Working' ? 'text-foreground' : 'text-[var(--ink-label)]'}`}
         data-next-row-state={state}
       >
-        {row.relations.waitingText && state === 'Working' ? 'Waiting on child' : state}
+        {statusIcon ? <Icon name={statusIcon} /> : null}
+        {state}
       </span>
       <span className="next-operation-harness">{row.harnessLabel}</span>
       <RouteAnchor
@@ -169,9 +181,6 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
             ? {}
             : { className: 'next-operation-title--unknown next-absence' })}
         >
-          {session.isLive ? (
-            <StatusDot label="working" className="next-operation-live-glyph" />
-          ) : null}
           {session.titleText}
         </strong>
       </RouteAnchor>
@@ -336,7 +345,10 @@ const RowView = memo(function RowView({
   const nowKind = 'NOW';
   const outcome = session.outcomeKnown ? (
     <span className={`next-operation-outcome next-operation-outcome--${session.tone}`}>
-      {`${session.outcomeGlyph} ${session.outcomeText}`}
+      {session.outcomeIcon ? (
+        <Icon name={session.outcomeIcon} className="mr-1 inline-block align-text-bottom" />
+      ) : null}
+      {session.outcomeText}
       <span
         className={
           session.gitKnown
@@ -685,6 +697,7 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
           </p>
         </IntentHowTo>
       </header>
+      <StatusLegend />
       <SourceGaps />
       <section className="next-operations-fleet" aria-label="Fleet facts">
         {screen.counters.slice(0, 2).map((counter, index) => (

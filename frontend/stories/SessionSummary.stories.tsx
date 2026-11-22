@@ -2169,11 +2169,13 @@ export const FullActivitySourceOnePressAway: Story = {
     });
     await expect(entry.querySelector('.next-visually-hidden.next-cockpit-work-source')).toBeNull();
     const source = within(entry).getByRole('button', { name: 'Source of entry #2' });
+    await waitFor(() => expect(source.querySelector('svg[data-icon="caret-down"]')).toBeVisible());
     await expect(source.closest('.next-cockpit-work-head')).not.toBeNull();
     const panel = document.getElementById(source.getAttribute('aria-controls') ?? '');
     await expect(panel?.hidden).toBe(true);
     await userEvent.click(source);
     await expect(source).toHaveAttribute('aria-expanded', 'true');
+    await expect(source.querySelector('svg[data-icon="caret-up"]')).toBeVisible();
     await waitFor(() => expect(panel).toBeVisible());
     await expect(panel).toHaveTextContent('transcript · exact');
     const identity = canvasElement.querySelector('.next-session-identity');

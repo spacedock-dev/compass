@@ -190,13 +190,16 @@ function readShell(page) {
     const { document, location, history } = globalThis;
     const text = (node) => (node ? node.textContent.replace(/\s+/g, ' ').trim() : null);
     const current = document.querySelector('nav[aria-label="Primary"] [aria-current="page"]');
+    const crumb = document.querySelector('nav[aria-label="Breadcrumb"]');
     return {
       hash: location.hash,
       search: location.search,
       title: document.title,
       current: text(current),
       primary: [...document.querySelectorAll('nav[aria-label="Primary"] a')].map(text),
-      breadcrumb: text(document.querySelector('nav[aria-label="Breadcrumb"]')),
+      breadcrumb: crumb
+        ? [...crumb.querySelectorAll('a, [aria-current="page"]')].map(text).join(' › ')
+        : null,
       historyLength: history.length,
     };
   });

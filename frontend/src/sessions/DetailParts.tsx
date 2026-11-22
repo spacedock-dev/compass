@@ -5,7 +5,7 @@ import { Disclosure } from '../controls';
 import type { Landing } from '../observed';
 import { RouteAnchor } from './RouteAnchor';
 import { durationSince, isRecord, promptCopied, type Row } from '../observed';
-import { StatusDot } from './SessionsView';
+import { Icon } from '../ui/icons';
 import type { CommandReports, Delivery, Facts, Health, Subagents, Tasks } from './detail';
 
 /* The parts of the session page that are a sentence or a list and nothing more. Each takes what the pure
@@ -118,17 +118,17 @@ export function TasksView({ tasks }: { readonly tasks: Tasks }) {
           }
           data-next-session-task={task.id}
         >
-          {task.glyph === 'completed' ? (
-            <span className="next-status-dot next-session-task-glyph" aria-label="completed">
-              ✓
-            </span>
-          ) : (
-            <StatusDot
-              label={task.glyph}
-              className="next-session-task-glyph"
-              filled={task.glyph === 'in progress'}
+          <span role="img" aria-label={task.glyph} className="next-session-task-glyph">
+            <Icon
+              name={
+                task.glyph === 'completed'
+                  ? 'check'
+                  : task.glyph === 'in progress'
+                    ? 'working'
+                    : 'unrecorded'
+              }
             />
-          )}
+          </span>
           <strong className="next-session-task-subject">{task.subject}</strong>
         </div>
       ))}
@@ -146,11 +146,13 @@ export function SubagentsView({ subagents }: { readonly subagents: Subagents }) 
           className={row.live ? 'next-session-subagent next-live' : 'next-session-subagent'}
           data-next-session-subagent={row.index}
         >
-          <StatusDot
-            label={row.live ? 'running' : 'idle'}
+          <span
+            role="img"
+            aria-label={row.live ? 'Working' : 'Quiet'}
             className="next-session-subagent-glyph"
-            filled={row.live}
-          />
+          >
+            <Icon name={row.live ? 'working' : 'quiet'} className="next-status-icon shrink-0" />
+          </span>
           <strong className="next-session-subagent-name">
             {row.name}
             {row.parent ? (

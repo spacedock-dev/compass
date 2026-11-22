@@ -392,7 +392,7 @@ describe('focus after a button that goes as it is pressed', () => {
     await press(page, preset('Waiting on you'));
     await press(page, preset('Waiting on you'));
     const state = await openFilter(page, 'state', 'State');
-    await pick(page, state, 'Idle');
+    await pick(page, state, 'Quiet');
     await closeFilters(page);
     const line = document.querySelector<HTMLElement>('[data-next-sessions-shown="history"]');
     const clear = within(line as HTMLElement).getByRole('button', { name: 'Clear filters' });

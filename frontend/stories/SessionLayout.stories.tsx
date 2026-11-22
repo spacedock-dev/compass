@@ -346,14 +346,16 @@ export const RegionsInOrder: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
+    const breadcrumb = canvas.getByRole('navigation', { name: 'Breadcrumb' });
+    await expect(breadcrumb.querySelector('svg[data-icon="caret-right"]')).toBeVisible();
     const expected = ['Intent', 'What the session has done', 'Drift', 'Full activity'];
     for (const width of [1280, 400]) {
       await atWidth(width, () => inOrderTopToBottom(canvasElement, expected));
     }
-    // The header: the state with its dot, leading the line that says what it is doing.
+    // The state word leads the line that says what it is doing.
     const status = canvasElement.querySelector('[data-next-session-status]') as HTMLElement;
-    await expect(status).toHaveTextContent('State: working');
-    await expect(status.querySelector('[data-next-session-status-dot]')).toBeVisible();
+    await expect(status).toHaveTextContent('State: Working');
+    await expect(status.querySelector('svg')).toBeNull();
     const meta = canvasElement.querySelector('.next-session-detail-meta') as HTMLElement;
     await expect(meta).toHaveTextContent(/running Bash · turn started 3m ago/);
     // One line, as the design draws it: the state, the identity with its rate and the measured words share a row.
@@ -380,7 +382,7 @@ export const IdleShowsNoRate: Story = {
     const canvas = within(canvasElement);
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
     const header = canvasElement.querySelector('.next-session-detail-header') as HTMLElement;
-    await expect(header).toHaveTextContent('State: idle');
+    await expect(header).toHaveTextContent('State: Quiet');
     await expect(header).not.toHaveTextContent('tokens/min');
     await expect(header).toHaveTextContent(/Turn ended \d\d:\d\d · waiting for you/);
     await expect(canvasElement).not.toHaveTextContent('idle · awaiting your message');

@@ -178,7 +178,7 @@ it('a parent exact question remains its visible state while a child works', asyn
     }),
   );
   expect(document.querySelector('[data-next-session-status]')).toHaveTextContent(
-    'State: needs input',
+    'State: Waiting on you',
   );
   expect(document.querySelector('[data-next-session-status]')).not.toHaveTextContent(
     'Waiting on child "Check build"',

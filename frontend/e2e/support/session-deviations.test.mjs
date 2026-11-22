@@ -97,7 +97,7 @@ test('a reader sees a published session age in the projected recorded header onl
   const projected = normaliseSessionRecord(record, evidence);
   assert.equal(
     projected.header,
-    'State: idleSyntheticclaude · s1 · 0 /m · alpha/app · Started about 23h 0m agoClaude Code · idle',
+    'State: QuietSyntheticclaude · s1 · 0 /m · alpha/app · Started about 23h 0m agoClaude Code · idle',
   );
   assert.equal(projected.metadata.header, 'Same words');
   assert.equal(record.header.includes('Started about'), false);

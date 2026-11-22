@@ -304,7 +304,7 @@ describe('the facets', () => {
     const { letters, indexed, prepared } = run({ project: ['compass', 'recce/compass'] });
     expect(letters).toBe('BCDEFGHK');
     const state = Object.fromEntries(facetCounts(indexed, prepared, 'state'));
-    expect(state).toEqual({ Working: 2, Idle: 5, Ended: 1 });
+    expect(state).toEqual({ Working: 2, Quiet: 5, Ended: 1 });
     // The project counts ignore the project choice itself.
     expect(projectOptions(indexed, prepared).map((one) => one.count)).toEqual([2, 2, 1, 6, 1]);
     expect(run({ project: ['recce/compass'], state: ['Working'] }).letters).toBe('BC');

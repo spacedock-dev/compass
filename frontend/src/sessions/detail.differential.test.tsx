@@ -60,7 +60,6 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
   const status = copy.querySelector('[data-next-session-status]');
   if (status) {
     const badge = status.querySelector('.next-session-state');
-    badge?.querySelector('[data-next-session-status-dot]')?.remove();
     if (badge) copy.querySelector('.next-session-detail-title')?.prepend(badge);
     status.remove();
   }
@@ -224,6 +223,24 @@ function projectRecordedCommandOpener(
     heading.textContent = noTitleText(row);
 }
 
+/* 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers */
+function maskRecordedDetailStatus(root: DocumentFragment) {
+  const states = new Map([
+    ['working', 'Working'],
+    ['needs input', 'Waiting on you'],
+    ['idle', 'Quiet'],
+    ['ended', 'Ended'],
+  ]);
+  const badge = root.querySelector('.next-session-state');
+  const word = states.get(norm(badge).replace(/^State: /, ''));
+  if (badge && word) badge.textContent = `State: ${word}`;
+  for (const glyph of root.querySelectorAll(
+    '.next-session-task-glyph, .next-session-subagent-glyph',
+  )) {
+    if (/^[●○✓]$/.test(glyph.textContent?.trim() ?? '')) glyph.remove();
+  }
+}
+
 function legacySummary(
   payload: unknown,
   route: { project: string; harness?: string; session: string; from?: string },
@@ -232,6 +249,7 @@ function legacySummary(
   legacy.setFocusCapability(capability);
   const template = document.createElement('template');
   template.innerHTML = legacy.sessionHtml(payload, route);
+  maskRecordedDetailStatus(template.content);
   retractSessionCopies(template.content);
   projectRecordedSessionAge(template.content, payload as Record<string, unknown>, route);
   projectRecordedRateUnit(template.content);

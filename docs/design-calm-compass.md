@@ -206,6 +206,9 @@ assistive technology. A tooltip may echo a name that already appears in a visibl
 Absence words have no icon. [NUI-12](design-next-ui.md#nui-12-motion-means-observed-activity-not-mere-attention)
 still governs motion.
 
+[DRC-5527](design-shadcn-adoption.md#icons-and-tooltips) records the icon names, weight
+and import boundary.
+
 ## Overlay rule
 
 | Placement | Use |

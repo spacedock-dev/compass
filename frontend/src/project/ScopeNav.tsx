@@ -1,3 +1,4 @@
+import { Icon } from '../ui/icons';
 import { Disclosure, disclosureKey } from '../controls';
 import { useFocusKey } from '../controls/useFocusKey';
 import { useShell } from '../shell/context';
@@ -81,11 +82,9 @@ function Link({
               }
             >
               {link.isWorking ? (
-                <span
-                  className={`next-project-dot next-project-tone--${meta.tone} next-project-dot--working`}
-                  role="img"
-                  aria-label={meta.state}
-                />
+                <span className="next-live inline-flex">
+                  <Icon name="working" className="next-status-icon shrink-0" />
+                </span>
               ) : null}
               {meta.state}
             </span>,

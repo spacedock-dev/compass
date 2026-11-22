@@ -172,7 +172,7 @@ describe('the groups', () => {
         ?.textContent;
     expect(state('gate')).toBe('Waiting on you');
     expect(state('work')).toBe('Working');
-    expect(state('idle-new')).toBe('Idle');
+    expect(state('idle-new')).toBe('Quiet');
     expect(state('done')).toBe('Ended');
     const groups = [...document.querySelectorAll('[data-next-operation-group]')];
     for (const group of groups) expect(group.textContent).not.toMatch(/NOW · |QUIET/);
@@ -374,7 +374,7 @@ describe('the groups', () => {
     },
   );
 
-  it('shows Idle only for a published idle state', () => {
+  it('shows Quiet only for a published idle state', () => {
     const session = (state: unknown) =>
       ({
         isEnded: false,
@@ -383,7 +383,7 @@ describe('the groups', () => {
         isWorking: false,
         isQuiet: state === 'idle',
       }) as unknown as ObservedSession;
-    expect(rowState(session('idle'))).toBe('Idle');
+    expect(rowState(session('idle'))).toBe('Quiet');
     expect(rowState(session(undefined))).toBe('State not published');
     expect(rowState(session('dozing'))).toBe('State not published');
   });

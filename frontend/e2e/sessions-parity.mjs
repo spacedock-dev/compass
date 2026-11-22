@@ -282,6 +282,11 @@ function firstDifference(left, right, path = '$') {
 /* A difference found by the comparison is a failure unless it is named here with its reason. */
 const DEVIATIONS = [
   {
+    scope: 'session status marks',
+    reason:
+      '2026-11-22: SVG glyphs replace text marks and the Session header uses the four state words.',
+  },
+  {
     scope: 'Sessions header',
     reason:
       'DEC-27 moves the two explanations into the shared how-to and request/block counters to Attention; goal links include saved words.',
@@ -1124,7 +1129,7 @@ try {
           () =>
             globalThis.globalThis.getComputedStyle(
               globalThis.document.querySelector(
-                '.next-session-subagent.next-live .next-status-dot',
+                '.next-session-subagent.next-live .next-status-icon',
               ),
             ).animationName,
         );

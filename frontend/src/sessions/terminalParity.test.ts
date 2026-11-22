@@ -75,8 +75,21 @@ function drawnAsRiskRow(subject: { key: string; session: Row | null }, drawn: Se
 describe('the board against the terminal listing', () => {
   const payload = asPayload(fixture.response.body);
 
-  it('holds the sessions the terminal lists, in its groups, and in the same words', () => {
-    expect(boardView(payload)).toEqual(expected['board']);
+  it('holds the sessions the terminal lists, in its groups, with the board’s Quiet wording', () => {
+    // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
+    type Board = ReturnType<typeof boardView>;
+    type RecordedRow = Omit<Board['active'][number], 'state'> & { state: string };
+    const recorded = expected['board'] as Omit<Board, 'active' | 'history'> & {
+      active: RecordedRow[];
+      history: RecordedRow[];
+    };
+    const quietOnBoard = (rows: typeof recorded.active) =>
+      rows.map((row) => (row.state === 'Idle' ? { ...row, state: 'Quiet' } : row));
+    expect(boardView(payload)).toEqual({
+      ...recorded,
+      active: quietOnBoard(recorded.active),
+      history: quietOnBoard(recorded.history),
+    });
   });
 
   it.each(finishedRuns)('holds the terminal Now reading: $name', ({ payload, now }) => {

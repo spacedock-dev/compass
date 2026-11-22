@@ -271,6 +271,10 @@ const digestOf = (value) =>
 /* A difference found by the comparison is a failure unless it is named here with its reason. */
 const DEVIATIONS = [
   {
+    scope: 'status and navigation marks',
+    reason: '2026-11-22: the project rows, activity and workstream use Phosphor SVGs.',
+  },
+  {
     scope: 'recovery strip',
     reason:
       'Plain project labels distinguish instructions from a session goal; workflow gloss is conditional.',
@@ -280,6 +284,41 @@ const DEVIATIONS = [
     reason: 'Opening requests Intent focus under the same rule as a Sessions goal link.',
   },
 ];
+
+function maskRecordedProjectGlyphs(record, evidence) {
+  if (Array.isArray(record.groups)) {
+    return {
+      ...record,
+      groups: record.groups.map((group) => ({
+        ...group,
+        rows: group.rows.map((row) => ({ ...row, text: row.text.replace(/›$/, '') })),
+      })),
+    };
+  }
+  if (typeof record.panel !== 'string') return record;
+  const authored = new Set();
+  const collect = (value) => {
+    if (typeof value === 'string' && /[●○△◦✓▸▾]/.test(value))
+      authored.add(value.replace(/\s+/g, ' ').trim());
+    else if (value && typeof value === 'object') Object.values(value).forEach(collect);
+  };
+  collect(evidence);
+  const held = [];
+  const pattern = [...authored]
+    .sort((a, b) => b.length - a.length)
+    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  let panel = record.panel;
+  if (pattern)
+    panel = panel.replace(new RegExp(pattern, 'g'), (word) => `\uE000${held.push(word) - 1}\uE001`);
+  return {
+    ...record,
+    panel: panel
+      .replace(/[●○△◦✓]/g, '')
+      .replace(/[▸▾]\s*(?=OBSERVED STATE CHANGES)/g, '')
+      .replace(/\uE000(\d+)\uE001/g, (_match, index) => held[Number(index)]),
+  };
+}
 
 const proof = parityBoard();
 const contextsFor = (contexts) => {
@@ -325,7 +364,10 @@ try {
     return {
       mine: restateLiveOpenerValue(mine),
       old: projectWordDeviation(
-        recordedLocationNotes(golden.observe(key), holder.body, project),
+        maskRecordedProjectGlyphs(
+          recordedLocationNotes(golden.observe(key), holder.body, project),
+          [holder.body, holder.contexts],
+        ),
         projectGlossEnabled(holder.body, project),
         [holder.body, holder.contexts],
         projectInstructionHeading(

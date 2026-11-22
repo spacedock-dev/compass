@@ -1,3 +1,4 @@
+import { rowState } from './rows';
 import { declaredRelations } from './declared';
 import { RelationshipLabels, LinkedChildren } from './DeclaredRelationships';
 import { Badge } from '../ui/badge';
@@ -5,7 +6,7 @@ import { useHoldStill } from './useHoldStill';
 import { Card } from '../ui/card';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Disclosure, RaiseControl, disclosureKey, useFocusKey } from '../controls';
-import { endedAt, noTitleText, pageTitleOf, type ObservedSession, type Row } from '../observed';
+import { noTitleText, pageTitleOf, type ObservedSession, type Row } from '../observed';
 import { selectObserved } from '../observed/select';
 import { sessionHome, type SessionRoute } from '../router/grammar';
 import { useDisplayed, useShell } from '../shell/context';
@@ -220,12 +221,12 @@ function Header({
   const titleRef = useFocusKey<HTMLHeadingElement>(shell.controls.focusLane, 'session-title');
   const relations = declaredRelations(payload, session);
   const state = detailState(session['state']);
-  const ended = endedAt(session) !== null && !observed.askKnown;
-  /* An observed end retires the state word, as it does on the Sessions rows: "working" beside "ended 1s ago"
-     contradicts the line under it. A question still waiting says "needs input" whatever the collector
-     inferred, because after `session_ended` pops the overlay the state is the collector's `working` or
-     `idle` while the ask stays open. */
-  const word = ended ? 'ended' : observed.askKnown ? 'needs input' : state?.label;
+  // An open exact request still needs an answer after the collector's session has ended.
+  const word = observed.askKnown ? 'Waiting on you' : rowState(observed);
+  const status =
+    relations.waitingText && word !== 'Ended' && word !== 'Waiting on you'
+      ? 'Waiting on child'
+      : word;
   const label = observed.project;
   const title = pageTitleOf(session);
   const showRate = observed.rateKnown && !observed.isEnded && !observed.isQuiet;
@@ -246,26 +247,11 @@ function Header({
         </h1>
       </div>
       <div className="next-session-detail-bar">
-        {/* The state with its dot leads the measured line, which already says what the session is doing and
-            how long its turn has run, so the header reads "working · running Bash · turn started 3m ago"
-            without a second copy of either. */}
         {state ? (
           <span className="inline-flex" data-next-session-status>
-            <Badge
-              variant="session-state"
-              className="next-session-state inline-flex items-center gap-2"
-            >
-              <span
-                aria-hidden="true"
-                className={`inline-block size-2 shrink-0 rounded-pill ${statusDot(observed, ended)}`}
-                data-next-session-status-dot
-              />
-              <span>
-                <span className="next-visually-hidden">State: </span>
-                {relations.waitingText && !ended && !observed.askKnown && !observed.isNeeds
-                  ? 'Waiting on child'
-                  : word}
-              </span>
+            <Badge variant="session-state" className="next-session-state">
+              <span className="next-visually-hidden">State: </span>
+              {status}
             </Badge>
           </span>
         ) : null}
@@ -301,14 +287,6 @@ function Header({
       <LinkedChildren relations={relations} sessions={sessions} />
     </header>
   );
-}
-
-/* The dot beside the state takes the colour the page gives that state everywhere else: amber when it waits on
-   the reader, the accent while it works, and no colour once it rests or ends. */
-function statusDot(observed: ObservedSession, ended: boolean): string {
-  if (observed.isNeeds || observed.askKnown) return 'bg-[var(--amber)]';
-  if (!ended && observed.isWorking) return 'bg-[var(--accent)]';
-  return 'bg-[var(--ink3)]';
 }
 
 export interface SessionDetailProps {

@@ -28,7 +28,7 @@ export function normaliseSessionRecord(record, evidence = {}) {
   const collect = (value) => {
     if (
       typeof value === 'string' &&
-      /ASSIGNMENT|Copy ID|Copy link|Copy command|COMMAND SURFACE|How rows are split|Goal sources|No resume command|What analysis does/.test(
+      /ASSIGNMENT|Copy ID|Copy link|Copy command|COMMAND SURFACE|How rows are split|Goal sources|No resume command|What analysis does|[●○△◦✓]/.test(
         value,
       )
     )
@@ -58,6 +58,14 @@ export function normaliseSessionRecord(record, evidence = {}) {
       const sessionRow = key === 'text' && path.includes('rows');
       if (!sessionHeader && !driftCard && !sessionRow && !path.includes('parts')) return value;
       return preserve(value, (value) => {
+        // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
+        if (sessionRow) value = maskRecordedSessionRowMarks(value);
+        if (sessionHeader && Array.isArray(record?.attrs)) value = projectRecordedStateWord(value);
+        if (
+          path.includes('[data-next-session-subagents]') ||
+          path.includes('[data-next-session-section="tasks"]')
+        )
+          value = value.replace(/[●○✓]/g, '');
         if (key === 'text' && path.includes('rows'))
           value = value.replace(/ASSIGNMENT · /, 'Current task · ');
         if (path.includes('parts') && path.includes('.next-session-evidence'))
@@ -171,6 +179,20 @@ export function normaliseSessionRecord(record, evidence = {}) {
     if (!available) result.header = result.header.replace(unchecked, '');
   }
   return result;
+}
+
+function maskRecordedSessionRowMarks(text) {
+  return text
+    .replace(/●/g, '')
+    .replace(/[△✓◦]\s*(?=Session ended|Stop observed|Turn stop in)/g, '');
+}
+
+function projectRecordedStateWord(text) {
+  return text
+    .replace(/^State: working/, 'State: Working')
+    .replace(/^State: needs input/, 'State: Waiting on you')
+    .replace(/^State: idle/, 'State: Quiet')
+    .replace(/^State: ended/, 'State: Ended');
 }
 
 // The owner appended age to the identity line. Keep the recording's words, adding only the

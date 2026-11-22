@@ -68,7 +68,7 @@ export const QUERY_LIMIT = 200;
 export const STATE_VALUES = [
   'Waiting on you',
   'Working',
-  'Idle',
+  'Quiet',
   'Ended',
   'State not published',
 ] as const;

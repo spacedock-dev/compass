@@ -1,5 +1,5 @@
 import { Disclosure, disclosureKey } from '../controls';
-import { StatusDot } from '../sessions/SessionsView';
+import { Icon } from '../ui/icons';
 import type { ProjectModel } from './model';
 import {
   entityState,
@@ -37,10 +37,9 @@ function PlanRows({ plan, model }: { readonly plan: Plan; readonly model: Projec
               data-next-plan-entity={entity.slug}
               data-next-live={String(entity.live)}
             >
-              <StatusDot
-                label={entity.live ? 'live' : 'pending'}
-                className="next-project-plan-glyph"
-                filled={entity.live}
+              <Icon
+                name={entity.live ? 'working' : 'unrecorded'}
+                className="next-project-plan-glyph shrink-0"
               />
               <span className="next-project-plan-step">
                 <strong>{entity.slug}</strong>

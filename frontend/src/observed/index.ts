@@ -14,13 +14,11 @@ export {
   landingOf,
   readHint,
   READING_TURN_STOP_HARNESSES,
-  sessionDot,
   sessionStop,
   type DelegatedWork,
   type EndKind,
   type Goal,
   type Landing,
-  type SessionDot,
   type SessionStop,
 } from './landing';
 export {
@@ -31,7 +29,14 @@ export {
   type ObservedTotals,
 } from './model';
 export { type ObservedProject } from './project';
-export { labelOf, noTitleText, observeSession, pageTitleOf, type ObservedSession } from './session';
+export {
+  labelOf,
+  noTitleText,
+  observeSession,
+  pageTitleOf,
+  sessionState,
+  type ObservedSession,
+} from './session';
 export { selectObserved } from './select';
 export {
   ageSeconds,

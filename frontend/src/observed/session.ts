@@ -25,7 +25,7 @@ export type ObservedSession = {
   readonly blockText: string;
   readonly blockKnown: boolean;
   readonly blockNote: string;
-  readonly outcomeGlyph: string;
+  readonly outcomeIcon: 'worth-a-look' | 'check' | 'unrecorded' | null;
   readonly waitedText: string;
   readonly waitedKnown: boolean;
   readonly state: string;
@@ -271,13 +271,13 @@ export function observeSession(
     // Stops and ends are published; readership and termination cause are not. Their absence belongs in
     // open and coverage, never in an inferred outcome.
     ...pair('outcome', outcome, 'No stop or end observed'),
-    outcomeGlyph: outcomeKnown
+    outcomeIcon: outcomeKnown
       ? source['dirty'] === true
-        ? '△'
+        ? ('worth-a-look' as const)
         : source['dirty'] === false
-          ? '✓'
-          : '◦'
-      : '',
+          ? ('check' as const)
+          : ('unrecorded' as const)
+      : null,
     ...pair('git', git, 'Git state was not measured'),
     ...pair(
       'rate',
@@ -321,4 +321,17 @@ export function observeSession(
     tasks: Array.isArray(source['tasks']) ? (source['tasks'] as unknown[]) : [],
   };
   return row as ObservedSession;
+}
+
+/* One state word leads each row (usability review, 2026-10-20): the row once said "NOW · IDLE" and "QUIET"
+   under "Active now", three words for one fact that read as a contradiction. Ended outranks the rest because
+   an ended session waits on nobody. */
+export function sessionState(
+  session: ObservedSession,
+): 'Ended' | 'Waiting on you' | 'Working' | 'Quiet' | 'State not published' {
+  if (session.isEnded) return 'Ended';
+  if (session.isNeeds || session.askKnown) return 'Waiting on you';
+  if (session.isWorking) return 'Working';
+  // Only a published idle reads Quiet: a missing or unknown state is not observed quiet.
+  return session.isQuiet ? 'Quiet' : 'State not published';
 }

@@ -1,7 +1,8 @@
 import { buttonVariants } from '../ui/button';
 import { cn } from '../lib/utils';
 import type { ReactNode, Ref } from 'react';
-import { sessionDot } from '../observed';
+import { sessionState } from '../observed';
+import { Icon, SESSION_STATE_ICONS } from '../ui/icons';
 import type { ObservedSession } from '../observed';
 import { fragmentForRoute, type RouteInput } from '../router/grammar';
 import { useNavigate } from '../shell/context';
@@ -28,10 +29,18 @@ export function Value({
   );
 }
 
-/** One dot per member line: its shape carries the lifecycle, so it reads without colour. */
-export function Dot({ session }: { readonly session: ObservedSession }) {
-  const dot = sessionDot(session);
-  return <span className={dot.className} role="img" aria-label={dot.label} />;
+export function ProjectSessionStatus({ session }: { readonly session: ObservedSession }) {
+  const state = sessionState(session);
+  if (state === 'State not published') return null;
+  return (
+    <span
+      className={cn('inline-flex', session.isLive && state === 'Working' && 'next-live')}
+      role="img"
+      aria-label={state}
+    >
+      <Icon name={SESSION_STATE_ICONS[state]} className="next-status-icon shrink-0" />
+    </span>
+  );
 }
 
 export function Absence({ children }: { readonly children: ReactNode }) {
