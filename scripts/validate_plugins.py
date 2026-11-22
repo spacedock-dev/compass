@@ -499,6 +499,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/copied_corrections.py",
     "skills/compass/compass_runtime/correction.py",
     "skills/compass/compass_runtime/drift_view.py",
+    "skills/compass/compass_runtime/focused_reading.py",
     "skills/compass/compass_runtime/notifications.py",
     "skills/compass/compass_runtime/spacedock.py",
     "skills/compass/compass_runtime/tripwires.py",

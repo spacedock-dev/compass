@@ -1854,6 +1854,59 @@ def result_stale(
     }
 
 
+def _stored_analysis(
+    session: dict[str, Json], parts: _Parts, context: Json
+) -> tuple[dict[str, Json] | None, dict[str, Json] | None]:
+    """The focused level and its freshness, shared with the board's stored result."""
+    analysis = (
+        analysis_level(session, parts.annotation, parts.shape, context) if parts.annotate else None
+    )
+    raw = _get(parts.annotation, "assessment")
+    stale = (
+        result_stale(parts.shape, raw, parts.annotation, parts.entries)
+        if parts.annotate
+        and parts.shape is not None
+        and not parts.shape.malformed
+        and _truthy(raw)
+        and parts.annotation is not None
+        else None
+    )
+    return analysis, stale
+
+
+def stored_progress(
+    session: dict[str, Json],
+    payload: dict[str, Json],
+    context: Json,
+    record: list[dict[str, Json]],
+) -> str:
+    """The checked result for the Sessions row, with a level only for a standing departure."""
+    session = declared_sessions.model_row(session)
+    _, parts = _read(session, payload, context, record)
+    analysis, stale = _stored_analysis(session, parts, context)
+    if analysis is None or stale is not None or parts.drafted:
+        return "out_of_date"
+    level, reasons = analysis["level"], analysis["reasons"]
+    if levels.REASON_READING_MALFORMED in reasons:
+        return "out_of_date"
+    if levels.REASON_GOAL_UNCLEAR in reasons:
+        return "goal_unclear"
+    if level in _LEVEL_SCALE:
+        return str(level)
+    raw = _get(parts.annotation, "assessment")
+    criteria = _get(raw, "criteria")
+    if (
+        _is_record(criteria)
+        and any(
+            key != _CLAIMS and _get(item, "result") == reading.RESULT_DEPARTURE
+            for key, item in criteria.items()
+        )
+        and not (parts.shape and parts.shape.departures)
+    ):
+        return "out_of_date"
+    return levels.NOT_ENOUGH if levels.REASON_SCAN_INCOMPLETE in reasons else "cant_tell"
+
+
 def derive(
     session: dict[str, Json],
     payload: dict[str, Json],
@@ -1873,9 +1926,7 @@ def derive(
     view, parts = _read(session, payload, context, record)
     lease = lease_state(context)
     live_on = bool(lease and lease["on"])
-    analysis = (
-        analysis_level(session, parts.annotation, parts.shape, context) if parts.annotate else None
-    )
+    analysis, stale = _stored_analysis(session, parts, context)
     estimate = live_estimate(
         live_on=live_on,
         monitor=monitor_level(lease) if live_on else None,
@@ -1901,16 +1952,6 @@ def derive(
                 and parts.shape.scope == "mid-flight"
             )
         )
-    raw = _get(parts.annotation, "assessment")
-    stale = (
-        result_stale(parts.shape, raw, parts.annotation, parts.entries)
-        if parts.annotate
-        and parts.shape is not None
-        and not parts.shape.malformed
-        and _truthy(raw)
-        and parts.annotation is not None
-        else None
-    )
     return {
         **view,
         "live_on": live_on,

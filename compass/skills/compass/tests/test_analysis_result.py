@@ -4,9 +4,9 @@ Items 6, 10 and 14 of
 [DEC-24](docs/design-reading-a-session.md#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy)
 and items 1 and 2 of
 [DEC-26](docs/design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn).
-The analysis-derived level is `levels.analysis_level` over the stored reading and the record as it
-is now, published on the focused project context only and never stored, never in history and never
-on a row. The reader's Not accurate mark is a token stored with the annotation entry and nothing
+The analysis-derived level is `levels.analysis_level` over the stored reading and the current
+record. The focused context carries the calculation. The board publishes a checked result after
+revalidating the reading's freshness and citations. The reader's Not accurate mark is a token stored with the annotation entry and nothing
 else: removed with the entry, untouched by `--forget`, never sent and never counted.
 """
 
@@ -344,8 +344,72 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
         self.assertEqual(stored["read_at"], row["read_at"])
         self.assertEqual(1, row["revision_read"])
         self.assertNotIn("analysis_levels", project["sources"]["work"])
-        self.assertNotIn("analysis_level", json.dumps(board))
+        self.assertEqual("cant_tell", self.board_progress(board))
+        self.assertNotIn("analysis_levels", json.dumps(board))
         self.assertNotIn('"level"', json.dumps(board["sessions"]))
+
+    def board_progress(self, board: dict[str, Any]) -> str | None:
+        (row,) = [row for row in board["sessions"] if row["sid"] == SHORT]
+        return cast("str | None", row["stored_progress"])
+
+    def test_the_board_distinguishes_a_saved_goal_without_a_reading(self) -> None:
+        self.save_goal()
+        with self.serving() as port:
+            self.assertIsNone(self.board_progress(self.get(port, "/api/data")))
+
+    def test_the_board_revalidates_a_stored_departure_before_the_session_opens(self) -> None:
+        self.save_goal(lines=())
+        self.session.write(str(Path(self.session.cwd) / "unrelated.py"))
+        cite = next(f["fact_id"] for f in self.facts_now() if f["subject"] == "write")
+        self.record(
+            _reading(
+                {
+                    "goal": {
+                        "result": runtime_reading.RESULT_DEPARTURE,
+                        "cites": [cite],
+                        "why": runtime_reading.WHY_RECORDED_WRITE,
+                    }
+                },
+                window_start=START.timestamp(),
+                revision_read_at=START.timestamp(),
+            )
+        )
+        with self.serving() as port:
+            self.assertEqual(levels.MEDIUM, self.board_progress(self.get(port, "/api/data")))
+            (focused,) = self.get(port, FOCUSED)["sources"]["work"]["analysis_levels"]
+            self.assertEqual(levels.MEDIUM, focused["level"])
+
+    def test_the_board_names_off_course_when_a_departure_has_a_current_failed_check(self) -> None:
+        self.save_goal(lines=())
+        self.session.bash("pytest -k lexer", "1 failed", is_error=True)
+        cite = next(f["fact_id"] for f in self.facts_now() if f["result"] == "failed")
+        self.record(
+            _reading(
+                {"goal": {"result": runtime_reading.RESULT_DEPARTURE, "cites": [cite]}},
+                window_start=START.timestamp(),
+                revision_read_at=START.timestamp(),
+                evidence_through=START.timestamp() + self.session.seconds,
+            )
+        )
+        with self.serving() as port:
+            self.assertEqual(levels.HIGH, self.board_progress(self.get(port, "/api/data")))
+        self.session.write(str(Path(self.session.cwd) / "later.py"))
+        self.session.save(self.path)
+        self.now += self.config.collect_memo_sec + 1
+        with self.serving() as port:
+            self.assertEqual("out_of_date", self.board_progress(self.get(port, "/api/data")))
+
+    def test_the_board_withholds_a_departure_if_its_citation_is_unreadable(self) -> None:
+        self.save_goal(lines=())
+        self.record(
+            _reading(
+                {"goal": {"result": runtime_reading.RESULT_DEPARTURE, "cites": ["unavailable"]}},
+                window_start=START.timestamp(),
+                revision_read_at=START.timestamp(),
+            )
+        )
+        with self.serving() as port:
+            self.assertEqual("out_of_date", self.board_progress(self.get(port, "/api/data")))
 
     def test_it_follows_the_record_and_is_never_written(self) -> None:
         self.save_goal()
