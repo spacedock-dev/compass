@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect } from 'vitest';
 import { commands } from 'vitest/browser';
+import budget from '../first-layer-budget.json';
+import { auditCalm } from '../stories/calm.audit';
 import {
   auditContrast,
   formatFailures,
@@ -41,4 +43,15 @@ afterEach(async () => {
     unexpectedlyUnmeasured(report),
     'Text the audit cannot measure (add it to UNMEASURED_ALLOWED with the reason, or fix it)',
   ).toEqual([]);
+});
+
+afterEach(async ({ task }) => {
+  const id = 'storyId' in task.meta ? task.meta.storyId : undefined;
+  expect(id, 'Storybook must identify the story for the first-layer audit').toEqual(
+    expect.any(String),
+  );
+  if (typeof id !== 'string' || budget.stories.some((legacy) => legacy === id)) return;
+  await settled();
+  const failures = auditCalm(document.body);
+  expect(failures, `${id}\n${failures.join('\n')}`).toEqual([]);
 });

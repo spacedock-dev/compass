@@ -162,7 +162,11 @@ function TypeSamples() {
         ))}
         <div aria-label="Technical details only">
           <p style={caption}>Technical details only</p>
-          <code data-type-sample style={{ ...caption, fontFamily: 'var(--mono)' }}>
+          <code
+            data-layer="technical"
+            data-type-sample
+            style={{ ...caption, fontFamily: 'var(--mono)' }}
+          >
             #81 · Agent said · 19:29
           </code>
         </div>

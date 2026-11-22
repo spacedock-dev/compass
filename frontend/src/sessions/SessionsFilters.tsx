@@ -234,10 +234,7 @@ function OptionRow({
         ) : null}
       </span>
       {option.count === null ? null : (
-        <span
-          className="text-label text-muted-foreground [font-family:var(--mono)]"
-          data-filter-count
-        >
+        <span className="text-label text-muted-foreground tabular-nums" data-filter-count>
           {option.count}
         </span>
       )}
@@ -792,7 +789,10 @@ export function SessionsFilters({
           />
           <span className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1">
             {filters.query ? null : (
-              <kbd aria-hidden="true" className="mr-2 [@media(max-width:620px)]:hidden">
+              <kbd
+                aria-hidden="true"
+                className="mr-2 [font-family:var(--sans)] [@media(max-width:620px)]:hidden"
+              >
                 /
               </kbd>
             )}
@@ -958,7 +958,7 @@ export function SessionsFilters({
                       </span>
                       {datesUnavailable ? null : (
                         <span
-                          className="text-label text-muted-foreground [font-family:var(--mono)]"
+                          className="text-label text-muted-foreground tabular-nums"
                           data-filter-count
                         >
                           {dates.byWhen.get(when) ?? 0}

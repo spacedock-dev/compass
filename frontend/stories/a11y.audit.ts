@@ -73,7 +73,7 @@ const describe = (element: Element): string => {
   return parts.join(' > ');
 };
 
-function isHidden(element: Element): boolean {
+export function isHidden(element: Element): boolean {
   const box = element.getBoundingClientRect();
   if (box.width <= 1 || box.height <= 1) return true;
   return !(element as HTMLElement).checkVisibility({

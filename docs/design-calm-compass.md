@@ -408,6 +408,27 @@ or the anonymized Sample session for those proofs and follow the
 [frontend migration record](design-frontend-migration.md) when an asking test's wording
 departs from a recorded answer.
 
+### First-layer checks
+
+The [style policy](../frontend/build/style-policy.mjs) counts monospace, uppercase and tracking
+patterns per source file. The [budget](../frontend/first-layer-budget.json) records the
+actual counts and gives a reason for each file where technical work can add monospace.
+Other counts can fall against the PR base. The first comparison reads the base's source
+files when the budget is absent. Inline SVG belongs in the shared UI directory.
+
+The [Storybook audit](../frontend/stories/calm.audit.ts) checks visible text for computed
+monospace, uppercase transforms, tracking above 0.04 em and raw epochs, hex identifiers
+or bracketed citations. It skips text in a technical area and the exact authored text
+nodes, such as a session title or saved goal. It also checks visible, enabled control
+borders against their painted surround at 3:1. Decorative dividers and borderless controls
+are outside that measurement.
+
+The initial budget lists the measured failures from stories that still end on legacy
+views or components. As each view is converted, remove its passing stories from the list.
+With a budget in the base, CI rejects additions to the exemption list. Sessions has no
+technical disclosure. An ID search can find its session without printing the matched ID
+on the row.
+
 ## Owner rulings
 
 The canvas rows summarize the resolved comments. The dated entries quote the decision

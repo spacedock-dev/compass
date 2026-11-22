@@ -38,7 +38,12 @@ function CardContents({
         <span className="grid min-w-0 gap-1">
           {previews.map(([row, detail]) => (
             <span key={sessionKey(row)} className="grid min-w-0">
-              <span className="line-clamp-2 font-semibold">{row.titleText}</span>
+              <span
+                className="line-clamp-2 font-semibold"
+                data-authored={row.titleKnown || undefined}
+              >
+                {row.titleText}
+              </span>
               {detail ? <span className="line-clamp-2 text-muted-foreground">{detail}</span> : null}
             </span>
           ))}
@@ -88,9 +93,7 @@ export function SessionsGlance({
   return (
     <>
       <header className="next-operations-header grid gap-2">
-        <h1 className="m-0 text-head font-extrabold tracking-tight min-[621px]:text-hero">
-          {greeting}
-        </h1>
+        <h1 className="m-0 text-head font-extrabold min-[621px]:text-hero">{greeting}</h1>
         <p
           id="sessions-glance-summary"
           className="m-0 text-body text-muted-foreground min-[621px]:text-value"

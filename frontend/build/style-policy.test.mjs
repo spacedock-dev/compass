@@ -89,6 +89,10 @@ async function policyFixture(run) {
       join(copy, 'frontend/css-budget.json'),
       JSON.stringify({ ...record, files: [], bytes: 0 }),
     );
+    await writeFile(
+      join(copy, 'frontend/first-layer-budget.json'),
+      JSON.stringify({ counts: {}, technical: {}, stories: [] }),
+    );
     await writeFile(join(copy, 'frontend/src/main.tsx'), '');
     await writeFile(join(copy, 'frontend/src/styles/tailwind.css'), '');
     await run(copy);
@@ -226,4 +230,137 @@ test('first-layer icon callers own their Tailwind utility sources', async () => 
     });
     assert.ok(owned, `${caller} has no Tailwind @source`);
   }
+});
+
+test('first-layer utility debt counts variants, recipes and repeated tokens', async () => {
+  const { firstLayerTokens } = await import('./style-policy.mjs');
+  for (const [token, kind] of [
+    ['uppercase', 'uppercase'],
+    ['hover:uppercase!', 'uppercase'],
+    ['md:tracking-wide', 'tracking'],
+    ['[letter-spacing:.12em]', 'tracking'],
+    ['tracking-[.12em]', 'tracking'],
+    ['font-mono', 'monospace'],
+    ['[font-family:var(--mono)]', 'monospace'],
+    ['font-[family-name:var(--mono)]', 'monospace'],
+  ]) {
+    assert.deepEqual(
+      firstLayerTokens(
+        `const recipe = cva("${token}", { variants: { high: { yes: "${token}" } } });`,
+        'row.tsx',
+      ),
+      { [kind]: [token, token] },
+      token,
+    );
+  }
+  assert.deepEqual(firstLayerTokens('const label = "Tracking shipments";', 'row.tsx'), {});
+});
+
+test('first-layer CSS debt counts declarations and ignores comments', async () => {
+  const { firstLayerTokens } = await import('./style-policy.mjs');
+  assert.deepEqual(
+    firstLayerTokens(
+      '.row { FONT-FAMILY: var( --mono ); text-transform: uppercase; LETTER-SPACING: .1em; } /* letter-spacing: 2em */',
+      'rows.css',
+    ),
+    {
+      monospace: ['font-family: var(--mono)'],
+      uppercase: ['text-transform: uppercase'],
+      tracking: ['letter-spacing'],
+    },
+  );
+});
+
+test('inline SVG is allowed in UI and rejected in feature source', async () => {
+  const { inlineSvgProblems } = await import('./style-policy.mjs');
+  assert.deepEqual(
+    inlineSvgProblems(
+      'const node = <><svg/><svg><path /></svg></>;',
+      'frontend/src/sessions/Row.tsx',
+    ),
+    ['frontend/src/sessions/Row.tsx:1: inline <svg> belongs in frontend/src/ui/'],
+  );
+  assert.deepEqual(inlineSvgProblems('const node = <svg />;', 'frontend/src/ui/icons.tsx'), []);
+  assert.deepEqual(
+    inlineSvgProblems('const image = "<svg />";', 'frontend/src/shell/favicon.ts'),
+    [],
+  );
+});
+
+test('first-layer counts fall but may grow only for monospace in reviewed technical files', async () => {
+  const { compareFirstLayer, firstLayerTokens } = await import('./style-policy.mjs');
+  const row = 'frontend/src/sessions/Row.tsx';
+  const log = 'frontend/src/sessions/Log.tsx';
+  const baseline = {
+    counts: { [row]: { uppercase: 2 } },
+    technical: { [log]: 'Displays raw commands.' },
+    stories: ['sessions-session-page--legacy'],
+  };
+  const warnings = compareFirstLayer(
+    {
+      [row]: firstLayerTokens(
+        'const cls = "uppercase tracking-wide [font-family:var(--mono)]";',
+        row,
+      ),
+      [log]: firstLayerTokens('const cls = "font-mono uppercase";', log),
+    },
+    { ...baseline, stories: ['sessions-session-page--legacy', 'sessions-home--new'] },
+    baseline,
+  );
+  assert.deepEqual(warnings, [
+    `${row}: first-layer tracking rose 0 -> 1 (tracking-wide)`,
+    `${row}: first-layer monospace rose 0 -> 1 ([font-family:var(--mono)])`,
+    `${log}: first-layer uppercase rose 0 -> 1 (uppercase)`,
+    'Story audit exemption added against the PR base: sessions-home--new',
+  ]);
+  assert.deepEqual(
+    compareFirstLayer(
+      {
+        [row]: firstLayerTokens('const cls = "uppercase";', row),
+        [log]: firstLayerTokens('const cls = "font-mono";', log),
+      },
+      { ...baseline, stories: [] },
+      baseline,
+    ),
+    [],
+  );
+});
+
+test('a new file can use monospace when its technical purpose is recorded', async () => {
+  const { compareFirstLayer } = await import('./style-policy.mjs');
+  const log = 'frontend/src/sessions/TechnicalDetails.tsx';
+  const tokens = { [log]: { monospace: ['font-mono'] } };
+  const base = { counts: {}, technical: {}, stories: [] };
+  assert.deepEqual(
+    compareFirstLayer(tokens, { ...base, technical: { [log]: 'Shows the raw session ID.' } }, base),
+    [],
+  );
+  assert.deepEqual(compareFirstLayer(tokens, base, base), [
+    `${log}: first-layer monospace rose 0 -> 1 (font-mono)`,
+  ]);
+});
+
+test('the first record bootstraps style counts from base sources', async () => {
+  const { bootstrapFirstLayer, compareFirstLayer, firstLayerTokens } = await import(
+    './style-policy.mjs'
+  );
+  const row = 'frontend/src/sessions/Row.tsx';
+  const readBase = (path) =>
+    ({
+      [row]: 'const classes = "uppercase";',
+    })[path];
+  const base = bootstrapFirstLayer([row], readBase);
+  assert.deepEqual(base, {
+    counts: { [row]: { uppercase: 1 } },
+  });
+  assert.deepEqual(
+    compareFirstLayer(
+      {
+        [row]: firstLayerTokens('const classes = "uppercase hover:uppercase";', row),
+      },
+      { ...base, technical: {}, stories: [] },
+      base,
+    ),
+    [`${row}: first-layer uppercase rose 1 -> 2 (uppercase, hover:uppercase)`],
+  );
 });

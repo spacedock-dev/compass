@@ -16,6 +16,11 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-23, Sessions uses sentence case for column, row and goal-source labels. The Sessions
+differential restates the recorded labels in sentence case and still compares the row content,
+order and links. The search story checks that an ID match names the source without repeating
+the ID. The recorded answers stay fixed.
+
 2026-11-23, Sessions uses status tabs, search and an inline Filters panel. The Sessions
 differential masks the active group heading and group counts while keeping the window-derived
 history heading, row order and links in the comparison. The Sessions Search and filters stories

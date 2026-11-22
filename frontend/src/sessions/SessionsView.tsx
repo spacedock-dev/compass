@@ -30,6 +30,7 @@ import {
   prepare,
   type Filtered,
   type FilterState,
+  type RowHint,
 } from './filters';
 import { useFilterState } from './filterStore';
 import {
@@ -133,7 +134,13 @@ function ObservedFact({
   );
 }
 
-function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: readonly string[] }) {
+function Identity({
+  row,
+  hints,
+}: {
+  readonly row: SessionRow;
+  readonly hints: readonly RowHint[];
+}) {
   const { session, source, history } = row;
   const assignment = history ? '' : assignmentOf(source);
   const names = source ? gapNames(source) : [];
@@ -152,6 +159,7 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
           fallback={SEARCH_KEY}
         >
           <strong
+            data-authored={session.titleKnown || undefined}
             className={`mt-0 font-semibold${session.titleKnown ? '' : ' next-operation-title--unknown next-absence'}`}
           >
             {session.titleText}
@@ -170,7 +178,10 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
           </span>
         ) : null}
         {!session.titleKnown && session.promptKnown ? (
-          <span className="next-operation-assignment block">{`LAST PROMPT · ${session.promptText}`}</span>
+          <span className="next-operation-assignment block">
+            {'Last prompt · '}
+            <span data-authored>{session.promptText}</span>
+          </span>
         ) : null}
         <RelationshipLabels
           source={source}
@@ -181,15 +192,25 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
         />
         {hints.map((hint) => (
           <span
-            key={hint}
+            key={hint.text}
             className="mt-1 block text-label leading-[1.5] text-muted-foreground"
             data-next-row-hint
           >
-            {hint}
+            {hint.text}
+            {hint.authoredExcerpt === undefined ? null : (
+              <>
+                {': "'}
+                <span data-authored>{hint.authoredExcerpt}</span>
+                {'"'}
+              </>
+            )}
           </span>
         ))}
         {assignment ? (
-          <span className="next-operation-assignment block">{`Current task · ${assignment}`}</span>
+          <span className="next-operation-assignment block">
+            {'Current task · '}
+            <span data-authored>{assignment}</span>
+          </span>
         ) : null}
         {session.sharedLabelKnown ? (
           <span className="next-operation-collision block" title={DUPLICATE_LABEL_LIMIT}>
@@ -211,7 +232,7 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
   const shell = useShell();
   const { goal } = row;
   if (goal.kind === 'off')
-    return <Fact kind="goal" label="GOAL" value={goal.text} tone="unknown" />;
+    return <Fact kind="goal" label="Goal" value={goal.text} tone="unknown" />;
   const onGoal = () =>
     goalFocusFor(shell.controls).request({ harness: row.session.harness, sid: row.session.sid });
   return (
@@ -225,7 +246,7 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
             ? 'next-operation-goal-link line-clamp-3'
             : 'next-operation-goal-link line-clamp-3 next-absence'
         }
-        extra={{ 'data-next-goal-focus': '' }}
+        extra={{ 'data-next-goal-focus': '', ...(goal.known ? { 'data-authored': '' } : {}) }}
         before={onGoal}
         focusKey={`sessions-row-goal:${row.key}`}
         fallback={SEARCH_KEY}
@@ -236,7 +257,7 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
   );
 }
 
-const NO_HINTS: readonly string[] = [];
+const NO_HINTS: readonly RowHint[] = [];
 
 /* Memoized with `Group`, so the urgent render a keystroke makes, which still holds the deferred result,
    passes every row the same props and redraws none of them. */
@@ -246,11 +267,10 @@ const RowView = memo(function RowView({
   depth = 0,
 }: {
   readonly row: SessionRow;
-  readonly hints?: readonly string[];
+  readonly hints?: readonly RowHint[];
   readonly depth?: number;
 }) {
   const { session, history } = row;
-  const nowKind = 'NOW';
   const outcomeTone =
     session.outcomeIcon === 'worth-a-look' ? '' : ` next-operation-outcome--${session.tone}`;
   const outcome = row.showOutcome ? (
@@ -273,7 +293,7 @@ const RowView = memo(function RowView({
   const now = (
     <ObservedFact
       kind="now"
-      label={nowKind}
+      label="Now"
       text={session.nowWords}
       known={session.nowWordsKnown}
       note={row.endedSince}
@@ -294,7 +314,7 @@ const RowView = memo(function RowView({
           error, for a location no harness publishes here. */}
       <Fact
         kind="where"
-        label="PROJECT"
+        label="Project"
         value={session.project}
         detail={worktreeLabel(row.source)}
       />
@@ -311,13 +331,13 @@ const RowView = memo(function RowView({
           {now}
           <ObservedFact
             kind="next"
-            label="NEXT"
+            label="Next"
             text={session.nextText}
             known={session.nextKnown}
           />
           <ObservedFact
             kind="blocked"
-            label={`BLOCKED${row.responsibility}`}
+            label={`Blocked${row.responsibility}`}
             text={session.blockText}
             known={session.blockKnown}
             note={session.blockNote}
@@ -422,14 +442,14 @@ const Group = memo(function Group({
       ) : null}
       {!countsAvailable || noMatches ? null : (
         <div className="next-operations-columns" aria-hidden="true">
-          <span>SESSION</span>
-          <span>PROJECT</span>
-          <span>GOAL</span>
-          <span>NOW</span>
+          <span>Session</span>
+          <span>Project</span>
+          <span>Goal</span>
+          <span>Now</span>
           {kind === 'history' ? null : (
             <>
-              <span>NEXT</span>
-              <span>BLOCKED</span>
+              <span>Next</span>
+              <span>Blocked</span>
             </>
           )}
         </div>

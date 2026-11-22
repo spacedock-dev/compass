@@ -223,7 +223,7 @@ export function goalCell(
   chosen: PromptCandidate | null = null,
 ): GoalCell {
   if (!context.annotate)
-    return { label: 'GOAL', kind: 'off', text: 'Annotations off', known: false };
+    return { label: 'Goal', kind: 'off', text: 'Annotations off', known: false };
   const typed = String(source?.['annotation_goal'] || '').trim();
   const asked = source?.['harness'] === 'claude' ? sessionInstruction(source, 'asked') : null;
   const prompt = asked
@@ -241,19 +241,19 @@ export function goalCell(
   const text = typed || (draft ? draft.text : openedWithControl(source) ? '' : prompt);
   const label = typed
     ? String(source?.['annotation_goal_source']) === SESSION_GOAL
-      ? 'GOAL · FROM /GOAL'
+      ? 'Goal · from /goal'
       : PROMPT_SOURCES.includes(String(source?.['annotation_goal_source']))
-        ? 'GOAL · FROM YOUR PROMPT'
-        : 'GOAL · YOUR WORDS'
+        ? 'Goal · from your prompt'
+        : 'Goal · your words'
     : draft && draft.source === 'first-prompt'
-      ? 'GOAL · YOUR FIRST PROMPT'
+      ? 'Goal · your first prompt'
       : draft && draft.source === SESSION_GOAL
-        ? 'GOAL · YOUR /GOAL'
+        ? 'Goal · your /goal'
         : draft && draft.source === PROMPT_CHOSEN
-          ? 'GOAL · YOUR CHOSEN PROMPT'
+          ? 'Goal · your chosen prompt'
           : text
-            ? 'GOAL · YOUR LATEST PROMPT'
-            : 'GOAL';
+            ? 'Goal · your latest prompt'
+            : 'Goal';
   return typed
     ? { label, kind: 'link', text, known: true }
     : { label, kind: 'link', text: text || 'Add a goal', known: Boolean(text) };
@@ -410,7 +410,7 @@ export function buildSessionsScreen(
         session.outcomeKnown &&
         (session.outcomeIcon !== 'worth-a-look' || dirtyOutcomes.has(session)),
       stateSegments: segments.get(session),
-      responsibility: ask ? ` · ${askResponsibility(payload, ask)}` : '',
+      responsibility: ask ? ` · ${askResponsibility(payload, ask).toLowerCase()}` : '',
       history,
       relations: declaredRelations(payload, source),
     };

@@ -139,7 +139,9 @@ describe('the words', () => {
       filtered.hints.get(
         indexed.find((one) => one.row.session.sid === SIDS[letter])?.row.key ?? '',
       );
-    expect(hint('B')).toEqual(['Matched in your first prompt: "write the release notes for 2.4"']);
+    expect(hint('B')).toEqual([
+      { text: 'Matched in your first prompt', authoredExcerpt: 'write the release notes for 2.4' },
+    ]);
     expect(hint('K')).toBeUndefined();
   });
 
@@ -152,7 +154,7 @@ describe('the words', () => {
   it('match a session id only by a prefix of six or more id characters', () => {
     const { letters, filtered } = run({ query: SIDS.C.slice(0, 8) });
     expect(letters).toBe('C');
-    expect([...filtered.hints.values()][0]).toEqual([`Matched in the session id: "${SIDS.C}"`]);
+    expect([...filtered.hints.values()][0]).toEqual([{ text: 'Matched in the session ID' }]);
     expect(run({ query: SIDS.C.slice(0, 5) }).letters).toBe('');
     expect(run({ query: SIDS.C.slice(2, 10) }).letters).toBe('');
   });
@@ -183,7 +185,10 @@ describe('the words', () => {
     // Row A is active, so its task is drawn under the title and needs no hint.
     expect(hintOf(SIDS.A)).toBeUndefined();
     expect(hintOf(SIDS.L)).toEqual([
-      `Matched in its current task: "migrate the zebrafish tables ${SIDS.L}"`,
+      {
+        text: 'Matched in its current task',
+        authoredExcerpt: `migrate the zebrafish tables ${SIDS.L}`,
+      },
     ]);
   });
 
@@ -302,7 +307,7 @@ describe('the dates', () => {
     const { filtered, indexed } = run({ when: 'week' });
     const c = indexed.find((one) => one.row.session.sid === SIDS.C);
     expect(filtered.hints.get(c?.row.key ?? '')).toEqual([
-      'Started 2030-01-14 16:02, from the first message',
+      { text: 'Started 2030-01-14 16:02, from the first message' },
     ]);
   });
 

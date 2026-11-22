@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { contrastOf, paintedColors, paintedControlColors } from './a11y.audit';
+import { auditCalm } from './calm.audit';
 import { act, useEffect, useState } from 'react';
 import { App } from '../src/App';
 import { SESSION_LIST_WORDS, SESSION_ROW_WORDS } from '../src/language/glossary';
@@ -687,7 +688,14 @@ export const AssignmentAndLocation: Story = {
     await ready(canvasElement);
     const row = rowOf(canvasElement, 'B');
     if (!row) throw new Error('Missing Changelog row');
-    const assignment = within(row).getByText('Current task · Fix queue');
+    const detail = within(row).getByText('Fix queue');
+    await expect(detail).toHaveAttribute('data-authored');
+    const title = within(row).getByText('Changelog for 2.4');
+    const goal = within(row).getByText('Ship the 2.4 changelog');
+    await expect(title).toHaveAttribute('data-authored');
+    await expect(goal).toHaveAttribute('data-authored');
+    const assignment = detail.parentElement;
+    if (!assignment) throw new Error('Missing current task line');
     const location = within(row).getByText(/share this display label across/);
     await expect(assignment.parentElement?.innerText).toContain(
       `${assignment.textContent}\n${location.textContent}`,
@@ -695,6 +703,18 @@ export const AssignmentAndLocation: Story = {
     await expect(location.getBoundingClientRect().top).toBeGreaterThanOrEqual(
       assignment.getBoundingClientRect().bottom,
     );
+    const excerpts = [title, goal, detail];
+    const originals = excerpts.map((node) => node.textContent);
+    try {
+      excerpts.forEach((node) => {
+        node.textContent = 'Revisit 1795327749000 and 1f4b8cd9 [3]';
+      });
+      await expect(auditCalm(canvasElement)).toEqual([]);
+    } finally {
+      excerpts.forEach((node, index) => {
+        node.textContent = originals[index] ?? '';
+      });
+    }
   },
 };
 
@@ -933,6 +953,11 @@ export const DefaultBoard: Story = {
     await expect(glance.compareDocumentPosition(search) & FOLLOWS).toBeTruthy();
     await expect(search.compareDocumentPosition(active) & FOLLOWS).toBeTruthy();
     await expect(chips(canvasElement)).toEqual([]);
+    const rows = canvasElement.querySelectorAll('[data-next-operation-group]');
+    await expect(rows[0]?.querySelector('.next-operations-columns')?.textContent).toBe(
+      'SessionProjectGoalNowNextBlocked',
+    );
+    await expect(auditCalm(canvasElement)).toEqual([]);
     await expect(canvas.getByRole('button', { name: 'All 12' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -1352,6 +1377,11 @@ export const KeyboardAndEscape: Story = {
     box.focus();
     await userEvent.paste(SIDS.C.slice(0, 8));
     await waitFor(() => expect(resultText(canvasElement)).toContain('Press Enter to open it.'));
+    const matchingRow = rowOf(canvasElement, 'C');
+    if (!matchingRow) throw new Error('Missing matching session');
+    await expect(matchingRow.querySelector('[data-next-row-hint]')).toHaveTextContent(
+      /^Matched in the session ID$/,
+    );
     await dispatchKey(box, 'Enter');
     await waitFor(() =>
       expect(shell.router.getRoute()).toMatchObject({ view: 'session', session: SIDS.C }),
