@@ -8,6 +8,7 @@ import { createShell } from '../src/shell/createShell';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
 import fixture from '../test/fixtures/declared-sessions.json';
+import { projectStatusBoard } from '../test/project_boards';
 
 function Example({
   hash = '#n=sessions',
@@ -15,12 +16,14 @@ function Example({
   parentQuestion = false,
   childTitle = 'Check build',
   plan = false,
+  statusRollup = false,
 }: {
   readonly hash?: string;
   readonly childQuestion?: boolean;
   readonly parentQuestion?: boolean;
   readonly childTitle?: string;
   readonly plan?: boolean;
+  readonly statusRollup?: boolean;
 }) {
   const [shell] = useState(() =>
     createShell({
@@ -98,6 +101,7 @@ function Example({
                         state: 'idle',
                       },
                     ],
+                    ...(statusRollup ? projectStatusBoard : {}),
                   }
                 : {},
             ),
@@ -465,6 +469,24 @@ export const ProjectsMemberAlignment: Story = {
     } finally {
       if (browser) await browser.viewport(original.width, original.height);
     }
+  },
+};
+
+export const ProjectsQuietRollup: Story = {
+  args: { hash: '#n=projects', statusRollup: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const scan = await canvas.findByRole('button', { name: /Scan-only session/ });
+    const stopped = canvas.getByRole('button', { name: /Recorded stop/ });
+    const counts = '3 sessions · 1 working · 1 quiet · 1 in no counted state';
+    await expect(within(stopped).getByRole('img', { name: 'Quiet' })).toBeVisible();
+    await expect(within(scan).queryByRole('img', { name: 'Quiet' })).toBeNull();
+    await expect(
+      within(scan).getByText('Read by scanning: no turn end can be observed here'),
+    ).toBeVisible();
+    await expect(canvas.getByText(counts)).toBeVisible();
+    await userEvent.click(canvas.getByText('rollup', { selector: 'strong' }));
+    await expect(await canvas.findByText(counts, { selector: 'p' })).toBeVisible();
   },
 };
 

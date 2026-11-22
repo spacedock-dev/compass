@@ -1,6 +1,6 @@
 import { nextNumber } from '../api/bootstrap';
 import type { BoardRisk } from './capacity';
-import type { ObservedSession } from './session';
+import { sessionState, type ObservedSession } from './session';
 import { goalOf } from './landing';
 import { locationNote } from './location';
 import { compare, pair, sessionKey, type Pair, type Row } from './values';
@@ -40,7 +40,7 @@ export function observeProject(
   const nativeNeeds = sessions.filter((session) => session.isNeeds).length;
   const working = sessions.filter((session) => session.isWorking);
   const ended = sessions.filter((session) => session.isEnded);
-  const quiet = sessions.filter((session) => session.isQuiet);
+  const quiet = sessions.filter((session) => sessionState(session) === 'Quiet');
   const counts = [`${String(sessions.length)} ${sessions.length === 1 ? 'session' : 'sessions'}`];
   if (working.length) counts.push(`${String(working.length)} working`);
   if (nativeNeeds) counts.push(`${String(nativeNeeds)} waiting on you`);

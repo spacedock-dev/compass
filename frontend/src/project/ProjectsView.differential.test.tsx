@@ -2,6 +2,7 @@ import { restateRecordedLocationNotes } from '../../test/location_departure';
 import { describe, expect, it } from 'vitest';
 import { genPayload } from '../observed/generate.test.helper';
 import { restateLiveOpener } from '../../test/recordedCommandOpener';
+import { omitQuietRollup } from '../../test/recordedSessionStatus';
 import { mountShell } from '../shell/testing';
 import { genBoard, scenarios } from './generate.test.helper';
 import { loadLegacyApp, parseHtml } from './legacy.test.helper';
@@ -39,6 +40,8 @@ interface Summary {
 
 function summarize(root: ParentNode): Summary {
   restateRecordedLocationNotes(root);
+  for (const count of root.querySelectorAll('.next-project-summary'))
+    count.textContent = omitQuietRollup(norm(count));
   return {
     note: norm(root.querySelector('.next-projects-note')),
     groups: [...root.querySelectorAll('[data-next-project-group]')].map((group) => ({

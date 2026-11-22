@@ -1,3 +1,12 @@
+/* The project rollups now require a recorded stop for Quiet. Keep the other counts in the
+   recorded comparisons. ProjectsQuietRollup asserts the two counts that can move. */
+export function omitQuietRollup(text: string): string {
+  return text.replace(
+    /(\d+ sessions?(?: · \d+ (?:working|waiting on you|ended))*)(?: · \d+ (?:quiet|in no counted state))+/g,
+    '$1',
+  );
+}
+
 /* 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
    Project members embed the same observed rows as Sessions. Project only the retired
    outcome marker and the idle placeholder. Relationship and scan status have their own proofs. */

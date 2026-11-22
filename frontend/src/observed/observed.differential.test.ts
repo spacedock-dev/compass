@@ -1,4 +1,4 @@
-import { recordedSessionStatus } from '../../test/recordedSessionStatus';
+import { omitQuietRollup, recordedSessionStatus } from '../../test/recordedSessionStatus';
 import { recordedLocationNotes } from '../../test/location_departure';
 import { describe, expect, it } from 'vitest';
 import { instructionSourceDeviation } from '../../test/projectWordDeviation';
@@ -29,8 +29,9 @@ const SEEDS = CASES;
 function withoutHistory(input: Record<string, unknown>): Record<string, unknown> {
   const model = recordedSessionStatus(recordedLocationNotes(input)) as typeof input;
   const projects = (model['projects'] as Record<string, unknown>[]).map((project) => {
+    const countLine = project['countLine'] as string;
     return Object.fromEntries(
-      Object.entries(project).filter(
+      Object.entries({ ...project, countLine: omitQuietRollup(countLine) }).filter(
         ([key]) => !(PROJECT_HISTORY_KEYS as readonly string[]).includes(key),
       ),
     );

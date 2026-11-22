@@ -43,6 +43,7 @@ import { openPage } from './support/browser.mjs';
 import { goldenFor, jsonSafe, normalise } from './support/golden.mjs';
 import { recordedLocationNotes } from './support/location-deviations.mjs';
 import { recordedName } from '../test/recorded-name.ts';
+import { omitQuietRollup } from '../test/recordedSessionStatus.ts';
 import {
   instrumentResources,
   recordClipboard,
@@ -353,6 +354,21 @@ function maskRecordedProjectGlyphs(record, evidence) {
   };
 }
 
+function omitProjectStatusCounts(record) {
+  if (Array.isArray(record.groups)) {
+    return {
+      ...record,
+      groups: record.groups.map((group) => ({
+        ...group,
+        rows: group.rows.map((row) => ({ ...row, text: omitQuietRollup(row.text) })),
+      })),
+    };
+  }
+  return typeof record.header === 'string'
+    ? { ...record, header: omitQuietRollup(record.header) }
+    : record;
+}
+
 const proof = parityBoard();
 const contextsFor = (contexts) => {
   const out = {};
@@ -406,10 +422,10 @@ try {
     const key = `${name} | ${fragment} | ${digestOf([holder.body, holder.contexts, args])}`;
     const project = decodeURIComponent(fragment.split(':')[1] || '');
     return {
-      mine: restateLiveOpenerValue(mine),
+      mine: omitProjectStatusCounts(restateLiveOpenerValue(mine)),
       old: projectWordDeviation(
         maskRecordedProjectGlyphs(
-          recordedLocationNotes(golden.observe(key), holder.body, project),
+          omitProjectStatusCounts(recordedLocationNotes(golden.observe(key), holder.body, project)),
           [holder.body, holder.contexts],
         ),
         projectGlossEnabled(holder.body, project),

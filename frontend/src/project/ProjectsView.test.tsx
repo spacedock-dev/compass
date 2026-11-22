@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { projectStatusBoard } from '../../test/project_boards';
 import { mountProject } from './testing';
 
 /* Keyboard focus on the Projects list is kept by the member button's own node surviving a refresh (see the
@@ -22,6 +23,19 @@ const member = (sid: string): HTMLElement => {
   if (!found) throw new Error(`No member line for ${sid}.`);
   return found;
 };
+
+it('counts idle sessions as quiet only when their rows show Quiet', async () => {
+  const page = mountProject({ hash: '#n=projects', data: projectStatusBoard });
+  await page.settle();
+  expect(member('stopped').querySelector('[aria-label="Quiet"]')).not.toBeNull();
+  expect(member('scan').querySelector('[aria-label="Quiet"]')).toBeNull();
+  expect(member('scan').textContent).toContain(
+    'Read by scanning: no turn end can be observed here',
+  );
+  expect(page.container.querySelector('.next-project-summary')?.textContent).toBe(
+    '3 sessions · 1 working · 1 quiet · 1 in no counted state',
+  );
+});
 
 describe('the Projects list keeps a member line through a refresh', () => {
   it('keeps keyboard focus on a member when a session joins above it', async () => {

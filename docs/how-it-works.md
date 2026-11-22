@@ -194,6 +194,9 @@ rows into label buckets within active work and recent history. Named choices, ch
 quote labels; unquoted "No group" means no label.
 Filters and grouping last across board refreshes and trips into a session; reloading clears them.
 
+The Projects list and each project's summary count a session as quiet only when its row is
+Quiet. An idle session without an observed turn end contributes to `in no counted state`.
+
 A quiet Codex rollout can still be working while a shell-capable call has no matching output.
 Within an open turn, an unanswered `exec`, `exec_command`, `shell_command` or `write_stdin` reads
 `running <tool>` for up to 15 minutes from that call. Each parallel call retires on its own output.

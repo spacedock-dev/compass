@@ -19,7 +19,7 @@ import { locationBoard, locationRow } from '../../test/location_boards';
 const read = (name: string) =>
   JSON.parse(readFileSync(resolve('frontend/test/fixtures', `${name}.json`), 'utf8'));
 for (const name of ['terminal-project', 'terminal-project-fo']) {
-  it(`a person reads the same recorded ${name} brief in the terminal and on the board`, async () => {
+  it(`the board preserves the recorded ${name} brief with evidence-based Quiet counts`, async () => {
     const payload = read(`client-contract/data-${name}`).response.body as Row;
     const context = read(`client-contract/context-${name}`).response.body as Row;
     const group = groupFor(payload, observe(payload), 'terminal-project');
@@ -110,9 +110,13 @@ for (const name of ['terminal-project', 'terminal-project-fo']) {
         `${JSON.stringify(board, null, 2)}\n`,
       );
     }
-    // The recorded rows publish label fallbacks, so none establishes a measured location.
+    // The recorded rows publish neither measured locations nor turn stops for their idle sessions.
     expect(board).toEqual({
       ...read(name),
+      counts:
+        name === 'terminal-project-fo'
+          ? '4 sessions · 1 ended · 3 in no counted state'
+          : '4 sessions · 1 working · 1 waiting on you · 1 ended · 1 in no counted state',
       warning: 'Location not measured for 4 sessions with this display label',
     });
   });

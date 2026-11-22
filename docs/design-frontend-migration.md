@@ -26,6 +26,13 @@ comparison maps recorded Idle to Quiet for the rows with a turn stop and to Stat
 the four rows without one. The activity proofs retain the hollow and marked circle distinction.
 The browser title's attention cue keeps its text. The recorded answers stay fixed.
 
+The Projects list and project header count Quiet only when the member's own state is Quiet.
+An idle row without a recorded turn end contributes to `in no counted state`. The recorded
+web comparisons omit those two subtotals and still compare the total and the other counts.
+The terminal-brief comparison expects the new web subtotals for its idle rows, which publish
+no turn end. `Projects Quiet Rollup` in Storybook checks both web surfaces using a recorded
+stop and a scan-only idle row in the same project.
+
 Raise now diagnoses a restarted dashboard only from an explicit `stale-capability` refusal.
 Other 403 replies keep the server's refusal sentence, with a generic refusal for older HTML
 replies. The live client-contract fixtures are regenerated with the server; the retired page's
