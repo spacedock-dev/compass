@@ -1,19 +1,13 @@
 import { buttonVariants } from '../ui/button';
 import { Icon } from '../ui/icons';
+import { SHOWN } from '../language/glossary';
 import { cn } from '../lib/utils';
-import { fragmentForRoute, sessionHome, type Route, type TopLevelView } from '../router/grammar';
+import { fragmentForRoute, sessionHome, type Route } from '../router/grammar';
 import type { PayloadData } from '../api/types';
 import { SAMPLE_FIXTURE } from '../sample/fixture';
 import { isSampleRoute } from '../sample/ids';
 import { findSession, sessionTitle } from './derive';
 import { useDisplayed } from './context';
-
-const HOME_LABEL: Readonly<Record<Exclude<TopLevelView, 'projects'>, string>> = {
-  sessions: 'Sessions',
-  attention: 'Attention',
-  intent: 'Intent log',
-  settings: 'Settings',
-};
 
 /* The crumb a reader sees for the location they are in. Top-level views carry none. A session's crumb
    starts at the view the reader came from (a pasted link carries no origin and starts at Sessions), and
@@ -29,7 +23,7 @@ export function Breadcrumb({ route }: { readonly route: Route }) {
       className={cn('next-crumb', buttonVariants({ variant: 'native' }))}
       href="#n=projects"
     >
-      Projects
+      {SHOWN.projects}
     </a>
   );
   const separator = (
@@ -48,7 +42,7 @@ export function Breadcrumb({ route }: { readonly route: Route }) {
     /* The sample's session is on its own board, not the one this page polls, so its crumb reads its title there. */
     const board = isSampleRoute(route) ? (SAMPLE_FIXTURE.board as unknown as PayloadData) : data;
     const session = findSession(board, route.project, route.harness, route.session);
-    const label = session ? sessionTitle(session) : 'Session';
+    const label = session ? sessionTitle(session) : SHOWN.session;
     const current = (
       <>
         {separator}
@@ -64,7 +58,7 @@ export function Breadcrumb({ route }: { readonly route: Route }) {
             className={cn('next-crumb', buttonVariants({ variant: 'native' }))}
             href={`#n=${home}`}
           >
-            {HOME_LABEL[home]}
+            {SHOWN[home]}
           </a>
           {current}
         </>
@@ -94,7 +88,7 @@ export function Breadcrumb({ route }: { readonly route: Route }) {
     }
   }
   return (
-    <nav className="next-breadcrumb" aria-label="Breadcrumb">
+    <nav className="next-breadcrumb" aria-label={SHOWN.breadcrumb}>
       {trail}
     </nav>
   );
