@@ -4,6 +4,7 @@ import {
   PiCheck,
   PiCheckBold,
   PiCheckCircle,
+  PiCheckCircleBold,
   PiCheckFat,
   PiChecks,
   PiCheckSquare,
@@ -21,7 +22,15 @@ const CHECK_GLYPHS = /[\u221a\u2611\u2705\u2713\u2714\u{10102}\u{1f5f8}\u{1f5f9}
 function checkIconPaths(): Set<string> {
   const host = document.createElement('div');
   const root = createRoot(host);
-  const icons = [PiCheck, PiCheckBold, PiCheckCircle, PiCheckFat, PiChecks, PiCheckSquare];
+  const icons = [
+    PiCheck,
+    PiCheckBold,
+    PiCheckCircle,
+    PiCheckCircleBold,
+    PiCheckFat,
+    PiChecks,
+    PiCheckSquare,
+  ];
   flushSync(() =>
     root.render(
       <>
