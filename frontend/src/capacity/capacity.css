@@ -1,8 +1,6 @@
 @layer legacy {
-/* The capacity strip and the consent disclosures, ported rule for rule from the legacy stylesheet so the
-   two pages draw the same boxes. Colours and sizes are the shell's tokens (`styles/shell.css`). The pairs of
-   rules for one selector (`.next-capacity-pct`, `.next-capacity-pace`) are the legacy page's own: the later
-   one is a deliberate override and the order is part of the port. */
+/* Capacity and consent use the shared theme tokens. The repeated .next-capacity-pct and
+   .next-capacity-pace rules retain the legacy override order. */
 .next-usage-consent{margin-top:22px}
 .next-usage-consent p{margin:0}
 .next-usage-consent strong{font-weight:500}
@@ -25,7 +23,7 @@
 .next-capacity-fill.warn{background:var(--amber)}
 .next-capacity-fill.crit{background:var(--clay)}
 .next-capacity-fill.unknown{background:var(--line)}
-.next-capacity-tick{position:absolute;top:-1px;bottom:-1px;width:2px;background:var(--ink)}
+.next-capacity-tick{position:absolute;top:-1px;bottom:-1px;width:2px;background:var(--ink);outline:1px solid var(--panel)}
 .next-capacity-noclock{height:16px;border:1px dashed var(--rule);background:repeating-linear-gradient(135deg,var(--sunk) 0 5px,transparent 5px 10px)}
 .next-capacity-pace,.next-capacity-ends,.next-capacity-resets{font-family:var(--mono);font-size:var(--fs-label);font-variant-numeric:tabular-nums;color:var(--ink2);min-width:0}
 .next-capacity-pace{font-size:var(--fs-label);text-align:right;color:var(--ink2)}

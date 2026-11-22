@@ -54,7 +54,7 @@
   --color-popover: var(--panel);
   --color-popover-foreground: var(--ink);
   --color-primary: var(--accent);
-  --color-primary-foreground: var(--sunk);
+  --color-primary-foreground: var(--on-accent);
   --color-secondary: var(--raise);
   --color-secondary-foreground: var(--ink);
   --color-muted: var(--sunk);
@@ -69,33 +69,47 @@
 }
 
 /* The page palette and five type steps stay present even when no utility names them. Semantic colours
-   bridge to these properties: shadcn uses accent for a hover surface, while Compass uses it for lime.
+   bridge to these properties: shadcn uses accent for a hover surface, while Compass uses it for actions.
    Base UI sets the measured panel properties on its elements; these defaults keep the compiled variable
    contract complete before any panel is measured. */
 @theme static {
   /* surfaces: sunk only inside panel, panel only on bg, raise only above bg */
-  --sunk: #0f0f0a;
-  --bg: #14140f;
-  --panel: #24231b;
-  --raise: #323025;
+  --sunk: #eef1f4;
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --raise: #fafbfc;
   /* boundaries: --line bounds controls, --rule divides rows and may not bound one */
-  --line: #74725f;
-  --line-hi: #8a8874;
-  --rule: #35342a;
-  --ink: #f6f3ea;
-  --ink2: #cdc7b4;
-  --ink3: #a39c88;
+  --line: #7b8794;
+  --line-hi: #52606d;
+  --rule: #e3e7eb;
+  --ink: #1f2933;
+  --ink2: #52606d;
+  --ink3: #5c6976;
   --ink-label: var(--ink2);
   --ink-value: var(--ink);
   --ink-absence: var(--ink2);
   --ink-caption: var(--ink2);
   /* colour is observation; absence has none */
-  --accent: #cfe884;
-  --accent-dim: #93a757;
-  /* a citation link in running text: not the lime of an action, not the ink of the words around it */
-  --cite: #8fb8e6;
-  --amber: #f0b95e;
-  --clay: #e4886a;
+  --accent: #2f7d5b;
+  --accent-dim: #21573f;
+  --on-accent: #ffffff;
+  --cite: #1d4ed8;
+  --amber: #92400e;
+  --clay: #9a3412;
+  --status-working-bg: #e8f0fe;
+  --status-working-ink: #1d4ed8;
+  --status-waiting-bg: #fef3e2;
+  --status-waiting-ink: #92400e;
+  --status-quiet-bg: #eef1f4;
+  --status-quiet-ink: #3e4c59;
+  --status-ended-bg: #e6f2ec;
+  --status-ended-ink: #21573f;
+  --progress-on-track: #2f7d5b;
+  --progress-slightly-off-course: #c2410c;
+  --progress-off-course: #c2410c;
+  --progress-way-off-course: #7c2d12;
+  --worth-a-look: #92400e;
+  --destructive-solid: #9a3412;
   /* type: five steps, floor 13px, sentences 15px */
   --fs-label: 0.8125rem;
   --fs-body: 0.9375rem;
@@ -110,8 +124,11 @@
   --r-shell: 1rem;
   --r-pill: 999px;
   --control-pad: 0.5625rem 0.875rem;
-  --e-raise: 0 18px 44px -22px #000, inset 0 1px 0 rgba(246, 243, 234, 0.07);
-  --hatch: repeating-linear-gradient(135deg, transparent 0 5px, rgba(163, 156, 136, 0.26) 5px 6px);
+  --scrim: rgb(31 41 51 / 40%);
+  --e-raise: 0 1px 2px rgb(31 41 51 / 12%);
+  --e-pop: 0 8px 24px rgb(31 41 51 / 18%);
+  --e-dialog: 0 16px 48px rgb(31 41 51 / 24%);
+  --hatch: repeating-linear-gradient(135deg, transparent 0 5px, rgb(31 41 51 / 9%) 5px 6px);
   --sp-1: 0.25rem;
   --sp-2: 0.5rem;
   --sp-3: 0.75rem;
@@ -131,9 +148,9 @@
   --anchor-width: auto;
 }
 
-/* Tailwind's default `dark:` variant emits a `prefers-color-scheme` rule, and this page is dark only.
+/* Tailwind's default `dark:` variant emits a `prefers-color-scheme` rule, and this page is light only.
    Redefined to a selector nothing carries, so a vendored `dark:` class emits an inert rule at most. */
-@custom-variant dark (&:where(.compass-light-mode, .compass-light-mode *));
+@custom-variant dark (&:where(.compass-dark-mode, .compass-dark-mode *));
 
 /* Copied from shadcn/tailwind.css (shadcn 4.21.4, MIT): the two variants the vendored files use. The rest of
    that file (keyframes, scroll-fade utilities) is not imported. */

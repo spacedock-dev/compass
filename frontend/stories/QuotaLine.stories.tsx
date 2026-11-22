@@ -9,6 +9,7 @@ import { createShell } from '../src/shell/createShell';
 import { ShellContext } from '../src/shell/context';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
+import { contrastOf, rgbOf } from './a11y.audit';
 
 /* The quota fetch is on until the reader turns it off: one line says what is read and that no session content
    is sent, and one button turns it off. Every `/api/data` URL the page sends is kept, so the story asserts the
@@ -161,5 +162,59 @@ export const ConsoleRailTurnedOffWithWindowsShown: Story = {
         'Quota reading is off. Windows above are the last cached read and will lapse.',
       ),
     ).toBeVisible();
+  },
+};
+
+const PACE_WINDOWS = [20, 55, 90];
+const PACE_USAGE = PACE_WINDOWS.map((pct) => ({
+  ...CLAUDE_WINDOW[0],
+  fiveH: { pct, windowSec: 18000, resetAt: 9001 },
+}));
+
+export const PaceTickContrast: Story = {
+  render: () => (
+    <>
+      <section aria-label="Capacity strip">
+        {PACE_USAGE.map((entry) => (
+          <QuotaExample key={entry.fiveH.pct} strip usage={[entry]} />
+        ))}
+      </section>
+      <section aria-label="Console capacity rail">
+        {PACE_USAGE.map((entry) => (
+          <QuotaExample key={entry.fiveH.pct} rail usage={[entry]} />
+        ))}
+      </section>
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    for (const [label, prefix] of [
+      ['Capacity strip', 'next-capacity'],
+      ['Console capacity rail', 'next-rail-capacity'],
+    ] as const) {
+      const region = within(canvas.getByRole('region', { name: label }));
+      for (const pct of PACE_WINDOWS) {
+        const bar = await region.findByRole('img', { name: new RegExp(`^${pct}%`) });
+        const fill = bar.querySelector(`.${prefix}-fill`);
+        const tick = bar.querySelector(`.${prefix}-tick`);
+        if (!fill || !tick) throw new Error(`Expected fill and clock tick for ${label} at ${pct}%`);
+        const track = bar.getBoundingClientRect();
+        const tickBox = tick.getBoundingClientRect();
+        await expect(tickBox.left - track.left).toBeCloseTo(track.width / 2, 0);
+        const coversTick = fill.getBoundingClientRect().right > tickBox.left + tickBox.width / 2;
+        await expect(coversTick).toBe(pct > 50);
+
+        const adjacent = rgbOf(getComputedStyle(coversTick ? fill : bar).backgroundColor);
+        const style = getComputedStyle(tick);
+        const body = contrastOf(rgbOf(style.backgroundColor), adjacent);
+        const edge =
+          style.outlineStyle === 'solid' && Number.parseFloat(style.outlineWidth) >= 1
+            ? contrastOf(rgbOf(style.outlineColor), adjacent)
+            : 0;
+        await expect(Math.max(body, edge), `${label} tick at ${pct}% used`).toBeGreaterThanOrEqual(
+          3,
+        );
+      }
+    }
   },
 };

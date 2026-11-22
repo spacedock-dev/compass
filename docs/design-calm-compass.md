@@ -83,6 +83,12 @@ Blue identifies Working. Orange indicates a progress reading that found a depart
 reserved for Waiting on you and Worth a look. A reader has a word, a shape or both alongside
 color.
 
+In the read-only terminal, xterm adjusts ANSI foregrounds to at least 4.5:1 on the light
+ground. The selection uses the strong boundary color behind white text and remains visible
+when the terminal loses focus. Select options show a two-pixel inset focus ring before the
+reader commits a choice. The Capacity strip and Console rail use a dark elapsed tick with a
+light outline so the marker stays visible on both the filled bar and the empty track.
+
 One bundled variable Inter face supplies the five steps. The style board uses 800 for the
 34 px page title, 700 for 24 px section and 18 px card titles, and 400 at 15 px for body
 text. Use 13 px for supporting text, tags and badges. It is the floor. Technical details

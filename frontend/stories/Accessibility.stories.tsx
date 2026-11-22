@@ -87,7 +87,7 @@ export const EveryLevelReadsWithoutColour: Story = {
   render: () => (
     <div
       style={{
-        background: 'var(--card, #24231b)',
+        background: 'var(--panel)',
         padding: 16,
         display: 'grid',
         gap: 16,

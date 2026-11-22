@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { build } from 'vite';
@@ -34,6 +35,77 @@ export function externalUrls(text: string): string[] {
 
 const REM = /^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)rem$/;
 const STEPS = { label: 0.8125, body: 0.9375, value: 1.125, head: 1.5, hero: 2.125 };
+const PALETTE = {
+  sunk: '#eef1f4',
+  bg: '#f4f6f8',
+  panel: '#ffffff',
+  raise: '#fafbfc',
+  line: '#7b8794',
+  'line-hi': '#52606d',
+  rule: '#e3e7eb',
+  ink: '#1f2933',
+  ink2: '#52606d',
+  ink3: '#5c6976',
+  'ink-label': 'var(--ink2)',
+  'ink-value': 'var(--ink)',
+  'ink-absence': 'var(--ink2)',
+  'ink-caption': 'var(--ink2)',
+  accent: '#2f7d5b',
+  'accent-dim': '#21573f',
+  'on-accent': '#ffffff',
+  cite: '#1d4ed8',
+  amber: '#92400e',
+  clay: '#9a3412',
+  'status-working-bg': '#e8f0fe',
+  'status-working-ink': '#1d4ed8',
+  'status-waiting-bg': '#fef3e2',
+  'status-waiting-ink': '#92400e',
+  'status-quiet-bg': '#eef1f4',
+  'status-quiet-ink': '#3e4c59',
+  'status-ended-bg': '#e6f2ec',
+  'status-ended-ink': '#21573f',
+  'progress-on-track': '#2f7d5b',
+  'progress-slightly-off-course': '#c2410c',
+  'progress-off-course': '#c2410c',
+  'progress-way-off-course': '#7c2d12',
+  'worth-a-look': '#92400e',
+  'destructive-solid': '#9a3412',
+  scrim: 'rgb(31 41 51 / 40%)',
+  'e-raise': '0 1px 2px rgb(31 41 51 / 12%)',
+  'e-pop': '0 8px 24px rgb(31 41 51 / 18%)',
+  'e-dialog': '0 16px 48px rgb(31 41 51 / 24%)',
+  hatch: 'repeating-linear-gradient(135deg, transparent 0 5px, rgb(31 41 51 / 9%) 5px 6px)',
+};
+// The production optimizer shortens opaque white and serializes these alpha colours as hex.
+const COMPILED_PALETTE = {
+  ...PALETTE,
+  panel: '#fff',
+  'on-accent': '#fff',
+  scrim: '#1f293366',
+  'e-raise': '0 1px 2px #1f29331f',
+  'e-pop': '0 8px 24px #1f29332e',
+  'e-dialog': '0 16px 48px #1f29333d',
+  hatch: 'repeating-linear-gradient(135deg, transparent 0 5px, #1f293317 5px 6px)',
+};
+const source = (path: string) =>
+  clean(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'));
+const theme = source('styles/tailwind.css');
+const paletteBlock = /@theme static\s*\{[^}]+\}/;
+const hexColour = /#(?:[\da-f]{8}|[\da-f]{6}|[\da-f]{4}|[\da-f]{3})(?![\da-z-])/i;
+const tokens = new Map(
+  [...(theme.match(paletteBlock)?.[0] ?? '').matchAll(/--([\w-]+):\s*([^;]+);/g)].map(
+    ([, name, value]) => [name, value],
+  ),
+);
+
+function luminance(hex: string): number {
+  expect(hex).toMatch(/^#[\da-f]{6}$/i);
+  const channels = [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16) / 255);
+  return channels.reduce((total, channel, index) => {
+    const linear = channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    return total + linear * ([0.2126, 0.7152, 0.0722][index] ?? 0);
+  }, 0);
+}
 const cssList: { space(value: string): string[] } = createRequire(import.meta.resolve('vite'))(
   'postcss',
 ).list;
@@ -71,8 +143,19 @@ export function builtProblems(input: string): string[] {
   const text = clean(input);
   const problems: string[] = [];
   const properties = new Map<string, string>();
-  for (const match of text.matchAll(/(--[\w-]+)\s*:\s*([^;}]+)/g))
-    properties.set(match[1] as string, (match[2] ?? '').trim());
+  const paletteDeclarations = new Map(Object.keys(PALETTE).map((name) => [`--${name}`, 0]));
+  for (const [, name, value] of text.matchAll(/(--[\w-]+)\s*:\s*([^;}]+)/g)) {
+    if (name === undefined || value === undefined) continue;
+    properties.set(name, value.trim());
+    const count = paletteDeclarations.get(name);
+    if (count !== undefined) paletteDeclarations.set(name, count + 1);
+  }
+  // The ruled value must be the sole declaration so no other rule can override it.
+  for (const [token, expected] of Object.entries(COMPILED_PALETTE)) {
+    const name = `--${token}`;
+    if (paletteDeclarations.get(name) !== 1 || properties.get(name) !== expected)
+      problems.push(`palette declaration ${name}`);
+  }
   for (const match of text.matchAll(
     /@property\s+(--[\w-]+)\s*\{[^}]*initial-value\s*:\s*([^;}]+)/g,
   ))
@@ -100,10 +183,10 @@ export function builtProblems(input: string): string[] {
   if (externalUrls(text).length || /https?:\/\//.test(text)) problems.push('external asset');
   if (
     /prefers-color-scheme/.test(text) ||
-    !/color-scheme\s*:\s*dark(?:[;}])/.test(text) ||
-    /color-scheme\s*:\s*(?!dark(?:[;}]))[^;}]+/.test(text)
+    !/color-scheme\s*:\s*light(?:[;}])/.test(text) ||
+    /color-scheme\s*:\s*(?!light(?:[;}]))[^;}]+/.test(text)
   )
-    problems.push('dark scheme');
+    problems.push('light scheme');
   if (/--ctl-/.test(text)) problems.push('retired control alias');
   for (const [name, value] of Object.entries(STEPS))
     if (
@@ -136,8 +219,52 @@ export function builtProblems(input: string): string[] {
   return [...new Set(problems)].sort();
 }
 
+describe('the light board palette', () => {
+  it.each([
+    ['--bg', ':root { --bg: rgb(20 20 15); }'],
+    ['--ink-caption', ':root { --ink-caption: rgb(205 199 180) !important; }'],
+  ])('rejects a compiled override of %s', (name, override) => {
+    expect(builtProblems(css + override)).toContain(`palette declaration ${name}`);
+  });
+
+  it('recognizes hex colours followed by a Tailwind underscore separator', () => {
+    expect('[box-shadow:#000_0_18px_44px_-22px]').toMatch(hexColour);
+  });
+
+  it.each(Object.entries(PALETTE))('keeps the ruled --%s token', (name, value) => {
+    expect(tokens.get(name)).toBe(value);
+  });
+
+  it.each(['panel', 'bg'])('makes control boundaries visible on --%s at 3:1 or more', (surface) => {
+    const backgrounds = [luminance(tokens.get(surface) ?? ''), luminance(tokens.get('line') ?? '')];
+    expect(
+      (Math.max(...backgrounds) + 0.05) / (Math.min(...backgrounds) + 0.05),
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it('uses the on-accent token for primary foregrounds', () => {
+    expect(theme).toMatch(/--color-primary-foreground:\s*var\(--on-accent\);/);
+  });
+
+  it.each([
+    ['styles/tailwind.css', theme.replace(paletteBlock, '')],
+    ...[
+      'shell/favicon.ts',
+      'terminal/owner.ts',
+      'controls/gallery.tsx',
+      'drift/CitationLink.tsx',
+      'ui/button.tsx',
+      'ui/tooltip.tsx',
+      'ui/popover.tsx',
+      'ui/select.tsx',
+    ].map((path) => [path, source(path)]),
+  ])('keeps hard-coded hex colours out of %s', (_path, text) => {
+    expect(text).not.toMatch(hexColour);
+  });
+});
+
 describe('the compiled stylesheet', () => {
-  it('keeps local assets, dark colours, resolved variables and the five type steps', () => {
+  it('keeps local assets, a light scheme, resolved variables and the five type steps', () => {
     expect(builtProblems(css)).toEqual([]);
   });
   it('detects quoted external URLs', () => {
@@ -150,7 +277,7 @@ describe('the compiled stylesheet', () => {
     ['type step', /--fs-label:[^;}]+/, '--fs-label:.75rem', 'type step label'],
     ['body type', /body\{([^}]*?)font-size:var\(--fs-body\);?/, 'body{$1', 'body type'],
     ['colour', /--ink-absence:[^;}]+/, '--ink-absence:var(--missing-ink)', 'absence ink'],
-    ['dark scheme', /color-scheme:dark/, 'color-scheme:light', 'dark scheme'],
+    ['light scheme', /color-scheme:light/, 'color-scheme:dark', 'light scheme'],
     ['variable', /--ink2:[^;}]+/, '--ink2:var(--missing-ink)', 'undeclared variable --missing-ink'],
   ] as const)('fails a mutation removing %s', (_name, needle, replacement, reason) => {
     expect(css).toMatch(needle);
@@ -165,7 +292,7 @@ describe('the compiled stylesheet', () => {
     ['.dead{color:var(--missing)}', 'undeclared variable --missing'],
     ['.dead{background:url(https://x.test/a.png)}', 'external asset'],
     ['@import url("a.css");', 'remaining import'],
-    ['@media(prefers-color-scheme:light){.dead{color:white}}', 'dark scheme'],
+    ['@media(prefers-color-scheme:dark){.dead{color:white}}', 'light scheme'],
     ['.dead{--a:var(--b);--b:var(--a);color:var(--a)}', 'cyclic variable --a'],
   ])('fails a compiled addition %s', (addition, reason) => {
     expect(builtProblems(css + addition)).toContain(reason);

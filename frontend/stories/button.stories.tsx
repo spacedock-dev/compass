@@ -42,11 +42,15 @@ export const Answer: Story = {
   },
 };
 export const Primary: Story = {
-  args: { variant: 'primary', children: 'Button primary' },
+  args: { variant: 'primary', children: 'Check progress' },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     const node = canvas.getByRole('button', { name: args.children as string });
     await expect(node).toBeVisible();
+    await expect(node).toHaveStyle({
+      backgroundColor: 'rgb(47, 125, 91)',
+      color: 'rgb(255, 255, 255)',
+    });
     await expect(node.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
     await userEvent.hover(node);
     node.focus();
@@ -171,6 +175,10 @@ export const RaisePrimary: Story = {
     const canvas = within(canvasElement);
     const node = canvas.getByRole('button', { name: args.children as string });
     await expect(node).toBeVisible();
+    await expect(node).toHaveStyle({
+      backgroundColor: 'rgb(47, 125, 91)',
+      color: 'rgb(255, 255, 255)',
+    });
     await expect(node.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
     await userEvent.hover(node);
     node.focus();
@@ -213,6 +221,10 @@ export const Pending: Story = {
     await expect(button).toHaveAccessibleName('Saving…');
     await expect(button).toHaveAttribute('aria-busy', 'true');
     await expect(button).toHaveAttribute('aria-disabled', 'true');
+    await expect(button).toHaveStyle({
+      backgroundColor: 'rgb(47, 125, 91)',
+      color: 'rgb(255, 255, 255)',
+    });
     await expect(button).toHaveFocus();
     await expect(button.getBoundingClientRect().width).toBe(width);
     await userEvent.keyboard('{Enter} ');
@@ -225,6 +237,7 @@ function PendingExample() {
   return (
     <>
       <Button
+        variant="primary"
         reserve="Saving the intent…"
         busyLabel="Saving…"
         aria-busy={requests > 0}
@@ -284,6 +297,20 @@ export const RaiseDeclined: Story = {
     await expect(
       within(canvasElement).getByRole('button', { name: 'RAISE declined' }),
     ).toBeVisible();
+  },
+};
+export const PrimaryRaiseDeclined: Story = {
+  render: () => (
+    <Button variant="raise-primary" data-raise-state="declined">
+      RAISE declined
+    </Button>
+  ),
+  play: async ({ canvasElement }) => {
+    const button = within(canvasElement).getByRole('button', { name: 'RAISE declined' });
+    await expect(button).toHaveStyle({
+      backgroundColor: 'rgb(238, 241, 244)',
+      color: 'rgb(82, 96, 109)',
+    });
   },
 };
 export const RaiseFailed: Story = {

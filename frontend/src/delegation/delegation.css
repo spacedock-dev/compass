@@ -40,7 +40,7 @@
 .next-rail-capacity-fill--clay{background:var(--clay)}
 .next-rail-capacity-fill--amber{background:var(--amber)}
 .next-rail-capacity-fill--unknown{background:var(--ink3)}
-.next-rail-capacity-tick{position:absolute;top:-2px;bottom:-2px;width:1.5px;background:var(--ink2)}
+.next-rail-capacity-tick{position:absolute;top:-2px;bottom:-2px;width:1.5px;background:var(--ink2);outline:1px solid var(--panel)}
 .next-rail-capacity-caption{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;color:var(--ink2);font:var(--fs-label) var(--mono)}
 .next-project-detail-rail .next-usage-consent{margin:0}
 .next-project-detail-rail .next-usage-consent-note{font-family:var(--sans);font-size:var(--fs-label)}

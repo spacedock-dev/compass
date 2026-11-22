@@ -271,8 +271,8 @@ try {
           };
         }),
         {
-          background: 'rgb(50, 48, 37)',
-          border: '1px solid rgb(116, 114, 95)',
+          background: 'rgb(250, 251, 252)',
+          border: '1px solid rgb(123, 135, 148)',
           padding: '10px 12px',
           radius: '4px',
         },

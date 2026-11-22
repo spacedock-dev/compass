@@ -104,7 +104,7 @@ export const grayOf = ([r, g, b]: Rgb, amount: number): Rgb => {
    gradient or a filter other than `grayscale` sits between. A `grayscale()` ancestor turns the colours it
    draws grey, and the page backdrop outside it is not touched, so the filter is applied to the group's own
    layers only. The one level of filter the page uses is all this models. */
-/* The page's hatch, the pattern that says a value is absent: 1px lines at 26% alpha over the surface's own colour.
+/* The page's hatch, the pattern that says a value is absent: faint 1px lines over the surface's own colour.
    Text over it is measured against that colour, as the lines are faint enough not to be its backdrop; any other
    image or gradient under text stays unmeasured. */
 let hatchValue: string | null = null;

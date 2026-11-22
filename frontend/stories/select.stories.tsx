@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, within, waitFor } from 'storybook/test';
 import { useState } from 'react';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../src/ui/select';
+import { contrastOf, rgbOf } from './a11y.audit';
 
 const meta = { title: 'UI/Select', component: SelectTrigger } satisfies Meta<typeof SelectTrigger>;
 export default meta;
@@ -54,10 +55,22 @@ export const KeyboardAndLongText: Story = {
     await expect(await page.findByRole('option', { name: long })).toHaveAttribute('title', long);
     const list = await page.findByRole('listbox');
     await expect(list).toBeVisible();
+    const popup = list.closest('[data-slot="select-content"]');
+    if (!popup) throw new Error('Expected the listbox inside a select popup');
+    await expect(getComputedStyle(popup).boxShadow).toContain('rgba(31, 41, 51, 0.18)');
     await waitFor(() =>
       expect(list.contains(canvasElement.ownerDocument.activeElement)).toBe(true),
     );
-    await userEvent.keyboard('{End}{Enter}');
+    await userEvent.keyboard('{End}');
+    const focused = page.getByRole('option', { name: 'Short choice' });
+    await expect(focused).toHaveFocus();
+    const { boxShadow } = getComputedStyle(focused);
+    await expect(boxShadow).toMatch(/rgb\([^)]+\) 0px 0px 0px 2px inset/);
+    const ring = boxShadow.match(/rgb\([^)]+\)/)?.[0] ?? '';
+    await expect(
+      contrastOf(rgbOf(ring), rgbOf(getComputedStyle(popup).backgroundColor)),
+    ).toBeGreaterThanOrEqual(3);
+    await userEvent.keyboard('{Enter}');
     await waitFor(() => expect(trigger).toHaveTextContent('Short choice'));
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
   },

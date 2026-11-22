@@ -8,8 +8,7 @@
    Layout is checked at 320 and 375 CSS px and at 200% zoom with no horizontal page scroll: every row
    that can be long wraps (`overflow-wrap:anywhere`) and every flex row can wrap. */
 :root {
-  /* Form controls use the page palette. */
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 * {

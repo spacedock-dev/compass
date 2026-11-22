@@ -63,7 +63,7 @@ export function CitationLink({
         >
           <PreviewCard.Popup
             data-next-citation-card={id}
-            className="box-border flex w-[min(24rem,calc(100vw-32px))] flex-col gap-2 rounded-control border border-solid border-[var(--line)] bg-[var(--raise)] px-3 py-2.5 text-body text-foreground shadow-[0_18px_44px_-22px_#000] outline-none transition-opacity duration-[var(--disclose-pop-dur)] ease-[var(--disclose-ease)] data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-none"
+            className="box-border flex w-[min(24rem,calc(100vw-32px))] flex-col gap-2 rounded-control border border-solid border-[var(--line)] bg-[var(--raise)] px-3 py-2.5 text-body text-foreground shadow-[var(--e-pop)] outline-none transition-opacity duration-[var(--disclose-pop-dur)] ease-[var(--disclose-ease)] data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-none"
           >
             {entry && row ? (
               <>

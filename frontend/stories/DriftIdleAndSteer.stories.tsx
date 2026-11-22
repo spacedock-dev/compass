@@ -232,6 +232,10 @@ export const SteerBackFromAnIdleSession: Story = {
     correctionPosts.length = 0;
     const canvas = within(canvasElement);
     const steer = await canvas.findByRole('button', { name: 'Steer back' });
+    await expect(steer).toHaveStyle({
+      backgroundColor: 'rgb(47, 125, 91)',
+      color: 'rgb(255, 255, 255)',
+    });
     await userEvent.click(steer);
     // The scenario's own clock reads 1000 s, so the reading was today on the page's clock.
     await expect(

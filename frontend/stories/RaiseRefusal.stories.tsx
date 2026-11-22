@@ -77,7 +77,7 @@ export const PrimaryAdmissionRefusal: Story = {
   play: async (context) => {
     await check(admission)(context);
     const button = within(context.canvasElement).getByRole('button');
-    await expect(getComputedStyle(button).borderColor).toBe('rgb(240, 185, 94)');
-    await expect(getComputedStyle(button).color).toBe('rgb(205, 199, 180)');
+    await expect(getComputedStyle(button).borderColor).toBe('rgb(146, 64, 14)');
+    await expect(getComputedStyle(button).color).toBe('rgb(82, 96, 109)');
   },
 };

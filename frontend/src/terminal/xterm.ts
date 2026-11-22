@@ -14,6 +14,7 @@ export const XTERM_CSS = '/assets/xterm.css';
 export interface XtermOptions {
   readonly disableStdin: boolean;
   readonly cursorBlink: boolean;
+  readonly minimumContrastRatio: number;
   readonly scrollback: number;
   readonly fontSize: number;
   readonly fontFamily: string;
@@ -21,6 +22,8 @@ export interface XtermOptions {
     readonly background: string;
     readonly foreground: string;
     readonly cursor: string;
+    readonly selectionBackground: string;
+    readonly selectionForeground: string;
   };
 }
 

@@ -1006,12 +1006,12 @@ stale, covered or unexplained exception identities and fail an added dead-rule m
 mode, then use `node frontend/build/css-coverage.mjs collect <directory>` to produce the
 local union under `docs/screenshots/css-cleanup/` before reviewing it for the tracked record.
 
-`css.test.ts` now compiles the actual Vite entry in memory instead of opening a list of
+`css.test.ts` compiles the actual Vite entry in memory instead of opening a list of
 source sheets. It checks the emitted stylesheet for the five type steps, root body type,
-dark-only scheme, local assets and resolved custom-property chains. Both `font-size` and
+light-only scheme, local assets and resolved custom-property chains. Both `font-size` and
 the size component of `font` shorthands must use the scale. Deliberate mutations
 remove type, body, absence ink, scheme and variable declarations or add off-scale type,
-external assets, imports, a light-scheme query and a variable cycle. The browser contract
+external assets, imports, a system colour-scheme query and a variable cycle. The browser contract
 continues to measure links, controls, rings and every rendered ink. Its exact exception
 sets and all locating hooks stay unchanged; mutation needles use direct tokens.
 
@@ -1040,7 +1040,7 @@ Storybook is a development dependency and is never imported by the shipped entry
 lives under `frontend/.storybook` and its asserted examples under `frontend/stories`, outside the
 Tailwind source scan. No docs, MDX, onboarding or hosted service addon is installed. The static output
 is ignored and kept outside `frontend/src`. The component explorer reuses the page's styles, Tailwind
-plugin, dark palette and fifteen embedded font faces.
+plugin, light palette and embedded font faces.
 
 On 2026-10-11 the npm registry dated Storybook 10.6.0 to September 2 and 10.6.1 to September 29.
 The two-week delay therefore selects 10.6.0 for `storybook`, `@storybook/react-vite` and
@@ -1089,10 +1089,10 @@ One TooltipProvider serves the activity list. Non-focusable spans open on hover 
 Tab stops. Short result words and icon shapes remain visible; full words are accessible names,
 and the Marks legend states all five meanings for touch. A tooltip therefore never carries the
 only copy, preserving the earlier ruling about hover text on touch. The unknown circle uses the
-same muted caption ink as the other marks, with no green or filled success state. The story checks
-the dark theme ink; the palette's `--ink2` (#cdc7b4) against `--panel` (#24231b) has a 9.3:1
-contrast ratio. The fold trigger retains the 44px control floor. Mounted members preserve row
-hooks while closed; failed and cited evidence never requires expansion.
+same muted caption ink as the other marks, with no green or filled success state. The shared story
+audit measures the ink against the rendered surface. The fold trigger retains the 44px control
+floor. Mounted members preserve row hooks while closed. Failed and cited evidence never requires
+expansion.
 
 Measured with pinned Node 26.10.0 and `pnpm build` on this worktree: before the activity change,
 the React core was 1,674,151 bytes with 13 bundled package licenses. Afterward it is 1,707,435

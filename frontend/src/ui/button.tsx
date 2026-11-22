@@ -12,8 +12,10 @@ const action =
   'inline-flex items-center justify-center rounded-control border border-solid border-[var(--line)] bg-transparent text-foreground font-[family-name:var(--sans)] text-body leading-[1.55] px-3.5 py-[.5625rem] cursor-pointer hover:border-[var(--line-hi)] [.next-rail-wait-controls_&]:px-2.5 [.next-rail-wait-controls_&]:py-[5px]';
 const refused =
   'disabled:border-dashed disabled:bg-[image:var(--hatch)] disabled:text-[color:var(--ink3)] disabled:cursor-not-allowed aria-disabled:not-aria-busy:border-dashed aria-disabled:not-aria-busy:bg-[image:var(--hatch)] aria-disabled:not-aria-busy:text-[color:var(--ink3)] aria-disabled:not-aria-busy:cursor-not-allowed aria-busy:border-solid aria-busy:bg-none aria-busy:text-foreground aria-busy:cursor-progress';
+const solid =
+  'border-[var(--accent)] bg-primary text-primary-foreground hover:border-[var(--accent)] aria-busy:text-primary-foreground disabled:bg-transparent aria-disabled:not-aria-busy:bg-transparent';
 const raiseState =
-  'data-[raise-state=sent]:border-[var(--accent)] data-[raise-state=declined]:border-[var(--line)] data-[raise-state=failed]:border-[var(--line)] data-[raise-state=throttled]:border-[var(--amber)] data-[raise-state=stale]:border-[var(--amber)] data-[raise-state=refused]:border-[var(--amber)] data-[raise-state=declined]:text-muted-foreground data-[raise-state=failed]:text-muted-foreground data-[raise-state=throttled]:text-muted-foreground data-[raise-state=stale]:text-muted-foreground data-[raise-state=refused]:text-muted-foreground data-[raise-state=refused]:bg-[var(--sunk)] aria-disabled:not-aria-busy:bg-none aria-disabled:not-aria-busy:bg-transparent data-[raise-state=sending]:cursor-progress';
+  'data-[raise-state=sent]:border-[var(--accent)] data-[raise-state=declined]:border-[var(--line)] data-[raise-state=failed]:border-[var(--line)] data-[raise-state=throttled]:border-[var(--amber)] data-[raise-state=stale]:border-[var(--amber)] data-[raise-state=refused]:border-[var(--amber)] data-[raise-state]:not-data-[raise-state=sent]:not-data-[raise-state=sending]:text-muted-foreground data-[raise-state]:not-data-[raise-state=sent]:not-data-[raise-state=sending]:bg-muted aria-disabled:not-aria-busy:bg-none aria-disabled:not-aria-busy:bg-transparent data-[raise-state=sending]:cursor-progress';
 const buttonVariants = cva(
   'min-h-[44px] min-w-[44px] max-w-full box-border [overflow-wrap:anywhere] focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-[var(--accent)] focus-visible:outline-offset-1 [&[hidden]]:hidden',
   {
@@ -26,11 +28,7 @@ const buttonVariants = cva(
           'aria-disabled:not-aria-busy:border-solid aria-disabled:not-aria-busy:cursor-wait disabled:border-solid disabled:cursor-wait',
         ),
         answer: cn(action, refused, 'px-[11px] py-[7px] hover:border-[var(--accent)]'),
-        primary: cn(
-          action,
-          refused,
-          'aria-busy:border-[var(--accent)] aria-busy:bg-primary aria-busy:text-[color:var(--bg)]',
-        ),
+        primary: cn(action, refused, solid),
         quiet: cn(action, refused),
         bare: cn(
           action,
@@ -68,7 +66,8 @@ const buttonVariants = cva(
         'raise-primary': cn(
           action,
           refused,
-          'border-[var(--accent)] bg-primary text-[color:var(--bg)] font-[family-name:var(--mono)] font-bold focus-visible:outline-[var(--ink)] focus-visible:outline-offset-2',
+          solid,
+          'font-[family-name:var(--mono)] font-bold focus-visible:outline-[var(--ink)] focus-visible:outline-offset-2',
           raiseState,
         ),
         terminal: cn(

@@ -221,6 +221,9 @@ export const HeadlessSubsets: Story = {
 export const DefaultBoard: Story = {
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
+    const page = canvasElement.ownerDocument;
+    await expect(page.documentElement).toHaveStyle({ colorScheme: 'light' });
+    await expect(page.body).toHaveStyle({ backgroundColor: 'rgb(244, 246, 248)' });
     const search = canvas.getByRole('search', { name: 'Find sessions' });
     const fleet = canvas.getByRole('region', { name: 'Fleet facts' });
     const active = canvas.getByRole('heading', { level: 2, name: 'Active now' });

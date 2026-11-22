@@ -21,8 +21,8 @@ export const NonFocusable: Story = {
     const trigger = within(canvasElement).getByLabelText('Full words');
     await expect(trigger.tabIndex).toBe(-1);
     await userEvent.hover(trigger);
-    await expect(
-      await within(canvasElement.ownerDocument.body).findByRole('tooltip'),
-    ).toHaveTextContent('Full words');
+    const popup = await within(canvasElement.ownerDocument.body).findByRole('tooltip');
+    await expect(popup).toHaveTextContent('Full words');
+    await expect(getComputedStyle(popup).boxShadow).toContain('rgba(31, 41, 51, 0.18)');
   },
 };
