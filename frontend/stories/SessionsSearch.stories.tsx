@@ -3,6 +3,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { contrastOf, paintedColors } from './a11y.audit';
 import { act, useEffect, useState } from 'react';
 import { App } from '../src/App';
+import { SESSION_LIST_WORDS, SESSION_ROW_WORDS } from '../src/language/glossary';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
 import { createShell } from '../src/shell/createShell';
@@ -359,6 +360,15 @@ export const AtAGlanceLinksAndWorkingFilter: Story = {
       history.flush();
       await canvas.findByRole('region', { name: 'At a glance' });
     }
+    const status = within(canvas.getByRole('group', { name: 'Session status' }));
+    await userEvent.click(status.getByRole('button', { name: 'Waiting on you 1' }));
+    const waitingRows = within(canvas.getByRole('region', { name: 'All sessions' }));
+    await waitFor(() =>
+      expect(waitingRows.getAllByRole('link', { name: /^Open session / })).toHaveLength(1),
+    );
+    await expect(
+      waitingRows.getByRole('link', { name: 'Open session Fix the flaky sign-in test' }),
+    ).toBeVisible();
     const button = cards().getByRole('button', { name: /Working now 2/ });
     const list = canvas.getByRole('region', { name: 'All sessions' });
     const rows = () => within(list).getAllByRole('link', { name: /^Open session / });
@@ -454,36 +464,21 @@ export const WorthALook: Story = {
       if (!colors) throw new Error('Missing painted colours for the flag');
       await expect(contrastOf(colors.foreground, colors.background)).toBeGreaterThanOrEqual(4.5);
     }
-    const state = await openFilter(canvasElement, 'state', 'State');
+    const state = await openFilter(canvasElement, 'state');
     await expect(within(state).queryByText('Worth a look', { exact: true })).toBeNull();
     await userEvent.keyboard('{Escape}');
     for (const name of ['drift-high', 'gate', 'clean-end']) {
       await expect(canvas.getByRole('link', { name: `Open session ${name}` })).toBeVisible();
     }
-    await expect(canvas.queryByText('Off course', { exact: true })).toBeNull();
-    const pressedMark = () => toggle.querySelector('svg[data-icon="check"]');
-    await expect(pressedMark()).toBeNull();
+    await expect(canvas.queryByRole('button', { name: 'Off course' })).toBeNull();
     await userEvent.click(toggle);
     const rows = () => canvasElement.querySelectorAll('article.next-operation-row');
     await waitFor(() => expect(rows()).toHaveLength(9));
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-    await expect(pressedMark()).toBeVisible();
     for (const name of ['drift-high', 'gate', 'clean-end']) {
       await expect(canvas.queryByRole('link', { name: `Open session ${name}` })).toBeNull();
     }
-    await userEvent.click(canvas.getByRole('button', { name: 'Remove Worth a look' }));
-    await waitFor(() => expect(rows()).toHaveLength(18));
-    await userEvent.click(toggle);
-    await userEvent.click(canvas.getByRole('button', { name: 'Clear all' }));
-    await waitFor(() => expect(rows()).toHaveLength(18));
-
-    await userEvent.click(canvas.getByRole('button', { name: 'Waiting on you' }));
-    await waitFor(() => expect(rows()).toHaveLength(2));
-    const scoped = canvas.getByRole('button', { name: 'Worth a look 9 on this board' });
-    await userEvent.click(scoped);
-    await waitFor(() => expect(rows()).toHaveLength(0));
-    await expect(scoped).toBeVisible();
-    await userEvent.click(canvas.getByRole('button', { name: 'Clear all' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'All 18' }));
     await waitFor(() => expect(rows()).toHaveLength(18));
   },
 };
@@ -694,9 +689,9 @@ const shownLines = (root: HTMLElement) =>
 const chips = (root: HTMLElement) =>
   [...root.querySelectorAll('[data-sessions-chip]')].map((one) => one.textContent);
 const headerText = (root: HTMLElement, kind: 'active' | 'history') =>
-  root.querySelector(`[data-next-operation-group="${kind}"] > header`)?.textContent ?? '';
+  root.querySelector(`[data-next-operation-group="${kind}"] > header h2`)?.textContent ?? '';
 const cue = (root: HTMLElement) => root.querySelector('#next-cockpit-cue-status') as HTMLElement;
-const ACTIVE_HEADER = 'Active nowworking, waiting on you, an exact request, or recorded drift';
+const ACTIVE_HEADER = 'Right now';
 const HISTORY_HEADER = 'Earlier in the last 24 hours';
 
 async function ready(root: HTMLElement) {
@@ -706,20 +701,33 @@ async function ready(root: HTMLElement) {
   return canvas;
 }
 
-const trigger = (root: HTMLElement, name: string) =>
-  within(root).getByRole('button', { name: new RegExp(`^${name}(,|$)`) });
+const filtersButton = (root: HTMLElement) => within(root).getByRole('button', { name: 'Filters' });
 
-async function openFilter(root: HTMLElement, facet: string, name: string) {
-  const button = trigger(root, name);
-  await userEvent.click(button);
-  await waitFor(() => expect(button).toHaveAttribute('aria-expanded', 'true'));
-  const popup = root.querySelector<HTMLElement>(`[data-filter-popover="${facet}"]`);
-  await expect(popup).not.toBeNull();
-  return popup as HTMLElement;
+async function openPanel(root: HTMLElement) {
+  const button = filtersButton(root);
+  if (button.getAttribute('aria-expanded') !== 'true') await userEvent.click(button);
+  return within(root).getByRole('region', { name: 'Filters' });
 }
 
-async function closeFilters() {
-  await userEvent.keyboard('{Escape}');
+async function openFilter(root: HTMLElement, facet: string) {
+  const panel = await openPanel(root);
+  const more = within(panel).getByRole('button', { name: 'More filters for power users' });
+  if (more.getAttribute('aria-expanded') !== 'true') await userEvent.click(more);
+  const section = panel.querySelector<HTMLElement>(`[data-filter-facet="${facet}"]`);
+  if (!section) throw new Error(`Missing ${facet} facet`);
+  return section;
+}
+
+async function closeFilters(root: HTMLElement) {
+  const button = filtersButton(root);
+  if (button.getAttribute('aria-expanded') === 'true') await userEvent.click(button);
+}
+
+async function startedToday(root: HTMLElement) {
+  const panel = await openPanel(root);
+  return within(within(panel).getByRole('group', { name: 'Started' })).getByRole('button', {
+    name: 'Today',
+  });
 }
 
 const options = (popup: HTMLElement, facet: string) =>
@@ -731,7 +739,12 @@ const options = (popup: HTMLElement, facet: string) =>
   }));
 
 async function pick(popup: HTMLElement, label: string) {
-  await userEvent.click(within(popup).getByText(label, { exact: true }));
+  await userEvent.click(
+    within(popup).getByText(label, {
+      exact: true,
+      selector: '[data-filter-label], [data-filter-option^="date-field:"] span:last-child',
+    }),
+  );
 }
 
 async function poll(change: Partial<Rig['live']> = {}) {
@@ -778,7 +791,7 @@ async function dispatchKey(target: EventTarget, key: string): Promise<KeyboardEv
 export const HeadlessSubsets: Story = {
   play: async ({ canvasElement }) => {
     await ready(canvasElement);
-    const popup = await openFilter(canvasElement, 'headless', 'Headless');
+    const popup = await openFilter(canvasElement, 'headless');
     await expect(options(popup, 'headless').map(({ label, count }) => ({ label, count }))).toEqual([
       { label: 'Headless', count: '1' },
       { label: 'Interactive or unknown', count: '11' },
@@ -791,7 +804,7 @@ export const HeadlessSubsets: Story = {
       ).toBeVisible(),
     );
     await pick(popup, 'Interactive or unknown');
-    await closeFilters();
+    await closeFilters(canvasElement);
     await waitFor(() => expect(shownRows(canvasElement)).toBe('ACDEFGHIJKL'));
     await expect(rowOf(canvasElement, 'A')).not.toBeNull();
     await expect(rowOf(canvasElement, 'B')).toBeNull();
@@ -802,9 +815,9 @@ export const HeadlessSubsets: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole('button', { name: 'Clear all' }));
     await waitFor(() => expect(shownRows(canvasElement)).toBe('ABCDEFGHIJKL'));
-    const headlessPopup = await openFilter(canvasElement, 'headless', 'Headless');
+    const headlessPopup = await openFilter(canvasElement, 'headless');
     await pick(headlessPopup, 'Headless');
-    await closeFilters();
+    await closeFilters(canvasElement);
     await waitFor(() => expect(shownRows(canvasElement)).toBe('B'));
     await expect(rowOf(canvasElement, 'B')).not.toBeNull();
     await expect(rowOf(canvasElement, 'A')).toBeNull();
@@ -817,8 +830,9 @@ export const HeadlessSubsets: Story = {
 export const ExplanationsOpenInPlace: Story = {
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
+    await openFilter(canvasElement, 'state');
     const counts = canvas.getByRole('button', { name: 'How filter counts work' });
-    await openInFlow(counts, canvas.getByRole('heading', { name: 'Active now' }));
+    await openInFlow(counts, canvas.getByRole('heading', { name: 'Right now' }));
     const history = canvas.getByRole('button', { name: 'How session history works' });
     const rows = canvasElement.querySelector<HTMLElement>(
       '[data-next-operation-group="history"] .next-operation-rows',
@@ -835,7 +849,7 @@ export const AllHistoryNamesTheScope: Story = {
   args: { showAll: true, annotate: false },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(await canvas.findByRole('heading', { name: 'Session history' })).toBeVisible();
+    await expect(await canvas.findByRole('heading', { name: 'Earlier sessions' })).toBeVisible();
     await expect(canvasElement.querySelector('[data-next-session="6a7b8c9d0e1f"]')).toBeVisible();
     await userEvent.click(canvas.getByRole('button', { name: 'How session history works' }));
     await waitFor(() =>
@@ -844,15 +858,18 @@ export const AllHistoryNamesTheScope: Story = {
   },
 };
 
-export const FilterChoicesCloseTheirSiblings: Story = {
+export const FiltersStayOpenWhileChoosing: Story = {
   play: async ({ canvasElement }) => {
     await ready(canvasElement);
-    await openFilter(canvasElement, 'project', 'Project');
-    const date = await openFilter(canvasElement, 'date', 'Date');
-    const dateButton = trigger(canvasElement, 'Date');
-    await expect(trigger(canvasElement, 'Project')).toHaveAttribute('aria-expanded', 'false');
-    await expect(date.getBoundingClientRect().top).toBeGreaterThan(
-      dateButton.getBoundingClientRect().bottom,
+    const project = await openFilter(canvasElement, 'project');
+    const panel = within(canvasElement).getByRole('region', { name: 'Filters' });
+    const date = await openFilter(canvasElement, 'date');
+    await waitFor(() => expect(project.querySelector('[data-filter-label]')).toBeVisible());
+    await expect(date.querySelector('[data-filter-label]')).toBeVisible();
+    await expect(panel.closest('[data-slot="popover-content"]')).toBeNull();
+    const rightNow = within(canvasElement).getByRole('heading', { name: 'Right now' });
+    await expect(panel.getBoundingClientRect().bottom).toBeLessThan(
+      rightNow.getBoundingClientRect().top,
     );
   },
 };
@@ -871,20 +888,15 @@ export const DefaultBoard: Story = {
     ).toBe(true);
     const search = canvas.getByRole('search', { name: 'Find sessions' });
     const glance = canvas.getByRole('region', { name: 'At a glance' });
-    const active = canvas.getByRole('heading', { level: 2, name: 'Active now' });
+    const active = canvas.getByRole('heading', { level: 2, name: 'Right now' });
     await expect(glance.compareDocumentPosition(search) & FOLLOWS).toBeTruthy();
     await expect(search.compareDocumentPosition(active) & FOLLOWS).toBeTruthy();
-    await expect(resultText(canvasElement)).toBe('12 sessions active in the last 24 hours.');
     await expect(chips(canvasElement)).toEqual([]);
-    const presets = within(canvas.getByRole('group', { name: 'Quick filters' })).getAllByRole(
-      'button',
+    await expect(canvas.getByRole('button', { name: 'All 12' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
     );
-    await expect(presets.map((one) => one.textContent)).toEqual([
-      'Waiting on you',
-      'Started today',
-      'Drift recorded',
-    ]);
-    for (const preset of presets) await expect(preset).toHaveAttribute('aria-pressed', 'false');
+    await expect(filtersButton(canvasElement)).toHaveAttribute('aria-expanded', 'false');
     await expect(headerText(canvasElement, 'active')).toBe(ACTIVE_HEADER);
     await expect(headerText(canvasElement, 'history')).toBe(HISTORY_HEADER);
     await expect(shownLines(canvasElement)).toEqual([]);
@@ -973,37 +985,26 @@ export const SearchByWords: Story = {
 export const StartedTodayAndMissingStartTimes: Story = {
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
-    const preset = canvas.getByRole('button', { name: 'Started today' });
+    const preset = await startedToday(canvasElement);
     await userEvent.click(preset);
     await expect(preset).toHaveAttribute('aria-pressed', 'true');
     await waitFor(() => expect(shownRows(canvasElement)).toBe('ABEFK'));
-    const date = trigger(canvasElement, 'Date');
-    await expect(date).toHaveAccessibleName('Date, 1 selected');
-    await expect(date.querySelector('[data-filter-badge]')).toHaveTextContent('1');
+    const date = filtersButton(canvasElement);
     await expect(chips(canvasElement)).toEqual(['Started: Today']);
     await expect(canvasElement.querySelector('[data-sessions-unstamped]')).toHaveTextContent(
       '4 sessions have no published start time and are not shown.',
     );
-    const popup = await openFilter(canvasElement, 'date', 'Date');
+    const popup = await openFilter(canvasElement, 'date');
     await expect(popup.querySelector('[data-sessions-unstamped-harnesses]')).toHaveTextContent(
       'No start time is published for: Cursor, Goose, OpenCode, Pi.',
     );
-    // The tall Date list opens under its button and scrolls there; it never flips beside it, over the search field.
-    const shell = popup.closest<HTMLElement>('[data-slot=popover-content]') as HTMLElement;
-    await waitFor(() => {
-      const box = shell.getBoundingClientRect();
-      const at = date.getBoundingClientRect();
-      expect(box.right).toBeGreaterThan(at.left);
-      expect(box.top).toBeGreaterThanOrEqual(at.bottom - 1);
-      expect(box.bottom).toBeLessThanOrEqual(innerHeight);
-    });
-    await closeFilters();
+    await closeFilters(canvasElement);
     await userEvent.click(canvas.getByRole('button', { name: 'Include them' }));
     await waitFor(() => expect(shownRows(canvasElement)).toHaveLength(9));
     // The button goes as it is pressed, and hands focus to the Date button rather than to the page.
     await expect(date).toHaveFocus();
     await expect(chips(canvasElement)).toEqual(['Started: Today, plus 4 with no start time']);
-    const again = await openFilter(canvasElement, 'date', 'Date');
+    const again = await openFilter(canvasElement, 'date');
     const unstamped = options(again, 'when').find((one) => one.label === 'Start not published');
     await expect(unstamped?.count).toBe('4');
     await pick(again, 'Start not published');
@@ -1011,7 +1012,7 @@ export const StartedTodayAndMissingStartTimes: Story = {
     await pick(again, 'Last 7 days');
     await waitFor(() =>
       expect(rowOf(canvasElement, 'C')?.querySelector('[data-next-row-hint]')).toHaveTextContent(
-        'Started 2030-01-14 16:02, from the first message',
+        'Started yesterday, from the first message',
       ),
     );
   },
@@ -1021,10 +1022,10 @@ export const StartedTodayAndMissingStartTimes: Story = {
 export const DatesBeyondTheBoardWindow: Story = {
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
-    const popup = await openFilter(canvasElement, 'date', 'Date');
+    const popup = await openFilter(canvasElement, 'date');
     await pick(popup, 'Yesterday');
     await waitFor(() => expect(shownRows(canvasElement)).toBe('CDL'));
-    await closeFilters();
+    await closeFilters(canvasElement);
     const search = canvas.getByRole('search', { name: 'Find sessions' });
     const started = search.querySelector(':scope > [data-sessions-window-note="started"]');
     await expect(started).toHaveTextContent(
@@ -1034,15 +1035,15 @@ export const DatesBeyondTheBoardWindow: Story = {
       within(started as HTMLElement).getByRole('button', { name: 'Filter by last active instead' }),
     );
     await waitFor(() => expect(shownRows(canvasElement)).toBe('L'));
-    await expect(trigger(canvasElement, 'Date')).toHaveFocus();
+    await expect(filtersButton(canvasElement)).toHaveFocus();
     const note = search.querySelector(
       ':scope > [data-sessions-window-note="active"]',
     ) as HTMLElement;
     await expect(note).toHaveTextContent('Older sessions are not loaded.');
-    await expect(note).toHaveTextContent('Your filters are not kept.');
-    const link = within(note).getByRole('link', { name: 'Show all stored sessions' });
+    const link = canvas.getByRole('link', { name: 'Show older sessions' });
+    await expect(link.parentElement).toHaveTextContent('Your filters are not kept.');
     await expect(link.getAttribute('href')?.endsWith('?all=1#n=sessions')).toBe(true);
-    await pick(await openFilter(canvasElement, 'date', 'Date'), 'Today');
+    await pick(await openFilter(canvasElement, 'date'), 'Today');
     await waitFor(() => expect(shownRows(canvasElement)).toHaveLength(11));
     await expect(canvasElement.querySelector('[data-sessions-window-note]')).toBeNull();
   },
@@ -1052,7 +1053,7 @@ export const DatesBeyondTheBoardWindow: Story = {
 export const ProjectAndHarness: Story = {
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
-    const popup = await openFilter(canvasElement, 'project', 'Project');
+    const popup = await openFilter(canvasElement, 'project');
     const listed = options(popup, 'project');
     await expect(listed.map((one) => `${one.label} ${one.count ?? ''}`)).toEqual([
       'compass 2',
@@ -1067,20 +1068,23 @@ export const ProjectAndHarness: Story = {
     await pick(popup, 'compass');
     await pick(popup, 'recce/compass');
     await waitFor(() => expect(shownRows(canvasElement)).toHaveLength(8));
-    await expect(trigger(canvasElement, 'Project')).toHaveAccessibleName('Project, 2 selected');
-    await closeFilters();
+    await closeFilters(canvasElement);
     await expect(chips(canvasElement)).toEqual(['Project: compass, recce/compass']);
     await expect(
       canvas.getByRole('button', { name: 'Remove Project: compass, recce/compass' }),
     ).toBeVisible();
-    const again = await openFilter(canvasElement, 'project', 'Project');
+    const again = await openFilter(canvasElement, 'project');
     await userEvent.click(within(again).getByRole('button', { name: 'Clear project filter' }));
     await waitFor(() => expect(chips(canvasElement)).toEqual([]));
     await expect(options(again, 'project')[0]?.box).toHaveFocus();
-    await closeFilters();
-    const harness = await openFilter(canvasElement, 'harness', 'Harness');
-    const harnesses = options(harness, 'harness');
-    await expect(harnesses.map((one) => one.label)).toEqual([
+    await closeFilters(canvasElement);
+    const harness = within(
+      within(await openPanel(canvasElement)).getByRole('group', { name: 'Agent' }),
+    );
+    const labels = harness
+      .getAllByRole('button')
+      .map((button) => button.textContent?.trim().replace(/\s*\d+$/, ''));
+    await expect(labels).toEqual([
       'Claude Code',
       'Codex',
       'Gemini',
@@ -1090,11 +1094,10 @@ export const ProjectAndHarness: Story = {
       'OpenCode',
       'Droid',
     ]);
-    const droid = harnesses.at(-1);
-    await expect(droid?.note).toBe('Store could not be read');
-    await expect(droid?.count).toBeNull();
-    await expect(droid?.box).toHaveAttribute('aria-disabled', 'true');
-    await expect(harness).not.toHaveTextContent(/Copilot|Antigravity/);
+    await expect(harness.getByRole('button', { name: /Droid/ })).toBeDisabled();
+    await expect(harness.getByRole('button', { name: /Droid/ })).toHaveAccessibleDescription(
+      'Store could not be read',
+    );
   },
 };
 
@@ -1102,8 +1105,8 @@ export const ProjectAndHarness: Story = {
 export const AWaitingSessionIsNeverHiddenSilently: Story = {
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
-    await pick(await openFilter(canvasElement, 'project', 'Project'), 'recce-cloud-infra');
-    await closeFilters();
+    await pick(await openFilter(canvasElement, 'project'), 'recce-cloud-infra');
+    await closeFilters(canvasElement);
     await waitFor(() => expect(shownRows(canvasElement)).toBe('I'));
     const guard = canvasElement.querySelector('[data-sessions-hidden-waiting]') as HTMLElement;
     await expect(guard).toHaveTextContent('1 session waiting on you is hidden by these filters.');
@@ -1136,28 +1139,30 @@ export const NothingMatches: Story = {
     await userEvent.type(canvas.getByRole('searchbox', { name: 'Search sessions' }), 'zzzz');
     await waitFor(() => expect(shownRows(canvasElement)).toBe(''));
     const nothing = canvasElement.querySelector('[data-sessions-nothing]') as HTMLElement;
-    await expect(nothing).toHaveTextContent('No session matches these filters.');
-    await expect(nothing).toHaveTextContent(
-      'Search reads titles, goals and prompts, not the conversation itself.',
-    );
-    await expect(nothing).toHaveTextContent(
-      'Sessions not active in the last 24 hours are not loaded.',
-    );
+    await expect(within(nothing).getByText('Nothing here matches.')).toBeVisible();
+    await expect(nothing.querySelectorAll('p')).toHaveLength(1);
+    const older = canvas.getByRole('link', { name: 'Show older sessions' });
+    await expect(older.parentElement).toHaveTextContent('Your filters are not kept.');
+    await expect(nothing.compareDocumentPosition(older) & FOLLOWS).toBeTruthy();
+    await expect(shownLines(canvasElement)).toEqual([]);
     await expect(
-      within(nothing).getByRole('link', { name: 'Show all stored sessions' }),
-    ).toBeVisible();
-    await expect(shownLines(canvasElement)).toEqual(['0 of 4 shown', '0 of 8 shown']);
-    await expect(
-      [...canvasElement.querySelectorAll('[data-next-sessions-filtered-empty]')].map(
-        (one) => one.textContent,
-      ),
-    ).toEqual([
-      'None of the 4 sessions in Active now match these filters.',
-      'None of the 8 sessions in Earlier in the last 24 hours match these filters.',
-    ]);
+      canvasElement.querySelectorAll('[data-next-sessions-filtered-empty]'),
+    ).toHaveLength(0);
     await expect(canvasElement.querySelectorAll('.next-sessions-empty')).toHaveLength(0);
     await expect(headerText(canvasElement, 'active')).toBe(ACTIVE_HEADER);
     await expect(headerText(canvasElement, 'history')).toBe(HISTORY_HEADER);
+    await expect(
+      [...canvasElement.querySelectorAll('[data-sessions-group-count]')].map(
+        (count) => count.textContent,
+      ),
+    ).toEqual(['0 sessions', '0 sessions']);
+    const reset = within(nothing).getByRole('button', { name: 'Show everything' });
+    await expect(reset).toBeVisible();
+    await expect(reset).toHaveStyle({
+      backgroundColor: 'rgba(0, 0, 0, 0)',
+      borderWidth: '0px',
+      textDecorationLine: 'underline',
+    });
   },
 };
 
@@ -1165,7 +1170,7 @@ export const NothingMatches: Story = {
 export const StateAndDrift: Story = {
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
-    const state = await openFilter(canvasElement, 'state', 'State');
+    const state = await openFilter(canvasElement, 'state');
     await pick(state, 'Waiting on you');
     await waitFor(() => expect(shownRows(canvasElement)).toBe('A'));
     await expect(rowOf(canvasElement, 'A')?.querySelector('[data-next-row-state]')).toHaveAttribute(
@@ -1179,21 +1184,17 @@ export const StateAndDrift: Story = {
       'Gemini and Goose do not report when a session is waiting, so 2 of their sessions could be waiting without showing here.',
       'Codex, OpenCode and Pi report a wait only in some setups. See coverage on Needs you.',
     ]);
-    await closeFilters();
+    await closeFilters(canvasElement);
     await userEvent.click(canvas.getByRole('button', { name: 'Clear all' }));
     await waitFor(() => expect(shownRows(canvasElement)).toHaveLength(12));
-    const drift = await openFilter(canvasElement, 'drift', 'Drift');
+    const drift = await openFilter(canvasElement, 'drift');
     const listed = options(drift, 'drift');
-    await expect(listed.map((one) => one.count)).toEqual(['1', '1', '10']);
+    await expect(listed.map((one) => one.count)).toEqual([null, null, null]);
     for (const one of listed) await expect(one.label).not.toMatch(/no drift|on track/i);
     await pick(drift, 'Drift recorded');
     await waitFor(() => expect(shownRows(canvasElement)).toBe('D'));
     await expect(rowOf(canvasElement, 'D')?.querySelector('[data-variant="progress"]')).toBeNull();
     await expect(options(drift, 'drift')[0]?.box).toHaveAttribute('aria-checked', 'true');
-    await expect(canvas.getByRole('button', { name: 'Drift recorded' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
   },
 };
 
@@ -1201,7 +1202,7 @@ export const StateAndDrift: Story = {
 export const Goal: Story = {
   play: async ({ canvasElement }) => {
     await ready(canvasElement);
-    const goal = await openFilter(canvasElement, 'goal', 'Goal');
+    const goal = await openFilter(canvasElement, 'goal');
     const counts = options(goal, 'goal').map((one) => Number(one.count));
     await expect(counts.reduce((sum, one) => sum + one, 0)).toBe(12);
     await pick(goal, 'Goal saved');
@@ -1217,8 +1218,8 @@ export const FiltersSurviveAPollAndARoundTrip: Story = {
     const canvas = await ready(canvasElement);
     const box = canvas.getByRole('searchbox', { name: 'Search sessions' }) as HTMLInputElement;
     await userEvent.type(box, 'release');
-    await pick(await openFilter(canvasElement, 'project', 'Project'), 'recce/compass');
-    await closeFilters();
+    await pick(await openFilter(canvasElement, 'project'), 'recce/compass');
+    await closeFilters(canvasElement);
     await waitFor(() => expect(chips(canvasElement)).toEqual(['Project: recce/compass']));
     box.focus();
     box.setSelectionRange(3, 3);
@@ -1269,20 +1270,17 @@ export const KeyboardAndEscape: Story = {
     await userEvent.keyboard('{Escape}');
     await expect(box.value).toBe('');
     await expect(box).toHaveFocus();
-    // Inside the Project popover, a letter belongs to the option, and Escape returns to the trigger.
-    const project = trigger(canvasElement, 'Project');
-    await openFilter(canvasElement, 'project', 'Project');
-    await userEvent.tab();
-    await expect(document.activeElement?.getAttribute('role')).toBe('checkbox');
-    await userEvent.keyboard('p');
-    await expect(shell.router.getRoute().view).toBe('sessions');
+    // Escape from a filter returns to the Filters button.
+    const project = filtersButton(canvasElement);
+    const projectOptions = await openFilter(canvasElement, 'project');
+    within(projectOptions).getAllByRole('checkbox')[0]?.focus();
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(project).toHaveAttribute('aria-expanded', 'false'));
     await expect(project).toHaveFocus();
-    // The capture-phase popover Escape runs first, and the field leaves its words alone.
+    // The open panel gets the first Escape, and the field keeps its words.
     await userEvent.type(box, 'rel');
-    const date = trigger(canvasElement, 'Date');
-    await openFilter(canvasElement, 'date', 'Date');
+    const date = filtersButton(canvasElement);
+    await openFilter(canvasElement, 'date');
     await dispatchKey(box, 'Escape');
     await waitFor(() => expect(date).toHaveAttribute('aria-expanded', 'false'));
     await expect(box.value).toBe('rel');
@@ -1314,7 +1312,7 @@ export const Announcements: Story = {
     });
     watch.observe(region, { childList: true, characterData: true, subtree: true });
     try {
-      const state = await openFilter(canvasElement, 'state', 'State');
+      const state = await openFilter(canvasElement, 'state');
       await pick(state, 'Waiting on you');
       await waitFor(() => expect(region).toHaveTextContent('Showing 1 of 12 sessions.'));
       await pick(state, 'Waiting on you');
@@ -1325,16 +1323,13 @@ export const Announcements: Story = {
       await pick(state, 'Waiting on you');
       await waitFor(() => expect(region).toHaveTextContent('Showing 1 of 12 sessions.'));
       await expect(writes).toBeGreaterThan(before);
-      await closeFilters();
+      await closeFilters(canvasElement);
       // A second press that lands on the same count says it again, so the reader hears their press counted.
       const same = writes;
-      await pick(
-        await openFilter(canvasElement, 'project', 'Project'),
-        'projects/pendulum-of-despair',
-      );
+      await pick(await openFilter(canvasElement, 'project'), 'projects/pendulum-of-despair');
       await waitFor(() => expect(writes).toBe(same + 1));
       await expect(region).toHaveTextContent('Showing 1 of 12 sessions.');
-      await closeFilters();
+      await closeFilters(canvasElement);
       await userEvent.click(canvas.getByRole('button', { name: 'Clear all' }));
       await waitFor(() =>
         expect(region).toHaveTextContent('Filters cleared. Showing all 12 sessions.'),
@@ -1367,33 +1362,8 @@ export const Announcements: Story = {
 };
 
 /* 13 */
-/* Linux Chromium in CI raised "ResizeObserver loop completed with undelivered notifications" twice on this story
-   (2026-10-29): opening a filter popover at phone width lets Floating UI's size middleware resize the popup its own
-   ResizeObserver watches, within one frame. The browser defers the notification and nothing is lost, and the same
-   steps never raise it on macOS. Vitest's error catcher logs it with console.error whatever other listeners do, so
-   this story alone drops that one message there; any other error still fails it. */
-function ignoreResizeObserverLoop(): () => void {
-  const original = console.error;
-  console.error = (...args: unknown[]) => {
-    const [first] = args;
-    const text = first instanceof Error ? first.message : String(first);
-    if (text.startsWith('ResizeObserver loop')) return;
-    original(...args);
-  };
-  return () => {
-    console.error = original;
-  };
-}
-
 export const PhoneWidth: Story = {
-  play: async ({ canvasElement }) => {
-    const restore = ignoreResizeObserverLoop();
-    try {
-      await phoneWidth(canvasElement);
-    } finally {
-      restore();
-    }
-  },
+  play: async ({ canvasElement }) => phoneWidth(canvasElement),
 };
 
 async function phoneWidth(canvasElement: HTMLElement) {
@@ -1411,17 +1381,17 @@ async function phoneWidth(canvasElement: HTMLElement) {
       for (const button of search.querySelectorAll<HTMLElement>('button'))
         if (button.checkVisibility())
           await expect(button.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
-      const popup = await openFilter(canvasElement, 'state', 'State');
+      const popup = await openFilter(canvasElement, 'state');
       for (const row of popup.querySelectorAll<HTMLElement>('[data-filter-option]'))
         await expect(row.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
-      const box2 = popup.closest('[data-slot=popover-content]') as HTMLElement;
-      await expect(box2.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth - 16);
-      await closeFilters();
+      const panel = canvas.getByRole('region', { name: 'Filters' });
+      await expect(panel.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth);
+      await closeFilters(canvasElement);
     });
-  await userEvent.click(canvas.getByRole('button', { name: 'Waiting on you' }));
-  await userEvent.click(canvas.getByRole('button', { name: 'Started today' }));
-  await pick(await openFilter(canvasElement, 'project', 'Project'), 'projects/pendulum-of-despair');
-  await closeFilters();
+  await userEvent.click(canvas.getByRole('button', { name: 'Waiting on you 1' }));
+  await userEvent.click(await startedToday(canvasElement));
+  await pick(await openFilter(canvasElement, 'project'), 'projects/pendulum-of-despair');
+  await closeFilters(canvasElement);
   await waitFor(() => expect(chips(canvasElement)).toHaveLength(3));
   for (const width of [400, 360, 1280])
     await atWidth(width, async () => {
@@ -1438,9 +1408,8 @@ export const AllStoredSessions: Story = {
     await waitFor(() =>
       expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(15),
     );
-    await expect(resultText(canvasElement)).toBe('15 stored sessions.');
-    const popup = await openFilter(canvasElement, 'date', 'Date');
-    const note = popup.querySelector('[data-sessions-all-note]') as HTMLElement;
+    const popup = await openFilter(canvasElement, 'date');
+    const note = canvasElement.querySelector('[data-sessions-all-note]') as HTMLElement;
     await expect(note).toHaveTextContent(
       'Showing all stored sessions. Sessions not active in the last 24 hours were not fully read, so their start time, title or model may not be published.',
     );
@@ -1448,7 +1417,7 @@ export const AllStoredSessions: Story = {
       expect(within(note).getByRole('link', { name: 'Show only the last 24 hours' })).toBeVisible(),
     );
     await pick(popup, 'Last 7 days');
-    await closeFilters();
+    await closeFilters(canvasElement);
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-sessions-unstamped]')).toHaveTextContent(
         '7 sessions have no published start time and are not shown.',
@@ -1463,12 +1432,14 @@ export const AnnotationsOff: Story = {
   args: { annotate: false },
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
-    const drift = await openFilter(canvasElement, 'drift', 'Drift');
-    await expect(drift).toHaveTextContent('Drift is not published because annotations are off.');
-    await closeFilters();
-    const goal = await openFilter(canvasElement, 'goal', 'Goal');
+    const drift = await openFilter(canvasElement, 'drift');
+    await expect(drift).toHaveTextContent(
+      'Progress records are not published because annotations are off.',
+    );
+    await closeFilters(canvasElement);
+    const goal = await openFilter(canvasElement, 'goal');
     await expect(goal).toHaveTextContent('Goals are not published because annotations are off.');
-    await closeFilters();
+    await closeFilters(canvasElement);
     await expect(canvas.queryByRole('button', { name: 'Drift recorded' })).toBeNull();
   },
 };
@@ -1480,10 +1451,15 @@ export const PaintHoldWhileAFilterIsOpen: Story = {
     const { shell } = current();
     const counts = () =>
       options(
-        canvasElement.querySelector<HTMLElement>('[data-filter-popover="state"]') as HTMLElement,
+        canvasElement.querySelector<HTMLElement>('[data-filter-facet="state"]') as HTMLElement,
         'state',
       ).map((one) => `${one.label} ${one.count ?? ''}`);
-    await openFilter(canvasElement, 'state', 'State');
+    const panel = await openPanel(canvasElement);
+    const projects = within(panel).getByRole('group', { name: 'Project' });
+    const optionsBefore = projects.textContent;
+    const agents = within(panel).getByRole('group', { name: 'Agent' });
+    const agentsBefore = agents.textContent;
+    await openFilter(canvasElement, 'state');
     const before = counts();
     await expect(before).toEqual([
       'Waiting on you 1',
@@ -1493,10 +1469,12 @@ export const PaintHoldWhileAFilterIsOpen: Story = {
       'Waiting on child 0',
       'State not published 7',
     ]);
-    await poll({ bIdle: true });
+    await poll({ bIdle: true, bProject: 'aaa/new project' });
     await expect(shell.runtime.store.getSnapshot().acceptedCount).toBeGreaterThan(1);
     await expect(shell.display.hasPending()).toBe(true);
     await expect(counts()).toEqual(before);
+    await expect(projects.textContent).toBe(optionsBefore);
+    await expect(agents.textContent).toBe(agentsBefore);
     await expect(
       canvasElement.querySelector(
         `[data-next-operation-group="active"] [data-next-session="${SIDS.B}"]`,
@@ -1507,7 +1485,7 @@ export const PaintHoldWhileAFilterIsOpen: Story = {
       painted += 1;
     });
     try {
-      await closeFilters();
+      await closeFilters(canvasElement);
       await waitFor(() =>
         expect(counts()).toEqual([
           'Waiting on you 1',
@@ -1519,6 +1497,8 @@ export const PaintHoldWhileAFilterIsOpen: Story = {
         ]),
       );
       await expect(painted).toBe(1);
+      await openPanel(canvasElement);
+      await expect(projects).toHaveTextContent('aaa/new project');
       await expect(shell.display.hasPending()).toBe(false);
       await expect(
         canvasElement.querySelector(
@@ -1554,14 +1534,14 @@ export const FocusKeepsItsPlace: Story = {
     await waitFor(() => expect(titleLink()).toHaveFocus());
     await expect(titleLink()).not.toBe(before);
     // Each option keeps its place by <facet>:<value>.
-    const state = await openFilter(canvasElement, 'state', 'State');
+    const state = await openFilter(canvasElement, 'state');
     await pick(state, 'Quiet');
     await waitFor(() => expect(shownRows(canvasElement)).not.toContain('C'));
     (document.activeElement as HTMLElement | null)?.blur();
     await expect(shell.controls.focusLane.focus('state:Quiet')).toBe(true);
     await expect(options(state, 'state').find((one) => one.label === 'Quiet')?.box).toHaveFocus();
-    await closeFilters();
-    await waitFor(() => expect(trigger(canvasElement, 'State')).toHaveFocus());
+    await closeFilters(canvasElement);
+    await waitFor(() => expect(filtersButton(canvasElement)).toHaveFocus());
     // A focused row link that leaves the filtered set hands focus to the search field.
     await waitFor(() => expect(shownRows(canvasElement)).toContain('B'));
     titleLink().focus();
@@ -1570,5 +1550,61 @@ export const FocusKeepsItsPlace: Story = {
     await waitFor(() =>
       expect(canvas.getByRole('searchbox', { name: 'Search sessions' })).toHaveFocus(),
     );
+  },
+};
+
+export const TabsAndInlineFilters: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = await ready(canvasElement);
+    const group = within(canvas.getByRole('group', { name: 'Session status' }));
+    const tabs = group.getAllByRole('button');
+    const words = [
+      SESSION_LIST_WORDS.allTab,
+      SESSION_ROW_WORDS.waitingOnYou,
+      SESSION_ROW_WORDS.worthALook,
+      SESSION_ROW_WORDS.working,
+      SESSION_ROW_WORDS.quiet,
+      SESSION_ROW_WORDS.ended,
+    ];
+    await expect(tabs.map((tab) => tab.textContent?.trim().replace(/\s*\d+$/, ''))).toEqual(words);
+    for (const tab of tabs) {
+      await expect(tab).toHaveAttribute('aria-pressed', tab === tabs[0] ? 'true' : 'false');
+      await expect(tab.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+    }
+    await userEvent.click(group.getByRole('button', { name: /^Working \d/ }));
+    await waitFor(() => expect(shownRows(canvasElement)).toHaveLength(2));
+    const filters = canvas.getByRole('button', { name: 'Filters' });
+    await expect(filters.querySelector('svg[data-icon="filters"]')).not.toBeNull();
+    await userEvent.click(filters);
+    const panel = canvas.getByRole('region', { name: 'Filters' });
+    await expect(
+      filters.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const progress = within(panel).getByRole('group', { name: 'Progress check' });
+    await expect(
+      within(progress)
+        .getAllByRole('button')
+        .map((chip) => chip.textContent),
+    ).toEqual(['Slightly off course', 'Off course', 'Way off course', 'No goal yet']);
+    await userEvent.click(
+      within(panel).getByRole('button', { name: 'More filters for power users' }),
+    );
+    for (const name of [
+      'Project',
+      'Agent',
+      'Started',
+      'Group',
+      'Headless',
+      'State',
+      'Progress records',
+      'Goal source',
+    ]) {
+      await waitFor(() => expect(within(panel).getAllByRole('group', { name })[0]).toBeVisible());
+    }
+    for (const name of ['Filter by', 'When']) {
+      await expect(within(panel).getByRole('radiogroup', { name })).toBeVisible();
+    }
+    await expect(within(panel).getByRole('button', { name: 'Group by group' })).toBeVisible();
+    await expect(panel.innerText).not.toMatch(/\b(?:Finished|Paused|Idle|Not checked)\s*($|\n)/m);
   },
 };

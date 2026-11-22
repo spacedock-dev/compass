@@ -131,6 +131,7 @@ export interface FixtureOptions {
   readonly rowExamples?: boolean;
   /** Row B has gone quiet since the first board. */
   readonly bIdle?: boolean;
+  readonly bProject?: string;
   /** `?all=1`: three older rows the default window would not load. */
   readonly showAll?: boolean;
   /** Annotations on, but the annotation store could not be read. */
@@ -164,7 +165,7 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
       sid: SIDS.B,
       headless: true,
       title: 'Changelog for 2.4',
-      project: 'recce/compass',
+      project: options.bProject ?? 'recce/compass',
       project_key: 'k-rc',
       project_identity_source: 'working directory path',
       state: options.bWaiting ? 'needs_input' : options.bIdle ? 'idle' : 'working',

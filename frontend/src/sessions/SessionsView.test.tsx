@@ -41,14 +41,16 @@ it('explains the filter counts and published history window in place', async () 
     }),
   );
   expect(screen.getByRole('heading', { name: 'Earlier in the last 24 hours' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+  fireEvent.click(screen.getByRole('button', { name: 'More filters for power users' }));
   for (const [name, sentences] of [
     [
       GLOSSARY.howFilterCountsWork.plain,
       [
         'Each number beside an option is how many sessions with that value your other filters keep.',
         'Choices inside one filter widen the list; separate filters and the search narrow it.',
-        'A session that does not publish a value is counted under its own option, never as zero and never as older.',
-        'At a glance counts the whole board.',
+        'An unpublished value has its own option where the board can identify it.',
+        'Tab and At a glance counts cover the whole board.',
       ],
     ],
     [
@@ -79,7 +81,7 @@ it('shows a three-day-old row in all history without a 24-hour heading', async (
     sessions: [{ harness: 'codex', sid: 'old', project: 'p', state: 'ended', ended_at: 3600 }],
   });
   expect(rows('history')).toEqual(['codex/old']);
-  expect(screen.getByRole('heading', { name: 'Session history' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Earlier sessions' })).toBeVisible();
   expect(screen.queryByRole('heading', { name: 'Earlier in the last 24 hours' })).toBeNull();
 });
 
@@ -691,4 +693,33 @@ it('keeps each card preview title and reason together when a title is missing', 
   expect(deploy.parentElement?.textContent).not.toContain('Edit handbook');
   expect(handbook.parentElement?.textContent).toContain('Edit handbook');
   expect(handbook.parentElement?.textContent).not.toContain('Approve production?');
+});
+
+it.each([24, 48])(
+  'labels and counts the two groups using the published %i-hour window',
+  async (hours) => {
+    await open(
+      board(
+        [
+          { harness: 'claude', sid: 'one', project: 'p', state: 'working', active: true },
+          { harness: 'claude', sid: 'two', project: 'p' },
+        ],
+        { window_hours: hours },
+      ),
+    );
+    for (const title of ['Right now', `Earlier in the last ${String(hours)} hours`]) {
+      const heading = screen.getByRole('heading', { name: title });
+      expect(heading.parentElement?.textContent).toContain('1 session');
+    }
+  },
+);
+
+it('labels the wider collection without claiming every earlier row falls inside the recent window', async () => {
+  await open(
+    board([{ harness: 'claude', sid: 'one', project: 'p', last_activity: 1 }], {
+      window_hours: 24,
+      show_all: true,
+    }),
+  );
+  expect(screen.getByRole('heading', { name: 'Earlier sessions' })).toBeVisible();
 });

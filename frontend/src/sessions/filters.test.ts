@@ -63,7 +63,7 @@ it('filters for the flag independently from a row’s State', () => {
   const indexed = indexScreen(
     buildSessionsScreen(payload, observedFor(payload), undefined, selection),
   );
-  const flagged = prepare({ ...EMPTY_FILTERS, worthALookOnly: true }, GENERATED, false);
+  const flagged = prepare({ ...EMPTY_FILTERS, segment: 'worth' }, GENERATED, false);
   const result = applyFilters(indexed, flagged, () => '');
   expect(result.shown).toBe(selection?.counts?.worthALook);
   expect(result.active).toBe(true);
@@ -358,12 +358,12 @@ describe('the facets', () => {
     expect(options[0]?.count).toBe(5);
   });
 
-  it('partition state, drift and goal so each sums to the board', () => {
+  it('partitions state and goals and offers progress records without counts', () => {
     const { indexed, prepared } = run({});
     const counts = (facet: 'state' | 'drift' | 'goal') =>
       fixedOptions(indexed, prepared, facet).map((one) => one.count);
     expect(counts('state')).toEqual([1, 2, 1, 1, 0, 7]);
-    expect(counts('drift')).toEqual([1, 1, 10]);
+    expect(counts('drift')).toEqual([null, null, null]);
     expect(counts('goal')).toEqual([2, 0, 10]);
     expect(run({ drift: ['recorded'] }).letters).toBe('D');
     expect(run({ drift: ['checked'] }).letters).toBe('K');
@@ -376,7 +376,11 @@ describe('the facets', () => {
     expect(run({ drift: ['recorded'], goal: ['saved'] }, { annotate: false }).letters).toHaveLength(
       12,
     );
-    expect(fixedOptions(indexed, prepared, 'drift').map((one) => one.count)).toEqual([0, 0, 0]);
+    expect(fixedOptions(indexed, prepared, 'drift').map((one) => one.count)).toEqual([
+      null,
+      null,
+      null,
+    ]);
     // The chip stays for the reader to clear, but it is not a filter, so the result line claims none.
     expect(run({ drift: ['recorded'] }, { annotate: false }).filtered.active).toBe(false);
     expect(run({ drift: ['recorded'] }).filtered.active).toBe(true);
@@ -493,7 +497,7 @@ describe('the guards and sentences', () => {
     const words = { ...EMPTY_FILTERS, query: 'release' };
     expect(announcement(some, words, EMPTY_FILTERS)).toBe('Showing 2 of 12 sessions.');
     expect(announcement(run({ query: 'zzzz' }).filtered, words, EMPTY_FILTERS)).toBe(
-      'No session matches these filters.',
+      'Nothing here matches.',
     );
     expect(announcement(all, EMPTY_FILTERS, words)).toBe(
       'Filters cleared. Showing all 12 sessions.',

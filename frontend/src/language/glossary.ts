@@ -81,6 +81,16 @@ export const SESSION_ROW_WORDS = {
 
 export const SESSION_LIST_WORDS = {
   all: 'All sessions',
+  allTab: 'All',
+  status: 'Session status',
+  filters: 'Filters',
+  moreFilters: 'More filters for power users',
+  progressCheck: 'Progress check',
+  rightNow: 'Right now',
+  earlierSessions: 'Earlier sessions',
+  nothingMatches: 'Nothing here matches.',
+  showEverything: 'Show everything',
+  showOlder: 'Show older sessions',
   atAGlance: 'At a glance',
   workingNow: 'Working now',
   openInNeedsYou: `Open in ${SHOWN.attention}`,

@@ -22,13 +22,21 @@ import { worktreeOf } from './worktree';
 
 export type DateField = 'started' | 'active';
 export type When = 'any' | 'hour' | 'today' | 'yesterday' | 'week' | 'unstamped';
-export type Facet = 'project' | 'group' | 'harness' | 'headless' | 'state' | 'drift' | 'goal';
+export type Facet =
+  | 'project'
+  | 'group'
+  | 'harness'
+  | 'headless'
+  | 'state'
+  | 'drift'
+  | 'goal'
+  | 'progress';
 export type DriftValue = 'recorded' | 'checked' | 'unchecked';
 export type GoalValue = 'saved' | 'drafted' | 'none';
 export type SessionSegment = 'all' | 'worth' | StateSegment;
 
 export const SEGMENT_LABELS: Readonly<Record<SessionSegment, string>> = {
-  all: SESSION_LIST_WORDS.all,
+  all: SESSION_LIST_WORDS.allTab,
   waiting: SESSION_ROW_WORDS.waitingOnYou,
   worth: SESSION_ROW_WORDS.worthALook,
   working: SESSION_ROW_WORDS.working,
@@ -48,7 +56,7 @@ export interface FilterState {
   readonly harness: readonly string[];
   readonly headless: readonly string[];
   readonly state: readonly string[];
-  readonly worthALookOnly: boolean;
+  readonly progress: readonly string[];
   readonly drift: readonly string[];
   readonly goal: readonly string[];
 }
@@ -65,7 +73,7 @@ export const EMPTY_FILTERS: FilterState = {
   harness: [],
   headless: [],
   state: [],
-  worthALookOnly: false,
+  progress: [],
   drift: [],
   goal: [],
 };
@@ -78,6 +86,7 @@ export const FACETS: readonly Facet[] = [
   'state',
   'drift',
   'goal',
+  'progress',
 ];
 export const QUERY_LIMIT = 200;
 
@@ -95,6 +104,29 @@ export const DRIFT_OPTIONS: readonly { readonly value: DriftValue; readonly labe
   { value: 'checked', label: 'Checked against your current words, none recorded' },
   { value: 'unchecked', label: 'Not checked against your current words' },
 ];
+export const PROGRESS_OPTIONS = [
+  { value: 'medium', label: SESSION_ROW_WORDS.slightlyOffCourse },
+  { value: 'high', label: SESSION_ROW_WORDS.offCourse },
+  { value: 'extreme', label: SESSION_ROW_WORDS.wayOffCourse },
+  { value: 'no-goal', label: SESSION_ROW_WORDS.noGoalYet },
+] as const;
+
+type ProgressValue = (typeof PROGRESS_OPTIONS)[number]['value'];
+
+function progressValue(row: SessionRow): ProgressValue | null {
+  const { source, session, goal } = row;
+  if (!source || (session.harness !== 'claude' && session.harness !== 'codex')) return null;
+  if (!goal.known && !source['annotation_assessment'] && source['stored_progress'] == null) {
+    return 'no-goal';
+  }
+  // The server revalidates this closed result against the stored reading before publishing it.
+  if (session.harness !== 'claude') return null;
+  const result = source['stored_progress'];
+  return (
+    PROGRESS_OPTIONS.find(({ value }) => value !== 'no-goal' && value === result)?.value ?? null
+  );
+}
+
 export const GOAL_OPTIONS: readonly { readonly value: GoalValue; readonly label: string }[] = [
   { value: 'saved', label: 'Goal saved' },
   { value: 'drafted', label: 'Drafted from a prompt, not saved' },
@@ -203,6 +235,7 @@ export interface IndexedRow {
   /** Null while the annotation store is off or unreadable: nothing is published to partition. */
   readonly drift: DriftValue | null;
   readonly goal: GoalValue | null;
+  readonly progress: ProgressValue | null;
   readonly started: Stamp | null;
   readonly active: Stamp | null;
 }
@@ -260,6 +293,7 @@ export function indexRow(row: SessionRow, context: SessionsContext): IndexedRow 
     hidden,
     sid: normalize(session.sid),
     state: rowState(session),
+    progress: readable ? progressValue(row) : null,
     drift: !readable ? null : row.drift ? 'recorded' : checked ? 'checked' : 'unchecked',
     goal: !readable ? null : typed ? 'saved' : goal.known ? 'drafted' : 'none',
     started: startStamp(source),
@@ -373,11 +407,38 @@ export function facetValue(indexed: IndexedRow, facet: Facet): string | null {
   if (facet === 'headless') return indexed.row.source?.['headless'] === true ? 'headless' : 'other';
   if (facet === 'state') return indexed.state;
   if (facet === 'drift') return indexed.drift;
+  if (facet === 'progress') return indexed.progress;
   return indexed.goal;
 }
 
 function hasEndedRequest(row: IndexedRow) {
   return row.row.session.isEnded && row.row.stateSegments?.includes('waiting');
+}
+
+function inSegment(row: SessionRow, segment: SessionSegment): boolean {
+  if (segment === 'all') return true;
+  if (segment === 'worth') return Boolean(row.worthALook);
+  return row.stateSegments?.includes(segment) ?? false;
+}
+
+export const SESSION_SEGMENTS = ['all', 'waiting', 'worth', 'working', 'quiet', 'ended'] as const;
+
+export function segmentCounts(indexed: readonly IndexedRow[]): Record<SessionSegment, number> {
+  const counts: Record<SessionSegment, number> = {
+    all: indexed.length,
+    waiting: 0,
+    worth: 0,
+    working: 0,
+    quiet: 0,
+    ended: 0,
+  };
+  const segments = SESSION_SEGMENTS.slice(1);
+  for (const { row } of indexed) {
+    for (const segment of segments) {
+      if (inSegment(row, segment)) counts[segment] += 1;
+    }
+  }
+  return counts;
 }
 
 type Part = 'search' | 'date' | Facet;
@@ -404,27 +465,21 @@ export function prepare(
 }
 
 /* The facets that read the annotation store. */
-export const ANNOTATION_FACETS: ReadonlySet<Facet> = new Set<Facet>(['drift', 'goal']);
+export const ANNOTATION_FACETS: ReadonlySet<Facet> = new Set<Facet>(['drift', 'goal', 'progress']);
 
 /* Values inside one facet widen (OR); facets, the date and the words narrow each other (AND). A facet whose
    rows publish nothing to partition (drift and goal with annotations off) filters nothing. */
 export function passes(indexed: IndexedRow, prepared: Prepared, skip: Part | null = null): boolean {
   const { filters, terms, edges } = prepared;
-  const { segment } = filters;
-  if (
-    segment === 'worth'
-      ? !indexed.row.worthALook
-      : segment !== 'all' && !indexed.row.stateSegments?.includes(segment)
-  )
-    return false;
+  if (!inSegment(indexed.row, filters.segment)) return false;
   if (skip !== 'search' && terms.length && !searchRow(indexed, terms).match) return false;
   if (skip !== 'date' && !datePasses(indexed, filters, edges)) return false;
-  if (filters.worthALookOnly && !indexed.row.worthALook) return false;
   for (const facet of FACETS) {
     if (facet === skip) continue;
     const chosen = filters[facet];
     if (!chosen.length) continue;
     const value = facetValue(indexed, facet);
+    if (facet === 'progress' && prepared.annotated && value === null) return false;
     if (value === null || chosen.includes(value)) continue;
     if (
       facet === 'state' &&
@@ -445,7 +500,6 @@ export function filtersActive(prepared: Prepared): boolean {
   return (
     terms.length > 0 ||
     filters.segment !== 'all' ||
-    filters.worthALookOnly ||
     (edges !== null && filters.when !== 'any') ||
     FACETS.some(
       (facet) => (annotated || !ANNOTATION_FACETS.has(facet)) && filters[facet].length > 0,
@@ -465,7 +519,7 @@ export interface Filtered {
 export function applyFilters(
   indexed: readonly IndexedRow[],
   prepared: Prepared,
-  datedClock: (at: number) => string,
+  formatStamp: (at: number) => string | null,
 ): Filtered {
   const active = filtersActive(prepared);
   const keys = new Set<string>();
@@ -479,9 +533,10 @@ export function applyFilters(
     const found = terms.length ? searchRow(one, terms).hint : '';
     if (found) lines.push(found);
     const stamp = dated ? stampOf(one, filters.dateField) : null;
-    if (stamp)
+    const when = stamp ? formatStamp(stamp.at) : null;
+    if (stamp && when)
       lines.push(
-        `${dateFieldLabel(filters.dateField)} ${datedClock(stamp.at)}${stamp.fromFirstMessage ? ', from the first message' : ''}`,
+        `${dateFieldLabel(filters.dateField)} ${when}${stamp.fromFirstMessage ? ', from the first message' : ''}`,
       );
     if (lines.length) hints.set(one.row.key, lines);
   }
@@ -671,7 +726,7 @@ export function fixedOptions(
   prepared: Prepared,
   facet: 'state' | 'drift' | 'goal' | 'headless',
 ): Option[] {
-  const counts = facetCounts(indexed, prepared, facet);
+  const counts = facet === 'drift' ? null : facetCounts(indexed, prepared, facet);
   const list =
     facet === 'state'
       ? STATE_VALUES.map((value) => ({ value, label: value }))
@@ -683,7 +738,7 @@ export function fixedOptions(
   return list.map((one) => ({
     value: one.value,
     label: one.label,
-    count: counts.get(one.value) ?? 0,
+    count: counts ? (counts.get(one.value) ?? 0) : null,
     note: '',
     disabled: false,
   }));
@@ -697,6 +752,8 @@ export function optionLabel(
   if (facet === 'project') return projectLabel(value);
   if (facet === 'group') return groupName(value);
   if (facet === 'harness') return harnesses.find((one) => one.key === value)?.label ?? value;
+  if (facet === 'progress')
+    return PROGRESS_OPTIONS.find((one) => one.value === value)?.label ?? value;
   if (facet === 'drift') return DRIFT_OPTIONS.find((one) => one.value === value)?.label ?? value;
   if (facet === 'goal') return GOAL_OPTIONS.find((one) => one.value === value)?.label ?? value;
   if (facet === 'headless')
@@ -792,7 +849,6 @@ export function hasChoices(filters: FilterState): boolean {
   return (
     queryTerms(filters.query).length > 0 ||
     filters.segment !== 'all' ||
-    filters.worthALookOnly ||
     filters.when !== 'any' ||
     FACETS.some((facet) => filters[facet].length > 0)
   );
@@ -807,7 +863,7 @@ export function announcement(filtered: Filtered, next: FilterState, before: Filt
     if (hasChoices(next)) return `${all} The filters you chose cannot be applied to this board.`;
     return hasChoices(before) ? `Filters cleared. ${all}` : all;
   }
-  if (filtered.shown === 0) return 'No session matches these filters.';
+  if (filtered.shown === 0) return SESSION_LIST_WORDS.nothingMatches;
   return `Showing ${String(filtered.shown)} of ${String(filtered.total)} sessions.`;
 }
 

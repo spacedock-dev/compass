@@ -65,6 +65,13 @@ const DEVIATIONS = {
   },
 };
 
+// The list heading and group counts have a separate story. Keep the recorded history-window comparison.
+function maskGroupHeader(group: Element): string {
+  return group.getAttribute('data-next-operation-group') === 'active'
+    ? ''
+    : norm(group.querySelector(':scope > header h2'));
+}
+
 function summarize(source: Element | DocumentFragment): Summary {
   restateRecordedLocationNotes(source);
   // The flag has its own reason and membership proofs.
@@ -74,7 +81,7 @@ function summarize(source: Element | DocumentFragment): Summary {
     // The old heading and fleet counters were retired. The new summary has its own story and count tests.
     groups: [...root.querySelectorAll('[data-next-operation-group]')].map((group) => ({
       kind: (group as HTMLElement).dataset['nextOperationGroup'] ?? '',
-      header: norm(group.querySelector(':scope > header')),
+      header: maskGroupHeader(group),
       disclosures: disclosureReadings(group),
       empty: group.querySelector('.next-sessions-empty')
         ? norm(group.querySelector('.next-sessions-empty'))

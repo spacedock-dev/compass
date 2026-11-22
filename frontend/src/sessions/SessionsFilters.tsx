@@ -12,11 +12,11 @@ import {
 import { Disclosure, disclosureKey, useControls, useFocusKey } from '../controls';
 import { DraftInput } from '../controls/DraftField';
 import { EXPLANATIONS, SESSION_LIST_WORDS, SHOWN } from '../language/glossary';
+import { useControlledDisclosureState } from '../controls/useDisclosureState';
 import { datedClock } from '../observed/values';
 import { useNavigate } from '../shell/context';
 import { keyIsTaken, SKIP_ROLE_SELECTOR } from '../shell/keyboard';
 import { Alert } from '../ui/alert';
-import { Badge } from '../ui/badge';
 import { Button, buttonVariants } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Icon } from '../ui/icons';
@@ -41,7 +41,9 @@ import {
   projectOptions,
   groupOptions,
   QUERY_LIMIT,
-  queryTerms,
+  PROGRESS_OPTIONS,
+  segmentCounts,
+  SESSION_SEGMENTS,
   resultLine,
   SEGMENT_LABELS,
   toggled,
@@ -64,29 +66,23 @@ import {
 } from './filters';
 import { RouteAnchor } from './RouteAnchor';
 
-/* The Find sessions toolbar: one search field, eight filter popovers, three presets, the chips that say what is
-   on, and the lines that say what the filters hide. It owns no state of its own beyond the "Find a project"
-   narrowing: every choice is in the filter store, so a poll, a view change and a round trip through a session
-   leave it as the reader left it. docs/design-sessions-search.md#the-toolbar owns the copy and the rules. */
-
+// Search and filter choices live for the life of the shell. See docs/design-sessions-search.md#the-toolbar.
 export const SEARCH_KEY = 'sessions-search';
 
-/** The focus key of a filter popover's trigger. */
-const filterKey = (popover: string): string => `sessions-filter-${popover}`;
+const FILTERS_KEY = 'sessions-filters';
+const FILTERS_PANEL = disclosureKey({ project: null, scope: null, name: FILTERS_KEY });
+const MORE_FILTERS = disclosureKey({ project: null, scope: null, name: 'sessions-more-filters' });
 
-/* An option keeps its place by `<facet>:<value>`, the name its row carries, and an option that goes while
-   focused hands focus to its popover's trigger rather than to the document body. */
-function useOptionKey<T extends HTMLElement>(key: string, popover: string) {
+function useOptionKey<T extends HTMLElement>(key: string) {
   const controls = useControls();
-  return useFocusKey<T>(controls.focusLane, key, { fallback: filterKey(popover) });
+  return useFocusKey<T>(controls.focusLane, key, { fallback: FILTERS_KEY });
 }
 
 function KeyedCheckbox({
   name,
-  inPopover,
   ...props
-}: ComponentProps<typeof Checkbox> & { readonly name: string; readonly inPopover: string }) {
-  const ref = useOptionKey<HTMLElement>(name, inPopover);
+}: ComponentProps<typeof Checkbox> & { readonly name: string }) {
+  const ref = useOptionKey<HTMLElement>(name);
   return <Checkbox ref={ref} {...props} />;
 }
 
@@ -94,7 +90,7 @@ function KeyedRadio({
   name,
   ...props
 }: ComponentProps<typeof RadioGroupItem> & { readonly name: string }) {
-  const ref = useOptionKey<HTMLElement>(name, 'date');
+  const ref = useOptionKey<HTMLElement>(name);
   return <RadioGroupItem ref={ref} {...props} />;
 }
 
@@ -102,10 +98,10 @@ export interface FilterBoard {
   readonly generated: number | null;
   readonly hours: number | null;
   readonly showAll: boolean;
-  readonly cleared: number;
   readonly harnesses: readonly HarnessMeta[];
   readonly annotate: boolean;
   readonly unreadable: string;
+  readonly countsAvailable: boolean;
 }
 
 export interface FilterActions {
@@ -115,8 +111,6 @@ export interface FilterActions {
   clearAll(): void;
 }
 
-const TRIGGER =
-  'gap-1.5 border border-solid border-[var(--line)] rounded-control px-3 text-foreground hover:border-[var(--line-hi)]';
 const ROW = 'flex min-h-11 w-full items-center gap-2.5 cursor-pointer';
 const NOTE = 'm-0 text-label text-muted-foreground leading-[1.5]';
 const SENTENCE = 'm-0 text-body text-muted-foreground leading-[1.55]';
@@ -132,10 +126,10 @@ function ShowAllLink() {
     <span className="flex flex-col gap-0.5">
       <a
         data-slot="button-link"
-        className={`${buttonVariants({ variant: 'native' })} inline-flex items-center text-foreground underline`}
+        className={`${buttonVariants({ variant: 'native' })} inline-flex items-center text-primary underline`}
         href={showAllHref(true)}
       >
-        Show all stored sessions
+        {SESSION_LIST_WORDS.showOlder}
       </a>
       <span className={NOTE}>
         The page reloads and reads every stored session. Your filters are not kept.
@@ -144,9 +138,29 @@ function ShowAllLink() {
   );
 }
 
+export function SessionsWindowLink({ board }: { readonly board: FilterBoard }) {
+  if (!board.showAll) return <ShowAllLink />;
+  return (
+    <div className="flex flex-col items-start gap-1" data-sessions-all-note>
+      <a
+        data-slot="button-link"
+        className={`${buttonVariants({ variant: 'native' })} inline-flex items-center text-primary underline`}
+        href={showAllHref(false)}
+      >
+        {board.hours
+          ? `Show only the last ${HOURS_WORD(board.hours)}`
+          : 'Show only recently active sessions'}
+      </a>
+      <p className={NOTE}>
+        {`Showing all stored sessions. ${board.hours ? `Sessions not active in the last ${HOURS_WORD(board.hours)}` : 'Sessions that were not recently active'} were not fully read, so their start time, title or model may not be published.`}
+      </p>
+    </div>
+  );
+}
+
 /* Where a dated choice reaches past what the board loaded. Started mode cannot be rescued by loading more,
    because start times are read only for sessions active in the window; Last active can. The note is drawn
-   twice, under the result line and inside the Date popover, and its button goes as it is pressed. */
+   below the search result, and its button goes as it is pressed. */
 export function WindowNote({
   filters,
   prepared,
@@ -173,7 +187,7 @@ export function WindowNote({
   return filters.dateField === 'started' ? (
     <div className="flex flex-col items-start gap-1" data-sessions-window-note="started">
       <p className={SENTENCE}>
-        {`${since} A session that started in this range and went quiet before then is not on the board. Showing all stored sessions will not help, because start times are read only for sessions active in that window.`}
+        {`${since} A session that started in this range and went quiet before then is not on the board. Start times are read only for sessions active in that window, even under Show older sessions.`}
       </p>
       <Button type="button" onClick={onSwitch}>
         Filter by last active instead
@@ -182,7 +196,6 @@ export function WindowNote({
   ) : (
     <div className="flex flex-col items-start gap-1" data-sessions-window-note="active">
       <p className={SENTENCE}>{`${since} Older sessions are not loaded.`}</p>
-      <ShowAllLink />
     </div>
   );
 }
@@ -206,7 +219,6 @@ function OptionRow({
     >
       <KeyedCheckbox
         name={name}
-        inPopover={facet}
         checked={checked}
         disabled={option.disabled}
         onCheckedChange={onToggle}
@@ -259,55 +271,72 @@ function OptionList({
   );
 }
 
-function FilterButton({
+function FilterFacet({
   facet,
   name,
-  selected,
   children,
 }: {
   readonly facet: string;
   readonly name: string;
-  readonly selected: number;
   readonly children: ReactNode;
 }) {
   return (
-    <Disclosure
-      variant="popover"
-      exclusiveGroup="sessions-filters"
-      disclosureKey={disclosureKey({
-        project: null,
-        scope: null,
-        name: `sessions-filter-${facet}`,
-      })}
-      focusKey={filterKey(facet)}
-      summaryLabel={selected ? `${name}, ${String(selected)} selected` : name}
-      triggerClassName={TRIGGER}
-      /* A short window flipped the tall Date list beside its button, over the search field; a filter list
-         belongs under its button and scrolls there instead. */
-      vertical
-      holdPaint
-      summary={
-        <>
-          <span>{name}</span>
-          {selected ? (
-            <Badge variant="count-chip" data-filter-badge>
-              {selected}
-            </Badge>
-          ) : null}
-        </>
-      }
+    <div data-filter-facet={facet} className="min-w-0">
+      <h3 className={`${NOTE} font-semibold`}>{name}</h3>
+      {children}
+    </div>
+  );
+}
+
+function ChipGroup({ name, children }: { readonly name: string; readonly children: ReactNode }) {
+  return (
+    <div role="group" aria-label={name} className="flex min-w-0 flex-col items-start gap-2">
+      <span className={`${NOTE} font-semibold`}>{name}</span>
+      <div className="flex flex-wrap gap-2">{children}</div>
+    </div>
+  );
+}
+
+function FilterChip({
+  label,
+  count,
+  note,
+  selected,
+  disabled,
+  onClick,
+}: {
+  readonly label: string;
+  readonly count?: number | null;
+  readonly note?: string;
+  readonly selected: boolean;
+  readonly disabled?: boolean;
+  readonly onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="filter-option"
+      title={note || undefined}
+      aria-pressed={selected}
+      disabled={disabled}
+      onClick={onClick}
     >
-      <div className="flex flex-col gap-2" data-filter-popover={facet}>
-        {children}
-      </div>
-    </Disclosure>
+      {label}
+      {count == null ? null : (
+        <>
+          {' '}
+          <span className="tabular-nums" data-filter-count>
+            {count}
+          </span>
+        </>
+      )}
+    </Button>
   );
 }
 
 export const PROJECT_FIND_KEY = 'sessions-filter-project-find';
 
-/* The narrowing is the field's words. The words last while the popover's content stays mounted, closed or
-   open; when the list falls to eight projects or fewer the field leaves the page and its words with it, so
+/* The narrowing is the field's words. The words last while the panel is mounted; when the list falls to eight projects or fewer the field leaves the page and its words with it, so
    a field that comes back reports what it holds, empty included, and no narrowing outlives what it shows.
    Field memory restores only the caret, scroll and size. */
 function ProjectFind({
@@ -376,13 +405,13 @@ function ProjectList({
   );
 }
 
-function annotationSentence(board: FilterBoard, what: 'drift' | 'goal'): string {
+function annotationSentence(board: FilterBoard, what: 'drift' | 'goal' | 'progress'): string {
   if (!board.annotate)
-    return what === 'drift'
-      ? 'Drift is not published because annotations are off.'
-      : 'Goals are not published because annotations are off.';
+    return what === 'goal'
+      ? 'Goals are not published because annotations are off.'
+      : 'Progress records are not published because annotations are off.';
   if (board.unreadable)
-    return 'The annotation store could not be read, so drift and goals cannot be filtered.';
+    return 'The annotation store could not be read, so progress and goals cannot be filtered.';
   return '';
 }
 
@@ -406,6 +435,9 @@ export function SessionsFilters({
   const navigate = useNavigate();
   const controls = useControls();
   const searchId = useId();
+  const panelId = useId();
+  const panelOpen = useControlledDisclosureState(controls.disclosures, FILTERS_PANEL);
+  const triggerRef = useFocusKey<HTMLButtonElement>(controls.focusLane, FILTERS_KEY);
   const quickId = useId();
   const fieldBox = useRef<HTMLDivElement>(null);
   const chipBox = useRef<HTMLDivElement>(null);
@@ -421,8 +453,7 @@ export function SessionsFilters({
     if (node && node.value !== filters.query) node.value = filters.query;
   });
 
-  /* "/" finds the field from anywhere on Sessions, by the same rule the route keys use, and never from
-     inside an open popup, where the reader is choosing. */
+  /* Use the shell's shortcut rules so typing and open overlays retain their keys. */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== '/') return;
@@ -441,7 +472,7 @@ export function SessionsFilters({
         return;
       if (
         document.querySelector(
-          '[data-slot=popover-trigger][aria-expanded=true], [data-slot=select-trigger][aria-expanded=true]',
+          '[data-slot=popover-trigger][aria-expanded=true], [data-slot=select-trigger][aria-expanded=true], [data-hold-paint][aria-expanded=true]',
         )
       )
         return;
@@ -472,7 +503,8 @@ export function SessionsFilters({
   });
 
   const readable = board.annotate && !board.unreadable;
-  const terms = queryTerms(prepared.filters.query);
+  const noMatches = filtered.active && filtered.shown === 0;
+  const emptySearch = noMatches && prepared.terms.length > 0;
   /* The rows lag the field while the deferred render catches up, so the one match is offered only once
      they agree, and Enter reads the live words rather than the rows still drawn. */
   const caughtUp = prepared.filters === filters;
@@ -484,8 +516,11 @@ export function SessionsFilters({
   const onFieldKey = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     const node = event.currentTarget;
     if (event.key === 'Escape') {
-      // The capture-phase popover handler has already closed a popup and placed focus.
       if (event.nativeEvent.defaultPrevented) return;
+      if (panelOpen) {
+        dismissPanel(event);
+        return;
+      }
       if (!node.value) return;
       node.value = '';
       event.preventDefault();
@@ -519,12 +554,19 @@ export function SessionsFilters({
     [indexed, prepared, filtered, board.harnesses],
   );
   const { dates, waiting, coverage, projects, harnesses } = derived;
+  const counts = useMemo(() => segmentCounts(indexed), [indexed]);
+  const togglePanel = () => controls.disclosures.set(FILTERS_PANEL, !panelOpen);
+  const dismissPanel = (event: ReactKeyboardEvent) => {
+    if (event.key !== 'Escape' || event.defaultPrevented || !panelOpen) return;
+    event.preventDefault();
+    togglePanel();
+    controls.focusLane.focus(FILTERS_KEY);
+  };
   const missing = unstampedHidden(dates, prepared);
   const noClock = board.generated === null;
   const stamped = filters.dateField === 'started' ? 'start time' : 'activity time';
 
-  /* A chip the board cannot apply stays, so the reader still sees and can clear what they chose, and it is
-     described by the sentence its popover says (`filtersActive` counts it as nothing). */
+  /* Keep an inactive choice visible and clearable when the board loses the data it needs. */
   const chips: {
     readonly key: string;
     readonly full: string;
@@ -554,11 +596,12 @@ export function SessionsFilters({
   const facetNames: Readonly<Record<Facet, string>> = {
     project: 'Project',
     group: 'Group',
-    harness: 'Harness',
+    harness: 'Agent',
     headless: 'Headless',
     state: 'State',
-    drift: 'Drift',
-    goal: 'Goal',
+    drift: 'Progress records',
+    goal: 'Goal source',
+    progress: SESSION_LIST_WORDS.progressCheck,
   };
   const ordered = (facet: Facet): string[] => {
     const order =
@@ -566,7 +609,9 @@ export function SessionsFilters({
         ? projects.map((one) => one.value)
         : facet === 'harness'
           ? harnesses.map((one) => one.value)
-          : derived[facet].map((one) => one.value);
+          : facet === 'progress'
+            ? PROGRESS_OPTIONS.map((one) => one.value)
+            : derived[facet].map((one) => one.value);
     return [...filters[facet]].sort(
       (a, b) =>
         (order.indexOf(a) === -1 ? order.length : order.indexOf(a)) -
@@ -581,6 +626,7 @@ export function SessionsFilters({
     'state',
     'drift',
     'goal',
+    'progress',
   ] as const) {
     if (!filters[facet].length) continue;
     const text = chipText(
@@ -591,20 +637,12 @@ export function SessionsFilters({
       key: facet,
       ...text,
       inert:
-        (facet === 'drift' || facet === 'goal') && !readable
+        (facet === 'drift' || facet === 'goal' || facet === 'progress') && !readable
           ? annotationSentence(board, facet)
           : '',
       clear: () => set({ [facet]: [] } as Partial<FilterState>),
     });
   }
-  if (filters.worthALookOnly)
-    chips.push({
-      key: 'worth-a-look',
-      short: SESSION_ROW_WORDS.worthALook,
-      full: SESSION_ROW_WORDS.worthALook,
-      inert: '',
-      clear: () => set({ worthALookOnly: false }),
-    });
   const inertNotes = [...new Set(chips.map((chip) => chip.inert).filter(Boolean))].map(
     (sentence) => {
       const names = chips
@@ -619,52 +657,18 @@ export function SessionsFilters({
   const noteId = (sentence: string) =>
     `${quickId}-inert-${String(inertNotes.findIndex((note) => note.sentence === sentence))}`;
 
-  const presets = [
-    {
-      key: 'waiting',
-      label: 'Waiting on you',
-      pressed: filters.state.includes('Waiting on you'),
-      disabled: false,
-      press: () => toggle('state', 'Waiting on you'),
-    },
-    {
-      key: 'today',
-      label: 'Started today',
-      pressed: filters.dateField === 'started' && filters.when === 'today',
-      disabled: noClock,
-      press: () =>
-        filters.dateField === 'started' && filters.when === 'today'
-          ? set({ when: 'any' })
-          : set({ dateField: 'started', when: 'today' }),
-    },
-    // Drawn only where it can apply, as the Drift popover lists its options only then.
-    ...(readable
-      ? [
-          {
-            key: 'drift',
-            label: 'Drift recorded',
-            pressed: filters.drift.includes('recorded'),
-            disabled: false,
-            press: () => toggle('drift', 'recorded'),
-          },
-        ]
-      : []),
-  ];
-
   /* Three buttons go as they are pressed, so each hands focus on before it goes: a focused node that leaves
      the page drops focus to the body. */
   const pressAndFocus = (change: Partial<FilterState>, key: string) => {
     set(change);
     controls.focusLane.focus(key);
   };
-  const windowNote = (inPopover: boolean) => (
+  const windowNote = (
     <WindowNote
       filters={prepared.filters}
       prepared={prepared}
       board={board}
-      onSwitch={() =>
-        pressAndFocus({ dateField: 'active' }, inPopover ? 'date-field:active' : filterKey('date'))
-      }
+      onSwitch={() => pressAndFocus({ dateField: 'active' }, FILTERS_KEY)}
     />
   );
 
@@ -677,6 +681,36 @@ export function SessionsFilters({
       className="mt-6 flex flex-col gap-3"
       data-next-sessions-search
     >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="m-0 text-subtitle font-semibold">{SESSION_LIST_WORDS.all}</h2>
+        <div
+          role="group"
+          aria-label={SESSION_LIST_WORDS.status}
+          className="flex flex-wrap gap-1 rounded-card bg-muted p-1"
+        >
+          {SESSION_SEGMENTS.map((segment) => (
+            <Button
+              key={segment}
+              type="button"
+              variant="segment"
+              aria-pressed={filters.segment === segment}
+              disabled={
+                segment !== 'all' &&
+                filters.segment !== segment &&
+                (!board.countsAvailable || indexed.length === 0)
+              }
+              onClick={() => set({ segment })}
+            >
+              {SEGMENT_LABELS[segment]}{' '}
+              {board.countsAvailable ? (
+                <span className="ml-1 tabular-nums">{counts[segment]}</span>
+              ) : (
+                <span className="sr-only">unavailable</span>
+              )}
+            </Button>
+          ))}
+        </div>
+      </div>
       <div className="flex flex-wrap items-start gap-2">
         <div ref={fieldBox} className="relative min-w-0 flex-[1_1_22rem]">
           <Label htmlFor={searchId} className="sr-only">
@@ -693,11 +727,11 @@ export function SessionsFilters({
             focusKey={SEARCH_KEY}
             defaultValue={filters.query}
             maxLength={QUERY_LIMIT}
-            placeholder="Search titles, goals and prompts"
+            placeholder="Search titles, goals or projects"
             aria-keyshortcuts="/"
             autoComplete="off"
             spellCheck={false}
-            className="pl-9 pr-24 [&::-webkit-search-cancel-button]:appearance-none"
+            className="bg-card pl-9 pr-24 [&::-webkit-search-cancel-button]:appearance-none"
             onInput={(event) =>
               actions.change({ ...filters, query: event.currentTarget.value }, 'typing')
             }
@@ -727,258 +761,314 @@ export function SessionsFilters({
             ) : null}
           </span>
         </div>
-        <div role="group" aria-label="Filters" className="flex flex-wrap gap-2">
-          <FilterButton facet="date" name="Date" selected={filters.when === 'any' ? 0 : 1}>
-            {noClock ? <p className={SENTENCE}>{NO_CLOCK}</p> : null}
-            <p id={`${searchId}-by`} className={NOTE}>
-              Filter by
-            </p>
-            <RadioGroup
-              aria-labelledby={`${searchId}-by`}
-              value={filters.dateField}
-              disabled={noClock}
-              onValueChange={(value) => set({ dateField: value as DateField })}
-            >
-              {(['started', 'active'] as const).map((value) => (
-                <Label key={value} className={ROW} data-filter-option={`date-field:${value}`}>
-                  <KeyedRadio name={`date-field:${value}`} value={value} />
-                  <span>{dateFieldLabel(value)}</span>
-                </Label>
+        <Button
+          ref={triggerRef}
+          type="button"
+          emphasis="secondary"
+          aria-expanded={panelOpen}
+          aria-controls={panelId}
+          data-hold-paint
+          className="gap-2"
+          onClick={togglePanel}
+          onKeyDown={dismissPanel}
+        >
+          <Icon name="filters" />
+          {SESSION_LIST_WORDS.filters}
+        </Button>
+      </div>
+      <section
+        id={panelId}
+        aria-label={SESSION_LIST_WORDS.filters}
+        hidden={!panelOpen}
+        className="rounded-card border border-border bg-card p-4"
+        onKeyDown={dismissPanel}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-start gap-x-6 gap-y-4">
+            <ChipGroup name="Project">
+              {projects.slice(0, 3).map(({ value, label, count, note, disabled }) => (
+                <FilterChip
+                  key={value}
+                  label={label}
+                  count={count}
+                  note={note}
+                  disabled={disabled}
+                  selected={filters.project.includes(value)}
+                  onClick={() => toggle('project', value)}
+                />
               ))}
-            </RadioGroup>
-            <p className={NOTE}>
-              {filters.dateField === 'started'
-                ? 'Started is when the session was created.'
-                : 'Last active is the last time the session was observed doing anything.'}
-            </p>
-            <p id={`${searchId}-when`} className={NOTE}>
-              When
-            </p>
-            <RadioGroup
-              aria-labelledby={`${searchId}-when`}
-              value={filters.when}
-              disabled={noClock}
-              onValueChange={(value) => set({ when: value as When })}
-            >
-              {WHENS.map((when) => (
-                <Label key={when} className={ROW} data-filter-option={`when:${when}`}>
-                  <KeyedRadio name={`when:${when}`} value={when} />
-                  <span className="min-w-0 flex-1" data-filter-label>
-                    {whenLabel(when, filters.dateField)}
-                  </span>
-                  {noClock ? null : (
-                    <span
-                      className="text-label text-muted-foreground [font-family:var(--mono)]"
-                      data-filter-count
-                    >
-                      {dates.byWhen.get(when) ?? 0}
-                    </span>
-                  )}
-                </Label>
-              ))}
-            </RadioGroup>
-            <Label className={ROW} data-filter-option="include-unstamped">
-              <KeyedCheckbox
-                name="include-unstamped"
-                inPopover="date"
-                checked={filters.includeUnstamped}
-                disabled={noClock}
-                onCheckedChange={(checked) => set({ includeUnstamped: checked })}
-              />
-              <span className="min-w-0 flex-1">{`Also show sessions with no ${stamped} (${String(dates.unstamped)})`}</span>
-            </Label>
-            <Separator />
-            {dates.unstampedHarnesses.length ? (
-              <p className={NOTE} data-sessions-unstamped-harnesses>
-                {`No ${stamped} is published for: ${dates.unstampedHarnesses.join(', ')}.`}
-              </p>
-            ) : null}
-            {filters.dateField === 'started' ? (
-              <p className={NOTE}>
-                Where no start time is published, Claude Code and Codex sessions use the time of
-                their first message, as the session page does.
-              </p>
-            ) : null}
-            <p className={NOTE}>Days follow this computer&apos;s clock and time zone.</p>
-            {windowNote(true)}
-            {board.showAll ? (
-              <div className="flex flex-col items-start gap-1" data-sessions-all-note>
-                <p className={NOTE}>
-                  {`Showing all stored sessions. ${board.hours ? `Sessions not active in the last ${HOURS_WORD(board.hours)}` : 'Sessions that were not recently active'} were not fully read, so their start time, title or model may not be published.`}
-                </p>
-                <a
-                  data-slot="button-link"
-                  className={`${buttonVariants({ variant: 'native' })} inline-flex items-center text-foreground underline`}
-                  href={showAllHref(false)}
+              {projects.length > 3 ? (
+                <Button
+                  type="button"
+                  variant="filter-option"
+                  onClick={() => {
+                    controls.disclosures.set(MORE_FILTERS, true);
+                    controls.focusLane.focus('sessions-more-filters');
+                  }}
                 >
-                  {board.hours
-                    ? `Show only the last ${HOURS_WORD(board.hours)}`
-                    : 'Show only recently active sessions'}
-                </a>
-              </div>
-            ) : null}
-          </FilterButton>
-          <FilterButton facet="project" name="Project" selected={filters.project.length}>
-            <ProjectList
-              options={projects}
-              chosen={filters.project}
-              onToggle={(value) => toggle('project', value)}
-            />
-            {filters.project.length ? (
-              <Button
-                type="button"
-                onClick={() =>
-                  pressAndFocus(
-                    { project: [] },
-                    projects.length > 8 ? PROJECT_FIND_KEY : `project:${projects[0]?.value ?? ''}`,
-                  )
-                }
-              >
-                Clear project filter
-              </Button>
-            ) : null}
-          </FilterButton>
-          <FilterButton facet="group" name="Group" selected={filters.group.length}>
-            <OptionList
-              facet="group"
-              name="Group"
-              options={derived.group}
-              chosen={filters.group}
-              onToggle={(value) => toggle('group', value)}
-            />
-          </FilterButton>
-          <Button
-            type="button"
-            aria-pressed={filters.byGroup}
-            className="text-muted-foreground aria-pressed:border-[var(--accent)] aria-pressed:bg-[var(--raise)] aria-pressed:text-foreground"
-            onClick={() => set({ byGroup: !filters.byGroup })}
+                  {`+${String(projects.length - 3)} more`}
+                </Button>
+              ) : null}
+            </ChipGroup>
+            <ChipGroup name="Agent">
+              {harnesses.map(({ value, label, count, note, disabled }) => (
+                <FilterChip
+                  key={value}
+                  label={label}
+                  count={count}
+                  note={note}
+                  disabled={disabled}
+                  selected={filters.harness.includes(value)}
+                  onClick={() => toggle('harness', value)}
+                />
+              ))}
+            </ChipGroup>
+            <ChipGroup name="Started">
+              {(['today', 'week'] as const).map((when) => {
+                const selected = filters.dateField === 'started' && filters.when === when;
+                return (
+                  <FilterChip
+                    key={when}
+                    label={whenLabel(when, 'started')}
+                    disabled={noClock}
+                    selected={selected}
+                    onClick={() =>
+                      set({
+                        dateField: 'started',
+                        when: selected ? 'any' : when,
+                      })
+                    }
+                  />
+                );
+              })}
+            </ChipGroup>
+          </div>
+          <ChipGroup name={SESSION_LIST_WORDS.progressCheck}>
+            {PROGRESS_OPTIONS.map(({ value, label }) => (
+              <FilterChip
+                key={value}
+                label={label}
+                selected={filters.progress.includes(value)}
+                disabled={!readable}
+                onClick={() => toggle('progress', value)}
+              />
+            ))}
+          </ChipGroup>
+          {noClock ? <p className={NOTE}>{NO_CLOCK}</p> : null}
+          {!readable ? <p className={NOTE}>{annotationSentence(board, 'progress')}</p> : null}
+          <Disclosure
+            disclosureKey={MORE_FILTERS}
+            summary={SESSION_LIST_WORDS.moreFilters}
+            focusKey="sessions-more-filters"
+            explanation
+            searchable={false}
           >
-            Group by group
-          </Button>
-          <FilterButton facet="harness" name="Harness" selected={filters.harness.length}>
-            <OptionList
-              facet="harness"
-              name="Harness"
-              options={harnesses}
-              chosen={filters.harness}
-              onToggle={(value) => toggle('harness', value)}
-            />
-          </FilterButton>
-          <FilterButton facet="headless" name="Headless" selected={filters.headless.length}>
-            <OptionList
-              facet="headless"
-              name="Headless"
-              options={derived.headless}
-              chosen={filters.headless}
-              onToggle={(value) => toggle('headless', value)}
-            />
-            <Separator />
-            <p className={NOTE}>
-              Read from Claude Code transcripts and Codex rollout metadata. Interactive or unknown
-              includes unknown entrypoints and other harnesses.
-            </p>
-          </FilterButton>
-          <FilterButton facet="state" name="State" selected={filters.state.length}>
-            <OptionList
-              facet="state"
-              name="State"
-              options={derived.state}
-              chosen={filters.state}
-              onToggle={(value) => toggle('state', value)}
-            />
-            {coverage.length ? (
-              <>
+            <div className="grid gap-4 pt-2 sm:grid-cols-2">
+              <FilterFacet facet="date" name="Date">
+                <p id={`${searchId}-by`} className={NOTE}>
+                  Filter by
+                </p>
+                <RadioGroup
+                  aria-labelledby={`${searchId}-by`}
+                  value={filters.dateField}
+                  disabled={noClock}
+                  onValueChange={(value) => set({ dateField: value as DateField })}
+                >
+                  {(['started', 'active'] as const).map((value) => (
+                    <Label key={value} className={ROW} data-filter-option={`date-field:${value}`}>
+                      <KeyedRadio name={`date-field:${value}`} value={value} />
+                      <span>{dateFieldLabel(value)}</span>
+                    </Label>
+                  ))}
+                </RadioGroup>
+                <p className={NOTE}>
+                  {filters.dateField === 'started'
+                    ? 'Started is when the session was created.'
+                    : 'Last active is the last time the session was observed doing anything.'}
+                </p>
+                <p id={`${searchId}-when`} className={NOTE}>
+                  When
+                </p>
+                <RadioGroup
+                  aria-labelledby={`${searchId}-when`}
+                  value={filters.when}
+                  disabled={noClock}
+                  onValueChange={(value) => set({ when: value as When })}
+                >
+                  {WHENS.map((when) => (
+                    <Label key={when} className={ROW} data-filter-option={`when:${when}`}>
+                      <KeyedRadio name={`when:${when}`} value={when} />
+                      <span className="min-w-0 flex-1" data-filter-label>
+                        {whenLabel(when, filters.dateField)}
+                      </span>
+                      {noClock ? null : (
+                        <span
+                          className="text-label text-muted-foreground [font-family:var(--mono)]"
+                          data-filter-count
+                        >
+                          {dates.byWhen.get(when) ?? 0}
+                        </span>
+                      )}
+                    </Label>
+                  ))}
+                </RadioGroup>
+                <Label className={ROW} data-filter-option="include-unstamped">
+                  <KeyedCheckbox
+                    name="include-unstamped"
+                    checked={filters.includeUnstamped}
+                    disabled={noClock}
+                    onCheckedChange={(checked) => set({ includeUnstamped: checked })}
+                  />
+                  <span className="min-w-0 flex-1">{`Also show sessions with no ${stamped} (${String(dates.unstamped)})`}</span>
+                </Label>
                 <Separator />
-                {coverage.map((line) => (
-                  <p key={line} className={NOTE} data-sessions-wait-coverage>
-                    {line}
+                {dates.unstampedHarnesses.length ? (
+                  <p className={NOTE} data-sessions-unstamped-harnesses>
+                    {`No ${stamped} is published for: ${dates.unstampedHarnesses.join(', ')}.`}
                   </p>
-                ))}
-              </>
-            ) : null}
-          </FilterButton>
-          <FilterButton facet="drift" name="Drift" selected={filters.drift.length}>
-            {readable ? (
-              <>
+                ) : null}
+                {filters.dateField === 'started' ? (
+                  <p className={NOTE}>
+                    Where no start time is published, Claude Code and Codex sessions use the time of
+                    their first message, as the session page does.
+                  </p>
+                ) : null}
+                <p className={NOTE}>Days follow this computer&apos;s clock and time zone.</p>
+              </FilterFacet>
+              <FilterFacet facet="project" name="Project">
+                <ProjectList
+                  options={projects}
+                  chosen={filters.project}
+                  onToggle={(value) => toggle('project', value)}
+                />
+                {filters.project.length ? (
+                  <Button
+                    type="button"
+                    onClick={() =>
+                      pressAndFocus(
+                        { project: [] },
+                        projects.length > 8
+                          ? PROJECT_FIND_KEY
+                          : `project:${projects[0]?.value ?? ''}`,
+                      )
+                    }
+                  >
+                    Clear project filter
+                  </Button>
+                ) : null}
+              </FilterFacet>
+              <FilterFacet facet="group" name="Group">
                 <OptionList
-                  facet="drift"
-                  name="Drift"
-                  options={derived.drift}
-                  chosen={filters.drift}
-                  onToggle={(value) => toggle('drift', value)}
+                  facet="group"
+                  name="Group"
+                  options={derived.group}
+                  chosen={filters.group}
+                  onToggle={(value) => toggle('group', value)}
+                />
+              </FilterFacet>
+              <div>
+                <Button
+                  type="button"
+                  aria-pressed={filters.byGroup}
+                  className="text-muted-foreground aria-pressed:border-[var(--accent)] aria-pressed:bg-accent aria-pressed:text-foreground"
+                  onClick={() => set({ byGroup: !filters.byGroup })}
+                >
+                  Group by group
+                </Button>
+              </div>
+              <FilterFacet facet="headless" name="Headless">
+                <OptionList
+                  facet="headless"
+                  name="Headless"
+                  options={derived.headless}
+                  chosen={filters.headless}
+                  onToggle={(value) => toggle('headless', value)}
                 />
                 <Separator />
                 <p className={NOTE}>
-                  Drift recorded means a check or a stored reading found the session moving away
-                  from the words you gave it.
+                  Read from Claude Code transcripts and Codex rollout metadata. Interactive or
+                  unknown includes unknown entrypoints and other harnesses.
                 </p>
-                <p className={NOTE}>
-                  A session nobody checked looks the same as one that was checked and found nothing,
-                  so Compass offers no &quot;No drift&quot; filter.
-                </p>
-              </>
-            ) : (
-              <p className={SENTENCE} data-sessions-annotations-off>
-                {annotationSentence(board, 'drift')}
-              </p>
-            )}
-          </FilterButton>
-          <FilterButton facet="goal" name="Goal" selected={filters.goal.length}>
-            {readable ? (
-              <OptionList
-                facet="goal"
-                name="Goal"
-                options={derived.goal}
-                chosen={filters.goal}
-                onToggle={(value) => toggle('goal', value)}
-              />
-            ) : (
-              <p className={SENTENCE} data-sessions-annotations-off>
-                {annotationSentence(board, 'goal')}
-              </p>
-            )}
-          </FilterButton>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <span id={quickId} className="text-label text-muted-foreground">
-          Quick filters
-        </span>
-        <div role="group" aria-labelledby={quickId} className="flex flex-wrap gap-2">
-          {presets.map((preset) => (
-            <Button
-              key={preset.key}
-              type="button"
-              variant="native"
-              aria-pressed={preset.pressed}
-              disabled={preset.disabled}
-              data-sessions-preset={preset.key}
-              className="inline-flex cursor-pointer items-center rounded-control border border-solid border-[var(--line)] bg-transparent px-3 font-[family-name:var(--sans)] text-body text-muted-foreground hover:border-[var(--line-hi)] aria-pressed:border-[var(--accent)] aria-pressed:bg-[var(--raise)] aria-pressed:text-foreground disabled:border-dashed disabled:text-[color:var(--ink3)] disabled:cursor-not-allowed"
-              onClick={preset.press}
+              </FilterFacet>
+              <FilterFacet facet="state" name="State">
+                <OptionList
+                  facet="state"
+                  name="State"
+                  options={derived.state}
+                  chosen={filters.state}
+                  onToggle={(value) => toggle('state', value)}
+                />
+                {coverage.length ? (
+                  <>
+                    <Separator />
+                    {coverage.map((line) => (
+                      <p key={line} className={NOTE} data-sessions-wait-coverage>
+                        {line}
+                      </p>
+                    ))}
+                  </>
+                ) : null}
+              </FilterFacet>
+              <FilterFacet facet="drift" name="Progress records">
+                {readable ? (
+                  <>
+                    <OptionList
+                      facet="drift"
+                      name="Progress records"
+                      options={derived.drift}
+                      chosen={filters.drift}
+                      onToggle={(value) => toggle('drift', value)}
+                    />
+                    <Separator />
+                    <p className={NOTE}>
+                      Progress records include saved checks against your current words.
+                    </p>
+                  </>
+                ) : (
+                  <p className={SENTENCE} data-sessions-annotations-off>
+                    {annotationSentence(board, 'drift')}
+                  </p>
+                )}
+              </FilterFacet>
+              <FilterFacet facet="goal" name="Goal source">
+                {readable ? (
+                  <OptionList
+                    facet="goal"
+                    name="Goal source"
+                    options={derived.goal}
+                    chosen={filters.goal}
+                    onToggle={(value) => toggle('goal', value)}
+                  />
+                ) : (
+                  <p className={SENTENCE} data-sessions-annotations-off>
+                    {annotationSentence(board, 'goal')}
+                  </p>
+                )}
+              </FilterFacet>
+            </div>
+            <Disclosure
+              explanation
+              disclosureKey={disclosureKey({
+                project: null,
+                scope: null,
+                name: 'sessions-filter-counts',
+              })}
+              summary={EXPLANATIONS.filterCounts}
+              searchable={false}
             >
-              {preset.label}
-            </Button>
-          ))}
+              <p className="next-why-body">
+                Each number beside an option is how many sessions with that value your other filters
+                keep. Choices inside one filter widen the list; separate filters and the search
+                narrow it.
+              </p>
+              <p className="next-why-body">
+                An unpublished value has its own option where the board can identify it. Tab and{' '}
+                {SESSION_LIST_WORDS.atAGlance} counts cover the whole board.
+              </p>
+            </Disclosure>
+          </Disclosure>
         </div>
-      </div>
-      <Disclosure
-        explanation
-        disclosureKey={disclosureKey({
-          project: null,
-          scope: null,
-          name: 'sessions-filter-counts',
-        })}
-        summary={EXPLANATIONS.filterCounts}
-      >
-        <p className="next-why-body">
-          Each number beside an option is how many sessions with that value your other filters keep.
-          Choices inside one filter widen the list; separate filters and the search narrow it.
-        </p>
-        <p className="next-why-body">
-          A session that does not publish a value is counted under its own option, never as zero and
-          never as older. {SESSION_LIST_WORDS.atAGlance} counts the whole board.
-        </p>
-      </Disclosure>
+      </section>
       {chips.length ? (
         <div ref={chipBox} className="flex flex-wrap items-center gap-2" data-sessions-chips>
           {chips.map((chip, index) => {
@@ -1027,49 +1117,14 @@ export function SessionsFilters({
       ) : (
         <div ref={chipBox} hidden />
       )}
-      <p className={SENTENCE} data-sessions-result>
-        {resultLine(filtered, board)}
-        {only ? ' Press Enter to open it.' : ''}
-      </p>
-      {windowNote(false)}
-      {filtered.active && filtered.shown === 0 ? (
-        <div className="flex flex-col items-start gap-1.5" data-sessions-nothing>
-          <p className={`${SENTENCE} text-foreground`}>No session matches these filters.</p>
-          <Button type="button" onClick={actions.clearAll}>
-            Clear filters
-          </Button>
-          {terms.length ? (
-            <p className={SENTENCE}>
-              Search reads titles, goals and prompts, not the conversation itself.
-            </p>
-          ) : null}
-          {board.showAll ? null : (
-            <>
-              <p className={SENTENCE}>
-                {board.hours
-                  ? `Sessions not active in the last ${HOURS_WORD(board.hours)} are not loaded.`
-                  : 'Sessions not recently active are not loaded.'}
-              </p>
-              <ShowAllLink />
-            </>
-          )}
-          {board.cleared > 0 ? (
-            <p className={SENTENCE}>
-              {board.cleared === 1
-                ? '1 session you marked handled is not on this board.'
-                : `${String(board.cleared)} sessions you marked handled are not on this board.`}
-            </p>
-          ) : null}
-          {prepared.filters.state.includes('Waiting on you')
-            ? coverage.map((line) => (
-                <p key={line} className={SENTENCE} data-sessions-wait-coverage>
-                  {line}
-                </p>
-              ))
-            : null}
-        </div>
+      {filtered.active && !noMatches ? (
+        <p className={SENTENCE} data-sessions-result>
+          {resultLine(filtered, board)}
+          {only ? ' Press Enter to open it.' : ''}
+        </p>
       ) : null}
-      {waiting.length ? (
+      {emptySearch ? null : windowNote}
+      {!emptySearch && waiting.length ? (
         <Alert
           variant="session-health"
           announce={false}
@@ -1102,12 +1157,12 @@ export function SessionsFilters({
           ) : null}
         </Alert>
       ) : null}
-      {missing ? (
+      {!emptySearch && missing ? (
         <div className="flex flex-wrap items-center gap-x-3" data-sessions-unstamped>
           <p className={SENTENCE}>{unstampedLine(missing, prepared.filters.dateField)}</p>
           <Button
             type="button"
-            onClick={() => pressAndFocus({ includeUnstamped: true }, filterKey('date'))}
+            onClick={() => pressAndFocus({ includeUnstamped: true }, FILTERS_KEY)}
           >
             Include them
           </Button>
