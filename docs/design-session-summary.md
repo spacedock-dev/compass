@@ -116,6 +116,19 @@ The earlier explicit `allow: true` request remains accepted for older pages, inc
 its destination checks. Summary presses keep `{consent: "off"}` and `{consent: "on"}`;
 while paused they answer 403 without changing the saved summary answer.
 
+### Amended 2026-11-22 (owner): Pause all AI use and Resume AI use
+
+The [DRC-5479 ruling](design-calm-compass.md#drc-5479-owner-ruling-2026-11-22) names the
+first-layer control Pause all AI use and its opposite Resume AI use. The
+[DRC-5494 follow-up](design-calm-compass.md#drc-5494-owner-follow-up-ruling-2026-11-22)
+puts the same server switch in Settings and in the session's AI use and privacy technical
+tab. The tab says it applies to every session. The
+[fourth-round follow-up](design-calm-compass.md#drc-5494-owner-follow-up-ruling-2026-11-22-fourth-round)
+keeps Summaries nested under the global control in Settings, reading as paused while AI
+use is paused. The per-session Turn off summaries control stays, as does the sentence that
+points to it in What is sent. The flag `--pause-model-calls`, the `pause` skill action and
+the server's pause and resume behavior keep their existing contract.
+
 ### Amended 2026-10-23 (owner): the Live monitor is a call a reader starts, and Pause stops it
 
 The Live monitor's Haiku check is a model call a reader's action starts, in the sense of

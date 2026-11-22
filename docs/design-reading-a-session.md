@@ -2297,6 +2297,16 @@ row, and the Drift row mark still comes from a stored departure alone.
 The primary control reads "Analyze drift", replacing "Check for drift". The rule of at most one
 primary, and none while a question is open without a raise, is unchanged.
 
+### Amended 2026-11-22 (owner): Goal, Goal history and Check progress
+
+The [DRC-5479 ruling](design-calm-compass.md#drc-5479-owner-ruling-2026-11-22) changes the
+first-layer names in the 2026-09-24 amendment and [DEC-27's signed table](#the-signed-table).
+The card reads Goal, the navigation item reads Goal history, and the first press reads
+Check progress. The [rerun ruling](design-calm-compass.md#drc-5479-owner-follow-up-ruling-2026-11-22-third-round)
+sets Check progress again for a current or stale reading. Staleness is stated on the card
+as Out of date. Drift stays in technical details. The `#n=intent` route and the
+primary-control hierarchy stay. Goal opens its explainer in place and Help links to it.
+
 ### What the session page build had to decide
 
 Built 2026-09-23 (DRC-4639, DRC-4642). The ruling as first written said a blocked session "keeps
@@ -6633,6 +6643,14 @@ The reading definition and the long scope paragraph left this panel, since the p
 elsewhere. The cutoff is reworded at the producer in plain sentences with the same counts
 (see [what the window build decided](#what-the-window-build-decided-2026-09-27)). A reading stored before the change keeps the sentence it was stored with.
 
+### Amended 2026-11-22 (owner): reading feedback and daily checks
+
+The [DRC-5479 ruling](design-calm-compass.md#drc-5479-owner-ruling-2026-11-22) changes the
+feedback label to This reading looks wrong. Update my goal instead sits beside Steer back
+and opens the Goal card in edit mode. Check progress always shows Uses AI. It also shows
+N of 100 daily checks left when 10 or fewer remain. The count describes the existing daily
+cap. The rest of the evidence and feedback contract stays in the 2026-10-16 amendment.
+
 ### Amended 2026-10-20 (owner): the correction carries the explanation
 
 Item 7 fixed the correction as exact text with no model prose. A walk of the session page found
@@ -8342,6 +8360,30 @@ with the panel first, so the goal stays in the first view on a phone. The count 
 and the page chrome. The activity column's own disclosures (About this record, Session facts and the
 reports line) now also show beside it at 1280 by 800, and are held by the complete inventory of 14.
 
+### Amended 2026-11-22 (owner): progress words by surface
+
+The [DRC-5476 ruling](design-calm-compass.md#drc-5476-owner-ruling-2026-11-22) and its
+[footer and filter follow-up](design-calm-compass.md#drc-5476-owner-follow-up-rulings-2026-11-22-fourth-round)
+amend the display words in the signed table. The
+[naming amendment](#amended-2026-11-22-owner-goal-goal-history-and-check-progress) covers
+the goal and progress controls in that table. The
+[Calm Compass status language](design-calm-compass.md#status-language) defines the four
+level words and six distinct absences. DEC-17 rule 4, DEC-20 item 3 and DEC-26 items 3 and
+6 continue to set the evidence floor.
+
+| Surface | What it can show |
+|---|---|
+| Sessions row | One progress pill for a stored reading that found a departure (Slightly off course or worse). Otherwise the appropriate absence word or nothing. A live estimate supplies no row level. |
+| Project row | The same stored-departure and absence rule. |
+| Goal history | Goal revisions with no level. |
+| Session header | A full level word when evidence permits one, otherwise the applicable absence. |
+| Is it on track? card | A full level word with its evidence, or the appropriate absence. On track means "No departure found in what Compass read". The meter and Help explain all four levels. |
+| Terminal status-line footer | The row rule. It may also say the Live monitor is on. |
+| Sessions Filters | Progress check chips read Slightly off course, Off course, Way off course and No goal yet, with no counts. |
+
+Codex sessions show neither a level nor a correction. The
+[installed skill](../compass/skills/compass/SKILL.md) states the limit.
+
 ### Amended 2026-10-14: what the how-to, the live line and a late save say
 
 Four sentences, each at the place a reader relies on it. None adds a control.
@@ -8520,6 +8562,23 @@ reading: a later press, a new reading or another session takes it down, and a re
 later press began publishes nothing. Escape on the row, the sentence or "Back to the finding" returns
 focus to the citation without leaving the session page, and both moves scroll without animation when
 the reader prefers reduced motion.
+
+### Amended 2026-11-22 (owner): the Session page has two columns from 1100 px
+
+The [DRC-5491 ruling](design-calm-compass.md#drc-5491-owner-ruling-2026-11-22) reverses the
+one-column-at-every-width decision. The
+[breakpoint ruling](design-calm-compass.md#drc-5491-owner-follow-up-ruling-2026-11-22)
+sets two columns from a window width of 1100 px. The
+[header follow-up](design-calm-compass.md#drc-5491-owner-follow-up-ruling-2026-11-22-fourth-round)
+puts the title, state and Check progress across both columns, with the two columns
+starting below. Goal, Is it on track? and What's happened so far go on the left. Right now,
+At a glance and Project go on the right. Below 1100 px the order is Header, Goal, Is it on
+track?, Right now, What's happened so far, At a glance, Project.
+
+Steer back stays editable and keeps "Compass never sends this for you". Use your prompt
+stays visible beside Edit goal in read mode. The direction question stays on Is it on
+track? with Add as a line, Make it the goal and Leave it. Its presentation goes through
+Storybook sign-off.
 
 ### Amended 2026-10-19 (owner): each departure is a card
 

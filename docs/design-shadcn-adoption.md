@@ -1164,3 +1164,12 @@ field is one, so this layer takes that tier rather than two lenses. The toolbar 
 unchanged at 121,030 bytes. Measured with `pnpm build` on this layer, the page grows from 2,174,695 to
 2,237,347 bytes (62,652 bytes for both components, the toolbar and the filter rules together), with
 14 bundled licenses before and after. These are byte measurements, not a fluidity qualification.
+
+### Amended 2026-11-22 (owner): switches for boolean settings
+
+The [DRC-5497 ruling](design-calm-compass.md#drc-5497-owner-ruling-2026-11-22) reverses
+the decision to leave Switch out. The redesign uses a shared Switch for boolean settings.
+The [Settings ruling](design-calm-compass.md#drc-5494-owner-ruling-2026-11-22) gives each
+setting its owner and lifetime. The Live monitor stays per session. Keep the focus
+and accessibility behavior of each control, and follow the
+[Calm Compass overlay rule](design-calm-compass.md#overlay-rule) for where it appears.
