@@ -1,7 +1,7 @@
 import { buttonVariants } from '../ui/button';
 import { cn } from '../lib/utils';
 import type { ReactNode, Ref } from 'react';
-import { sessionState } from '../observed';
+import { sessionState, sessionStateLimit } from '../observed';
 import { Icon, SESSION_STATE_ICONS } from '../ui/icons';
 import type { ObservedSession } from '../observed';
 import { fragmentForRoute, type RouteInput } from '../router/grammar';
@@ -31,7 +31,7 @@ export function Value({
 
 export function ProjectSessionStatus({ session }: { readonly session: ObservedSession }) {
   const state = sessionState(session);
-  if (state === 'State not published') return null;
+  if (state === 'State not published' || state === 'Waiting on child') return null;
   return (
     <span
       className={cn('inline-flex', session.isLive && state === 'Working' && 'next-live')}
@@ -41,6 +41,11 @@ export function ProjectSessionStatus({ session }: { readonly session: ObservedSe
       <Icon name={SESSION_STATE_ICONS[state]} className="next-status-icon shrink-0" />
     </span>
   );
+}
+
+export function ProjectSessionLimit({ session }: { readonly session: ObservedSession }) {
+  const limit = sessionStateLimit(session);
+  return limit ? <span className="next-project-session-limit">{limit}</span> : null;
 }
 
 export function Absence({ children }: { readonly children: ReactNode }) {

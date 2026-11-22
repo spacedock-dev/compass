@@ -99,10 +99,24 @@ export const StatusLegend: Story = {
       await expect(label).toBeVisible();
       await expect(label.closest('li')?.querySelector(`svg[data-icon="${icon}"]`)).toBeVisible();
     }
-    const quiet = canvasElement.querySelector('[data-next-row-state="Quiet"]');
+    const quiet = rowOf(canvasElement, 'D')?.querySelector('[data-next-row-state]');
+    const scan = rowOf(canvasElement, 'F')?.querySelector('[data-next-row-state]');
+    await expect(scan).toBeVisible();
+    await expect(scan).toHaveTextContent('Read by scanning: no turn end can be observed here');
+    await expect(scan?.querySelector('svg')).toBeNull();
+    const live = rowOf(canvasElement, 'B')?.querySelector(
+      '[data-next-row-state] [data-icon="working"]',
+    );
+    const lapsed = rowOf(canvasElement, 'C')?.querySelector(
+      '[data-next-row-state] [data-icon="working"]',
+    );
+    if (!live || !lapsed) throw new Error('Expected both Working shapes');
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    await expect(getComputedStyle(live).animationName).toBe(reduced ? 'none' : 'next-live-pulse');
+    await expect(getComputedStyle(lapsed).animationName).toBe('none');
     await expect(quiet).toBeVisible();
     await expect(quiet?.querySelector('svg[data-icon="quiet"]')).toBeVisible();
-    const unknown = canvasElement.querySelector('[data-next-row-state="State not published"]');
+    const unknown = rowOf(canvasElement, 'J')?.querySelector('[data-next-row-state]');
     await expect(unknown).toHaveTextContent('State not published');
     await expect(unknown?.querySelector('svg')).toBeNull();
     await expect(
@@ -120,7 +134,7 @@ export const ProjectActivityIcons: Story = {
     const currentRun = await activity.findByRole('button', { name: /Changelog for 2.4/ });
     await expect(currentRun.querySelector('svg[data-icon="working"]')).toBeVisible();
     const ended = await activity.findByRole('button', { name: /Theme tokens/ });
-    await expect(ended.querySelector('svg[data-icon="unrecorded"]')).toBeVisible();
+    await expect(ended.querySelector('svg[data-icon="ended"]')).toBeVisible();
     await expect(ended).toHaveTextContent('Session ended; git state not measured');
   },
 };
@@ -844,9 +858,10 @@ export const PaintHoldWhileAFilterIsOpen: Story = {
     await expect(before).toEqual([
       'Waiting on you 1',
       'Working 2',
-      'Quiet 7',
+      'Quiet 1',
       'Ended 1',
-      'State not published 1',
+      'Waiting on child 0',
+      'State not published 7',
     ]);
     await poll({ bIdle: true });
     await expect(shell.runtime.store.getSnapshot().acceptedCount).toBeGreaterThan(1);
@@ -867,9 +882,10 @@ export const PaintHoldWhileAFilterIsOpen: Story = {
         expect(counts()).toEqual([
           'Waiting on you 1',
           'Working 1',
-          'Quiet 8',
+          'Quiet 2',
           'Ended 1',
-          'State not published 1',
+          'Waiting on child 0',
+          'State not published 7',
         ]),
       );
       await expect(painted).toBe(1);

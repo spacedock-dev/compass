@@ -16,12 +16,15 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
-2026-11-22, status, navigation and activity marks use Phosphor Bold SVGs. Sessions and Project
-mask the retired text marks at their own render sites and compare the surrounding words and
-structure. The observed-model proof projects the old outcome characters to their icon names.
-Session detail projects the four old header state words and omits the old task and helper
-characters. The board comparison with the terminal fixture projects Idle to Quiet on the board
-side. The browser title's attention cue keeps its text. The recorded answers stay fixed.
+2026-11-22, status, navigation and activity marks use Phosphor Bold SVGs. The Sessions and
+Project comparisons mask the retired text marks at their render sites and compare the surrounding
+words and structure. The observed-model and Project member comparisons project the old outcome
+marks only for reported ends. The presentation proofs compare the new state and limit lines,
+plan status words and helper counts against their own evidence. The recorded-answer comparisons
+omit those fields and keep the surrounding text, order, identities and timing. The terminal
+comparison maps recorded Idle to Quiet for the rows with a turn stop and to State not published for
+the four rows without one. The activity proofs retain the hollow and marked circle distinction.
+The browser title's attention cue keeps its text. The recorded answers stay fixed.
 
 Raise now diagnoses a restarted dashboard only from an explicit `stale-capability` refusal.
 Other 403 replies keep the server's refusal sentence, with a generic refusal for older HTML

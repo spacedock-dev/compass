@@ -78,6 +78,12 @@ async function mine(payload: unknown): Promise<Summary> {
   const root = page.container.querySelector('[data-next-view-body="projects"]');
   if (!root) throw new Error('The Projects list did not draw.');
   restateLiveOpener(root);
+  // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
+  for (const limit of root.querySelectorAll('.next-project-session-limit')) limit.remove();
+  for (const now of root.querySelectorAll('.next-project-session-now')) {
+    if (now.textContent === 'quiet' || now.textContent === 'No recent activity')
+      now.textContent = '';
+  }
   const result = summarize(root);
   page.unmount();
   return result;
@@ -90,6 +96,10 @@ function legacy(payload: unknown, raw?: (html: string) => void): Summary {
   raw?.(html);
   const root = parseHtml(html);
   restateRecordedLocationNotes(root);
+  for (const mark of root.querySelectorAll('.next-project-chevron')) mark.remove();
+  for (const now of root.querySelectorAll('.next-project-session-now')) {
+    if (now.textContent === 'quiet') now.textContent = '';
+  }
   return summarize(root);
 }
 

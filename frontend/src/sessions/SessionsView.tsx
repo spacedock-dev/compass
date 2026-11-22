@@ -15,7 +15,7 @@ import {
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
-import { gapNames, isRecord, isScanOnly, type Row } from '../observed';
+import { gapNames, isRecord, sessionStateLimit, type Row } from '../observed';
 import { nextNumber } from '../api/bootstrap';
 import { contextKey } from '../api/identity';
 import { headerAnalysis } from '../drift/model';
@@ -66,7 +66,6 @@ import {
   GOAL_SOURCES_OFF,
   GOAL_SOURCES_ON,
   RECENT_WHY,
-  SCAN_ONLY_LINE,
   SCAN_ONLY_NOTE,
   UNREAD_SOURCE_NOTE,
 } from './notes';
@@ -152,22 +151,25 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
   const { session, source, history } = row;
   const assignment = history ? '' : assignmentOf(source);
   const names = source ? gapNames(source) : [];
-  const publishedState = rowState(session);
-  const state =
-    row.relations.waitingText && publishedState === 'Working' ? 'Waiting on child' : publishedState;
+  const state = rowState(session);
+  const limit = sessionStateLimit(session, state);
   const statusIcon =
     state === 'State not published' || state === 'Waiting on child'
       ? null
       : SESSION_STATE_ICONS[state];
   return (
     <span className="next-operation-identity">
-      <span
-        className={`m-0 flex items-center gap-2 text-label font-semibold ${state === 'Waiting on you' ? 'text-[var(--amber)]' : state === 'Working' ? 'text-foreground' : 'text-[var(--ink-label)]'}`}
-        data-next-row-state={state}
-      >
-        {statusIcon ? <Icon name={statusIcon} /> : null}
-        {state}
-      </span>
+      {statusIcon ? (
+        <span
+          className={`m-0 flex items-center gap-2 text-label font-semibold ${state === 'Waiting on you' ? 'text-[var(--amber)]' : state === 'Working' ? 'text-foreground' : 'text-[var(--ink-label)]'}`}
+          data-next-row-state={state}
+        >
+          <span className={session.isLive && state === 'Working' ? 'next-live' : undefined}>
+            <Icon name={statusIcon} className="next-status-icon" />
+          </span>
+          {state}
+        </span>
+      ) : null}
       <span className="next-operation-harness">{row.harnessLabel}</span>
       <RouteAnchor
         route={row.route}
@@ -190,6 +192,7 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
       <RelationshipLabels
         source={source}
         relations={row.relations}
+        waitingIsState={state === 'Waiting on child'}
         focusScope={`sessions-row:${row.key}`}
         fallback={SEARCH_KEY}
       />
@@ -210,9 +213,13 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
           {session.sharedLabelText}
         </span>
       ) : null}
-      {source && isScanOnly(source) ? (
-        <span className="next-operation-scan-only" title={SCAN_ONLY_NOTE}>
-          {SCAN_ONLY_LINE}
+      {limit && state !== 'Waiting on child' ? (
+        <span
+          className="next-operation-scan-only"
+          title={session.scanOnly ? SCAN_ONLY_NOTE : undefined}
+          data-next-row-state={statusIcon ? undefined : state}
+        >
+          {limit}
         </span>
       ) : null}
       {names.length ? (

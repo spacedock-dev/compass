@@ -217,6 +217,54 @@ function StatusLanguage() {
   );
 }
 
+function Terminology() {
+  const words = [
+    ['Goal', 'Intent'],
+    ['What “done” looks like', 'Expected outcome (optional)'],
+    ['Check progress / Check progress again', 'Analyze drift / Check again'],
+    ['This reading looks wrong', 'Mark as inaccurate'],
+    ['Where it went off course', 'Departure + Goal'],
+    ['Helpers', 'Subagents'],
+    ['Agent', 'Harness'],
+    ['Needs you', 'Attention'],
+    ['Goal history', 'Intent log'],
+    ['Quiet', 'Idle'],
+    ['Pause all AI use / Resume AI use', 'Pause model calls / Resume model calls'],
+    ['Live monitor', 'Live monitor'],
+    ['Your AI allowance (the plan quota only)', 'Quota strip'],
+    ['How much a progress check reads', 'Estimated prompt allowances'],
+  ];
+  return (
+    <Panel id="calm-terminology" title="Words we use now">
+      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'start' }}>
+        <thead>
+          <tr>
+            <th scope="col" style={{ textAlign: 'start' }}>
+              Now
+            </th>
+            <th scope="col" style={{ textAlign: 'start' }}>
+              Before
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {words.map(([current, previous]) => (
+            <tr key={current}>
+              <th
+                scope="row"
+                style={{ ...row, textAlign: 'start', paddingInlineEnd: 'var(--sp-3)' }}
+              >
+                {current}
+              </th>
+              <td style={{ ...row, color: 'var(--ink2)' }}>{previous}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Panel>
+  );
+}
+
 function Pieces() {
   const buttons: CSSProperties = {
     display: 'flex',
@@ -324,14 +372,29 @@ function Guide() {
         <TypeSamples />
       </div>
       <StatusLanguage />
+      <RadiusSamples />
       <div style={columns}>
-        <RadiusSamples />
+        <Terminology />
         <Pieces />
       </div>
       <ReservedExamples />
     </main>
   );
 }
+
+function measuredLuminance(element: Element) {
+  const channels = (getComputedStyle(element).backgroundColor.match(/[\d.]+/g) ?? [])
+    .slice(0, 3)
+    .map((value) => Number(value) / 255)
+    .map((value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4));
+  const [red, green, blue] = channels;
+  if (red === undefined || green === undefined || blue === undefined)
+    throw new Error('Expected an RGB swatch');
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+const contrastRatio = (one: number, other: number) =>
+  ((Math.max(one, other) + 0.05) / (Math.min(one, other) + 0.05)).toFixed(2);
 
 const meta = { title: 'Design/Calm Compass' } satisfies Meta;
 export default meta;
@@ -345,6 +408,9 @@ export const StyleGuide: Story = {
     const colors = canvas.getByRole('region', { name: 'Color' });
     const swatches = colors.querySelectorAll<HTMLElement>('[data-swatch]');
     await expect(swatches).toHaveLength(8);
+    const card = colors.querySelector('[data-swatch="--panel"]');
+    const ground = colors.querySelector('[data-swatch="--bg"]');
+    if (!card || !ground) throw new Error('Expected the Card and Ground swatches');
     const rootStyle = getComputedStyle(document.documentElement);
     const reference = document.createElement('span');
     colors.append(reference);
@@ -357,7 +423,13 @@ export const StyleGuide: Story = {
         await expect(getComputedStyle(swatch).backgroundColor, token).toBe(
           getComputedStyle(reference).backgroundColor,
         );
-        await expect(swatch.parentElement).toHaveTextContent(/Card [\d.]+:1 · Ground [\d.]+:1/);
+        await expect(swatch.style.backgroundColor, token).toBe(`var(${token})`);
+        const luminance = measuredLuminance(swatch);
+        const cardRatio = contrastRatio(luminance, measuredLuminance(card));
+        const groundRatio = contrastRatio(luminance, measuredLuminance(ground));
+        await expect(swatch.parentElement).toHaveTextContent(
+          `Card ${cardRatio}:1 · Ground ${groundRatio}:1`,
+        );
       }
     } finally {
       reference.remove();
@@ -402,6 +474,17 @@ export const StyleGuide: Story = {
       }
     } finally {
       corner.remove();
+    }
+
+    const words = within(canvas.getByRole('region', { name: 'Words we use now' }));
+    for (const [current, previous] of [
+      ['Goal', 'Intent'],
+      ['Helpers', 'Subagents'],
+      ['Needs you', 'Attention'],
+      ['Quiet', 'Idle'],
+    ]) {
+      const item = words.getByRole('row', { name: `${current} ${previous}` });
+      await expect(item).toBeVisible();
     }
 
     const pieces = within(canvas.getByRole('region', { name: 'Pieces' }));

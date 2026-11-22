@@ -95,16 +95,11 @@ export const CompletedReadingAndFinalResult: Story = {
     const pillWords = pill()?.textContent;
     await expect(pill()).not.toHaveTextContent('so far');
     await userEvent.click(canvas.getByRole('button', { name: 'Apply child display hold' }));
-    await waitFor(() =>
-      expect(canvasElement.querySelector('[data-next-session-status]')).toHaveTextContent(
-        'Waiting on child',
-      ),
-    );
+    const childWait = await canvas.findByRole('link', { name: 'Waiting on child "Check build"' });
+    await expect(childWait).toBeVisible();
+    await expect(canvasElement.querySelector('[data-next-session-status]')).toBeNull();
     await expect(pill()?.textContent).toBe(pillWords);
     await expect(drift.textContent).toBe(wording);
-    await expect(
-      canvas.getByRole('link', { name: 'Waiting on child "Check build"' }),
-    ).toBeVisible();
     await userEvent.click(canvas.getByRole('button', { name: 'View final result' }));
     const timeline = await waitFor(() => {
       const node = canvasElement.querySelector<HTMLElement>('[data-next-cockpit-semantic]');

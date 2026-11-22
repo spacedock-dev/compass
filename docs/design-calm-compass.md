@@ -207,7 +207,9 @@ Absence words have no icon. [NUI-12](design-next-ui.md#nui-12-motion-means-obser
 still governs motion.
 
 [DRC-5527](design-shadcn-adoption.md#icons-and-tooltips) records the icon names, weight
-and import boundary.
+and import boundary. The [Calm Compass story](../frontend/stories/CalmCompass.stories.tsx)
+keeps the swatches, contrast figures, type, radii, terminology and available components together.
+Its reserved Switch example will be filled by the shared control.
 
 ## Overlay rule
 

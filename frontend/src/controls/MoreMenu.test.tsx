@@ -41,7 +41,9 @@ const flush = async () => {
 describe('the project More menu', () => {
   it('names its summary, keeps the all-project status and offers Copy briefing', () => {
     const { view } = mount(menu());
-    expect(view.getByText('···').closest('summary')?.getAttribute('aria-label')).toBe('More');
+    const summary = view.getByText('More').closest('summary');
+    expect(summary?.getAttribute('aria-label')).toBe('More');
+    expect(summary?.querySelector('svg[data-icon="caret-down"]')).toBeInTheDocument();
     expect(view.getByText('All projects · 3 running · 1 subagent observed')).toBeInTheDocument();
     expect(view.getByRole('button', { name: 'Copy briefing' })).toBeInTheDocument();
     expect(view.queryByRole('button', { name: 'Add human context' })).toBeNull();
@@ -128,33 +130,33 @@ describe('the project More menu', () => {
       );
     }
     const { view, rerender } = mount(<Page />);
-    const details = view.getByText('···').closest('details') as HTMLDetailsElement;
+    const details = view.getByText('More').closest('details') as HTMLDetailsElement;
     act(() => {
       details.open = true;
     });
     await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
-    const summary = view.getByText('···');
+    const summary = view.getByText('More');
     summary.focus();
     act(() => view.getByRole('button', { name: 'tick' }).click());
-    expect(view.getByText('···').closest('details')).toBe(details);
+    expect(view.getByText('More').closest('details')).toBe(details);
     expect(details.open).toBe(true);
     expect(document.activeElement).toBe(summary);
     rerender(<p>another view</p>);
     rerender(<Page />);
     expect(
-      (view.getByText('···').closest('details') as HTMLDetailsElement).hasAttribute('open'),
+      (view.getByText('More').closest('details') as HTMLDetailsElement).hasAttribute('open'),
     ).toBe(true);
   });
 
   it('keeps its summary keyboard operable and a menu is not dismissed by Escape as a popover is', async () => {
     const { view } = mount(menu());
-    const details = view.getByText('···').closest('details') as HTMLDetailsElement;
+    const details = view.getByText('More').closest('details') as HTMLDetailsElement;
     act(() => {
       details.open = true;
     });
     const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
     act(() => {
-      view.getByText('···').dispatchEvent(escape);
+      view.getByText('More').dispatchEvent(escape);
     });
     expect(details.open).toBe(true);
     expect(escape.defaultPrevented).toBe(false);

@@ -9,7 +9,7 @@ import { useShell } from '../shell/context';
 import { selectObserved } from '../observed/select';
 import { useDisplayed } from '../shell/context';
 import { projectMembers } from './activity';
-import { ProjectSessionStatus, Value } from './parts';
+import { ProjectSessionLimit, ProjectSessionStatus, Value } from './parts';
 import { routeToken, useRouteTarget } from './routing';
 import type { ObservedSession } from '../observed';
 import './project.css';
@@ -63,7 +63,9 @@ function MemberLine({
         target.onClick(event);
       }}
     >
-      <ProjectSessionStatus session={session} />
+      <span>
+        <ProjectSessionStatus session={session} />
+      </span>
       <span className="next-project-session-harness">{session.harness}</span>
       <Value
         text={session.titleText}
@@ -76,6 +78,7 @@ function MemberLine({
         known={session.nextKnown}
         className="next-project-session-next"
       />
+      <ProjectSessionLimit session={session} />
     </Button>
   );
 }

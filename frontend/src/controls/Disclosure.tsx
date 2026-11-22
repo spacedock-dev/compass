@@ -1,3 +1,4 @@
+import { Icon } from '../ui/icons';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../ui/accordion';
 import { useRevealFragment } from './useRevealFragment';
 import {
@@ -191,6 +192,7 @@ function DisclosureNode({
         {...(summaryLabel ? { 'aria-label': summaryLabel } : {})}
       >
         {summary}
+        <Icon name={open ? 'caret-up' : 'caret-down'} />
       </summary>
       {children}
     </details>

@@ -1,3 +1,4 @@
+import { sessionState, sessionStateLimit } from '../observed/session';
 import { ageSeconds, endedAt, sessionKey } from '../observed/values';
 import { formatDuration } from '../shell/format';
 import { humanLabel, scopeLabel, sessKey, type ProjectGroup } from './group';
@@ -118,10 +119,13 @@ export interface ScopeLink {
   /** The title is the sentence for "no title published", which is not the session's own words. */
   readonly withheld: boolean;
   readonly isWorking: boolean;
+  readonly isLive: boolean;
+  readonly limit: string;
   /** The part under the title: for a session, harness, state, age and a sid where two rows look the same. */
   readonly meta: {
     readonly harness: string;
     readonly state: string;
+    readonly label: string;
     readonly tone: string;
     readonly age: string;
     readonly sid: string;
@@ -158,9 +162,12 @@ export function scopeLinks(
     title: scopeLabel(group).replace(/\s+/g, ' ').trim(),
     withheld: scopeLabel(group).replace(/\s+/g, ' ').trim() === TITLE_WITHHELD,
     isWorking: false,
+    isLive: false,
+    limit: '',
     meta: null,
     count: `${String(rows.length)} ${rows.length === 1 ? 'session' : 'sessions'}`,
   };
+  const observedByKey = new Map(group.observed.sessions.map((row) => [sessionKey(row), row]));
   return [
     project,
     ...rows.map((session, index): ScopeLink => {
@@ -168,16 +175,22 @@ export function scopeLinks(
       const raw = text(session['title']).trim() || TITLE_WITHHELD;
       const title = raw.replace(/\s+/g, ' ').trim();
       const state = String(session['state'] || 'unknown');
+      const observed = observedByKey.get(sessionKey(session));
+      const word = observed ? sessionState(observed) : 'State not published';
+      const limit = observed ? sessionStateLimit(observed, word) : 'State not published';
       const since = ageSeconds(generated, session['last_activity']);
       return {
         key: sessKey(session),
         scope: sessionScope(session, harnesses),
         title,
         withheld: title === TITLE_WITHHELD,
-        isWorking: sessionIsWorking(session, group),
+        isWorking: word === 'Working',
+        isLive: word === 'Working' && observed?.isLive === true,
+        limit,
         meta: {
           harness: hoisted ? '' : harnessName(session, harnesses),
           state,
+          label: word === 'State not published' || word === 'Waiting on child' ? '' : word,
           tone: sessionTone(session, group),
           age: since === null ? '' : (formatDuration(since) ?? ''),
           sid: twin ? text(session['sid']) : '',
@@ -188,20 +201,18 @@ export function scopeLinks(
   ];
 }
 
-/** What the switcher says is selected: one session's harness and state, or the project. */
-export function switcherSummary(
+/** The focused session's name and state share the scope links' evidence. */
+export function viewingSession(
+  focus: Row,
   group: ProjectGroup,
-  focus: Row | null,
   harnesses: ReadonlyMap<string, string>,
-): string {
-  return focus
-    ? `Viewing session · ${sessionScope(focus, harnesses).detail || 'Session'} · ${String(focus['state'] || 'state unavailable')}`
-    : `Viewing project · ${scopeLabel(group)}`;
-}
-
-/** The line under the strip when a session is focused: the same claim, narrowed. */
-export function viewingSession(focus: Row, harnesses: ReadonlyMap<string, string>): string {
+) {
   const scope = sessionScope(focus, harnesses);
-  const state = String(focus['state'] || 'state unavailable').trim();
-  return `Viewing session · ${scope.detail || 'Session'} · ${state}`;
+  const observed = group.observed.sessions.find((row) => sessionKey(row) === sessionKey(focus));
+  const state = observed ? sessionState(observed) : 'State not published';
+  return {
+    label: `Viewing session · ${scope.detail || 'Session'}`,
+    state: state === 'Waiting on child' || state === 'State not published' ? '' : state,
+    limit: observed ? sessionStateLimit(observed, state) : 'State not published',
+  };
 }

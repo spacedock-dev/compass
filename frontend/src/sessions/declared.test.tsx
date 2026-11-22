@@ -69,9 +69,10 @@ describe('declared process children', () => {
     const links = screen.getByRole('region', { name: 'Linked children' });
     expect(links).toHaveTextContent('Check build');
     expect(links).toHaveTextContent('Check docs');
-    expect(document.querySelector('[data-next-session-status]')).toHaveTextContent(
-      'Waiting on child',
-    );
+    expect(document.querySelector('[data-next-session-status]')).toBeNull();
+    expect(
+      screen.getByRole('link', { name: 'Waiting on child "Check build"' }),
+    ).toBeInTheDocument();
     await page.poll({
       ...fixture.payload,
       sessions: fixture.payload.sessions.map((s) =>
@@ -82,7 +83,7 @@ describe('declared process children', () => {
             : s,
       ),
     });
-    expect(document.querySelector('[data-next-session-status]')).not.toHaveTextContent(
+    expect(document.querySelector('[data-next-session-status]')?.textContent ?? '').not.toContain(
       'Waiting on',
     );
     expect(screen.getByRole('region', { name: 'Linked children' })).toHaveTextContent('Ended');
@@ -238,7 +239,7 @@ it('keeps prompt-first child titles out of the state slot and quotes their relat
   });
   await page.settle();
   const state = row('parent').querySelector('[data-next-row-state]');
-  expect(state?.textContent).toBe('Waiting on child');
+  expect(state?.textContent).toBe('Waiting on child "You are verifying a fix round"');
   expect(state).not.toHaveTextContent(/Waiting on you/i);
   expect(
     within(row('parent')).getByRole('link', {
@@ -253,9 +254,7 @@ it('keeps prompt-first child titles out of the state slot and quotes their relat
       session: 'parent',
     }),
   );
-  expect(document.querySelector('[data-next-session-status]')?.textContent).toBe(
-    'State: Waiting on child',
-  );
+  expect(document.querySelector('[data-next-session-status]')).toBeNull();
   expect(
     screen.getByRole('link', { name: 'Waiting on child "You are verifying a fix round"' }),
   ).toBeInTheDocument();

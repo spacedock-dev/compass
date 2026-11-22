@@ -1,3 +1,4 @@
+import { declaredRelations } from './relationships';
 import { nativeSession } from './native';
 import { nextNumber } from '../api/bootstrap';
 import { boardLocationWarnings, rowLocationNote } from './location';
@@ -159,6 +160,7 @@ export function observe(input: unknown): Observed {
       byHarness.get(identityPart(source['harness'])),
       generated,
       rowLocationNote(groups.get(labelOf(source)) ?? [], source),
+      source['waiting_on_child'] ? declaredRelations(payload, source).waitingText : '',
     ),
   );
   const risks: BoardRisk[] = [];

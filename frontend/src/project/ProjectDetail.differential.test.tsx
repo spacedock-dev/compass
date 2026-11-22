@@ -49,6 +49,7 @@ interface Summary {
 function summarize(source: Element | DocumentFragment, tab: string): Summary {
   restateRecordedLocationNotes(source);
   const article = normalizeDisclosures(source);
+  maskProjectStatusPresentation(article, source.nodeType === Node.DOCUMENT_FRAGMENT_NODE);
   const header = article.querySelector('.next-project-detail-header');
   const tree = article.querySelector('nav.next-cockpit-scope-tree');
   const strip = article.querySelector('.next-cockpit-recovery');
@@ -103,6 +104,33 @@ function summarize(source: Element | DocumentFragment, tab: string): Summary {
 }
 
 /* 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers */
+function maskProjectStatusPresentation(root: ParentNode, recorded: boolean) {
+  for (const node of root.querySelectorAll(
+    '.next-project-session-limit,[data-next-plan-status],[data-next-project-focus-status]',
+  )) {
+    node.remove();
+  }
+  if (recorded) {
+    for (const header of root.querySelectorAll(
+      '.next-cockpit-viewing-session, .next-cockpit-scope-switcher summary > span:first-child',
+    )) {
+      if (header.textContent?.startsWith('Viewing session · '))
+        header.textContent = header.textContent.replace(/ · [^·]+$/, '');
+    }
+  }
+  for (const word of root.querySelectorAll('.next-cockpit-scope-state')) {
+    const previous = word.previousSibling;
+    const following = word.nextSibling;
+    if (previous?.nodeType === Node.TEXT_NODE && /·\s*$/.test(previous.textContent ?? ''))
+      previous.textContent = previous.textContent?.replace(/\s*·\s*$/, '') ?? '';
+    else if (following?.nodeType === Node.TEXT_NODE)
+      following.textContent = following.textContent?.replace(/^\s*·\s*/, '') ?? '';
+    word.remove();
+  }
+  for (const meta of root.querySelectorAll('.next-cockpit-scope-meta'))
+    meta.textContent = norm(meta);
+}
+
 function maskRecordedProjectGlyphs(root: DocumentFragment): DocumentFragment {
   for (const glyph of root.querySelectorAll(
     '.next-project-ending-glyph, .next-activity-done-glyph, .next-project-plan-glyph',

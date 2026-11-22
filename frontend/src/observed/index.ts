@@ -35,6 +35,7 @@ export {
   observeSession,
   pageTitleOf,
   sessionState,
+  sessionStateLimit,
   type ObservedSession,
 } from './session';
 export { selectObserved } from './select';

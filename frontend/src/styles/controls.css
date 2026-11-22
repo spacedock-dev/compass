@@ -79,15 +79,7 @@
   padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: var(--r-control);
-  font-size: 0;
-}
-.ctl-menu > summary::before {
-  content: attr(aria-label);
-  font: 0.8125rem var(--sans);
-}
-.ctl-menu > summary::after {
-  content: '\25BE';
-  font: 0.8125rem var(--sans);
+  font-size: var(--fs-label);
 }
 .ctl-menu-items {
   position: absolute;

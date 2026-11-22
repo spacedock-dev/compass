@@ -2169,6 +2169,8 @@ export const FullActivitySourceOnePressAway: Story = {
     });
     await expect(entry.querySelector('.next-visually-hidden.next-cockpit-work-source')).toBeNull();
     const source = within(entry).getByRole('button', { name: 'Source of entry #2' });
+    const target = source.getBoundingClientRect();
+    await expect(Math.min(target.width, target.height)).toBeGreaterThanOrEqual(44);
     await waitFor(() => expect(source.querySelector('svg[data-icon="caret-down"]')).toBeVisible());
     await expect(source.closest('.next-cockpit-work-head')).not.toBeNull();
     const panel = document.getElementById(source.getAttribute('aria-controls') ?? '');

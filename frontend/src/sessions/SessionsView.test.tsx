@@ -12,7 +12,7 @@ import inaccurate from '../../test/fixtures/client-contract/data-focused-drift-i
 import inaccurateContext from '../../test/fixtures/client-contract/context-focused-drift-inaccurate.json';
 import withdrawn from '../../test/fixtures/client-contract/data-focused-drift-withdrawn.json';
 import withdrawnContext from '../../test/fixtures/client-contract/context-focused-drift-withdrawn.json';
-import type { ObservedSession } from '../observed';
+import { observe } from '../observed';
 
 const NOW = 5000;
 const board = (sessions: unknown[], extra: Record<string, unknown> = {}) => ({
@@ -172,7 +172,7 @@ describe('the groups', () => {
         ?.textContent;
     expect(state('gate')).toBe('Waiting on you');
     expect(state('work')).toBe('Working');
-    expect(state('idle-new')).toBe('Quiet');
+    expect(state('idle-new')).toBe('State not published');
     expect(state('done')).toBe('Ended');
     const groups = [...document.querySelectorAll('[data-next-operation-group]')];
     for (const group of groups) expect(group.textContent).not.toMatch(/NOW · |QUIET/);
@@ -374,18 +374,21 @@ describe('the groups', () => {
     },
   );
 
-  it('shows Quiet only for a published idle state', () => {
-    const session = (state: unknown) =>
-      ({
-        isEnded: false,
-        isNeeds: false,
-        askKnown: false,
-        isWorking: false,
-        isQuiet: state === 'idle',
-      }) as unknown as ObservedSession;
-    expect(rowState(session('idle'))).toBe('Quiet');
-    expect(rowState(session(undefined))).toBe('State not published');
-    expect(rowState(session('dozing'))).toBe('State not published');
+  it('shows Quiet only for a published idle with a measured turn stop', () => {
+    const states = observe(
+      board([
+        { harness: 'claude', sid: '1', state: 'idle', finished_at: NOW - 2 },
+        { harness: 'claude', sid: '2', state: 'idle' },
+        { harness: 'claude', sid: '3' },
+        { harness: 'claude', sid: '4', state: 'dozing' },
+      ]),
+    ).sessions.map(rowState);
+    expect(states).toEqual([
+      'Quiet',
+      'State not published',
+      'State not published',
+      'State not published',
+    ]);
   });
 
   it('says annotations are off, and the goal cell says so too, when the payload does not publish them', async () => {

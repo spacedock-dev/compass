@@ -9,6 +9,7 @@
       "frontend/**/*.tsx",
       "frontend/**/*.mts",
       "frontend/**/*.mjs",
+      "frontend/**/*.{js,jsx,cjs,cts}",
       "vitest.config.mts",
       "playwright.config.ts",
       "biome.json",

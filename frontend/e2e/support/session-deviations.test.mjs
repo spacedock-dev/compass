@@ -86,7 +86,13 @@ test('a reader sees a published session age in the projected recorded header onl
   const evidence = {
     generated: 1900000000,
     sessions: [
-      { harness: 'claude', sid: 's1', project: 'alpha/app', started_at: 1900000000 - 23 * 3600 },
+      {
+        harness: 'claude',
+        sid: 's1',
+        project: 'alpha/app',
+        started_at: 1900000000 - 23 * 3600,
+        finished_at: 1900000000 - 60,
+      },
     ],
   };
   const record = {
@@ -124,4 +130,20 @@ test('a project with an empty display label says its members have no measured lo
     'Exact location not publishedLocation not measured for 2 sessions with this display label',
   );
   assert.equal(record.groups[0].rows[0].text, `Exact location not published${warning}`);
+});
+
+test('only a recorded turn end projects a retired Idle header to Quiet', () => {
+  const record = {
+    attrs: ['one', 'idle', 'ok', false],
+    header: 'State: idleFix the buildclaude · one',
+  };
+  const one = { sid: 'one', harness: 'claude', state: 'idle' };
+  for (const source of [one, { ...one, acquisition: 'scan-only' }]) {
+    const projected = normaliseSessionRecord(record, { sessions: [source] });
+    assert.equal(projected.header, 'Fix the buildclaude · one');
+  }
+  const observed = normaliseSessionRecord(record, {
+    sessions: [{ ...one, finished_at: 1900000000 }],
+  });
+  assert.equal(observed.header, 'State: QuietFix the buildclaude · one');
 });

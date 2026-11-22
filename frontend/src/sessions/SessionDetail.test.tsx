@@ -483,7 +483,10 @@ describe('answering a held request', () => {
     );
     await open(data, { hash: '#n=session:p:claude:one' });
     expect(document.querySelector('[data-next-session-section="ask"]')).toBeNull();
-    expect(document.querySelector('.next-session-state')?.textContent).toBe('State: Quiet');
+    expect(document.querySelector('.next-session-state')).toBeNull();
+    expect(document.querySelector('[data-next-session-state-limit]')?.textContent).toBe(
+      'State not published',
+    );
   });
 
   it('says a session holding a request needs input, and one that ended without a request is ended', async () => {
@@ -585,9 +588,9 @@ describe('what the page says about what it could not see', () => {
           ...ONE,
           state: 'working',
           subagents: [
-            { name: 'lead' },
+            { name: 'lead', active: true },
             { name: 'idle one', active: false },
-            { name: 'child', parent: 'lead' },
+            { name: 'child', parent: 'lead', active: true },
           ],
           subagents_omitted: 2,
         },

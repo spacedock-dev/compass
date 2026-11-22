@@ -8,7 +8,6 @@ import {
   gapNames,
   isRecord,
   nativeSession,
-  isScanOnly,
   payloadAskRows,
   records,
   sessionKey,
@@ -121,7 +120,6 @@ export function sessionMeta(
     parts.push(
       `${partial ? 'at least ' : ''}${String(entries)} ${entries === 1 ? 'entry' : 'entries'}${since === null ? '' : `, ${String(since)} since your intent’s start`}`,
     );
-  if (isScanOnly(session)) parts.push('read by scanning: no turn end can be observed here');
   const gaps = gapNames(session);
   if (gaps.length) parts.push(`source not fully read: ${gaps.join(', ')}`);
   return parts.join(' · ');
@@ -304,15 +302,14 @@ export function sessionTasks(tasks: readonly unknown[]): Tasks | null {
   };
 }
 
-/* Only `active === false` withholds the live pulse and the running count. Unset means the collector does
-   not measure per-entry liveness, so a harness nobody has taught to measure it renders as it always did. */
-export function subagentIsLive(subagent: unknown): boolean {
-  return !(isRecord(subagent) && subagent['active'] === false);
+function subagentActivity(subagent: unknown): boolean | null {
+  const active = field(subagent, 'active');
+  return typeof active === 'boolean' ? active : null;
 }
 
 export interface SubagentRow {
   readonly index: number;
-  readonly live: boolean;
+  readonly live: boolean | null;
   readonly name: string;
   readonly parent: string;
   readonly elapsed: string | null;
@@ -340,13 +337,14 @@ export function sessionSubagents(
     return parent ? String(parent) : '';
   };
   const direct = subagents.filter((subagent) => !parentOf(subagent));
-  const running = direct.filter(subagentIsLive).length;
+  const running = direct.filter((subagent) => subagentActivity(subagent) === true).length;
+  const unmeasured = direct.some((subagent) => subagentActivity(subagent) === null);
   const beneath = subagents.filter(
-    (subagent) => parentOf(subagent) && subagentIsLive(subagent),
+    (subagent) => parentOf(subagent) && subagentActivity(subagent) === true,
   ).length;
   const label =
     (running === 0
-      ? `${String(direct.length)} SUBAGENT${direct.length === 1 ? '' : 'S'} · NONE RUNNING`
+      ? `${String(direct.length)} SUBAGENT${direct.length === 1 ? '' : 'S'} · ${unmeasured ? 'NONE OBSERVED RUNNING' : 'NONE RUNNING'}`
       : running === 1
         ? '1 RUNNING SUBAGENT'
         : `${String(running)} RUNNING SUBAGENTS`) +
@@ -358,7 +356,7 @@ export function sessionSubagents(
     omitted: omitted || 0,
     rows: subagents.map((subagent, index) => ({
       index,
-      live: subagentIsLive(subagent),
+      live: subagentActivity(subagent),
       name: String(field(subagent, 'name') || 'subagent'),
       parent: parentOf(subagent),
       elapsed: durationSince(generated, field(subagent, 'started_at')),

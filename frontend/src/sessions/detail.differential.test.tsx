@@ -34,6 +34,7 @@ interface DetailSummary {
   readonly text: string;
   readonly disclosures: ReturnType<typeof disclosureReadings>;
   readonly answers: readonly string[];
+  readonly workers: number;
   readonly links: readonly string[];
 }
 
@@ -49,10 +50,12 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
       text: norm(root.querySelector('.next-session-detail-empty')),
       disclosures: [],
       answers: [],
+      workers: 0,
       links: [],
     };
   const copy = article.cloneNode(true) as Element;
   copy.querySelector('.next-session-panel')?.remove();
+  maskDetailLifecycle(copy);
   /* The one-column page (owner, 2026-10-19; docs/design-frontend-migration.md#held-to-recorded-answers): the
      state badge moved under the title beside a new line that restates CURRENT ACTIVITY and the turn, and the
      activity heading became the Full activity trigger. Read back in the recorded order and words; the rest of
@@ -98,6 +101,7 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
     },
     text: norm(copy),
     disclosures: disclosureReadings(copy),
+    workers: article.querySelectorAll('.next-session-subagent').length,
     answers: [...article.querySelectorAll('[data-next-answer]')].map(
       (button) =>
         `${button.getAttribute('data-next-answer')}#${button.getAttribute('data-next-answer-index')}:${norm(button)}`,
@@ -223,17 +227,24 @@ function projectRecordedCommandOpener(
     heading.textContent = noTitleText(row);
 }
 
+/* Status wording and helper liveness are independently proved by status-evidence and
+   helper-and-plan-status. Keep the names, timing and rest of the detail comparison. */
+function maskDetailLifecycle(root: ParentNode) {
+  root.querySelector('.next-session-detail-header .next-session-state')?.remove();
+  root.querySelector('[data-next-session-state-limit]')?.remove();
+  root.querySelector('[data-next-session-subagents] > span')?.remove();
+  root.querySelectorAll('.next-session-subagent-state').forEach((word) => word.remove());
+  const meta = root.querySelector('.next-session-detail-meta');
+  if (meta) {
+    meta.textContent = (meta.textContent ?? '')
+      .split(' · ')
+      .filter((part) => part !== 'read by scanning: no turn end can be observed here')
+      .join(' · ');
+  }
+}
+
 /* 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers */
 function maskRecordedDetailStatus(root: DocumentFragment) {
-  const states = new Map([
-    ['working', 'Working'],
-    ['needs input', 'Waiting on you'],
-    ['idle', 'Quiet'],
-    ['ended', 'Ended'],
-  ]);
-  const badge = root.querySelector('.next-session-state');
-  const word = states.get(norm(badge).replace(/^State: /, ''));
-  if (badge && word) badge.textContent = `State: ${word}`;
   for (const glyph of root.querySelectorAll(
     '.next-session-task-glyph, .next-session-subagent-glyph',
   )) {
@@ -374,7 +385,7 @@ describe('the session page reads as the legacy page does, over generated payload
         seen.ask += old.text.includes('ASKED YOU') ? 1 : 0;
         seen.ended += old.text.includes('ended') ? 1 : 0;
         seen.tasks += old.text.includes('TASKS ·') ? 1 : 0;
-        seen.workers += /SUBAGENT|RUNNING SUBAGENT/.test(old.text) ? 1 : 0;
+        seen.workers += old.workers > 0 ? 1 : 0;
         seen.health += /LONG TURN|FAILED TOOL LOOP/.test(old.text) ? 1 : 0;
         seen.facts += old.text.includes('Session facts:') ? 1 : 0;
         seen.absent += old.text.includes('not in the current payload') ? 1 : 0;

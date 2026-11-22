@@ -75,7 +75,7 @@ function drawnAsRiskRow(subject: { key: string; session: Row | null }, drawn: Se
 describe('the board against the terminal listing', () => {
   const payload = asPayload(fixture.response.body);
 
-  it('holds the sessions the terminal lists, in its groups, with the board’s Quiet wording', () => {
+  it('holds the sessions the terminal lists, in its groups, with the board’s evidence-based state wording', () => {
     // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
     type Board = ReturnType<typeof boardView>;
     type RecordedRow = Omit<Board['active'][number], 'state'> & { state: string };
@@ -83,12 +83,23 @@ describe('the board against the terminal listing', () => {
       active: RecordedRow[];
       history: RecordedRow[];
     };
-    const quietOnBoard = (rows: typeof recorded.active) =>
-      rows.map((row) => (row.state === 'Idle' ? { ...row, state: 'Quiet' } : row));
+    // The recorded Idle bucket includes four rows with no observed stop.
+    const withoutStop = new Set([
+      'claude:f6a7b8c9',
+      'claude:d0e1f2a3',
+      'codex:019c0000-1111-7222-8333-444455557777',
+      'gemini:gem-0001',
+    ]);
+    const idleOnBoard = (rows: typeof recorded.active) =>
+      rows.map((row) =>
+        row.state === 'Idle'
+          ? { ...row, state: withoutStop.has(row.key.join(':')) ? 'State not published' : 'Quiet' }
+          : row,
+      );
     expect(boardView(payload)).toEqual({
       ...recorded,
-      active: quietOnBoard(recorded.active),
-      history: quietOnBoard(recorded.history),
+      active: idleOnBoard(recorded.active),
+      history: idleOnBoard(recorded.history),
     });
   });
 

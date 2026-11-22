@@ -3,10 +3,10 @@ import { Disclosure, disclosureKey } from '../controls';
 import { useFocusKey } from '../controls/useFocusKey';
 import { useShell } from '../shell/context';
 import { ScopeCue } from '../timeline/ScopeCue';
-import { sessKey } from './group';
+import { scopeLabel, sessKey } from './group';
 import type { ProjectModel } from './model';
 import { ProjectAnchor } from './parts';
-import { hoistedHarness, scopeLinks, switcherSummary, type ScopeLink } from './scope';
+import { hoistedHarness, scopeLinks, viewingSession, type ScopeLink } from './scope';
 
 /* The project's scopes as links: the project as a whole, and each of its sessions. The root and one exact
    focused session are different scopes, so they draw different cues, on the wide page's rail and in the
@@ -73,21 +73,23 @@ function Link({
         <span className="next-cockpit-scope-meta">
           {[
             meta.harness ? <span key="harness">{meta.harness}</span> : null,
-            <span
-              key="state"
-              className={
-                link.isWorking
-                  ? 'next-cockpit-scope-state next-cockpit-scope-state--working'
-                  : 'next-cockpit-scope-state'
-              }
-            >
-              {link.isWorking ? (
-                <span className="next-live inline-flex">
-                  <Icon name="working" className="next-status-icon shrink-0" />
-                </span>
-              ) : null}
-              {meta.state}
-            </span>,
+            meta.label ? (
+              <span
+                key="state"
+                className={
+                  link.isWorking
+                    ? 'next-cockpit-scope-state next-cockpit-scope-state--working'
+                    : 'next-cockpit-scope-state'
+                }
+              >
+                {link.isWorking ? (
+                  <span className={link.isLive ? 'next-live inline-flex' : 'inline-flex'}>
+                    <Icon name="working" className="next-status-icon shrink-0" />
+                  </span>
+                ) : null}
+                {meta.label}
+              </span>
+            ) : null,
             meta.age ? <span key="age">{meta.age}</span> : null,
             meta.sid ? <span key="sid">{meta.sid}</span> : null,
           ]
@@ -97,6 +99,7 @@ function Link({
       ) : (
         <span className="next-cockpit-scope-meta">{link.count}</span>
       )}
+      {link.limit ? <span className="next-project-session-limit">{link.limit}</span> : null}
     </ProjectAnchor>
   );
 }
@@ -123,7 +126,8 @@ export function ScopeTree({ model }: { readonly model: ProjectModel }) {
 
 export function ScopeSwitcher({ model }: { readonly model: ProjectModel }) {
   const links = scopeLinks(model.group, model.harnesses, model.generated);
-  const summary = switcherSummary(model.group, model.focus, model.harnesses);
+  const focused = model.focus ? viewingSession(model.focus, model.group, model.harnesses) : null;
+  const summary = focused?.label ?? `Viewing project · ${scopeLabel(model.group)}`;
   return (
     <Disclosure
       disclosureKey={disclosureKey({
@@ -135,7 +139,12 @@ export function ScopeSwitcher({ model }: { readonly model: ProjectModel }) {
       focusKey="cockpit-disclosure:scope"
       summary={
         <>
-          <span>{summary}</span>
+          <span>
+            {summary}
+            {focused?.state ? (
+              <span data-next-project-focus-status>{` · ${focused.state}`}</span>
+            ) : null}
+          </span>
           <strong>Change scope</strong>
         </>
       }

@@ -91,8 +91,12 @@ async function step(name, run) {
 const summarizeList = () => {
   const norm = (node) => (node ? node.textContent.replace(/\s+/g, ' ').trim() : '');
   const { document } = globalThis;
-  const root = document.querySelector('[data-next-view-body="projects"]');
+  const root = document.querySelector('[data-next-view-body="projects"]')?.cloneNode(true);
   if (!root) return { missing: true, text: norm(document.body).slice(0, 200) };
+  root.querySelectorAll('.next-project-session-limit').forEach((node) => node.remove());
+  for (const activity of root.querySelectorAll('.next-project-session-now')) {
+    if (activity.textContent === 'No recent activity') activity.textContent = 'quiet';
+  }
   return {
     note: norm(root.querySelector('.next-projects-note')),
     groups: [...root.querySelectorAll('[data-next-project-group]')].map((group) => ({
@@ -123,11 +127,11 @@ const summarizeList = () => {
   };
 };
 
-const summarizeProject = (tab) => {
+const summarizeProject = ({ tab, recordedStates }) => {
   const norm = (node) => (node ? node.textContent.replace(/\s+/g, ' ').trim() : '');
   const { document } = globalThis;
   const body = document.querySelector('[data-next-view-body="project"]');
-  const article = document.querySelector('article.next-project-detail');
+  const article = document.querySelector('article.next-project-detail')?.cloneNode(true);
   if (!article)
     return {
       empty: body
@@ -139,6 +143,35 @@ const summarizeProject = (tab) => {
         : { missing: true },
     };
   const header = article.querySelector('.next-project-detail-header');
+  // The recorded scope metadata used raw state tokens and contained no status limit or
+  // plan status word. The Storybook plays assert the changed presentation directly.
+  article
+    .querySelectorAll(
+      '.next-project-session-limit,[data-next-plan-status],[data-next-project-focus-status]',
+    )
+    .forEach((node) => node.remove());
+  for (const link of article.querySelectorAll('[data-next-cockpit-scope]')) {
+    const state = recordedStates[link.getAttribute('data-next-cockpit-scope')];
+    const meta = link.querySelector('.next-cockpit-scope-meta');
+    if (!state || !meta) continue;
+    const hoisted = link
+      .closest('nav')
+      ?.querySelector('.next-cockpit-scope-heading')
+      ?.textContent.includes(' · ');
+    const parts = [...meta.children]
+      .filter((part) => !part.matches('.next-cockpit-scope-state'))
+      .map(norm);
+    parts.splice(hoisted ? 0 : 1, 0, state);
+    meta.textContent = parts.join(' · ');
+  }
+  const viewing = article.querySelector('[data-next-cockpit-viewing-session]');
+  const focusedState = recordedStates[viewing?.getAttribute('data-next-cockpit-viewing-session')];
+  if (focusedState) {
+    viewing.append(` · ${focusedState}`);
+    article
+      .querySelector('.next-cockpit-scope-switcher [data-slot="accordion-trigger"] > span')
+      ?.append(` · ${focusedState}`);
+  }
   const tree = article.querySelector('nav.next-cockpit-scope-tree');
   const strip = article.querySelector('.next-cockpit-recovery');
   const panel =
@@ -358,7 +391,18 @@ try {
      moment, so two reads of one fragment over different boards are different keys. */
   async function both(name, fragment, read, ...args) {
     await load(react, board.react.origin, fragment);
-    const mine = await settled(react.page, read, ...args);
+    const mine =
+      read === summarizeProject
+        ? await settled(react.page, read, {
+            tab: args[0],
+            recordedStates: Object.fromEntries(
+              (holder.body.sessions ?? []).map((row) => [
+                `${row.harness}:${row.sid}`,
+                String(row.state || 'unknown'),
+              ]),
+            ),
+          })
+        : await settled(react.page, read, ...args);
     const key = `${name} | ${fragment} | ${digestOf([holder.body, holder.contexts, args])}`;
     const project = decodeURIComponent(fragment.split(':')[1] || '');
     return {

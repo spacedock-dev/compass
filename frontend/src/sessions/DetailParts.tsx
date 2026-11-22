@@ -146,13 +146,11 @@ export function SubagentsView({ subagents }: { readonly subagents: Subagents }) 
           className={row.live ? 'next-session-subagent next-live' : 'next-session-subagent'}
           data-next-session-subagent={row.index}
         >
-          <span
-            role="img"
-            aria-label={row.live ? 'Working' : 'Quiet'}
-            className="next-session-subagent-glyph"
-          >
-            <Icon name={row.live ? 'working' : 'quiet'} className="next-status-icon shrink-0" />
-          </span>
+          {row.live ? (
+            <span role="img" aria-label="Working" className="next-session-subagent-glyph">
+              <Icon name="working" className="next-status-icon" />
+            </span>
+          ) : null}
           <strong className="next-session-subagent-name">
             {row.name}
             {row.parent ? (
@@ -162,6 +160,11 @@ export function SubagentsView({ subagents }: { readonly subagents: Subagents }) 
           {row.elapsed !== null ? (
             <span className="next-session-subagent-elapsed">{row.elapsed}</span>
           ) : null}
+          {row.live === true ? null : (
+            <span className="next-session-subagent-state">
+              {row.live === false ? 'Not running' : 'Activity not published'}
+            </span>
+          )}
         </div>
       ))}
       {subagents.omitted > 0 ? (

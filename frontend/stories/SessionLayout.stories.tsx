@@ -1,3 +1,5 @@
+import { SubagentsView } from '../src/sessions/DetailParts';
+import { sessionSubagents } from '../src/sessions/detail';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { seeInContext } from './citation';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
@@ -942,5 +944,34 @@ export const IdleQuestionPrecedesTurnEnd: Story = {
     await expect(activity).not.toHaveTextContent('Turn ended');
     const metadata = canvasElement.querySelector('.next-session-detail-meta') as HTMLElement;
     await expect(metadata).not.toHaveTextContent(/Turn ended|Run finished/);
+  },
+};
+
+export const HelperActivity: Story = {
+  render: () => {
+    const helpers = sessionSubagents(
+      [
+        { name: 'Review results', active: true, started_at: G - 60 },
+        { name: 'Read documentation', active: false },
+        { name: 'Check types' },
+      ],
+      0,
+      G,
+    );
+    if (!helpers) throw new Error('Expected the synthetic helpers');
+    return <SubagentsView subagents={helpers} />;
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText('1 RUNNING SUBAGENT')).toBeVisible();
+    await expect(canvas.getByRole('img', { name: 'Working' })).toBeVisible();
+    for (const [name, word] of [
+      ['Read documentation', 'Not running'],
+      ['Check types', 'Activity not published'],
+    ]) {
+      const helper = canvas.getByText(name ?? '').closest('[data-next-session-subagent]');
+      await expect(helper).toHaveTextContent(word ?? '');
+      await expect(helper?.querySelector('svg')).toBeNull();
+    }
   },
 };

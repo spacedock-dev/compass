@@ -60,11 +60,22 @@ export function normaliseSessionRecord(record, evidence = {}) {
       return preserve(value, (value) => {
         // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
         if (sessionRow) value = maskRecordedSessionRowMarks(value);
-        if (sessionHeader && Array.isArray(record?.attrs)) value = projectRecordedStateWord(value);
-        if (
-          path.includes('[data-next-session-subagents]') ||
-          path.includes('[data-next-session-section="tasks"]')
-        )
+        if (sessionHeader && Array.isArray(record?.attrs)) {
+          const rows = (evidence.sessions ?? []).filter((row) => row.sid === record.attrs[0]);
+          const owner =
+            rows.length === 1
+              ? rows[0]
+              : rows.find((row) => value.includes(`${row.harness} · ${row.sid}`));
+          value = projectRecordedStateWord(value, owner);
+        }
+        if (path.includes('[data-next-session-subagents]'))
+          value = value
+            .replace(
+              /^\d+ (?:RUNNING )?SUBAGENTS?(?: · NONE RUNNING)?(?: · \d+ WORKERS? RUNNING BENEATH)?/,
+              '',
+            )
+            .replace(/[●○✓]/g, '');
+        if (path.includes('[data-next-session-section="tasks"]'))
           value = value.replace(/[●○✓]/g, '');
         if (key === 'text' && path.includes('rows'))
           value = value.replace(/ASSIGNMENT · /, 'Current task · ');
@@ -184,14 +195,19 @@ export function normaliseSessionRecord(record, evidence = {}) {
 function maskRecordedSessionRowMarks(text) {
   return text
     .replace(/●/g, '')
-    .replace(/[△✓◦]\s*(?=Session ended|Stop observed|Turn stop in)/g, '');
+    .replace(/[△✓◦]\s*(?=Session ended|Stop observed|Turn stop in)/g, '')
+    .replace('Read by scanning: no turn end can be observed here', '');
 }
 
-function projectRecordedStateWord(text) {
+function projectRecordedStateWord(text, row) {
+  const stop =
+    Number(row?.finished_at) > 0 ||
+    (['claude', 'codex'].includes(row?.harness) && Number(row?.turn_end_at) > 0);
   return text
     .replace(/^State: working/, 'State: Working')
     .replace(/^State: needs input/, 'State: Waiting on you')
-    .replace(/^State: idle/, 'State: Quiet')
+    .replace(/^State: idle/, stop ? 'State: Quiet' : '')
+    .replace(/ · read by scanning: no turn end can be observed here/, '')
     .replace(/^State: ended/, 'State: Ended');
 }
 

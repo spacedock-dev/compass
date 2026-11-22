@@ -49,7 +49,13 @@ function PlanRows({ plan, model }: { readonly plan: Plan; readonly model: Projec
                 <small>{entity.stage}</small>
               </span>
               <span className="next-project-plan-owner">{owner}</span>
-              <span className="next-project-plan-state">{state.label}</span>
+              <span className="next-project-plan-state">
+                <span data-next-plan-status>
+                  {entity.live ? 'Live' : 'Pending'}
+                  {state.label ? ' · ' : ''}
+                </span>
+                {state.label}
+              </span>
             </div>
           );
         })}

@@ -70,6 +70,7 @@ export const STATE_VALUES = [
   'Working',
   'Quiet',
   'Ended',
+  'Waiting on child',
   'State not published',
 ] as const;
 export const DRIFT_OPTIONS: readonly { readonly value: DriftValue; readonly label: string }[] = [

@@ -153,6 +153,7 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
           ? 'awaiting your message'
           : 'running Bash',
       ...(options.bWaiting ? { blocked_since: local(0, 11, 59) } : {}),
+      ...(options.bIdle ? { finished_at: local(0, 11, 59) } : {}),
       started_at: local(0, 10, 2),
       last_activity: local(0, 11, 59),
       first_prompt: 'write the release notes for 2.4',
@@ -177,6 +178,7 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
       harness: 'claude',
       sid: SIDS.D,
       title: 'Session list paging',
+      finished_at: local(0, 10, 55),
       project: 'recce/compass',
       project_key: 'k-rc',
       project_identity_source: 'working directory path',
@@ -202,6 +204,7 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
       harness: 'gemini',
       sid: SIDS.F,
       title: 'Docs pass',
+      acquisition: 'scan-only',
       project: 'compass',
       project_key: 'k-compass-a',
       project_identity_source: 'working directory path',

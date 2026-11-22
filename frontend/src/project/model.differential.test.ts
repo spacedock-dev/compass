@@ -1,3 +1,4 @@
+import { recordedSessionStatus } from '../../test/recordedSessionStatus';
 import { recordedLocationNotes } from '../../test/location_departure';
 import { describe, expect, it } from 'vitest';
 import { instructionSourceDeviation } from '../../test/projectWordDeviation';
@@ -29,8 +30,8 @@ describe('the project model reads as the legacy model does', () => {
         const at = `seed ${String(seed)} ${JSON.stringify(label)}`;
         const check = (name: string, left: unknown, right: unknown) => {
           const found = firstDifference(
-            canonical(recordedLocationNotes(left)),
-            canonical(recordedLocationNotes(right)),
+            canonical(recordedSessionStatus(recordedLocationNotes(left))),
+            canonical(recordedSessionStatus(recordedLocationNotes(right))),
           );
           if (found) failures.push(`${at} ${name}: ${found}`);
         };

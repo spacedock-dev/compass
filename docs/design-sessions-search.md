@@ -124,7 +124,7 @@ line read "Showing 12 of 12" for a filter that hides nothing; the prototype revi
 | Group | Exact published labels in collator order, with No group last; chosen labels that left the board remain clearable | `group`; inherited labels already resolved by the producer |
 | Harness | Harnesses the payload marks `discovered`, in payload order, with payload labels | `harness`, and `payload.harnesses` |
 | Headless | Headless; Interactive or unknown | `headless === true` for Headless; every other value, including missing and null, for Interactive or unknown |
-| State | Waiting on you, Working, Idle, Ended, State not published | `rowState()` |
+| State | Waiting on you, Working, Quiet, Ended, Waiting on child, State not published | `rowState()` |
 | Drift | Drift recorded; Checked against your current words, none recorded; Not checked against your current words | Recorded drift, `departure_checked`, and a stored reading whose `revision_read` equals `annotation_revision` |
 | Goal | Goal saved; Drafted from a prompt, not saved; No goal yet | `goalCell()`: typed words are saved, a known goal without them is drafted |
 
@@ -198,7 +198,8 @@ or unknown, so choosing that subset keeps both.
   label (n characters)", each its own option, never merged and never dropped. The length tells two
   blank labels apart, which would otherwise read the same in the list and in the chip. A chosen label that leaves the board
   stays listed as "Not on the board now" and keeps its chip, and its rows return when it comes back.
-- State: an unknown state is "State not published", never Idle. A footnote names the harnesses on the
+- State: Quiet requires a turn stop and Ended requires a reported session end. An unknown state
+  is "State not published". A scan without a turn stop has its own limit on the row. A footnote names the harnesses on the
   board that do not report a wait (`reports_needs_input` is not true), with how many of their sessions
   could be waiting unseen. A session of a harness that does report one, but whose wait state could not
   be read, is counted on its own line: "The wait state of 2 OpenCode and Pi sessions could not be read,

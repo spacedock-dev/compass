@@ -1,4 +1,4 @@
-import { rowState } from './rows';
+import { sessionState, sessionStateLimit } from '../observed';
 import { declaredRelations } from './declared';
 import { RelationshipLabels, LinkedChildren } from './DeclaredRelationships';
 import { Badge } from '../ui/badge';
@@ -220,13 +220,9 @@ function Header({
   const shell = useShell();
   const titleRef = useFocusKey<HTMLHeadingElement>(shell.controls.focusLane, 'session-title');
   const relations = declaredRelations(payload, session);
-  const state = detailState(session['state']);
-  // An open exact request still needs an answer after the collector's session has ended.
-  const word = observed.askKnown ? 'Waiting on you' : rowState(observed);
-  const status =
-    relations.waitingText && word !== 'Ended' && word !== 'Waiting on you'
-      ? 'Waiting on child'
-      : word;
+  const status = sessionState(observed);
+  const limit = sessionStateLimit(observed, status);
+  const showState = status !== 'State not published' && status !== 'Waiting on child';
   const label = observed.project;
   const title = pageTitleOf(session);
   const showRate = observed.rateKnown && !observed.isEnded && !observed.isQuiet;
@@ -247,7 +243,7 @@ function Header({
         </h1>
       </div>
       <div className="next-session-detail-bar">
-        {state ? (
+        {showState ? (
           <span className="inline-flex" data-next-session-status>
             <Badge variant="session-state" className="next-session-state">
               <span className="next-visually-hidden">State: </span>
@@ -279,6 +275,11 @@ function Header({
         <DriftPill />
         <Controls session={session} observed={observed} route={route} />
       </div>
+      {limit && status !== 'Waiting on child' ? (
+        <p className="next-session-detail-meta" data-next-session-state-limit>
+          {limit}
+        </p>
+      ) : null}
       <RelationshipLabels
         source={session}
         relations={relations}

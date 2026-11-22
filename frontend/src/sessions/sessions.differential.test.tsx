@@ -48,6 +48,12 @@ const norm = (node: Element | null): string =>
 
 const DEVIATIONS = {
   // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
+  stateLines: (root: ParentNode) => {
+    for (const state of root.querySelectorAll('[data-next-row-state],.next-operation-scan-only')) {
+      state.remove();
+    }
+  },
+  // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
   liveMarks: (root: DocumentFragment) => {
     for (const mark of root.querySelectorAll('.next-operation-live-glyph'))
       if (mark.textContent?.trim() === '●') mark.remove();
@@ -116,6 +122,7 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
   retractSessionCopies(template.content);
   DEVIATIONS.outcomeMarks(template.content);
   DEVIATIONS.liveMarks(template.content);
+  DEVIATIONS.stateLines(template.content);
   const header = template.content.querySelector('.next-operations-header');
   header?.querySelector(':scope > span')?.remove();
   header?.querySelectorAll('summary').forEach((node) => node.remove());
@@ -179,7 +186,10 @@ async function reactSummary(payload: unknown): Promise<Summary> {
   await page.settle();
   const root = page.container.querySelector('[data-next-view-body="sessions"]');
   if (!root) throw new Error('The Sessions screen did not draw.');
-  const states = [...root.querySelectorAll('[data-next-row-state]')].map(norm);
+  DEVIATIONS.stateLines(root);
+  for (const text of root.querySelectorAll('[data-next-operation-fact="now"] strong')) {
+    if (text.textContent === 'No recent activity') text.textContent = 'quiet';
+  }
   const levels = [...root.querySelectorAll('[data-next-row-drift-level]')].map(norm);
   const drawn = summarize(root);
   page.unmount();
@@ -191,8 +201,6 @@ async function reactSummary(payload: unknown): Promise<Summary> {
       ...group,
       rows: group.rows.map((row) => {
         let text = row.text;
-        const state = states.find((word) => text.startsWith(word));
-        if (state) text = text.slice(state.length).trimStart();
         for (const level of levels) text = text.replace(level, 'Drift');
         return { ...row, text };
       }),

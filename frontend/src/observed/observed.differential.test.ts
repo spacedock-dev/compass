@@ -1,3 +1,4 @@
+import { recordedSessionStatus } from '../../test/recordedSessionStatus';
 import { recordedLocationNotes } from '../../test/location_departure';
 import { describe, expect, it } from 'vitest';
 import { instructionSourceDeviation } from '../../test/projectWordDeviation';
@@ -25,26 +26,8 @@ const IDLE_ENTRY =
 const CASES = 80;
 const SEEDS = CASES;
 
-// 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
-function projectRecordedOutcomeIcons(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(projectRecordedOutcomeIcons);
-  if (!value || typeof value !== 'object') return value;
-  const marks = new Map([
-    ['△', 'worth-a-look'],
-    ['✓', 'check'],
-    ['◦', 'unrecorded'],
-  ]);
-  return Object.fromEntries(
-    Object.entries(value).map(([key, item]) =>
-      key === 'outcomeGlyph'
-        ? ['outcomeIcon', marks.get(String(item)) ?? null]
-        : [key, projectRecordedOutcomeIcons(item)],
-    ),
-  );
-}
-
 function withoutHistory(input: Record<string, unknown>): Record<string, unknown> {
-  const model = projectRecordedOutcomeIcons(recordedLocationNotes(input)) as typeof input;
+  const model = recordedSessionStatus(recordedLocationNotes(input)) as typeof input;
   const projects = (model['projects'] as Record<string, unknown>[]).map((project) => {
     return Object.fromEntries(
       Object.entries(project).filter(

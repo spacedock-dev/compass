@@ -299,9 +299,9 @@ describe('the scopes', () => {
     );
     expect(focused[1]?.getAttribute('aria-current')).toBe('page');
     expect(focused[0]?.hasAttribute('aria-current')).toBe(false);
-    expect(
-      screen.getAllByText(/Viewing session · Claude Code · needs_input/).length,
-    ).toBeGreaterThan(0);
+    expect(document.querySelector('[data-next-cockpit-viewing-session]')?.textContent).toBe(
+      'Viewing session · Claude Code · Waiting on you',
+    );
   });
 });
 

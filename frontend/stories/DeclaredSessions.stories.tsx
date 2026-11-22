@@ -14,11 +14,13 @@ function Example({
   childQuestion = false,
   parentQuestion = false,
   childTitle = 'Check build',
+  plan = false,
 }: {
   readonly hash?: string;
   readonly childQuestion?: boolean;
   readonly parentQuestion?: boolean;
   readonly childTitle?: string;
+  readonly plan?: boolean;
 }) {
   const [shell] = useState(() =>
     createShell({
@@ -51,7 +53,27 @@ function Example({
                         : [],
                     sessions: [
                       ...fixture.payload.sessions.map((one) =>
-                        one.sid === 'child' ? { ...one, title: childTitle } : one,
+                        one.sid === 'child'
+                          ? {
+                              ...one,
+                              title: childTitle,
+                              ...(plan
+                                ? {
+                                    spacedock: {
+                                      workflows: [
+                                        {
+                                          workflow: 'Release',
+                                          entities: [
+                                            { slug: 'alpha', stage: 'build', live: true },
+                                            { slug: 'beta', stage: 'plan', live: false },
+                                          ],
+                                        },
+                                      ],
+                                    },
+                                  }
+                                : {}),
+                            }
+                          : one,
                       ),
                       {
                         harness: 'codex',
@@ -176,9 +198,10 @@ export const ParentPageNamesChildrenAndTheirState: Story = {
     const children = await canvas.findByRole('region', { name: 'Linked children' });
     await expect(children).toHaveTextContent('Check build · Working');
     await expect(children).toHaveTextContent('Check docs · Ended');
-    await expect(canvasElement.querySelector('[data-next-session-status]')).toHaveTextContent(
-      'Waiting on child',
-    );
+    await expect(canvasElement.querySelector('[data-next-session-status]')).toBeNull();
+    await expect(
+      canvas.getByRole('link', { name: 'Waiting on child "Check build"' }),
+    ).toBeVisible();
   },
 };
 export const ChildPageNamesParent: Story = {
@@ -363,7 +386,7 @@ export const PromptFirstTitleIsAChildWait: Story = {
       name: 'Waiting on child "You are verifying a fix round"',
     });
     const state = row(canvasElement, 'parent').querySelector('[data-next-row-state]');
-    await expect(state?.textContent).toBe('Waiting on child');
+    await expect(state?.textContent).toBe('Waiting on child "You are verifying a fix round"');
     await expect(state).not.toHaveTextContent(/Waiting on you/i);
     await expect(link).toBeVisible();
     await userEvent.click(
@@ -372,12 +395,92 @@ export const PromptFirstTitleIsAChildWait: Story = {
       }),
     );
     await waitFor(() =>
-      expect(canvasElement.querySelector('[data-next-session-status]')?.textContent).toBe(
-        'State: Waiting on child',
-      ),
+      expect(canvasElement.querySelector('[data-next-session-status]')).toBeNull(),
     );
     await expect(
       canvas.getByRole('link', { name: 'Waiting on child "You are verifying a fix round"' }),
     ).toBeVisible();
+  },
+};
+
+export const ProjectChildWaitAndMore: Story = {
+  args: { hash: '#n=project:demo' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const more = await canvas.findByLabelText('More');
+    await expect(more).toBeVisible();
+    await expect(more.querySelector('svg[data-icon="caret-down"]')).toBeVisible();
+    await expect(getComputedStyle(more, '::after').content).toBe('none');
+    const parent = canvasElement.querySelector('[data-next-going-on="parent"]');
+    await expect(parent).toHaveTextContent('Waiting on child "Check build"');
+    await expect(parent?.querySelector('[data-icon="working"]')).toBeNull();
+    const scope = canvasElement.querySelector('[data-next-cockpit-scope="claude:parent"]');
+    await expect(scope).toHaveTextContent('Waiting on child "Check build"');
+    await expect(scope?.querySelector('[data-icon="working"]')).toBeNull();
+    if (!scope) throw new Error('Expected the parent scope');
+    await userEvent.click(scope);
+    const focused = canvasElement.querySelector('[data-next-cockpit-viewing-session]');
+    await waitFor(() =>
+      expect(
+        focused ?? canvasElement.querySelector('[data-next-cockpit-viewing-session]'),
+      ).toHaveTextContent('Waiting on child "Check build"'),
+    );
+  },
+};
+
+export const ProjectsMemberAlignment: Story = {
+  args: { hash: '#n=projects' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('button', { name: /No label assigned/ });
+    const browser =
+      '__vitest_browser_runner__' in window ? (await import('vitest/browser')).page : null;
+    const original = { width: window.innerWidth, height: window.innerHeight };
+    try {
+      for (const width of [1280, 800, 400]) {
+        if (browser) await browser.viewport(width, 900);
+        const first = row(canvasElement, 'child');
+        const unknown = row(canvasElement, 'bare');
+        const harness = (element: HTMLElement) =>
+          element.querySelector('.next-project-session-harness')?.getBoundingClientRect();
+        const title = (element: HTMLElement) =>
+          element.querySelector('.next-project-session-title')?.getBoundingClientRect();
+        const icon = first.querySelector('svg[data-icon="working"]')?.getBoundingClientRect();
+        await expect(icon).toBeDefined();
+        await expect(icon?.right).toBeLessThanOrEqual(harness(first)?.left ?? 0);
+        await expect(harness(unknown)?.left).toBe(harness(first)?.left);
+        await expect(harness(unknown)?.width).toBe(harness(first)?.width);
+        await expect(title(unknown)?.left).toBe(title(first)?.left);
+        await expect(title(unknown)?.width).toBe(title(first)?.width);
+        await expect(unknown.querySelector('svg')).toBeNull();
+        await expect(unknown).toHaveTextContent('State not published');
+        const chevron = canvasElement.querySelector('.next-project-chevron');
+        const card = chevron?.closest('.next-project-row');
+        if (!chevron || !card) throw new Error('Expected a project navigation chevron');
+        const columns = getComputedStyle(card).gridTemplateColumns.split(' ');
+        await expect(chevron.getBoundingClientRect().width).toBeLessThanOrEqual(
+          Number.parseFloat(columns.at(-1) ?? '0'),
+        );
+      }
+    } finally {
+      if (browser) await browser.viewport(original.width, original.height);
+    }
+  },
+};
+
+export const PlanEntityStatus: Story = {
+  args: { hash: '#n=project:demo', plan: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: 'Show project plan' }));
+    for (const [slug, state] of [
+      ['alpha', 'Live'],
+      ['beta', 'Pending'],
+    ]) {
+      const entity = canvasElement.querySelector(`[data-next-plan-entity="${slug}"]`);
+      await waitFor(() => expect(entity).toBeVisible());
+      await expect(entity).toHaveTextContent(state ?? '');
+      await expect(entity?.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    }
   },
 };

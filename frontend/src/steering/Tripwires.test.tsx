@@ -93,9 +93,14 @@ describe('the rules', () => {
     });
     await page.settle();
     expect(rows().map((row) => row.textContent)).toEqual([
-      '◇an old string rule',
-      '◇keptDisabled in this browser.',
+      'an old string rule',
+      'keptDisabled in this browser.',
     ]);
+    for (const row of rows()) {
+      expect(row.querySelector('svg[data-icon="tripwire"]')?.getAttribute('aria-hidden')).toBe(
+        'true',
+      );
+    }
     expect(rows().map((row) => row.getAttribute('aria-checked'))).toEqual(['true', 'false']);
     await press(rows()[0] as Element);
     expect(JSON.parse(page.backend.data.get(KEY('alpha/app')) ?? '[]')).toEqual([

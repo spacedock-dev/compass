@@ -1076,8 +1076,12 @@ The 2026-11-22 redesign uses Phosphor Bold for status, navigation and activity. 
 marks keep the hollow `PiCircleBold` and its marked variants `PiCheckCircleBold` and
 `PiXCircleBold`. Glyph SVGs are hidden from assistive technology and sit beside words or
 an accessible name. Sessions gives the five status and warning icons a visible legend.
-Absence lines are text. The only test import exception is `frontend/stories/drift.checks.tsx`,
-which checks that the result carries no check glyph.
+Quiet requires an observed turn stop and Ended requires a reported session end. A dirty end
+can show the warning. A turn stop alone shows its outcome and Git facts in words. A child wait,
+the scanning limit and an unpublished state appear on a separate line. Only observed live
+activity animates the Working glyph, and reduced motion stops it. Biome covers TypeScript and
+JavaScript importers, including JSX. The only test import exception is
+`frontend/stories/drift.checks.tsx`, which checks that the result carries no check glyph.
 
 | Icon names | Phosphor Bold sources |
 |---|---|
@@ -1086,7 +1090,8 @@ which checks that the result carries no check glyph.
 | `forget`, `check-progress`, `reset` | Trash, Compass, ArrowCounterClockwise |
 | `caret-up`, `caret-down`, `caret-left`, `caret-right`, `tripwire` | CaretUp, CaretDown, CaretLeft, CaretRight, Diamond |
 
-The [Icons story](../frontend/stories/icons.stories.tsx) shows every name beside its source.
+The [Icons story](../frontend/stories/icons.stories.tsx) shows every name beside its source
+and checks its geometry against the pinned Phosphor Bold paths.
 The [page allowance record](design-sample-session.md#how-big-it-may-be) holds the measured byte delta.
 
 That line is a Popover, not a Tooltip, even though it reads like one. A tooltip does not open on a

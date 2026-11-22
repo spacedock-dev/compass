@@ -117,6 +117,7 @@ export function ProjectDetail({
   const multiSession = model.group.sessions.length > 1;
   const focused = model.focus !== null;
   const conditions = slots.courseConditions?.(context) ?? null;
+  const viewing = model.focus ? viewingSession(model.focus, model.group, model.harnesses) : null;
   return (
     <section data-next-view-body="project">
       <article className="next-project-detail" data-next-project-detail={model.group.label}>
@@ -129,8 +130,8 @@ export function ProjectDetail({
             </>
           ) : null}
           <div className="next-cockpit-content">
-            {model.focus ? (
-              <p
+            {viewing && model.focus ? (
+              <div
                 className="next-cockpit-viewing-session"
                 data-next-cockpit-viewing-session={String(
                   model.focus['sid']
@@ -138,8 +139,14 @@ export function ProjectDetail({
                     : '',
                 )}
               >
-                {viewingSession(model.focus, model.harnesses)}
-              </p>
+                {viewing.label}
+                {viewing.state ? (
+                  <span data-next-project-focus-status>{` · ${viewing.state}`}</span>
+                ) : null}
+                {viewing.limit ? (
+                  <div className="next-project-session-limit">{viewing.limit}</div>
+                ) : null}
+              </div>
             ) : null}
             <RecoveryStrip model={model} />
             {slots.steering?.(context) ?? null}

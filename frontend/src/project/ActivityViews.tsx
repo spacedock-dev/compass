@@ -11,7 +11,7 @@ import {
   projectProgress,
 } from './activity';
 import type { ProjectModel } from './model';
-import { ProjectSessionStatus, Value } from './parts';
+import { ProjectSessionLimit, ProjectSessionStatus, Value } from './parts';
 import { routeToken, useRouteTarget } from './routing';
 
 /* What the project's sessions are doing now (GOING ON), how the ones that stopped ended, and the tasks
@@ -113,6 +113,7 @@ function ActivityCard({
         <ProjectSessionStatus session={session} />
         <Value text={session.titleText} known={session.titleKnown} />
       </span>
+      <ProjectSessionLimit session={session} />
       <Instruction source={source} title={session.titleText} generated={model.generated} />
       <span className="next-activity-now">
         <span className="next-activity-harness">{`${session.harness} · `}</span>
