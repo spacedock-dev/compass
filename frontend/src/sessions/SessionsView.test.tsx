@@ -286,33 +286,18 @@ describe('the groups', () => {
     annotation_assessment: reading,
   };
 
-  it.each([
-    ['medium', 'Slightly off course'],
-    ['high', 'Off course'],
-  ])(
-    'shows no progress copy for a stored %s departure on the first visit',
-    async (level, label) => {
-      const page = await open(
-        board([
-          {
-            harness: 'claude',
-            sid: 'read',
-            state: 'working',
-            ...assessed,
-            stored_progress: level,
-          },
-        ]),
-      );
-      const row = document.querySelector<HTMLElement>('article[data-next-session="read"]');
-      if (!row) throw new Error('Missing row');
-      expect(within(row).queryByText(label)).not.toBeInTheDocument();
-      expect(row.querySelector('[data-slot="badge"]')).toBeNull();
-      expect(row.querySelector('.next-operation-progress')).toBeNull();
-      expect(
-        page.state.requests.some((request) => request.url.startsWith('/api/project-context')),
-      ).toBe(false);
-    },
-  );
+  it('leaves the published departure details on the session page', async () => {
+    const page = await open(
+      board([{ harness: 'claude', sid: 'read', state: 'working', ...assessed }]),
+    );
+    const row = document.querySelector<HTMLElement>('article[data-next-session="read"]');
+    if (!row) throw new Error('Missing row');
+    expect(row.textContent).not.toMatch(/Slightly off course|Off course|Way off course/);
+    expect(row.querySelector('[data-slot="badge"], .next-operation-progress')).toBeNull();
+    expect(
+      page.state.requests.some((request) => request.url.startsWith('/api/project-context')),
+    ).toBe(false);
+  });
 
   it.each([
     ['a row with no goal', {}],

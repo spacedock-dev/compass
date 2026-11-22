@@ -96,9 +96,10 @@ Worth a look open **Needs you**. Working now selects Working and takes you to th
 Press it again to clear that selection. The summary says when it covers only sources Compass
 could read. Below the cards, Right now comes before the earlier group. The six status tabs count the whole loaded board.
 Search reads titles, goals and prompts. Press `/` to jump to it or paste a session id to find it.
-Filters opens a panel for Project, Agent, Started and Progress check. The progress chips use
-current saved evidence and carry no counts. More filters for power users holds the full project
-list, date ranges, Group, Headless, State, Progress records and Goal source.
+Filters opens a panel for Project, Agent, Started and Progress check. Progress levels appear on
+each session's page. The list cannot be filtered by level yet. No goal yet uses the board's
+published goal evidence. More filters for power users holds the full project list, date ranges,
+Group, Headless, State, Progress records and Goal source.
 Headless offers Headless and Interactive or unknown. The latter includes
 interactive Claude Code and Codex runs, unknown entrypoints and other harnesses. Codex classifies
 only rollout source `exec` as headless and `cli` as interactive. A quiet headless Codex row with a

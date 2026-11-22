@@ -111,20 +111,13 @@ export const PROGRESS_OPTIONS = [
   { value: 'no-goal', label: SESSION_ROW_WORDS.noGoalYet },
 ] as const;
 
-type ProgressValue = (typeof PROGRESS_OPTIONS)[number]['value'];
+type ProgressValue = 'no-goal' | 'has-goal';
 
-function progressValue(row: SessionRow): ProgressValue | null {
-  const { source, session, goal } = row;
-  if (!source || (session.harness !== 'claude' && session.harness !== 'codex')) return null;
-  if (!goal.known && !source['annotation_assessment'] && source['stored_progress'] == null) {
-    return 'no-goal';
-  }
-  // The server revalidates this closed result against the stored reading before publishing it.
-  if (session.harness !== 'claude') return null;
-  const result = source['stored_progress'];
-  return (
-    PROGRESS_OPTIONS.find(({ value }) => value !== 'no-goal' && value === result)?.value ?? null
-  );
+function progressValue({ source, session, goal }: SessionRow): ProgressValue | null {
+  if (session.harness !== 'claude' && session.harness !== 'codex') return null;
+  const saved = source?.['annotation_goal'];
+  if (typeof saved !== 'string') return null;
+  return saved.trim() || goal.known ? 'has-goal' : 'no-goal';
 }
 
 export const GOAL_OPTIONS: readonly { readonly value: GoalValue; readonly label: string }[] = [
@@ -449,23 +442,26 @@ export interface Prepared {
   readonly edges: DayEdges | null;
   /** False while annotations are off or unreadable: drift and goal then have nothing to partition. */
   readonly annotated: boolean;
+  readonly progressAvailable: boolean;
 }
 
 export function prepare(
   filters: FilterState,
   generated: number | null,
   annotated: boolean,
+  progressAvailable = false,
 ): Prepared {
   return {
     filters,
     terms: queryTerms(filters.query),
     edges: generated === null ? null : dayEdges(generated),
     annotated,
+    progressAvailable,
   };
 }
 
 /* The facets that read the annotation store. */
-export const ANNOTATION_FACETS: ReadonlySet<Facet> = new Set<Facet>(['drift', 'goal', 'progress']);
+export const ANNOTATION_FACETS: ReadonlySet<Facet> = new Set<Facet>(['drift', 'goal']);
 
 /* Values inside one facet widen (OR); facets, the date and the words narrow each other (AND). A facet whose
    rows publish nothing to partition (drift and goal with annotations off) filters nothing. */
@@ -479,7 +475,11 @@ export function passes(indexed: IndexedRow, prepared: Prepared, skip: Part | nul
     const chosen = filters[facet];
     if (!chosen.length) continue;
     const value = facetValue(indexed, facet);
-    if (facet === 'progress' && prepared.annotated && value === null) return false;
+    if (facet === 'progress') {
+      if (prepared.progressAvailable && chosen.includes('no-goal') && value !== 'no-goal')
+        return false;
+      continue;
+    }
     if (value === null || chosen.includes(value)) continue;
     if (
       facet === 'state' &&
@@ -501,8 +501,10 @@ export function filtersActive(prepared: Prepared): boolean {
     terms.length > 0 ||
     filters.segment !== 'all' ||
     (edges !== null && filters.when !== 'any') ||
-    FACETS.some(
-      (facet) => (annotated || !ANNOTATION_FACETS.has(facet)) && filters[facet].length > 0,
+    FACETS.some((facet) =>
+      facet === 'progress'
+        ? prepared.progressAvailable && filters.progress.includes('no-goal')
+        : (annotated || !ANNOTATION_FACETS.has(facet)) && filters[facet].length > 0,
     )
   );
 }

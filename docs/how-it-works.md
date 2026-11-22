@@ -175,8 +175,10 @@ At a glance on Sessions shows what is waiting on you, what is working and what i
 Waiting on you and Worth a look open Needs you. Working now selects Working and moves focus to
 the list. The status tabs and At a glance count the whole loaded board while you filter it.
 Search reads titles, goals, prompts and project names. Press `/` to jump to the field.
-Open Filters for Project, Agent, Started and Progress check. More filters for power users
-holds the complete list of choices, including Last active, Group, Headless and Goal source.
+Open Filters for Project, Agent, Started and Progress check. Progress levels appear on each
+session's page. The list cannot be filtered by level yet. No goal yet uses the board's published
+goal evidence. More filters for power users holds the complete list of choices, including
+Last active, Group, Headless and Goal source.
 Headless offers Headless and Interactive or unknown. Claude Code and Codex publish headless status;
 Codex uses the rollout entrypoint, with `exec` headless and `cli` interactive. Unknown entrypoints and
 other harnesses stay under Interactive or unknown. Both options start unselected, so

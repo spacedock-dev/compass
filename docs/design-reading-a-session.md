@@ -8379,7 +8379,7 @@ level words and six distinct absences. DEC-17 rule 4, DEC-20 item 3 and DEC-26 i
 | Session header | A full level word when evidence permits one, otherwise the applicable absence. |
 | Is it on track? card | A full level word with its evidence, or the appropriate absence. On track means "No departure found in what Compass read". The meter and Help explain all four levels. |
 | Terminal status-line footer | The row rule. It may also say the Live monitor is on. |
-| Sessions Filters | Progress check chips read Slightly off course, Off course, Way off course and No goal yet, with no counts. |
+| Sessions Filters | Progress check lists disabled level chips. No goal yet uses published goal evidence. |
 
 The Sessions implementation of 2026-11-23 leaves the progress slot blank. The session
 page holds the progress reading. The board snapshot uses ordinary collection. DRC-5533

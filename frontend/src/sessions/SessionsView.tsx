@@ -24,7 +24,6 @@ import {
   announcement,
   applyFilters,
   EMPTY_FILTERS,
-  filtersActive,
   groupEmptyLine,
   harnessMeta,
   indexScreen,
@@ -512,12 +511,13 @@ function useFilterActions(
   indexed: ReturnType<typeof indexScreen>,
   generated: number | null,
   annotated: boolean,
+  progressAvailable: boolean,
 ): FilterActions {
   const shell = useShell();
-  const latest = useRef({ indexed, generated, annotated });
+  const latest = useRef({ indexed, generated, annotated, progressAvailable });
   const timer = useRef<TimerHandle | null>(null);
   useEffect(() => {
-    latest.current = { indexed, generated, annotated };
+    latest.current = { indexed, generated, annotated, progressAvailable };
   });
   useEffect(
     () => () => {
@@ -535,7 +535,7 @@ function useFilterActions(
       since.current = null;
       const result = applyFilters(
         now.indexed,
-        prepare(next, now.generated, now.annotated),
+        prepare(next, now.generated, now.annotated, now.progressAvailable),
         () => null,
       );
       // Forgotten first, so the same sentence after a second press is spoken again.
@@ -594,9 +594,13 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
   const indexed = useMemo(() => (screen ? indexScreen(screen) : []), [screen]);
   const generated = screen ? screen.context.generated : null;
   const annotated = screen ? screen.context.annotate && !screen.context.unreadable : false;
+  const progressAvailable = useMemo(
+    () => indexed.some(({ progress }) => progress !== null),
+    [indexed],
+  );
   const prepared = useMemo(
-    () => prepare(deferred, generated, annotated),
-    [deferred, generated, annotated],
+    () => prepare(deferred, generated, annotated, progressAvailable),
+    [deferred, generated, annotated, progressAvailable],
   );
   const filtered = useMemo(
     () =>
@@ -605,7 +609,7 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
       ),
     [indexed, prepared, generated],
   );
-  const actions = useFilterActions(store, indexed, generated, annotated);
+  const actions = useFilterActions(store, indexed, generated, annotated, progressAvailable);
   const board = useMemo((): FilterBoard | null => {
     if (!data || !screen) return null;
     const payload = data as unknown as Row;

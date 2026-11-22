@@ -1,7 +1,6 @@
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { GENERATED, SIDS, sessionsSearchPayload } from '../../stories/sessionsSearch.fixture';
-import { worthALookBoard } from '../../test/worthALookBoard';
 import type { Row } from '../observed';
 import { mountSessions } from './testing';
 
@@ -598,51 +597,63 @@ it('keeps the count on every tab equal to its unfiltered rows and independent of
   expect(tabs.getAllByRole('button').map((button) => button.textContent)).toEqual(names);
 });
 
-it('filters by published stored progress, never a live estimate, a stale result or a Codex level', async () => {
+it('keeps the rows visible when progress levels cannot be filtered', async () => {
   const page = await open({
     generated: GENERATED,
     annotate: true,
     sessions: [
-      {
-        harness: 'claude',
-        sid: 'stored',
-        project: 'p',
-        annotation_goal: 'Ship',
-        stored_progress: 'medium',
-      },
-      {
-        harness: 'claude',
-        sid: 'live',
-        project: 'p',
-        annotation_goal: 'Ship',
-        drift_level: 'medium',
-      },
-      {
-        harness: 'claude',
-        sid: 'stale',
-        project: 'p',
-        annotation_goal: 'Ship',
-        stored_progress: 'out_of_date',
-      },
-      {
-        harness: 'codex',
-        sid: 'codex',
-        project: 'p',
-        annotation_goal: 'Ship',
-        stored_progress: 'medium',
-      },
-      { harness: 'codex', sid: 'no-goal', project: 'p' },
-      { harness: 'claude', sid: 'unclassified', project: 'p', annotation_assessment: {} },
+      { harness: 'claude', sid: 'saved', project: 'p', annotation_goal: 'Ship' },
+      { harness: 'codex', sid: 'empty', project: 'p', annotation_goal: '' },
     ],
   });
   await press(page, screen.getByRole('button', { name: 'Filters' }));
   const group = within(screen.getByRole('group', { name: 'Progress check' }));
-  await press(page, group.getByRole('button', { name: 'Slightly off course' }));
-  expect(document.querySelectorAll('[data-next-session]')).toHaveLength(1);
-  expect(document.querySelector('[data-next-session="stored"]')).toBeInTheDocument();
-  await press(page, group.getByRole('button', { name: 'No goal yet' }));
-  expect(document.querySelectorAll('[data-next-session]')).toHaveLength(2);
-  expect(document.querySelector('[data-next-session="no-goal"]')).toBeInTheDocument();
+  for (const name of ['Slightly off course', 'Off course', 'Way off course']) {
+    const chip = group.getByRole('button', { name });
+    await press(page, chip);
+    expect(rows(), name).toBe(2);
+    expect((chip as HTMLButtonElement).disabled).toBe(true);
+  }
+  expect(
+    group.getByText(
+      "Progress levels are shown on each session's page. Filtering this list by level is not available yet.",
+    ),
+  ).toBeVisible();
+});
+
+it('filters for no goal only when the board publishes that absence', async () => {
+  const page = await open({
+    generated: GENERATED,
+    annotate: true,
+    sessions: [
+      { harness: 'claude', sid: 'saved', project: 'p', annotation_goal: 'Ship' },
+      { harness: 'codex', sid: 'empty', project: 'p', annotation_goal: '' },
+      { harness: 'claude', sid: 'unpublished', project: 'p' },
+    ],
+  });
+  await press(page, screen.getByRole('button', { name: 'Filters' }));
+  const group = within(screen.getByRole('group', { name: 'Progress check' }));
+  const noGoal = group.getByRole('button', { name: 'No goal yet' });
+  await press(page, noGoal);
+  expect(rows()).toBe(1);
+  expect(document.querySelector('[data-next-session="empty"]')).toBeInTheDocument();
+
+  await closeFilters(page);
+  await page.poll({
+    generated: GENERATED + 1,
+    annotate: true,
+    sessions: [{ harness: 'claude', sid: 'unpublished', project: 'p' }],
+  });
+  expect(rows()).toBe(1);
+  expect(document.querySelector('[data-next-session="unpublished"]')).toBeInTheDocument();
+  await openPanel(page);
+  const updated = within(screen.getByRole('group', { name: 'Progress check' }));
+  expect(updated.getByRole<HTMLButtonElement>('button', { name: 'No goal yet' }).disabled).toBe(
+    true,
+  );
+  expect(
+    updated.getByText(/The board did not publish saved goals for these sessions\./),
+  ).toBeVisible();
 });
 
 it('words the start hint with the displayed board clock', async () => {

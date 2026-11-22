@@ -80,11 +80,11 @@ the reader's pointer as counts change. Counts use the same keys as drawn rows.
 When every discovered source fails, the tabs show that counts are unavailable.
 On an empty board the tabs cannot start a new status filter.
 
-Progress check offers Slightly off course, Off course, Way off course and No goal yet.
-The departing levels match only the board's revalidated `stored_progress` for Claude Code.
-No goal yet uses the board's goal evidence for Claude Code and Codex. Stale, withheld and
-live readings supply no level to these filters. Progress check and the advanced Progress
-records options carry no counts.
+Progress check lists Slightly off course, Off course and Way off course as disabled choices.
+Progress levels appear on the session page. No goal yet uses the board's published goal evidence
+for Claude Code and Codex. It includes rows whose published goal is empty and which offer no
+draft. If the board publishes no usable goal evidence, the choice is unavailable. Progress check
+and the advanced Progress records options carry no counts.
 
 A choice whose clock or annotation data becomes unavailable stays visible and clearable.
 An explanation beside the choice says why it filters nothing.

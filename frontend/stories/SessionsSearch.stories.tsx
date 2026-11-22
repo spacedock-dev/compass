@@ -1586,6 +1586,13 @@ export const TabsAndInlineFilters: Story = {
         .getAllByRole('button')
         .map((chip) => chip.textContent),
     ).toEqual(['Slightly off course', 'Off course', 'Way off course', 'No goal yet']);
+    for (const name of ['Slightly off course', 'Off course', 'Way off course']) {
+      await expect(within(progress).getByRole('button', { name })).toBeDisabled();
+    }
+    await expect(
+      within(progress).getByText(/Progress levels are shown on each session's page/),
+    ).toBeVisible();
+    await expect(shownRows(canvasElement)).toHaveLength(2);
     await userEvent.click(
       within(panel).getByRole('button', { name: 'More filters for power users' }),
     );

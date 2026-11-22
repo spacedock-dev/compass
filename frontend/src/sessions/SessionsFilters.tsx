@@ -20,7 +20,6 @@ import { Alert } from '../ui/alert';
 import { Button, buttonVariants } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Icon } from '../ui/icons';
-import { SESSION_ROW_WORDS } from '../language/glossary';
 import { Label } from '../ui/label';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Separator } from '../ui/separator';
@@ -114,6 +113,9 @@ export interface FilterActions {
 const ROW = 'flex min-h-11 w-full items-center gap-2.5 cursor-pointer';
 const NOTE = 'm-0 text-label text-muted-foreground leading-[1.5]';
 const SENTENCE = 'm-0 text-body text-muted-foreground leading-[1.55]';
+const PROGRESS_LEVEL_NOTE =
+  "Progress levels are shown on each session's page. Filtering this list by level is not available yet.";
+const NO_PUBLISHED_GOALS = 'The board did not publish saved goals for these sessions.';
 const NO_CLOCK = 'The board published no clock time, so dates cannot be filtered.';
 const HOURS_WORD = (hours: number) => `${String(hours)} ${hours === 1 ? 'hour' : 'hours'}`;
 
@@ -288,11 +290,30 @@ function FilterFacet({
   );
 }
 
-function ChipGroup({ name, children }: { readonly name: string; readonly children: ReactNode }) {
+function ChipGroup({
+  name,
+  children,
+  note,
+}: {
+  readonly name: string;
+  readonly children: ReactNode;
+  readonly note?: ReactNode;
+}) {
+  const noteId = useId();
   return (
-    <div role="group" aria-label={name} className="flex min-w-0 flex-col items-start gap-2">
+    <div
+      role="group"
+      aria-label={name}
+      aria-describedby={note ? noteId : undefined}
+      className="flex min-w-0 flex-col items-start gap-2"
+    >
       <span className={`${NOTE} font-semibold`}>{name}</span>
       <div className="flex flex-wrap gap-2">{children}</div>
+      {note ? (
+        <p id={noteId} className={NOTE}>
+          {note}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -503,6 +524,11 @@ export function SessionsFilters({
   });
 
   const readable = board.annotate && !board.unreadable;
+  const progressExplanation = !readable
+    ? annotationSentence(board, 'progress')
+    : prepared.progressAvailable
+      ? ''
+      : NO_PUBLISHED_GOALS;
   const noMatches = filtered.active && filtered.shown === 0;
   const emptySearch = noMatches && prepared.terms.length > 0;
   /* The rows lag the field while the deferred render catches up, so the one match is offered only once
@@ -530,7 +556,13 @@ export function SessionsFilters({
     if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
     const live = caughtUp
       ? only
-      : onlyIn(applyFilters(indexed, prepare(filters, board.generated, readable), () => ''));
+      : onlyIn(
+          applyFilters(
+            indexed,
+            prepare(filters, board.generated, readable, prepared.progressAvailable),
+            () => '',
+          ),
+        );
     if (!live) return;
     event.preventDefault();
     navigate(live.row.route);
@@ -637,9 +669,11 @@ export function SessionsFilters({
       key: facet,
       ...text,
       inert:
-        (facet === 'drift' || facet === 'goal' || facet === 'progress') && !readable
-          ? annotationSentence(board, facet)
-          : '',
+        facet === 'progress'
+          ? progressExplanation
+          : (facet === 'drift' || facet === 'goal') && !readable
+            ? annotationSentence(board, facet)
+            : '',
       clear: () => set({ [facet]: [] } as Partial<FilterState>),
     });
   }
@@ -843,19 +877,26 @@ export function SessionsFilters({
               })}
             </ChipGroup>
           </div>
-          <ChipGroup name={SESSION_LIST_WORDS.progressCheck}>
+          <ChipGroup
+            name={SESSION_LIST_WORDS.progressCheck}
+            note={
+              <>
+                {PROGRESS_LEVEL_NOTE}
+                {progressExplanation ? ` ${progressExplanation}` : ''}
+              </>
+            }
+          >
             {PROGRESS_OPTIONS.map(({ value, label }) => (
               <FilterChip
                 key={value}
                 label={label}
-                selected={filters.progress.includes(value)}
-                disabled={!readable}
+                selected={value === 'no-goal' && filters.progress.includes(value)}
+                disabled={value !== 'no-goal' || !prepared.progressAvailable}
                 onClick={() => toggle('progress', value)}
               />
             ))}
           </ChipGroup>
           {noClock ? <p className={NOTE}>{NO_CLOCK}</p> : null}
-          {!readable ? <p className={NOTE}>{annotationSentence(board, 'progress')}</p> : null}
           <Disclosure
             disclosureKey={MORE_FILTERS}
             summary={SESSION_LIST_WORDS.moreFilters}
