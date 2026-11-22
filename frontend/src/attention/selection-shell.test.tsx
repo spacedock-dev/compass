@@ -204,13 +204,10 @@ it('shows an ended session in both matching segments while its request remains a
   const glance = within(canvas.getByRole('region', { name: 'At a glance' }));
   expect(glance.getByRole('link', { name: /Waiting on you 1/ })).toBeVisible();
   expect(canvas.getByRole('link', { name: 'Needs you 1' })).toBeVisible();
-  const preset = canvas.getByRole('button', { name: 'Waiting on you' });
-  fireEvent.click(preset);
-  expect(canvas.getByRole('link', { name: 'Open session clean-end' })).toBeVisible();
-  fireEvent.click(preset);
-  const filters = filterStoreFor(page.shell.controls);
-  for (const segment of ['waiting', 'ended'] as const) {
-    await act(() => filters.set({ ...filters.get(), segment }));
+  const tabs = within(canvas.getByRole('group', { name: 'Session status' }));
+  for (const name of ['Waiting on you 1', 'Ended 1']) {
+    fireEvent.click(tabs.getByRole('button', { name }));
+    await page.settle();
     const row = canvas.getByRole('link', { name: 'Open session clean-end' }).closest('article');
     if (!row) throw new Error('Missing ended session');
     expect(within(row).getByRole('img', { name: 'Ended' })).toBeVisible();
