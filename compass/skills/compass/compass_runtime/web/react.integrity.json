@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2342379,
+    "bytes": 2342915,
     "file": "react.html",
-    "sha256": "1b24910b2c27425f0f97f7c4a77b4e9b20c25bd5a8ab2b3f111ba32d8db684cc"
+    "sha256": "806401143b0813094d7af581537ec0885812b893974e136f427ca067f0f04f8f"
   },
   "format": 1,
   "frontend": "react",
@@ -403,7 +403,7 @@
       },
       {
         "file": "frontend/src/capacity/capacity.css",
-        "sha256": "1e0084962b9af3ebb7344365185ada1647d7f52b38993aa7363bb2b3a463f00e"
+        "sha256": "1a527049b27d6d61aec34f6cf7333af6e909c84946ad8563b82f932b2923ac39"
       },
       {
         "file": "frontend/src/capacity/held.ts",
@@ -547,7 +547,7 @@
       },
       {
         "file": "frontend/src/delegation/delegation.css",
-        "sha256": "10581b95ce9d07459e7f070c0cd44ca17eaf6029735354e9c998fd1d594ddd28"
+        "sha256": "3cb0fb24e751c02b52a225162a68ec0380b4e0e2e3840b90ee458430fd0247c7"
       },
       {
         "file": "frontend/src/delegation/evidence.ts",
@@ -1587,7 +1587,7 @@
       },
       {
         "file": "frontend/src/terminal/owner.ts",
-        "sha256": "c57ff805b1229c0532d416d042fdeb72b8938389ccc7e875f235e8a3265fd39c"
+        "sha256": "0b48e706ecae3ceff5cdc9f2cec03d4097eab7cd120e92151c7bd6d0ea4daa27"
       },
       {
         "file": "frontend/src/terminal/registration.ts",
@@ -1619,7 +1619,7 @@
       },
       {
         "file": "frontend/src/terminal/xterm.ts",
-        "sha256": "4993c38a54f2ea0f043386fee736a0725366c338062125ed61530a5ae7ca7a90"
+        "sha256": "b2c59f83cabefa724abcff8d1f9f0afccadf1cb55d2f1079fb5a8a8e37ea0321"
       },
       {
         "file": "frontend/src/timeline/ActivityFilter.tsx",
@@ -1775,7 +1775,7 @@
       },
       {
         "file": "frontend/src/ui/select.tsx",
-        "sha256": "c5e79b9ad426f453bed7ac7039221a0454451ad5aee3749bb6dcfba1e84372ca"
+        "sha256": "cff7c85c6110a14863cdf188f87120b39212364ec3fd1845800cb83f16bfaf60"
       },
       {
         "file": "frontend/src/ui/separator.tsx",
