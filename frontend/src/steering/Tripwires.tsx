@@ -98,7 +98,7 @@ function RuleRow({
     <div className="flex items-center gap-2">
       <Switch
         ref={toggle}
-        className="w-full justify-between gap-2 rounded-control border border-solid border-input px-[11px] py-1.5 text-left text-muted-foreground hover:border-[var(--line-hi)] data-unchecked:text-[color:var(--ink3)]"
+        className="min-w-0 flex-1 justify-between gap-2 rounded-control border border-solid border-input px-[11px] py-1.5 text-left text-muted-foreground hover:border-[var(--line-hi)] data-unchecked:text-[color:var(--ink3)]"
         checked={rule.enabled}
         aria-labelledby={rule.enabled ? labelId : `${labelId} ${disabledNoteId}`}
         data-next-guardrail-toggle={index}
@@ -127,6 +127,7 @@ function RuleRow({
       <Button
         ref={remove}
         type="button"
+        className="shrink-0"
         aria-label={`Remove tripwire: ${rule.text}`}
         onClick={(event) => {
           const focused = document.activeElement === event.currentTarget;

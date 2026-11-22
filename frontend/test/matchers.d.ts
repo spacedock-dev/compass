@@ -5,5 +5,6 @@ declare module 'vitest' {
   interface Assertion<T> {
     toBeInTheDocument: TestingLibraryMatchers<T, void>['toBeInTheDocument'];
     toBeVisible: TestingLibraryMatchers<T, void>['toBeVisible'];
+    toHaveAccessibleDescription: TestingLibraryMatchers<T, void>['toHaveAccessibleDescription'];
   }
 }

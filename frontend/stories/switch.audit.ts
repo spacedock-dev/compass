@@ -2,7 +2,7 @@ import { expect } from 'storybook/test';
 
 export async function expectSwitchPaint(root: HTMLElement, checked: boolean) {
   // The Node route-reason test also imports the unasked permission stories.
-  const { contrastOf, paintedColors, rgbOf, settled } = await import('./a11y.audit');
+  const { contrastOf, paintedControlColors, rgbOf, settled } = await import('./a11y.audit');
   await settled();
   await expect(root).toHaveAttribute('aria-checked', String(checked));
   const target = root.getBoundingClientRect();
@@ -22,23 +22,30 @@ export async function expectSwitchPaint(root: HTMLElement, checked: boolean) {
   await expect(knob.left - box.left, 'Thumb offset').toBeCloseTo(checked ? 25 : 3);
   await expect(knob.top - box.top, 'Thumb vertical offset').toBeCloseTo(3);
 
-  const thumbFill = getComputedStyle(thumb).backgroundColor;
-  const fill = paintedColors(track, thumbFill);
-  if (!fill) throw new Error('Cannot measure switch thumb and track paint');
+  const forced = matchMedia('(forced-colors: active)').matches;
+  const thumbStyle = getComputedStyle(thumb);
+  const hasEdge =
+    thumbStyle.borderTopStyle === 'solid' && Number.parseFloat(thumbStyle.borderTopWidth) > 0;
+  const fill = paintedControlColors(
+    thumb,
+    forced && hasEdge ? thumbStyle.borderTopColor : thumbStyle.backgroundColor,
+  );
+  if (!fill) throw new Error('Thumb against track: no measurable paint');
   await expect(
     contrastOf(fill.foreground, fill.background),
     'Thumb against track',
   ).toBeGreaterThanOrEqual(3);
-  if (checked) {
+  if (checked && !forced) {
     const onAccent = getComputedStyle(root).getPropertyValue('--on-accent');
-    await expect(rgbOf(thumbFill), 'Checked thumb paint').toEqual(rgbOf(onAccent));
-  } else {
+    await expect(rgbOf(thumbStyle.backgroundColor), 'Checked thumb paint').toEqual(rgbOf(onAccent));
+  }
+  if (!checked) {
     const style = getComputedStyle(track);
     await expect(style.borderTopStyle, 'Off track boundary').toBe('solid');
     await expect(Number.parseFloat(style.borderTopWidth), 'Off track border width').toBeGreaterThan(
       0,
     );
-    const border = paintedColors(root, style.borderTopColor);
+    const border = paintedControlColors(track, style.borderTopColor);
     if (!border) throw new Error('Cannot measure the switch track against its surface');
     await expect(
       contrastOf(border.foreground, border.background),

@@ -30,7 +30,7 @@ export function LiveMonitorSwitch() {
           readOnly={view.blocked !== null}
           aria-disabled={view.blocked !== null || undefined}
           aria-labelledby="next-session-drift-monitor-label"
-          aria-describedby={`next-session-drift-monitor-hint${view.blocked ? ' next-session-drift-monitor-reason' : ''}`}
+          aria-describedby={`next-session-drift-monitor-hint${view.blocked ? ' next-session-drift-monitor-reason' : ''} next-session-drift-monitor-details`}
           data-next-cockpit-action="live-monitor"
           data-next-focus={`live-monitor:${key}`}
           onCheckedChange={view.press}
@@ -52,7 +52,12 @@ export function LiveMonitorSwitch() {
       >
         {LIVE_HINT}
       </p>
-      <p className="m-0 text-label leading-[1.4] text-muted-foreground">{LIVE_MONITOR_DETAILS}</p>
+      <p
+        id="next-session-drift-monitor-details"
+        className="m-0 text-label leading-[1.4] text-muted-foreground"
+      >
+        {LIVE_MONITOR_DETAILS}
+      </p>
       {sent ? (
         <p className="m-0 text-label leading-[1.4] text-muted-foreground" data-next-live-sent>
           {sent}

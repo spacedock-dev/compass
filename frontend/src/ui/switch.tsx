@@ -23,7 +23,7 @@ function Switch({ children, className, ...props }: SwitchProps) {
       render={<button type="button" />}
       data-slot="switch"
       className={cn(
-        'group/switch inline-flex min-h-[44px] min-w-[44px] box-border items-center justify-center border-0 bg-transparent p-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-2 disabled:cursor-not-allowed aria-disabled:cursor-not-allowed',
+        'group/switch inline-flex min-h-[44px] min-w-[44px] box-border items-center justify-center border-0 bg-transparent p-0 text-body [font-family:var(--sans)] text-foreground cursor-pointer focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-2 disabled:cursor-not-allowed aria-disabled:cursor-not-allowed',
         className,
       )}
       {...props}
@@ -32,11 +32,11 @@ function Switch({ children, className, ...props }: SwitchProps) {
       <span
         aria-hidden="true"
         data-slot="switch-track"
-        className="flex h-[30px] w-[52px] shrink-0 box-border items-center rounded-full border border-solid border-input bg-[var(--sunk)] p-0.5 group-data-checked/switch:border-[var(--accent-dim)] group-data-checked/switch:bg-[var(--accent-dim)]"
+        className="flex h-[30px] w-[52px] shrink-0 box-border items-center rounded-full border border-solid border-input bg-[var(--sunk)] p-0.5 group-data-checked/switch:border-[var(--accent-dim)] group-data-checked/switch:bg-[var(--accent-dim)] group-disabled/switch:border-dashed group-aria-disabled/switch:border-dashed"
       >
         <SwitchPrimitive.Thumb
           data-slot="switch-thumb"
-          className="size-[24px] shrink-0 rounded-full bg-[var(--ink2)] data-checked:ms-auto data-checked:bg-[var(--on-accent)]"
+          className="size-[24px] shrink-0 rounded-full bg-[var(--ink2)] data-checked:ms-auto data-checked:bg-[var(--on-accent)] forced-colors:box-border forced-colors:border forced-colors:border-solid forced-colors:border-[CanvasText]"
         />
       </span>
     </SwitchPrimitive.Root>

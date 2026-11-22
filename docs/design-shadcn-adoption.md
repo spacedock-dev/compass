@@ -1206,12 +1206,18 @@ govern this adoption. The Base UI root renders a native button so the existing f
 and keyboard activation carry over. The 52 by 30 px track and 24 px thumb sit inside a
 target of at least 44 by 44 px. The off track uses `--line` around `--sunk` with an
 `--ink2` thumb. The on track uses `--accent-dim` with an `--on-accent` thumb, moved to
-the other end. The target uses the same keyboard focus outline as Button.
+the other end. Forced colors give the thumb a `CanvasText` edge in both positions. The
+track has a solid border when available and a dashed border when disabled. The button
+uses the shared Inter body step and foreground by default, and the target uses the
+same keyboard focus outline as Button.
 
 The Live monitor keeps its session lease and focusable disabled state in Drift settings
-until the Session page's AI use and privacy tab ships (DRC-5522). Its target sits clear of
-the popover's clipping edge. Codex permission keeps its
-server grant and disables the control while a request is pending. The Tripwire switch includes
-the whole labelled row. Remove remains a separate button, and the rule stays in browser storage.
-The three callers replace 1,744 bytes of hand-written CSS. The Switch story measures both
-states on the rendered controls, and the Calm Compass style guide shows both states.
+until the Session page's AI use and privacy tab ships (DRC-5522). Its accessible
+description includes the cadence, any disabled reason, and the Haiku and Claude Code
+disclosure. Its target sits clear of the popover's clipping edge. Codex permission keeps
+its server grant and disables the control while a request is pending. The Tripwire switch
+includes the whole labelled row and saves its rule in browser storage. The rule text wraps
+beside a separate, single-line Remove button on narrow screens.
+The three callers replace 1,744 bytes of hand-written CSS. The Switch stories measure
+the rendered controls in both positions and color modes, and the Calm Compass style
+guide shows both positions.

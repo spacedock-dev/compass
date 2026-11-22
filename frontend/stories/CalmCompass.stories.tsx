@@ -6,7 +6,7 @@ import { Alert } from '../src/ui/alert';
 import { Button } from '../src/ui/button';
 import { Card } from '../src/ui/card';
 import { Switch } from '../src/ui/switch';
-import { contrastOf } from './a11y.audit';
+import { contrastOf, rgbOf } from './a11y.audit';
 
 const palette = [
   ['Ground', '--bg'],
@@ -526,13 +526,16 @@ export const StyleGuide: Story = {
       'Forget everything',
     ])
       await expect(reserved.getByRole('heading', { name: heading })).toBeVisible();
-    await expect(reserved.getByRole('switch', { name: 'Off' })).toHaveAttribute(
-      'aria-checked',
-      'false',
-    );
-    await expect(reserved.getByRole('switch', { name: 'On' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    for (const [name, checked] of [
+      ['Off', false],
+      ['On', true],
+    ] as const) {
+      const toggle = reserved.getByRole('switch', { name });
+      await expect(toggle).toHaveAttribute('aria-checked', String(checked));
+      const type = getComputedStyle(toggle);
+      await expect(type.fontFamily).toMatch(/^Inter\b/);
+      await expect(type.fontSize).toBe('15px');
+      await expect(rgbOf(type.color)).toEqual(rgbOf(type.getPropertyValue('--ink')));
+    }
   },
 };

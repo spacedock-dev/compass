@@ -9,6 +9,7 @@ import {
 
 declare module 'vitest/browser' {
   interface BrowserCommands {
+    storyForcedColors(forcedColors: 'active' | 'none' | null): Promise<void>;
     storyGuard(): Promise<string>;
     storyResult(): Promise<string[]>;
   }

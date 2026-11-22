@@ -94,7 +94,7 @@ export const Off: Story = {
     }
     await expect(hint).toHaveTextContent(/^Checks progress about once a minute while you watch$/);
     await expect(toggle).toHaveAccessibleDescription(
-      'Checks progress about once a minute while you watch',
+      /^Checks progress about once a minute while you watch Asks Haiku, through your Claude Code/,
     );
     await expect(
       within(document.body).getByText(/^Asks Haiku, through your Claude Code/),
@@ -160,12 +160,17 @@ export const EndedAndDisabled: Story = {
     const toggle = await monitorSwitch(card);
     await expect(toggle).toHaveAttribute('aria-disabled', 'true');
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    const track = toggle.querySelector('[data-slot="switch-track"]');
+    if (!track) throw new Error('Live monitor is missing its track');
+    await expect(getComputedStyle(track).borderTopStyle).toBe('dashed');
     await expect(document.querySelector('[data-next-live-reason]')).toHaveTextContent(
       'The session has ended',
     );
-    // The reason is the switch's own description, so a screen reader reads it with the switch.
-    const reason = document.querySelector('[data-next-live-reason]') as HTMLElement;
-    await expect(toggle.getAttribute('aria-describedby')).toContain(reason.id);
+    toggle.focus();
+    await expect(toggle).toHaveFocus();
+    await expect(toggle).toHaveAccessibleDescription(
+      /^Checks progress about once a minute while you watch The session has ended Asks Haiku, through your Claude Code/,
+    );
     await userEvent.click(toggle);
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await expect(actions(args.scenario.lease as LeaseScenario)).toEqual([]);

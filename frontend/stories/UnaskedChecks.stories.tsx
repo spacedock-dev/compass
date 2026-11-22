@@ -147,7 +147,11 @@ export const Paused: Story = {
     }),
   },
   play: async ({ canvasElement }) => {
-    await expect(await within(canvasElement).findByRole('switch', { name: off })).toBeDisabled();
+    const toggle = await within(canvasElement).findByRole('switch', { name: off });
+    await expect(toggle).toBeDisabled();
+    const track = toggle.querySelector('[data-slot="switch-track"]');
+    if (!track) throw new Error('Codex permission is missing its track');
+    await expect(getComputedStyle(track).borderTopStyle).toBe('dashed');
     await expect(
       within(canvasElement).getByRole('region', { name: 'Unasked checks' }),
     ).toHaveTextContent(/paused/i);

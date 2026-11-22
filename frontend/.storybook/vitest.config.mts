@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { storybookTest } from '@storybook/addon-vitest/vitest-plugin';
 import { playwright } from '@vitest/browser-playwright';
 import { defineConfig } from 'vitest/config';
-import { storyGuard, storyResult } from '../storybook/guard.mts';
+import { storyForcedColors, storyGuard, storyResult } from '../storybook/guard.mts';
 
 export default defineConfig({
   server: { host: '127.0.0.1' },
@@ -24,7 +24,7 @@ export default defineConfig({
           browser: {
             enabled: true,
             api: { host: '127.0.0.1' },
-            commands: { storyGuard, storyResult },
+            commands: { storyForcedColors, storyGuard, storyResult },
             screenshotDirectory: fileURLToPath(
               new URL('../../docs/screenshots/storybook', import.meta.url),
             ),

@@ -34,15 +34,19 @@ const paint = canvas.getContext('2d', { willReadFrequently: true }) as CanvasRen
 
 type Rgb = [number, number, number];
 
-function over(backdrop: Rgb, color: string, alpha = 1): Rgb {
+function composite(backdrop: string, color: string, alpha: number): Uint8ClampedArray {
   paint.clearRect(0, 0, 1, 1);
   paint.globalAlpha = 1;
-  paint.fillStyle = `rgb(${backdrop[0]} ${backdrop[1]} ${backdrop[2]})`;
+  paint.fillStyle = backdrop;
   paint.fillRect(0, 0, 1, 1);
   paint.globalAlpha = alpha;
   paint.fillStyle = color;
   paint.fillRect(0, 0, 1, 1);
-  const data = paint.getImageData(0, 0, 1, 1).data;
+  return paint.getImageData(0, 0, 1, 1).data;
+}
+
+function over(backdrop: Rgb, color: string, alpha = 1): Rgb {
+  const data = composite(`rgb(${backdrop.join(' ')})`, color, alpha);
   return [data[0] ?? 0, data[1] ?? 0, data[2] ?? 0];
 }
 
@@ -77,6 +81,34 @@ function isHidden(element: Element): boolean {
     visibilityProperty: true,
     contentVisibilityAuto: true,
   });
+}
+
+/* Compare a solid control fill or edge to the paint beneath it. Each ancestor's opacity
+   applies to its background and the child layers together. */
+export function paintedControlColors(
+  element: Element,
+  color: string,
+): { foreground: Rgb; background: Rgb } | null {
+  if (isHidden(element)) return null;
+  const blend = (backdrop: string, layer: string, alpha: number) => {
+    const [r = 0, g = 0, b = 0, a = 0] = composite(backdrop, layer, alpha);
+    return `rgb(${r} ${g} ${b} / ${a / 255})`;
+  };
+  let foreground = color;
+  let background = 'transparent';
+  let opacity = Number(getComputedStyle(element).opacity);
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    if (style.backgroundImage !== 'none' || style.filter !== 'none') return null;
+    foreground = blend(style.backgroundColor, foreground, opacity);
+    background = blend(style.backgroundColor, background, opacity);
+    opacity = Number(style.opacity);
+  }
+  const ground: Rgb = [255, 255, 255];
+  return {
+    foreground: over(ground, foreground, opacity),
+    background: over(ground, background, opacity),
+  };
 }
 
 /* A pulse that never ends takes an element through every opacity, so which one a snapshot catches is chance.

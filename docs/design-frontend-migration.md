@@ -245,6 +245,11 @@ you watch". Drift settings retains the Haiku and Claude Code explanation before 
 shows the server's sending disclosure while the switch is on. `LiveMonitor.test.tsx` and the
 Live monitor and Session layout stories read the new helper. The recorded answers stay frozen.
 
+2026-11-23, the Live monitor's accessible description pairs that helper with the existing Haiku
+and Claude Code explanation. When the switch is unavailable, its reason follows the helper and
+comes before the technical explanation. The Live monitor tests and the Live monitor, Drift
+and Session layout stories assert the composed description.
+
 2026-10-23, a session whose only prompt was a harness command is not said to have an unpublished title: on the
 session page's heading, the browser tab title and the breadcrumb, a session with no title whose first prompt
 was a command (`first_prompt_control`) reads "No name: the session opened with a command" where the

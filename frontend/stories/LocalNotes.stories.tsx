@@ -11,6 +11,7 @@ import { steeringHeldFor } from '../src/steering/held';
 import { createLegacyStorage, guardrailKey, memoKey } from '../src/storage';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend, type FakeBackend } from '../test/storage_backends';
+import { rgbOf } from './a11y.audit';
 import { expectSwitchPaint } from './switch.audit';
 
 const PROJECT = 'alpha/app';
@@ -231,14 +232,52 @@ export const TripwireSwitch: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const toggle = await canvas.findByRole('switch', { name: 'Watch the tests' });
+    const label = canvas.getByText('Watch the tests');
+    const labelType = getComputedStyle(label);
+    await expect(labelType.fontFamily).toMatch(/^Inter\b/);
+    await expect(labelType.fontSize).toBe('15px');
+    await expect(rgbOf(labelType.color)).toEqual(rgbOf(labelType.getPropertyValue('--ink2')));
     await expectSwitchPaint(toggle, true);
-    await userEvent.click(canvas.getByText('Watch the tests'));
-    await expect(canvas.getByText('Disabled in this browser.')).toBeVisible();
+    await userEvent.click(label);
+    const note = canvas.getByText('Disabled in this browser.');
+    await expect(note).toBeVisible();
+    const noteType = getComputedStyle(note);
+    await expect(noteType.fontFamily).toMatch(/^Inter\b/);
+    await expect(noteType.fontSize).toBe('13px');
+    await expect(rgbOf(noteType.color)).toEqual(rgbOf(noteType.getPropertyValue('--ink2')));
     await expect(toggle).toHaveAccessibleName('Watch the tests Disabled in this browser.');
     await expectSwitchPaint(toggle, false);
     await userEvent.keyboard(' ');
     await expect(toggle).toHaveAccessibleName('Watch the tests');
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  },
+};
+
+const narrowRule = 'Watch the tests and report back when the build finishes';
+
+export const TripwireAt320px: Story = {
+  args: { kind: 'tripwire', initialRules: [narrowRule] },
+  play: async ({ canvasElement }) => {
+    const driver =
+      '__vitest_browser_runner__' in window ? (await import('vitest/browser')).page : null;
+    const before = { width: window.innerWidth, height: window.innerHeight };
+    if (driver) await driver.viewport(320, 800);
+    try {
+      if (driver) await expect(window.innerWidth).toBe(320);
+      await document.fonts.ready;
+      const canvas = within(canvasElement);
+      const remove = canvas.getByRole('button', { name: `Remove tripwire: ${narrowRule}` });
+      const range = document.createRange();
+      range.selectNodeContents(remove);
+      await expect(range.getClientRects().length, 'Remove text lines').toBe(1);
+      if (window.innerWidth === 320) {
+        range.selectNodeContents(canvas.getByText(narrowRule));
+        await expect(range.getClientRects().length).toBeGreaterThan(1);
+        await expect(remove.getBoundingClientRect().right).toBeLessThanOrEqual(320);
+      }
+    } finally {
+      if (driver) await driver.viewport(before.width, before.height);
+    }
   },
 };
 
