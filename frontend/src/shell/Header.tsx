@@ -119,6 +119,7 @@ function ProjectMore({ route }: { readonly route: Extract<Route, { view: 'projec
 
 export function Header({ route }: { readonly route: Route }) {
   const selection = useDisplayed(selectAttentionSelection);
+  const counts = selection?.counts;
   const unread = useDisplayed((snapshot) => snapshot.data === null);
   return (
     <header className="-mt-[18px] -mx-[26px] flex min-h-16 flex-wrap items-center justify-between gap-x-5 gap-y-2 border-b border-[var(--rule)] bg-card px-4 py-2 [@media(max-width:760px)]:mx-0">
@@ -134,12 +135,12 @@ export function Header({ route }: { readonly route: Route }) {
           <Icon name="compass" size="1.35em" className="text-primary" />
           {SHOWN.compass}
         </a>
-        <PrimaryNavigation route={route} needsCount={selection?.counts.badge ?? 0} />
+        <PrimaryNavigation route={route} needsCount={counts?.badge ?? 0} />
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <NotificationControl />
         {route.view === 'project' && selection ? <ProjectMore route={route} /> : null}
-        <WorkingPill count={selection?.counts.working} unread={unread} />
+        <WorkingPill count={counts?.working} unread={unread} />
       </div>
       <AttentionAnnouncer />
     </header>
