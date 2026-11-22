@@ -262,6 +262,7 @@ function progressAbsence(source: Row, result: unknown): string | null {
     return null;
   }
   if (!trimmed(source['annotation_goal'])) return SESSION_ROW_WORDS.noGoalYet;
+  // A completed departure check can be measured even when the row has no stored assessment.
   const checked =
     source['departure_checked'] === true ||
     (nextNumber(source['annotation_reading_count']) ?? 0) > 0;

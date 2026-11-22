@@ -177,11 +177,12 @@ export const LiveEstimateNamesNoRowLevel: Story = {
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-session="44444444"]')).not.toBeNull(),
     );
+    // The fixture measures a completed check alongside its live estimate.
     await expect(
       canvasElement.querySelector(
         '[data-next-session="44444444"] [data-next-row-progress-absence]',
       ),
-    ).toHaveTextContent('Not checked yet');
+    ).toBeNull();
     await expect(canvasElement.querySelector('[data-next-row-drift-level]')).toBeNull();
   },
 };
