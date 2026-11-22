@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2362427,
+    "bytes": 2364211,
     "file": "react.html",
-    "sha256": "93fef4a94c96eff72d3c9f940bb2a3fdd730d43a7fb1303f5ea673e8fecdc559"
+    "sha256": "4b7539ee55eaef6454f5b1fc3c6b7ea28fc05333d5ad57b98fc9d1b705694101"
   },
   "format": 1,
   "frontend": "react",
@@ -283,7 +283,7 @@
       },
       {
         "file": "frontend/src/attention/WorthALookFlag.tsx",
-        "sha256": "a17028f6e12aa36545b6f694ea2ae8ed5288ca564c49a2a7294d6f473c4b8814"
+        "sha256": "4df6e4958394a1969f0141b709bf1183b6fef35297de839ac4041ecedfb4602b"
       },
       {
         "file": "frontend/src/attention/attention.css",
@@ -307,7 +307,7 @@
       },
       {
         "file": "frontend/src/attention/select.ts",
-        "sha256": "c3b6be416358457676a5b32ef2514df99d5965d3e8b30b55df57a53eb3a68b6c"
+        "sha256": "657582c2983dac49eec235f8f67e4c10f93ec99f8516d1eec63f0aec7998b53e"
       },
       {
         "file": "frontend/src/attention/subjects.ts",
@@ -1191,11 +1191,11 @@
       },
       {
         "file": "frontend/src/sessions/SessionsFilters.tsx",
-        "sha256": "90eaeaa1268db74c9077b010c960032298890e05731a7380329ded7868a8b6ce"
+        "sha256": "0670e647b134ae411f15db82b6f95d6819f05ed5b8e1b47e9688d391d0d798e7"
       },
       {
         "file": "frontend/src/sessions/SessionsView.tsx",
-        "sha256": "e4b445cf1414e6873bd6f84f44a2d2b88b4f587e1d184d12a1dd84305d47e1cb"
+        "sha256": "b3a2bb8092a821eb62d3911142ea9e19f6434730d423b9bc332be5b92c876a4b"
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",
@@ -1251,7 +1251,7 @@
       },
       {
         "file": "frontend/src/sessions/rows.ts",
-        "sha256": "6e58babc7543e533eb12d291ca2d3bf6ded94581943d0018dd4075e94ed9925d"
+        "sha256": "b859ea1ed4269e4533176e15ec43fd8f985bd7cbfec1327197c84694dda4357c"
       },
       {
         "file": "frontend/src/sessions/sessions.css",
@@ -1511,7 +1511,7 @@
       },
       {
         "file": "frontend/src/styles/tailwind.css",
-        "sha256": "96f631a4c937b2d6df1b399373d00e4bf4f41d0aea8036c14b68f47c7b9d1876"
+        "sha256": "950d84d41972468c5415873ae7ac9e8cef2749aaebedcb96ce8ebd3cd0464236"
       },
       {
         "file": "frontend/src/terminal/TerminalSurface.tsx",
