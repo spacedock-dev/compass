@@ -171,7 +171,7 @@ function signalNow(signal: Signal, subject: Subject, model: AttentionModel): Now
     if (session?.['wait_unconfirmed']) {
       return {
         text: sentence,
-        note: UNCONFIRMED_WAIT_NOTE,
+        note: expandDurationUnits(UNCONFIRMED_WAIT_NOTE),
       };
     }
     return { text: sentence, note: '' };
