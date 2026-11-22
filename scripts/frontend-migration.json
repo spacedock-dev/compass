@@ -1402,14 +1402,26 @@
       "disposition": "not-managed"
     },
     {
-      "name": "The Intent how-to popover",
+      "name": "The Goal explanation",
       "owner": "DRC-4825",
       "oracles": [
         "frontend/src/intent/HowTo.test.tsx",
-        "frontend/e2e/popover-continuity.mjs"
+        "frontend/stories/IntentDriftWording.stories.tsx"
       ],
-      "contract": "How Intent and drift works is keyed by project and exact session identity, persists across redraws and remounts for this tab, and uses shared Popover dismissal/focus rules without browser storage.",
+      "contract": "How goals work opens inline in the Goal card and keeps its open state across board refreshes and remounts by project and exact session identity for this tab.",
       "disposition": "stable-identity"
+    },
+    {
+      "name": "Sessions explanations",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/sessions/SessionsView.test.tsx",
+        "frontend/stories/SessionsSearch.stories.tsx",
+        "frontend/stories/QuotaLine.stories.tsx",
+        "frontend/src/controls/Disclosure.test.tsx"
+      ],
+      "contract": "The inline explanations keep independent tab-lifetime open state. An anchored filter choice closes its peer in the same disclosure store write.",
+      "disposition": "store-held"
     },
     {
       "name": "The revision a discard was armed against",

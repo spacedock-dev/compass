@@ -220,6 +220,8 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Uses AI | Cost implied by Analyze | The destination, what is sent and its limits | Number of remaining checks | Always beside Check progress |
 | N of 100 daily checks left | Budget count | Rolling cap and when capacity returns | Plan quota | Show at 10 or fewer checks left |
 | How goals work | How Intent and drift works | Goal sources, adoption and revisions | A separate Help-only explainer | Open in place from Goal. Help links there |
+| How filter counts work | How these counts work | Filter option counts and board-wide counts | The count of rows shown | Opens beneath the filters |
+| How session history works | What recent means | The published window and what recently observed means | Whether a harness process is still open | Opens above the earlier rows |
 | How progress checks work | Drift explainer | What the reading can and cannot establish | A verdict or account of completed work | Keep the local explanation next to the reading |
 | How project grouping works | Project grouping explanation | Project evidence and folder identity | Session state or agent type | Explains Unnamed folder |
 | How the AI allowance works | Quota explainer | Provider reading, pace and measurement limits | How much a progress check reads | Help and the plan quota card use the same subject |

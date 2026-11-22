@@ -195,6 +195,18 @@ export function normaliseSessionRecord(record, evidence = {}) {
       `Session operations${sentence}${available && result.header.includes(unchecked) ? ' ' : ''}`,
     );
     if (!available) result.header = result.header.replace(unchecked, '');
+    // Board caveats moved under the history disclosure. SessionsView.test holds their new home.
+    result.header = result.header.split(
+      'Blocked sessions lead, followed by recorded departures',
+    )[0];
+    const history = result.groups.find((group) => group.kind === 'history');
+    const hours = evidence.window_hours;
+    if (history?.header.startsWith('Recent historyWhat recent means')) {
+      history.header =
+        typeof hours === 'number' && Number.isFinite(hours) && hours > 0
+          ? `Earlier in the last ${hours} ${hours === 1 ? 'hour' : 'hours'}`
+          : 'Recently active';
+    }
   }
   return result;
 }

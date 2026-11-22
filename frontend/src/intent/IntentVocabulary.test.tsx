@@ -53,9 +53,10 @@ describe('the words on the Intent card', () => {
     page.state.data = withRecorded(page.state.data as object);
     await page.poll(page.state.data);
     const card = () => document.querySelector('.next-cockpit-held') as Element;
-    fireEvent.click(screen.getByRole('button', { name: 'More about these words' }));
-    const menu = [...document.querySelectorAll('[data-slot="popover-content"]')].flatMap(
-      readerFacing,
+    const more = screen.getByRole('button', { name: 'More about these words' });
+    fireEvent.click(more);
+    const menu = readerFacing(
+      document.getElementById(more.getAttribute('aria-controls') ?? '') as Element,
     );
     expect(menu.join(' ')).toContain('Discard everything');
     for (const string of menu) expect(string).not.toMatch(BOOKKEEPING);

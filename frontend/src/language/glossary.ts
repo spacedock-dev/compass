@@ -78,6 +78,15 @@ export const SESSION_ROW_WORDS = {
   outOfDate: 'Out of date',
 } as const;
 
+export const GOAL_LABEL = 'Goal';
+export const ALLOWANCE_LABEL = 'Your AI allowance';
+export const EXPLANATIONS = {
+  goals: how('goals', 'work'),
+  filterCounts: how('filter counts', 'work'),
+  sessionHistory: how('session history'),
+  aiAllowance: how('the AI allowance'),
+} as const;
+
 export const GLOSSARY = /* @__PURE__ */ (() =>
   ({
     // Shell and project tabs.
@@ -225,13 +234,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     // Recorded language decisions.
     goal: ruled(
       [
-        'Goal',
+        GOAL_LABEL,
         'Intent, Intent and drift',
         'Saved intent, source, revision and lines read',
         "An agent's task or a provisional prompt",
         'The `intent` slug and technical names keep their spelling',
       ],
-      'Intent',
+      GOAL_LABEL,
     ),
     doneLooksLike: ruled(
       [
@@ -568,13 +577,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ]),
     aiAllowance: ruled(
       [
-        'Your AI allowance',
+        ALLOWANCE_LABEL,
         'Capacity',
         'Provider plan quota and measurement',
         'Daily progress-check cap or prompt size limit',
         'Allowance refers only to this plan quota',
       ],
-      'Capacity',
+      ALLOWANCE_LABEL,
     ),
     progressCheckReadSize: ruled(
       [
@@ -608,13 +617,33 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ),
     howGoalsWork: ruled(
       [
-        how('goals', 'work'),
+        EXPLANATIONS.goals,
         'How Intent and drift works',
         'Goal sources, adoption and revisions',
         'A separate Help-only explainer',
         'Open in place from Goal. Help links there',
       ],
-      'How Intent and drift works',
+      EXPLANATIONS.goals,
+    ),
+    howFilterCountsWork: ruled(
+      [
+        EXPLANATIONS.filterCounts,
+        'How these counts work',
+        'Filter option counts and board-wide counts',
+        'The count of rows shown',
+        'Opens beneath the filters',
+      ],
+      EXPLANATIONS.filterCounts,
+    ),
+    howSessionHistoryWorks: ruled(
+      [
+        EXPLANATIONS.sessionHistory,
+        'What recent means',
+        'The published window and what recently observed means',
+        'Whether a harness process is still open',
+        'Opens above the earlier rows',
+      ],
+      EXPLANATIONS.sessionHistory,
     ),
     howProgressChecksWork: ruled(
       [
@@ -638,13 +667,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ),
     howAiAllowanceWorks: ruled(
       [
-        how('the AI allowance'),
+        EXPLANATIONS.aiAllowance,
         'Quota explainer',
         'Provider reading, pace and measurement limits',
         'How much a progress check reads',
         'Help and the plan quota card use the same subject',
       ],
-      null,
+      EXPLANATIONS.aiAllowance,
     ),
 
     // Section and disclosure labels.

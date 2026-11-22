@@ -346,8 +346,11 @@ const SWITCH = '[data-next-ci-switch]';
 
 async function opened(canvasElement: HTMLElement): Promise<HTMLElement> {
   const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
-  await userEvent.click(await within(card).findByRole('button', { name: /^What is sent/ }));
-  return within(document.body).findByRole('dialog');
+  const sent = await within(card).findByRole('button', { name: /^What is sent/ });
+  await userEvent.click(sent);
+  const panel = document.getElementById(sent.getAttribute('aria-controls') ?? '');
+  if (!panel || !card.contains(panel)) throw new Error('What is sent did not open in the card');
+  return panel;
 }
 
 const ROUTE = routeOf('claude', {
@@ -365,10 +368,10 @@ export const TheSwitchTurnsTheReadOffAndBackOn: Story = {
     ciPosts: [],
   }),
   play: async ({ canvasElement, args }) => {
-    const dialog = await opened(canvasElement);
+    const panel = await opened(canvasElement);
     const posts = args.scenario.ciPosts ?? [];
     const node = await waitFor(() => {
-      const found = dialog.querySelector<HTMLElement>(SWITCH);
+      const found = panel.querySelector<HTMLElement>(SWITCH);
       if (!found) throw new Error('no switch');
       return found;
     });
@@ -381,19 +384,19 @@ export const TheSwitchTurnsTheReadOffAndBackOn: Story = {
     );
     // Saved on the server and read back from the board: the sentence follows the answer, not the press.
     await waitFor(() =>
-      expect(dialog.querySelector(SWITCH)).toHaveAttribute('data-next-ci-switch', 'off'),
+      expect(panel.querySelector(SWITCH)).toHaveAttribute('data-next-ci-switch', 'off'),
     );
     await expect(posts).toEqual([{ ci_read: 'off', press: true, observer_model: 1 }]);
-    await expect(dialog.querySelector(SWITCH)).toHaveTextContent(
+    await expect(panel.querySelector(SWITCH)).toHaveTextContent(
       'Pull request checks are not read from GitHub or GitLab.',
     );
     await userEvent.click(
-      within(dialog.querySelector<HTMLElement>(SWITCH) as HTMLElement).getByRole('button', {
+      within(panel.querySelector<HTMLElement>(SWITCH) as HTMLElement).getByRole('button', {
         name: 'Turn on the pull request read',
       }),
     );
     await waitFor(() =>
-      expect(dialog.querySelector(SWITCH)).toHaveAttribute('data-next-ci-switch', 'on'),
+      expect(panel.querySelector(SWITCH)).toHaveAttribute('data-next-ci-switch', 'on'),
     );
     await expect(posts).toHaveLength(2);
   },
@@ -406,9 +409,9 @@ export const TheFlagHoldsTheReadOffAndOffersNoSwitch: Story = {
     ciPosts: [],
   }),
   play: async ({ canvasElement }) => {
-    const dialog = await opened(canvasElement);
+    const panel = await opened(canvasElement);
     const node = await waitFor(() => {
-      const found = dialog.querySelector<HTMLElement>(SWITCH);
+      const found = panel.querySelector<HTMLElement>(SWITCH);
       if (!found) throw new Error('no switch line');
       return found;
     });

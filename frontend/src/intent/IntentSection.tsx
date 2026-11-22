@@ -4,6 +4,7 @@ import { compatSessKey } from '../api/identity';
 import { nextNumber } from '../api/bootstrap';
 import { Disclosure, disclosureKey, useFocusKey } from '../controls';
 import { clock, endedAt } from '../observed';
+import { GOAL_LABEL } from '../language/glossary';
 import { useDisplayed } from '../shell/context';
 import { ActionButton } from './ActionButton';
 import {
@@ -42,7 +43,7 @@ import {
 } from './sentences';
 import { REVISION_DEFINITION } from '../drift/sentences';
 import { usePanel } from './useIntent';
-import { HowTo } from './HowTo';
+import { GoalExplanation } from './HowTo';
 
 /* The controls sit together on the left and are always drawn, as the design has them: Save intent and Undo
    changes, inert until there is something to undo. Add a line lives inside the Expected outcome accordion. */
@@ -164,8 +165,8 @@ export function SavedStamp() {
 }
 
 /* What the retired session More held about the reader's words, reduced to what the design has: the reading's
-   start beside the card, and one quiet menu for the rest (the sentence saying drift is measured against these
-   words, Clear, how Intent and drift works, the caveats, Discard everything and the state of later
+   start beside the card, and one disclosure for the rest (the sentence saying drift is measured against these
+   words, Clear, the caveats, Discard everything and the state of later
    directions). What became of discarded words stays in the card, because it says what became of the reader's
    words. Each part draws nothing when it has nothing to say.
    [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */
@@ -194,7 +195,8 @@ function Kept() {
           disclosureKey={menu}
           summary="More"
           summaryLabel="More about these words"
-          variant="popover"
+          searchable={false}
+          className="basis-full"
           focusKey={`intent-menu:${compatSessKey(session)}`}
         >
           <p className="next-cockpit-held-hint" data-next-intent-measured>
@@ -203,7 +205,6 @@ function Kept() {
           <ClearGoal />
           <Caveats />
           <LaterDirections />
-          <HowTo />
         </Disclosure>
       ) : null}
       <ArmedDiscard />
@@ -241,7 +242,7 @@ export function IntentSection() {
             tabIndex={-1}
             data-next-focus={`intent:${compatSessKey(session)}`}
           >
-            Intent
+            {GOAL_LABEL}
           </h2>
           <SampleMark id="intent" />
         </span>
@@ -274,6 +275,7 @@ export function IntentSection() {
       </div>
       <Footer />
       <Kept />
+      <GoalExplanation />
     </Card>
   );
 }

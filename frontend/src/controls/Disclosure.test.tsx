@@ -237,6 +237,22 @@ describe('a disclosure keeps its open state by key, not by node', () => {
     ).toBe(true);
   });
 
+  it('atomically closes the previously opened choice in the same group', () => {
+    const { kit } = mount(<div />);
+    const store = kit.controls.disclosures;
+    const queue = key('queue');
+    const date = key('date');
+    const unrelated = key('unrelated');
+    store.set(queue, true, 'filters');
+    store.set(unrelated, true, 'another-card');
+    const seen: boolean[][] = [];
+    store.subscribe(() => seen.push([store.isOpen(queue), store.isOpen(date)]));
+    store.set(date, true, 'filters');
+    expect(seen).toEqual([[false, true]]);
+    expect(store.isOpen(unrelated)).toBe(true);
+    expect(store.version(queue)).toBeGreaterThan(0);
+  });
+
   it('accepts a native browser opening even when a redraw precedes the queued event', async () => {
     const { view, kit, rerender } = mount(
       <Disclosure disclosureKey={key('plan')} summary="Project plan" variant="menu">

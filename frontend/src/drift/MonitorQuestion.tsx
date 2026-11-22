@@ -106,9 +106,11 @@ export function MonitorQuestion({
     if (shown || !answered.current) return;
     answered.current = false;
     const lane = shell.controls.focusLane;
-    lane.focus(`live-monitor:${compatSessKey(session)}`);
+    const key = compatSessKey(session);
+    const monitor = `live-monitor:${key}`;
+    if (!lane.element(monitor)?.closest('[hidden]')) lane.focus(monitor);
     if (!document.activeElement || document.activeElement === document.body)
-      lane.focus(`drift-settings:${compatSessKey(session)}`);
+      lane.focus(`drift-settings:${key}`);
   }, [shown, shell, session]);
 
   if (left === null || left <= 0) return null;

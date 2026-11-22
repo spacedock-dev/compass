@@ -6,11 +6,10 @@ import { titleLink } from '../ui/link';
 import { Button } from '../ui/button';
 import { StatusTile } from '../ui/status-tile';
 import { TooltipProvider } from '../ui/tooltip';
-import { SESSION_ROW_WORDS } from '../language/glossary';
+import { EXPLANATIONS, SESSION_ROW_WORDS } from '../language/glossary';
 import { selectAttentionSelection } from '../attention/select';
 import { WorthALookFlag } from '../attention/WorthALookFlag';
 import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 'react';
-import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
 import { gapNames, sessionStateLimit, type Row } from '../observed';
@@ -356,7 +355,7 @@ const Group = memo(function Group({
   readonly label: string;
   readonly rows: readonly SessionRow[];
   readonly empty: string;
-  readonly caveat?: { readonly summary: string; readonly body: string };
+  readonly caveat?: readonly string[];
   /** Set while the reader's filters are on: what they keep of this group, and how to take them off. */
   readonly filter?: {
     readonly filtered: Filtered;
@@ -380,20 +379,24 @@ const Group = memo(function Group({
       <header>
         <h2>{title}</h2>
         {label ? <p>{label}</p> : null}
-        {caveat ? (
-          <Disclosure
-            disclosureKey={disclosureKey({
-              project: null,
-              scope: null,
-              name: `sessions-${kind}-why`,
-            })}
-            summary={caveat.summary}
-            variant="popover"
-          >
-            <p className="next-why-body">{caveat.body}</p>
-          </Disclosure>
-        ) : null}
       </header>
+      {caveat ? (
+        <Disclosure
+          disclosureKey={disclosureKey({
+            project: null,
+            scope: null,
+            name: `sessions-${kind}-why`,
+          })}
+          summary={EXPLANATIONS.sessionHistory}
+          explanation
+        >
+          {caveat.map((sentence) => (
+            <p key={sentence} className="next-why-body">
+              {sentence}
+            </p>
+          ))}
+        </Disclosure>
+      ) : null}
       {/* A sibling after the header, never inside it, so a filtered header reads exactly as an unfiltered one. */}
       {filter?.filtered.active && rows.length ? (
         <p
@@ -455,7 +458,15 @@ const Group = memo(function Group({
   );
 });
 
-const RECENT_CAVEAT = { summary: 'What recent means', body: RECENT_WHY };
+const RECENT_CAVEATS = [
+  [RECENT_WHY, BOARD_WHY, GOAL_SOURCES_OFF],
+  [RECENT_WHY, BOARD_WHY, GOAL_SOURCES_ON],
+] as const;
+
+function historyHeading(hours: number | null) {
+  if (hours === null || hours <= 0) return 'Recently active';
+  return `Earlier in the last ${String(hours)} ${hours === 1 ? 'hour' : 'hours'}`;
+}
 
 const FACT_KEYS = ['active', 'working', 'requests', 'reported-blocks'] as const;
 
@@ -613,12 +624,6 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
             : 'Open a session to see what it is doing and where it stands.'}
           {canAnalyze && screen.lede ? ` ${NOT_CHECKED}` : ''}
         </p>
-        <IntentHowTo payload={data as unknown as Row} project="">
-          <p className="next-why-body">{BOARD_WHY}</p>
-          <p className="next-why-body">
-            {screen.context.annotate ? GOAL_SOURCES_ON : GOAL_SOURCES_OFF}
-          </p>
-        </IntentHowTo>
       </header>
       <StatusLegend />
       <SourceGaps />
@@ -671,11 +676,11 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
       />
       <Group
         kind="history"
-        title="Recent history"
+        title={historyHeading(board.hours)}
         label=""
         rows={screen.history}
         empty="No recent-history rows in this payload."
-        caveat={RECENT_CAVEAT}
+        caveat={RECENT_CAVEATS[screen.context.annotate ? 1 : 0]}
         filter={groupFilter}
         byGroup={filters.byGroup}
         progressEnabled={annotated}

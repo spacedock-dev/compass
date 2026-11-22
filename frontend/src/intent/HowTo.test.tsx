@@ -1,27 +1,37 @@
 import { act, fireEvent, screen } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { mountDrift, ROUTE } from '../drift/testing';
+import { GLOSSARY } from '../language/glossary';
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
+const summary = () => screen.getByRole('button', { name: GLOSSARY.howGoalsWork.plain });
+const explanation = () => document.getElementById('goal-explanation');
+
 async function openHowTo(page: { settle: () => Promise<void> }) {
-  fireEvent.click(screen.getByRole('button', { name: 'More about these words' }));
-  await page.settle();
-  fireEvent.click(screen.getByRole('button', { name: 'How Intent and drift works' }));
+  fireEvent.click(summary());
   await page.settle();
 }
 
 describe('the Intent how-to', () => {
-  it('keeps the popup keyed across session remounts without a first-use flag', async () => {
+  it('keeps the one Goal disclosure open across a refresh and a session remount', async () => {
     const page = mountDrift();
     await page.settle();
     await openHowTo(page);
+    expect(screen.getByRole('region', { name: GLOSSARY.goal.plain }).contains(summary())).toBe(
+      true,
+    );
+    expect(document.querySelectorAll('#goal-explanation')).toHaveLength(1);
+    expect(explanation()).toBeVisible();
+    await page.poll(page.state.data);
+    expect(summary().getAttribute('aria-expanded')).toBe('true');
     await act(async () => {
       page.router.navigate({ view: 'sessions' });
     });
     await page.settle();
+    expect(screen.queryByRole('button', { name: GLOSSARY.howGoalsWork.plain })).toBeNull();
     await act(async () => {
       page.router.navigate({
         view: 'session',
@@ -31,7 +41,8 @@ describe('the Intent how-to', () => {
       });
     });
     await page.settle();
-    expect(screen.getByRole('dialog', { name: 'How Intent and drift works' })).toBeTruthy();
+    expect(summary().getAttribute('aria-expanded')).toBe('true');
+    expect(explanation()).toBeVisible();
     expect(page.posts()).toBe(0);
   });
   for (const [harness, reader, steer] of [
@@ -64,8 +75,7 @@ describe('the Intent how-to', () => {
           ?.querySelector('[data-slot=popover]'),
       ).toBeNull();
       await openHowTo(page);
-      const popup = screen.getByRole('dialog', { name: 'How Intent and drift works' });
-      expect((popup.textContent ?? '').split(/\s+/).length).toBeLessThanOrEqual(150);
+      const popup = explanation() as HTMLElement;
       expect(popup.textContent).toContain('1. Give the goal.');
       expect(popup.textContent).toContain('Expected outcome is optional.');
       expect(popup.textContent).not.toContain('a level needs one');
@@ -73,13 +83,13 @@ describe('the Intent how-to', () => {
       expect(popup.textContent).toContain(
         "A session's /goal is used until you edit it; else Compass drafts from your first prompt.",
       );
-      expect(popup.textContent).toContain('2. Press Analyze drift.');
+      expect(popup.textContent).toContain('A progress check asks once to allow reading');
       expect(popup.textContent).toContain('3. Read where the work left your goal.');
-      expect(popup.textContent).toContain('Drift level: Claude Code, Codex and Pi only.');
+      expect(popup.textContent).toContain('Progress levels: Claude Code, Codex and Pi only.');
       expect(popup.textContent).toContain(
         reader
-          ? `Analyze drift here: ${harness === 'pi' ? 'Codex' : 'Claude Code'}.`
-          : 'Analyze drift here: No reader on this machine.',
+          ? `Reader here: ${harness === 'pi' ? 'Codex' : 'Claude Code'}.`
+          : 'Reader here: No reader on this machine.',
       );
       expect(popup.textContent).toContain(
         steer ? 'Steer back: available here.' : 'Steer back: Claude Code only.',
@@ -97,7 +107,7 @@ describe('the Intent how-to', () => {
       );
       const node = popup;
       await page.poll(page.state.data);
-      expect(screen.getByRole('dialog', { name: 'How Intent and drift works' })).toBe(node);
+      expect(explanation()).toBe(node);
       expect(page.posts()).toBe(0);
     });
   }

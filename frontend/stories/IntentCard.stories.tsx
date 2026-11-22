@@ -253,7 +253,7 @@ export const TypedSourceAndSavedStatus: Story = {
   },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
     await expect(view.getByText(GOAL_HINT)).toBeVisible();
     await expect(outcomesTrigger(view)).toHaveTextContent(
@@ -279,7 +279,7 @@ export const TypedSourceAndSavedStatus: Story = {
 export const FromPromptSource: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await expect(goal).toHaveValue('Keep the parser small and pure');
@@ -310,7 +310,7 @@ export const AdoptedThenEditedSource: Story = {
   },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saved');
     await expect(view.getByText('From your first prompt · saved')).toBeVisible();
@@ -368,7 +368,7 @@ const WARNING =
 export const AGoalTooVagueWarnsUnderTheGoalField: Story = {
   args: { setup: { session: { ...VAGUE_GOAL, annotation_assessment: REFUSED_READING } } },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     const goal = view.getByRole('textbox', { name: 'Goal' });
     const warning = await waitFor(() => {
@@ -409,7 +409,7 @@ export const AGoalWithAnEndStateIsNotWarned: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     await within(card).findByRole('textbox', { name: 'Goal' });
     await expect(card.querySelector('[data-next-goal-unclear]')).toBeNull();
   },
@@ -461,7 +461,7 @@ export const SavingStatus: Story = {
   },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
     await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
     await waitFor(async () => {
@@ -489,7 +489,7 @@ export const NotConfirmedStatus: Story = {
   },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ' edited');
@@ -526,7 +526,7 @@ export const RefusedStatus: Story = {
   },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ' edited');
@@ -556,7 +556,7 @@ export const ConcurrentRevisionKeepsUnsavedChanges: Story = {
   },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saved');
     const goal = view.getByRole('textbox', { name: 'Goal' });
@@ -596,7 +596,7 @@ export const GoalEditKeepsTheReadingStart: Story = {
   args: { setup: { session: READING_FROM_ORIGINAL } },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
     await expect(
       view.getByRole('button', { name: new RegExp(`Saved · reads from ${clock(FIRST_START)}`) }),
@@ -622,7 +622,7 @@ export const UsingAPromptAsTheGoalKeepsTheReadingStart: Story = {
   args: { setup: { session: READING_FROM_ORIGINAL } },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
     await userEvent.click(view.getByRole('button', { name: 'Use your prompt' }));
     const doc = within(canvasElement.ownerDocument.body);
@@ -646,7 +646,7 @@ export const ReadFromNowMovesTheStartAndSaysSo: Story = {
   args: { setup: { session: READING_FROM_ORIGINAL } },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
     const now = view.getByRole('button', { name: 'Read from my latest message' });
     await expect(now).toHaveAttribute('aria-disabled', 'true');
@@ -680,7 +680,7 @@ export const PromptMenuPick: Story = {
   },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
     // The design's button, not a select: it holds no value, and pressing it opens the list of prompts.
     const trigger = view.getByRole('button', { name: 'Use your prompt' });
@@ -721,7 +721,7 @@ export const GoalLabelStaysOneWordAtPhoneWidth: Story = {
     const before = { width: window.innerWidth, height: window.innerHeight };
     if (browserPage) await browserPage.viewport(400, 667);
     try {
-      const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+      const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
       const label = card.querySelector('label[for]') as HTMLElement;
       await expect(label.textContent).toBe('Goal');
       const range = document.createRange();
@@ -772,7 +772,7 @@ export const MovedControlsInQuietRow: Story = {
   },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const kept = card.querySelector('[data-next-intent-kept]') as HTMLElement;
     await expect(kept).not.toBeNull();
     // The row keeps only the reading start and the menu; everything else is one press away.
@@ -836,7 +836,7 @@ export const EndedSessionCaveatBeforeAndAfterSave: Story = {
   },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
     await expect(card.querySelector('[data-next-ended-goal]')).toHaveTextContent(ENDED_CAVEAT);
     const goal = view.getByRole('textbox', { name: 'Goal' });
@@ -855,7 +855,7 @@ export const EndedSessionCaveatBeforeAndAfterSave: Story = {
 export const TypedWordsStayThroughSlowSave: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.clear(goal);
@@ -918,7 +918,7 @@ export const AdoptedPromptStaysThroughSlowSave: Story = {
   },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
     const chosen = 'Add streaming tokenizer benchmarks before touching the AST';
     await userEvent.click(view.getByRole('button', { name: 'Use your prompt' }));
@@ -1001,9 +1001,10 @@ async function controlsTogether(card: HTMLElement, outcomes: 'open' | 'closed') 
   await expect(card.querySelector('[data-next-intent-status]')?.textContent ?? '').not.toMatch(
     /how intent/i,
   );
-  await expect(view.queryByRole('button', { name: 'How Intent and drift works' })).toBeNull();
+  await expect(view.getByRole('button', { name: 'How goals work' })).toBeVisible();
   await expect(view.queryByRole('button', { name: 'Clear' })).toBeNull();
-  await expect(view.queryByText(INTENT_MEASURED)).toBeNull();
+  const measured = view.queryByText(INTENT_MEASURED);
+  if (measured) await expect(measured).not.toBeVisible();
   return { view, save, undo };
 }
 
@@ -1021,7 +1022,7 @@ export const StateEmpty: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const { save, undo } = await controlsTogether(card, 'closed');
     await expect(card.querySelector('[data-next-intent-status]')).toBeNull();
     await expect(inert(save)).toBe(true);
@@ -1046,7 +1047,7 @@ export const StateDrafted: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const { view, save } = await controlsTogether(card, 'closed');
     await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
       'Keep the parser small and pure',
@@ -1066,7 +1067,7 @@ export const StateDrafted: Story = {
 
 export const StateEdited: Story = {
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     await userEvent.type(view.getByRole('textbox', { name: 'Goal' }), ' and fast');
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(
@@ -1098,7 +1099,7 @@ export const StateSaved: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(/^Saved$/);
     await expect(view.getByRole('button', { name: /^Saved · reads from/ })).toBeVisible();
@@ -1125,7 +1126,7 @@ export const StateGoalDetected: Story = {
     setup: { session: { session_goal: { text: DETECTED_GOAL, at: 1_760_000_300 } } },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     // Filled, marked and sourced without a keystroke, ahead of the session's first prompt.
     await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(DETECTED_GOAL);
@@ -1148,7 +1149,7 @@ export const StateGoalDetectedCodex: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(DETECTED_GOAL);
     await expect(card.querySelector('[data-next-goal-detected]')).toHaveTextContent(
@@ -1166,7 +1167,7 @@ export const StateGoalDetectedAntigravity: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(DETECTED_GOAL);
     await expect(card.querySelector('[data-next-goal-detected]')).toHaveTextContent(
@@ -1189,7 +1190,7 @@ export const StateGoalDetectedCut: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     // The excerpt is what the box holds, and the line says it was cut rather than passing it off as whole.
     await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue(DETECTED_GOAL);
     await expect(goalSource(card)).toMatch(
@@ -1217,7 +1218,7 @@ export const StateGoalUpdateOffered: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     const offer = card.querySelector('[data-next-goal-update]') as HTMLElement;
     // The offer names the new condition and its time, and the saved words stay as they are.
@@ -1240,7 +1241,7 @@ export const StateGoalUpdateOffered: Story = {
 export const StateGoalUpdateTaken: Story = {
   args: { setup: StateGoalUpdateOffered.args?.setup as CardSetup },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     await userEvent.click(view.getByRole('button', { name: 'Use this goal' }));
     await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(LATER_GOAL);
@@ -1273,7 +1274,7 @@ const earlierGoal = (how: string) => ({
 export const StateEarlierGoalReplaced: Story = {
   ...earlierGoal('replaced'),
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     await expect(endedNote(card)).toHaveTextContent(
       `Replaced an earlier /goal at ${datedClock(1_760_000_450)}`,
     );
@@ -1284,7 +1285,7 @@ export const StateEarlierGoalReplaced: Story = {
 export const StateEarlierGoalMet: Story = {
   ...earlierGoal('met'),
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     await expect(endedNote(card)).toHaveTextContent(
       `An earlier /goal was met at ${datedClock(1_760_000_450)}`,
     );
@@ -1294,7 +1295,7 @@ export const StateEarlierGoalMet: Story = {
 export const StateEarlierGoalGivenUp: Story = {
   ...earlierGoal('gave-up'),
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     await expect(endedNote(card)).toHaveTextContent(
       `Claude Code gave up on an earlier /goal at ${datedClock(1_760_000_450)}`,
     );
@@ -1306,7 +1307,7 @@ export const StateGoalClearedNoteSitsAboveTheSourceLineNamingTheDraft: Story = {
     setup: { session: { session_goal: null, session_goal_cleared: { at: 1_760_000_450 } } },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     // The note is the session's /goal; the source line between it and the box names the draft, so the two are
     // never read as one goal.
     await expect(endedNote(card)).toHaveTextContent(
@@ -1337,7 +1338,7 @@ export const StateGoalCleared: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     // No draft below it, so the plain sentence stands.
     await expect(endedNote(card)?.textContent).toBe(
       `Your /goal was cleared at ${datedClock(1_760_000_450)}`,
@@ -1360,7 +1361,7 @@ export const StateGoalClearedWhereTheSessionOpenedWithGoal: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     // The existing sentence takes the clause, so it is said once and the separate line is absent.
     await expect(card).toHaveTextContent(
       `This session opened with /goal, so there is no first prompt to draft a goal from. Your /goal was cleared at ${datedClock(1_760_000_450)}.`,
@@ -1384,7 +1385,7 @@ export const StateGoalClearedStaysSaidAfterAPromptIsChosen: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     await expect(endedNote(card)).toBeNull();
     await userEvent.click(await view.findByRole('button', { name: 'Use your prompt' }));
@@ -1423,7 +1424,7 @@ export const StateEarlierGoalNoteWaitsForTheUpdateOffer: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     await expect(card.querySelector('[data-next-goal-update]')).not.toBeNull();
     await expect(endedNote(card)).toBeNull();
     await expect(card.textContent).not.toContain('Replaced an earlier /goal');
@@ -1473,7 +1474,7 @@ export const DiscardEverythingSaysWhatGoesAndWhatStays: Story = {
   },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const kept = card.querySelector('[data-next-intent-kept]') as HTMLElement;
     await userEvent.click(within(kept).getByRole('button', { name: 'More about these words' }));
     const quiet = within(canvasElement);
@@ -1757,7 +1758,7 @@ const ARMED_SETUP: CardSetup = { session: ARMED_SESSION };
 
 async function armDiscard(canvasElement: HTMLElement) {
   const page = within(canvasElement);
-  const card = await page.findByRole('region', { name: 'Intent' });
+  const card = await page.findByRole('region', { name: 'Goal' });
   const kept = card.querySelector('[data-next-intent-kept]') as HTMLElement;
   const more = within(kept).getByRole('button', { name: 'More about these words' });
   await userEvent.click(more);
@@ -1876,7 +1877,7 @@ export const DiscardEverythingOverNoSummaryClaimsNoSummaryGone: Story = {
   },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Intent' });
+    const card = await page.findByRole('region', { name: 'Goal' });
     const kept = card.querySelector('[data-next-intent-kept]') as HTMLElement;
     await userEvent.click(within(kept).getByRole('button', { name: 'More about these words' }));
     const quiet = within(canvasElement);
@@ -1918,7 +1919,7 @@ export const StateDiscarded: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     await expect(card).toHaveTextContent(/discarded/);
     await expect(card.querySelector('[data-next-intent-status]')?.textContent ?? '').not.toBe(
       'Saved',
@@ -1931,7 +1932,7 @@ export const StateDiscarded: Story = {
    accordion opens over saved lines so nothing saved is hidden. */
 export const OutcomeAccordionClosedWithNoLines: Story = {
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     const trigger = outcomesTrigger(view);
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -1956,7 +1957,7 @@ export const OutcomeAccordionOpenOverSavedLines: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     await expect(outcomesTrigger(view)).toHaveAttribute('aria-expanded', 'true');
     await expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).toHaveValue(
@@ -1976,7 +1977,7 @@ export const OutcomeAccordionOpenOverSavedLines: Story = {
 
 export const AddingALineInsideTheAccordionSaves: Story = {
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     await openOutcomes(view);
     await userEvent.type(
@@ -1999,7 +2000,7 @@ export const AddingALineInsideTheAccordionSaves: Story = {
 /* The trigger is a button: Enter and Space open and close it, and focus stays on it. */
 export const OutcomeAccordionKeyboard: Story = {
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     const trigger = outcomesTrigger(view);
     trigger.focus();
@@ -2033,7 +2034,7 @@ export const OverCapLineBlocksSave: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     await openOutcomes(view);
     const box = view.getByRole('textbox', { name: 'Expected outcome line 1' });
@@ -2099,7 +2100,7 @@ export const RefusedSaveShowsReason: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     await openOutcomes(view);
     const box = view.getByRole('textbox', { name: 'Expected outcome line 1' });
@@ -2116,7 +2117,7 @@ export const RefusedSaveShowsReason: Story = {
 export const OverCapGoalBlocksSave: Story = {
   name: 'Over Cap Goal Blocks Save',
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     const box = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.click(box);

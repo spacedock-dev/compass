@@ -73,17 +73,7 @@ function summarize(source: Element | DocumentFragment): Summary {
   source.querySelectorAll('[data-next-row-worth-a-look]').forEach((flag) => flag.remove());
   const root = normalizeDisclosures(source);
   return {
-    header: (() => {
-      const header = root.querySelector('.next-operations-header');
-      const howto = [...(header?.querySelectorAll('details') ?? [])].find(
-        (node) => node.querySelector('summary')?.textContent === 'How Intent and drift works',
-      );
-      if (howto) {
-        const bodies = [...howto.querySelectorAll('.next-why-body')];
-        howto.replaceWith(...bodies);
-      }
-      return norm(header);
-    })(),
+    header: norm(root.querySelector('.next-operations-header')),
     fleet: [...root.querySelectorAll('[data-next-fleet-fact]')].map(
       (node) => [(node as HTMLElement).dataset['nextFleetFact'] ?? '', norm(node)] as const,
     ),
@@ -145,8 +135,19 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
   DEVIATIONS.rowPresentation(template.content, true);
   const header = template.content.querySelector('.next-operations-header');
   header?.querySelector(':scope > span')?.remove();
-  header?.querySelectorAll('summary').forEach((node) => node.remove());
+  // The two board caveats now live with the history explanation, proved in SessionsView.test.
+  header?.querySelectorAll('details').forEach((node) => node.remove());
+  const history = template.content.querySelector('[data-next-operation-group="history"] > header');
+  history?.querySelectorAll('details').forEach((node) => node.remove());
   const data = payload as Record<string, unknown>;
+  const hours = data['window_hours'];
+  const heading = history?.querySelector('h2');
+  if (heading) {
+    heading.textContent =
+      typeof hours === 'number' && hours > 0
+        ? `Earlier in the last ${String(hours)} ${hours === 1 ? 'hour' : 'hours'}`
+        : 'Recently active';
+  }
   const routes = data['reading_routes'];
   const canAnalyze =
     data['annotate'] === true &&
@@ -207,6 +208,7 @@ async function reactSummary(payload: unknown): Promise<Summary> {
   const root = page.container.querySelector('[data-next-view-body="sessions"]');
   if (!root) throw new Error('The Sessions screen did not draw.');
   DEVIATIONS.rowPresentation(root);
+  root.querySelector('[data-next-operation-group="history"] > [data-explanation]')?.remove();
   for (const text of root.querySelectorAll('[data-next-operation-fact="now"] strong')) {
     if (text.textContent === 'No recent activity') text.textContent = 'quiet';
   }

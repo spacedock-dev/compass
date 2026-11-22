@@ -428,11 +428,13 @@ export const NoticeCollapsesOnceRead: Story = {
     await expect(card.querySelector('[data-next-reading-notice]')).toBeNull();
     const sent = sentButtons(card);
     await expect(sent).toHaveLength(1);
-    await userEvent.click(sent[0] as HTMLElement);
-    const dialog = await within(document.body).findByRole('dialog');
-    await waitFor(() => expect(dialog).toHaveTextContent('Words go to: first.example'));
+    const summary = sent[0] as HTMLElement;
+    await userEvent.click(summary);
+    const panel = document.getElementById(summary.getAttribute('aria-controls') ?? '');
+    if (!panel || !card.contains(panel)) throw new Error('What is sent did not open in the card');
+    await waitFor(() => expect(panel).toHaveTextContent('Words go to: first.example'));
     await waitFor(() =>
-      expect(within(dialog).getByRole('button', { name: 'Pause model calls' })).toBeVisible(),
+      expect(within(panel).getByRole('button', { name: 'Pause model calls' })).toBeVisible(),
     );
     await expect(rerun(card)).toHaveLength(1);
   },

@@ -7,6 +7,8 @@ import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
+import { GLOSSARY } from '../src/language/glossary';
+import { openInFlow } from './disclosure.flow';
 
 /* The words a reader meets at the edges of a reading: why a line reads "Can't tell", what the how-to says a
    reading can settle and how far to trust it, and what saving an intent on an ended session still cannot do.
@@ -222,13 +224,10 @@ export const HowToSaysWhatAReadingCanSettleAndHowFarToTrustIt: Story = {
   args: { cites: [] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'More about these words' }));
-    await userEvent.click(
-      await canvas.findByRole('button', { name: 'How Intent and drift works' }),
-    );
-    const popup = await within(document.body).findByRole('dialog', {
-      name: 'How Intent and drift works',
-    });
+    const goal = await canvas.findByRole('region', { name: GLOSSARY.goal.plain });
+    const summary = within(goal).getByRole('button', { name: GLOSSARY.howGoalsWork.plain });
+    const popup = await openInFlow(summary, canvas.getByRole('heading', { name: 'Drift' }));
+    await expect(goal).toContainElement(popup);
     const settle = popup.querySelector('[data-next-intent-howto-settle]') as HTMLElement;
     await expect(settle).toHaveTextContent("Readings settle a command's latest unpiped run");
     await expect(settle).toHaveTextContent('nothing written after it');

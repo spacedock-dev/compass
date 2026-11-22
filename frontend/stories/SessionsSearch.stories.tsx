@@ -10,6 +10,7 @@ import type { Shell } from '../src/shell/context';
 import { createFakeClock, createFakeEnvironment, type FakeClock } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
 import { worthALookBoard } from '../test/worthALookBoard';
+import { openInFlow } from './disclosure.flow';
 import {
   GENERATED,
   SIDS,
@@ -384,7 +385,7 @@ const headerText = (root: HTMLElement, kind: 'active' | 'history') =>
   root.querySelector(`[data-next-operation-group="${kind}"] > header`)?.textContent ?? '';
 const cue = (root: HTMLElement) => root.querySelector('#next-cockpit-cue-status') as HTMLElement;
 const ACTIVE_HEADER = 'Active nowworking, waiting on you, an exact request, or recorded drift';
-const HISTORY_HEADER = 'Recent historyWhat recent means';
+const HISTORY_HEADER = 'Earlier in the last 24 hours';
 
 async function ready(root: HTMLElement) {
   const canvas = within(root);
@@ -501,6 +502,36 @@ export const HeadlessSubsets: Story = {
 };
 
 /* 1 */
+export const ExplanationsOpenInPlace: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = await ready(canvasElement);
+    const counts = canvas.getByRole('button', { name: 'How filter counts work' });
+    await openInFlow(counts, canvas.getByRole('heading', { name: 'Active now' }));
+    const history = canvas.getByRole('button', { name: 'How session history works' });
+    const rows = canvasElement.querySelector<HTMLElement>(
+      '[data-next-operation-group="history"] .next-operation-rows',
+    );
+    if (!rows) throw new Error('The earlier session rows did not render');
+    await openInFlow(history, rows);
+    await poll();
+    await expect(counts).toHaveAttribute('aria-expanded', 'true');
+    await expect(history).toHaveAttribute('aria-expanded', 'true');
+  },
+};
+
+export const FilterChoicesCloseTheirSiblings: Story = {
+  play: async ({ canvasElement }) => {
+    await ready(canvasElement);
+    await openFilter(canvasElement, 'project', 'Project');
+    const date = await openFilter(canvasElement, 'date', 'Date');
+    const dateButton = trigger(canvasElement, 'Date');
+    await expect(trigger(canvasElement, 'Project')).toHaveAttribute('aria-expanded', 'false');
+    await expect(date.getBoundingClientRect().top).toBeGreaterThan(
+      dateButton.getBoundingClientRect().bottom,
+    );
+  },
+};
+
 export const DefaultBoard: Story = {
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
@@ -797,7 +828,7 @@ export const NothingMatches: Story = {
       ),
     ).toEqual([
       'None of the 4 sessions in Active now match these filters.',
-      'None of the 8 sessions in Recent history match these filters.',
+      'None of the 8 sessions in Earlier in the last 24 hours match these filters.',
     ]);
     await expect(canvasElement.querySelectorAll('.next-sessions-empty')).toHaveLength(0);
     await expect(headerText(canvasElement, 'active')).toBe(ACTIVE_HEADER);
