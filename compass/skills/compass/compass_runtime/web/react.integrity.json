@@ -1,15 +1,15 @@
 {
   "document": {
-    "bytes": 2342915,
+    "bytes": 2338599,
     "file": "react.html",
-    "sha256": "806401143b0813094d7af581537ec0885812b893974e136f427ca067f0f04f8f"
+    "sha256": "e49e9dab0d78094a046d6ac5f9e6576b8936671d6e880283cdd2940563ee001c"
   },
   "format": 1,
   "frontend": "react",
   "licenses": {
-    "bytes": 41797,
+    "bytes": 37269,
     "file": "react-licenses.txt",
-    "sha256": "7401c14f5d397b76b461c3d6e121d0097b78ba43fe53b92971e661e13f5c115b"
+    "sha256": "d44cd73588ddcb96418a879910c09cbb8c47eacbb8946392d3189551d3911fed"
   },
   "optionalTerminal": {
     "javascript": {
@@ -26,94 +26,22 @@
   "provenance": {
     "fonts": [
       {
-        "bytes": 6772,
-        "face": "@font-face{font-family:'Space Grotesk';font-style:normal;font-weight:400 700;font-display:swap;src:url(\"{{COMPASS_FONT_SPACE_GROTESK_V22_VIETNAMESE}}\") format(\"woff2\");unicode-range:U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB}",
-        "file": "fonts/space-grotesk-v22-vietnamese.woff2.b64",
-        "sha256": "d699664b145bfeeccc66a4cce7fa55e14eb63efd7ec6b0b2ec52e25dd98f3917"
+        "bytes": 10252,
+        "face": "@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;src:url(\"{{COMPASS_FONT_INTER_V20_VIETNAMESE}}\") format(\"woff2\");unicode-range:U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB}",
+        "file": "fonts/inter-v20-vietnamese.woff2.b64",
+        "sha256": "5c66f9e07e90c6d4ac4922cc68d60de26c17b1858e677fb5e603fce3952b3ff2"
       },
       {
-        "bytes": 18924,
-        "face": "@font-face{font-family:'Space Grotesk';font-style:normal;font-weight:400 700;font-display:swap;src:url(\"{{COMPASS_FONT_SPACE_GROTESK_V22_LATIN_EXT}}\") format(\"woff2\");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}",
-        "file": "fonts/space-grotesk-v22-latin-ext.woff2.b64",
-        "sha256": "054c266fbb441ee059365dba0885d206f67ca05b375de869b88e02ebfccc9b9d"
+        "bytes": 85068,
+        "face": "@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;src:url(\"{{COMPASS_FONT_INTER_V20_LATIN_EXT}}\") format(\"woff2\");unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF}",
+        "file": "fonts/inter-v20-latin-ext.woff2.b64",
+        "sha256": "34b9c504cab7a73e37b746343a449132e56cf7b5481af2cb81dc74dcff25c956"
       },
       {
-        "bytes": 22320,
-        "face": "@font-face{font-family:'Space Grotesk';font-style:normal;font-weight:400 700;font-display:swap;src:url(\"{{COMPASS_FONT_SPACE_GROTESK_V22_LATIN}}\") format(\"woff2\");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}",
-        "file": "fonts/space-grotesk-v22-latin.woff2.b64",
-        "sha256": "a0d054c4af557de20afd6ca59f47ab353bcaec49c63ff04b6c9d39d0f8910557"
-      },
-      {
-        "bytes": 4000,
-        "face": "@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url(\"{{COMPASS_FONT_IBM_PLEX_MONO_V20_REGULAR_VIETNAMESE}}\") format(\"woff2\");unicode-range:U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB}",
-        "file": "fonts/ibm-plex-mono-v20-regular-vietnamese.woff2.b64",
-        "sha256": "0a8b854cc18641bd1b8222afa7ec82a75e59bc6501f777744ec87db1b6cd7a2c"
-      },
-      {
-        "bytes": 8860,
-        "face": "@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url(\"{{COMPASS_FONT_IBM_PLEX_MONO_V20_REGULAR_LATIN_EXT}}\") format(\"woff2\");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}",
-        "file": "fonts/ibm-plex-mono-v20-regular-latin-ext.woff2.b64",
-        "sha256": "f1050dc5317b43434c0aeda599d4624c774ffc162e87a8cf204b949b6a85816d"
-      },
-      {
-        "bytes": 10052,
-        "face": "@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url(\"{{COMPASS_FONT_IBM_PLEX_MONO_V20_REGULAR_LATIN}}\") format(\"woff2\");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}",
-        "file": "fonts/ibm-plex-mono-v20-regular-latin.woff2.b64",
-        "sha256": "c36f509c0a8f9f85f29cb44bc8701d8a9e0b14c499e77a884f789ead7093a7ac"
-      },
-      {
-        "bytes": 4036,
-        "face": "@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;src:url(\"{{COMPASS_FONT_IBM_PLEX_MONO_V20_MEDIUM_VIETNAMESE}}\") format(\"woff2\");unicode-range:U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB}",
-        "file": "fonts/ibm-plex-mono-v20-medium-vietnamese.woff2.b64",
-        "sha256": "b2529fba93fd07a50ffb8fc3d103eb04b0c298d4f6564d2833c44fde286de7e4"
-      },
-      {
-        "bytes": 8848,
-        "face": "@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;src:url(\"{{COMPASS_FONT_IBM_PLEX_MONO_V20_MEDIUM_LATIN_EXT}}\") format(\"woff2\");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}",
-        "file": "fonts/ibm-plex-mono-v20-medium-latin-ext.woff2.b64",
-        "sha256": "77f03e26f981c582bdba3a7abed4baa2d3149211c01366bb3ab3ba7622ec4ae5"
-      },
-      {
-        "bytes": 10060,
-        "face": "@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;src:url(\"{{COMPASS_FONT_IBM_PLEX_MONO_V20_MEDIUM_LATIN}}\") format(\"woff2\");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}",
-        "file": "fonts/ibm-plex-mono-v20-medium-latin.woff2.b64",
-        "sha256": "a76f53ca6612e7b3828eec2311098675b7f9849ae4169a8bcef6302aec02a6c0"
-      },
-      {
-        "bytes": 4116,
-        "face": "@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:600;font-display:swap;src:url(\"{{COMPASS_FONT_IBM_PLEX_MONO_V20_SEMIBOLD_VIETNAMESE}}\") format(\"woff2\");unicode-range:U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB}",
-        "file": "fonts/ibm-plex-mono-v20-semibold-vietnamese.woff2.b64",
-        "sha256": "69744cabbccc9faf77516ce9b744361e1e6be7f8081400006035a153797d2965"
-      },
-      {
-        "bytes": 8960,
-        "face": "@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:600;font-display:swap;src:url(\"{{COMPASS_FONT_IBM_PLEX_MONO_V20_SEMIBOLD_LATIN_EXT}}\") format(\"woff2\");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}",
-        "file": "fonts/ibm-plex-mono-v20-semibold-latin-ext.woff2.b64",
-        "sha256": "1b6b18fd0fd240bc6d5850f4df621484722d4b5d3650ebdd1e3a8bbd81c75854"
-      },
-      {
-        "bytes": 10120,
-        "face": "@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:600;font-display:swap;src:url(\"{{COMPASS_FONT_IBM_PLEX_MONO_V20_SEMIBOLD_LATIN}}\") format(\"woff2\");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}",
-        "file": "fonts/ibm-plex-mono-v20-semibold-latin.woff2.b64",
-        "sha256": "ad4580d8cb4b5f627c2d18457656732f7f7b070f7837fbc380e08054157e6f6c"
-      },
-      {
-        "bytes": 4416,
-        "face": "@font-face{font-family:'IBM Plex Mono';font-style:italic;font-weight:400;font-display:swap;src:url(\"{{COMPASS_FONT_IBM_PLEX_MONO_V20_ITALIC_VIETNAMESE}}\") format(\"woff2\");unicode-range:U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB}",
-        "file": "fonts/ibm-plex-mono-v20-italic-vietnamese.woff2.b64",
-        "sha256": "fe88a1e1a9cdb5b50308f09aaf573987f4ba2177bc6faa5feeb82a47df277bbb"
-      },
-      {
-        "bytes": 9788,
-        "face": "@font-face{font-family:'IBM Plex Mono';font-style:italic;font-weight:400;font-display:swap;src:url(\"{{COMPASS_FONT_IBM_PLEX_MONO_V20_ITALIC_LATIN_EXT}}\") format(\"woff2\");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}",
-        "file": "fonts/ibm-plex-mono-v20-italic-latin-ext.woff2.b64",
-        "sha256": "c590f625acd1a18021f23486445b03b8435879b406db1003d3fdd7804e9319fb"
-      },
-      {
-        "bytes": 11568,
-        "face": "@font-face{font-family:'IBM Plex Mono';font-style:italic;font-weight:400;font-display:swap;src:url(\"{{COMPASS_FONT_IBM_PLEX_MONO_V20_ITALIC_LATIN}}\") format(\"woff2\");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}",
-        "file": "fonts/ibm-plex-mono-v20-italic-latin.woff2.b64",
-        "sha256": "2665f5fbbb334780fa135c7f1dc6e2459061a2d6d44c32b7c1fdbc34cde65ede"
+        "bytes": 48256,
+        "face": "@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;src:url(\"{{COMPASS_FONT_INTER_V20_LATIN}}\") format(\"woff2\");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}",
+        "file": "fonts/inter-v20-latin.woff2.b64",
+        "sha256": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62"
       }
     ],
     "packages": [
@@ -226,24 +154,20 @@
         "sha256": "10e4e07fe7b63d3da1d899ea0f9a7a3d78c116051fae44b9f245a53d6f665a41"
       },
       {
-        "file": "compass/skills/compass/compass_runtime/web/fonts/IBMPlexMono-OFL.txt",
-        "sha256": "37784b44044a4ffd9256702b7c0982c37e5c8887ba90c6dca0479aea93dc898d"
+        "file": "compass/skills/compass/compass_runtime/web/fonts/Inter-OFL.txt",
+        "sha256": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57"
       },
       {
         "file": "compass/skills/compass/compass_runtime/web/fonts/SOURCES.txt",
-        "sha256": "ec7d60f394d9f32aba94490e834cff71385833896e1728c80e5836ea25c02cfd"
-      },
-      {
-        "file": "compass/skills/compass/compass_runtime/web/fonts/SpaceGrotesk-OFL.txt",
-        "sha256": "c6dec685825f73b18c20926fddc65e8315642e12986f15db0699170940a09efc"
+        "sha256": "c58a759743973209d6731443ed208419d64ff97fcdb227f7ea43f14c32b3523a"
       },
       {
         "file": "compass/skills/compass/compass_runtime/web/page.py",
-        "sha256": "0b93157e039744a024dd407d86db2a14724b1a0db54e9ed56e2ed7297c6be093"
+        "sha256": "48d0b54b42f7ab022fb97be63f68d1d4460daf2b9d574693e05bc68fdc39675b"
       },
       {
         "file": "compass/skills/compass/compass_runtime/web/styles.css",
-        "sha256": "110691292af02ba598126f8dcbf48dbeda6556b8621e0d3b72a406aa22f5dafc"
+        "sha256": "ba4394977c6d4fb57d34a1fbaff5db6d33c0ee6342011708c7a8c50441d6eb1b"
       },
       {
         "file": "compass/skills/compass/compass_runtime/web/vendor/SOURCES.txt",
@@ -259,7 +183,7 @@
       },
       {
         "file": "frontend/build/package.mjs",
-        "sha256": "3cd95f220924931ad300aa52555e1182f6f1582d71607d682ac8e127b58cd7b2"
+        "sha256": "548694d96e34b9474269d1feea996ca84c9f914743576e3ee94cd663799a2316"
       },
       {
         "file": "frontend/build/shadcn-LICENSE.txt",
@@ -403,7 +327,7 @@
       },
       {
         "file": "frontend/src/capacity/capacity.css",
-        "sha256": "1a527049b27d6d61aec34f6cf7333af6e909c84946ad8563b82f932b2923ac39"
+        "sha256": "1e0084962b9af3ebb7344365185ada1647d7f52b38993aa7363bb2b3a463f00e"
       },
       {
         "file": "frontend/src/capacity/held.ts",
@@ -547,7 +471,7 @@
       },
       {
         "file": "frontend/src/delegation/delegation.css",
-        "sha256": "3cb0fb24e751c02b52a225162a68ec0380b4e0e2e3840b90ee458430fd0247c7"
+        "sha256": "10581b95ce9d07459e7f070c0cd44ca17eaf6029735354e9c998fd1d594ddd28"
       },
       {
         "file": "frontend/src/delegation/evidence.ts",
@@ -1571,11 +1495,11 @@
       },
       {
         "file": "frontend/src/styles/shell.css",
-        "sha256": "082be061b8468c0c994748e6a31c8c48ac650378bbbf72674b448dc5a6505619"
+        "sha256": "2ebf2cfe399ba94b3412e49c214c31d446a859a3c86c74ffb7d45890cc16820a"
       },
       {
         "file": "frontend/src/styles/tailwind.css",
-        "sha256": "7ac67377b2156dbdbe95dabcae33933640f693d9620f6838e3d1c5010c42f7aa"
+        "sha256": "cb647089b61166a2807473be252f48ebc11b4f7755af2db52aca6a8d8d325d2b"
       },
       {
         "file": "frontend/src/terminal/TerminalSurface.tsx",
@@ -1587,7 +1511,7 @@
       },
       {
         "file": "frontend/src/terminal/owner.ts",
-        "sha256": "0b48e706ecae3ceff5cdc9f2cec03d4097eab7cd120e92151c7bd6d0ea4daa27"
+        "sha256": "7daefe5787c43f26d44fff5edd86e031e4c73ead9e4bd75487fc735e116c5f34"
       },
       {
         "file": "frontend/src/terminal/registration.ts",
@@ -1619,7 +1543,7 @@
       },
       {
         "file": "frontend/src/terminal/xterm.ts",
-        "sha256": "b2c59f83cabefa724abcff8d1f9f0afccadf1cb55d2f1079fb5a8a8e37ea0321"
+        "sha256": "4993c38a54f2ea0f043386fee736a0725366c338062125ed61530a5ae7ca7a90"
       },
       {
         "file": "frontend/src/timeline/ActivityFilter.tsx",
@@ -1775,7 +1699,7 @@
       },
       {
         "file": "frontend/src/ui/select.tsx",
-        "sha256": "cff7c85c6110a14863cdf188f87120b39212364ec3fd1845800cb83f16bfaf60"
+        "sha256": "c5e79b9ad426f453bed7ac7039221a0454451ad5aee3749bb6dcfba1e84372ca"
       },
       {
         "file": "frontend/src/ui/separator.tsx",
