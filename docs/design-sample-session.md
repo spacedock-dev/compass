@@ -224,6 +224,12 @@ from 2,354,223 bytes at `9303135c` to 2,355,311 bytes with Node 26.10.0. The inc
 by 1 KiB to the same baseline plus 460 KiB, or 2,355,787 bytes, with 476 bytes to spare.
 The fixture allowance stays at 250,000 bytes.
 
+On 2026-11-23, the Sessions status tiles, keyboard tooltips and stored-progress pills brought
+the page from 2,354,223 bytes on the shared Switch layer at `9303135c` to 2,357,823 bytes on
+Node 26.10.0. The 3,600-byte increase (0.15%) exceeded the previous bound by 3,060 bytes.
+The page allowance rises by 4 KiB to the same baseline plus 463 KiB, or 2,358,859 bytes,
+leaving 1,036 bytes above the build. The fixture allowance stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

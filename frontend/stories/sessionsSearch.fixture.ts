@@ -104,9 +104,32 @@ const READING_K = {
   },
 };
 
+/* The board snapshot's validated result. These rows open directly on the Sessions view. */
+function storedDeparture(revision: number, level: 'medium' | 'high', at: number) {
+  return {
+    annotation_goal: 'Finish the release work',
+    annotation_revision: revision,
+    stored_progress: level,
+    annotation_assessment: {
+      revision_read: revision,
+      read_at: at,
+      scope: 'last-turn',
+      criteria: {
+        goal: {
+          result: 'departure',
+          cites: ['fact:check'],
+          detail: '',
+          clause: 'Finish the release work',
+        },
+      },
+    },
+  };
+}
+
 export interface FixtureOptions {
   readonly generated?: number;
   readonly annotate?: boolean;
+  readonly progressPills?: boolean;
   /** Row B has gone quiet since the first board. */
   readonly bIdle?: boolean;
   /** `?all=1`: three older rows the default window would not load. */
@@ -187,6 +210,7 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
       last_activity: local(0, 10, 55),
       departures: [{ at: local(0, 10, 40), revision: 2 }],
       annotation_revision: 2,
+      ...(options.progressPills ? storedDeparture(2, 'medium', local(0, 10, 40)) : {}),
     },
     {
       harness: 'claude',
@@ -199,6 +223,7 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
       ended_at: local(0, 10, 30),
       started_at: local(0, 8),
       last_activity: local(0, 10, 30),
+      ...(options.progressPills ? storedDeparture(1, 'high', local(0, 10, 30)) : {}),
     },
     {
       harness: 'gemini',

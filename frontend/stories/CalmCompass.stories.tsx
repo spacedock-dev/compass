@@ -1,3 +1,4 @@
+import { Badge } from '../src/ui/badge';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, within } from 'storybook/test';
 import type { CSSProperties, ReactNode } from 'react';
@@ -195,7 +196,9 @@ function StatusLanguage() {
                   gap: 'var(--sp-1) var(--sp-3)',
                 }}
               >
-                <dt style={{ fontWeight: 650 }}>{word}</dt>
+                <dt>
+                  <Badge variant="status">{word}</Badge>
+                </dt>
                 <dd style={{ color: 'var(--ink2)', margin: 0 }}>{description}</dd>
               </div>
             ))}
@@ -207,13 +210,19 @@ function StatusLanguage() {
           </h3>
           <p style={caption}>A row shows a pill when a stored check found a departure.</p>
           <ul role="list" style={sampleList}>
-            {[GLOSSARY.slightlyOffCourse, GLOSSARY.offCourse, GLOSSARY.wayOffCourse].map(
-              ({ plain }) => (
-                <li key={plain} style={row}>
-                  {plain}
-                </li>
-              ),
-            )}
+            {(
+              [
+                [GLOSSARY.slightlyOffCourse.plain, 'medium'],
+                [GLOSSARY.offCourse.plain, 'high'],
+                [GLOSSARY.wayOffCourse.plain, 'extreme'],
+              ] as const
+            ).map(([word, tone]) => (
+              <li key={word} style={row}>
+                <Badge variant="progress" tone={tone}>
+                  {word}
+                </Badge>
+              </li>
+            ))}
           </ul>
           <p style={{ ...caption, marginTop: 'var(--sp-3)' }}>
             {[
@@ -462,11 +471,21 @@ export const StyleGuide: Story = {
 
     const statusRegion = canvas.getByRole('region', { name: 'Status' });
     const status = within(statusRegion);
-    for (const word of ['Working', 'Waiting on you', 'Quiet', 'Ended'])
-      await expect(status.getByText(word, { exact: true })).toBeVisible();
+    for (const word of ['Working', 'Waiting on you', 'Quiet', 'Ended']) {
+      const badge = status.getByText(word, { exact: true });
+      await expect(badge).toBeVisible();
+      await expect(badge).toHaveAttribute('data-variant', 'status');
+      await expect(getComputedStyle(badge).fontSize).toBe('13px');
+    }
     for (const word of ['Needs you', 'Finished', 'Paused', 'Idle'])
       await expect(status.queryByText(word, { exact: true })).toBeNull();
-    await expect(statusRegion.querySelector('svg, img')).toBeNull();
+    const progressBadges = within(canvas.getByRole('region', { name: 'Progress pills' }));
+    for (const word of ['Slightly off course', 'Off course', 'Way off course']) {
+      const badge = progressBadges.getByText(word, { exact: true });
+      await expect(badge).toBeVisible();
+      await expect(badge).toHaveAttribute('data-variant', 'progress');
+      await expect(getComputedStyle(badge).fontSize).toBe('13px');
+    }
 
     const words = within(canvas.getByRole('table', { name: 'Words we use now' }));
     await expect(words.getByRole('columnheader', { name: 'Plain word' })).toBeVisible();

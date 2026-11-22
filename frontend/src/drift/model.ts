@@ -136,14 +136,7 @@ export interface ModelInput {
   readonly monitor?: DriftLevel | null;
 }
 
-/* What the stored reading stands on, read once for the session page and for the Sessions row's chip, so the
-   chip cannot name a level the header does not show. */
-type ReadingInput = Pick<
-  ModelInput,
-  'record' | 'session' | 'payload' | 'projectKey' | 'contexts' | 'held'
->;
-
-function readingParts(input: ReadingInput) {
+function readingParts(input: ModelInput) {
   const { session, payload, contexts, held } = input;
   const annotate = annotateOn(payload);
   /* With the store off the page draws no words of the reader's and no stored reading, whatever the row carries. */
@@ -226,23 +219,6 @@ function readingParts(input: ReadingInput) {
     analysis,
     drafted,
   };
-}
-
-/* The stored reading's level as the header pill shows it: never "Not enough recorded yet" and never over a
-   drafted intent. */
-function shownAnalysis(analysis: DriftLevel | null, drafted: boolean): DriftLevel | null {
-  return analysis &&
-    analysis.level !== 'not_enough' &&
-    !drafted &&
-    LEVEL_SCALE.includes(analysis.level)
-    ? analysis
-    : null;
-}
-
-/** The analysis level the session page's header pill would show for this session, or null. */
-export function headerAnalysis(input: ReadingInput): DriftLevel | null {
-  const parts = readingParts(input);
-  return shownAnalysis(parts.analysis, parts.drafted);
 }
 
 export function buildModel(input: ModelInput): DriftModel {

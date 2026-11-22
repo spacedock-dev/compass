@@ -187,9 +187,13 @@ Linked children follow their visible parent on Sessions and name it with a page 
 parent gets a second line, `Waiting on child "title"`. Sessions and the session page link it to the
 child even when a filter hides the child. An open question takes precedence over the child wait.
 A reported session end takes precedence in the state label. If the board still publishes a
-question for that session, you can answer it on the session page. The Sessions legend marks an
-observed turn stop as Quiet and a reported session end as Ended. If scanning cannot see a turn end,
-the row explains that in words.
+question for that session, you can answer it on the session page. Sessions shows a status tile
+beside the title when the harness publishes enough evidence. The legend names each tile,
+including Quiet for an observed turn stop and Ended for a reported session end. If scanning
+cannot see a turn end, the row explains that in words. Slightly off course and Off course appear
+as progress pills when a saved check found a departure that still holds. An absence appears in
+muted text or leaves the space blank. Live estimates stay on the session page. Codex rows carry
+no progress level.
 An unmatched declaration says the parent is not on the board and is not linked. Open
 a parent to see its linked children and their states, or a child to open its parent. Group labels
 stay separate from goals; inherited labels say "from parent". Group by group arranges the kept

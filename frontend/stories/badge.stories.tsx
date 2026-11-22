@@ -4,12 +4,26 @@ import { Badge } from '../src/ui/badge';
 const meta = { title: 'UI/Badge', component: Badge } satisfies Meta<typeof Badge>;
 export default meta;
 type Story = StoryObj<typeof meta>;
-export const SessionState: Story = {
-  args: { variant: 'session-state', children: 'Badge session-state' },
-  play: async ({ canvasElement, args }) => {
-    const canvas = within(canvasElement);
-    await expect(canvas.getByText(args.children as string)).toBeVisible();
-  },
+const smallBadge: NonNullable<Story['play']> = async ({ canvasElement, args }) => {
+  const badge = within(canvasElement).getByText(String(args.children));
+  await expect(badge).toBeVisible();
+  await expect(badge).toHaveAttribute('data-variant', args.variant ?? 'status');
+  const css = getComputedStyle(badge);
+  await expect(css.fontSize).toBe('13px');
+  await expect(css.fontFamily).toContain('Inter');
+  await expect(css.textTransform).toBe('none');
+};
+export const Status: Story = {
+  args: { children: 'Waiting on you' },
+  play: smallBadge,
+};
+export const Progress: Story = {
+  args: { variant: 'progress', tone: 'high', children: 'Off course' },
+  play: smallBadge,
+};
+export const CountChip: Story = {
+  args: { variant: 'count-chip', children: '3' },
+  play: smallBadge,
 };
 export const DriftPill: Story = {
   args: { variant: 'drift-pill', children: 'Badge drift-pill' },

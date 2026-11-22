@@ -8,6 +8,7 @@ import { mountShell } from '../shell/testing';
 import { retractSessionCopies } from '../../test/sessionCopyDeviation';
 import { projectRecordedRowOpener } from '../../test/recordedCommandOpener';
 import { maskRevisionWords } from '../../test/revisionWordDeviation';
+import { maskSessionRowPresentation } from '../../test/sessionRowDeviation';
 
 /* The Sessions screen, held to the legacy page by what a reader can read. The legacy `nextSessionsView`
    runs unchanged over a generated payload and this screen renders the same payload in the real shell;
@@ -48,11 +49,7 @@ const norm = (node: Element | null): string =>
 
 const DEVIATIONS = {
   // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
-  stateLines: (root: ParentNode) => {
-    for (const state of root.querySelectorAll('[data-next-row-state],.next-operation-scan-only')) {
-      state.remove();
-    }
-  },
+  rowPresentation: maskSessionRowPresentation,
   // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
   liveMarks: (root: DocumentFragment) => {
     for (const mark of root.querySelectorAll('.next-operation-live-glyph'))
@@ -122,7 +119,7 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
   retractSessionCopies(template.content);
   DEVIATIONS.outcomeMarks(template.content);
   DEVIATIONS.liveMarks(template.content);
-  DEVIATIONS.stateLines(template.content);
+  DEVIATIONS.rowPresentation(template.content, true);
   const header = template.content.querySelector('.next-operations-header');
   header?.querySelector(':scope > span')?.remove();
   header?.querySelectorAll('summary').forEach((node) => node.remove());
@@ -186,27 +183,13 @@ async function reactSummary(payload: unknown): Promise<Summary> {
   await page.settle();
   const root = page.container.querySelector('[data-next-view-body="sessions"]');
   if (!root) throw new Error('The Sessions screen did not draw.');
-  DEVIATIONS.stateLines(root);
+  DEVIATIONS.rowPresentation(root);
   for (const text of root.querySelectorAll('[data-next-operation-fact="now"] strong')) {
     if (text.textContent === 'No recent activity') text.textContent = 'quiet';
   }
-  const levels = [...root.querySelectorAll('[data-next-row-drift-level]')].map(norm);
   const drawn = summarize(root);
   page.unmount();
-  /* The departures above: the state word is not in the legacy row, and the drift chip's level is a word the
-     legacy chip never had (SessionsView.test holds both). */
-  const result: Summary = {
-    ...drawn,
-    groups: drawn.groups.map((group) => ({
-      ...group,
-      rows: group.rows.map((row) => {
-        let text = row.text;
-        for (const level of levels) text = text.replace(level, 'Drift');
-        return { ...row, text };
-      }),
-    })),
-  };
-  return result;
+  return drawn;
 }
 
 describe('the Sessions screen reads as the legacy screen does, over generated payloads', () => {
@@ -276,7 +259,7 @@ describe('the Sessions screen reads as the legacy screen does, over generated pa
       seen.history += (text.match(/"kind":"history"/g) ?? []).length;
       seen.ended += (html.match(/NOW · ENDED/g) ?? []).length;
       seen.asked += (text.match(/BLOCKED · /g) ?? []).length;
-      seen.drift += (text.match(/Drift · /g) ?? []).length;
+      seen.drift += (html.match(/class="next-operation-drift"/g) ?? []).length;
       seen.shared += (html.match(/sessions share this display label/g) ?? []).length;
       seen.goalTyped += (text.match(/GOAL · YOUR WORDS|GOAL · FROM YOUR PROMPT/g) ?? []).length;
       seen.annotationsOff += (text.match(/Annotations off/g) ?? []).length;

@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { contrastOf, paintedColors } from './a11y.audit';
 import { act, useEffect, useState } from 'react';
 import { App } from '../src/App';
 import { createRouter } from '../src/router/router';
@@ -38,16 +39,18 @@ const current = (): Rig => {
 function Board({
   annotate = true,
   showAll = false,
+  progressPills = false,
   hash = '#n=sessions',
 }: {
   readonly annotate?: boolean;
   readonly showAll?: boolean;
+  readonly progressPills?: boolean;
   readonly hash?: string;
 }) {
   const [shell] = useState(() => {
     const history = fakeRouterEnvironment(hash);
     const clock = createFakeClock();
-    const live: Rig['live'] = { generated: GENERATED, annotate, showAll };
+    const live: Rig['live'] = { generated: GENERATED, annotate, showAll, progressPills };
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
     const made = createShell({
       env: createFakeEnvironment({ clock }),
@@ -99,7 +102,49 @@ export const StatusLegend: Story = {
       await expect(label).toBeVisible();
       await expect(label.closest('li')?.querySelector(`svg[data-icon="${icon}"]`)).toBeVisible();
     }
-    const quiet = rowOf(canvasElement, 'D')?.querySelector('[data-next-row-state]');
+    const canvas = within(canvasElement);
+    for (const [id, name] of [
+      ['A', 'Waiting on you'],
+      ['B', 'Working'],
+      ['D', 'Quiet'],
+      ['E', 'Ended'],
+    ] as const) {
+      const row = rowOf(canvasElement, id);
+      if (!row) throw new Error(`Missing row ${id}`);
+      const tile = within(row).getByRole('img', { name });
+      await expect(within(row).getAllByRole('img')).toHaveLength(1);
+      await expect(tile).toBeVisible();
+      const css = getComputedStyle(tile);
+      await expect([css.width, css.height, css.borderRadius]).toEqual(['40px', '40px', '12px']);
+      await expect(css.fontFamily).toContain('Inter');
+      await expect(css.textTransform).toBe('none');
+      await expect(tile.textContent).toBe('');
+      const glyph = tile.querySelector('svg');
+      if (!glyph) throw new Error(`Missing glyph for ${name}`);
+      const colors = paintedColors(glyph);
+      if (!colors) throw new Error(`Missing painted colours for ${name}`);
+      await expect(contrastOf(colors.foreground, colors.background)).toBeGreaterThanOrEqual(3);
+      if (name === 'Quiet') {
+        // The leading path of Phosphor Moon Bold, including its 12px corner arcs.
+        await expect(glyph.querySelector('path')?.getAttribute('d')).toMatch(
+          /^M236\.37,139\.4a12,12,0,0,0-12-3A84\.07,84\.07/,
+        );
+      }
+    }
+    for (const word of ['Finished', 'Paused', 'Idle']) {
+      await expect(canvas.queryByText(word, { exact: true })).toBeNull();
+      await expect(canvas.queryByRole('img', { name: word })).toBeNull();
+    }
+    const first = rowOf(canvasElement, 'A');
+    if (!first) throw new Error('Missing first row');
+    const waiting = within(first).getByRole('img', { name: 'Waiting on you' });
+    await userEvent.click(waiting);
+    await userEvent.tab({ shift: true });
+    await userEvent.tab();
+    await expect(waiting).toHaveFocus();
+    const tooltip = await within(document.body).findByRole('tooltip');
+    await expect(tooltip).toHaveTextContent(/^Waiting on you$/);
+    await userEvent.keyboard('{Escape}');
     const scan = rowOf(canvasElement, 'F')?.querySelector('[data-next-row-state]');
     await expect(scan).toBeVisible();
     await expect(scan).toHaveTextContent('Read by scanning: no turn end can be observed here');
@@ -112,16 +157,54 @@ export const StatusLegend: Story = {
     );
     if (!live || !lapsed) throw new Error('Expected both Working shapes');
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    await expect(getComputedStyle(live).animationName).toBe(reduced ? 'none' : 'next-live-pulse');
+    await expect(getComputedStyle(live).animationName).toBe(
+      reduced ? 'none' : 'next-status-tile-pulse',
+    );
     await expect(getComputedStyle(lapsed).animationName).toBe('none');
-    await expect(quiet).toBeVisible();
-    await expect(quiet?.querySelector('svg[data-icon="quiet"]')).toBeVisible();
     const unknown = rowOf(canvasElement, 'J')?.querySelector('[data-next-row-state]');
     await expect(unknown).toHaveTextContent('State not published');
     await expect(unknown?.querySelector('svg')).toBeNull();
     await expect(
       canvasElement.querySelector('.next-running svg[data-icon="working"]'),
     ).toBeVisible();
+  },
+};
+
+export const StatusTilesAndProgressPills: Story = {
+  args: { progressPills: true },
+  play: async ({ canvasElement }) => {
+    await ready(canvasElement);
+    for (const [id, state, progress] of [
+      ['D', 'Quiet', 'Slightly off course'],
+      ['E', 'Ended', 'Off course'],
+    ] as const) {
+      const row = rowOf(canvasElement, id);
+      if (!row) throw new Error(`Missing row ${id}`);
+      const reads = within(row);
+      const tile = reads.getByRole('img', { name: state });
+      const title = reads.getByRole('link', { name: /^Open session/ });
+      const pill = reads.getByText(progress);
+      await expect(pill).toHaveAttribute('data-variant', 'progress');
+      await expect(getComputedStyle(pill).fontSize).toBe('13px');
+      await expect(pill.getBoundingClientRect().height).toBeLessThan(30);
+      const colors = paintedColors(pill);
+      if (!colors) throw new Error(`Missing painted colours for ${progress}`);
+      await expect(contrastOf(colors.foreground, colors.background)).toBeGreaterThanOrEqual(4.5);
+      await expect(tile.getBoundingClientRect().right).toBeLessThanOrEqual(
+        title.getBoundingClientRect().left,
+      );
+      if (window.innerWidth > 1100) {
+        await expect(
+          row.getBoundingClientRect().right - pill.getBoundingClientRect().right,
+        ).toBeLessThanOrEqual(16);
+      }
+      await expect(row.querySelectorAll('[data-slot="badge"]')).toHaveLength(1);
+    }
+    const codex = rowOf(canvasElement, 'C');
+    await expect(codex?.querySelector('[data-slot="badge"]')).toBeNull();
+    const absence = rowOf(canvasElement, 'B')?.querySelector('[data-next-row-progress-absence]');
+    await expect(absence).toHaveTextContent('Not checked yet');
+    await expect(absence?.querySelector('svg')).toBeNull();
   },
 };
 
@@ -605,8 +688,8 @@ export const StateAndDrift: Story = {
     await pick(drift, 'Drift recorded');
     await waitFor(() => expect(shownRows(canvasElement)).toBe('D'));
     await expect(
-      rowOf(canvasElement, 'D')?.querySelector('[data-next-session-drift-mark]'),
-    ).not.toBeNull();
+      rowOf(canvasElement, 'D')?.querySelector('[data-next-row-drift-level]'),
+    ).toBeNull();
     await expect(options(drift, 'drift')[0]?.box).toHaveAttribute('aria-checked', 'true');
     await expect(canvas.getByRole('button', { name: 'Drift recorded' })).toHaveAttribute(
       'aria-pressed',

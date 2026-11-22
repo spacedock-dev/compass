@@ -16,6 +16,15 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-23, Sessions rows lead with an accessible status tile. The harness follows the
+title. The board publishes a revalidated stored reading with each qualifying row, and the row
+shows one progress pill for a departure that still stands. Withheld results use muted text or
+leave the space blank. The differential comparison uses `frontend/test/sessionRowDeviation.ts`
+to set aside the old Drift mark, the new pill or absence, and the state presentation. It aligns
+title and harness order and still compares groups, row order, facts and links. The Sessions
+stories hold placement, contrast, the visible legend and the keyboard tooltip. Terminal
+grouping keeps its shared recorded answers. Terminal row wording follows in DRC-5510.
+
 2026-11-22, status, navigation and activity marks use Phosphor Bold SVGs. The Sessions and
 Project comparisons mask the retired text marks at their render sites and compare the surrounding
 words and structure. The observed-model and Project member comparisons project the old outcome
@@ -398,9 +407,9 @@ header names the token rate's unit ("44 tokens/min" where the retired page wrote
 once an intent is saved, with the entries since the intent's start beside it, and a chip for an
 entry before that start keeps its number, muted. Golden files are unchanged.
 
-The row-level placement below is permitted by the
+The historical row-level placement below was permitted by the
 [2026-11-08 owner amendment](design-reading-a-session.md#amended-2026-11-08-owner-a-stored-departing-analysis-may-name-its-level-on-a-sessions-row).
-Live estimates stay off Sessions rows.
+The 2026-11-23 entry above describes the current presentation.
 
 2026-10-20, usability review: each Sessions row leads with one state word (Working, Waiting on
 you, Idle, Ended, or State not published where the board publishes no known state) in place of the

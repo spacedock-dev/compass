@@ -11,8 +11,12 @@ import { cn } from '@/lib/utils';
 const badgeVariants = cva('', {
   variants: {
     variant: {
-      'session-state':
-        'inline-block m-0 px-[8px] py-[2px] border border-solid border-border rounded-pill text-muted-foreground [font-family:var(--mono)] text-label font-normal leading-[normal]',
+      status:
+        'inline-block px-2 py-0.5 border border-solid border-border rounded-pill [font-family:var(--sans)] text-label font-medium text-muted-foreground',
+      progress:
+        'inline-block max-w-full whitespace-nowrap px-2.5 py-0.5 border border-solid rounded-pill [font-family:var(--sans)] text-label font-semibold',
+      'count-chip':
+        'inline-block px-1.5 border border-solid border-border rounded-pill [font-family:var(--sans)] text-label font-medium text-muted-foreground',
       'drift-pill':
         'inline-flex items-center gap-[8px] max-w-full px-[10px] py-[3px] border border-solid border-border rounded-pill text-foreground text-label',
       'course-tag':
@@ -22,19 +26,29 @@ const badgeVariants = cva('', {
       'work-flag':
         'ml-auto px-[7px] py-0 border border-solid border-[var(--rule)] rounded-pill text-muted-foreground [font-family:var(--mono)] text-label font-medium leading-[1.5] [&+[data-variant=work-flag]]:ml-0',
     },
+    tone: {
+      medium: 'border-[var(--progress-slightly-off-course)] text-[var(--clay)]',
+      high: 'border-[var(--progress-off-course)] bg-[var(--progress-off-course)] text-[var(--on-accent)]',
+      extreme:
+        'border-[var(--progress-way-off-course)] bg-[var(--progress-way-off-course)] text-[var(--on-accent)]',
+    },
   },
-  defaultVariants: { variant: 'session-state' },
+  defaultVariants: { variant: 'status' },
 });
 
 function Badge({
   className,
-  variant = 'session-state',
+  variant = 'status',
+  tone,
   render,
   ...props
 }: useRender.ComponentProps<'span'> & VariantProps<typeof badgeVariants>) {
   return useRender({
     defaultTagName: 'span',
-    props: mergeProps<'span'>({ className: cn(badgeVariants({ variant }), className) }, props),
+    props: mergeProps<'span'>(
+      { className: cn(badgeVariants({ variant, tone }), className) },
+      props,
+    ),
     render,
     state: { slot: 'badge', variant },
   });

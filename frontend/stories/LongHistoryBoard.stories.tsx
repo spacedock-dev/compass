@@ -58,6 +58,10 @@ function Board({
             ? project.response.body
             : shared.response.body,
     ) as MutableRow;
+    if (reading) {
+      const row = (data['sessions'] as MutableRow[]).find((one) => one['sid'] === 'a1b2c3d4');
+      if (row) row['stored_progress'] = reading === 'current' ? 'medium' : 'out_of_date';
+    }
     if (missingExplanation) {
       const rows = data['sessions'] as MutableRow[];
       const token = rows.find((row) => row['sid'] === '33333333')?.['delivery_binding_why'];
@@ -125,10 +129,8 @@ export const StoredReadingNamesItsLevel: Story = {
     mounted.router.navigate({ view: 'sessions' });
     await waitFor(() =>
       expect(
-        canvasElement.querySelector(
-          '[data-next-session="a1b2c3d4"] [data-next-session-drift-mark]',
-        ),
-      ).toHaveTextContent('Drift: Medium'),
+        canvasElement.querySelector('[data-next-session="a1b2c3d4"] [data-next-row-drift-level]'),
+      ).toHaveTextContent('Slightly off course'),
     );
     await expect(canvasElement.textContent).not.toContain('why:');
   },
@@ -144,7 +146,9 @@ async function absentReading(canvasElement: HTMLElement) {
   );
   const row = canvasElement.querySelector('[data-next-session="a1b2c3d4"]');
   await expect(row?.querySelector('[data-next-row-drift-level]')).toBeNull();
-  await expect(row?.textContent).not.toMatch(/Medium|High/);
+  await expect(row?.querySelector('[data-next-row-progress-absence]')).toHaveTextContent(
+    'Out of date',
+  );
 }
 export const StaleReadingNamesNoRowLevel: Story = {
   args: { view: 'rows', reading: 'stale' },
@@ -174,8 +178,10 @@ export const LiveEstimateNamesNoRowLevel: Story = {
       expect(canvasElement.querySelector('[data-next-session="44444444"]')).not.toBeNull(),
     );
     await expect(
-      canvasElement.querySelector('[data-next-session="44444444"] [data-next-session-drift-mark]'),
-    ).toHaveTextContent(/^Drift · /);
+      canvasElement.querySelector(
+        '[data-next-session="44444444"] [data-next-row-progress-absence]',
+      ),
+    ).toHaveTextContent('Not checked yet');
     await expect(canvasElement.querySelector('[data-next-row-drift-level]')).toBeNull();
   },
 };
