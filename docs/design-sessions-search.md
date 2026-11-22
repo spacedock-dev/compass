@@ -35,8 +35,8 @@ its header, "N of M shown", with its own Clear filters button for a reader who h
 the bar. M is the group's unfiltered size, so the M for Active now always equals the ACTIVE NOW figure;
 both are `groups.active.length`.
 
-ACTIVE NOW and WORKING stay board-wide while filtering, and so do the header's running count, the
-reported-blocks button, the favicon and the document title. The result line says so: "Showing 4 of
+ACTIVE NOW and WORKING stay board-wide while filtering, as do the header's Working pill,
+the Needs you badge, the favicon and the document title. The result line reads "Showing 4 of
 12 sessions. ACTIVE NOW and WORKING above count the whole board." The owner chose this on
 2026-10-29. Making the figures follow the filter would change what they have meant since 2026-10-20,
 and the recorded answers they are held to.
@@ -261,9 +261,9 @@ Whenever a hidden row's `rowState()` is "Waiting on you", a static amber `Alert`
 announce) under the result line says so: "1 session waiting on you is hidden by these filters." With
 one hidden, it offers Open it, a link to that session named "Open it: " and the session's title, and
 Clear filters. With two or more, it offers
-Clear filters and See them on Attention. The line is recomputed on every displayed board, so a session
-that starts waiting behind the filters is surfaced at the next paint. The header's reported-blocks
-button and the favicon are board-wide, so neither goes quiet behind a filter.
+Clear filters and See them on Needs you. The line is recomputed on every displayed board, so a session
+that starts waiting behind the filters is surfaced at the next paint. The Needs you badge and
+favicon stay board-wide.
 
 When nothing matches, the result says why where it can: search reads titles, goals and prompts, not
 the conversation itself; sessions outside the window are not loaded; and sessions the reader marked

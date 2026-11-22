@@ -493,8 +493,10 @@ describe('the hidden-waiting guard across polls', () => {
     const guard = document.querySelector<HTMLElement>('[data-sessions-hidden-waiting]');
     expect(guard?.textContent).toContain('2 sessions waiting on you are hidden by these filters.');
     expect(
-      within(guard as HTMLElement).getByRole('link', { name: 'See them on Attention' }),
-    ).toBeTruthy();
+      within(guard as HTMLElement)
+        .getByRole('link', { name: 'See them on Needs you' })
+        .getAttribute('href'),
+    ).toBe('#n=attention');
     expect(within(guard as HTMLElement).queryByRole('link', { name: /^Open it/ })).toBeNull();
   });
 
@@ -508,7 +510,7 @@ describe('the hidden-waiting guard across polls', () => {
       ),
     ).toEqual([
       'Gemini and Goose do not report when a session is waiting, so 2 of their sessions could be waiting without showing here.',
-      "Codex, OpenCode and Pi report a wait only in some setups; Attention's coverage says which.",
+      'Codex, OpenCode and Pi report a wait only in some setups. See coverage on Needs you.',
     ]);
   });
 });

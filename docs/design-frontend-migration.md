@@ -29,6 +29,19 @@ session. The keyboard proof uses `n` for Needs you and checks that `a` leaves th
 The update notice keeps the release link and version-specific dismissal in a light banner.
 The recorded answers stay fixed.
 
+Filter warnings, the native wait's resume link and the Full activity link use Needs you and
+Goal history for their existing destinations. The session comparisons project the new link name
+and description only in the recorded Full activity pointer. The Goal history browser comparison
+projects just the recorded level-one heading. The notification browser proof checks that focus
+returns to the current Needs you link with its badge count after permission is granted.
+
+A session with an exact request retains its native input signal on the same queue row and shows the
+reported reason inside Asked you on entry. The generated attention comparisons set aside that
+signal and its contribution to the additional-signal count. The browser comparison expects both
+on the fixture's five waiting rows. The session comparisons set aside the added note inside
+Asked you and compare the surrounding question and controls. The routed shell test checks both
+facts in view and one link for the waiting session.
+
 2026-11-23, Sessions shows one inline Worth a look flag beside the evidence-based status tile.
 The dirty-end warning and its git evidence move from Now to that line on the copy with the
 measurement. A session that counts as a wait keeps its request and one plain dirty-end fact.

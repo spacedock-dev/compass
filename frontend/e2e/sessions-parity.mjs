@@ -208,6 +208,8 @@ const summarizeDetail = () => {
     header.querySelector('.next-session-detail-bar').prepend(meta);
   if (meta) meta.textContent = meta.textContent.replace(/ · \d+ entr(?:y|ies)\b/, '');
   const ask = clone.querySelector('[data-next-session-section="ask"]');
+  // The recording dropped the native wait detail when an exact request was open.
+  ask?.querySelector('[data-next-session-wait-note]')?.remove();
   return {
     attrs: [
       article.getAttribute('data-next-session-detail'),
@@ -732,6 +734,10 @@ try {
         await live.page.goto(board.react.origin + '/' + sessionFragment(gate));
         await reactReady(live.page);
         await live.page.waitForSelector('[data-next-answer]');
+        await live.page
+          .getByRole('region', { name: 'Asked you' })
+          .getByText('Harness reports: waiting on a permission prompt', { exact: true })
+          .waitFor();
         const options = await live.page.locator('[data-next-answer]').allInnerTexts();
         assert.deepEqual(
           options,

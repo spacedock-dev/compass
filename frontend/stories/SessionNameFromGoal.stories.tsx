@@ -137,9 +137,13 @@ export const UntitledWaitingSession: Story = {
     const trail = within(canvas.getByRole('navigation', { name: 'Breadcrumb' }));
     await expect(trail.getByText(fallback)).toHaveAttribute('aria-current', 'page');
     await waitFor(() => expect(document.title).toBe(`● Needs you · ${fallback} — demo — Compass`));
-    await expect(canvas.getByRole('status', { name: 'Working sessions' })).toHaveTextContent(
-      'Nothing working right now',
-    );
+    const pill = canvas.getByRole('status', { name: 'Working sessions' });
+    await expect(pill).toHaveTextContent('Nothing working right now');
+    await expect(pill.querySelector('[aria-hidden="true"]')).toBeNull();
+    await expect(pill).toHaveStyle({
+      backgroundColor: 'rgb(238, 241, 244)',
+      color: 'rgb(82, 96, 109)',
+    });
     const nav = within(canvas.getByRole('navigation', { name: 'Primary' }));
     await expect(nav.getByRole('link', { name: 'Needs you 1' })).toBeVisible();
   },

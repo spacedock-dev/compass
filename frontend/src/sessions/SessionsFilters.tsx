@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { Disclosure, disclosureKey, useControls, useFocusKey } from '../controls';
 import { DraftInput } from '../controls/DraftField';
+import { SHOWN } from '../language/glossary';
 import { datedClock } from '../observed/values';
 import { useNavigate } from '../shell/context';
 import { keyIsTaken, SKIP_ROLE_SELECTOR } from '../shell/keyboard';
@@ -1087,7 +1088,7 @@ export function SessionsFilters({
               route={{ view: 'attention', project: null, session: null }}
               className="inline-flex items-center text-foreground underline"
             >
-              See them on Attention
+              See them on {SHOWN.attention}
             </RouteAnchor>
           ) : null}
         </Alert>

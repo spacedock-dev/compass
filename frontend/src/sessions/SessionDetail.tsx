@@ -353,6 +353,7 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
         {observed.askKnown ? (
           <AnswerBlock
             payload={payload}
+            session={session}
             observed={observed}
             asks={asks}
             title={askingTitle(labels, session)}

@@ -1,5 +1,6 @@
 import { Card } from '../ui/card';
 import { resumeCommand } from '../controls';
+import { SHOWN } from '../language/glossary';
 import type { ObservedSession } from '../observed';
 import { RouteLink } from '../shell/RouteLink';
 
@@ -10,8 +11,8 @@ export const WAITING_ANSWER_WHERE =
    exact request Compass can show or answer, so the Asked-you block never draws for it. Before this the
    pill was the page's only sign of the wait (owner, 2026-10-29): this says it is waiting, for how long,
    what the harness said of it, and where it is answered. The raise stays in the header's controls; the
-   resume command stays off this page (docs/design-reading-a-session.md, "The resume command after the
-   Copy buttons go"), so the block points to Attention for it where Attention has one. */
+   resume command lives on Needs you (docs/design-reading-a-session.md, "The resume command after the
+   Copy buttons go"). */
 export function WaitingBlock({ observed }: { readonly observed: ObservedSession }) {
   return (
     <Card
@@ -34,11 +35,11 @@ export function WaitingBlock({ observed }: { readonly observed: ObservedSession 
       </p>
       <p className="m-0 text-muted-foreground text-body">
         {WAITING_ANSWER_WHERE}
-        {/* Attention carries a command only where the harness's CLI takes one back in (Claude Code, Codex). */}
+        {/* The command needs a session id the harness's CLI accepts (Claude Code, Codex). */}
         {resumeCommand(observed.harness, String(observed.resume_id || '')) ? (
           <>
             {' The command back into it is on '}
-            <RouteLink route={{ view: 'attention' }}>Attention</RouteLink>.
+            <RouteLink route={{ view: 'attention' }}>{SHOWN.attention}</RouteLink>.
           </>
         ) : null}
       </p>

@@ -452,7 +452,7 @@ describe('the guards and sentences', () => {
     const { indexed } = run({});
     expect(waitCoverage(indexed, harnessMeta(sessionsSearchPayload() as Row))).toEqual([
       'Gemini and Goose do not report when a session is waiting, so 2 of their sessions could be waiting without showing here.',
-      "Codex, OpenCode and Pi report a wait only in some setups; Attention's coverage says which.",
+      'Codex, OpenCode and Pi report a wait only in some setups. See coverage on Needs you.',
     ]);
   });
 
@@ -461,7 +461,7 @@ describe('the guards and sentences', () => {
     expect(waitCoverage(indexed, harnessMeta(sessionsSearchPayload() as Row))).toEqual([
       'Gemini and Goose do not report when a session is waiting, so 2 of their sessions could be waiting without showing here.',
       'The wait state of 2 OpenCode and Pi sessions could not be read, so they could be waiting without showing here.',
-      "Codex, OpenCode and Pi report a wait only in some setups; Attention's coverage says which.",
+      'Codex, OpenCode and Pi report a wait only in some setups. See coverage on Needs you.',
     ]);
   });
 

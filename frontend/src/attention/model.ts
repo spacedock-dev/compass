@@ -573,7 +573,6 @@ export function attentionModel(input: unknown): AttentionModel {
   const asks = payloadAskRows(payload);
   const subjects = new Map<string, Subject>();
   const riskSubjects = new Map<string, Subject>();
-  const matchedAskOwners = new Set<string>();
 
   for (const [sourceIndex, ask] of asks.entries()) {
     if (!text(ask['question']).trim()) continue;
@@ -625,18 +624,23 @@ export function attentionModel(input: unknown): AttentionModel {
         sourceIndex,
       });
     }
-    matchedAskOwners.add(key);
   }
 
   for (const [sourceIndex, session] of sessions.entries()) {
     const key = sessionKey(session);
-    if (session['state'] !== 'needs_input' || matchedAskOwners.has(key)) continue;
+    if (session['state'] !== 'needs_input') continue;
+    const signal: Signal = { kind: 'input', section: 'needs', detail: { session }, sourceIndex };
+    const request = subjects.get(key);
+    if (request?.primaryKind === 'ask') {
+      if (endedAt(session) === null) request.signals.push(signal);
+      continue;
+    }
     const subject: Subject = {
       key,
       kind: 'session',
       section: 'needs',
       primaryKind: 'input',
-      signals: [{ kind: 'input', section: 'needs', detail: { session }, sourceIndex }],
+      signals: [signal],
       session,
       sessions: [session],
       asks: [],

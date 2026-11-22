@@ -266,14 +266,27 @@ async function write(sid, body) {
 
 try {
   const react = await newPage();
+  const openGoalHistory = async () => {
+    await react.page
+      .getByRole('navigation', { name: 'Primary' })
+      .getByRole('link', { name: 'Goal history', exact: true })
+      .click();
+    await react.page.waitForURL((url) => url.hash === '#n=intent');
+  };
 
-  /* ===================== DIFFERENTIAL: the Intent log ===================== */
+  /* ===================== DIFFERENTIAL: Goal history ===================== */
   async function compareLog(label) {
     const read = (o) => settled(() => o.page.evaluate(summarizeLog));
     await load(react, '#n=intent');
     const mine = await read(react);
-    const old = golden.observe(`log: ${label}`);
-    assert.deepEqual(norm(mine), old, `the Intent log differs from the recorded log (${label})`);
+    const old = golden
+      .observe(`log: ${label}`)
+      .map((block, index) =>
+        index === 0 && block[0] === 'heading' && block[1] === 'Intent log'
+          ? ['heading', 'Goal history']
+          : block,
+      );
+    assert.deepEqual(norm(mine), old, `Goal history differs from the recorded log (${label})`);
     return old;
   }
 
@@ -623,7 +636,7 @@ try {
       react.reset();
       await react.page.locator('nav[aria-label="Primary"] a', { hasText: 'Sessions' }).click();
       await react.page.waitForSelector('[data-next-view-body="sessions"]');
-      await react.page.locator('nav[aria-label="Primary"] a', { hasText: 'Intent log' }).click();
+      await openGoalHistory();
       await react.page.waitForSelector('[data-next-view-body="intent"]');
       await react.page.goBack();
       await react.page.goBack();
@@ -646,7 +659,7 @@ try {
       react.reset();
       const start = await resources(react.page);
       for (let i = 0; i < 4; i += 1) {
-        await react.page.locator('nav[aria-label="Primary"] a', { hasText: 'Intent log' }).click();
+        await openGoalHistory();
         await react.page.waitForSelector('[data-next-view-body="intent"]');
         await react.page.locator('nav[aria-label="Primary"] a', { hasText: 'Sessions' }).click();
         await react.page.waitForSelector('[data-next-view-body="sessions"]');
@@ -929,7 +942,7 @@ try {
       );
       assert.equal(react.log.nonGet.length, 1);
       assert.equal(react.log.nonGet[0].path, '/api/annotate');
-      await react.page.locator('nav[aria-label="Primary"] a', { hasText: 'Intent log' }).click();
+      await openGoalHistory();
       const log = await settled(() => react.page.evaluate(summarizeLog));
       assert.ok(JSON.stringify(log).includes('Your words'), 'the log kept withdrawn words');
       assert.ok(!JSON.stringify(log).includes('Fix the redirect for signed-in readers'));

@@ -763,6 +763,9 @@ export const AWaitingSessionIsNeverHiddenSilently: Story = {
     const primary = within(canvas.getByRole('navigation', { name: 'Primary' }));
     await expect(primary.getByRole('link', { name: /^Needs you [1-9]\d*$/ })).toBeVisible();
     const back = canvasElement.querySelector('[data-sessions-hidden-waiting]') as HTMLElement;
+    await poll({ bWaiting: true });
+    const needs = await within(back).findByRole('link', { name: 'See them on Needs you' });
+    await expect(needs).toHaveAttribute('href', '#n=attention');
     await userEvent.click(within(back).getByRole('button', { name: 'Clear filters' }));
     await waitFor(() => expect(shownRows(canvasElement)).toHaveLength(12));
     await expect(canvas.getByRole('searchbox', { name: 'Search sessions' })).toHaveFocus();
@@ -818,7 +821,7 @@ export const StateAndDrift: Story = {
     );
     await expect(coverage).toEqual([
       'Gemini and Goose do not report when a session is waiting, so 2 of their sessions could be waiting without showing here.',
-      "Codex, OpenCode and Pi report a wait only in some setups; Attention's coverage says which.",
+      'Codex, OpenCode and Pi report a wait only in some setups. See coverage on Needs you.',
     ]);
     await closeFilters();
     await userEvent.click(canvas.getByRole('button', { name: 'Clear all' }));

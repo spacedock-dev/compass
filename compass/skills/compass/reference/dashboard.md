@@ -258,6 +258,8 @@ checkout warnings and requests whose session ownership is not established. Those
 missing observations instead of treating an unmeasured harness as an all-clear.
 
 **Needs you now** combines native harness gates with questions registered through `ask_operator`.
+When one session has both, its row and session page show the question and the reported reason
+for the native wait. The session counts once.
 Native permission prompts, plan approvals, and harness questions must still be answered in that
 session's terminal; Compass does not mark them answered on the session's behalf. A Claude Code or
 Codex row therefore carries a control that copies the command that harness's own CLI takes to

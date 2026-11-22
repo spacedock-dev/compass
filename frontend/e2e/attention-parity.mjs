@@ -298,6 +298,23 @@ const readControl = () => {
 };
 const controlText = (page) => page.evaluate(readControl);
 
+async function needsYouFocus(page) {
+  const focused = await settled(page, () => {
+    const active = globalThis.document.activeElement;
+    return {
+      primary: active?.matches('nav[aria-label="Primary"] a[aria-current="page"]'),
+      href: active?.getAttribute('href') ?? null,
+      text: active?.textContent ?? '',
+    };
+  });
+  assert.deepEqual(
+    focused,
+    { primary: true, href: '#n=attention', text: 'Needs you 4' },
+    'focus was dropped with the button',
+  );
+  return focused.text;
+}
+
 /* ---- pages ---- */
 const holder = { body: null, revision: 10 };
 const lanePosts = [];
@@ -418,6 +435,27 @@ const sectionToggle = (page, name) => page.locator(`[data-next-attention-toggle=
 const subjectSelector = (sid) =>
   `[data-next-attention-subject="${`session:["claude","${sid}"]`.replaceAll('"', '\\"')}"]`;
 
+// The screen fixture gives each of its five exact requests a native permission wait too.
+function withRecordedFixtureWaits(summary) {
+  return {
+    ...summary,
+    sections: summary.sections.map((section) =>
+      section.name === 'needs'
+        ? {
+            ...section,
+            items: section.items.map((item) => ({
+              ...item,
+              text: item.text.replace(
+                /^Question waitingIDENTITY(.+?)(NOWApprove step [1-5]\?2 published options)SOURCE/,
+                'Question waiting · 1 additional source signalIDENTITY$1$2$1 · Input signal observed: waiting on a permission promptSOURCE',
+              ),
+            })),
+          }
+        : section,
+    ),
+  };
+}
+
 try {
   await prepareCopy();
   browser = await chromium.launch();
@@ -437,7 +475,7 @@ try {
       assert.equal(counters.length, 2);
       assert.ok(counters[0].includes('EXACT REQUESTS'));
       assert.ok(counters[1].includes('REPORTED BLOCKS'));
-      const recorded = golden.observe('the screen, collapsed');
+      const recorded = withRecordedFixtureWaits(golden.observe('the screen, collapsed'));
       const unchangedAttention = (summary) =>
         unchangedAttentionLocations({
           ...summary,
@@ -451,7 +489,9 @@ try {
       );
       for (const name of ['needs', 'next']) await sectionToggle(react.page, name).click();
       const mineOpen = await settled(react.page, readAttention);
-      const recordedOpen = golden.observe('the screen, every section expanded');
+      const recordedOpen = withRecordedFixtureWaits(
+        golden.observe('the screen, every section expanded'),
+      );
       assert.deepEqual(unchangedAttention(clockless(mineOpen)), unchangedAttention(recordedOpen));
       assert.ok(
         mineOpen.sections
@@ -688,18 +728,7 @@ try {
         await flowReact.page.getByRole('button', { name: 'Enable notifications' }).count(),
         0,
       );
-      const focused = await settled(flowReact.page, () => {
-        const active = globalThis.document.activeElement;
-        return {
-          current: active?.getAttribute('aria-current') ?? null,
-          text: active?.textContent ?? '',
-        };
-      });
-      assert.deepEqual(
-        focused,
-        { current: 'page', text: 'Attention' },
-        'focus was dropped with the button',
-      );
+      await needsYouFocus(flowReact.page);
       const posts = postsOf(flowReact);
       assert.equal(posts.length, 1, `React reported the lane ${posts.length} times`);
       assert.deepEqual(JSON.parse(posts[0].body), { supported: true, permission: 'granted' });
@@ -1044,9 +1073,7 @@ try {
           );
           await pause(300);
           assert.equal((await notifyState(side.page)).asked, 1);
-          seen.afterEnable = await focusedLabel(side.page);
-          // The button is gone, so focus is handed to the Attention item of the primary navigation, as a press does.
-          assert.equal(seen.afterEnable, 'Attention', 'focus was dropped with the button');
+          seen.afterEnable = await needsYouFocus(side.page);
         }
         await side.close();
       }

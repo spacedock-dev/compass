@@ -1,5 +1,5 @@
 import { restoredMemberKeys, unchangedAttention } from '../../test/location_departure';
-import type { AttentionModel } from './model';
+import type { AttentionModel, Subject } from './model';
 import { describe, expect, it } from 'vitest';
 import { genPayload, mulberry32, pick } from '../observed/generate.test.helper';
 import { canonical, firstDifference } from '../observed/legacy.test.helper';
@@ -20,17 +20,26 @@ const legacy = loadLegacyAttention();
 const CASES = 80;
 const SEEDS = CASES;
 
+// Overlapping waits retain the input signal beside the question. The recording dropped that signal.
+function withoutOverlappingInput(subject: Subject): Subject {
+  return subject.primaryKind === 'ask'
+    ? { ...subject, signals: subject.signals.filter((signal) => signal.kind !== 'input') }
+    : subject;
+}
+
 describe('nextAttentionModel and attentionModel agree over generated payloads', () => {
   it(`agrees on all ${String(SEEDS)} seeds`, () => {
     const failures: string[] = [];
     for (let seed = 1; seed <= SEEDS; seed += 1) {
       const payload = genPayload(seed);
       const old = legacy.model(payload);
-      const mine = attentionModel(payload) as unknown as Record<string, unknown>;
+      const mine = attentionModel(payload);
       const restored = restoredMemberKeys(old as unknown as AttentionModel);
       const found = firstDifference(
         canonical(unchangedAttention(old as unknown as AttentionModel, restored)),
-        canonical(unchangedAttention(mine as unknown as AttentionModel, restored)),
+        canonical(
+          unchangedAttention({ ...mine, needs: mine.needs.map(withoutOverlappingInput) }, restored),
+        ),
       );
       if (found) failures.push(`seed ${String(seed)}: ${found}`);
       if (failures.length >= 5) break;
@@ -212,7 +221,7 @@ describe('the sentences a subject is read through agree with the legacy builders
           if (old['kind'] === 'collision') return;
           if (!subject) throw new Error(`Unchanged subject missing: ${String(old['key'])}`);
           const current = [
-            subjectNow(subject, model),
+            subjectNow(withoutOverlappingInput(subject), model),
             subjectOutcome(subject, model),
             checkpointRows(subject, model),
             subjectSource(subject, model),

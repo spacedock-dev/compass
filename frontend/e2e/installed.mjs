@@ -142,9 +142,9 @@ try {
     try {
       await probe.page.goto(probe.origin + '/');
       await probe.page.getByRole('heading', { level: 1, name: 'Session operations' }).waitFor();
-      // Attention is real too: it draws its own sections from the board, and nothing stands in for it.
+      // Needs you draws its own sections from the board.
       await probe.page.goto(probe.origin + '/#n=attention');
-      await probe.page.getByRole('heading', { level: 1, name: 'Attention' }).waitFor();
+      await probe.page.getByRole('heading', { level: 1, name: 'Needs you' }).waitFor();
       await probe.page.getByRole('heading', { name: 'Not on this board yet' }).waitFor();
       assert.equal(
         await probe.page.getByText(/not available in the React interface yet/i).count(),

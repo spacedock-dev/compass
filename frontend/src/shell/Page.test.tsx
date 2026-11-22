@@ -251,6 +251,7 @@ describe('the header counts come from the displayed board', () => {
     const page = mountShell({ data: { ...data, sessions: data.sessions.slice(0, 1) } });
     await page.settle();
     expect(working().textContent).toBe('1 session working');
+    expect(working().querySelector('[aria-hidden="true"]')).toBeVisible();
   });
 
   it('counts the native wait with an exact request once and includes Worth a look but not a clean end', async () => {
@@ -263,25 +264,38 @@ describe('the header counts come from the displayed board', () => {
     await page.go('#n=attention');
     expect(primary().getByRole('link', { name: 'Needs you 3', current: 'page' })).toBe(current());
     expect(screen.getByRole('heading', { level: 1, name: 'Needs you' })).toBeVisible();
-    expect(screen.getByText('Approve the command?')).toBeVisible();
     const waiting = screen.getByRole('heading', { name: 'Needs you now (2)' }).closest('section');
     if (!waiting) throw new Error('The waiting section is missing');
-    const links = within(waiting).getAllByRole('link');
-    expect(
-      links.filter((link) => link.getAttribute('href')?.includes(':claude:gate')),
-    ).toHaveLength(1);
+    const gateLinks = within(waiting)
+      .getAllByRole('link')
+      .filter((link) => link.getAttribute('href')?.includes(':claude:gate'));
+    expect(gateLinks).toHaveLength(1);
+    const gate = gateLinks[0];
+    const row = gate?.closest('li');
+    if (!gate || !row) throw new Error('The waiting session has no row');
+    expect(within(row).getByText('Approve the command?')).toBeVisible();
+    expect(within(row).getByText(/Waiting for command approval/)).toBeVisible();
+
+    fireEvent.click(gate);
+    await page.settle();
+    const asked = screen.getByRole('region', { name: 'Asked you' });
+    expect(within(asked).getByText('Approve the command?')).toBeVisible();
+    expect(within(asked).getByText(/Waiting for command approval/)).toBeVisible();
+    expect(primary().getByRole('link', { name: 'Needs you 3', current: 'page' })).toBe(current());
   });
 
   it('claims no Working count or badge before a board, or without a published collection', async () => {
     const unread = mountShell({});
     await unread.settle();
     expect(working().textContent).toBe('Waiting for the first board.');
+    expect(working().querySelector('[aria-hidden="true"]')).toBeNull();
     expect(primary().getByRole('link', { name: 'Needs you' })).toBeVisible();
     unread.unmount();
 
     const absent = mountShell({ data: { generated: 1 } });
     await absent.settle();
     expect(working().textContent).toBe('Session data not published.');
+    expect(working().querySelector('[aria-hidden="true"]')).toBeNull();
     expect(primary().getByRole('link', { name: 'Needs you' })).toBeVisible();
   });
 
@@ -289,6 +303,7 @@ describe('the header counts come from the displayed board', () => {
     const page = mountShell({ data: { generated: 1, sessions: [] } });
     await page.settle();
     expect(working().textContent).toBe('Nothing working right now');
+    expect(working().querySelector('[aria-hidden="true"]')).toBeNull();
     expect(primary().getByRole('link', { name: 'Needs you' })).toBeVisible();
   });
 
