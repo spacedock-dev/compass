@@ -361,7 +361,8 @@ export const AtAGlanceLinksAndWorkingFilter: Story = {
       await canvas.findByRole('region', { name: 'At a glance' });
     }
     const status = within(canvas.getByRole('group', { name: 'Session status' }));
-    await userEvent.click(status.getByRole('button', { name: 'Waiting on you 1' }));
+    const waitingTab = status.getByRole('button', { name: 'Waiting on you 1' });
+    await userEvent.click(waitingTab);
     const waitingRows = within(canvas.getByRole('region', { name: 'All sessions' }));
     await waitFor(() =>
       expect(waitingRows.getAllByRole('link', { name: /^Open session / })).toHaveLength(1),
@@ -373,14 +374,12 @@ export const AtAGlanceLinksAndWorkingFilter: Story = {
     const list = canvas.getByRole('region', { name: 'All sessions' });
     const rows = () => within(list).getAllByRole('link', { name: /^Open session / });
     await expect(button).toHaveAttribute('aria-controls', list.id);
-    const waitingPreset = canvas.getByRole('button', { name: /^Waiting on you$/ });
-    await userEvent.click(waitingPreset);
-    await expect(waitingPreset).toHaveAttribute('aria-pressed', 'true');
+    await expect(waitingTab).toHaveAttribute('aria-pressed', 'true');
     const search = canvas.getByRole('searchbox', { name: 'Search sessions' });
     await userEvent.type(search, 'onboarding');
     await userEvent.click(button);
     await expect(search).toHaveValue('onboarding');
-    await expect(waitingPreset).toHaveAttribute('aria-pressed', 'false');
+    await expect(waitingTab).toHaveAttribute('aria-pressed', 'false');
     await waitFor(async () => {
       await expect(list).toHaveFocus();
       await expect(rows()).toHaveLength(1);
