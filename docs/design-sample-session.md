@@ -211,6 +211,13 @@ an increase of 8,420 bytes (0.36%) and 4,060 bytes above the old bound. The 4 Ki
 sets the allowance at the same baseline plus 452 KiB, or 2,347,595 bytes, with 36
 bytes to spare. The fixture allowance stays at 250,000 bytes. Both builds used Node 26.10.0.
 
+On 2026-11-23, the shared buttons, title links, cards and notices brought the page from
+2,347,567 bytes on the icons and style guide layer at `b64a11a3` to 2,350,359 bytes on the
+restacked buttons and cards layer, an increase of 2,792 bytes (0.12%) and 2,764 bytes above
+the previous bound. The page allowance rises by 7 KiB to the same baseline plus 459 KiB,
+or 2,354,763 bytes, leaving 4,404 bytes above the measured build. The new build used Node
+26.10.0. The fixture allowance stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.
