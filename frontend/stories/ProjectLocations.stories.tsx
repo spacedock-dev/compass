@@ -83,6 +83,32 @@ const meta = { title: 'Attention/Project locations', component: Board } satisfie
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+export const ProjectShellLabels: Story = {
+  args: { hash: '#n=project:audits' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const nav = within(canvas.getByRole('navigation', { name: 'Primary' }));
+    await expect(nav.getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Sessions',
+      'Projects',
+      'Attention',
+      'Intent log',
+      'Settings',
+    ]);
+    await expect(nav.getByRole('link', { name: 'Projects', current: 'page' })).toBeVisible();
+    const crumb = within(canvas.getByRole('navigation', { name: 'Breadcrumb' }));
+    await expect(crumb.getByRole('link', { name: 'Projects' })).toHaveAttribute(
+      'href',
+      '#n=projects',
+    );
+    await expect(crumb.getByText('audits')).toHaveAttribute('aria-current', 'page');
+    const tabs = await canvas.findByRole('tablist', { name: 'Project cockpit views' });
+    await expect(within(tabs).getByRole('tab', { name: 'Now', selected: true })).toBeVisible();
+    for (const name of [/^Course/, /^Decisions/, /^Console/])
+      await expect(within(tabs).getByRole('tab', { name })).toBeVisible();
+  },
+};
+
 export const OneMeasuredLocation: Story = {
   play: async ({ canvasElement }) => {
     await within(canvasElement).findByText(/of 9 sessions carry a subject/);
