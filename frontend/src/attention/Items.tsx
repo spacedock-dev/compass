@@ -74,7 +74,8 @@ export function SubjectItem({
   const hasNativeWait =
     subject.section === 'needs' &&
     subject.asks.length > 0 &&
-    subject.session?.['state'] === 'needs_input';
+    subject.session?.['state'] === 'needs_input' &&
+    !subject.signals.some(({ kind }) => kind === 'input');
   const now = subjectNow(subject, model);
   const nativeWait = hasNativeWait ? inputNow(subject.session) : null;
   const checkpoints = checkpointRows(subject, model);

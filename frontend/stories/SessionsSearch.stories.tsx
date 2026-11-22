@@ -138,9 +138,12 @@ function Board({
                     ? limitedBoard
                     : flagBoard === 'empty'
                       ? {
-                          sessions: live.flagPoll
-                            ? worthALookBoard().sessions.filter(({ sid }) => sid === 'clean-end')
-                            : [],
+                          sessions:
+                            live.flagPoll || live.generated !== GENERATED
+                              ? worthALookBoard().sessions.filter(
+                                  ({ sid }) => sid === (live.flagPoll ? 'clean-end' : 'gate'),
+                                )
+                              : [],
                         }
                       : flagBoard === 'failed'
                         ? {
