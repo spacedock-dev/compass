@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { installChoiceRelease } from '../controls/displayGate';
+import { SHOWN } from '../language/glossary';
 import { useBoardRuntime } from '../transport/hooks';
 import { FALLBACK_POLL_MS, UNCOORDINATED_POLL_MS } from '../transport/live';
 import { Breadcrumb } from './Breadcrumb';
@@ -10,7 +11,7 @@ import { UpdateNotice } from './UpdateNotice';
 import { Notices } from './Notices';
 import { findSession } from './derive';
 import { selectObserved } from '../observed/select';
-import { showFavicon, WAITING_TITLE_PREFIX } from './favicon';
+import { showFavicon } from './favicon';
 import { documentTitle } from './title';
 import { RoutedView } from './views';
 
@@ -69,7 +70,7 @@ export function Page() {
         row.project === String(shown.project ?? '') &&
         (row.isNeeds || row.askKnown),
     );
-  const title = `${waiting ? WAITING_TITLE_PREFIX : ''}${documentTitle(route, snapshot.data)}`;
+  const title = `${waiting ? `${SHOWN.waitingTitle} ` : ''}${documentTitle(route, snapshot.data)}`;
   useEffect(() => {
     document.title = title;
     showFavicon(document, waiting);

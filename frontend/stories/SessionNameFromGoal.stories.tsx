@@ -44,9 +44,28 @@ const SESSIONS = [
   },
 ];
 
-function Example({ hash }: { readonly hash: string }) {
+function Example({
+  hash,
+  commandOnly = false,
+}: {
+  readonly hash: string;
+  readonly commandOnly?: boolean;
+}) {
   const [shell] = useState(() => {
     const history = fakeRouterEnvironment(hash);
+    const sessions = commandOnly
+      ? [
+          ...SESSIONS,
+          {
+            harness: 'claude',
+            sid: 'command',
+            project: 'demo',
+            first_prompt_control: true,
+            state: 'needs_input',
+            subagents: [{}],
+          },
+        ]
+      : SESSIONS;
     return createShell({
       env: createFakeEnvironment({ clock: createFakeClock() }),
       router: createRouter(history.env),
@@ -57,8 +76,7 @@ function Example({ hash }: { readonly hash: string }) {
       reducedMotion: () => true,
       fetch: (url) => {
         const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
-        if (url.startsWith('/api/data'))
-          return Promise.resolve(json({ generated: NOW, sessions: SESSIONS }));
+        if (url.startsWith('/api/data')) return Promise.resolve(json({ generated: NOW, sessions }));
         return Promise.resolve(json({}));
       },
     });
@@ -107,5 +125,19 @@ export const SessionWithoutGoalKeepsItsName: Story = {
   play: async ({ canvasElement }) => {
     await within(canvasElement).findByRole('heading', { level: 1, name: PLAIN });
     await waitFor(() => expect(document.title).toBe(`${PLAIN} — demo — Compass`));
+  },
+};
+
+export const UntitledWaitingSession: Story = {
+  args: { hash: '#n=session:demo:claude:command', commandOnly: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const fallback = 'No name: the session opened with a command';
+    await expect(await canvas.findByRole('heading', { level: 1, name: fallback })).toBeVisible();
+    const trail = within(canvas.getByRole('navigation', { name: 'Breadcrumb' }));
+    await expect(trail.getByText(fallback)).toHaveAttribute('aria-current', 'page');
+    await waitFor(() => expect(document.title).toBe(`● Needs you · ${fallback} — demo — Compass`));
+    await expect(canvas.getByText('0 running · 1 subagent observed')).toBeVisible();
+    await expect(canvas.getByRole('button', { name: '1 reported block' })).toBeVisible();
   },
 };

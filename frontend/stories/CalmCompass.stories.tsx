@@ -516,6 +516,7 @@ export const StyleGuide: Story = {
       ['Needs you', 'Attention'],
       ['Goal history', 'Intent log'],
       ['Quiet', 'Idle'],
+      ['Update my goal instead', 'Update intent instead'],
     ] as const) {
       const item = within(words.getByRole('row', { name: plain + ' ' + earlier }));
       await expect(item.getByRole('rowheader', { name: plain })).toBeVisible();

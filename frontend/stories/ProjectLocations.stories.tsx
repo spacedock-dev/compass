@@ -103,9 +103,19 @@ export const ProjectShellLabels: Story = {
     );
     await expect(crumb.getByText('audits')).toHaveAttribute('aria-current', 'page');
     const tabs = await canvas.findByRole('tablist', { name: 'Project cockpit views' });
+    const triggers = within(tabs).getAllByRole('tab');
+    const labels = triggers.map((tab) =>
+      Array.from(tab.childNodes)
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent)
+        .join(''),
+    );
+    await expect(labels).toEqual(['Now', 'Course', 'Decisions', 'Console']);
     await expect(within(tabs).getByRole('tab', { name: 'Now', selected: true })).toBeVisible();
-    for (const name of [/^Course/, /^Decisions/, /^Console/])
-      await expect(within(tabs).getByRole('tab', { name })).toBeVisible();
+    const course = within(tabs).getByRole('tab', {
+      name: 'CourseNo observed state changes observed',
+    });
+    await expect(within(course).getByText('0')).toBeVisible();
   },
 };
 

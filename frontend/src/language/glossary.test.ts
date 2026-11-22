@@ -1,41 +1,95 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
 import { screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PROJECT_TABS, TOP_LEVEL_VIEWS } from '../router/grammar';
 import { BOARD, mountShell } from '../shell/testing';
-import { GLOSSARY } from './glossary';
+import { documentTitle } from '../shell/title';
+import { GLOSSARY, SHOWN } from './glossary';
+
+// Keep the real record for agreement checks and give shell tests a replaceable copy of its wording.
+vi.mock(import('./glossary'), async (load) => {
+  const glossary = await load();
+  return { ...glossary, SHOWN: { ...glossary.SHOWN } };
+});
+
+const released = { ...SHOWN };
+afterEach(() => {
+  Object.assign(SHOWN, released);
+});
+
+const tabLabel = (tab: HTMLElement): string =>
+  Array.from(tab.childNodes)
+    .filter((node) => node.nodeType === Node.TEXT_NODE)
+    .map((node) => node.textContent)
+    .join('');
+
+function designColumns(design: string): string[][] {
+  const glossary = design.split(/^## /m).find((section) => /^Glossary\r?\n/.test(section));
+  if (!glossary) throw new Error('The design record has no Glossary section.');
+  const tables = glossary
+    .split(/\r?\n[ \t]*\r?\n/)
+    .map((block) => block.split(/\r?\n/))
+    .filter(([, separator]) => /^\|(?:\s*:?-+:?\s*\|){5}$/.test(separator?.trim() ?? ''));
+  const [table] = tables;
+  if (!table || tables.length !== 1) throw new Error('Expected one five-column glossary table.');
+  return table.slice(2).map((row) => {
+    const cells = row
+      .trim()
+      .replace(/^\||\|$/g, '')
+      .split('|')
+      .map((cell) => cell.trim());
+    if (cells.length !== 5) throw new Error(`Expected five glossary cells in: ${row}`);
+    return cells;
+  });
+}
+
+const design = readFileSync('docs/design-calm-compass.md', 'utf8');
+const moduleColumns = Object.values(GLOSSARY).map(
+  ({ plain, replaces, technical, distinctFrom, exceptions }) => [
+    plain,
+    replaces,
+    technical,
+    distinctFrom,
+    exceptions,
+  ],
+);
 
 describe('the first-layer glossary', () => {
   it('matches every row of the design record in order', () => {
-    const design = readFileSync('docs/design-calm-compass.md', 'utf8');
-    const glossary = design.split(/^## /m).find((section) => /^Glossary\r?\n/.test(section));
-    if (!glossary) throw new Error('The design record has no Glossary section.');
-    const rows = glossary
-      .split(/\r?\n/)
-      .filter((line) => line.startsWith('|'))
-      .slice(2)
-      .map((row) =>
-        row
-          .slice(1, -1)
-          .split('|')
-          .map((cell) => cell.trim()),
-      );
+    expect(designColumns(design)).toEqual(moduleColumns);
+  });
 
-    expect(rows).toEqual(
-      Object.values(GLOSSARY).map(({ plain, replaces, technical, distinctFrom, exceptions }) => [
-        plain,
-        replaces,
-        technical,
-        distinctFrom,
-        exceptions,
-      ]),
-    );
+  it('rejects a rendered record-only row with leading indentation', () => {
+    const extra = '| Extra control | old | detail | separate | none |';
+    const mutated = design.replace(/^(?=\| Project cockpit views \|)/m, `  ${extra}\n`);
+    expect(designColumns(mutated)).not.toEqual(moduleColumns);
   });
 
   it('has no open rows and keeps the Needs you navigation name', () => {
     expect(Object.values(GLOSSARY).filter(({ status }) => status === 'open')).toEqual([]);
     expect(GLOSSARY.attention.plain).toBe('Needs you');
+  });
+
+  it('includes the six controls and sections named in the owner record', () => {
+    const words = Object.values(GLOSSARY).map(({ plain }) => plain);
+    expect(words).toEqual(
+      expect.arrayContaining([
+        'Dismiss',
+        'Mark as read',
+        'Steer back',
+        'Use your prompt',
+        'Edit goal',
+        'Your data',
+      ]),
+    );
+  });
+
+  it('uses the recorded update-intent button text as shown', () => {
+    expect(GLOSSARY.updateGoalInstead).toMatchObject({
+      plain: 'Update my goal instead',
+      shown: 'Update intent instead',
+    });
   });
 });
 
@@ -79,12 +133,9 @@ describe('the labels the shell shows today', () => {
     expect(document.title).toBe(['alpha/app', GLOSSARY.compass.shown].join(' — '));
 
     const tabs = within(screen.getByRole('tablist', { name: GLOSSARY.projectTabs.shown }));
-    expect(tabs.getAllByRole('tab')).toHaveLength(PROJECT_TABS.length);
-    for (const tab of PROJECT_TABS) {
-      const label = GLOSSARY[tab].shown;
-      const trigger = tabs.getByRole('tab', { name: (name) => name.startsWith(label) });
-      expect(trigger.getAttribute('data-arg')).toBe(tab);
-    }
+    const triggers = tabs.getAllByRole('tab');
+    expect(triggers.map((tab) => tab.getAttribute('data-arg'))).toEqual(PROJECT_TABS);
+    expect(triggers.map(tabLabel)).toEqual(PROJECT_TABS.map((tab) => GLOSSARY[tab].shown));
   });
 
   it('uses the fallback crumb before a session can be found and keeps the ID in the title', () => {
@@ -94,4 +145,122 @@ describe('the labels the shell shows today', () => {
     expect(screen.getByText(GLOSSARY.waitingForBoard.shown)).toBeVisible();
     expect(document.title).toBe(['missing', 'alpha/app', GLOSSARY.compass.shown].join(' — '));
   });
+
+  it('renders substituted glossary labels in navigation, breadcrumbs, project tabs and titles', async () => {
+    const labels = {
+      compass: 'Test board',
+      primary: 'Test main navigation',
+      breadcrumb: 'Test trail',
+      sessions: 'Test work list',
+      projects: 'Test project list',
+      attention: 'Test requests',
+      intent: 'Test goal archive',
+      settings: 'Test preferences',
+      session: 'Test missing session',
+      projectTabs: 'Test project views',
+      now: 'Test current activity',
+      course: 'Test direction changes',
+      decisions: 'Test decisions',
+      console: 'Test terminal',
+      waitingForBoard: 'Test board waiting',
+    };
+    Object.assign(SHOWN, labels);
+    const page = mountShell({ data: BOARD });
+    expect(screen.getByText(labels.waitingForBoard)).toBeVisible();
+    await page.settle();
+    expect(screen.getByText(labels.compass, { exact: true })).toBeVisible();
+    const navigation = within(screen.getByRole('navigation', { name: labels.primary }));
+    for (const view of TOP_LEVEL_VIEWS) {
+      await page.go('#n=' + view);
+      expect(navigation.getByRole('link', { name: labels[view], current: 'page' })).toBeVisible();
+      expect(document.title).toBe(`${labels.compass} — ${labels[view]}`);
+    }
+
+    await page.go('#n=project:alpha%2Fapp');
+    const tabs = within(screen.getByRole('tablist', { name: labels.projectTabs }));
+    expect(tabs.getAllByRole('tab').map(tabLabel)).toEqual(PROJECT_TABS.map((tab) => labels[tab]));
+    const projectTrail = within(screen.getByRole('navigation', { name: labels.breadcrumb }));
+    expect(projectTrail.getByRole('link', { name: labels.projects })).toBeVisible();
+    expect(projectTrail.getByText('alpha/app')).toBeVisible();
+    expect(document.title).toBe(`alpha/app — ${labels.compass}`);
+
+    await page.go('#n=session:alpha%2Fapp:claude:missing&from=intent');
+    const sessionTrail = within(screen.getByRole('navigation', { name: labels.breadcrumb }));
+    expect(sessionTrail.getByRole('link', { name: labels.intent })).toBeVisible();
+    expect(sessionTrail.getByText(labels.session).getAttribute('aria-current')).toBe('page');
+    expect(document.title).toBe(`missing — alpha/app — ${labels.compass}`);
+  });
+
+  it('uses the absent-sessions label after a board arrives without the collection', async () => {
+    const page = mountShell({ data: { generated: 1 } });
+    const header = within(screen.getByRole('banner'));
+    expect(header.getByText(GLOSSARY.waitingForBoard.shown)).toBeVisible();
+    await page.settle();
+    expect(header.getByText(GLOSSARY.sessionDataNotPublished.shown)).toBeVisible();
+
+    Object.assign(SHOWN, { sessionDataNotPublished: 'Test session collection absent' });
+    await page.go('#n=projects');
+    expect(header.getByText('Test session collection absent')).toBeVisible();
+  });
+
+  it('uses the glossary Session fallback when the title receives an empty session ID', () => {
+    const route = { view: 'session', project: 'beta/api', session: '' } as const;
+    expect(documentTitle(route, null)).toBe(`${GLOSSARY.session.shown} — beta/api — Compass`);
+    Object.assign(SHOWN, { session: 'Test missing ID' });
+    expect(documentTitle(route, null)).toBe('Test missing ID — beta/api — Compass');
+  });
+
+  it.each([
+    [false, 'Test missing title'],
+    [true, 'Test command-only title'],
+  ])(
+    'uses glossary wording for the waiting title and untitled fallback (command: %s)',
+    async (command, fallback) => {
+      Object.assign(SHOWN, {
+        waitingTitle: '● Test needs a reply ·',
+        titleNotPublished: 'Test missing title',
+        commandOnlyTitle: 'Test command-only title',
+      });
+      const data = {
+        ...BOARD,
+        sessions: BOARD.sessions.map((row) =>
+          row.sid === 'colon:sid' ? { ...row, first_prompt_control: command } : row,
+        ),
+      };
+      await mountShell({ hash: '#n=session:beta%2Fapi:claude:colon%3Asid', data }).settle();
+      const trail = within(screen.getByRole('navigation', { name: GLOSSARY.breadcrumb.shown }));
+      expect.soft(trail.queryByText(fallback, { selector: '[aria-current="page"]' })).toBeVisible();
+      expect(document.title).toBe(`● Test needs a reply · ${fallback} — beta/api — Compass`);
+    },
+  );
+
+  it.each([
+    [1, '1 in motion · 1 assistant seen', '1 request noted'],
+    [2, '2 in motion · 3 assistants seen', '2 requests noted'],
+  ])(
+    'uses glossary wording with measured header counts for %i reported blocks',
+    async (blocks, counts, gates) => {
+      Object.assign(SHOWN, {
+        runningCount: '{count} in motion',
+        subagentCountOne: '{count} assistant seen',
+        subagentCountMany: '{count} assistants seen',
+        reportedBlockCountOne: '{count} request noted',
+        reportedBlockCountMany: '{count} requests noted',
+      });
+      const sessions =
+        blocks === 1
+          ? BOARD.sessions.filter((row) => row.sid === 'colon:sid' || row.sid === 'beta-working')
+          : [
+              ...BOARD.sessions,
+              { harness: 'claude', sid: 'second-block', project: 'beta/api', state: 'needs_input' },
+            ];
+      await mountShell({ data: { ...BOARD, sessions } }).settle();
+      const navigation = screen.getByRole('navigation', { name: GLOSSARY.primary.shown });
+      const element = navigation.closest('header');
+      if (!element) throw new Error('Primary navigation must be in the header.');
+      const header = within(element);
+      expect.soft(header.queryByText(counts)).toBeVisible();
+      expect(header.getByRole('button', { name: gates })).toBeVisible();
+    },
+  );
 });

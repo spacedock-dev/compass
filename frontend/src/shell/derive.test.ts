@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PayloadData } from '../api/types';
 import { createBoardStore } from '../store/board';
-import {
-  findSession,
-  historyResetReason,
-  selectHeaderCounts,
-  sessionTitle,
-  TITLE_NOT_PUBLISHED,
-} from './derive';
+import { findSession, historyResetReason, selectHeaderCounts, sessionTitle } from './derive';
 
 const body = (value: unknown): PayloadData => value as PayloadData;
 
@@ -145,10 +139,10 @@ describe('finding the one session a route names', () => {
   });
 
   it('states an absent title in words instead of leaving it blank', () => {
-    expect(TITLE_NOT_PUBLISHED).toBe('Title not published');
-    expect(sessionTitle(findSession(sessions, '', 'claude', 'bare'))).toBe(TITLE_NOT_PUBLISHED);
+    expect(sessionTitle(null)).toBe('Title not published');
+    expect(sessionTitle(findSession(sessions, '', 'claude', 'bare'))).toBe('Title not published');
     expect(sessionTitle(findSession(sessions, 'alpha', 'claude', 'untitled'))).toBe(
-      TITLE_NOT_PUBLISHED,
+      'Title not published',
     );
     expect(sessionTitle(findSession(sessions, 'alpha', 'claude', 'shared'))).toBe('Claude title');
   });

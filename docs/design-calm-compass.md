@@ -151,9 +151,10 @@ concepts being replaced. The [ruling index](#owner-rulings) records which labels
 explicitly settled and where the decisions apply.
 
 The [glossary module](../frontend/src/language/glossary.ts) holds these rows and the labels
-the board currently shows. The header navigation, breadcrumb, document title and project
-tabs share the displayed labels. Each view adopts the plain wording when its redesign
-ships. Route tokens still belong to the router.
+the board currently shows. The header, breadcrumb, document title and project tabs share
+the displayed labels. In header phrases, `{count}` stands for a number read from the board.
+Session titles and IDs also come from the board or the route. Each view adopts the plain
+wording when its redesign ships. Route tokens still belong to the router.
 
 | Plain word | Replaces | Technical layer shows | Must stay distinct from | Allowed exceptions |
 |---|---|---|---|---|
@@ -171,6 +172,14 @@ ships. Route tokens still belong to the router.
 | Console | Keeps current label | Read-only terminal | A place to send a command | The console tab slug stays. The terminal moves to technical details |
 | Session data not published. | Keeps current label | The session collection is missing | A measured zero | Used after a board arrives without session data |
 | Waiting for the first board. | Keeps current label | Initial board read | A measured zero | Used before the first board arrives |
+| ● Needs you · | Keeps current label | Published request or block on the open session | The Needs you navigation destination | Browser tab title prefix |
+| Title not published | Keeps current label | Missing or identifier-only session title | A session ID or a command-only opening | Session heading, breadcrumb and browser tab title |
+| No name: the session opened with a command | Keeps current label | The opening prompt was a harness command | A missing published title | Session heading, breadcrumb and browser tab title |
+| {count} running | Keeps current label | Observed running session count | Observed subagents or an unread board | Released header wording |
+| {count} subagent observed | Keeps current label | One observed subagent | Declared child sessions | Released header wording |
+| {count} subagents observed | Keeps current label | Observed subagent count | Declared child sessions | Released header wording for zero or more than one |
+| {count} reported block | Keeps current label | One session with a reported block or request | Total running sessions | Released header button |
+| {count} reported blocks | Keeps current label | Sessions with reported blocks or requests | Total running sessions | Released header button for more than one |
 | Goal | Intent, Intent and drift | Saved intent, source, revision and lines read | An agent's task or a provisional prompt | The `intent` slug and technical names keep their spelling |
 | What "done" looks like | Expected outcome (optional) | An outcome line and its evidence | The goal itself or proof of completion | Technical fields retain their names |
 | Goal history | Intent log | Saved goal revisions and source | A session's current progress | The `#n=intent` fragment survives |
@@ -178,7 +187,13 @@ ships. Route tokens still belong to the router.
 | Check progress again | Analyze again, Check again | Prior reading and its recency | The first check or an Out of date state | Same label for a current or stale prior reading |
 | Progress check | Drift check | The reading and evidence | Tests and builds run by the agent | Terminal flag `--drift` |
 | This reading looks wrong | Mark as inaccurate | The marked reading and what the mark changed | Editing the goal | Undo is still offered |
-| Update my goal instead | Goal edit alongside feedback | The goal revision | Marking the reading wrong | Opens Goal in edit mode |
+| Update my goal instead | Update intent instead | The goal revision | Marking the reading wrong | Opens Goal in edit mode |
+| Dismiss | No standalone attention-row control | Server dismissal record | Mark as read | Survives Forget |
+| Mark as read | No standalone control | Server dismissal record | Dismiss | Survives Forget |
+| Steer back | Keeps current label | Editable correction and its evidence | Editing the goal | Compass never sends the correction |
+| Use your prompt | Keeps current label | Saved prompts in this session | Editing the goal directly | Stays visible in read mode |
+| Edit goal | Direct editing in the goal field | Goal draft and revision | Adopting a saved prompt | Beside Use your prompt |
+| Your data | No dedicated Settings section | Data kept and settings reset by Forget | AI use settings | The Forget explanation opens here in Settings |
 | Where it went off course | Departure · Goal | Departure, supporting evidence and citations | A warning signal or a proposed correction | Data token `departure` stays |
 | Helpers | Subagents | Recorded subagent activity | Declared child sessions | Technical language may say subagents |
 | Agent | Harness | Harness identity | A particular session | Technical language may say harness |

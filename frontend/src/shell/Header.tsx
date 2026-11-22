@@ -18,6 +18,9 @@ import { useProjectBriefing } from './projectBriefing';
    only by typing a fragment. Sessions comes first so the first step is opening a session. */
 const PRIMARY = ['sessions', 'projects', 'attention', 'intent', 'settings'] as const;
 
+const countLabel = (template: string, count: number): string =>
+  template.replace('{count}', String(count));
+
 /* The view a route sits under: a session sits under the view it was opened from, a project under Projects. */
 function currentView(route: Route): TopLevelView {
   if (route.view === 'session') return sessionHome(route);
@@ -56,12 +59,17 @@ function RunningCounts({ counts }: { readonly counts: HeaderCounts }) {
     return <span className="next-running">{SHOWN.waitingForBoard}</span>;
   if (counts.state === 'absent')
     return <span className="next-running">{SHOWN.sessionDataNotPublished}</span>;
+  const running = countLabel(SHOWN.runningCount, counts.running);
+  const subagents = countLabel(
+    counts.subagents === 1 ? SHOWN.subagentCountOne : SHOWN.subagentCountMany,
+    counts.subagents,
+  );
   return (
     <span className="next-running next-live">
       {counts.running ? (
         <Icon name="working" className="next-status-icon inline-block shrink-0" />
       ) : null}
-      {` ${String(counts.running)} running · ${String(counts.subagents)} ${counts.subagents === 1 ? 'subagent' : 'subagents'} observed`}
+      {` ${running} · ${subagents}`}
     </span>
   );
 }
@@ -115,7 +123,10 @@ export function Header({ route }: { readonly route: Route }) {
             data-next-action="needs-input"
             onClick={() => navigate({ view: 'attention', project: null, session: null })}
           >
-            {`${String(counts.gates)} ${counts.gates === 1 ? 'reported block' : 'reported blocks'}`}
+            {countLabel(
+              counts.gates === 1 ? SHOWN.reportedBlockCountOne : SHOWN.reportedBlockCountMany,
+              counts.gates,
+            )}
           </Button>
         ) : null}
         <NotificationControl />

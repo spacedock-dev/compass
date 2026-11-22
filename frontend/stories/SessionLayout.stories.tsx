@@ -11,7 +11,6 @@ import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
 import { WHAT_IT_DID_PLACEHOLDER } from '../src/sessions/WhatItDid';
 import { createShell } from '../src/shell/createShell';
-import { WAITING_TITLE_PREFIX } from '../src/shell/favicon';
 import { WAITING_ANSWER_WHERE } from '../src/sessions/WaitingBlock';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
@@ -880,7 +879,7 @@ export const HarnessGateSaysWhereToAnswer: Story = {
     await expect(box.top - above.bottom).toBeGreaterThanOrEqual(16);
     await expect(below.top - box.bottom).toBeGreaterThanOrEqual(16);
     await expect(canvas.queryByRole('region', { name: 'Asked you' })).toBeNull();
-    await waitFor(() => expect(document.title.startsWith(WAITING_TITLE_PREFIX)).toBe(true));
+    await waitFor(() => expect(document.title).toMatch(/^● Needs you · /));
     const icon = document.head.querySelector('link[data-next-favicon]');
     await expect(decodeURIComponent(icon?.getAttribute('href') ?? '')).toContain('fill="#92400e"');
   },
@@ -905,7 +904,7 @@ export const ExactRequestKeepsItsOwnBlock: Story = {
     const canvas = within(canvasElement);
     await canvas.findByRole('region', { name: 'Asked you' });
     await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
-    await waitFor(() => expect(document.title.startsWith(WAITING_TITLE_PREFIX)).toBe(true));
+    await waitFor(() => expect(document.title).toMatch(/^● Needs you · /));
   },
 };
 
@@ -922,7 +921,7 @@ export const WorkingSessionCarriesNoWaitingSign: Story = {
       '0px',
     );
     await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
-    await waitFor(() => expect(document.title.startsWith(WAITING_TITLE_PREFIX)).toBe(false));
+    await waitFor(() => expect(document.title).not.toMatch(/^● Needs you · /));
     const icon = document.head.querySelector('link[data-next-favicon]');
     await expect(decodeURIComponent(icon?.getAttribute('href') ?? '')).toContain(
       'stroke="#2f7d5b"',
