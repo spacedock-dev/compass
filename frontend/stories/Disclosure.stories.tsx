@@ -85,7 +85,7 @@ export const WhatIsSentSize: Story = {
     );
     await waitFor(() => expect(canvas.getByText('Up to 16 KB per part.')).toBeVisible());
     await expect(canvas.queryByText('16,384 bytes per part.')).not.toBeVisible();
-    await userEvent.click(canvas.getByText('Show technical details', { exact: true }));
+    await userEvent.click(await canvas.findByText('Exact byte limits', { exact: true }));
     await waitFor(() => expect(canvas.getByText('16,384 bytes per part.')).toBeVisible());
   },
 };

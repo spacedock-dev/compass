@@ -32,7 +32,7 @@ export interface DisclosureProps {
   readonly summaryLabel?: string;
   /** Registers the summary with the focus lane. */
   readonly focusKey?: string;
-  /** Chrome for the popover's trigger itself, such as a filter button's border. Popover only. */
+  /** Extra chrome for the accordion or popover trigger. */
   readonly triggerClassName?: string;
   /** Opens below the trigger and scrolls in the room there, never flipping above or beside it. Popover only. */
   readonly vertical?: boolean;
@@ -77,6 +77,7 @@ function AccordionDisclosure({
   summary,
   className,
   summaryLabel,
+  triggerClassName,
   focusKey,
   aside,
   headerProps,
@@ -107,9 +108,12 @@ function AccordionDisclosure({
   }, [openWhen, controls.disclosures, disclosureKey]);
   const triggerRef = useFocusKey<HTMLButtonElement>(controls.focusLane, focusKey ?? null);
   const panelRef = useRevealFragment(disclosureKey);
-  const triggerClasses = explanation
-    ? 'text-[color:var(--accent)] text-label font-semibold hover:underline'
-    : '';
+  const triggerClasses = [
+    triggerClassName,
+    explanation ? 'text-[color:var(--accent)] text-label font-semibold hover:underline' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
     <Accordion
       className={className ? `ctl-disclosure ${className}` : 'ctl-disclosure'}

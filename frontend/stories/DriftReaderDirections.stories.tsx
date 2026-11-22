@@ -94,7 +94,7 @@ export const TheReadersDirectionsAreNotTheAgentsDrift: Story = {
         'You sent 2 messages after your goal. Choose one to add or make the goal, or leave them all:',
       ),
     ).toBeVisible();
-    // Each is a row in Full activity under the reader's own words, never the agent's.
+    // Each is a row in Activity log under the reader's own words, never the agent's.
     for (const [id, words] of [
       ['u2', MID_TURN_WORDS],
       ['u3', ANSWER_WORDS],

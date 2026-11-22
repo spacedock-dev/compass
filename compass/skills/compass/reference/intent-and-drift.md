@@ -96,23 +96,19 @@ so rather than leaving you to assume otherwise.
 
 Below the two fields the Drift section holds the run control (or the question about a later
 direction), the reading and the departures on record. Notes about your saved words are in the
-Goal card under the save. The agent's current activity leads Full activity, and the session's entries follow it,
-numbered. The departures section appears only with `--unasked-readings` on, or once a reading or a
-departure is on record. How it landed follows the session's own facts further down. With saved
-words the list starts at the entry where their evidence window opens; earlier entries are
-counted and not listed, and with nothing saved the whole record is listed. A Claude Code session's
-numbers are fixed: #1 is its oldest message, a message keeps its number as the session grows, and a
-check or file is numbered by the message it follows and its place after it (#41.2). Other harnesses
-number what the page holds, from the oldest. The measured line
-gives the count, in Full activity when the session is blocked and otherwise in the header,
-and leaves it out when the record was not read. It lists the twenty most
-recent entries in the window, the ten most recent messages the agent wrote, every check and file in
-the window and every later direction still to settle, each at its own number, and says how many it
-counted and did not list. An entry a departure cites is flagged "Cited" and always listed, and a direction you
+Goal card under the save. At the foot of the page, Show technical details opens the Activity log.
+It lists the loaded entries, with the session's current activity and end evidence below. The
+departures section appears only with `--unasked-readings` on, or once a reading or a departure is
+on record. Grey entries fall before the current goal's reading window. A progress check for that
+window leaves them out. A Claude Code session's numbers are fixed: #1 is its oldest message,
+a message keeps its number as the session grows, and a check or file is numbered by the message
+it follows and its place after it (#41.2). Other harnesses number the loaded entries in the
+window, from the oldest. Use All, You, Agent, Commands, Files or Cited to filter the loaded
+entries. The log counts the rows hidden by a filter. An entry a departure cites is flagged "Cited" and always listed, and a direction you
 gave after saving is flagged "A later direction you gave", which records no finding. In a Claude Code
 session a message you sent while the agent was working, and your answer to its multiple-choice question, are
 directions you gave too, at the time you typed or answered. Numbers are
-worked out again on every render. Each cited entry's number on a finding opens Full activity,
+worked out again on every render. Each cited entry's number on a finding opens the Activity log,
 scrolls to that entry and marks every entry the finding cites with its saved words and their current
 numbers, and tints each of those rows so it stands apart from the list, without requesting another
 analysis. An entry it cites that is not loaded yet is read from older record pages first; one no
@@ -154,7 +150,7 @@ excerpt adds "Shortened here; Analyze reads the whole prompt"
 (the goal keeps the excerpt, and a reading reads the prompt it came from whole, up to 1,000
 characters, or says in what it read that it could not), and the box is tinted: nothing is saved until you press Save intent, edit the box and save, or
 press `Analyze drift`, which adopts the draft. `Use your prompt` lists up to five of your own
-prompts, and choosing one fills the goal box for you to save. While no goal is saved and no `/goal` was detected, `Find goal` beside it reads the prompts you typed in the session, on your press only, and fills the box when it can quote your own words for a goal: it says "Found in your prompts at" the time and the prompt entries it quotes, each a link to that entry in Full activity, and editing the words replaces it. It sends your prompts to the model Analyze names, counts against the same daily limit, is refused while model calls are paused, and says so beside the button when it finds nothing clear. Analyze drift, Keep and an added line's save are refused
+prompts, and choosing one fills the goal box for you to save. While no goal is saved and no `/goal` was detected, `Find goal` beside it reads the prompts you typed in the session, on your press only, and fills the box when it can quote your own words for a goal: it says "Found in your prompts at" the time and the prompt entries it quotes, each a link to that entry in the Activity log, and editing the words replaces it. It sends your prompts to the model Analyze names, counts against the same daily limit, is refused while model calls are paused, and says so beside the button when it finds nothing clear. Analyze drift, Keep and an added line's save are refused
 while the goal box or the outcome lines hold an edit you have not saved, because each would stand
 on words that are not on screen; your edit stays in the box. No drift level or pill is drawn over
 an unsaved draft. Once a goal is saved, "Saved" names the window's opening time and holds when the words were saved. Editing the goal, using a prompt or a later direction as the goal, and adding or editing outcome lines all keep that window, so work already done toward the earlier words stays read. `Read from my latest message`, beside Save intent over saved words, saves and opens a new window at your latest message, and says so with its time. A `/goal` Claude Code gave up on, or the reader cleared, ends that goal: the Drift card says a give-up as the harness's claim with its time, never as met and never as a level or a check, and the Goal card says under the Goal field that an earlier `/goal` was replaced, met, given up or cleared, with the time and never its words.
@@ -304,7 +300,7 @@ its last recorded entry, and the result says so with that entry's time, never as
 count-by-kind cutoff remain under What the analysis read, which groups the model, your intent, the
 session read and what is never read under their own headings. Coverage holds only counts, time and closed state
 tokens and changes no verdict. A departure is a card whose What gives each cited entry as one line in its own words with its number (the
-agent said, you said, a failed check, a file write), with no Evidence or Source fold; the claims row and every quiet row do the same, and a number opens Full activity on that entry. Each other line reads "Consistent with
+agent said, you said, a failed check, a file write), with no Evidence or Source fold; the claims row and every quiet row do the same, and a number opens the Activity log on that entry. Each other line reads "Consistent with
 #n, as the tool reported; not inspected", "Consistent with what the agent said at #n; not a
 check" where it rests on the agent's messages alone, "Consistent with what the session said at #n;
 not a check", "Not reached at this stop" or "Can't tell · <your line>" with its own reason under it; the result's own words never say "Done" (an agent message it cites is quoted and attributed to the agent). A line that rules out a folder, or limits the work to one, departs on a file write the record holds

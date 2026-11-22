@@ -188,7 +188,7 @@ describe('a reader paging a session record', () => {
     expect(document.activeElement).toBe(goal);
   });
 
-  it('a reader whose older page has no visible new row reaches the new window-boundary sentence', async () => {
+  it('a reader can page in earlier rows and focus the first new entry', async () => {
     const page = mountDrift({
       session: { ...session, annotation_window_start: 40, annotation_goal_saved_at: 40 },
       routes: {
@@ -200,56 +200,12 @@ describe('a reader paging a session record', () => {
     await openActivity();
     more().focus();
     await press(more());
-    expect(rows()).toHaveLength(50);
-    expect(document.activeElement).toBe(
+    expect(rows()).toHaveLength(80);
+    expect(document.activeElement).toBe(document.querySelector('[data-next-entry-id="p30"]'));
+    expect(document.activeElement?.hasAttribute('data-before-window')).toBe(true);
+    expect(
       screen.getByText("Everything since your intent's window opened is listed."),
-    );
-  });
-
-  it('a reader can add an older loaded direction to their intent just like a context entry', async () => {
-    const page = mountDrift({
-      session,
-      routes: {
-        [path]: (r) =>
-          json(pageBody(r.url.includes('before=') ? { entries: entries(50, 50) } : {})),
-        '/api/direction': () => json({ ok: true, text: 'Older direction in full', clipped: false }),
-      },
-    });
-    await page.settle();
-    await openActivity();
-    await press(more());
-    await press(
-      document.querySelector(
-        '[data-next-entry-id="p50"] [data-next-cockpit-action="direction-add"]',
-      ),
-    );
-    expect(document.body.textContent).toContain('Older direction in full');
-    await page.poll(page.state.data);
-    expect(document.body.textContent).toContain('Older direction in full');
-  });
-
-  it('a reader leaving an older direction draft keeps their words while its record page is unread on return', async () => {
-    const page = mountDrift({
-      session,
-      routes: {
-        [path]: (r) =>
-          json(pageBody(r.url.includes('before=') ? { entries: entries(50, 50) } : {})),
-        '/api/direction': () => json({ ok: true, text: 'Older direction in full', clipped: false }),
-      },
-    });
-    await page.settle();
-    await openActivity();
-    await press(more());
-    await press(
-      document.querySelector(
-        '[data-next-entry-id="p50"] [data-next-cockpit-action="direction-add"]',
-      ),
-    );
-    expect(document.body.textContent).toContain('Older direction in full');
-    await page.go('#n=intent');
-    await page.go('#n=session:alpha%2Fapp:claude:s1');
-    expect(rows()).toHaveLength(50);
-    expect(document.body.textContent).toContain('Older direction in full');
+    ).toBeTruthy();
   });
 
   it('a reader whose harness is unsupported sees its limit without a paging button', async () => {
@@ -343,14 +299,15 @@ describe('a reader paging a session record', () => {
     expect(page.gets(path)).toBe(3);
   });
 
-  it('a reader already past the intent window sees all its entries and cannot request invisible older rows', async () => {
+  it('a reader already past the intent window sees the earlier entries the record holds', async () => {
     const page = mountDrift({
       session: { ...session, annotation_window_start: 75, annotation_goal_saved_at: 75 },
       routes: { [path]: () => json(pageBody()) },
     });
     await page.settle();
     await openActivity();
-    expect(rows()).toHaveLength(26);
+    expect(rows()).toHaveLength(50);
+    expect(document.querySelectorAll('[data-before-window]')).toHaveLength(24);
     expect(
       screen.getByText("Everything since your intent's window opened is listed."),
     ).toBeVisible();

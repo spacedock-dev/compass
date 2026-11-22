@@ -22,7 +22,7 @@ import { driftCtxFor, useDriftVersion, type DriftCtx } from './state';
 import { clearFlipLines } from './flip';
 import { entryWindow } from '../intent/work';
 import { citationsHeld, citedIdsOf, citesOf, entriesHeld, heldIds } from './citations';
-import { fullActivityKey } from '../sessions/fullActivityKey';
+import { showActivityLog } from '../sessions/fullActivityKey';
 import { trackJobs } from './jobs';
 import { syncPaused } from './steerActions';
 
@@ -140,7 +140,7 @@ export function DriftProvider({
   // The note answers one press on one reading; a new reading or another session takes it down, as it does `chosen`.
   if (missing && (missing.press.session !== key || missing.press.readAt !== readAt))
     setMissing(null);
-  /* A press of a cited entry opens Full activity and, where an entry it cites is not one the page holds,
+  /* A press of a cited entry opens Activity log and, where an entry it cites is not one the page holds,
      reads older record pages until it is, the record's start, or the page cap. The reader asked for these
      entries, so this is their read, as Show more is; docs/design-reader-state.md#the-inventory owns it.
      Whatever is still not held when the read ends is counted, and the list says so. */
@@ -154,7 +154,7 @@ export function DriftProvider({
     setChosen(next);
     setSettled(null);
     setMissing(null);
-    ctx.shell.controls.disclosures.set(fullActivityKey(project, session), true);
+    showActivityLog(ctx.shell.controls, project, session, true);
     const cited = priorOf(findingKey)?.cites.slice() ?? citesOf(model.raw, findingKey);
     const identity = model.identity;
     const scope = { projectKey: model.projectKey, session: model.session, cited };

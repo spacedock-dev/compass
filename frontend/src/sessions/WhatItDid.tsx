@@ -14,7 +14,7 @@ import { Card } from '../ui/card';
 import { Disclosure, disclosureKey } from '../controls';
 import { SummaryControls, SummaryView } from './SummaryParts';
 import { summaryHeader, useOpenSummary, useSummaryState } from './summaryState';
-import { fullActivityKey } from './fullActivityKey';
+import { showActivityLog } from './fullActivityKey';
 import {
   missingSentence,
   OUTLINE_EMPTY,
@@ -28,9 +28,9 @@ import {
 import { useSteadyOutline } from './steadyOutline';
 
 export const WHAT_IT_DID_PLACEHOLDER =
-  'An outline of what this session did is not drawn here yet. Full activity below shows the recorded activity available to this page.';
+  'An outline of what this session did is not drawn here yet. Activity log below shows the recorded activity available to this page.';
 
-/* An entry chip: its `#n` where the page holds and numbers the entry. Pressing it opens Full activity and lands
+/* An entry chip: its `#n` where the page holds and numbers the entry. Pressing it opens Activity log and lands
    on the entry, reading older record pages for it first when the page does not hold it, as Show cited entries
    does (docs/design-reader-state.md#the-inventory). An entry from before the intent's window keeps its number,
    muted, and says why Analyze does not read it. */
@@ -72,7 +72,7 @@ export function EntryChip({
         : outside
           ? UNNUMBERED_BEFORE
           : UNNUMBERED_OLDER;
-  const label = `Open ${n ? `entry #${n}` : command ? 'a command, not numbered' : outside ? 'the entry before your intent’s start' : 'an older entry the page has not read yet'}, ${purpose}, in Full activity${outside ? `. ${OUTSIDE_WINDOW}` : ''}`;
+  const label = `Open ${n ? `entry #${n}` : command ? 'a command, not numbered' : outside ? 'the entry before your intent’s start' : 'an older entry the page has not read yet'}, ${purpose}, in Activity log${outside ? `. ${OUTSIDE_WINDOW}` : ''}`;
   const marks = {
     'data-next-outline-entry': id,
     'data-next-cockpit-action': 'finding-jump',
@@ -273,13 +273,15 @@ export function WhatItDid({
     const press = {};
     latestPress.current = press;
     setMissing(null);
-    controls.disclosures.set(fullActivityKey(model.project, model.session), true);
-    /* After Full activity has finished opening. A smooth scroll begun while its panel still grew was clamped
+    showActivityLog(controls, model.project, model.session);
+    /* After Activity log has finished opening. A smooth scroll begun while its panel still grew was clamped
        at the foot of a page not yet tall enough, and left the row at the bottom edge (top 728 of 729 px). */
     const settle = () =>
       requestAnimationFrame(() => {
         if (latestPress.current !== press) return;
-        const panel = document.querySelector('[data-next-full-activity-body]');
+        const panel = document.querySelector(
+          '[data-next-session-full-activity] [data-slot="accordion-content"]',
+        );
         const growing = panel?.getAnimations?.() ?? [];
         void Promise.allSettled(growing.map((animation) => animation.finished)).then(() => {
           afterPanelSettles(() => {
@@ -435,7 +437,7 @@ function Outline({
   );
 }
 
-/* A chip whose entry Full activity could not show, said where the press was made. */
+/* A chip whose entry Activity log could not show, said where the press was made. */
 function MissingLine({ missing }: { readonly missing: string }) {
   return (
     <p className="next-cockpit-define" role="status" data-next-outline-missing>

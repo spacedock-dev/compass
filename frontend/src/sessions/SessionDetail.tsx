@@ -28,7 +28,7 @@ import {
   WorkListView,
 } from '../drift';
 import { DriftSlot } from './DriftSlot';
-import { FullActivity } from './FullActivity';
+import { SessionTechnicalDetails } from './SessionTechnicalDetails';
 import { WhatItDid } from './WhatItDid';
 import {
   CommandReportsView,
@@ -68,7 +68,7 @@ import './sessions.css';
    Drift cards.
 
    One column at every width, top to bottom: the header, the answer block when the session needs input, the
-   Intent card, the What the session has done card, the Drift card, and Full activity, collapsed. The owner
+   Intent card, the What the session has done card, the Drift card, and Activity log, collapsed. The owner
    reversed the two-column layout on 2026-10-19:
    [one column again](../../../docs/design-reading-a-session.md#amended-2026-10-19-owner-one-column-again). */
 
@@ -380,7 +380,7 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
           >
             <DeparturesSection />
           </DriftSlot>
-          <FullActivity project={route.project} session={session}>
+          <SessionTechnicalDetails project={route.project} session={session}>
             {observed.isNeeds || observed.askKnown ? (
               <SessionMetadata
                 session={session}
@@ -388,9 +388,8 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
                 hasOpenRequest={observed.askKnown}
               />
             ) : null}
-            <CommandSurface session={session} observed={observed} generated={generated} />
-            {/* The numbered record every "#<n>" on this page names, right after CURRENT ACTIVITY. */}
             <WorkListView />
+            <CommandSurface session={session} observed={observed} generated={generated} />
             {subagents ? <SubagentsView subagents={subagents} /> : null}
             <FactsView facts={facts} disclosureKey={factKey('session-facts')} />
             <div className="next-session-evidence">
@@ -409,7 +408,7 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
             {tasks ? <TasksView tasks={tasks} /> : null}
             <CommandReportsView reports={reports} disclosureKey={factKey('command-reports')} />
             {delivery ? <DeliveryView delivery={delivery} /> : null}
-            {/* The record under Full activity belongs to the annotation store: with it off the page this ports
+            {/* The record under Activity log belongs to the annotation store: with it off the page this ports
               draws neither card nor pointer, and a card claiming an end the store cannot back would be new. */}
             {payload['annotate'] === true ? (
               <>
@@ -417,7 +416,7 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
                 <DeparturesKept disclosureKey={factKey('kept-why')} />
               </>
             ) : null}
-          </FullActivity>
+          </SessionTechnicalDetails>
         </div>
         {footer ? (
           <footer className="next-session-footer" data-next-session-tokens={footer.source}>

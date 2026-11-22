@@ -229,7 +229,7 @@ export const NarrowHead: Story = {
   },
 };
 
-/* The list as Full activity draws it: newest first by message, so a check sits under the message whose number it
+/* The list as Activity log draws it: newest first by message, so a check sits under the message whose number it
    carries even when it last ran later; the last turn said once, on its newest drawn row, with the numbers it spans;
    and an agent's markdown emphasis drawn as the words it marks, while a check command keeps its `**` globs. */
 const row = (

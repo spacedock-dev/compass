@@ -274,6 +274,10 @@ On 2026-11-23, preserving published wording while auditing the Sessions page bro
 2,377,735 to 2,379,479 bytes on Node 26.10.0. The allowance rises by 1,744 bytes to
 2,379,479 bytes. The fixture allowance stays at 250,000 bytes.
 
+On 2026-11-23, the Session's inline technical details and Activity log filters bring the
+packaged page to 2,405,367 bytes on the pinned Node 26.10.0. The page bound rises by the
+measured 25,888 bytes. The fixture bound stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

@@ -258,6 +258,8 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Waiting on child | Keeps current label | The reported child and relationship | Waiting on you | Text only |
 | Read by scanning: no turn end can be observed here | Keeps current label | Collector scope | The Quiet session state | Text only |
 | Show technical details | Separate technical controls | Activity log, AI use, limits and raw evidence | What Compass can't see | Opens in place on the surfaces with technical evidence |
+| Hide technical details | Keeps the same subject as Show technical details | Closes the inline disclosure | Other collapsible sections | Only while the layer is open |
+| Activity log | Full activity | Session record | Session summary | Names the technical tab and citation destination |
 | AI use | Separate model and quota controls | Model and quota settings | The AI allowance | Names the Settings section |
 | AI use and privacy | Separate model controls and disclosures | Model settings and what is sent | The AI allowance | Names the Session technical tab |
 | Customize | Always-visible prompt limits | Prompt size controls | Your AI allowance | Opens How much a progress check reads |

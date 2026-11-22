@@ -977,12 +977,12 @@ describe('the failure badge', () => {
 });
 
 describe('the citations a chip cannot open', () => {
-  it('is said once, as a count of the entries Full activity does not list', () => {
+  it('is said once, as a count of the entries Activity log does not list', () => {
     expect(unlinkedSentence(1)).toBe(
-      '1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.',
+      '1 cited entry is an earlier check or file that Activity log does not list, so it cannot be opened from here.',
     );
     expect(unlinkedSentence(3)).toBe(
-      '3 cited entries are earlier checks or files that Full activity does not list, so they cannot be opened from here.',
+      '3 cited entries are earlier checks or files that Activity log does not list, so they cannot be opened from here.',
     );
   });
 });

@@ -198,9 +198,7 @@ opens without a call. Source collection continues through bounded pages in the b
 keeps `Cancel` available. Collection limits and unread regions remain explicit, separately from
 the model's window and call limits; an incomplete update keeps the saved summary.
 `Delete summary` removes it after a second press, says what it removes before that press, and reports the deletion; and a line that claims in its own voice that the
-work is done is withheld. **Full activity** closes the page, collapsed until you open it: the agent's current
-activity, the session's numbered entries, the recorded request, tasks, subagents, token
-measurements and how the session landed. On a harness other than Claude Code or Pi the Drift section says "Compass
+work is done is withheld. **Show technical details** at the foot of the page opens the **Activity log**, with the session's numbered entries, agent activity, recorded request, tasks, subagents, token measurements and end evidence. Filters narrow the loaded entries by speaker, kind or citation. On a harness other than Claude Code or Pi the Drift section says "Compass
 can't read work from this harness" where a drift level will go; `Analyze drift` stays wherever a
 reader is named. With no reader on this machine, the reason stands where the control would be. The
 page has at most one primary run control. No answer option is ever emphasised: a session blocked on

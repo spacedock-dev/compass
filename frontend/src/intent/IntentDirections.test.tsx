@@ -666,7 +666,7 @@ describe('a direction press that cannot finish', () => {
     await settle(page);
     expect(goal.parentElement?.querySelector('[data-next-action-feedback]')).toBeNull();
   });
-  it('tells a reader at the activity row when its direction is beyond the search and retains that row focus', async () => {
+  it('keeps the direction action with the progress question and leaves the activity row read-only', async () => {
     const page = mountSession({
       store: SAVED,
       session: SAVED_AT,
@@ -676,19 +676,16 @@ describe('a direction press that cannot finish', () => {
       },
     });
     await settle(page);
-    const row = document.querySelector('[data-next-entry-id="f1"]') as HTMLElement;
-    const button = row.querySelector(
-      'button[data-next-cockpit-action="direction-add"]',
-    ) as HTMLButtonElement;
-    button.focus();
+    const row = document.querySelector('[data-next-entry-id="f1"]');
+    const button = control('direction-add');
+    expect(row?.querySelector('button[data-next-cockpit-action="direction-add"]')).toBeNull();
+    expect(button).toBeVisible();
+    button?.focus();
     await press(button);
     await settle(page);
-    const message =
-      'That direction is beyond the part of the record Compass could search. No outcome line was added.';
-    expect(button.parentElement?.querySelector('[data-next-action-feedback]')?.textContent).toBe(
-      message,
+    expect(document.querySelector('#next-cockpit-cue-status')?.textContent).toBe(
+      'That direction is beyond the part of the record Compass could search. No outcome line was added.',
     );
-    expect(document.querySelector('#next-cockpit-cue-status')?.textContent).toBe(message);
     expect(document.activeElement).toBe(button);
   });
 

@@ -79,11 +79,11 @@ describe('a stored reading', () => {
     const goal = document.querySelector('[data-next-result-goal]') as HTMLElement;
     expect(goal.getAttribute('data-next-result-state')).toBe('departs');
     // The card's What is the cited entry, with its number; no Evidence fold restates it as a status.
-    expect(goal.textContent).toContain('Failed check: pytest -q[1]');
+    expect(goal.textContent).toContain('Failed check: pytest -q#1');
     expect(goal.textContent).not.toContain('Departs; evidence');
     const line = document.querySelector('.next-cockpit-result-lines li') as HTMLElement;
     expect(line.getAttribute('data-next-result-state')).toBe('consistent');
-    expect(line.textContent).toContain('Consistent with [2]');
+    expect(line.textContent).toContain('Consistent with #2');
     expect(result.textContent).not.toMatch(/[✓✔]/);
     // The numbers it names are rows on screen, and the one it cites is flagged.
     expect(document.querySelector('[data-next-entry="1"]')).not.toBeNull();
@@ -259,12 +259,12 @@ describe('a finding jump', () => {
     const jumps = [...document.querySelectorAll('[data-next-finding]')];
     expect(
       screen.queryByRole('link', {
-        name: 'Show #1 in Full activity for Goal: Ship the queue',
+        name: 'Show #1 in Activity log for Goal: Ship the queue',
       }),
     ).toBe(jumps[0]);
     expect(
       screen.queryByRole('link', {
-        name: 'Show #2 in Full activity for Expected outcome line 1: Tests pass',
+        name: 'Show #2 in Activity log for Expected outcome line 1: Tests pass',
       }),
     ).toBe(jumps[1]);
   });

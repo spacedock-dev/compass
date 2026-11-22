@@ -6,7 +6,7 @@ import { OutlinePage } from './outline.scenario';
 
 /* The reader typed `/compass:compass sessions` inside the session, after saving their goal. The agent ran Compass
    and repeated what it printed. That asked Compass a question: it is not a message the reader sent the session,
-   so the Drift card asks nothing about it, and the outline opens no phase for it. Full activity still lists what
+   so the Drift card asks nothing about it, and the outline opens no phase for it. Activity log still lists what
    the agent ran and said, because it happened.
 
    The facts and the outline are not written here. They are what the server published for a transcript in
@@ -93,7 +93,7 @@ export const ACompassSkillActionAddsNothingToTheGoal: Story = {
     await expect(drift).not.toHaveTextContent(/message adds:/);
     await expect(drift).not.toHaveTextContent(/messages after your goal/);
     await expect(drift.querySelector('[data-next-cockpit-direction-question]')).toBeNull();
-    // Full activity still lists what the agent repeated, as the agent's.
+    // Activity log still lists what the agent repeated, as the agent's.
     const echo = await waitFor(() => {
       const node = document.querySelector<HTMLElement>(
         `[data-next-entry-id="${ECHO?.fact_id ?? ''}"]`,
@@ -134,7 +134,7 @@ export const TheSameTurnWithoutTheMarkIsNewWork: Story = {
   },
 };
 
-/* Full activity says whose answer the agent's echo and the command it ran are, and says nothing of the reader's own
+/* Activity log says whose answer the agent's echo and the command it ran are, and says nothing of the reader's own
    work. */
 export const FullActivityLabelsTheEntriesAsCompassAnswer: Story = {
   args: { scenario: scenario(placed) },

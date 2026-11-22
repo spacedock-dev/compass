@@ -203,7 +203,7 @@ export const SharedDeliveryWordsKeepTheirOutcomes: Story = {
   args: { view: 'delivery' },
   play: async ({ canvasElement }) => {
     await userEvent.click(
-      await within(canvasElement).findByRole('button', { name: 'Full activity' }),
+      await within(canvasElement).findByRole('button', { name: /^(Show|Hide) technical details$/ }),
     );
     await waitFor(() =>
       expect(canvasElement.querySelector('.next-session-delivery-why')).toBeVisible(),
@@ -242,7 +242,7 @@ export const MissingOptionalExplanationShowsNoToken: Story = {
   args: { view: 'delivery', missingExplanation: true },
   play: async ({ canvasElement }) => {
     await userEvent.click(
-      await within(canvasElement).findByRole('button', { name: 'Full activity' }),
+      await within(canvasElement).findByRole('button', { name: /^(Show|Hide) technical details$/ }),
     );
     await waitFor(() => expect(canvasElement.textContent).toContain('Handed to this machine'));
     // Delivery outcome and count carry the fact. Identity binding is optional supporting detail.

@@ -83,7 +83,9 @@ export const SentAndSettingsStayInFlow: Story = {
     await expect(Math.abs(subtitleOffset() - before)).toBeLessThan(2);
     await userEvent.click(settings);
     const sent = await inCard.findByRole('button', { name: /^What is sent/ });
-    const activity = within(canvasElement).getByRole('heading', { name: 'Full activity' });
+    const activity = within(canvasElement).getByRole('region', {
+      name: 'Show technical details',
+    });
     await openInFlow(sent, activity);
   },
 };
@@ -184,7 +186,7 @@ export const LiveMonitorAtHigh: Story = {
       new RegExp(`^${LIVE_LEVEL_NAMES['high']}Live estimate · \\d\\d:\\d\\d`),
     );
     await within(level).findByRole('heading', { name: 'Recorded signals' });
-    await expect(level).toHaveTextContent(/pytest -q failed .* ago at \[\d+\]/);
+    await expect(level).toHaveTextContent(/pytest -q failed .* ago at #\d+/);
     await expect(level).toHaveTextContent('Result time not recorded.');
     await expect(within(card).getByText(NUDGE)).toBeVisible();
     await expect(within(card).queryByText(HARNESS_LIMIT)).toBeNull();
@@ -263,7 +265,7 @@ export const ResultUnderADeparture: Story = {
     await expect(level).not.toHaveTextContent(/pytest -q failed .* at #\d+/);
     await expect(
       card.querySelector('[data-next-read-section="session"]')?.textContent ?? '',
-    ).toMatch(/pytest -q failed .* at \[\d+\]/);
+    ).toMatch(/pytest -q failed .* at #\d+/);
     await expect(level).not.toHaveTextContent('Live estimate');
     // The answer is said once, in the verdict sentence under the heading, and not again as a result heading.
     await expect(card.querySelector('[data-next-drift-verdict]')).toHaveTextContent(/1 departure/);
@@ -275,7 +277,7 @@ export const ResultUnderADeparture: Story = {
       .getAllByRole('listitem')
       .find((item) => item.textContent?.includes('Tests pass')) as HTMLElement;
     await expect(line).toHaveAttribute('data-next-result-state', 'consistent');
-    await expect(line).toHaveTextContent(/Consistent with \[\d+\]/);
+    await expect(line).toHaveTextContent(/Consistent with #\d+/);
     // Where the work went is one of the things the analysis read, under its footer disclosure.
     await userEvent.click(within(card).getByRole('button', { name: 'What the analysis read' }));
     await waitFor(() => expect(within(card).getByText('Where the work went')).toBeVisible());
@@ -446,9 +448,11 @@ export const CodexShowsAFailedCheck: Story = {
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
     const canvas = within(canvasElement);
-    /* The row is the failed check's own in Full activity, found by the fact it was drawn from; its mark is a
+    /* The row is the failed check's own in Activity log, found by the fact it was drawn from; its mark is a
        CSS-drawn glyph on an empty span, so the row is what is seen and the mark's name is what is read. */
-    await userEvent.click(await canvas.findByRole('button', { name: 'Full activity' }));
+    await userEvent.click(
+      await canvas.findByRole('button', { name: /^(Show|Hide) technical details$/ }),
+    );
     const row = await waitFor(
       () => {
         const node = canvasElement.querySelector<HTMLElement>('[data-next-entry-id="c1"]');
@@ -520,7 +524,9 @@ export const CodexShowsASubagentsFailedCheck: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await drawn(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Full activity' }));
+    await userEvent.click(
+      await canvas.findByRole('button', { name: /^(Show|Hide) technical details$/ }),
+    );
     const row = await waitFor(
       () => {
         const node = canvasElement.querySelector<HTMLElement>('[data-next-entry-id="c2"]');
@@ -551,7 +557,9 @@ export const CodexSaysHowManySubagentsWereNotRead: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await drawn(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Full activity' }));
+    await userEvent.click(
+      await canvas.findByRole('button', { name: /^(Show|Hide) technical details$/ }),
+    );
     const about = await canvas.findByRole('button', { name: /About this record/ });
     if (about.getAttribute('aria-expanded') !== 'true') await userEvent.click(about);
     await waitFor(() =>

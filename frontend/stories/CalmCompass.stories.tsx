@@ -4,6 +4,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { ControlsProvider, Disclosure } from '../src/controls';
 import { testControls } from '../src/controls/testControls';
+import { TechnicalDetails } from '../src/controls/TechnicalDetails';
 import { GLOSSARY } from '../src/language/glossary';
 import { Alert } from '../src/ui/alert';
 import { Button } from '../src/ui/button';
@@ -337,8 +338,22 @@ function ReservedExamples() {
             </Disclosure>
           </ControlsProvider>
         </section>
+        <section style={row}>
+          <h3 style={subheading}>{GLOSSARY.showTechnicalDetails.plain}</h3>
+          <ControlsProvider controls={kit.controls}>
+            <TechnicalDetails
+              disclosureKey="guide:technical-details"
+              tabs={[
+                {
+                  id: 'activity',
+                  label: GLOSSARY.activityLog.plain,
+                  content: <p>Recorded activity</p>,
+                },
+              ]}
+            />
+          </ControlsProvider>
+        </section>
         {[
-          [GLOSSARY.showTechnicalDetails.plain, 'Activity log, AI use, limits and raw evidence.'],
           ['Stepped slider', 'Choose how much a progress check reads.'],
           ['Forget everything', 'The explanation opens inline in the Your data card.'],
         ].map(([title, note]) => (
@@ -574,6 +589,14 @@ export const StyleGuide: Story = {
       'Forget everything',
     ])
       await expect(reserved.getByRole('heading', { name: heading })).toBeVisible();
+    const detail = reserved.getByRole('region', { name: 'Show technical details' });
+    const detailTrigger = within(detail).getByRole('button', { name: 'Show technical details' });
+    await expect(detailTrigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(detailTrigger.querySelector('svg[data-icon="details"]')).not.toBeNull();
+    await userEvent.click(detailTrigger);
+    await waitFor(() =>
+      expect(within(detail).getByRole('tabpanel', { name: 'Activity log' })).toBeVisible(),
+    );
     for (const [name, checked] of [
       ['Off', false],
       ['On', true],

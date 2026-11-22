@@ -2,6 +2,7 @@ import { nativeSession } from '../observed/native';
 import { nextNumber } from '../api/bootstrap';
 import {
   conflictCandidates,
+  entryLabel,
   entryNumbering,
   labelOrder,
   laterDirections,
@@ -31,8 +32,8 @@ import {
 } from './sentences';
 import { readingAuthor, readingCopied } from './shape';
 
-/* The session's activity, numbered. It sits right after CURRENT ACTIVITY in Full activity, under that
-   section's own heading, and the numbers are the ones every "#<n>" on the page names: a
+/* The numbered session record shown in Activity log. The numbers are the ones every "#<n>"
+   on the page names: a
    reading cites an entry by this list's number, so a citation resolves against the same list the reader is
    looking at rather than against a second collection assembled from the same facts. `cited` is the set of
    fact ids the current reading's surviving departures rest on. The legacy cockpit's `nextCockpitWorkEvidence`
@@ -312,7 +313,7 @@ function unreadSentence(scan: Row | null | undefined): string {
   return `${parts.join(' and ')} ${subagents + calls === 1 ? 'was' : 'were'} not read`;
 }
 
-/* A passing check gets one more mark when the scan left subagent transcripts unread, so Full activity does not
+/* A passing check gets one more mark when the scan left subagent transcripts unread, so Activity log does not
    show a bare "Passed" for a session whose subagent work was not read. Only a pass: a failure stands whatever
    else was unread, and a check with no recorded result claims nothing to qualify. Unread calls get no mark: each
    one is recorded as a change, so a pass before it already carries the stale mark and a pass after it saw it. */
@@ -522,7 +523,6 @@ export interface WorkRow {
   readonly source: string;
   readonly at: string;
   readonly turn: boolean;
-  readonly add: boolean;
 }
 
 export interface CheckRunModel {
@@ -647,10 +647,12 @@ export function workList(input: WorkListInput): WorkList {
   /* An entry a fixed-number session published no number for (a workflow fact, say) is still in the window, so it
      is drawn, without a number and with its time, as a cited earlier entry is. */
   const unnumberedHere = new Set(noNumber);
+  const datedEarlier = new Set(earlier);
   const entries = all.filter(
     (entry) =>
       numbers.has(entry) ||
       unnumberedHere.has(entry) ||
+      datedEarlier.has(entry) ||
       isCited(entry) ||
       isRevealed(entry) ||
       open.has(entry),
@@ -658,7 +660,8 @@ export function workList(input: WorkListInput): WorkList {
   const turnOf = lastTurn(session, all);
   const rows = entries.map((entry): WorkRow => {
     const stamp = nextNumber(entry.at);
-    const n = numbers.get(entry);
+    const n =
+      numbers.get(entry) ?? (ordinals && datedEarlier.has(entry) ? entryLabel(entry) : null);
     const copied = readingCopied(entry);
     const row: WorkRow = {
       entry,
@@ -701,7 +704,6 @@ export function workList(input: WorkListInput): WorkList {
           stamp <= turnOf.to &&
           !personAuthored(entry),
       ),
-      add: later.has(entry),
     };
     return incompletePass(row, source.scan);
   });
@@ -725,16 +727,6 @@ export function workList(input: WorkListInput): WorkList {
         : 'The record read here no longer reaches back to where your intent’s window opens, so #1 is the first entry it holds after that point.'
       : '';
   const unlisted: string[] = [];
-  const unasked = earlier.filter((entry) => !open.has(entry));
-  if (unasked.length) {
-    unlisted.push(
-      unlistedClause(
-        unasked.length,
-        `earlier ${unasked.length === 1 ? 'entry' : 'entries'}, from before your intent’s window opened,`,
-        unasked.filter((entry) => isCited(entry) || isRevealed(entry)).length,
-      ),
-    );
-  }
   if (untimed.length) {
     unlisted.push(
       unlistedClause(
@@ -752,7 +744,9 @@ export function workList(input: WorkListInput): WorkList {
   const unnumbered =
     !numbers.size && (earlier.length || untimed.length)
       ? earlier.length
-        ? 'No entry in the record read here is from after your intent’s window opened, so none is numbered.'
+        ? ordinals
+          ? ''
+          : 'No entry in the record read here is from after your intent’s window opened, so none is numbered.'
         : 'No entry in the record read here has a published time, so none is numbered.'
       : '';
   const harness = String(session['harness'] || '');

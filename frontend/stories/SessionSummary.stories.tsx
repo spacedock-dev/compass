@@ -90,7 +90,7 @@ async function atWidth(width: number, check: () => Promise<void>) {
 
 /* Each `said` bullet names the agent as its speaker and cites only the agent's messages; each `asked` opens with "You" and
    cites only the person's; a `failed` one says so in words; every chip is named for the bullet it supports and
-   names a row of Full activity. */
+   names a row of Activity log. */
 async function attributed(summary: HTMLElement) {
   const bullets = [...summary.querySelectorAll<HTMLElement>('[data-next-summary-bullet]')];
   await expect(bullets.length).toBeGreaterThan(0);
@@ -108,7 +108,7 @@ async function attributed(summary: HTMLElement) {
       const entry = document.querySelector<HTMLElement>(
         `[data-next-cockpit-work] [data-next-entry-id="${CSS.escape(id)}"]`,
       );
-      // Whose words a bullet cites is read off the entry Full activity draws for it.
+      // Whose words a bullet cites is read off the entry Activity log draws for it.
       await expect(entry).not.toBeNull();
       if (kind === 'said') await expect(entry?.textContent).toMatch(/Agentsaid/);
       if (kind === 'asked') await expect(entry?.textContent).toMatch(/You/);
@@ -159,7 +159,7 @@ export const Ready: Story = {
     await expect(
       summary.querySelectorAll('a:not([data-next-outline-entry]), strong, em, code, img'),
     ).toHaveLength(0);
-    // A chip opens Full activity at its entry.
+    // A chip opens Activity log at its entry.
     await seeInContext(within(summary).getByRole('link', { name: /^Open entry #2\.1, cited for/ }));
     await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'c1')));
     await expect(summaryPosts()).toHaveLength(0);
@@ -371,7 +371,7 @@ export const NamedSubjectsAreNotDoubled: Story = {
   },
 };
 
-/* With Full activity closed, a chip opens it and the cited row lands on screen. A smooth scroll begun while
+/* With Activity log closed, a chip opens it and the cited row lands on screen. A smooth scroll begun while
    the panel still grew was clamped at the foot of a page not yet tall enough and left the row at the edge. */
 export const ChipLandsOnScreenWithFullActivityClosed: Story = {
   render: () => <SummaryPage summary={storedSummary()} />,
@@ -380,7 +380,7 @@ export const ChipLandsOnScreenWithFullActivityClosed: Story = {
     const summary = await summaryOf(region);
     await expect(
       canvasElement
-        .querySelector('[data-next-full-activity-trigger]')
+        .querySelector('[data-next-session-full-activity] .technical-details-trigger')
         ?.getAttribute('aria-expanded'),
     ).toBe('false');
     await seeInContext(within(summary).getByRole('link', { name: /^Open entry #2\.1, cited for/ }));
@@ -402,7 +402,7 @@ export const ChipLandsOnScreenWithFullActivityClosed: Story = {
 };
 
 /* Hovering a citation shows the cited entry's own words in a card, and nothing moves. The card's last line is
-   the only way to Full activity: it closes the card and lands on the row. */
+   the only way to Activity log: it closes the card and lands on the row. */
 export const CitationCardShowsTheEntry: Story = {
   render: () => <SummaryPage summary={storedSummary()} />,
   play: async ({ canvasElement }) => {
@@ -421,10 +421,10 @@ export const CitationCardShowsTheEntry: Story = {
     );
     await expect(shown).toHaveTextContent('#2.1');
     await expect(getComputedStyle(shown).boxShadow).toContain('rgba(31, 41, 51, 0.18)');
-    // Seeing the entry did not open Full activity or move focus to it.
+    // Seeing the entry did not open Activity log or move focus to it.
     await expect(
       canvasElement
-        .querySelector('[data-next-full-activity-trigger]')
+        .querySelector('[data-next-session-full-activity] .technical-details-trigger')
         ?.getAttribute('aria-expanded'),
     ).toBe('false');
     const contextLink = within(shown).getByRole('link', { name: 'See in context of the session' });
@@ -1569,7 +1569,7 @@ export const ColdReopenCitesAnOlderPage: Story = {
       '[data-next-summary-phase="0:0"] [data-next-outline-entry="p1"]',
     ) as HTMLElement;
     await expect(chip).toHaveAccessibleName(
-      'Open an older entry the page has not read yet, cited for “You asked for retry with backoff on the webhook handler.”, in Full activity',
+      'Open an older entry the page has not read yet, cited for “You asked for retry with backoff on the webhook handler.”, in Activity log',
     );
     await expect(entryRow(canvasElement, 'p1')).toBeNull();
     await seeInContext(chip);
@@ -1604,7 +1604,7 @@ export const CitationThatCannotLoad: Story = {
     );
     await waitFor(() =>
       expect(region.querySelector('[data-next-outline-missing]')).toHaveTextContent(
-        'Full activity does not show that entry: it could not be loaded',
+        'Activity log does not show that entry: it could not be loaded',
       ),
     );
   },
@@ -1794,7 +1794,7 @@ export const SampleDrawsAStoredSummary: Story = {
       ),
     );
     await expect(region.querySelector('[data-next-summary]')).not.toBeNull();
-    // A citation reads: it lands on its entry in Full activity.
+    // A citation reads: it lands on its entry in Activity log.
     const chip = summary.querySelector<HTMLElement>(
       `[data-next-summary-phase="0:0"] [data-next-outline-entry="${SAMPLE_PHASE_START}"]`,
     ) as HTMLElement;
@@ -2157,14 +2157,14 @@ export const WithheldRunCollapses: Story = {
   },
 };
 
-/* Full activity: where each entry came from is one press away in its head, not a sentence read out on every
+/* Activity log: where each entry came from is one press away in its head, not a sentence read out on every
    row, and the header names the token rate's unit. */
 export const FullActivitySourceOnePressAway: Story = {
   render: () => <SummaryPage summary={storedSummary()} session={{ rate_per_min: 44 }} />,
   play: async ({ canvasElement }) => {
     await card(canvasElement);
     await userEvent.click(
-      await within(canvasElement).findByRole('button', { name: 'Full activity' }),
+      await within(canvasElement).findByRole('button', { name: /^(Show|Hide) technical details$/ }),
     );
     const entry = await waitFor(() => {
       const node = entryRow(canvasElement, 'a1');
@@ -2312,7 +2312,7 @@ export const CheckCitationTheRecordDoesNotCarry: Story = {
     await expect(row.querySelector('[data-next-summary-unlinked]')).toBeNull();
     await expect(summary.querySelectorAll('[data-next-summary-unlinked]')).toHaveLength(1);
     await expect(summary.querySelector('[data-next-summary-unlinked]')).toHaveTextContent(
-      '1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.',
+      '1 cited entry is an earlier check or file that Activity log does not list, so it cannot be opened from here.',
     );
     const line = await waitFor(() => {
       const node = canvasElement.querySelector<HTMLElement>('[data-next-departure-summary]');
@@ -2438,10 +2438,11 @@ export const MissingLineStaysInTheOutline: Story = {
       return node;
     });
     await userEvent.click(chip);
-    await waitFor(() =>
-      expect(outline.querySelector('[data-next-outline-missing]')).not.toBeNull(),
-    );
-    await expect(region.querySelectorAll('[data-next-outline-missing]')).toHaveLength(1);
+    const log = within(canvasElement).getByRole('tabpanel', { name: 'Activity log' });
+    const row = log.querySelector('[data-next-entry-id="c1"]');
+    await expect(row).toHaveAttribute('data-before-window');
+    await waitFor(() => expect(row).toHaveFocus());
+    await expect(outline.querySelector('[data-next-outline-missing]')).toBeNull();
   },
 };
 
@@ -2474,7 +2475,7 @@ export const PhasesStartClosedAndStayOpenOnceOpened: Story = {
   },
 };
 
-/* The citations Full activity does not list are said once, at the foot of the card, as a count of the entries
+/* The citations Activity log does not list are said once, at the foot of the card, as a count of the entries
    across the opening and every line: they were said after the opening and most bullets. */
 export const FullActivityLimitSaidOnce: Story = {
   render: () => (
@@ -2507,7 +2508,7 @@ export const FullActivityLimitSaidOnce: Story = {
     await expect(notes).toHaveLength(1);
     const note = notes[0] as HTMLElement;
     await expect(note).toHaveTextContent(
-      '2 cited entries are earlier checks or files that Full activity does not list, so they cannot be opened from here.',
+      '2 cited entries are earlier checks or files that Activity log does not list, so they cannot be opened from here.',
     );
     await expect(note.dataset['nextSummaryUnlinked']).toBe('2');
     // Not after the opening, nor after a bullet.

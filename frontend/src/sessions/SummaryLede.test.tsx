@@ -49,7 +49,7 @@ describe('the lede of a stored summary', () => {
     const notes = region.querySelectorAll('[data-next-summary-unlinked]');
     expect(notes).toHaveLength(1);
     expect(notes[0]?.textContent).toBe(
-      '1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.',
+      '1 cited entry is an earlier check or file that Activity log does not list, so it cannot be opened from here.',
     );
   });
 });

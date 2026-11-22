@@ -11,18 +11,25 @@ export function ActivityHead({
   row,
   turnRange,
   source,
+  summary,
 }: {
   readonly row: WorkRow;
   readonly turnRange?: string | null;
   /** The row's Source disclosure, drawn before its time. */
   readonly source?: ReactNode;
+  readonly summary?: ReactNode;
 }) {
   const turn = row.turn && turnRange !== null;
   const turnWords = turnRange ? `${LAST_TURN_MARK.words}, ${turnRange}` : LAST_TURN_MARK.words;
   return (
-    <div className="next-cockpit-work-head">
-      <span className="next-cockpit-work-actor">{row.head.actor}</span>
-      <span className="next-cockpit-work-type">{row.head.type}</span>
+    <div
+      className={`next-cockpit-work-head ${summary ? 'grid grid-cols-1 gap-x-3 min-[760px]:grid-cols-[minmax(6rem,1fr)_minmax(0,4fr)_auto]' : ''}`}
+    >
+      <span className="flex flex-wrap gap-x-2">
+        <span className="next-cockpit-work-actor">{row.head.actor}</span>
+        <span className="next-cockpit-work-type">{row.head.type}</span>
+      </span>
+      {summary}
       <span
         className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1 text-label [font-family:var(--mono)]"
         data-activity-head-right

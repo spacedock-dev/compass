@@ -1,21 +1,21 @@
 import { afterPanelSettles } from './panelSettle';
 import type { DriftValue } from './context';
-import { fullActivityKey } from '../sessions/fullActivityKey';
+import { showActivityLog } from '../sessions/fullActivityKey';
 import { entriesHeld } from './citations';
 
 const LAND_SETTLE_MS = 1500;
 
-/* Places a numbered entry of Full activity in view and focuses it, or says it is not drawn. */
+/* Places a numbered entry of Activity log in view and focuses it, or says it is not drawn. */
 export function landOnEntry(id: string): boolean {
   const node = document.querySelector<HTMLElement>(
     `[data-next-cockpit-work] [data-next-entry-id="${CSS.escape(id)}"]`,
   );
-  if (!node) return false;
+  if (!node || node.closest('[hidden]')) return false;
   node.focus({ preventScroll: true });
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   node.scrollIntoView({ behavior: reduce ? 'instant' : 'smooth', block: 'center' });
   if (!reduce) {
-    /* A smooth scroll runs against the page as it was when it started. Full activity opening or its rows
+    /* A smooth scroll runs against the page as it was when it started. Activity log opening or its rows
        arriving under it moved the row after that, and the scroll ended with the row at the foot of the
        screen or below it, so it is checked once where the scroll ends and placed again if it is off screen.
        The check is dropped after a moment, so a scroll of the reader's own is never answered. */
@@ -34,13 +34,15 @@ export function landOnEntry(id: string): boolean {
   return true;
 }
 
-/* A press on an entry the page already holds: Full activity opens, and the row is placed once its panel has
+/* A press on an entry the page already holds: Activity log opens, and the row is placed once its panel has
    finished easing open, as a citation in the summary does. */
 export function jumpToEntry(drift: DriftValue, id: string): void {
   const { ctx, model } = drift;
-  ctx.shell.controls.disclosures.set(fullActivityKey(model.project, model.session), true);
+  showActivityLog(ctx.shell.controls, model.project, model.session);
   requestAnimationFrame(() => {
-    const panel = document.querySelector('[data-next-full-activity-body]');
+    const panel = document.querySelector(
+      '[data-next-session-full-activity] [data-slot="accordion-content"]',
+    );
     const growing = panel?.getAnimations?.() ?? [];
     void Promise.allSettled(growing.map((animation) => animation.finished)).then(() => {
       afterPanelSettles(() => {
@@ -51,12 +53,12 @@ export function jumpToEntry(drift: DriftValue, id: string): void {
 }
 
 /* A press on an entry the page may not hold yet, from a citation outside the reading: the older record pages are
-   read for it first, as Show cited entries reads them, because the reader asked for this entry; then Full
-   activity opens and the row is placed once its panel has finished easing open. Resolves whether the row is
+   read for it because the reader asked for this entry. Activity log opens and the row is placed once its panel
+   has finished easing open. Resolves whether the row is
    drawn, so the caller can say where it is not. */
 export async function openEntry(drift: DriftValue, id: string): Promise<boolean> {
   const { ctx, model } = drift;
-  ctx.shell.controls.disclosures.set(fullActivityKey(model.project, model.session), true);
+  showActivityLog(ctx.shell.controls, model.project, model.session);
   if (!model.byId.has(id) && model.identity) {
     const scope = { projectKey: model.projectKey, session: model.session, cited: [id] };
     await ctx.shell.runtime.resolveRecord(
@@ -65,7 +67,9 @@ export async function openEntry(drift: DriftValue, id: string): Promise<boolean>
     );
   }
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  const panel = document.querySelector('[data-next-full-activity-body]');
+  const panel = document.querySelector(
+    '[data-next-session-full-activity] [data-slot="accordion-content"]',
+  );
   const growing = panel?.getAnimations?.() ?? [];
   await Promise.allSettled(growing.map((animation) => animation.finished));
   return new Promise<boolean>((resolve) => {

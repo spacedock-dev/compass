@@ -221,7 +221,7 @@ export const ACitedMessageIsQuotedWithoutItsWrapper: Story = {
   },
 };
 
-/* Full activity lists each message by the words it carries. */
+/* Activity log lists each message by the words it carries. */
 export const TheWorkListDrawsNoWrapper: Story = {
   ...scenario({
     session: { annotation_assessment: DEPARTURE_READING, annotation_reading_count: 1 },
@@ -229,7 +229,7 @@ export const TheWorkListDrawsNoWrapper: Story = {
   }),
   play: async ({ canvasElement }) => {
     await userEvent.click(
-      await within(canvasElement).findByRole('button', { name: 'Full activity' }),
+      await within(canvasElement).findByRole('button', { name: /^(Show|Hide) technical details$/ }),
     );
     for (const [id, words] of [
       ['u2', 'Back to my goal: Ship the queue'],

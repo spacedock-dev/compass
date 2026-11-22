@@ -16,8 +16,9 @@
       "monospace": 1,
       "tracking": 1
     },
-    "frontend/src/drift/CitationLink.tsx": {
-      "monospace": 2
+    "frontend/src/drift/drift.css": {
+      "monospace": 10,
+      "tracking": 4
     },
     "frontend/src/drift/DriftStamp.tsx": {
       "monospace": 2
@@ -27,9 +28,12 @@
       "tracking": 3,
       "monospace": 4
     },
-    "frontend/src/drift/drift.css": {
-      "monospace": 10,
-      "tracking": 4
+    "frontend/src/drift/WorkListView.tsx": {
+      "monospace": 1
+    },
+    "frontend/src/intent/intent.css": {
+      "monospace": 7,
+      "tracking": 1
     },
     "frontend/src/intent/IntentSection.tsx": {
       "monospace": 1
@@ -37,28 +41,21 @@
     "frontend/src/intent/OutcomeLines.tsx": {
       "monospace": 1
     },
-    "frontend/src/intent/PromptSelect.tsx": {
-      "monospace": 2
-    },
-    "frontend/src/intent/intent.css": {
-      "monospace": 7,
-      "tracking": 4
-    },
     "frontend/src/project/project.css": {
       "monospace": 17,
       "uppercase": 1,
       "tracking": 15
+    },
+    "frontend/src/sessions/sessions.css": {
+      "monospace": 19,
+      "uppercase": 2,
+      "tracking": 17
     },
     "frontend/src/sessions/SummaryParts.tsx": {
       "monospace": 2
     },
     "frontend/src/sessions/WhatItDid.tsx": {
       "monospace": 4
-    },
-    "frontend/src/sessions/sessions.css": {
-      "monospace": 20,
-      "uppercase": 2,
-      "tracking": 18
     },
     "frontend/src/steering/steering.css": {
       "monospace": 1,
@@ -88,8 +85,7 @@
     }
   },
   "technical": {
-    "frontend/src/drift/CitationLink.tsx": "Shows citation identifiers and the recorded evidence they open.",
-    "frontend/src/sessions/FullActivity.tsx": "Shows the underlying activity log.",
+    "frontend/src/drift/WorkListView.tsx": "Activity log row text is under the technical details panel.",
     "frontend/src/terminal/terminal.css": "Styles terminal output, identities and attach commands."
   },
   "stories": [

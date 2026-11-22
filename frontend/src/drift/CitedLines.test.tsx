@@ -79,8 +79,8 @@ describe('the cited entries on a claim row and a departure card', () => {
     const claim = document.querySelector('[data-next-result-claims]') as HTMLElement;
     const found = lines(claim);
     expect(found).toHaveLength(2);
-    expect(found[0]).toMatch(/^Agent said: “The queue is done and the tests pass\.” ?\[\d+\]/);
-    expect(found[1]).toMatch(/^Failed check: pytest -q ?\[\d+\]/);
+    expect(found[0]).toMatch(/^Agent said: “The queue is done and the tests pass\.” ?#\d+/);
+    expect(found[1]).toMatch(/^Failed check: pytest -q ?#\d+/);
   });
 
   it('draws one line per cited entry on a departure card, in the same form as the claims row', async () => {
@@ -98,7 +98,7 @@ describe('the cited entries on a claim row and a departure card', () => {
     const goal = document.querySelector('[data-next-result-goal]') as HTMLElement;
     const found = lines(goal);
     expect(found).toHaveLength(1);
-    expect(found[0]).toMatch(/^Agent said: “The queue is done and the tests pass\.” ?\[\d+\]/);
+    expect(found[0]).toMatch(/^Agent said: “The queue is done and the tests pass\.” ?#\d+/);
     expect(goal.textContent).not.toContain('Agent message');
   });
 
@@ -119,7 +119,7 @@ describe('the cited entries on a claim row and a departure card', () => {
     }
   });
 
-  it('keeps pressing a number opening Full activity on that entry', async () => {
+  it('keeps pressing a number opening Activity log on that entry', async () => {
     HTMLElement.prototype.scrollIntoView = vi.fn();
     window.matchMedia = vi.fn().mockReturnValue({ matches: true });
     await mount();

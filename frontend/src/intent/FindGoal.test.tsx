@@ -161,8 +161,8 @@ describe('a press', () => {
     expect(cites().map((cite) => cite.textContent)).toEqual(['[1]', '[3]']);
     expect(cites().map((cite) => cite.getAttribute('data-next-cite'))).toEqual(['f1', 'f2']);
     expect(cites().map((cite) => cite.getAttribute('aria-label'))).toEqual([
-      'Show #1 in Full activity for the detected goal',
-      'Show #3 in Full activity for the detected goal',
+      'Show #1 in Activity log for the detected goal',
+      'Show #3 in Activity log for the detected goal',
     ]);
   });
 

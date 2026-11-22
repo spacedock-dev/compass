@@ -32,7 +32,7 @@ import {
    constraint's own words, What as the cited entries by number and Why as the stored detail), then one quiet row
    per remaining line, Steer back by its unchanged rules, and the quiet footer. The table of these states, with
    the rendering before and after, is in the pull request. Every story asserts what a reader can check: which
-   constraint a card is about, that each number names a row in Full activity and opens on it, whose words each
+   constraint a card is about, that each number names a row in Activity log and opens on it, whose words each
    sentence is, and that nothing says the work was done. */
 
 const meta = {
@@ -123,19 +123,19 @@ const primaries = (root: HTMLElement) => [
 
 /* Each number on a finding is the activity list's own: a button named for the number, the constraint and the
    reader's words, with the kind of entry Compass names beside it (on a departure card, the entry's own words,
-   attributed), and a row in Full activity that carries the same number. */
+   attributed), and a row in Activity log that carries the same number. */
 async function citesResolvably(root: HTMLElement, constraint: string, clause: string) {
   const found = chips(root);
   await expect(found.length).toBeGreaterThan(0);
   for (const chip of found) {
     const cite = chip.textContent ?? '';
-    await expect(cite).toMatch(/^\[\d+(\.\d+)?\]$/);
-    const number = `#${cite.slice(1, -1)}`;
+    await expect(cite).toMatch(/^#\d+(\.\d+)?$/);
+    const number = cite;
     await expect(chip).toHaveAccessibleName(
-      `Show ${number} in Full activity for ${clause ? `${constraint}: ${clause}` : constraint}`,
+      `Show ${number} in Activity log for ${clause ? `${constraint}: ${clause}` : constraint}`,
     );
     await expect(chip.previousSibling?.textContent).toMatch(
-      /^(failed check|passed check|File write|Agent message|Your message|Recorded entry|Agent said: “.+”|(At (\d\d:\d\d|a time not recorded) (the agent changed .+\.|a check (failed|ran)(: .+\.|\.)|the agent said (“.+”|something)\.|you said “.+”\.|[a-z ]+ was recorded\.))|\[\d+(\.\d+)?\]|You said: “.+”|(Failed|Passed|Recorded) check: .+|Command that exited 0: .+|File write: .+)$/,
+      /^(failed check|passed check|File write|Agent message|Your message|Recorded entry|Agent said: “.+”|(At (\d\d:\d\d|a time not recorded) (the agent changed .+\.|a check (failed|ran)(: .+\.|\.)|the agent said (“.+”|something)\.|you said “.+”\.|[a-z ]+ was recorded\.))|#\d+(\.\d+)?|You said: “.+”|(Failed|Passed|Recorded) check: .+|Command that exited 0: .+|File write: .+)$/,
     );
     const row = document.querySelector<HTMLElement>(
       `[data-next-entry-id="${CSS.escape(chip.dataset['nextCite'] ?? '')}"]`,
@@ -203,7 +203,7 @@ async function noFolds(node: HTMLElement) {
 }
 
 /* The cited entries of a card or row, one line each: its own words, then its number (a press on which opens
-   Full activity), then when. */
+   Activity log), then when. */
 const citedLines = (node: HTMLElement) => [
   ...node.querySelectorAll<HTMLElement>('[data-next-cited-entries] > li'),
 ];
@@ -359,7 +359,7 @@ export const TwoDeparturesOnTwoMessagesAreTitledApart: Story = {
   },
 };
 
-/* A number opens Full activity on that entry, not on the finding's first; Back to the finding returns to it. */
+/* A number opens Activity log on that entry, not on the finding's first; Back to the finding returns to it. */
 export const ANumberOpensFullActivityAtItsEntry: Story = {
   ...scenario({
     session: stored(
@@ -418,7 +418,7 @@ export const NotReachedAndConsistentWithACheck: Story = {
     await expect(getComputedStyle(quiet).borderTopStyle).toBe('none');
     const goal = quietRow(quiet, 'goal');
     await expect(goal).toHaveAttribute('data-next-result-state', 'consistent');
-    await expect(goal).toHaveTextContent(/^Consistent with \[\d+(\.\d+)?\] · “Ship the queue”/);
+    await expect(goal).toHaveTextContent(/^Consistent with #\d+(\.\d+)? · “Ship the queue”/);
     await citesResolvably(goal, 'Goal', 'Ship the queue');
     const line = quietRow(quiet, 'line_1');
     await expect(line).toHaveAttribute('data-next-result-state', 'not-reached');
@@ -502,11 +502,11 @@ export const ConsistentWithTheAgent: Story = {
       expect(node).not.toBeNull();
       return node;
     });
-    await expect(goal).toHaveTextContent(/^Consistent with what the agent said at \[\d+\]/);
+    await expect(goal).toHaveTextContent(/^Consistent with what the agent said at #\d+/);
     await citesResolvably(goal, 'Goal', 'Ship the queue');
     // The cited entry is one line in its own words, like every other line on the card; nothing is folded.
     await expect(citedLines(goal)[0]).toHaveTextContent(
-      /^Agent said: “All green locally: the tests pass\.”\[\d+(\.\d+)?\]/,
+      /^Agent said: “All green locally: the tests pass\.”#\d+(\.\d+)?/,
     );
     await noFolds(goal);
     await expect(goal).toHaveTextContent('not a check');
@@ -533,7 +533,7 @@ export const ConsistentWithTheSession: Story = {
       return node;
     });
     await expect(goal).toHaveTextContent(
-      /^Consistent with what the session said at (\[\d+(\.\d+)?\]|\d\d:\d\d)/,
+      /^Consistent with what the session said at (#\d+(\.\d+)?|\d\d:\d\d)/,
     );
     await expect(goal.textContent).not.toContain('Queue worker started');
     await neverDone(shown);
@@ -627,10 +627,10 @@ export const ARecordedWriteSettlesALineThatRulesOutItsFolder: Story = {
     // Each written file is one line in the same plain form, with its number and when.
     const written = citedLines(cards[0] as HTMLElement);
     await expect(written[0]).toHaveTextContent(
-      /^File write: frontend\/e2e\/support\/state\.ts\[\d+(\.\d+)?\]\d\d:\d\d$/,
+      /^File write: frontend\/e2e\/support\/state\.ts#\d+(\.\d+)?\d\d:\d\d$/,
     );
     await expect(written[1]).toHaveTextContent(
-      /^File write: frontend\/e2e\/a\.spec\.ts\[\d+(\.\d+)?\]\d\d:\d\d$/,
+      /^File write: frontend\/e2e\/a\.spec\.ts#\d+(\.\d+)?\d\d:\d\d$/,
     );
     await neverDone(shown);
   },
@@ -781,7 +781,7 @@ export const EveryCantTellLineSaysItsOwnReason: Story = {
     await expect(reasons[0]).toBe(CHECK_DOES_NOT_SHOW_IT);
     await expect(reasons[1]).toBe(TELLS_THE_PERSON);
     await expect(reasons[2]).toMatch(
-      /^What it read, \[\d+(\.\d+)?\], neither shows nor contradicts this\.$/,
+      /^What it read, #\d+(\.\d+)?, neither shows nor contradicts this\.$/,
     );
     await expect(reasons[3]).toBe(RESULT_NOTHING_SHOWS_REASON);
     for (const node of rows) {
@@ -817,7 +817,7 @@ export const ClaimContradicted: Story = {
     });
     await expect(claim).toHaveAttribute('data-next-result-state', 'departs');
     await expect(claim).toHaveTextContent(
-      /^What the agent claimed · “All green locally: the tests pass” is contradicted at \[\d+(\.\d+)?\]/,
+      /^What the agent claimed · “All green locally: the tests pass” is contradicted at #\d+(\.\d+)?/,
     );
     await expect(claim).toHaveTextContent('pytest failed after the agent said the tests pass.');
     await citesResolvably(claim, 'What the agent claimed', '');
@@ -904,9 +904,9 @@ const unexplained = (detail: string): Pick<Story, 'args' | 'play'> => ({
     const entries = citedLines(claim);
     await expect(entries).toHaveLength(2);
     await expect(entries[0]).toHaveTextContent(
-      /^Agent said: “All green locally: the tests pass.”\[\d+(\.\d+)?\]/,
+      /^Agent said: “All green locally: the tests pass.”#\d+(\.\d+)?/,
     );
-    await expect(entries[1]).toHaveTextContent(/^Failed check: pytest -q\[\d+(\.\d+)?\]/);
+    await expect(entries[1]).toHaveTextContent(/^Failed check: pytest -q#\d+(\.\d+)?/);
     await neverDone(shown);
   },
 });
@@ -941,14 +941,14 @@ export const ACitedCheckReadsPlainlyWithItsNumber: Story = {
     await noFolds(claim);
     const entries = citedLines(claim);
     await expect(entries).toHaveLength(2);
-    await expect(entries[0]).toHaveTextContent(/^Agent said: “.+”\[\d+(\.\d+)?\]\d\d:\d\d$/);
-    await expect(entries[1]).toHaveTextContent(/^Failed check: pytest -q\[\d+(\.\d+)?\]\d\d:\d\d$/);
+    await expect(entries[0]).toHaveTextContent(/^Agent said: “.+”#\d+(\.\d+)?\d\d:\d\d$/);
+    await expect(entries[1]).toHaveTextContent(/^Failed check: pytest -q#\d+(\.\d+)?\d\d:\d\d$/);
     await citesResolvably(claim, 'What the agent claimed', '');
     await neverDone(shown);
   },
 };
 
-/* A departure card draws each cited entry as its own line, and pressing a number opens Full activity on that
+/* A departure card draws each cited entry as its own line, and pressing a number opens Activity log on that
    entry, as the bare number did. */
 export const ADepartureCardListsEachCitedEntryAndItsNumberOpensFullActivity: Story = {
   ...scenario({
@@ -967,7 +967,7 @@ export const ADepartureCardListsEachCitedEntryAndItsNumberOpensFullActivity: Sto
     await noFolds(departure);
     const entries = citedLines(departure);
     await expect(entries).toHaveLength(2);
-    for (const entry of entries) await expect(entry).toHaveTextContent(/\[\d+(\.\d+)?\]/);
+    for (const entry of entries) await expect(entry).toHaveTextContent(/#\d+(\.\d+)?/);
     await expect(departure).toHaveTextContent('Agent said: “');
     const number = chips(departure)[0] as HTMLElement;
     await seeInContext(number);
@@ -1013,7 +1013,7 @@ export const AgentDoneIsNeverDrawnInTheResult: Story = {
       'Agent said: “Done [check mark] the queue ships.”',
     );
     await noFolds(goal);
-    // The entry is in the record: Full activity, outside the result, still carries the agent's words.
+    // The entry is in the record: Activity log, outside the result, still carries the agent's words.
     await expect(document.querySelector('[data-next-entry-id="m2"]')?.textContent ?? '').toContain(
       'the queue ships',
     );
@@ -1084,7 +1084,7 @@ export const ClaimShownByTheRecord: Story = {
     });
     await expect(claim).toHaveAttribute('data-next-result-state', 'consistent');
     await expect(claim).toHaveTextContent(
-      /^What the agent claimed · “All green locally: the tests pass” is shown at \[\d+(\.\d+)?\]/,
+      /^What the agent claimed · “All green locally: the tests pass” is shown at #\d+(\.\d+)?/,
     );
     await citesResolvably(claim, 'What the agent claimed', '');
     await neverDone(shown);

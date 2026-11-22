@@ -92,11 +92,11 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
     const whats = [...drift.querySelectorAll<HTMLElement>('[data-next-departure-what]')];
     await expect(whats).toHaveLength(2);
     for (const what of whats) {
-      await expect(what).toHaveTextContent(/\[\d+\]/);
+      await expect(what).toHaveTextContent(/#\d+/);
       await expect(what).toHaveTextContent(`Agent said: “${SAID}”`);
       await expect(what).toHaveTextContent(clock(650));
       await expect(
-        within(what).getByRole('link', { name: /Show .* in Full activity/ }),
+        within(what).getByRole('link', { name: /Show .* in Activity log/ }),
       ).toBeVisible();
     }
     // Said once, inside What the analysis read, not between the verdict and the cards.
@@ -104,7 +104,7 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
     await expect(drift.querySelector('[data-next-reading-coverage]')).toBeNull();
     const read = drift.querySelector('[data-next-read-section="session"]') as HTMLElement;
     await expect(read.textContent).toContain('The adopted source was found.');
-    await expect(read.textContent).toMatch(/Entries read: \[\d+\]/);
+    await expect(read.textContent).toMatch(/Entries read: #\d+/);
     await expect(
       drift.querySelector('[data-next-drift-level] .next-session-drift-range'),
     ).toBeNull();
@@ -130,7 +130,7 @@ export const ADepartureCardHasNoEvidenceOrSourceFold: Story = {
     const goal = drift.querySelector('[data-next-departure="goal"]') as HTMLElement;
     await expect(within(goal).queryByRole('button', { name: /^(Evidence|Source)/ })).toBeNull();
     const line = goal.querySelector('[data-next-cited-entries] > li') as HTMLElement;
-    await expect(line).toHaveTextContent(new RegExp(`^Agent said: “.+”\\[\\d+\\]${clock(650)}$`));
+    await expect(line).toHaveTextContent(new RegExp(`^Agent said: “.+”#\\d+${clock(650)}$`));
     await expect(goal.textContent).not.toContain('UTC');
     await expect(goal.textContent).not.toContain('Evidence recorded at');
     await expect(goal.textContent).not.toContain('Departs; evidence');

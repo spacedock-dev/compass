@@ -316,7 +316,7 @@ export const AFoundGoalWithItsCitations: Story = {
       '#3 “make sure the existing tests”',
     ]);
     await expect(cites[0]?.getAttribute('aria-label')).toBe(
-      'Show #1 in Full activity for the detected goal',
+      'Show #1 in Activity log for the detected goal',
     );
     // Found, so there is nothing left to find until the reader changes the words.
     await expect(view.queryByRole('button', { name: 'Find goal' })).toBeNull();
@@ -351,7 +351,7 @@ export const AFoundGoalIsAnalyzedWithoutASaveFirst: Story = {
   },
 };
 
-/* Pressing a citation shows the prompt in place and "See in context of the session" opens Full activity at
+/* Pressing a citation shows the prompt in place and "See in context of the session" opens Activity log at
    that entry, as a cited entry on the Drift card does. */
 export const ACitationOpensTheEntryInFullActivity: Story = {
   play: async ({ canvasElement }) => {
@@ -376,7 +376,7 @@ export const ACitationOpensTheEntryInFullActivity: Story = {
     );
     await expect(
       canvasElement
-        .querySelector('[data-next-full-activity-trigger]')
+        .querySelector('[data-next-session-full-activity] .technical-details-trigger')
         ?.getAttribute('aria-expanded'),
     ).toBe('true');
   },

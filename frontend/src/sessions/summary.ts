@@ -351,7 +351,7 @@ const PERSON_NAMED = new RegExp(
 const PERSON_THIRD = new RegExp(`^the\\s+(?:person|user)\\s+(${ADVERB}${SPEECH_VERB})\\b\\s*`, 'i');
 const BARE_SPEECH = /^(asked|said)\b\s*/i;
 
-/* An `asked` bullet reads as the person's words, as Full activity names them "You": the server admits it under
+/* An `asked` bullet reads as the person's words, as Activity log names them "You": the server admits it under
    the same speech licence as a `said` bullet, so text that opens with another verb ("Confirmed the parser is
    fixed") would otherwise read in the summary's own voice. */
 export function askedText(words: string): string {
@@ -400,12 +400,12 @@ export function bulletWords(kind: string, words: string): string {
   return words;
 }
 
-/* Cited entries a chip cannot open: an earlier check or file has no entry of its own in Full activity. Said once,
+/* Cited entries a chip cannot open: an earlier check or file has no entry of its own in Activity log. Said once,
    at the foot of the card, for the whole summary: it once followed the opening and most bullets. */
 export function unlinkedSentence(n: number): string {
   return n === 1
-    ? '1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.'
-    : `${String(n)} cited entries are earlier checks or files that Full activity does not list, so they cannot be opened from here.`;
+    ? '1 cited entry is an earlier check or file that Activity log does not list, so it cannot be opened from here.'
+    : `${String(n)} cited entries are earlier checks or files that Activity log does not list, so they cannot be opened from here.`;
 }
 
 /* Whether a failed bullet is a failed test run. The server marks a bullet failed when a cited check failed, which

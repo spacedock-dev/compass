@@ -521,6 +521,15 @@ header names the token rate's unit ("44 tokens/min" where the retired page wrote
 once an intent is saved, with the entries since the intent's start beside it, and a chip for an
 entry before that start keeps its number, muted. Golden files are unchanged.
 
+2026-11-23. Show technical details opens one inline layer on the Session page. The Activity log
+keeps the loaded record and its numbered citations together. It also shows dated entries outside
+the current reading window when the record supplies them. Publisher numbers are retained. The
+`sessions__detail` comparison projects the new accordion and tab chrome back to the recorded
+activity heading. The `drift__workList` comparison masks the added earlier rows and the old
+omission sentence. The Activity log stories cover the filters, new rows and reading-window notice.
+Direction actions stay on the progress card. Clickable reading citations show the log's `#n`
+notation.
+
 The historical row-level placement below was permitted by the
 [2026-11-08 owner amendment](design-reading-a-session.md#amended-2026-11-08-owner-a-stored-departing-analysis-may-name-its-level-on-a-sessions-row).
 The 2026-11-23 entry above describes the current presentation.

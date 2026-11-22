@@ -2,6 +2,7 @@ import { SubagentsView } from '../src/sessions/DetailParts';
 import { sessionSubagents } from '../src/sessions/detail';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { seeInContext } from './citation';
+import { auditTechnicalMonospace } from './calm.audit';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { App } from '../src/App';
@@ -17,7 +18,7 @@ import { fakeBackend } from '../test/storage_backends';
 import { routeOf } from './drift.scenario';
 
 /* The session page as one column (owner, 2026-10-19): the header, the answer block when the session needs
-   input, the Intent card, the What the session has done card, the Drift card and Full activity, collapsed.
+   input, the Intent card, the What the session has done card, the Drift card and Activity log, collapsed.
    Every story mounts the real page over a scripted backend; a path nobody scripted answers `{}`. */
 
 const meta = { title: 'Sessions/One-column page' } satisfies Meta;
@@ -128,6 +129,7 @@ function PageExample({
   ended = false,
   idle = false,
   readingWindow = G - 200,
+  entries,
 }: {
   readonly asking?: boolean;
   /** The exact request published while `asking`. */
@@ -142,6 +144,7 @@ function PageExample({
   readonly ended?: boolean;
   readonly idle?: boolean;
   readonly readingWindow?: number;
+  readonly entries?: readonly Record<string, unknown>[];
 }) {
   const [shell] = useState(() => {
     log.answers = [];
@@ -265,9 +268,10 @@ function PageExample({
           return json({
             state: 'ok',
             session: { harness: 'claude', sid: 's1' },
-            entries: Array.from({ length: 50 }, (_, i) => message((older ? 50 : 100) - i)),
-            next: older ? null : 'older',
-            reached_start: older,
+            entries:
+              entries ?? Array.from({ length: 50 }, (_, i) => message((older ? 50 : 100) - i)),
+            next: older || entries ? null : 'older',
+            reached_start: Boolean(older || entries),
             bound: null,
             scanned_bytes: 65536,
             kinds: ['user_message', 'agent_message'],
@@ -284,9 +288,13 @@ function PageExample({
     },
     [shell],
   );
+  const [mounted, remount] = useState(0);
   return (
     <>
-      <App shell={shell} />
+      <App key={mounted} shell={shell} />
+      <button type="button" onClick={() => remount((previous) => previous + 1)}>
+        Remount session
+      </button>
       <button type="button" onClick={() => void shell.runtime.refresh()}>
         Simulate board poll
       </button>
@@ -294,7 +302,7 @@ function PageExample({
   );
 }
 
-const ORDER = ['Asked you', 'Goal', 'What the session has done', 'Drift', 'Full activity'];
+const ORDER = ['Asked you', 'Goal', 'What the session has done', 'Drift', 'Show technical details'];
 /* A harness's own gate takes the asked block's place, and never stands beside it. */
 const REGIONS = [...ORDER, 'Waiting on you'];
 
@@ -349,7 +357,7 @@ export const RegionsInOrder: Story = {
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
     const breadcrumb = canvas.getByRole('navigation', { name: 'Breadcrumb' });
     await expect(breadcrumb.querySelector('svg[data-icon="caret-right"]')).toBeVisible();
-    const expected = ['Goal', 'What the session has done', 'Drift', 'Full activity'];
+    const expected = ['Goal', 'What the session has done', 'Drift', 'Show technical details'];
     for (const width of [1280, 400]) {
       await atWidth(width, () => inOrderTopToBottom(canvasElement, expected));
     }
@@ -368,10 +376,9 @@ export const RegionsInOrder: Story = {
         await expect(Math.abs(box.top - (rows[0] as DOMRect).top)).toBeLessThan(12);
     });
     await expect(canvas.getByText(WHAT_IT_DID_PLACEHOLDER)).toBeVisible();
-    await expect(canvas.getByRole('button', { name: 'Full activity' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
+    await expect(
+      canvas.getByRole('button', { name: /^(Show|Hide) technical details$/ }),
+    ).toHaveAttribute('aria-expanded', 'false');
   },
 };
 
@@ -399,7 +406,7 @@ export const HoldsControlUnderPointer: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
-    const control = await canvas.findByRole('button', { name: 'Full activity' });
+    const control = await canvas.findByRole('button', { name: /^(Show|Hide) technical details$/ });
     const browser =
       '__vitest_browser_runner__' in window ? (await import('vitest/browser')).page : null;
     await document.fonts.ready;
@@ -409,7 +416,7 @@ export const HoldsControlUnderPointer: Story = {
       await browser.getByRole('button', { name: 'Simulate board poll' }).hover();
       control.scrollIntoView({ block: 'center', behavior: 'instant' });
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      await browser.getByRole('button', { name: 'Full activity' }).hover();
+      await browser.getByRole('button', { name: /^(Show|Hide) technical details$/ }).hover();
       await expect(control.matches(':hover')).toBe(true);
     } else {
       await userEvent.unhover(control);
@@ -436,6 +443,98 @@ export const HoldsControlUnderPointer: Story = {
     await waitFor(() =>
       expect(Math.abs(control.getBoundingClientRect().top - before)).toBeLessThan(1.5),
     );
+  },
+};
+
+export const TechnicalDetailsContinuity: Story = {
+  render: () => <PageExample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const open = () => canvas.getByRole('button', { name: 'Hide technical details' });
+    const trigger = await canvas.findByRole('button', { name: 'Show technical details' });
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(trigger.querySelector('svg[data-icon="details"]')).not.toBeNull();
+    await expect(canvas.queryByRole('tablist', { name: 'Technical details' })).toBeNull();
+    await userEvent.click(trigger);
+    const tabs = canvas.getByRole('tablist', { name: 'Technical details' });
+    const activityTab = within(tabs).getByRole('tab', { name: 'Activity log', selected: true });
+    const panel = canvas.getByRole('tabpanel', { name: 'Activity log' });
+    await expect(activityTab).toHaveAttribute('aria-controls', panel.id);
+    await waitFor(() => expect(panel).toBeVisible());
+    await expect(panel.closest('[data-layer="technical"]')).not.toBeNull();
+    await expect(auditTechnicalMonospace(canvasElement)).toEqual([]);
+    const number = await waitFor(() => {
+      const node = panel.querySelector('.next-cockpit-work-n');
+      if (!node) throw new Error('Waiting for numbered entries');
+      return node;
+    });
+    await expect(getComputedStyle(number).fontFamily).toMatch(/^ui-monospace/);
+    activityTab.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    await expect(activityTab).toHaveFocus();
+    const previous = log.served;
+    (canvas.getByRole('button', { name: 'Simulate board poll' }) as HTMLButtonElement).click();
+    await waitFor(() => expect(log.served).toBeGreaterThan(previous));
+    await expect(open()).toHaveAttribute('aria-expanded', 'true');
+    const previousTrigger = open();
+    await userEvent.click(canvas.getByRole('button', { name: 'Remount session' }));
+    await waitFor(() => expect(open()).not.toBe(previousTrigger));
+    await expect(open()).toHaveAttribute('aria-expanded', 'true');
+    await expect(canvas.getByRole('tab', { name: 'Activity log', selected: true })).toBeVisible();
+  },
+};
+
+const logEntries = [
+  { ...message(1), type: 'user_message', by: 'person:claude' },
+  message(2),
+  { ...message(3), type: 'tool_report', subject: 'command' },
+  { ...message(4), type: 'tool_report', subject: 'write' },
+  { ...message(5), type: 'gate_decision', by: 'harness' },
+  message(6),
+];
+
+export const ActivityLogFilters: Story = {
+  render: () => <PageExample entries={logEntries} cites={['e2']} windowStart={G - 98} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: 'Show technical details' }));
+    const panel = canvas.getByRole('tabpanel', { name: 'Activity log' });
+    const contents = within(panel);
+    const ids = () =>
+      [...panel.querySelectorAll<HTMLElement>('[data-next-entry-id]')].map((row) =>
+        row.getAttribute('data-next-entry-id'),
+      );
+    await waitFor(() => expect(ids()).toEqual(['e6', 'e5', 'e4', 'e3', 'e2', 'e1']));
+    await waitFor(() => expect(contents.getByText(/before the reading window/)).toBeVisible());
+    await expect(panel.querySelector('[data-next-entry-id="e1"]')).toHaveAttribute(
+      'data-before-window',
+    );
+    await expect(panel.querySelector('[data-next-entry-id="e2"]')).not.toHaveAttribute(
+      'data-before-window',
+    );
+    for (const [name, expected] of [
+      ['You', ['e1']],
+      ['Agent', ['e6', 'e2']],
+      ['Commands', ['e3']],
+      ['Files', ['e4']],
+      ['Cited', ['e2']],
+      ['All', ['e6', 'e5', 'e4', 'e3', 'e2', 'e1']],
+    ] as const) {
+      const chip = contents.getByRole('button', { name });
+      await userEvent.click(chip);
+      await expect(chip).toHaveAttribute('aria-pressed', 'true');
+      await expect(ids()).toEqual(expected);
+      if (name === 'All') await expect(contents.queryByText(/entries hidden/)).toBeNull();
+      else await expect(contents.getByText(`${6 - expected.length} entries hidden`)).toBeVisible();
+    }
+    await atWidth(400, async () => {
+      const rows = [...panel.querySelectorAll<HTMLElement>('[data-next-entry-id]')];
+      const boxes = rows.map((row) => row.getBoundingClientRect());
+      await expect(new Set(boxes.map((box) => box.left)).size).toBe(1);
+      await expect(
+        boxes.every((box, index) => !index || box.top >= (boxes[index - 1]?.bottom ?? 0)),
+      ).toBe(true);
+    });
   },
 };
 
@@ -506,6 +605,12 @@ export const MoreIsRetired: Story = {
     const inDrift = within(drift);
     const head = drift.querySelector('header') as HTMLElement;
     await expect(await within(head).findByText(DRIFT_SUBTITLE)).toBeVisible();
+    const details = canvas.getByRole('button', { name: 'Show technical details' });
+    await userEvent.click(details);
+    await waitFor(() =>
+      expect(canvas.getByRole('tabpanel', { name: 'Activity log' })).toBeVisible(),
+    );
+    await userEvent.click(details);
     // The live monitor and Pause model calls are behind one Drift settings control in the head, and not in the body.
     await expect(inDrift.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
     await userEvent.click(await within(head).findByRole('button', { name: 'Drift settings' }));
@@ -574,11 +679,9 @@ function spyScroll() {
   };
 }
 
-/* The Goal cites an entry on the older record page. The press opens Full activity, reads that page, and lands
+/* The Goal cites an entry on the older record page. The press opens Activity log, reads that page, and lands
    on the entry with its tint; Escape goes back to the press, and neither move animates under reduced motion. */
 export const CitationLoadsAnOlderEntry: Story = {
-  // Flaky: kept out of the test run until fixed; see docs/flaky-tests.md.
-  tags: ['!test'],
   render: () => <PageExample cites={['e5']} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -586,17 +689,26 @@ export const CitationLoadsAnOlderEntry: Story = {
     try {
       const jump = () =>
         canvas.getByRole('button', {
-          name: 'Load the cited entries in Full activity for Goal: Synthetic goal',
+          name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
         });
       await waitFor(() => expect(jump()).toBeVisible());
       await waitFor(() =>
         expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(50),
       );
       await expect(canvasElement.querySelector('[data-next-entry-id="e5"]')).toBeNull();
-      const trigger = canvas.getByRole('button', { name: 'Full activity' });
+      const trigger = canvas.getByRole('button', { name: /^(Show|Hide) technical details$/ });
       await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await userEvent.click(trigger);
+      const tab = canvas.getByRole('tab', { name: 'Activity log', selected: true });
+      const panel = canvas.getByRole('tabpanel', { name: 'Activity log' });
+      await expect(tab).toHaveAttribute('aria-controls', panel.id);
+      await userEvent.click(within(panel).getByRole('button', { name: 'Cited' }));
+      await userEvent.click(trigger);
       await userEvent.click(jump());
       await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      await waitFor(() =>
+        expect(within(panel).getByRole('button', { name: 'Cited', pressed: true })).toBeVisible(),
+      );
       const row = await waitFor(() => {
         const found = canvasElement.querySelector<HTMLElement>('[data-next-entry-id="e5"]');
         if (!found) throw new Error('the older page has not arrived');
@@ -605,25 +717,34 @@ export const CitationLoadsAnOlderEntry: Story = {
       await waitFor(() => expect(document.activeElement).toBe(row));
       await expect(row).toHaveAttribute('data-next-cited');
       await expect(getComputedStyle(row).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
-      // Full activity eases open; the row is there at once and in view once it has.
-      await waitFor(() => expect(row).toBeVisible());
-      const box = row.getBoundingClientRect();
-      await expect(box.bottom).toBeGreaterThan(0);
-      await expect(box.top).toBeLessThan(window.innerHeight);
+      // Wait for the row to land inside the viewport as the accordion settles.
+      await waitFor(() => {
+        const box = row.getBoundingClientRect();
+        expect(box.bottom).toBeGreaterThan(0);
+        expect(box.top).toBeLessThan(window.innerHeight);
+      });
       await expect(scroll.calls.at(-1)).toEqual({ behavior: 'instant', block: 'center' });
       /* Once the entry is held, the finding names it by its number instead of offering to load it, and the
          way back lands on that number. */
       const cited = () =>
         canvas.getByRole('link', {
-          name: /^Show #\d+(\.\d+)? in Full activity for Goal: Synthetic goal$/,
+          name: /^Show #\d+(\.\d+)? in Activity log for Goal: Synthetic goal$/,
         });
       await userEvent.keyboard('{Escape}');
       await expect(document.activeElement).toBe(cited());
       await expect(scroll.calls.at(-1)).toEqual({ behavior: 'instant', block: 'center' });
-      // The visible way back does the same.
+      // A citation also lands from a filter that would otherwise hide its entry.
+      await userEvent.click(within(panel).getByRole('button', { name: 'You' }));
       await seeInContext(cited());
-      await waitFor(() => expect(document.activeElement).toBe(row));
-      await userEvent.click(within(row).getByRole('button', { name: 'Back to the finding' }));
+      const reopened = await waitFor(() => {
+        const found = panel.querySelector('[data-next-entry-id="e5"]');
+        if (!found) throw new Error('Waiting for the cited entry');
+        return found;
+      });
+      await waitFor(() => expect(document.activeElement).toBe(reopened));
+      await userEvent.click(
+        within(reopened as HTMLElement).getByRole('button', { name: 'Back to the finding' }),
+      );
       await expect(document.activeElement).toBe(cited());
     } finally {
       scroll.restore();
@@ -639,7 +760,7 @@ export const CitationThatCannotLoadSaysSo: Story = {
     const canvas = within(canvasElement);
     const jump = () =>
       canvas.getByRole('button', {
-        name: 'Load the cited entries in Full activity for Goal: Synthetic goal',
+        name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
       });
     await waitFor(() => expect(jump()).toBeVisible());
     await userEvent.click(jump());
@@ -684,7 +805,7 @@ export const RetainedReadingCitesBeforeTheWindow: Story = {
       expect(canvasElement.querySelectorAll('[data-next-entry-id]').length).toBeGreaterThan(0),
     );
     const jump = await canvas.findByRole('button', {
-      name: 'Load the cited entries in Full activity for Goal: Synthetic goal',
+      name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
     });
     await expect(canvasElement.querySelector('[data-next-unloaded]')).toBeNull();
     await expect(canvasElement.querySelector('[data-next-entry-id="e5"]')).toBeNull();
@@ -707,7 +828,7 @@ export const CitationSetAsideByTheReadingSaysSo: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(
       await canvas.findByRole('button', {
-        name: 'Load the cited entries in Full activity for Goal: Synthetic goal',
+        name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
       }),
     );
     const note = await waitFor(() => {
@@ -738,7 +859,7 @@ export const SlowReadEndsAfterANewReading: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const jump = await canvas.findByRole('button', {
-      name: 'Load the cited entries in Full activity for Goal: Synthetic goal',
+      name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
     });
     await userEvent.click(jump);
     await waitFor(() => expect(log.releaseOlder).not.toBeNull());
@@ -759,7 +880,7 @@ export const NoteLeavesWithItsReading: Story = {
   render: () => <PageExample cites={['ghost']} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const name = 'Load the cited entries in Full activity for Goal: Synthetic goal';
+    const name = 'Load the cited entries in Activity log for Goal: Synthetic goal';
     await userEvent.click(await canvas.findByRole('button', { name }));
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-jump-missing]')).not.toBeNull(),
@@ -782,7 +903,7 @@ export const QuestionLeadsAndAnswersOnce: Story = {
         'Goal',
         'What the session has done',
         'Drift',
-        'Full activity',
+        'Show technical details',
       ]),
     );
     log.asking = true;
@@ -915,7 +1036,9 @@ export const FullActivityLinksToGoalHistory: Story = {
   render: () => <PageExample />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Full activity' }));
+    await userEvent.click(
+      await canvas.findByRole('button', { name: /^(Show|Hide) technical details$/ }),
+    );
     const summary = await canvas.findByText('What it keeps');
     const history = summary.closest<HTMLElement>('.next-cockpit-departures-kept');
     if (!history) throw new Error('The history disclosure is missing');

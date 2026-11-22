@@ -1,7 +1,7 @@
 import type { ProjectContext } from '../api/types';
 import { act } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { check, fact, jumpTo, mountDrift, press } from './testing';
+import { check, fact, jumpTo, mountDrift, openActivity, press } from './testing';
 
 /* The session's activity list reads newest first. The numbers are the oldest-first ones every "#<n>" and
    every citation names, so the column reads from the highest down to #1 and a reader opens on what just
@@ -25,18 +25,69 @@ describe('the session activity list', () => {
     expect(rows.map((row) => row.dataset['nextEntry'])).toEqual(['4', '3', '2', '1']);
   });
 
-  it('draws "Add to my intent" at rest, with nothing hiding it until the pointer arrives', async () => {
+  it('keeps the Activity log for evidence and leaves goal actions on the progress card', async () => {
     const page = mountDrift({ facts: FACTS, session });
     await page.settle();
+    await openActivity();
+    const panel = page.getByRole('tabpanel', { name: 'Activity log' });
+    expect(panel.querySelector('[data-next-cockpit-action="direction-add"]')).toBeNull();
+  });
+
+  it('keeps the selected filter when the board polls and the session remounts', async () => {
+    const page = mountDrift({ facts: FACTS, session });
     await page.settle();
-    const adds = [
-      ...document.querySelectorAll<HTMLElement>('[data-next-cockpit-action="direction-add"]'),
-    ];
-    expect(adds.length).toBeGreaterThan(0);
-    for (const add of adds) {
-      expect(add.className).not.toMatch(/opacity-0|hover:opacity|group-hover/);
-      expect(add.hidden).toBe(false);
-    }
+    await openActivity();
+    const selected = () => page.getByRole('button', { name: 'Commands', pressed: true });
+    await press(page.getByRole('button', { name: 'Commands' }));
+    expect(selected()).toBeVisible();
+    await page.poll(page.state.data);
+    expect(selected()).toBeVisible();
+    await page.go('#n=intent');
+    await page.go('#n=session:alpha%2Fapp:claude:s1');
+    await page.settle();
+    expect(selected()).toBeVisible();
+    expect(document.querySelector('[data-next-entry-id="c1"]')).toBeVisible();
+    expect(document.querySelector('[data-next-entry-id="p1"]')).toBeNull();
+  });
+
+  it('shows all matching commands individually when a filter counts them', async () => {
+    const commands = [1, 2, 3].map((n) =>
+      check(`command-${n}`, 900 + n, '', { result_source: '' }),
+    );
+    const page = mountDrift({ facts: [fact('direction', 880), ...commands], session });
+    await page.settle();
+    await openActivity();
+    const panel = page.getByRole('tabpanel', { name: 'Activity log' });
+    expect(panel.querySelector('[data-check-run]')).not.toBeNull();
+    await press(page.getByRole('button', { name: 'Commands' }));
+    expect(page.getByText('1 entry hidden')).toBeVisible();
+    expect(panel.querySelector('[data-check-run]')).toBeNull();
+    for (const row of panel.querySelectorAll('[data-next-entry-id]')) expect(row).toBeVisible();
+    expect(panel.querySelectorAll('[data-next-entry-id]')).toHaveLength(3);
+  });
+
+  it('marks only dated entries before the published reading window, by result time when available', async () => {
+    const page = mountDrift({
+      facts: [
+        fact('before', 899),
+        fact('at', 900),
+        fact('after', 901),
+        check('completed-before', 897, 'passed', { result_at: 899 }),
+        check('completed-at', 898, 'passed', { result_at: 900 }),
+      ],
+      session: { ...session, annotation_window_start: 900, annotation_goal_saved_at: 905 },
+    });
+    await page.settle();
+    await openActivity();
+    const ids = (selector: string) =>
+      [...document.querySelectorAll(selector)].map((row) => row.getAttribute('data-next-entry-id'));
+    expect(ids('[data-before-window]')).toEqual(['before', 'completed-before']);
+    expect(ids('[data-next-entry-id]:not([data-before-window])')).toEqual([
+      'after',
+      'at',
+      'completed-at',
+    ]);
+    expect(page.getByText(/before the reading window/)).toBeVisible();
   });
 
   it('sees short check marks with full accessible words, and time in the head beside Last turn', async () => {

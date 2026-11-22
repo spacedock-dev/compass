@@ -157,10 +157,11 @@ describe('the first view of a session', () => {
     expect(text('[data-next-ended-goal]')).not.toContain('can only read');
   });
 
-  it('keeps Full activity open and held fields across refresh and a remount', async () => {
+  it('keeps Activity log open and held fields across refresh and a remount', async () => {
     const page = mountSession({ store: { goal: 'Saved', lines: ['A check'], revision: 1 } });
     await settle(page);
-    const trigger = () => document.querySelector('[data-next-full-activity-trigger]');
+    const trigger = () =>
+      document.querySelector('[data-next-session-full-activity] .technical-details-trigger');
     expect(trigger()?.getAttribute('aria-expanded')).toBe('false');
     await act(async () => {
       fireEvent.click(trigger() as Element);

@@ -11,7 +11,7 @@
 .next-cockpit-held-stamp [data-slot="accordion-content"]>span{display:block}
 .next-session-drift-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:16px 12px;padding:16px 16px 12px}
 .next-session-drift-titles{min-width:0}
-.next-session-drift-heading{margin:0;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
+.next-session-drift-heading{margin:0;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600}
 .next-cockpit-direction-whole{margin:6px 0 8px;padding:0;list-style:none;display:grid;gap:6px}
 .next-cockpit-direction-whole-item{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:8px;align-items:baseline;color:var(--ink);font-size:var(--fs-body);line-height:1.5;overflow-wrap:anywhere}
 .next-cockpit-direction-whole-text{grid-column:2}
@@ -27,7 +27,7 @@
 }
 .next-cockpit-define{margin:0;max-width:var(--measure);color:var(--ink2);font:500 var(--fs-body)/1.55 var(--sans)}
 .next-cockpit-held>header{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
-.next-cockpit-held h2{margin:0;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
+.next-cockpit-held h2{margin:0;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600}
 .next-cockpit-held-lede{margin:0;color:var(--ink);font:500 var(--fs-body)/1.55 var(--sans);max-width:var(--measure)}
 .next-cockpit-held-revision{color:var(--ink2);font:500 var(--fs-body)/1.55 var(--sans);max-width:var(--measure)}
 .next-cockpit-held-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
@@ -40,7 +40,7 @@
 .next-cockpit-held-remove{min-inline-size:44px}
 .next-cockpit-held-tools{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
 .next-direction-select{display:grid;gap:4px;min-inline-size:0;max-inline-size:100%}
-.next-cockpit-held-label{grid-column:1/-1;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
+.next-cockpit-held-label{grid-column:1/-1;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600}
 .next-cockpit-held-field textarea{grid-column:1/-1}
 .next-cockpit-held-count{color:var(--ink-caption);font-family:var(--mono);font-size:var(--fs-label)}
 .next-cockpit-held-field button[data-variant="native"]{border:0;background:none;color:var(--ink2);font:var(--fs-label) var(--sans);cursor:pointer}
