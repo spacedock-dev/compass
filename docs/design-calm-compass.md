@@ -294,6 +294,12 @@ projects that ended today. The two group labels and the three project-list shape
 settled independently. The direction question's presentation also goes to Storybook for
 sign-off. Its controls and placement are settled.
 
+Sign-off works the same way for every redesign layer. The owner set this policy on
+2026-11-22, when the build started. The coordinator checks each layer's stories and play
+assertions against the canvas After images and the rulings above, with a browser walk and
+two review lenses plus an arbiter, and lands the layer once it passes. Nothing reaches a user
+until the owner tags a release, and the owner reviews main in Storybook before each tag.
+
 ## How it is enforced
 
 The plugin validator checks repository links and heading anchors. The documentation module
