@@ -225,10 +225,10 @@ by 1 KiB to the same baseline plus 460 KiB, or 2,355,787 bytes, with 476 bytes t
 The fixture allowance stays at 250,000 bytes.
 
 On 2026-11-23, the Sessions status tiles, keyboard tooltips and stored-progress pills brought
-the page from 2,354,223 bytes on the shared Switch layer at `9303135c` to 2,357,843 bytes on
-Node 26.10.0. The 3,620-byte increase (0.15%) exceeded the previous bound by 3,080 bytes.
-The page allowance rises by 4 KiB to the same baseline plus 463 KiB, or 2,358,859 bytes,
-leaving 1,016 bytes above the build. The fixture allowance stays at 250,000 bytes.
+the page from 2,355,311 bytes on the shared Switch layer to 2,358,771 bytes on Node 26.10.0.
+The 3,460-byte increase (0.15%) exceeded the previous bound by 2,984 bytes. The page allowance
+rises by 3 KiB to the same baseline plus 463 KiB, or 2,358,859 bytes, leaving 88 bytes above
+the build. The fixture allowance stays at 250,000 bytes.
 
 ## View only
 
