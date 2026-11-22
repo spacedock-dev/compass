@@ -16,7 +16,7 @@
       ],
       "generated": 1900000000
     },
-    "now": "run finished 10m ago"
+    "now": "run finished 10 minutes ago"
   },
   {
     "name": "finished run precedes an old plan step",
@@ -41,7 +41,7 @@
       ],
       "generated": 1900000000
     },
-    "now": "run finished 10m ago"
+    "now": "run finished 10 minutes ago"
   },
   {
     "name": "missing board clock publishes no age",
@@ -79,7 +79,7 @@
       ],
       "generated": 1900000000
     },
-    "now": "run finished 30s ago"
+    "now": "run finished 30 seconds ago"
   },
   {
     "name": "ended session takes precedence",
@@ -147,7 +147,7 @@
       ],
       "generated": 1900000000
     },
-    "now": "last active 1m ago"
+    "now": "last active 1 minute ago"
   },
   {
     "name": "unknown origin stays quiet",
@@ -166,7 +166,7 @@
       ],
       "generated": 1900000000
     },
-    "now": "last active 1m ago"
+    "now": "last active 1 minute ago"
   },
   {
     "name": "hook alone does not establish a finished run",
@@ -186,7 +186,7 @@
       ],
       "generated": 1900000000
     },
-    "now": "last active 1m ago"
+    "now": "last active 1 minute ago"
   },
   {
     "name": "zero rollout stop does not establish a finished run",
@@ -205,7 +205,7 @@
       ],
       "generated": 1900000000
     },
-    "now": "last active 1m ago"
+    "now": "last active 1 minute ago"
   },
   {
     "name": "resumed work takes precedence",

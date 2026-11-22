@@ -160,6 +160,12 @@ describe('the groups', () => {
     expect(rows('history')).toEqual(['claude/done', 'claude/idle-new', 'claude/idle-old']);
   });
 
+  it('spells out the elapsed time on quiet and ended rows', async () => {
+    await open(data);
+    expect(screen.getByText('last active 5 seconds ago')).toBeVisible();
+    expect(screen.getByText('ended 20 seconds ago')).toBeVisible();
+  });
+
   it('keeps one sid under two harnesses as two rows, each opening its own exact route', async () => {
     await open(
       board([

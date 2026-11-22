@@ -202,7 +202,9 @@ _SPACES = re.compile(r"[ \t\r\n\f\v\u2028\u2029]+")
 
 _ACTIVE_EMPTY: Final = "No exact session has active evidence right now."
 _HISTORY_EMPTY: Final = "No recent-history rows in this payload."
-_UNCONFIRMED: Final = "Unconfirmed: no positive observation in 5m; prompt may still be standing"
+_UNCONFIRMED: Final = (
+    "Unconfirmed: no positive observation in 5 minutes; prompt may still be standing"
+)
 
 
 def printable(value: object) -> str:
@@ -234,20 +236,28 @@ def printable_text(value: object) -> str:
     )
 
 
+def _duration_part(count: int, unit: str) -> str:
+    return f"{count} {unit}" if count == 1 else f"{count} {unit}s"
+
+
 def format_duration(seconds: object) -> str | None:
-    """The page's one duration spelling: the two largest units, floored."""
+    """Match the board's elapsed wording, with up to two units and no zero remainder."""
     if isinstance(seconds, bool) or not isinstance(seconds, int | float):
         return None
     if not math.isfinite(seconds) or seconds < 0:
         return None
     whole = math.floor(seconds)
     if whole < 60:
-        return f"{whole}s"
+        return _duration_part(whole, "second")
     if whole < 3600:
-        return f"{whole // 60}m"
+        return _duration_part(whole // 60, "minute")
     if whole < 86400:
-        return f"{whole // 3600}h {whole % 3600 // 60}m"
-    return f"{whole // 86400}d {whole % 86400 // 3600}h"
+        hours, minutes = divmod(whole // 60, 60)
+        major = _duration_part(hours, "hour")
+        return f"{major} {_duration_part(minutes, 'minute')}" if minutes else major
+    days, hours = divmod(whole // 3600, 24)
+    major = _duration_part(days, "day")
+    return f"{major} {_duration_part(hours, 'hour')}" if hours else major
 
 
 def _rec(value: object) -> bool:

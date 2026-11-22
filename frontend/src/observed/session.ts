@@ -1,7 +1,7 @@
 import { nativeSession } from './native';
 import { nextNumber } from '../api/bootstrap';
 import { SHOWN } from '../language/glossary';
-import { formatDuration } from '../shell/format';
+import { expandDurationUnits, formatDuration } from '../shell/format';
 import { finishedRunAt, goalOf, landingOf, sessionStop, stopRecord, type Landing } from './landing';
 import {
   ageSeconds,
@@ -35,6 +35,7 @@ export type ObservedSession = {
   readonly scanOnly: boolean;
   readonly waitedText: string;
   readonly waitedKnown: boolean;
+  readonly nowWords: string;
   readonly state: string;
   readonly isWorking: boolean;
   readonly isNeeds: boolean;
@@ -229,13 +230,14 @@ export function observeSession(
   const stateDetail = trimmed(source['state_detail']);
   const runFinish = finishedRunAt(source);
   const runAge = formatDuration(ageSeconds(generated, runFinish));
+  const runIsNow = runFinish !== null && !question && !source['waiting_on_child'];
   /* A quiet row states how long ago it was last active in place of the collector's "awaiting your
      message": a recent observation cannot prove the harness is still open, so a day-old idle row cannot
      claim to be waiting. A session holding an exact request is not quiet, and with no timestamp the old
      reading stands, minus the waiting claim. */
   const nowValue = ended
     ? 'Session reported its own end'
-    : runFinish !== null && !question && !source['waiting_on_child']
+    : runIsNow
       ? `run finished${runAge ? ` ${runAge} ago` : ''}`
       : stateKnown
         ? doing
@@ -250,6 +252,8 @@ export function observeSession(
                 : ''
             : source['state_detail']
         : '';
+  const now = pair('now', nowValue, stateKnown ? 'Activity not published' : 'No state published');
+  const nowHasAge = !ended && (runIsNow || (quiet && !question && !doing && quietSeconds !== null));
   const row = {
     sid: textOf(source['sid']),
     harness: textOf(source['harness']),
@@ -258,7 +262,8 @@ export function observeSession(
     resume_id: source['resume_id'] == null ? null : source['resume_id'],
     ...pair('title', source['title'], noTitleText(source)),
     ...pair('prompt', source['last_prompt'], 'Last prompt not published'),
-    ...pair('now', nowValue, stateKnown ? 'Activity not published' : 'No state published'),
+    ...now,
+    nowWords: nowHasAge ? expandDurationUnits(now.nowText) : now.nowText,
     ...pair('next', pending?.['subject'], 'No pending step published'),
     ...pair('where', '', 'Exact location not published'),
     ...pair('turn', turnText, turnReason),

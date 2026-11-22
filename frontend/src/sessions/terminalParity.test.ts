@@ -105,7 +105,7 @@ describe('the board against the terminal listing', () => {
 
   it.each(finishedRuns)('holds the terminal Now reading: $name', ({ payload, now }) => {
     const screen = buildSessionsScreen(payload, observe(payload));
-    expect([...screen.active, ...screen.history].map((row) => row.session.nowText)).toEqual([now]);
+    expect([...screen.active, ...screen.history].map((row) => row.session.nowWords)).toEqual([now]);
   });
 
   it('keys every row by the identity the file names', () => {

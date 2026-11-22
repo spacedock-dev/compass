@@ -73,9 +73,9 @@ export const FinishedAndInteractive: Story = {
     const article = (sid: string) =>
       canvasElement.querySelector(`article[data-next-session="${sid}"]`) as HTMLElement;
     await waitFor(() => expect(article('exec')).not.toBeNull());
-    await expect(within(article('exec')).getByText('run finished 10m ago')).toBeVisible();
+    await expect(within(article('exec')).getByText('run finished 10 minutes ago')).toBeVisible();
     await expect(article('exec').textContent).not.toContain('waiting for you');
-    await expect(within(article('tui')).getByText('last active 1m ago')).toBeVisible();
+    await expect(within(article('tui')).getByText('last active 1 minute ago')).toBeVisible();
     await userEvent.click(within(article('exec')).getByRole('link', { name: /Open session/ }));
     await waitFor(() =>
       expect(root.getByRole('heading', { level: 1 })).toHaveTextContent('Synthetic exec'),

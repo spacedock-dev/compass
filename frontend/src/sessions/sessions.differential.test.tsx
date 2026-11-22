@@ -87,6 +87,25 @@ function summarize(source: Element | DocumentFragment): Summary {
       rows: [...group.querySelectorAll('article.next-operation-row')].map((row) => {
         const route = row.querySelector('a.next-operation-route');
         const data = (row as HTMLElement).dataset;
+        const now = row.querySelector('[data-next-operation-fact="now"]');
+        for (const value of now?.querySelectorAll('strong, em') ?? []) {
+          // The recorded page used compact units only in these generated Now labels.
+          if (/^(?:last active|run finished|ended) /.test(value.textContent ?? '')) {
+            value.textContent =
+              value.textContent?.replace(
+                / ([\d]+[smhd](?: \d+[mh])?|\d+ (?:seconds?|minutes?|hours?|days?)(?: \d+ (?:minutes?|hours?))?) ago$/,
+                ' <duration> ago',
+              ) ?? '';
+          }
+        }
+        const caution = row.querySelector('[data-next-operation-fact="blocked"] em');
+        if (
+          caution?.textContent ===
+          'Unconfirmed: no positive observation in 5m; prompt may still be standing'
+        ) {
+          caution.textContent =
+            'Unconfirmed: no positive observation in 5 minutes; prompt may still be standing';
+        }
         return {
           harness: data['nextHarness'] ?? '',
           sid: data['nextSession'] ?? '',

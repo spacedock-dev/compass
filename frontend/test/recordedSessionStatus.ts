@@ -50,6 +50,15 @@ export function recordedSessionStatus(value: unknown): unknown {
   } else if (Object.hasOwn(row, 'outcomeIcon')) {
     // Scan notice placement and availability are tested directly against acquisition evidence.
     projected['scanOnly'] = false;
+    // Sessions renders this new spelling. Its mounted and terminal parity tests check the words.
+    delete projected['nowWords'];
+  }
+  if (
+    projected['blockNote'] ===
+    'Unconfirmed: no positive observation in 5m; prompt may still be standing'
+  ) {
+    projected['blockNote'] =
+      'Unconfirmed: no positive observation in 5 minutes; prompt may still be standing';
   }
   return projected;
 }
