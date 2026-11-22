@@ -238,6 +238,9 @@ above its allowance. The allowance rises by 1 KiB to the same baseline plus 464 
 Removing progress levels from Sessions rows on 2026-11-23 reduced the page by 768 bytes
 to 2,358,555 bytes on Node 26.10.0. The 2,359,883-byte allowance leaves 1,328 bytes to spare.
 
+Removing progress absence words from Sessions rows reduced the page by another 1,624 bytes,
+to 2,356,931 bytes on Node 26.10.0. The same allowance leaves 2,952 bytes to spare.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

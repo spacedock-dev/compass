@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { mountSessions } from './testing';
 import { rowState } from './rows';
 import declared from '../../test/fixtures/declared-sessions.json';
+import liveBoard from '../../test/fixtures/client-contract/data-live-row.json';
 import { observe } from '../observed';
 
 const NOW = 5000;
@@ -213,7 +214,7 @@ describe('the groups', () => {
       if (!row) throw new Error('Missing row');
       expect(within(row).queryByText(label)).not.toBeInTheDocument();
       expect(row.querySelector('[data-slot="badge"]')).toBeNull();
-      expect(row.querySelector('[data-next-row-progress-absence]')).toBeNull();
+      expect(row.querySelector('.next-operation-progress')).toBeNull();
       expect(
         page.state.requests.some((request) => request.url.startsWith('/api/project-context')),
       ).toBe(false);
@@ -221,6 +222,9 @@ describe('the groups', () => {
   );
 
   it.each([
+    ['a row with no goal', {}],
+    ['a Codex row without a goal', { harness: 'codex' }],
+    ['a Codex row with a goal', { harness: 'codex', annotation_goal: 'Ship it' }],
     ['a saved departure', assessed],
     [
       'a non-departing reading',
@@ -252,21 +256,22 @@ describe('the groups', () => {
     const row = document.querySelector('article[data-next-session="read"]');
     expect(row).toBeInTheDocument();
     expect(row?.querySelector('.next-operation-progress')).toBeNull();
+    expect(row?.querySelector('[data-variant="progress"]')).toBeNull();
+    expect(row?.textContent).not.toMatch(/No goal yet|Not checked yet/);
   });
 
-  it.each([
-    ['No goal yet', {}],
-    ['Not checked yet', { annotation_goal: 'Ship it' }],
-  ])('shows %s in plain text without an icon or a pill', async (label, fields) => {
-    await open(
-      board([{ harness: 'claude', sid: 'read', state: 'working', ...fields }], { annotate: true }),
-    );
-    const row = document.querySelector<HTMLElement>('article[data-next-session="read"]');
-    if (!row) throw new Error('Missing row');
-    const absence = within(row).getByText(label, { exact: true });
-    expect(absence.classList.contains('text-muted-foreground')).toBe(true);
-    expect(absence.closest('[data-slot="badge"]')).toBeNull();
-    expect(absence.querySelector('svg')).toBeNull();
+  it('leaves the row blank for a live estimate before a stored check', async () => {
+    const data = liveBoard.response.body;
+    await open({
+      ...data,
+      sessions: data.sessions.map((row) =>
+        row.sid === '44444444' ? { ...row, departure_checked: false } : row,
+      ),
+    });
+    const row = document.querySelector('article[data-next-session="44444444"]');
+    expect(row).toBeInTheDocument();
+    expect(row?.querySelector('.next-operation-progress, [data-variant="progress"]')).toBeNull();
+    expect(row?.textContent).not.toMatch(/No goal yet|Not checked yet/);
   });
 
   it.each([
@@ -277,36 +282,6 @@ describe('the groups', () => {
     const row = document.querySelector('article[data-next-session="read"]');
     expect(row).toBeInTheDocument();
     expect(row?.querySelector('.next-operation-progress')).toBeNull();
-  });
-
-  it('uses saved goals and actual attempts for progress absence', async () => {
-    const draft = { first_prompt: 'Draft the release notes', first_prompt_at: NOW - 30 };
-    const cases = [
-      ['draft', draft, 'No goal yet'],
-      ['discarded', { ...draft, annotation_discarded_at: NOW - 20 }, 'No goal yet'],
-      [
-        'codex-draft',
-        { harness: 'codex', title: 'Draft the release notes', prompt_states_work: true },
-        'No goal yet',
-      ],
-      ['completed', { annotation_goal: 'Ship it', departure_checked: true }, null],
-      ['attempted', { annotation_goal: 'Ship it', annotation_reading_count: 1 }, null],
-      ['unchecked', { annotation_goal: 'Ship it' }, 'Not checked yet'],
-    ] as const;
-    await open(
-      board(
-        cases.map(([sid, fields]) => ({ harness: 'claude', sid, state: 'working', ...fields })),
-        { annotate: true },
-      ),
-    );
-    for (const [sid, , expected] of cases) {
-      const row = document.querySelector(`article[data-next-session="${sid}"]`);
-      expect(row).toBeInTheDocument();
-      expect
-        .soft(row?.querySelector('[data-next-row-progress-absence]')?.textContent ?? null)
-        .toBe(expected);
-      expect(row?.querySelector('[data-variant="progress"]')).toBeNull();
-    }
   });
 
   it('keeps State not published in the line below the title', async () => {

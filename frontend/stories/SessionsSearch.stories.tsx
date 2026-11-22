@@ -178,7 +178,7 @@ export const StatusLegend: Story = {
   },
 };
 
-export const StatusTilesAndProgressAbsences: Story = {
+export const StatusTilesWithBlankProgress: Story = {
   args: { rowExamples: true },
   play: async ({ canvasElement }) => {
     await ready(canvasElement);
@@ -194,30 +194,18 @@ export const StatusTilesAndProgressAbsences: Story = {
       await expect(tile.getBoundingClientRect().right).toBeLessThanOrEqual(
         title.getBoundingClientRect().left,
       );
-      await expect(row.querySelector('.next-operation-progress')).toBeNull();
     }
-    for (const [id, label] of [
-      ['B', 'Not checked yet'],
-      ['C', 'No goal yet'],
-    ] as const) {
+    for (const id of ['B', 'C', 'D', 'E', 'K'] as const) {
       const row = rowOf(canvasElement, id);
       if (!row) throw new Error(`Missing row ${id}`);
-      const absence = within(row).getByText(label, { exact: true });
-      await expect(absence).toBeVisible();
-      await expect(getComputedStyle(absence).fontSize).toBe('13px');
-      await expect(absence.closest('[data-slot="badge"]')).toBeNull();
-      await expect(absence.querySelector('svg')).toBeNull();
-      const colors = paintedColors(absence);
-      if (!colors) throw new Error(`Missing painted colours for ${label}`);
-      await expect(contrastOf(colors.foreground, colors.background)).toBeGreaterThanOrEqual(4.5);
+      await expect(
+        row.querySelector('.next-operation-progress, [data-variant="progress"]'),
+      ).toBeNull();
+      await expect(row).not.toHaveTextContent(/No goal yet|Not checked yet/);
       if (window.innerWidth > 1100) {
-        await expect(
-          row.getBoundingClientRect().right - absence.getBoundingClientRect().right,
-        ).toBeLessThanOrEqual(16);
+        await expect(getComputedStyle(row).gridTemplateColumns).toMatch(/ 176px$/);
       }
     }
-    const checked = rowOf(canvasElement, 'K');
-    await expect(checked?.querySelector('.next-operation-progress')).toBeNull();
   },
 };
 

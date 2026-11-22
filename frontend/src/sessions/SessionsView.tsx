@@ -11,7 +11,7 @@ import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 're
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
-import { gapNames, sessionStateLimit, trimmed, type Row } from '../observed';
+import { gapNames, sessionStateLimit, type Row } from '../observed';
 import { nextNumber } from '../api/bootstrap';
 import { selectObserved } from '../observed/select';
 import { selectHarnessSources } from '../store/selectors';
@@ -237,47 +237,6 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
   );
 }
 
-const PROGRESS_SLOT =
-  'next-operation-progress col-span-full max-w-full self-start justify-self-start px-3 pb-2 text-left [overflow-wrap:anywhere] min-[1101px]:[grid-area:1/-2/2/-1] min-[1101px]:justify-self-end min-[1101px]:pt-[13px] min-[1101px]:pb-0 min-[1101px]:text-right';
-
-function progressAbsence(source: Row): string | null {
-  if (
-    source['annotation_assessment'] ||
-    source['annotation_reading_refused'] ||
-    source['annotation_not_accurate']
-  ) {
-    return null;
-  }
-  if (!trimmed(source['annotation_goal'])) return SESSION_ROW_WORDS.noGoalYet;
-  // A completed departure check can be measured even when the row has no stored assessment.
-  const checked =
-    source['departure_checked'] === true ||
-    (nextNumber(source['annotation_reading_count']) ?? 0) > 0;
-  return checked ? null : SESSION_ROW_WORDS.notCheckedYet;
-}
-
-function ProgressAbsence({
-  row,
-  enabled,
-}: {
-  readonly row: SessionRow;
-  readonly enabled: boolean;
-}) {
-  const { source, session } = row;
-  if (!enabled || !source || (session.harness !== 'claude' && session.harness !== 'codex')) {
-    return null;
-  }
-  const absence = progressAbsence(source);
-  return absence ? (
-    <span
-      className={`${PROGRESS_SLOT} [font-family:var(--sans)] text-label text-muted-foreground`}
-      data-next-row-progress-absence
-    >
-      {absence}
-    </span>
-  ) : null;
-}
-
 const NO_HINTS: readonly string[] = [];
 
 /* Memoized with `Group`, so the urgent render a keystroke makes, which still holds the deferred result,
@@ -286,12 +245,10 @@ const RowView = memo(function RowView({
   row,
   hints = NO_HINTS,
   depth = 0,
-  progressEnabled,
 }: {
   readonly row: SessionRow;
   readonly hints?: readonly string[];
   readonly depth?: number;
-  readonly progressEnabled: boolean;
 }) {
   const { session, history } = row;
   const nowKind = 'NOW';
@@ -332,7 +289,6 @@ const RowView = memo(function RowView({
       {...(history ? { 'data-next-operation-history': 'true' } : {})}
     >
       <Identity row={row} hints={hints} />
-      <ProgressAbsence row={row} enabled={progressEnabled} />
       {/* The project label alone: "Exact location not published" sat hatched on every row and read as an
           error, for a location no harness publishes here. */}
       <Fact
@@ -472,7 +428,6 @@ const Group = memo(function Group({
                     key={row.key}
                     row={row}
                     depth={depth}
-                    progressEnabled={progressEnabled}
                     hints={filter?.filtered.hints.get(row.key) ?? NO_HINTS}
                   />
                 ))}

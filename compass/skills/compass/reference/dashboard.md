@@ -37,10 +37,9 @@ Pi relocation: `PI_CODING_AGENT_SESSION_DIR` is an authoritative direct session-
 
 ## Session states
 
-Sessions rows show the observed state in a named icon tile beside the title. If the board
-can tell that the session has no saved goal or that a check has yet to run, the row says
-No goal yet or Not checked yet in grey. Open the session page to see the progress reading
-and any live estimate the session supports.
+Sessions rows show the observed state in a named icon tile beside the title. The progress
+slot is blank. Open the session page to see the progress reading and any live estimate
+the session supports.
 
 The Sessions legend pairs Working with a pulse, Waiting on you with a clock, Quiet with a moon
 and Ended with a checkmark. The warning triangle means Worth a look. A wait on a child, an

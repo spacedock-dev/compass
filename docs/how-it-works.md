@@ -190,9 +190,9 @@ A reported session end takes precedence in the state label. If the board still p
 question for that session, you can answer it on the session page. Sessions shows a status tile
 beside the title when the harness publishes enough evidence. The legend names each tile,
 including Quiet for an observed turn stop and Ended for a reported session end. If scanning
-cannot see a turn end, the row explains that in words. The row can show No goal yet or
-Not checked yet in muted text when the board has evidence for it. The session page holds
-the progress reading and any live estimate the session supports.
+cannot see a turn end, the row explains that in words. The progress slot on the row is
+blank. Open the session page to see the progress reading and any live estimate the session
+supports.
 An unmatched declaration says the parent is not on the board and is not linked. Open
 a parent to see its linked children and their states, or a child to open its parent. Group labels
 stay separate from goals; inherited labels say "from parent". Group by group arranges the kept

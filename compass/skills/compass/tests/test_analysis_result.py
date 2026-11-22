@@ -12,15 +12,18 @@ stored with the annotation entry and nothing else: removed with the entry, untou
 
 from __future__ import annotations
 
+import builtins
 import contextlib
 import http.client
+import io
 import json
+import os
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
 
+from compass_runtime import aggregate, history, http_api, levels
 from compass_runtime import annotations as annotation_store
-from compass_runtime import history, http_api, levels
 from compass_runtime import io as runtime_io
 from compass_runtime import reading as runtime_reading
 
@@ -367,31 +370,55 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
             evidence_through=through,
         )
 
-    def test_board_serialization_opens_neither_the_transcript_nor_the_assessment_store(
-        self,
-    ) -> None:
+    def test_board_polls_do_not_reopen_evidence_for_a_saved_departure(self) -> None:
         self.save_goal(lines=())
         self.record(self.departure())
         app = self.app()
-        collection = app.collect(show_all=True)
-        (session,) = collection["sessions"]
-        self.assertIsNotNone(session["annotation_assessment"])
-        # Measure serialization after ordinary collection, even with a cold store cache.
-        app.state.annotations = None
-        with (
-            patch.object(app, "collect", return_value=collection),
-            patch.object(runtime_io, "open_harness", wraps=runtime_io.open_harness) as harness_open,
-            patch.object(runtime_io, "open_regular", wraps=runtime_io.open_regular) as regular_open,
-        ):
-            board = json.loads(app.collect_json(show_all=True)[1])
-        transcript_opens = sum(
-            Path(call.args[0]) == self.path
-            for call in [*harness_open.call_args_list, *regular_open.call_args_list]
+        app.harnesses = tuple(
+            spec
+            for spec in aggregate.default_harnesses(usage_fetch_enabled=False)
+            if spec.key == "claude"
         )
-        store = Path(annotation_store.store_path(self.config))
-        store_opens = sum(Path(call.args[0]) == store for call in regular_open.call_args_list)
-        self.assertEqual((0, 0), (transcript_opens, store_opens))
-        self.assertNotIn("stored_progress", board["sessions"][0])
+        app.state.annotations = None
+        store_name = Path(annotation_store.store_path(self.config)).name
+        # On POSIX the safe readers open a leaf relative to an admitted directory descriptor.
+        # On Windows the regular opener uses a native file handle.
+        descriptor_owner = runtime_io if os.name == "nt" else os
+        descriptor_method = "open_regular" if os.name == "nt" else "open"
+        # Claude's cold scan opens this transcript four times. With warm caches the collector
+        # still reads the head for agent identity and Spacedock settings.
+        for poll, expected_transcript_opens in (("cold", 4), ("expired", 2)):
+            with (
+                self.subTest(poll=poll),
+                patch.object(
+                    descriptor_owner,
+                    descriptor_method,
+                    wraps=getattr(descriptor_owner, descriptor_method),
+                ) as descriptor_open,
+                patch.object(builtins, "open", wraps=builtins.open) as file_open,
+                patch.object(io, "open", wraps=io.open) as path_open,
+            ):
+                board = json.loads(app.collect_json(show_all=True)[1])
+                (session,) = board["sessions"]
+                self.assertIsNotNone(session["annotation_assessment"])
+                self.assertNotIn("stored_progress", session)
+                paths = [
+                    Path(call.args[0])
+                    for opener in (descriptor_open, file_open, path_open)
+                    for call in opener.call_args_list
+                    if call.args and isinstance(call.args[0], (str, os.PathLike))
+                ]
+                self.assertEqual(
+                    expected_transcript_opens,
+                    sum(path.suffix == ".jsonl" for path in paths),
+                    "transcript opens",
+                )
+                self.assertEqual(
+                    1,
+                    sum(path.name == store_name for path in paths),
+                    "annotation store opens",
+                )
+            self.now += self.config.collect_memo_sec + 1
 
     def test_the_focused_page_shows_the_level_of_a_saved_departure(self) -> None:
         self.save_goal(lines=())

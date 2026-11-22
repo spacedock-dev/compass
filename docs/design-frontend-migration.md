@@ -17,12 +17,12 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 ## Held to recorded answers
 
 2026-11-23, Sessions rows lead with an accessible status tile. The harness follows the
-title. A row shows No goal yet or Not checked yet in muted text when the existing board
-data supports the claim. Rows with saved progress readings leave that slot blank.
-The differential comparison uses `frontend/test/sessionRowDeviation.ts` to set aside the
-old Drift mark, the new absence text and the state presentation. It aligns title and
-harness order and still compares groups, row order, facts and links. The Sessions
-stories hold placement, contrast, the visible legend and the keyboard tooltip. Terminal
+title. The progress slot is blank. The board data can represent unreadable evidence in
+the same way as a missing goal or check. The differential comparison uses
+`frontend/test/sessionRowDeviation.ts` to set aside the old Drift mark and the state
+presentation. It aligns title and harness order and still compares groups, row order,
+facts and links. The Sessions stories hold placement, contrast, the visible legend and
+the keyboard tooltip. Terminal
 grouping keeps its shared recorded answers. Terminal row wording follows in DRC-5510.
 The row puts the assignment and location notice on separate lines. The status story
 checks the 44 px tooltip target around its 40 px artwork. The browser proof for the Session
