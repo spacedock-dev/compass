@@ -117,6 +117,7 @@ shipped skill body, lives in the `sync-docs` skill at `.claude/skills/sync-docs/
 | `compass/skills/compass/SKILL.md` and `reference/*.md` beside it | The shipped product surface: the body holds terminal actions, disclosures and start/status/stop; bundled references hold the details. Validated artifacts — see the portability rules below. |
 | `docs/promise-map.md` | **Canonical** user-facing promise: one promise per stage of the user's day, the shipped capability behind each, and where each stops. Release notes and the README lede restate it rather than reinvent it. |
 | `docs/development-tracking.md` | **Canonical** development taxonomy: promise IDs, journey labels, board columns, moves and tracker copies. It links to the public promise map without putting tracker provenance into that map. |
+| [`docs/design-calm-compass.md`](docs/design-calm-compass.md) | **Canonical** redesign record for the first layer, technical details, glossary, visual system, dated owner rulings and [screenshot evidence policy](docs/design-calm-compass.md#screenshot-evidence-policy). |
 | `docs/design-runtime-architecture.md` | **Canonical** module map: what each runtime file owns, which way dependencies run, and how config/state/application are held. |
 | `docs/design-reader-state.md` | **Canonical** rule for what survives a board refresh: one row per thing a reader can leave in the page, which React owner keeps it, and — for the two it does not manage — why. The code cites it instead of repeating it. |
 | `docs/design-frontend-migration.md` | The React frontend: its boundaries, the recorded answers it is held to, its deviations from the retired page and why, and the retired measurement method and its recorded figures. `scripts/frontend-migration.json` maps the retired page's parts, surfaces, routes, reader state and browser storage to owners and proofs; `scripts/frontend_inventory.py` checks that each row is owned and names proofs that exist. |
@@ -136,7 +137,8 @@ shipped skill body, lives in the `sync-docs` skill at `.claude/skills/sync-docs/
 | `tests/README.md` | The pushback session fixtures under `tests/raw_sessions/` and `tests/annotated_sessions/`: what is committed (steering excerpts and annotations), why the full sanitized session logs stay local and gitignored, the redaction tags, and how the sessions were chosen. |
 | `docs/drift-replay/` | The committed half of the drift replay check: a README saying what the files may hold, the run order (blind marks before any output) and how to argue with a result, plus the marks digest and, once scored, the outcome summary. The study is retired (owner, 2026-11-01) and the tooling that produced these records was removed, so the folder is a record rather than a procedure; the cases, marks and outputs it describes stayed under `~/.compass/drift-replay/` (or `COMPASS_HOME`), and the spend ledger under `~/.cargento/drift-replay/`. |
 | `docs/visibility-2x2/` | The Visibility 2x2 prioritisation board and the blind-panel evidence behind its scores. A local working tool, opened by the `visibility-2x2` skill. |
-| `docs/screenshots/` | Screenshots taken in this repository. Every capture — browser or screen — lands here unless the request names another location. Its contents are gitignored, so a capture never reaches a commit, and a committed `.gitkeep` holds the directory itself for a fresh clone. Write a descriptive filename, because the directory has no index and nothing prunes it. |
+| `docs/screenshots/` | Default local staging for browser or screen captures. Git ignores its contents apart from `.gitkeep`. Use descriptive filenames. Real-session captures may be attached only to issues in this project's Linear workspace. Never commit them or put them in a pull request, an artifact, a public doc or an externally shared review. Use the [Sample session route](sample-session/README.md) or [Storybook with synthetic data](CONTRIBUTING.md#component-stories) for committed evidence and all other sharing. The [removal ruling](docs/design-calm-compass.md#drc-5506-owner-ruling-2026-11-22) directs removal of the earlier real-session captures from `main`. |
+| `docs/reference_shots/` | Gitignored local reference captures from real sessions. Follow the [screenshot evidence policy](docs/design-calm-compass.md#screenshot-evidence-policy) before sharing any capture. |
 
 `scripts/validate_plugins.py` gates the docs as well as the plugin: across the files above it
 resolves every relative Markdown link **and heading anchor**, and rejects the `localhost` spelling of
@@ -419,9 +421,10 @@ tree. Do not choose a side of the generated files.
 said, and the page that produced it no longer exists, so it cannot be regenerated. A conflict or a diff
 there is a mistake to undo, never something to resolve by re-recording. A change that needs a different
 answer edits the test that asks for it and records the departure in
-[the design record](docs/design-frontend-migration.md#held-to-recorded-answers).
+[the frontend migration record](docs/design-frontend-migration.md#held-to-recorded-answers).
+The [Calm Compass record](docs/design-calm-compass.md) gives the reasons for redesign departures.
 
-**Three files are conflict hotspots** because every branch wants a line in them:
+**Four files are conflict hotspots** because every branch wants a line in them:
 
 - `SKILL.md`'s **Project** bullet. Three branches appending to that one sentence collided. Keep
   `SKILL.md` edits inside the paragraph your feature belongs to.
@@ -430,6 +433,7 @@ answer edits the test that asks for it and records the departure in
   read. Leave it alone per branch and stamp it once from `main` after the merges, naming what the
   range actually covers.
 - `config.py`, where every feature adds a threshold. Usually additive, occasionally not.
+- `frontend/src/language/glossary.ts`, where redesign layers add vocabulary. Add rows in your layer's own block.
 
 **Merges serialize even when builds do not, unless a merge queue serializes them for you.** Check
 which rule `main` has before landing anything:
@@ -796,6 +800,17 @@ own and one of them is deliberately ordered by convention alone.
 A change to a component or view updates its story and passes `pnpm test:stories`. Storybook is where the
 interface is verified now: a story's `play` function asserts what a reader sees and does, in pinned
 Chromium, offline. New UI or UX behaviour is proven there, not in a new browser proof.
+
+**Make the first layer plain.** Before changing anything a reader sees, read the
+[Calm Compass record](docs/design-calm-compass.md). Write for someone new to Compass, including
+non-technical readers. Use its [glossary](docs/design-calm-compass.md#glossary) as the only
+first-layer vocabulary, on the board first and then on the reader-facing surfaces the record names.
+Keep CLI flags, skill action names, route slugs, data tokens and model prompts as written.
+Keep technical evidence available through the shared **Show technical details** control where the
+record calls for it. Reserve monospace, capitals for emphasis and raw identifiers for that layer.
+Keep what Compass can't see visible on the first layer. Use icons through
+[`frontend/src/ui/icons.tsx`](frontend/src/ui/icons.tsx). Use a modal only for an irreversible
+action wider than its card.
 
 ## Code Comments
 

@@ -119,7 +119,11 @@ The experiment is accepted only when the captain and first officer both judge th
 
 ## Review package
 
-The [Session Operations Board visual walkthrough](presentations/future-ui-session-operations-board/README.md) pairs the accepted wide and 320-pixel captures with a short explanation for readers who did not follow the experiment. This file remains the reusable workflow definition. Live stage reports and correction history remain in the split-root Spacedock state checkout.
+The [dashboard UI design record](../design-next-ui.md) explains the earlier board decisions. The
+[Calm Compass record](../design-calm-compass.md) governs the redesign and its
+[screenshot evidence policy](../design-calm-compass.md#screenshot-evidence-policy). For a walkthrough,
+open the [Sample session](../../sample-session/README.md). Live stage reports and correction history
+remain in the split-root Spacedock state checkout.
 
 ## Workflow-specific rules
 
