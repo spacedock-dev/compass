@@ -23,10 +23,10 @@ information architecture, the absence rules, and the palette and type tokens tha
 
 It is a record of rationale, including the direction that was rejected, and it is written for
 whoever changes this interface next. What the interface promises a user, and what backs each
-promise, is owned by [promise-map.md](promise-map.md). Before and after captures live with the
-experiment that produced them, in
-[the session operations board walkthrough](future-ui-exploration/presentations/future-ui-session-operations-board/README.md),
-and they explain a progression rather than a product claim.
+promise, is owned by [promise-map.md](promise-map.md). The
+[Calm Compass record](design-calm-compass.md#how-it-is-enforced) explains how to verify the
+redesign. Use the [Sample session](../sample-session/README.md) or
+[Storybook with synthetic data](../CONTRIBUTING.md#component-stories) for visual evidence.
 
 The v2 project-level design this interface was built to is kept as the artifact it was
 designed in, not as a description of it:

@@ -644,8 +644,10 @@ The [DRC-5500 follow-up](#drc-5500-owner-follow-up-ruling-2026-11-22) closes the
 
 ## Screenshot evidence policy
 
-Keep real-session captures local and gitignored under `docs/reference_shots/`. Use
-synthetic fixtures or the anonymized Sample session for any shared or committed evidence.
+Keep real-session captures in the gitignored `docs/reference_shots/`. Attach them only to issues
+in this project's Linear workspace. Never commit them or put them in a pull request, an artifact,
+a public doc or an externally shared review. Use synthetic Storybook fixtures or the anonymized
+Sample session for committed evidence and all other sharing.
 Describe reader feedback and real-session findings in words without exposing session
 text, repo names or identifiers. A new After image shared in an issue uses the approved
 upload flow and the same synthetic or sample data. The temporary upload location stays

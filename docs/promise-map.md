@@ -471,7 +471,6 @@ come-back-later time whose measured lead over simply looking was one minute sixt
 The limits are part of the promise, not a disclaimer under it. The reason a reader believes the
 first four paragraphs of a section is that the fifth one tells them where it ends.
 
-Before and after screenshots are the design record, not the promise. They explain how the interface
-got here to people who followed the process, and they belong in
-[the session operations board walkthrough](future-ui-exploration/presentations/future-ui-session-operations-board/README.md)
-and [the Next UI design record](design-next-ui.md).
+The [Calm Compass design record](design-calm-compass.md) explains the redesign. To see the board
+in use, open the [Sample session](../sample-session/README.md) or use the
+[Storybook examples with synthetic data](../CONTRIBUTING.md#component-stories).
