@@ -175,9 +175,10 @@ At a glance on Sessions shows what is waiting on you, what is working and what i
 Waiting on you and Worth a look open Needs you. Working now selects Working and moves focus to
 the list. The status tabs and At a glance count the whole loaded board while you filter it.
 Search reads titles, goals, prompts and project names. Press `/` to jump to the field.
-Open Filters for Project, Agent, Started and Progress check. Progress levels appear on each
-session's page. The list cannot be filtered by level yet. No goal yet uses the board's published
-goal evidence. More filters for power users holds the complete list of choices, including
+Open Filters for Project, Agent, Started and Progress check. The level chips are disabled.
+No goal yet finds sessions with a published absence of a saved goal, including drafts you
+haven't saved. Filters explains when some sessions have unpublished goal data.
+More filters for power users holds the complete list of choices, including
 Last active, Group, Headless and Goal source.
 Headless offers Headless and Interactive or unknown. Claude Code and Codex publish headless status;
 Codex uses the rollout entrypoint, with `exec` headless and `cli` interactive. Unknown entrypoints and
@@ -188,7 +189,8 @@ and later work withdraws it. When filters hide a waiting session, the result can
 to Needs you. With no search matches, Show everything clears the choices. Show older sessions
 reloads without filters and reads the wider collection. How filter counts work sits inside
 More filters for power users. The earlier group names the published window, and How session
-history works explains what those rows can tell you.
+history works explains what those rows can tell you. If every discovered source fails, search
+results and session counts are unavailable.
 The [Find sessions design record](design-sessions-search.md) owns the counting rules.
 
 At the foot of Sessions, Your AI allowance shows the selected quota window, its published reset

@@ -211,12 +211,12 @@ describe('choices the board cannot apply', () => {
     const page = await open();
     await press(
       page,
-      within(await openFilter(page, 'drift')).getByRole('checkbox', { name: 'Drift recorded' }),
+      within(await openFilter(page, 'drift')).getByRole('checkbox', { name: 'Departure recorded' }),
     );
     await closeFilters(page);
     await page.poll(sessionsSearchPayload({ generated: GENERATED + 1, unreadable: true }));
-    expect(screen.queryByRole('button', { name: 'Drift recorded' })).toBeNull();
-    expect(chips()).toEqual(['Progress records: Drift recorded']);
+    expect(screen.queryByRole('button', { name: 'Departure recorded' })).toBeNull();
+    expect(chips()).toEqual(['Progress records: Departure recorded']);
     expect(document.querySelector('[data-sessions-chip-note]')?.textContent).toBe(
       'The annotation store could not be read, so progress and goals cannot be filtered. The Progress records chip filters nothing.',
     );
@@ -231,7 +231,7 @@ describe('choices the board cannot apply', () => {
     }
     await press(
       page,
-      screen.getByRole('button', { name: 'Remove Progress records: Drift recorded' }),
+      screen.getByRole('button', { name: 'Remove Progress records: Departure recorded' }),
     );
     expect(cue()).toBe('Filters cleared. Showing all 12 sessions.');
   });
@@ -247,12 +247,12 @@ describe('choices the board cannot apply', () => {
     const page = await open();
     await press(
       page,
-      within(await openFilter(page, 'drift')).getByRole('checkbox', { name: 'Drift recorded' }),
+      within(await openFilter(page, 'drift')).getByRole('checkbox', { name: 'Departure recorded' }),
     );
     expect(rows()).toBe(1);
     await closeFilters(page);
     await page.poll(sessionsSearchPayload({ annotate: false }));
-    expect(chips()).toEqual(['Progress records: Drift recorded']);
+    expect(chips()).toEqual(['Progress records: Departure recorded']);
     const note = document.querySelector('[data-sessions-chip-note]');
     expect(note?.textContent).toBe(
       'Progress records are not published because annotations are off. The Progress records chip filters nothing.',
@@ -262,7 +262,7 @@ describe('choices the board cannot apply', () => {
     );
     expect(result()).toBe('');
     expect(rows()).toBe(12);
-    expect(screen.queryByRole('button', { name: 'Drift recorded' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Departure recorded' })).toBeNull();
   });
 });
 
@@ -416,6 +416,24 @@ describe('focus after a button that goes as it is pressed', () => {
   });
 });
 
+it.each([
+  ['Today', 'Last 7 days'],
+  ['Last 7 days', 'Today'],
+])('toggling a Started range off clears Include them (%s)', async (previous, next) => {
+  const page = await open();
+  const panel = within(await openPanel(page));
+  const started = within(panel.getByRole('group', { name: 'Started' }));
+  const range = started.getByRole('button', { name: previous });
+  await press(page, range);
+  await press(page, preset('Include them'));
+  expect(chips()).toEqual([`Started: ${previous}, plus 4 with no start time`]);
+  await press(page, range);
+  expect(chips()).toEqual([]);
+  await press(page, started.getByRole('button', { name: next }));
+  expect(chips()).toEqual([`Started: ${next}`]);
+  expect(preset('Include them')).toBeVisible();
+});
+
 describe('names that hold the words on screen', () => {
   it('names a shortened chip by its words and describes it by the whole list', async () => {
     const page = await open();
@@ -457,24 +475,28 @@ describe('the hidden-waiting guard across polls', () => {
     expect(within(guard as HTMLElement).queryByRole('link', { name: /^Open it/ })).toBeNull();
   });
 
-  it('shows the wait footnote beside an empty Waiting on you result', async () => {
+  it('explains wait coverage in the visible State facet', async () => {
     const page = await open();
-    await press(page, tab('Waiting on you'));
-    await pick(page, await openFilter(page, 'drift'), 'Drift recorded');
-    expect(
-      [...document.querySelectorAll('[data-sessions-wait-coverage]')].map((one) => one.textContent),
-    ).toEqual([
+    const state = within(await openFilter(page, 'state'));
+    for (const sentence of [
       'Gemini and Goose do not report when a session is waiting, so 2 of their sessions could be waiting without showing here.',
       'Codex, OpenCode and Pi report a wait only in some setups. See coverage on Needs you.',
-    ]);
+    ]) {
+      expect(state.getByText(sentence)).toBeVisible();
+    }
   });
 });
 
 describe('when nothing matches', () => {
-  it('offers a single reset and keeps the older sessions link below the list', async () => {
+  it('offers a single empty result after closing Filters and keeps the older sessions link below', async () => {
     const page = await open();
+    await openFilter(page, 'state');
+    await closeFilters(page);
     await type(page, 'quarterly invoices');
     expect(nothing()?.querySelector('p')?.textContent).toBe('Nothing here matches.');
+    expect(document.querySelectorAll('[data-sessions-nothing] p')).toHaveLength(1);
+    expect(document.querySelector('[data-sessions-result]')).toBeNull();
+    expect(screen.queryByRole('group', { name: 'State' })).toBeNull();
     expect(document.querySelectorAll('[data-next-sessions-filtered-empty]')).toHaveLength(0);
     const older = screen.getByRole('link', { name: 'Show older sessions' });
     expect(older.getAttribute('href')).toContain('?all=1#n=sessions');
@@ -614,29 +636,38 @@ it('keeps the rows visible when progress levels cannot be filtered', async () =>
     expect(rows(), name).toBe(2);
     expect((chip as HTMLButtonElement).disabled).toBe(true);
   }
-  expect(
-    group.getByText(
-      "Progress levels are shown on each session's page. Filtering this list by level is not available yet.",
-    ),
-  ).toBeVisible();
+  expect(group.getByText(/Filtering by progress level is unavailable/)).toBeVisible();
 });
 
-it('filters for no goal only when the board publishes that absence', async () => {
+it('a mixed-evidence board explains its goal coverage', async () => {
   const page = await open({
     generated: GENERATED,
     annotate: true,
     sessions: [
       { harness: 'claude', sid: 'saved', project: 'p', annotation_goal: 'Ship' },
-      { harness: 'codex', sid: 'empty', project: 'p', annotation_goal: '' },
+      {
+        harness: 'gemini',
+        sid: 'empty',
+        project: 'p',
+        annotation_goal: '',
+        annotation_goal_why: 'No goal typed for this session.',
+      },
       { harness: 'claude', sid: 'unpublished', project: 'p' },
     ],
   });
   await press(page, screen.getByRole('button', { name: 'Filters' }));
   const group = within(screen.getByRole('group', { name: 'Progress check' }));
+  const partial = 'Goal filters skip sessions whose saved goal status was not published.';
+  expect(group.getByText(new RegExp(partial))).toBeVisible();
   const noGoal = group.getByRole('button', { name: 'No goal yet' });
   await press(page, noGoal);
   expect(rows()).toBe(1);
   expect(document.querySelector('[data-next-session="empty"]')).toBeInTheDocument();
+  await press(page, noGoal);
+  const advanced = await openFilter(page, 'goal');
+  expect(within(advanced).getByText(partial)).toBeVisible();
+  await pick(page, advanced, 'No goal yet');
+  expect(rows()).toBe(1);
 
   await closeFilters(page);
   await page.poll({
@@ -654,6 +685,10 @@ it('filters for no goal only when the board publishes that absence', async () =>
   expect(
     updated.getByText(/The board did not publish saved goals for these sessions\./),
   ).toBeVisible();
+  const goal = await openFilter(page, 'goal');
+  const option = goal.querySelector('[data-filter-option="goal:none"]') as HTMLElement;
+  expect(within(option).getByRole('checkbox').hasAttribute('data-disabled')).toBe(true);
+  expect(option.querySelector('[data-filter-count]')).toBeNull();
 });
 
 it('words the start hint with the displayed board clock', async () => {

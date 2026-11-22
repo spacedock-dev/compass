@@ -96,9 +96,10 @@ Worth a look open **Needs you**. Working now selects Working and takes you to th
 Press it again to clear that selection. The summary says when it covers only sources Compass
 could read. Below the cards, Right now comes before the earlier group. The six status tabs count the whole loaded board.
 Search reads titles, goals and prompts. Press `/` to jump to it or paste a session id to find it.
-Filters opens a panel for Project, Agent, Started and Progress check. Progress levels appear on
-each session's page. The list cannot be filtered by level yet. No goal yet uses the board's
-published goal evidence. More filters for power users holds the full project list, date ranges,
+Filters opens a panel for Project, Agent, Started and Progress check. The level chips are disabled.
+No goal yet uses published goal evidence across agents and includes unsaved prompt drafts.
+Filters explains when some sessions have unpublished goal data. More filters for power users holds
+the full project list, date ranges,
 Group, Headless, State, Progress records and Goal source.
 Headless offers Headless and Interactive or unknown. The latter includes
 interactive Claude Code and Codex runs, unknown entrypoints and other harnesses. Codex classifies
@@ -107,7 +108,8 @@ standing recorded turn stop says "run finished" with its age on the list and ses
 withdraws that reading; it does not declare a session end. Neither
 option is selected by default, so all sessions show. At a glance keeps counting the whole board.
 When the filters hide a waiting session, the list can link to it or to Needs you.
-Show everything resets a search with no matches. Show older sessions widens the collection with
+Show everything resets a search with no matches. If every discovered source fails, search results
+and session counts are unavailable. Show older sessions widens the collection with
 a reload, which clears the filters. Choices and the open panel last across refreshes and trips
 into a session and back for the life of the tab. **Projects**, one
 click away, groups sessions by the label their harness publishes. **Goal history** lists every

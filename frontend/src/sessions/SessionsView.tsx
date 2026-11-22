@@ -335,6 +335,7 @@ const Group = memo(function Group({
   title,
   rows,
   empty,
+  countsAvailable,
   caveat,
   filter,
   byGroup = false,
@@ -344,6 +345,7 @@ const Group = memo(function Group({
   readonly title: string;
   readonly rows: readonly SessionRow[];
   readonly empty: string;
+  readonly countsAvailable: boolean;
   readonly caveat?: readonly string[];
   /** Set while the reader's filters are on: what they keep of this group, and how to take them off. */
   readonly filter?: {
@@ -354,7 +356,7 @@ const Group = memo(function Group({
   const kept = filter?.filtered.active
     ? rows.filter((row) => filter.filtered.keys.has(row.key))
     : rows;
-  const noMatches = filter?.filtered.active && filter.filtered.shown === 0;
+  const noMatches = countsAvailable && filter?.filtered.active && filter.filtered.shown === 0;
   const buckets = byGroup
     ? [...new Set(kept.map((row) => groupOf(row.source)))]
         .sort((a, b) => (a ? (b ? a.localeCompare(b, 'en') : -1) : 1))
@@ -367,9 +369,11 @@ const Group = memo(function Group({
     >
       <header className="flex flex-wrap items-center justify-between gap-x-2">
         <h2>{title}</h2>
-        <span className="text-label text-muted-foreground" data-sessions-group-count>
-          {kept.length} {kept.length === 1 ? 'session' : 'sessions'}
-        </span>
+        {countsAvailable ? (
+          <span className="text-label text-muted-foreground" data-sessions-group-count>
+            {kept.length} {kept.length === 1 ? 'session' : 'sessions'}
+          </span>
+        ) : null}
       </header>
       {noMatches && kind === 'active' ? (
         <div className="flex flex-wrap items-center gap-x-2" data-sessions-nothing>
@@ -384,7 +388,7 @@ const Group = memo(function Group({
           </Button>
         </div>
       ) : null}
-      {caveat && !noMatches ? (
+      {countsAvailable && caveat && !noMatches ? (
         <Disclosure
           disclosureKey={disclosureKey({
             project: null,
@@ -416,7 +420,7 @@ const Group = memo(function Group({
           </Button>
         </p>
       ) : null}
-      {noMatches ? null : (
+      {!countsAvailable || noMatches ? null : (
         <div className="next-operations-columns" aria-hidden="true">
           <span>SESSION</span>
           <span>PROJECT</span>
@@ -450,7 +454,7 @@ const Group = memo(function Group({
                 ))}
               </Fragment>
             ))
-          ) : noMatches ? null : rows.length ? (
+          ) : !countsAvailable || noMatches ? null : rows.length ? (
             <p data-next-sessions-filtered-empty className="next-absence">
               {groupEmptyLine(rows.length, title)}
             </p>
@@ -512,12 +516,13 @@ function useFilterActions(
   generated: number | null,
   annotated: boolean,
   progressAvailable: boolean,
+  countsAvailable: boolean,
 ): FilterActions {
   const shell = useShell();
-  const latest = useRef({ indexed, generated, annotated, progressAvailable });
+  const latest = useRef({ indexed, generated, annotated, progressAvailable, countsAvailable });
   const timer = useRef<TimerHandle | null>(null);
   useEffect(() => {
-    latest.current = { indexed, generated, annotated, progressAvailable };
+    latest.current = { indexed, generated, annotated, progressAvailable, countsAvailable };
   });
   useEffect(
     () => () => {
@@ -540,7 +545,10 @@ function useFilterActions(
       );
       // Forgotten first, so the same sentence after a second press is spoken again.
       shell.announcer.forget(ANNOUNCE_KEY);
-      shell.announcer.announce(ANNOUNCE_KEY, announcement(result, next, before));
+      shell.announcer.announce(
+        ANNOUNCE_KEY,
+        announcement(result, next, before, now.countsAvailable),
+      );
     };
     const cancel = () => {
       if (timer.current === null) return;
@@ -609,7 +617,15 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
       ),
     [indexed, prepared, generated],
   );
-  const actions = useFilterActions(store, indexed, generated, annotated, progressAvailable);
+  const countsAvailable = Boolean(attention?.counts);
+  const actions = useFilterActions(
+    store,
+    indexed,
+    generated,
+    annotated,
+    progressAvailable,
+    countsAvailable,
+  );
   const board = useMemo((): FilterBoard | null => {
     if (!data || !screen) return null;
     const payload = data as unknown as Row;
@@ -620,9 +636,9 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
       harnesses: harnessMeta(payload),
       annotate: screen.context.annotate,
       unreadable: screen.context.unreadable,
-      countsAvailable: Boolean(attention?.counts),
+      countsAvailable,
     };
-  }, [data, screen, generated, shell, attention]);
+  }, [data, screen, generated, shell, countsAvailable]);
   const groupFilter = useMemo(() => ({ filtered, onClear: actions.clearAll }), [filtered, actions]);
   if (!screen || !board) return null;
   return (
@@ -665,6 +681,7 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
           kind="active"
           title={SESSION_LIST_WORDS.rightNow}
           rows={screen.active}
+          countsAvailable={countsAvailable}
           empty="No exact session has active evidence right now."
           filter={groupFilter}
           byGroup={filters.byGroup}
@@ -673,6 +690,7 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
           kind="history"
           title={historyHeading(board)}
           rows={screen.history}
+          countsAvailable={countsAvailable}
           empty="No recent-history rows in this payload."
           caveat={RECENT_CAVEATS[screen.context.annotate ? 1 : 0]}
           filter={groupFilter}

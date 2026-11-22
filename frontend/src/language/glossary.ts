@@ -86,6 +86,8 @@ export const SESSION_LIST_WORDS = {
   filters: 'Filters',
   moreFilters: 'More filters for power users',
   progressCheck: 'Progress check',
+  progressRecords: 'Progress records',
+  departureRecorded: 'Departure recorded',
   rightNow: 'Right now',
   earlierSessions: 'Earlier sessions',
   nothingMatches: 'Nothing here matches.',
@@ -311,6 +313,20 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       ],
       'Drift level',
     ),
+    progressRecords: kept([
+      SESSION_LIST_WORDS.progressRecords,
+      'Drift filter',
+      'Recorded checks and departures',
+      'Progress levels',
+      'Sessions filters',
+    ]),
+    departureRecorded: kept([
+      SESSION_LIST_WORDS.departureRecorded,
+      'Drift recorded',
+      'A recorded departure from the goal',
+      'A progress level or a generic risk',
+      'The saved filter value remains `recorded`',
+    ]),
     readingLooksWrong: ruled(
       [
         'This reading looks wrong',

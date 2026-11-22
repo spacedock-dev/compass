@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
-import { contrastOf, paintedColors } from './a11y.audit';
+import { contrastOf, paintedColors, paintedControlColors } from './a11y.audit';
 import { act, useEffect, useState } from 'react';
 import { App } from '../src/App';
 import { SESSION_LIST_WORDS, SESSION_ROW_WORDS } from '../src/language/glossary';
@@ -15,6 +15,7 @@ import { openInFlow } from './disclosure.flow';
 import {
   GENERATED,
   SIDS,
+  sessionRows,
   sessionsSearchPayload,
   type FixtureOptions,
 } from './sessionsSearch.fixture';
@@ -99,13 +100,23 @@ function Board({
   annotate = true,
   showAll = false,
   rowExamples = false,
+  goalEvidence = false,
   flagBoard,
   hash = '#n=sessions',
 }: {
   readonly annotate?: boolean;
   readonly showAll?: boolean;
   readonly rowExamples?: boolean;
-  readonly flagBoard?: 'mixed' | 'empty' | 'failed' | 'future-end' | 'glance' | 'links' | 'limited';
+  readonly goalEvidence?: boolean;
+  readonly flagBoard?:
+    | 'mixed'
+    | 'empty'
+    | 'failed'
+    | 'future-end'
+    | 'glance'
+    | 'links'
+    | 'limited'
+    | 'codex';
   readonly hash?: string;
 }) {
   const [shell] = useState(() => {
@@ -133,54 +144,73 @@ function Board({
         Promise.resolve(
           url.startsWith('/api/data')
             ? json(
-                flagBoard === 'mixed'
-                  ? worthALookBoard()
-                  : flagBoard === 'limited'
-                    ? limitedBoard
-                    : flagBoard === 'empty'
-                      ? {
-                          sessions:
-                            live.flagPoll || live.generated !== GENERATED
-                              ? worthALookBoard().sessions.filter(
-                                  ({ sid }) => sid === (live.flagPoll ? 'clean-end' : 'gate'),
-                                )
-                              : [],
-                        }
-                      : flagBoard === 'failed'
+                flagBoard === 'codex'
+                  ? {
+                      generated: GENERATED,
+                      annotate: true,
+                      sessions: [{ harness: 'codex', sid: 'only', annotation_goal: 'Write docs' }],
+                    }
+                  : flagBoard === 'mixed'
+                    ? worthALookBoard()
+                    : flagBoard === 'limited'
+                      ? limitedBoard
+                      : flagBoard === 'empty'
                         ? {
-                            sessions: [],
-                            harnesses: [
-                              {
-                                key: 'claude',
-                                label: 'Claude Code',
-                                discovered: true,
-                                error: 'Read failed',
-                              },
-                            ],
+                            sessions:
+                              live.flagPoll || live.generated !== GENERATED
+                                ? worthALookBoard().sessions.filter(
+                                    ({ sid }) => sid === (live.flagPoll ? 'clean-end' : 'gate'),
+                                  )
+                                : [],
                           }
-                        : flagBoard === 'future-end'
+                        : flagBoard === 'failed'
                           ? {
-                              generated: GENERATED,
-                              sessions: [
+                              sessions: [],
+                              harnesses: [
                                 {
-                                  harness: 'claude',
-                                  sid: 'future',
-                                  title: 'Future-dated end',
-                                  project: 'p',
-                                  ended_at: GENERATED + 60,
-                                },
-                                {
-                                  harness: 'claude',
-                                  sid: 'recent',
-                                  title: 'Recently ended',
-                                  project: 'p',
-                                  ended_at: GENERATED - 60,
+                                  key: 'claude',
+                                  label: 'Claude Code',
+                                  discovered: true,
+                                  error: 'Read failed',
                                 },
                               ],
                             }
-                          : flagBoard === 'glance' || flagBoard === 'links'
-                            ? glanceBoard(live.generated, flagBoard === 'links')
-                            : sessionsSearchPayload({ ...live }),
+                          : flagBoard === 'future-end'
+                            ? {
+                                generated: GENERATED,
+                                sessions: [
+                                  {
+                                    harness: 'claude',
+                                    sid: 'future',
+                                    title: 'Future-dated end',
+                                    project: 'p',
+                                    ended_at: GENERATED + 60,
+                                  },
+                                  {
+                                    harness: 'claude',
+                                    sid: 'recent',
+                                    title: 'Recently ended',
+                                    project: 'p',
+                                    ended_at: GENERATED - 60,
+                                  },
+                                ],
+                              }
+                            : flagBoard === 'glance' || flagBoard === 'links'
+                              ? glanceBoard(live.generated, flagBoard === 'links')
+                              : goalEvidence
+                                ? {
+                                    ...sessionsSearchPayload(live),
+                                    sessions: sessionRows(live).map((row) =>
+                                      row['sid'] === SIDS.F
+                                        ? {
+                                            ...row,
+                                            annotation_goal: '',
+                                            annotation_goal_why: 'No goal typed for this session.',
+                                          }
+                                        : row,
+                                    ),
+                                  }
+                                : sessionsSearchPayload(live),
               )
             : json({}),
         ),
@@ -508,6 +538,18 @@ export const WorthALookUnreadBoard: Story = {
     ).toBeDisabled();
     await expect(canvas.getByText(/Claude Code: Harness source could not be read/)).toBeVisible();
     await expect(canvas.queryByRole('button', { name: 'Worth a look 0' })).toBeNull();
+    await expect(canvasElement.querySelectorAll('[data-sessions-group-count]')).toHaveLength(0);
+    const state = await openFilter(canvasElement, 'state');
+    await waitFor(() => expect(within(state).getByText('Working', { exact: true })).toBeVisible());
+    await expect(state.querySelectorAll('[data-filter-count]')).toHaveLength(0);
+    await closeFilters(canvasElement);
+    await userEvent.type(canvas.getByRole('searchbox'), 'quarterly invoices');
+    await expect(
+      await canvas.findByText(
+        'Search results are unavailable because the sources could not be read.',
+      ),
+    ).toBeVisible();
+    await expect(canvas.queryByText('Nothing here matches.')).toBeNull();
   },
 };
 
@@ -1017,6 +1059,30 @@ export const StartedTodayAndMissingStartTimes: Story = {
   },
 };
 
+export const ClearingStartedResetsMissingTimes: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = await ready(canvasElement);
+    const today = await startedToday(canvasElement);
+    const panel = within(await openPanel(canvasElement));
+    const week = within(panel.getByRole('group', { name: 'Started' })).getByRole('button', {
+      name: 'Last 7 days',
+    });
+    for (const [selected, other] of [
+      [today, week],
+      [week, today],
+    ] as const) {
+      await userEvent.click(selected);
+      await userEvent.click(canvas.getByRole('button', { name: 'Include them' }));
+      await expect(chips(canvasElement)[0]).toContain('plus 4 with no start time');
+      await userEvent.click(selected);
+      await expect(chips(canvasElement)).toEqual([]);
+      await userEvent.click(other);
+      await expect(canvas.getByRole('button', { name: 'Include them' })).toBeVisible();
+      await userEvent.click(other);
+    }
+  },
+};
+
 /* 4 */
 export const DatesBeyondTheBoardWindow: Story = {
   play: async ({ canvasElement }) => {
@@ -1094,9 +1160,7 @@ export const ProjectAndHarness: Story = {
       'Droid',
     ]);
     await expect(harness.getByRole('button', { name: /Droid/ })).toBeDisabled();
-    await expect(harness.getByRole('button', { name: /Droid/ })).toHaveAccessibleDescription(
-      'Store could not be read',
-    );
+    await expect(harness.getByText('Store could not be read')).toBeVisible();
   },
 };
 
@@ -1190,7 +1254,7 @@ export const StateAndDrift: Story = {
     const listed = options(drift, 'drift');
     await expect(listed.map((one) => one.count)).toEqual([null, null, null]);
     for (const one of listed) await expect(one.label).not.toMatch(/no drift|on track/i);
-    await pick(drift, 'Drift recorded');
+    await pick(drift, 'Departure recorded');
     await waitFor(() => expect(shownRows(canvasElement)).toBe('D'));
     await expect(rowOf(canvasElement, 'D')?.querySelector('[data-variant="progress"]')).toBeNull();
     await expect(options(drift, 'drift')[0]?.box).toHaveAttribute('aria-checked', 'true');
@@ -1203,11 +1267,11 @@ export const Goal: Story = {
     await ready(canvasElement);
     const goal = await openFilter(canvasElement, 'goal');
     const counts = options(goal, 'goal').map((one) => Number(one.count));
-    await expect(counts.reduce((sum, one) => sum + one, 0)).toBe(12);
+    await expect(counts).toEqual([2, 0, 0]);
     await pick(goal, 'Goal saved');
     await waitFor(() => expect(shownRows(canvasElement)).toBe('BK'));
     const after = options(goal, 'goal').map((one) => Number(one.count));
-    await expect(after.reduce((sum, one) => sum + one, 0)).toBe(12);
+    await expect(after).toEqual(counts);
   },
 };
 
@@ -1439,7 +1503,7 @@ export const AnnotationsOff: Story = {
     const goal = await openFilter(canvasElement, 'goal');
     await expect(goal).toHaveTextContent('Goals are not published because annotations are off.');
     await closeFilters(canvasElement);
-    await expect(canvas.queryByRole('button', { name: 'Drift recorded' })).toBeNull();
+    await expect(canvas.queryByRole('button', { name: 'Departure recorded' })).toBeNull();
   },
 };
 
@@ -1589,7 +1653,7 @@ export const TabsAndInlineFilters: Story = {
       await expect(within(progress).getByRole('button', { name })).toBeDisabled();
     }
     await expect(
-      within(progress).getByText(/Progress levels are shown on each session's page/),
+      within(progress).getByText(/Filtering by progress level is unavailable/),
     ).toBeVisible();
     await expect(shownRows(canvasElement)).toHaveLength(2);
     await userEvent.click(
@@ -1612,5 +1676,125 @@ export const TabsAndInlineFilters: Story = {
     }
     await expect(within(panel).getByRole('button', { name: 'Group by group' })).toBeVisible();
     await expect(panel.innerText).not.toMatch(/\b(?:Finished|Paused|Idle|Not checked)\s*($|\n)/m);
+  },
+};
+
+export const MixedGoalEvidence: Story = {
+  args: { goalEvidence: true },
+  play: async ({ canvasElement }) => {
+    await ready(canvasElement);
+    const panel = within(await openPanel(canvasElement));
+    const progress = within(panel.getByRole('group', { name: 'Progress check' }));
+    await expect(
+      progress.getByText(/Goal filters skip sessions whose saved goal status was not published/),
+    ).toBeVisible();
+    const noSavedGoal = progress.getByRole('button', { name: 'No goal yet' });
+    await userEvent.click(noSavedGoal);
+    await waitFor(() => expect(shownRows(canvasElement)).toBe('F'));
+    await userEvent.click(noSavedGoal);
+    const goal = await openFilter(canvasElement, 'goal');
+    const noGoal = goal.querySelector('[data-filter-option="goal:none"]');
+    await expect(noGoal?.querySelector('[data-filter-count]')).toHaveTextContent('1');
+    await waitFor(() =>
+      expect(
+        within(goal).getByText(
+          'Goal filters skip sessions whose saved goal status was not published.',
+        ),
+      ).toBeVisible(),
+    );
+  },
+};
+
+export const UnselectedSegmentHasVisibleBoundary: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = await ready(canvasElement);
+    const tab = canvas.getByRole('button', { name: /^Quiet \d/ });
+    await expect(tab).toHaveAttribute('aria-pressed', 'false');
+    const edge = paintedControlColors(tab, getComputedStyle(tab).borderTopColor);
+    if (!edge) throw new Error('The segment boundary has no measurable backdrop.');
+    await expect(contrastOf(edge.foreground, edge.background)).toBeGreaterThanOrEqual(3);
+  },
+};
+
+export const SelectedChipHasNonColourCue: Story = {
+  play: async ({ canvasElement }) => {
+    await ready(canvasElement);
+    const panel = within(await openPanel(canvasElement));
+    const agent = within(panel.getByRole('group', { name: 'Agent' }));
+    const chip = agent.getByRole('button', { name: /^Claude Code \d/ });
+    const before = Number(getComputedStyle(chip).fontWeight);
+    await userEvent.click(chip);
+    await expect(chip).toHaveAttribute('aria-pressed', 'true');
+    await expect(Number(getComputedStyle(chip).fontWeight)).toBeGreaterThan(before);
+  },
+};
+
+export const OptionCaveatsAreVisible: Story = {
+  play: async ({ canvasElement }) => {
+    await ready(canvasElement);
+    const panel = within(await openPanel(canvasElement));
+    const agents = within(panel.getByRole('group', { name: 'Agent' }));
+    const projects = within(panel.getByRole('group', { name: 'Project' }));
+    await expect(agents.getByText('Store could not be read')).toBeVisible();
+    const note = projects.getByText(/Label shared by more than one location/);
+    await expect(note).toBeVisible();
+    await expect(projects.getByRole('button', { name: /^compass \d/ })).toHaveAccessibleDescription(
+      note.textContent ?? '',
+    );
+  },
+};
+
+export const SessionsHeadingUsesTypeScale: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = await ready(canvasElement);
+    const heading = canvas.getByRole('heading', { name: 'All sessions' });
+    await expect(getComputedStyle(heading).fontSize).toBe('18px');
+  },
+};
+
+export const UnavailableSegmentsLookDisabled: Story = {
+  args: { flagBoard: 'failed' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const tab = await canvas.findByRole('button', { name: 'Working unavailable' });
+    await expect(tab).toBeDisabled();
+    const style = getComputedStyle(tab);
+    await expect(style.cursor).toBe('not-allowed');
+    await expect(style.borderTopStyle).toBe('dashed');
+    await expect(style.backgroundImage).toMatch(/gradient/);
+    await expect(style.color).not.toBe(
+      getComputedStyle(canvas.getByRole('button', { name: 'All unavailable' })).color,
+    );
+  },
+};
+
+export const CodexFiltersExplainUnavailableLevels: Story = {
+  args: { flagBoard: 'codex' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('button', { name: 'All 1' });
+    const panel = within(await openPanel(canvasElement));
+    const progress = within(panel.getByRole('group', { name: 'Progress check' }));
+    const explanation = 'Filtering by progress level is unavailable.';
+    await expect(progress.getByText(explanation)).toBeVisible();
+    for (const name of ['Slightly off course', 'Off course', 'Way off course']) {
+      await expect(progress.getByRole('button', { name })).toBeDisabled();
+    }
+  },
+};
+
+export const AppliedProgressRecordUsesGlossaryWords: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = await ready(canvasElement);
+    const progress = await openFilter(canvasElement, 'drift');
+    const recorded = options(progress, 'drift')[0];
+    if (!recorded?.box) throw new Error('Missing recorded progress option.');
+    await userEvent.click(recorded.box);
+    await waitFor(() => expect(shownRows(canvasElement)).toBe('D'));
+    await closeFilters(canvasElement);
+    await expect(
+      canvas.getByRole('button', { name: 'Remove Progress records: Departure recorded' }),
+    ).toBeVisible();
+    await expect(canvas.queryByRole('region', { name: 'Filters' })).toBeNull();
   },
 };

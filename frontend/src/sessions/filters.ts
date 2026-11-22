@@ -100,7 +100,7 @@ export const STATE_VALUES = [
   'State not published',
 ] as const;
 export const DRIFT_OPTIONS: readonly { readonly value: DriftValue; readonly label: string }[] = [
-  { value: 'recorded', label: 'Drift recorded' },
+  { value: 'recorded', label: SESSION_LIST_WORDS.departureRecorded },
   { value: 'checked', label: 'Checked against your current words, none recorded' },
   { value: 'unchecked', label: 'Not checked against your current words' },
 ];
@@ -113,17 +113,21 @@ export const PROGRESS_OPTIONS = [
 
 type ProgressValue = 'no-goal' | 'has-goal';
 
-function progressValue({ source, session, goal }: SessionRow): ProgressValue | null {
-  if (session.harness !== 'claude' && session.harness !== 'codex') return null;
+function progressValue(source: Row | undefined): ProgressValue | null {
   const saved = source?.['annotation_goal'];
   if (typeof saved !== 'string') return null;
-  return saved.trim() || goal.known ? 'has-goal' : 'no-goal';
+  if (saved.trim()) return 'has-goal';
+  // The collector initializes an empty field. The annotation store publishes the reason for an absence.
+  const discarded = nextNumber(source?.['annotation_discarded_at']);
+  return trimmed(source?.['annotation_goal_why']) || (discarded !== null && discarded > 0)
+    ? 'no-goal'
+    : null;
 }
 
 export const GOAL_OPTIONS: readonly { readonly value: GoalValue; readonly label: string }[] = [
   { value: 'saved', label: 'Goal saved' },
   { value: 'drafted', label: 'Drafted from a prompt, not saved' },
-  { value: 'none', label: 'No goal yet' },
+  { value: 'none', label: SESSION_ROW_WORDS.noGoalYet },
 ];
 export const HEADLESS_OPTIONS = [
   { value: 'headless', label: 'Headless' },
@@ -278,7 +282,7 @@ export function indexRow(row: SessionRow, context: SessionsContext): IndexedRow 
     ...outcome,
     ...tasks,
   ].filter((one): one is Field => one !== null);
-  const typed = Boolean(trimmed(source?.['annotation_goal']));
+  const progress = readable ? progressValue(source) : null;
   const checked = checkedAgainstCurrentWords(source, context);
   return {
     row,
@@ -286,9 +290,16 @@ export function indexRow(row: SessionRow, context: SessionsContext): IndexedRow 
     hidden,
     sid: normalize(session.sid),
     state: rowState(session),
-    progress: readable ? progressValue(row) : null,
+    progress,
     drift: !readable ? null : row.drift ? 'recorded' : checked ? 'checked' : 'unchecked',
-    goal: !readable ? null : typed ? 'saved' : goal.known ? 'drafted' : 'none',
+    goal:
+      progress === 'has-goal'
+        ? 'saved'
+        : progress === 'no-goal'
+          ? goal.known
+            ? 'drafted'
+            : 'none'
+          : null,
     started: startStamp(source),
     active: activityStamp(source),
   };
@@ -480,6 +491,8 @@ export function passes(indexed: IndexedRow, prepared: Prepared, skip: Part | nul
         return false;
       continue;
     }
+    if (facet === 'goal' && !prepared.progressAvailable) continue;
+    if (facet === 'goal' && value === null) return false;
     if (value === null || chosen.includes(value)) continue;
     if (
       facet === 'state' &&
@@ -504,7 +517,10 @@ export function filtersActive(prepared: Prepared): boolean {
     FACETS.some((facet) =>
       facet === 'progress'
         ? prepared.progressAvailable && filters.progress.includes('no-goal')
-        : (annotated || !ANNOTATION_FACETS.has(facet)) && filters[facet].length > 0,
+        : filters[facet].length > 0 &&
+          (facet === 'goal'
+            ? prepared.progressAvailable
+            : annotated || !ANNOTATION_FACETS.has(facet)),
     )
   );
 }
@@ -727,8 +743,10 @@ export function fixedOptions(
   indexed: readonly IndexedRow[],
   prepared: Prepared,
   facet: 'state' | 'drift' | 'goal' | 'headless',
+  countsAvailable = true,
 ): Option[] {
-  const counts = facet === 'drift' ? null : facetCounts(indexed, prepared, facet);
+  const unavailable = !countsAvailable || (facet === 'goal' && !prepared.progressAvailable);
+  const counts = facet === 'drift' || unavailable ? null : facetCounts(indexed, prepared, facet);
   const list =
     facet === 'state'
       ? STATE_VALUES.map((value) => ({ value, label: value }))
@@ -742,7 +760,7 @@ export function fixedOptions(
     label: one.label,
     count: counts ? (counts.get(one.value) ?? 0) : null,
     note: '',
-    disabled: false,
+    disabled: unavailable,
   }));
 }
 
@@ -833,10 +851,17 @@ export function waitCoverage(
 
 /* ---- Sentences ---- */
 
+const UNAVAILABLE_RESULTS = 'Search results are unavailable because the sources could not be read.';
+
 export function resultLine(
   filtered: Filtered,
-  board: { readonly showAll: boolean; readonly hours: number | null },
+  board: {
+    readonly showAll: boolean;
+    readonly hours: number | null;
+    readonly countsAvailable?: boolean;
+  },
 ): string {
+  if (board.countsAvailable === false) return UNAVAILABLE_RESULTS;
   if (filtered.active)
     return `Showing ${String(filtered.shown)} of ${plural(filtered.total, 'session', 'sessions')}. ${SESSION_LIST_WORDS.atAGlance} counts the whole board.`;
   if (board.showAll) return `${plural(filtered.total, 'stored session', 'stored sessions')}.`;
@@ -859,7 +884,13 @@ export function hasChoices(filters: FilterState): boolean {
 /* What the cue region says after the reader's own change, from the choices before it to the choices after.
    "Filters cleared" only when the change took the last choice away: a press that adds a choice the board
    cannot apply, or changes a setting while nothing is chosen, clears nothing. Never the words they typed. */
-export function announcement(filtered: Filtered, next: FilterState, before: FilterState): string {
+export function announcement(
+  filtered: Filtered,
+  next: FilterState,
+  before: FilterState,
+  countsAvailable = true,
+): string {
+  if (!countsAvailable) return UNAVAILABLE_RESULTS;
   const all = `Showing all ${String(filtered.total)} sessions.`;
   if (!filtered.active) {
     if (hasChoices(next)) return `${all} The filters you chose cannot be applied to this board.`;

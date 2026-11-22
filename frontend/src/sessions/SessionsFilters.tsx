@@ -113,9 +113,9 @@ export interface FilterActions {
 const ROW = 'flex min-h-11 w-full items-center gap-2.5 cursor-pointer';
 const NOTE = 'm-0 text-label text-muted-foreground leading-[1.5]';
 const SENTENCE = 'm-0 text-body text-muted-foreground leading-[1.55]';
-const PROGRESS_LEVEL_NOTE =
-  "Progress levels are shown on each session's page. Filtering this list by level is not available yet.";
+const PROGRESS_LEVEL_NOTE = 'Filtering by progress level is unavailable.';
 const NO_PUBLISHED_GOALS = 'The board did not publish saved goals for these sessions.';
+const PARTIAL_GOALS = 'Goal filters skip sessions whose saved goal status was not published.';
 const NO_CLOCK = 'The board published no clock time, so dates cannot be filtered.';
 const HOURS_WORD = (hours: number) => `${String(hours)} ${hours === 1 ? 'hour' : 'hours'}`;
 
@@ -333,11 +333,12 @@ function FilterChip({
   readonly disabled?: boolean;
   readonly onClick: () => void;
 }) {
-  return (
+  const noteId = useId();
+  const chip = (
     <Button
       type="button"
       variant="filter-option"
-      title={note || undefined}
+      aria-describedby={note ? noteId : undefined}
       aria-pressed={selected}
       disabled={disabled}
       onClick={onClick}
@@ -352,6 +353,16 @@ function FilterChip({
         </>
       )}
     </Button>
+  );
+  return note ? (
+    <div className="flex min-w-0 flex-col items-start gap-1">
+      {chip}
+      <p id={noteId} className={NOTE}>
+        {note}
+      </p>
+    </div>
+  ) : (
+    chip
   );
 }
 
@@ -465,6 +476,8 @@ export function SessionsFilters({
   const refocus = useRef<number | null>(null);
   const field = () => fieldBox.current?.querySelector('input') ?? null;
   const set = (change: Partial<FilterState>) => actions.change({ ...filters, ...change }, 'press');
+  const setWhen = (when: When, dateField = filters.dateField) =>
+    set(when === 'any' ? { dateField, when, includeUnstamped: false } : { dateField, when });
   const toggle = (facet: Facet, value: string) =>
     set({ [facet]: toggled(filters[facet], value) } as Partial<FilterState>);
 
@@ -529,7 +542,12 @@ export function SessionsFilters({
     : prepared.progressAvailable
       ? ''
       : NO_PUBLISHED_GOALS;
-  const noMatches = filtered.active && filtered.shown === 0;
+  const incompleteGoals = useMemo(
+    () => indexed.some(({ progress }) => progress === null),
+    [indexed],
+  );
+  const goalCoverage = progressExplanation || (incompleteGoals ? PARTIAL_GOALS : '');
+  const noMatches = board.countsAvailable && filtered.active && filtered.shown === 0;
   const emptySearch = noMatches && prepared.terms.length > 0;
   /* The rows lag the field while the deferred render catches up, so the one match is offered only once
      they agree, and Enter reads the live words rather than the rows still drawn. */
@@ -578,12 +596,12 @@ export function SessionsFilters({
       projects: projectOptions(indexed, prepared),
       group: groupOptions(indexed, prepared),
       harnesses: harnessOptions(indexed, prepared, board.harnesses),
-      state: fixedOptions(indexed, prepared, 'state'),
-      drift: fixedOptions(indexed, prepared, 'drift'),
-      goal: fixedOptions(indexed, prepared, 'goal'),
-      headless: fixedOptions(indexed, prepared, 'headless'),
+      state: fixedOptions(indexed, prepared, 'state', board.countsAvailable),
+      drift: fixedOptions(indexed, prepared, 'drift', board.countsAvailable),
+      goal: fixedOptions(indexed, prepared, 'goal', board.countsAvailable),
+      headless: fixedOptions(indexed, prepared, 'headless', board.countsAvailable),
     }),
-    [indexed, prepared, filtered, board.harnesses],
+    [indexed, prepared, filtered, board.harnesses, board.countsAvailable],
   );
   const { dates, waiting, coverage, projects, harnesses } = derived;
   const counts = useMemo(() => segmentCounts(indexed), [indexed]);
@@ -596,6 +614,7 @@ export function SessionsFilters({
   };
   const missing = unstampedHidden(dates, prepared);
   const noClock = board.generated === null;
+  const datesUnavailable = noClock || !board.countsAvailable;
   const stamped = filters.dateField === 'started' ? 'start time' : 'activity time';
 
   /* Keep an inactive choice visible and clearable when the board loses the data it needs. */
@@ -631,7 +650,7 @@ export function SessionsFilters({
     harness: 'Agent',
     headless: 'Headless',
     state: 'State',
-    drift: 'Progress records',
+    drift: SESSION_LIST_WORDS.progressRecords,
     goal: 'Goal source',
     progress: SESSION_LIST_WORDS.progressCheck,
   };
@@ -669,9 +688,9 @@ export function SessionsFilters({
       key: facet,
       ...text,
       inert:
-        facet === 'progress'
+        facet === 'progress' || facet === 'goal'
           ? progressExplanation
-          : (facet === 'drift' || facet === 'goal') && !readable
+          : facet === 'drift' && !readable
             ? annotationSentence(board, facet)
             : '',
       clear: () => set({ [facet]: [] } as Partial<FilterState>),
@@ -716,7 +735,7 @@ export function SessionsFilters({
       data-next-sessions-search
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="m-0 text-subtitle font-semibold">{SESSION_LIST_WORDS.all}</h2>
+        <h2 className="m-0 text-value font-semibold">{SESSION_LIST_WORDS.all}</h2>
         <div
           role="group"
           aria-label={SESSION_LIST_WORDS.status}
@@ -864,14 +883,9 @@ export function SessionsFilters({
                   <FilterChip
                     key={when}
                     label={whenLabel(when, 'started')}
-                    disabled={noClock}
+                    disabled={datesUnavailable}
                     selected={selected}
-                    onClick={() =>
-                      set({
-                        dateField: 'started',
-                        when: selected ? 'any' : when,
-                      })
-                    }
+                    onClick={() => setWhen(selected ? 'any' : when, 'started')}
                   />
                 );
               })}
@@ -882,7 +896,7 @@ export function SessionsFilters({
             note={
               <>
                 {PROGRESS_LEVEL_NOTE}
-                {progressExplanation ? ` ${progressExplanation}` : ''}
+                {goalCoverage ? ` ${goalCoverage}` : ''}
               </>
             }
           >
@@ -912,7 +926,7 @@ export function SessionsFilters({
                 <RadioGroup
                   aria-labelledby={`${searchId}-by`}
                   value={filters.dateField}
-                  disabled={noClock}
+                  disabled={datesUnavailable}
                   onValueChange={(value) => set({ dateField: value as DateField })}
                 >
                   {(['started', 'active'] as const).map((value) => (
@@ -933,8 +947,8 @@ export function SessionsFilters({
                 <RadioGroup
                   aria-labelledby={`${searchId}-when`}
                   value={filters.when}
-                  disabled={noClock}
-                  onValueChange={(value) => set({ when: value as When })}
+                  disabled={datesUnavailable}
+                  onValueChange={(value) => setWhen(value as When)}
                 >
                   {WHENS.map((when) => (
                     <Label key={when} className={ROW} data-filter-option={`when:${when}`}>
@@ -942,7 +956,7 @@ export function SessionsFilters({
                       <span className="min-w-0 flex-1" data-filter-label>
                         {whenLabel(when, filters.dateField)}
                       </span>
-                      {noClock ? null : (
+                      {datesUnavailable ? null : (
                         <span
                           className="text-label text-muted-foreground [font-family:var(--mono)]"
                           data-filter-count
@@ -957,10 +971,13 @@ export function SessionsFilters({
                   <KeyedCheckbox
                     name="include-unstamped"
                     checked={filters.includeUnstamped}
-                    disabled={noClock}
+                    disabled={datesUnavailable}
                     onCheckedChange={(checked) => set({ includeUnstamped: checked })}
                   />
-                  <span className="min-w-0 flex-1">{`Also show sessions with no ${stamped} (${String(dates.unstamped)})`}</span>
+                  <span className="min-w-0 flex-1">
+                    {`Also show sessions with no ${stamped}`}
+                    {board.countsAvailable ? ` (${String(dates.unstamped)})` : ''}
+                  </span>
                 </Label>
                 <Separator />
                 {dates.unstampedHarnesses.length ? (
@@ -1050,12 +1067,12 @@ export function SessionsFilters({
                   </>
                 ) : null}
               </FilterFacet>
-              <FilterFacet facet="drift" name="Progress records">
+              <FilterFacet facet="drift" name={facetNames.drift}>
                 {readable ? (
                   <>
                     <OptionList
                       facet="drift"
-                      name="Progress records"
+                      name={facetNames.drift}
                       options={derived.drift}
                       chosen={filters.drift}
                       onToggle={(value) => toggle('drift', value)}
@@ -1073,13 +1090,16 @@ export function SessionsFilters({
               </FilterFacet>
               <FilterFacet facet="goal" name="Goal source">
                 {readable ? (
-                  <OptionList
-                    facet="goal"
-                    name="Goal source"
-                    options={derived.goal}
-                    chosen={filters.goal}
-                    onToggle={(value) => toggle('goal', value)}
-                  />
+                  <>
+                    <OptionList
+                      facet="goal"
+                      name="Goal source"
+                      options={derived.goal}
+                      chosen={filters.goal}
+                      onToggle={(value) => toggle('goal', value)}
+                    />
+                    {goalCoverage ? <p className={NOTE}>{goalCoverage}</p> : null}
+                  </>
                 ) : (
                   <p className={SENTENCE} data-sessions-annotations-off>
                     {annotationSentence(board, 'goal')}
@@ -1164,7 +1184,7 @@ export function SessionsFilters({
           {only ? ' Press Enter to open it.' : ''}
         </p>
       ) : null}
-      {emptySearch ? null : windowNote}
+      {emptySearch || !board.countsAvailable ? null : windowNote}
       {!emptySearch && waiting.length ? (
         <Alert
           variant="session-health"

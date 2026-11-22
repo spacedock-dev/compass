@@ -115,6 +115,51 @@ describe('what the screen says when it has nothing to draw', () => {
     ).toBeVisible();
   });
 
+  it('failed collection and readable empty collection give different counts and search results', async () => {
+    const page = await open(
+      board([], {
+        harnesses: [{ key: 'claude', label: 'Claude Code', discovered: true, error: 'Denied' }],
+      }),
+    );
+    const groupCounts = () =>
+      [...document.querySelectorAll('[data-sessions-group-count]')].map((node) => node.textContent);
+    const stateCount = () =>
+      document.querySelector('[data-filter-option="state:Working"] [data-filter-count]');
+    const search = async () => {
+      fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'quarterly invoices' } });
+      await page.settle();
+      act(() => page.clock.advance(600));
+      await page.settle();
+    };
+
+    expect(groupCounts()).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More filters for power users' }));
+    expect(screen.getByText('Working', { selector: '[data-filter-label]' })).toBeVisible();
+    expect(stateCount()).toBeNull();
+    expect(document.querySelector('[data-filter-option^="when:"] [data-filter-count]')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    await search();
+    const unavailable = 'Search results are unavailable because the sources could not be read.';
+    expect(document.querySelector('[data-sessions-result]')?.textContent).toBe(unavailable);
+    expect(document.querySelector('#next-cockpit-cue-status')?.textContent).toBe(unavailable);
+    expect(screen.queryByText('Nothing here matches.')).toBeNull();
+    expect(screen.queryByText('No recent-history rows in this payload.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+
+    await page.poll(board([]));
+    expect(groupCounts()).toEqual(['0 sessions', '0 sessions']);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(stateCount()?.textContent).toBe('0');
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    await search();
+    const empty = document.querySelector('[data-sessions-nothing]') as HTMLElement;
+    expect(within(empty).getByText('Nothing here matches.')).toBeVisible();
+    expect(document.querySelector('#next-cockpit-cue-status')?.textContent).toBe(
+      'Nothing here matches.',
+    );
+  });
+
   it('names a harness whose store could not be read, so its absence is not read as no sessions', async () => {
     await open(
       board([], {

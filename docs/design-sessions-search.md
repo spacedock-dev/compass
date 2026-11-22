@@ -33,9 +33,9 @@ Changes apply as soon as they are made. Selected filters stay visible as removab
 The list groups visible rows under Right now and a heading derived from `window_hours`, such as
 Earlier in the last 24 hours. A rolling window can include parts of two calendar days. The
 wider collection uses Earlier sessions.
-Each group counts the rows it shows. A search with zero matches says "Nothing here matches."
-and offers Show everything. The Show older sessions link below the list reloads with the wider
-scope and explains that filters are cleared.
+Each group counts the rows it shows when the collection is readable. A search with zero matches
+says "Nothing here matches." and offers Show everything. The Show older sessions link below the
+list reloads with the wider scope and explains that filters are cleared.
 
 All tab, filter and option targets are at least 44px high. They wrap at narrow widths. The
 toolbar is in normal page flow and the slash hint is hidden below 620px.
@@ -77,17 +77,20 @@ Choices within a facet are ORed. The selected tab, search, date and facet choice
 Each counted option displays the number of its rows kept by the other choices. Its own facet is
 left out. Fixed options, collator order for labels and payload order for agents keep options under
 the reader's pointer as counts change. Counts use the same keys as drawn rows.
-When every discovered source fails, the tabs show that counts are unavailable.
-On an empty board the tabs cannot start a new status filter.
+When every discovered source fails, counts are unavailable for the tabs, list groups and
+filter choices. Search reports that the sources could not be read. A readable empty board has
+measured zeros. On an empty board the tabs cannot start a new status filter.
 
 Progress check lists Slightly off course, Off course and Way off course as disabled choices.
-Progress levels appear on the session page. No goal yet uses the board's published goal evidence
-for Claude Code and Codex. It includes rows whose published goal is empty and which offer no
-draft. If the board publishes no usable goal evidence, the choice is unavailable. Progress check
-and the advanced Progress records options carry no counts.
+No goal yet uses published annotation evidence from every harness. An explicitly empty or
+discarded saved goal qualifies, including when the row offers an unsaved draft. Goal source
+keeps drafted goals separate. On a mixed board both filters explain that they skip rows with
+unpublished goal status. If no usable goal evidence is published, the goal choices are
+unavailable. Progress check and the advanced Progress records options carry no counts.
 
 A choice whose clock or annotation data becomes unavailable stays visible and clearable.
 An explanation beside the choice says why it filters nothing.
+Clearing a date range also clears its option to include sessions with no published timestamp.
 
 | Filter | Values | Read from |
 |---|---|---|
@@ -97,8 +100,8 @@ An explanation beside the choice says why it filters nothing.
 | Agent | Harnesses the payload marks `discovered`, in payload order, with payload labels | `harness`, and `payload.harnesses` |
 | Headless | Headless; Interactive or unknown | `headless === true` for Headless; every other value, including missing and null, for Interactive or unknown |
 | State | Waiting on you, Working, Quiet, Ended, Waiting on child, State not published | `rowState()` |
-| Progress records | Drift recorded; Checked against your current words, none recorded; Not checked against your current words | Recorded drift, `departure_checked`, and a stored reading whose `revision_read` equals `annotation_revision` |
-| Goal source | Goal saved; Drafted from a prompt, not saved; No goal yet | `goalCell()`: typed words are saved, a known goal without them is drafted |
+| Progress records | Departure recorded; Checked against your current words, none recorded; Not checked against your current words | Recorded departures, `departure_checked`, and a stored reading whose `revision_read` equals `annotation_revision` |
+| Goal source | Goal saved; Drafted from a prompt, not saved; No goal yet | Published annotation evidence. A prompt offered by `goalCell()` on a row without a saved goal is drafted. |
 
 Headless starts with neither value selected, so all sessions show. Interactive or unknown includes
 measured interactive runs and sessions whose entrypoint is unknown. The panel says
