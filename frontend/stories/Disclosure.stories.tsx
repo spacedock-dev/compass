@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Disclosure } from '../src/controls/Disclosure';
 import { ControlsProvider } from '../src/controls/ControlsProvider';
 import { testControls } from '../src/controls/testControls';
+import { formatSize } from '../src/shell/format';
 import { Button } from '../src/ui/button';
 const meta = { title: 'Controls/Disclosure', component: Example } satisfies Meta<typeof Example>;
 export default meta;
@@ -55,5 +56,33 @@ export const Popover: Story = {
     await userEvent.keyboard(' ');
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await expect(trigger).toHaveFocus();
+  },
+};
+
+function SizeExample() {
+  const [kit] = useState(() => testControls());
+  const bytes = 16_384;
+  return (
+    <ControlsProvider controls={kit.controls}>
+      <Disclosure disclosureKey="story:sent" summary="What is sent">
+        <p>{`Up to ${formatSize(bytes, 'en-US')} at a time`}</p>
+        <Disclosure disclosureKey="story:sent-detail" summary="Show technical details">
+          <p>{`${bytes.toLocaleString('en-US')} bytes`}</p>
+        </Disclosure>
+      </Disclosure>
+    </ControlsProvider>
+  );
+}
+
+export const WhatIsSentSize: Story = {
+  render: () => <SizeExample />,
+  args: { variant: 'accordion' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'What is sent' }));
+    await waitFor(() => expect(canvas.getByText('Up to 16 KB at a time')).toBeVisible());
+    await expect(canvas.getByText('16,384 bytes')).not.toBeVisible();
+    await userEvent.click(canvas.getByRole('button', { name: 'Show technical details' }));
+    await waitFor(() => expect(canvas.getByText('16,384 bytes')).toBeVisible());
   },
 };

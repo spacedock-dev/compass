@@ -228,14 +228,15 @@ describe('a label is interpreted by measured locations', () => {
       const page = mountShell({ hash: '#n=attention', data });
       await page.settle();
       const card = document.querySelector('[data-next-board-risk="collision"]') as HTMLElement;
-      const stamp = started > 0 ? new Date(started * 1000).toISOString() : 'not published';
       const link = within(card).getByRole('link', {
-        name: `Title not published · No worktree published · claude:audit-1 · Start time ${stamp}`,
+        name: /Title not published · No worktree published · claude:audit-1 · Start time/,
       });
       expect(link).toHaveAttribute('href', '#n=session:audits:claude:audit-1');
+      expect(link).toHaveTextContent(started > 0 ? /Start time at \d/ : 'Start time not published');
       expect(within(card).getByRole('link', { name: /Audit 0/ })).toHaveTextContent(
-        'Start time 2030-03-17T17:30:00.000Z',
+        /Start time at \d/,
       );
+      expect(card).not.toHaveTextContent(/\d{4}-\d{2}-\d{2}T/);
       expect(link).not.toHaveTextContent('1970-01-01');
     },
   );

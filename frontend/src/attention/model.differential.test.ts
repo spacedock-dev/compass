@@ -6,6 +6,7 @@ import { canonical, firstDifference } from '../observed/legacy.test.helper';
 import { loadLegacyAttention } from './legacy.test.helper';
 import { attentionAnnouncement, attentionModel } from './model';
 import { checkpointRows, subjectNow, subjectOutcome, subjectSource } from './text';
+import { maskSourceTime, maskTimePhrases } from './timing.test.helper';
 
 /* The Attention model and the sentences read through it are held to the legacy file that computes them.
    Generated payloads run through the real `nextAttentionModel` and through `attentionModel`, and the two
@@ -212,19 +213,27 @@ describe('the sentences a subject is read through agree with the legacy builders
         const oldSubjects = oldModel[section] as Record<string, unknown>[];
         oldSubjects.forEach((old, index) => {
           const subject = model[section].find((row) => row.key === old['key']);
+          const maskNow = (rows: ReturnType<typeof subjectNow>) =>
+            rows.map(({ text, note }) => ({
+              text: maskTimePhrases(text),
+              note: maskTimePhrases(note),
+            }));
+          const maskSource = (source: string) => maskSourceTime(maskTimePhrases(source));
+          const maskCheckpoints = (rows: string[]) =>
+            rows.filter((row) => maskTimePhrases(row) !== 'Reset <time>');
           const recorded = [
-            legacy.call('nextAttentionSubjectNow', old, oldModel),
+            maskNow(legacy.call('nextAttentionSubjectNow', old, oldModel)),
             legacy.call('nextAttentionOutcome', old, oldModel),
-            legacy.call('nextAttentionCheckpointRows', old, oldModel),
-            legacy.call('nextAttentionSubjectSource', old, oldModel),
+            maskCheckpoints(legacy.call<string[]>('nextAttentionCheckpointRows', old, oldModel)),
+            maskSource(legacy.call('nextAttentionSubjectSource', old, oldModel)),
           ];
           if (old['kind'] === 'collision') return;
           if (!subject) throw new Error(`Unchanged subject missing: ${String(old['key'])}`);
           const current = [
-            subjectNow(withoutOverlappingInput(subject), model),
+            maskNow(subjectNow(withoutOverlappingInput(subject), model)),
             subjectOutcome(subject, model),
-            checkpointRows(subject, model),
-            subjectSource(subject, model),
+            maskCheckpoints(checkpointRows(subject, model)),
+            maskSource(subjectSource(subject, model)),
           ];
           for (const [at, name] of ['now', 'outcome', 'next', 'source'].entries()) {
             const found = firstDifference(canonical(recorded[at]), canonical(current[at]));

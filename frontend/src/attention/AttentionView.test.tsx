@@ -63,7 +63,7 @@ describe('before a board, and without one', () => {
   it('says an empty collection is empty, in the payload window it was read over', async () => {
     await open({ generated: 1, window_hours: 24, sessions: [], harnesses: [] });
     expect(document.querySelector('.next-attention-empty')?.textContent).toBe(
-      'No sessions in this 24h payload',
+      'No sessions in this 24-hour payload',
     );
   });
 });
@@ -153,7 +153,7 @@ describe('the four queues', () => {
       (node) => node.textContent ?? '',
     );
     // The oldest question is first, and the age is the payload's own clock against the published age.
-    expect(ages[0]).toContain('8m');
+    expect(ages[0]).toContain('waiting 8 minutes');
     const board = [...document.querySelectorAll('[data-next-board-risk]')].map(
       (node) => node.getAttribute('data-next-board-risk') ?? '',
     );
@@ -304,6 +304,7 @@ describe('the command-shape reports', () => {
     const links = [...reports.querySelectorAll('h3 a')].map((link) => link.getAttribute('href'));
     expect(links).toHaveLength(1);
     expect(reports.textContent).toContain('Command shape reported: git push --force');
+    expect(reports.textContent).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
     expect(reports.textContent).toContain('A shape match does not prove the action succeeded.');
   });
 

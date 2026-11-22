@@ -1,12 +1,13 @@
 import { Card } from '../ui/card';
 import { CopyControl, RaiseControl, resumeCommand } from '../controls';
 import type { BoardRisk, Row } from '../observed';
-import { nextNumber } from '../api/bootstrap';
+import { expandDurationUnits, formatTimestamp } from '../shell/format';
 import { AttentionLink } from './AttentionLink';
 import type { AttentionModel, Subject } from './model';
 import { riskRow } from './subjects';
 import {
   checkpointRows,
+  delegatedAttentionText,
   subjectNow,
   subjectOutcome,
   subjectSource,
@@ -140,6 +141,11 @@ export function RiskItem({
 }) {
   const row = riskRow(risk, model, board, retained);
   const outcome = row.subject ? subjectOutcome(row.subject, model) : null;
+  let observation = risk.nowText;
+  if (risk.kind === 'long-turn') observation = expandDurationUnits(observation);
+  if (risk.kind === 'quiet-launch' && row.subject) {
+    observation = delegatedAttentionText(row.subject, model);
+  }
   return (
     <li>
       <Card
@@ -172,18 +178,15 @@ export function RiskItem({
           ) : null}
         </div>
         <div className="next-attention-risk-observation">
-          <p>{risk.nowText}</p>
+          <p>{observation}</p>
           {row.subject?.kind === 'collision' ? (
             <ul>
               {row.subject.sessions.map((session) => {
                 const harness = String(session['harness'] || '');
                 const sid = String(session['sid'] || '');
-                const started = nextNumber(session['started_at']);
-                const date = new Date((started ?? Number.NaN) * 1000);
                 const stamp =
-                  started !== null && started > 0 && Number.isFinite(date.getTime())
-                    ? date.toISOString()
-                    : 'not published';
+                  formatTimestamp(session['started_at'], model.generated, { style: 'clock' }) ??
+                  'not published';
                 return (
                   <li key={JSON.stringify([harness, sid])}>
                     <AttentionLink
@@ -214,7 +217,9 @@ export function RiskItem({
         </div>
         <div className="next-attention-risk-source">
           {risk.nextKnown ? (
-            <span className="next-attention-risk-next">{risk.nextText}</span>
+            <span className="next-attention-risk-next">
+              {risk.kind === 'quota' ? expandDurationUnits(risk.nextText) : risk.nextText}
+            </span>
           ) : (
             row.checkpoints.map((text, position) => (
               <span key={position} className="next-attention-risk-next">
