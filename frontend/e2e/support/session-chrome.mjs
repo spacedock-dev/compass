@@ -85,10 +85,22 @@ export function measureSessionChrome() {
   return rows;
 }
 
+const currentFamilyByRecordedFamily = new Map([
+  [
+    '"Space Grotesk", system-ui, -apple-system, sans-serif',
+    'Inter, system-ui, -apple-system, sans-serif',
+  ],
+  ['"IBM Plex Mono", ui-monospace, monospace', 'ui-monospace, monospace'],
+]);
+
 export function sessionChromeDifferences(rows, instances) {
   const differences = [];
   for (const row of rows) {
-    const expected = instances[row.key];
+    const recorded = instances[row.key];
+    const family = currentFamilyByRecordedFamily.get(recorded?.chrome['font-family']);
+    const expected = family
+      ? { ...recorded, chrome: { ...recorded.chrome, 'font-family': family } }
+      : recorded;
     const tolerance = row.inlineSize.kind === 'text' ? 0.15 : 0.015;
     const nonFinite =
       expected &&

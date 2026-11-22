@@ -158,7 +158,7 @@ try {
       }));
       assert.equal(structure.scripts, 1);
       assert.equal(structure.roots, 1);
-      assert.equal(structure.fonts, 15);
+      assert.equal(structure.fonts, 3);
       assert.equal(structure.focus, 1);
       assert.equal(
         await probe.page.locator('head meta[name="compass-focus"]').getAttribute('content'),

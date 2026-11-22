@@ -471,6 +471,12 @@ undated cards say Published instruction and saved rows say Your saved words. Ord
 use plain attention states. The wording adapters change named UI regions and protect published
 quoted values, including instructions containing an old label. The recorded fixtures stay intact.
 
+The typography change to Inter updates the expected font families in the browser comparisons.
+The Sessions chrome proof translates the recorded Space Grotesk stack to the Inter stack and
+the recorded IBM Plex Mono stack to `ui-monospace, monospace`. The Project proof applies the same
+monospace substitution to the Course workstream toggle at 375 and 1280 px. Both proofs keep
+comparing the other computed styles and widths against the original fixtures.
+
 While the legacy page existed, each port was proved against it: the pure functions by running the
 legacy function next to its TypeScript twin over generated inputs, and each rendered surface by
 serving one board to both pages in one Chromium and comparing what a reader can read. Those

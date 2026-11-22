@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { JSDOM } from 'jsdom';
 import { createDocument, readFonts, packageFrontend } from './package.mjs';
@@ -42,6 +43,34 @@ test('one variable Inter face is embedded across its three WOFF2 subsets', async
   );
   assert.equal(fonts.css.match(/data:font\/woff2;base64,/g).length, 3);
   assert.equal(fonts.css.includes('{{COMPASS_FONT_'), false);
+  // Pin the bytes attached to each emitted range. Checking the assets alone misses swapped CSS slots.
+  const digestByRange = new Map(
+    [
+      ...fonts.css.matchAll(/url\("data:font\/woff2;base64,([^"]+)"\).*?unicode-range:([^}]+)}/g),
+    ].map(([, encoded, range]) => [
+      range,
+      createHash('sha256').update(Buffer.from(encoded, 'base64')).digest('hex'),
+    ]),
+  );
+  for (const [subset, range, digest] of [
+    [
+      'Latin',
+      'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD',
+      '3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62',
+    ],
+    [
+      'Latin Extended',
+      'U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF',
+      '34b9c504cab7a73e37b746343a449132e56cf7b5481af2cb81dc74dcff25c956',
+    ],
+    [
+      'Vietnamese',
+      'U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB',
+      '5c66f9e07e90c6d4ac4922cc68d60de26c17b1858e677fb5e603fce3952b3ff2',
+    ],
+  ]) {
+    assert.equal(digestByRange.get(range), digest, `wrong Inter subset for the ${subset} range`);
+  }
   assert.equal(
     fonts.provenance.reduce((total, font) => total + font.bytes, 0),
     143576,
@@ -57,9 +86,13 @@ test('production packaging includes full licenses and a matching document digest
   assert.ok(packed.licenses.includes('Inter\nSource: fonts/Inter-OFL.txt\n'));
   const interLicense = await readFile(
     join(root, 'compass/skills/compass/compass_runtime/web/fonts/Inter-OFL.txt'),
-    'utf8',
   );
-  assert.ok(packed.licenses.includes(interLicense.trimEnd()));
+  assert.equal(
+    createHash('sha256').update(interLicense).digest('hex'),
+    '5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57',
+    'incomplete or changed Inter OFL',
+  );
+  assert.ok(packed.licenses.includes(interLicense.toString('utf8')));
   assert.ok(packed.metadata.provenance.packages.some((pkg) => pkg.name === 'react'));
   assert.ok(packed.metadata.provenance.packages.some((pkg) => pkg.name === 'react-dom'));
   assert.ok(packed.metadata.provenance.packages.some((pkg) => pkg.name === 'scheduler'));
