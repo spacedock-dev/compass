@@ -323,6 +323,11 @@ export const TitlesOpenSessions: Story = {
     await expect(title).toHaveAttribute('href', expect.stringContaining('#'));
     await expect(decoration(title)).toBe('none');
     await expect(decoration(sentence)).toBe('underline');
+    const invite = sentence.closest('[data-sample-invite]');
+    await expect(invite).toHaveStyle({
+      backgroundColor: 'rgb(230, 242, 236)',
+      borderLeftWidth: '1px',
+    });
     await expect(title.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
     await expect(title.getBoundingClientRect().width).toBeGreaterThanOrEqual(44);
     if ('__vitest_browser_runner__' in window) {
@@ -338,6 +343,12 @@ export const TitlesOpenSessions: Story = {
     title.focus();
     await expect(title).toHaveFocus();
     await expect(decoration(title)).toBe('underline');
+    await expect(title).toHaveStyle({
+      outlineWidth: '2px',
+      outlineStyle: 'solid',
+      outlineColor: 'rgb(47, 125, 91)',
+      outlineOffset: '2px',
+    });
   },
 };
 

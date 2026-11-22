@@ -7,9 +7,15 @@ import type { ComponentProps } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
+const notice =
+  'm-0 rounded-standard-card border border-solid border-[var(--rule)] px-4 py-3 text-body text-foreground';
+
 const alertVariants = cva('block', {
   variants: {
     variant: {
+      notice: cn(notice, 'bg-[var(--status-ended-bg)]'),
+      warning: cn(notice, 'bg-[var(--status-waiting-bg)]'),
+      danger: cn(notice, 'bg-[color-mix(in_srgb,var(--clay)_8%,var(--panel))]'),
       'session-health':
         'px-[16px] py-[14px] [border-left:3px_solid_var(--amber)] bg-card text-muted-foreground text-body leading-[1.5]',
       'observer-status': 'm-0',

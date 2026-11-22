@@ -6,10 +6,21 @@
 import type { ComponentProps } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
+import { RouteLink, type RouteLinkProps } from '../shell/RouteLink';
+import { Button } from './button';
+import { Icon, type IconName } from './icons';
+
+const baseCard =
+  'box-border rounded-standard-card border border-solid border-[var(--rule)] bg-card p-6';
 
 const cardVariants = cva('min-w-0', {
   variants: {
     variant: {
+      base: baseCard,
+      summary: cn(
+        baseCard,
+        'flex cursor-pointer flex-col items-start gap-3 border-border text-start text-body text-foreground no-underline hover:border-[var(--line-hi)] hover:shadow-[0_1px_0_var(--rule)] aria-pressed:bg-[var(--status-ended-bg)]',
+      ),
       'session-row':
         'grid w-full p-0 text-foreground [border-bottom:1px_solid_var(--line)] hover:bg-card [@media(max-width:620px)]:[border:1px_solid_var(--line)] [@media(max-width:620px)]:rounded-control [@media(max-width:620px)]:bg-card',
       'session-current':
@@ -66,7 +77,7 @@ const cardVariants = cva('min-w-0', {
       ok: 'border-l-[var(--accent)]',
     },
   },
-  defaultVariants: { variant: 'session-current', tone: 'unknown' },
+  defaultVariants: { variant: 'base', tone: 'unknown' },
 });
 function Card({
   className,
@@ -79,10 +90,60 @@ function Card({
   return (
     <Tag
       data-slot="card"
-      data-variant={variant ?? 'session-current'}
+      data-variant={variant ?? 'base'}
       className={cn(cardVariants({ variant, tone }), className)}
       {...props}
     />
   );
 }
-export { Card, cardVariants };
+
+function SummaryCue({ children, icon }: { readonly children: string; readonly icon: IconName }) {
+  return (
+    <span className="flex max-w-full items-center gap-2 text-label font-semibold text-[color:var(--accent-dim)]">
+      <span>{children}</span>
+      <Icon name={icon} />
+    </span>
+  );
+}
+
+function SummaryRouteCard({
+  className,
+  children,
+  cue,
+  route,
+}: RouteLinkProps & { readonly cue: string }) {
+  return (
+    <RouteLink route={route} className={cn(cardVariants({ variant: 'summary' }), className)}>
+      {children}
+      <SummaryCue icon="go-to-page">{cue}</SummaryCue>
+    </RouteLink>
+  );
+}
+
+function SummaryFilterCard({
+  children,
+  className,
+  controls,
+  pressed,
+  onClick,
+}: Pick<ComponentProps<'button'>, 'children' | 'className'> & {
+  readonly controls: string;
+  readonly pressed: boolean;
+  readonly onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="native"
+      className={cn(cardVariants({ variant: 'summary' }), className)}
+      aria-controls={controls}
+      aria-pressed={pressed}
+      onClick={onClick}
+    >
+      {children}
+      <SummaryCue icon={pressed ? 'check' : 'show-below'}>Show in the list below</SummaryCue>
+    </Button>
+  );
+}
+
+export { Card, cardVariants, SummaryFilterCard, SummaryRouteCard };

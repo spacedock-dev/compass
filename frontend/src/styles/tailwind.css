@@ -46,6 +46,7 @@
 
   --radius-control: var(--r-control);
   --radius-card: var(--r-card);
+  --radius-standard-card: var(--r-standard-card);
   --radius-shell: var(--r-shell);
   --radius-pill: var(--r-pill);
 
@@ -123,6 +124,7 @@
   --mono: ui-monospace, monospace;
   --r-control: 0.25rem;
   --r-card: 0.625rem;
+  --r-standard-card: 1rem;
   --r-shell: 1rem;
   --r-pill: 999px;
   --control-pad: 0.5625rem 0.875rem;

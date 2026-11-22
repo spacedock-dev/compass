@@ -1,9 +1,40 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, within } from 'storybook/test';
 import { Alert } from '../src/ui/alert';
+import { auditContrast, rgbOf } from './a11y.audit';
 const meta = { title: 'UI/Alert', component: Alert } satisfies Meta<typeof Alert>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+function stripeFree(
+  variant: 'notice' | 'warning' | 'danger',
+  message: string,
+  tint: number[],
+): Story {
+  return {
+    args: { variant, children: message },
+    play: async ({ canvasElement }) => {
+      const alert = within(canvasElement).getByRole('status');
+      await expect(alert).toHaveTextContent(message);
+      await expect(alert).toHaveStyle({ borderWidth: '1px' });
+      await expect(rgbOf(getComputedStyle(alert).backgroundColor)).toEqual(tint);
+      const reading = auditContrast(canvasElement).measured.find((entry) => entry.text === message);
+      await expect(reading?.ratio).toBeGreaterThanOrEqual(4.5);
+    },
+  };
+}
+
+export const Notice = stripeFree(
+  'notice',
+  'New to Compass? See a sample session.',
+  [230, 242, 236],
+);
+export const Warning = stripeFree(
+  'warning',
+  'Waiting on you. The session needs a reply.',
+  [254, 243, 226],
+);
+export const Danger = stripeFree('danger', 'Could not load the session.', [247, 239, 236]);
 export const SessionHealth: Story = {
   args: { variant: 'session-health', children: 'Alert session-health' },
   play: async ({ canvasElement, args }) => {
