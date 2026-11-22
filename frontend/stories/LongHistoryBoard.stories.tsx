@@ -134,6 +134,7 @@ export const StoredReadingNamesItsLevel: Story = {
       return session;
     });
     await expect(row?.querySelector('.next-operation-progress')).toBeNull();
+    await expect(within(canvasElement).queryByText('Slightly off course')).toBeNull();
     await expect(canvasElement.textContent).not.toContain('why:');
   },
 };

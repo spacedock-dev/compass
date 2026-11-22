@@ -79,6 +79,14 @@ export const SESSION_ROW_WORDS = {
   outOfDate: 'Out of date',
 } as const;
 
+export const SESSION_LIST_WORDS = {
+  all: 'All sessions',
+  atAGlance: 'At a glance',
+  workingNow: 'Working now',
+  openInNeedsYou: `Open in ${SHOWN.attention}`,
+  showBelow: 'Show in the list below',
+} as const;
+
 export const GOAL_LABEL = 'Goal';
 export const ALLOWANCE_LABEL = 'Your AI allowance';
 export const EXPLANATIONS = {
@@ -697,7 +705,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ]),
     workingNow: ruled(
       [
-        'Working now',
+        SESSION_LIST_WORDS.workingNow,
         'Active now',
         'Count of sessions in the Working state',
         'Sessions in the Right now group',
@@ -757,7 +765,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ),
     atAGlance: ruled(
       [
-        'At a glance',
+        SESSION_LIST_WORDS.atAGlance,
         'Session facts spread across the page',
         'Published session facts',
         'What the session intends to do',

@@ -51,17 +51,6 @@ export function sessionsContext(payload: Row): SessionsContext {
   };
 }
 
-export function analysisAvailable(payload: Row): boolean {
-  const context = sessionsContext(payload);
-  const routes = payload['reading_routes'];
-  return (
-    context.annotate &&
-    !context.unreadable &&
-    isRecord(routes) &&
-    Object.values(routes).some((route) => isRecord(route) && Boolean(route['provider']))
-  );
-}
-
 /* The label each harness publishes about itself, by key. */
 export function harnessLabels(payload: Row): Map<string, string> {
   const labels = new Map<string, string>();
@@ -201,24 +190,9 @@ export function driftMark(source: Row | undefined, context: SessionsContext): Dr
   };
 }
 
-/* Whether any session carries a check: a stored reading, a reading counted against its words, an unasked
-   check, or a departure on record. Read off the rows rather than a flag, and only while the annotation
-   store is on, because with it off a stored reading is not published and "none" would be a claim about
-   something the page cannot see. Null for that case. */
-export function anyChecked(rows: readonly Row[], context: SessionsContext): boolean | null {
-  if (!context.annotate) return null;
-  return rows.some((session) => {
-    if (session['departure_checked'] === true) return true;
-    const assessment = session['annotation_assessment'];
-    if (assessment !== undefined && assessment !== null && assessment !== '') return true;
-    if ((nextNumber(session['annotation_reading_count']) ?? 0) > 0) return true;
-    return Array.isArray(session['departures']) && session['departures'].length > 0;
-  });
-}
-
 /* One row's check against the words the reader holds now: an unasked check that found no departure, or a
    stored reading made against the current revision. A reading made against earlier words is not one. Null
-   while annotations are off, for the reason `anyChecked` is. Drift outranks it where a row has both. */
+   while annotations are off because the store's readings are not published. */
 export function checkedAgainstCurrentWords(
   source: Row | undefined,
   context: SessionsContext,
@@ -231,8 +205,6 @@ export function checkedAgainstCurrentWords(
   const read = nextNumber(assessment['revision_read']);
   return read !== null && read === nextNumber(source['annotation_revision']);
 }
-
-export const NOT_CHECKED = 'No session has been checked for drift yet; open one to check it.';
 
 export interface GoalCell {
   readonly label: string;
@@ -287,6 +259,8 @@ export function goalCell(
     : { label, kind: 'link', text: text || 'Add a goal', known: Boolean(text) };
 }
 
+export type StateSegment = 'waiting' | 'working' | 'quiet' | 'ended';
+
 export interface SessionRow {
   /** Unique within the screen, so two rows that carry one identity (a payload can) still draw. */
   readonly key: string;
@@ -304,19 +278,18 @@ export interface SessionRow {
   readonly history: boolean;
   readonly worthALook: string | undefined;
   readonly showOutcome: boolean;
+  readonly stateSegment: StateSegment | undefined;
   readonly relations: ReturnType<typeof declaredRelations>;
 }
 
 export interface SessionsScreen {
   readonly context: SessionsContext;
-  readonly counters: Observed['counters'];
-  readonly lede: boolean;
   readonly active: readonly SessionRow[];
   readonly history: readonly SessionRow[];
 }
 
-/* The two groups. Promote only this screen's rows: changing the shared `isActive` or the model's active
-   list would turn a stored reading into running evidence and inflate its counter. A held request outranks
+/* The two groups. Promote only this screen's rows: changing the shared `isActive` would turn a stored
+   reading into running evidence. A held request outranks
    a recorded departure, which outranks a working session; the sort is stable, so within a rank the lanes'
    own order stands. */
 export function groupSessions(
@@ -350,13 +323,14 @@ export function buildSessionsScreen(
   payload: Row,
   model: Observed,
   chosenFor?: (session: Row) => PromptCandidate | null,
-  worthALook?: ReadonlyMap<ObservedSession, string>,
+  selection?: AttentionSelection | null,
 ): SessionsScreen {
   const context = sessionsContext(payload);
   const rows = payloadSessionRows(payload);
   const sources = new Map(rows.map((session) => [sessionKey(session), session] as const));
   const asks = operationsAsks(payload, rows);
   const labels = harnessLabels(payload);
+  const worthALook = selection?.worthALook;
   const flaggedRows = [...(worthALook?.keys() ?? [])];
   const covered = new Set(flaggedRows.map(sessionKey));
   const dirtyOutcomes = new Set<ObservedSession>();
@@ -375,6 +349,17 @@ export function buildSessionsScreen(
     context,
     new Set([...flaggedRows, ...dirtyOutcomes]),
   );
+  const segments = new Map<ObservedSession, StateSegment>();
+  if (selection) {
+    for (const [segment, members] of [
+      ['waiting', selection.waitingOnYou],
+      ['working', selection.working],
+      ['quiet', selection.quiet],
+      ['ended', selection.ended],
+    ] as const) {
+      for (const member of members) segments.set(member, segment);
+    }
+  }
   const projectKeys = new Map<string, string>();
   const projectKey = (project: string): string => {
     let key = projectKeys.get(project);
@@ -420,6 +405,7 @@ export function buildSessionsScreen(
       showOutcome:
         session.outcomeKnown &&
         (session.outcomeIcon !== 'worth-a-look' || dirtyOutcomes.has(session)),
+      stateSegment: segments.get(session),
       responsibility: ask ? ` · ${askResponsibility(payload, ask)}` : '',
       history,
       relations: declaredRelations(payload, source),
@@ -427,15 +413,10 @@ export function buildSessionsScreen(
   };
   return {
     context,
-    // The count under "Active now" counts the cards listed there, which include recorded drift. The model's
-    // count is the board's and has no drift, so it read 0 above a listed drift card.
-    counters: model.counters.map((counter) =>
-      counter.label === 'ACTIVE NOW' ? { ...counter, value: groups.active.length } : counter,
-    ),
-    lede: anyChecked(rows, context) === false,
     active: groups.active.map((session) => row(session, false)),
     history: groups.history.map((session) => row(session, true)),
   };
 }
 
 export { sessionState as rowState } from '../observed';
+import type { AttentionSelection } from '../attention/select';

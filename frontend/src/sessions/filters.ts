@@ -4,12 +4,14 @@ import { nextNumber } from '../api/bootstrap';
 import { SHOWN } from '../language/glossary';
 import { isRecord, promptCopied, trimmed, type Row } from '../observed';
 import { assignmentOf, sessionInstruction } from './intent';
+import { SESSION_LIST_WORDS, SESSION_ROW_WORDS } from '../language/glossary';
 import {
   checkedAgainstCurrentWords,
   rowState,
   type SessionRow,
   type SessionsContext,
   type SessionsScreen,
+  type StateSegment,
 } from './rows';
 import { worktreeOf } from './worktree';
 
@@ -23,8 +25,19 @@ export type When = 'any' | 'hour' | 'today' | 'yesterday' | 'week' | 'unstamped'
 export type Facet = 'project' | 'group' | 'harness' | 'headless' | 'state' | 'drift' | 'goal';
 export type DriftValue = 'recorded' | 'checked' | 'unchecked';
 export type GoalValue = 'saved' | 'drafted' | 'none';
+export type SessionSegment = 'all' | 'worth' | StateSegment;
+
+export const SEGMENT_LABELS: Readonly<Record<SessionSegment, string>> = {
+  all: SESSION_LIST_WORDS.all,
+  waiting: SESSION_ROW_WORDS.waitingOnYou,
+  worth: SESSION_ROW_WORDS.worthALook,
+  working: SESSION_ROW_WORDS.working,
+  quiet: SESSION_ROW_WORDS.quiet,
+  ended: SESSION_ROW_WORDS.ended,
+};
 
 export interface FilterState {
+  readonly segment: SessionSegment;
   readonly byGroup: boolean;
   readonly group: readonly string[];
   readonly query: string;
@@ -41,6 +54,7 @@ export interface FilterState {
 }
 
 export const EMPTY_FILTERS: FilterState = {
+  segment: 'all',
   byGroup: false,
   group: [],
   query: '',
@@ -392,6 +406,13 @@ export const ANNOTATION_FACETS: ReadonlySet<Facet> = new Set<Facet>(['drift', 'g
    rows publish nothing to partition (drift and goal with annotations off) filters nothing. */
 export function passes(indexed: IndexedRow, prepared: Prepared, skip: Part | null = null): boolean {
   const { filters, terms, edges } = prepared;
+  const { segment } = filters;
+  if (
+    segment === 'worth'
+      ? !indexed.row.worthALook
+      : segment !== 'all' && indexed.row.stateSegment !== segment
+  )
+    return false;
   if (skip !== 'search' && terms.length && !searchRow(indexed, terms).match) return false;
   if (skip !== 'date' && !datePasses(indexed, filters, edges)) return false;
   if (filters.worthALookOnly && !indexed.row.worthALook) return false;
@@ -412,6 +433,7 @@ export function filtersActive(prepared: Prepared): boolean {
   const { filters, terms, edges, annotated } = prepared;
   return (
     terms.length > 0 ||
+    filters.segment !== 'all' ||
     filters.worthALookOnly ||
     (edges !== null && filters.when !== 'any') ||
     FACETS.some(
@@ -739,7 +761,7 @@ export function resultLine(
   board: { readonly showAll: boolean; readonly hours: number | null },
 ): string {
   if (filtered.active)
-    return `Showing ${String(filtered.shown)} of ${plural(filtered.total, 'session', 'sessions')}. ACTIVE NOW and WORKING above count the whole board.`;
+    return `Showing ${String(filtered.shown)} of ${plural(filtered.total, 'session', 'sessions')}. ${SESSION_LIST_WORDS.atAGlance} counts the whole board.`;
   if (board.showAll) return `${plural(filtered.total, 'stored session', 'stored sessions')}.`;
   if (board.hours !== null && board.hours > 0)
     return `${plural(filtered.total, 'session', 'sessions')} active in the last ${plural(board.hours, 'hour', 'hours')}.`;
@@ -751,6 +773,7 @@ export function resultLine(
 export function hasChoices(filters: FilterState): boolean {
   return (
     queryTerms(filters.query).length > 0 ||
+    filters.segment !== 'all' ||
     filters.worthALookOnly ||
     filters.when !== 'any' ||
     FACETS.some((facet) => filters[facet].length > 0)

@@ -150,15 +150,23 @@ function Board({
       <Title />
       {data ? <UnaskedAttentionCue payload={data as unknown as Record<string, unknown>} /> : null}
       {collection ? (
-        <section className="next-operations-fleet" aria-label="Request and block facts">
-          {observed.counters.slice(2).map((counter, index) => (
+        <section
+          className="mt-6 grid grid-cols-2 divide-x divide-[var(--rule)] border-y border-[var(--rule)]"
+          aria-label="Request and block facts"
+        >
+          {observed.counters.map((counter, index) => (
             <section
+              className="grid min-w-0 gap-1.5 px-2 py-1.5 min-[621px]:px-[18px] min-[621px]:py-[15px]"
               key={counter.label}
               data-next-fleet-fact={index === 0 ? 'requests' : 'reported-blocks'}
             >
-              <span>{counter.label}</span>
-              <strong>{counter.value}</strong>
-              <small>{counter.noteText}</small>
+              <span className="text-label font-semibold">{counter.label}</span>
+              <strong className="text-value font-semibold min-[621px]:text-hero">
+                {counter.value}
+              </strong>
+              <small className="text-body leading-[1.55] text-muted-foreground">
+                {counter.noteText}
+              </small>
             </section>
           ))}
         </section>

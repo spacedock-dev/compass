@@ -266,7 +266,8 @@ export const ParentQuestionOutranksChildWait: Story = {
   args: { parentQuestion: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByText('Ship now?');
+    const sessions = within(await canvas.findByRole('region', { name: 'All sessions' }));
+    await expect(await sessions.findByText('Ship now?')).toBeVisible();
     const state = row(canvasElement, 'parent').querySelector('[data-next-row-state]');
     await expect(state).toHaveAccessibleName('Waiting on you');
     await expect(state).not.toHaveTextContent('Waiting on child "Check build"');
@@ -338,7 +339,7 @@ export const GroupingRemainsVisiblyPressed: Story = {
     const driver =
       '__vitest_browser_runner__' in window ? (await import('vitest/browser')).page : null;
     const leave = async () => {
-      if (driver) await driver.getByRole('heading', { name: 'Session operations' }).hover();
+      if (driver) await driver.getByRole('heading', { name: /^Good / }).hover();
       else await userEvent.unhover(toggle);
     };
     const colors = () => {
@@ -363,7 +364,7 @@ export const GroupingRemainsVisiblyPressed: Story = {
 
 export const ParentLinkFromSessionsRowUsesPointer: Story = {
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByText('Check build');
+    await within(canvasElement).findByRole('link', { name: 'Open session Check build' });
     const child = row(canvasElement, 'child');
     const link = within(child).getByRole('link', { name: 'Child of Coordinate release' });
     const driver =

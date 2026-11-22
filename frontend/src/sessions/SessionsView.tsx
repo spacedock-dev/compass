@@ -6,10 +6,10 @@ import { titleLink } from '../ui/link';
 import { Button } from '../ui/button';
 import { StatusTile } from '../ui/status-tile';
 import { TooltipProvider } from '../ui/tooltip';
-import { EXPLANATIONS, SESSION_ROW_WORDS } from '../language/glossary';
+import { EXPLANATIONS, SESSION_LIST_WORDS, SESSION_ROW_WORDS } from '../language/glossary';
 import { selectAttentionSelection } from '../attention/select';
 import { WorthALookFlag } from '../attention/WorthALookFlag';
-import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 'react';
+import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
 import { gapNames, sessionStateLimit, type Row } from '../observed';
@@ -40,13 +40,8 @@ import {
   type FilterActions,
   type FilterBoard,
 } from './SessionsFilters';
-import {
-  analysisAvailable,
-  buildSessionsScreen,
-  NOT_CHECKED,
-  rowState,
-  type SessionRow,
-} from './rows';
+import { buildSessionsScreen, rowState, type SessionRow } from './rows';
+import { SessionsGlance } from './SessionsGlance';
 import { assignmentOf, type PromptCandidate } from './intent';
 import { goalFocusFor } from './heldState';
 import { worktreeLabel } from './worktree';
@@ -62,8 +57,7 @@ import {
 import './sessions.css';
 
 /* The Sessions screen: one row per exact session, the blocked and moving ones first, each with the goal
-   it was given and whether it has drifted. A pure render of one payload: every figure comes from the
-   model read from the rows being drawn, so the fleet facts, the groups and the header cannot disagree.
+   it was given. Every summary figure comes from the shared selection over the rows being drawn.
    Nothing here fetches, polls or acts; a row's controls act only when pressed. */
 
 const SESSION_LEGEND = [
@@ -469,7 +463,7 @@ function historyHeading({ hours, showAll }: FilterBoard) {
   return `Earlier in the last ${String(hours)} ${hours === 1 ? 'hour' : 'hours'}`;
 }
 
-const FACT_KEYS = ['active', 'working', 'requests', 'reported-blocks'] as const;
+const SESSIONS_LIST_ID = 'sessions-list';
 
 /* The harnesses whose store could not be read, named, because "no sessions" under one of them would be
    a claim about a store nobody could open. */
@@ -567,14 +561,13 @@ function useFilterActions(
 
 export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
   const shell = useShell();
+  const [hour] = useState(() => new Date(shell.clock.now()).getHours());
+  const list = useRef<HTMLElement>(null);
   const data = useDisplayed((snapshot) => snapshot.data);
   const model = useDisplayed(selectObserved);
   const attention = useDisplayed(selectAttentionSelection);
   const screen = useMemo(
-    () =>
-      data
-        ? buildSessionsScreen(data as unknown as Row, model, chosenFor, attention?.worthALook)
-        : null,
+    () => (data ? buildSessionsScreen(data as unknown as Row, model, chosenFor, attention) : null),
     [data, model, chosenFor, attention],
   );
   const [filters, store] = useFilterState(shell.controls);
@@ -608,7 +601,6 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
   }, [data, screen, generated, shell]);
   const groupFilter = useMemo(() => ({ filtered, onClear: actions.clearAll }), [filtered, actions]);
   if (!screen || !board) return null;
-  const canAnalyze = analysisAvailable(data as unknown as Row);
   const worthALookCount = attention?.counts?.worthALook;
   const otherFilters = filtersActive({
     ...prepared,
@@ -616,27 +608,21 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
   });
   return (
     <section className="next-operations" data-next-view-body="sessions">
-      <header className="next-operations-header">
-        <h1>Session operations</h1>
-        {/* [DEC-27](docs/design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result) */}
-        <p data-next-sessions-orientation>
-          {canAnalyze
-            ? 'Open a session, set its goal and press Analyze drift to see how far it moved from it.'
-            : 'Open a session to see what it is doing and where it stands.'}
-          {canAnalyze && screen.lede ? ` ${NOT_CHECKED}` : ''}
-        </p>
-      </header>
+      {attention ? (
+        <SessionsGlance
+          selection={attention}
+          hour={hour}
+          listId={SESSIONS_LIST_ID}
+          working={filters.segment === 'working'}
+          showWorking={() => {
+            actions.change({ ...filters, segment: 'working' }, 'press');
+            list.current?.focus({ preventScroll: true });
+            list.current?.scrollIntoView?.({ block: 'start' });
+          }}
+        />
+      ) : null}
       <StatusLegend />
       <SourceGaps />
-      <section className="next-operations-fleet" aria-label="Fleet facts">
-        {screen.counters.slice(0, 2).map((counter, index) => (
-          <section key={FACT_KEYS[index]} data-next-fleet-fact={FACT_KEYS[index]}>
-            <span>{counter.label}</span>
-            <strong>{counter.value}</strong>
-            <small>{counter.noteText}</small>
-          </section>
-        ))}
-      </section>
       {Array.isArray(data?.sessions) ? (
         <Button
           type="button"
@@ -665,27 +651,35 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
           actions={actions}
         />
       ) : null}
-      <Group
-        kind="active"
-        title="Active now"
-        label="working, waiting on you, an exact request, or recorded drift"
-        rows={screen.active}
-        empty="No exact session has active evidence right now."
-        filter={groupFilter}
-        byGroup={filters.byGroup}
-        progressEnabled={annotated}
-      />
-      <Group
-        kind="history"
-        title={historyHeading(board)}
-        label=""
-        rows={screen.history}
-        empty="No recent-history rows in this payload."
-        caveat={RECENT_CAVEATS[screen.context.annotate ? 1 : 0]}
-        filter={groupFilter}
-        byGroup={filters.byGroup}
-        progressEnabled={annotated}
-      />
+      <section
+        ref={list}
+        id={SESSIONS_LIST_ID}
+        aria-label={SESSION_LIST_WORDS.all}
+        tabIndex={-1}
+        className="scroll-mt-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      >
+        <Group
+          kind="active"
+          title="Active now"
+          label="working, waiting on you, an exact request, or recorded drift"
+          rows={screen.active}
+          empty="No exact session has active evidence right now."
+          filter={groupFilter}
+          byGroup={filters.byGroup}
+          progressEnabled={annotated}
+        />
+        <Group
+          kind="history"
+          title={historyHeading(board)}
+          label=""
+          rows={screen.history}
+          empty="No recent-history rows in this payload."
+          caveat={RECENT_CAVEATS[screen.context.annotate ? 1 : 0]}
+          filter={groupFilter}
+          byGroup={filters.byGroup}
+          progressEnabled={annotated}
+        />
+      </section>
       <CapacityStrip />
     </section>
   );

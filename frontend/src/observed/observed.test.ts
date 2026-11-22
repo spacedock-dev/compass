@@ -265,8 +265,6 @@ describe('the counts are read from the rows the page renders', () => {
       subagents: 2,
     });
     expect(model.counters.map((counter) => [counter.label, counter.value])).toEqual([
-      ['ACTIVE NOW', 2],
-      ['WORKING', 1],
       ['EXACT REQUESTS', 0],
       ['REPORTED BLOCKS', 1],
     ]);
