@@ -1,5 +1,14 @@
 # Design: the dashboard UI
 
+The [Calm Compass record](design-calm-compass.md) governs the redesign. The owner rulings of
+2026-11-22 supersede these parts of the earlier design as their slices land.
+
+| Earlier decision | Superseded part | Ruling |
+|---|---|---|
+| [NUI-2](#nui-2-one-stylesheet-owns-the-interface) | Dark-only palette direction. The named token roles carry the light palette. | [DRC-5473](design-calm-compass.md#drc-5473-owner-ruling-2026-11-22) |
+| [NUI-14](#nui-14-the-specified-fonts-travel-inside-the-page) | The bundled font selection. The page bundles variable Inter only. | [DRC-5473](design-calm-compass.md#drc-5473-owner-ruling-2026-11-22) |
+| [NUI-16](#nui-16) | The Active now and Working counter pair and where reported gates go. See the [Sessions counters amendment](#amended-2026-11-22-owner-sessions-counters) for the retained Right now evidence rule. | [DRC-5485](design-calm-compass.md#drc-5485-owner-ruling-2026-11-22) and its [gate follow-up](design-calm-compass.md#drc-5485-owner-follow-up-ruling-2026-11-22) |
+
 This document records the interface first released behind `?next=true` and the decisions that
 survived its promotion to the dashboard. That interface is the legacy page now, and it is gone: the
 React page replaced it and nothing serves it, so this is a record of what was decided and why. Where it
@@ -514,6 +523,19 @@ pair beside it, because a stamp that adds no size still says nothing about the b
 Space Grotesk and IBM Plex Mono subsets travel inside the assembled page as data URLs. A missing or
 malformed font is a canonical asset failure and prevents startup before the socket binds. There is
 no font route or browser request to a provider. Licenses and source hashes live under `web/fonts/`.
+
+### Amended 2026-11-22 (owner): light only and Inter only
+
+The [DRC-5473 ruling](design-calm-compass.md#drc-5473-owner-ruling-2026-11-22) changes the
+board to light only and keeps the token roles. This also amends NUI-14's bundled font
+selection. The page uses one variable Inter face and drops IBM Plex Mono. The technical
+layer can use system `ui-monospace`. The measurement of Inter's bundle cost and any change
+to the page budget belong to the font implementation.
+
+The 13, 15, 18, 24 and 34 px steps stay, with 13 px for badges and tags and 44 px for targets.
+The [new palette measurements](design-calm-compass.md#tokens-and-type) put `#7B8794` at
+3.66:1 on white. [NUI-18](#nui-18-one-control-primitive-and-an-inert-control-stays-on-the-page)
+still sets the control-boundary requirement.
 
 ## NUI-3: the released route and storage namespace remain stable
 
@@ -1173,6 +1195,20 @@ sit above the first row. Measured on a four-session board at 1825x1146: 147 word
 above the fold before, 21 words in one sentence and one label after. Every absence on the screen wears
 `.next-absence`.
 
+### Amended 2026-11-22 (owner): Sessions counters
+
+The [DRC-5485 ruling](design-calm-compass.md#drc-5485-owner-ruling-2026-11-22) replaces the
+old counter pair. The header pill on every page and the Working now card count sessions in
+the Working state. The Needs you badge counts Waiting on you plus Worth a look. Its sections
+and the Sessions at-a-glance cards draw from the same selector. The
+[gate follow-up](design-calm-compass.md#drc-5485-owner-follow-up-ruling-2026-11-22) puts a
+session with a reported workflow gate in Waiting on you and counts it once.
+
+The active-evidence definition above still applies to Right now: working or needs-input
+without an observed end, or an exact request. A reported workflow gate now supplies the
+Waiting on you state. The Working count uses its own population. A reading against the goal
+supplies no Needs you count.
+
 ## NUI-17: the gate queue hands over a command, and only where one was measured
 
 A gate-queue row names a session that is waiting and then leaves the reader to find its terminal.
@@ -1437,6 +1473,20 @@ page follows the same rule as the session, Sessions and Attention pages, since a
 from every session's crumb. Its two menus ease too, each keeping its own look: the scope switcher,
 shown only on a narrow screen, opens in place as an accordion does, and the More menu, which drops
 over the page, fades in over 160ms.
+
+### Amended 2026-11-22 (owner): overlay choices
+
+The [DRC-5497 ruling](design-calm-compass.md#drc-5497-owner-ruling-2026-11-22) amends
+where a tier-2 disclosure opens. The [Calm Compass overlay rule](design-calm-compass.md#overlay-rule)
+gives each placement its use. Inline is the default, including the phone Menu and Filters.
+Popover use is limited to anchored choices and short companions in a flex row. Popovers
+open vertically, close siblings and stay unnested. The reusable technical disclosure opens
+in its card. The old Project More menu is replaced.
+
+Only an irreversible action wider than its card qualifies for a future modal. The
+[Forget ruling](design-calm-compass.md#drc-5488-owner-ruling-2026-11-22) puts the reset
+explanation inline. The four redesign slices ship with zero modals. The tier assignments
+and the visibility of first-layer limits still apply.
 
 ### Tier 3 ships no `docs/` href and no `DEC-N` token
 
