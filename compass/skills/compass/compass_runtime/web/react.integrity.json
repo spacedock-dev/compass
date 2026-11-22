@@ -1191,7 +1191,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionsView.tsx",
-        "sha256": "bccacf801ef1bc83557121c8379eedb4f7b30aa12f15855d8a35df375d449f6e"
+        "sha256": "9c6f55109a085d39314d5d86d99eabaf739b9ed806d44c461bb12a5ed093d070"
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",
