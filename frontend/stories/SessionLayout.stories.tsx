@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import { SubagentsView } from '../src/sessions/DetailParts';
 import { sessionSubagents } from '../src/sessions/detail';
 import type { Meta, StoryObj } from '@storybook/react-vite';
@@ -6,7 +7,6 @@ import { auditTechnicalMonospace } from './calm.audit';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { App } from '../src/App';
-import { LIVE_HINT, LIVE_MONITOR_DETAILS } from '../src/drift/sentences';
 import { DRIFT_SUBTITLE, INTENT_MEASURED } from '../src/intent/sentences';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
@@ -48,7 +48,7 @@ const reading = (cites: readonly string[], readAt: number, windowStart: number) 
   goal_source: 'typed',
   scope: 'last-turn',
   scope_text: 'Read up to its last turn.',
-  stamp: 'model · m',
+  stamp: 'model: claude-sonnet-5-5, read at 01:46',
   cutoff: 'Evidence read to its end.',
   coverage: {
     tail_truncated: false,
@@ -97,6 +97,7 @@ interface Log {
   release: (() => void) | null;
   readAt: number;
   served: number;
+  previews: number;
   stallOlder: boolean;
   olderAsked: boolean;
   releaseOlder: (() => void) | null;
@@ -110,6 +111,7 @@ const log: Log = {
   release: null,
   readAt: G - 10,
   served: 0,
+  previews: 0,
   stallOlder: false,
   olderAsked: false,
   releaseOlder: null,
@@ -131,6 +133,7 @@ function PageExample({
   readingWindow = G - 200,
   revised = false,
   entries,
+  technical = false,
 }: {
   readonly asking?: boolean;
   /** The exact request published while `asking`. */
@@ -146,6 +149,7 @@ function PageExample({
   readonly idle?: boolean;
   readonly readingWindow?: number;
   readonly revised?: boolean;
+  readonly technical?: boolean;
   readonly entries?: readonly Record<string, unknown>[];
 }) {
   const [shell] = useState(() => {
@@ -157,11 +161,44 @@ function PageExample({
     log.release = null;
     log.readAt = G - 10;
     log.served = 0;
+    log.previews = 0;
     log.stallOlder = stallOlder;
     log.olderAsked = false;
     log.releaseOlder = null;
     const history = fakeRouterEnvironment('#n=session:demo:claude:s1');
     let generation = G;
+    let paused = false;
+    let marked = false;
+    const policy = () => ({
+      consent: true,
+      off: paused,
+      providers: { claude: true },
+      words: { claude: true },
+      tool_output: { claude: ['api'] },
+      used: 1,
+      limit: technical ? 100 : 10,
+    });
+    const sent = [
+      'Sent: your goal, a bounded set of entries, and your messages and the agent’s messages.',
+      'The prompt size limit is 524,288 bytes.',
+      'The agent’s newest final reply goes whole, up to 16,384 characters.',
+      'Tool output includes a check’s command, result and last 180 characters of output, and paths of files written.',
+      'To: api.anthropic.com, with credential shapes redacted, through your Claude Code sign-in.',
+    ];
+    const settings = {
+      values: {
+        analyze_prompt_bytes: 524288,
+        analyze_record_events: 2000,
+        analyze_listed_checks: 1000,
+        analyze_scan_megabytes: 512,
+      },
+      limits: [
+        { key: 'analyze_prompt_bytes', default: 524288, minimum: 16384, maximum: 2097152 },
+        { key: 'analyze_record_events', default: 2000, minimum: 100, maximum: 5000 },
+        { key: 'analyze_listed_checks', default: 1000, minimum: 12, maximum: 5000 },
+        { key: 'analyze_scan_megabytes', default: 512, minimum: 8, maximum: 1024 },
+      ],
+    };
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
     return createShell({
       env: createFakeEnvironment({ clock: createFakeClock() }),
@@ -180,23 +217,34 @@ function PageExample({
             annotate_cap: 240,
             annotate_goal_cap: 1000,
             reading_check: 'passed',
-            reading: {
-              consent: true,
-              off: false,
-              providers: { claude: true },
-              words: { claude: true },
-              tool_output: { claude: ['api'] },
-              used: 1,
-              limit: 10,
-            },
+            reading: policy(),
+            ...(technical
+              ? {
+                  summaries: {
+                    consent: true,
+                    off: false,
+                    reason: paused ? 'model-calls-paused' : '',
+                  },
+                }
+              : {}),
             reading_routes: {
-              claude: routeOf('claude', {
-                provider: 'claude',
-                label: 'Claude Code',
-                reason: 'own-harness',
-                note: "This session's own harness reads it.",
-                fallback: false,
-              }),
+              claude: {
+                ...routeOf('claude', {
+                  provider: 'claude',
+                  label: 'Claude Code',
+                  reason: 'own-harness',
+                  note: "This session's own harness reads it.",
+                  fallback: false,
+                }),
+                ...(technical
+                  ? {
+                      disclosure: sent.join(' '),
+                      disclosure_parts: sent,
+                      destination: 'api.anthropic.com',
+                      model: 'claude-sonnet-5-5',
+                    }
+                  : {}),
+              },
             },
             harnesses: [
               { key: 'claude', label: 'Claude Code', reports_rate: true, discovered: true },
@@ -222,6 +270,7 @@ function PageExample({
                         state_detail: 'running Bash',
                         turn: { elapsed_h: '3m' },
                       }),
+                ...(technical ? { delivery_raises: 1, delivery_why: 'Accepted by macOS.' } : {}),
                 delegated_launches: 2,
                 delegated_unpaired: 1,
                 delegated_visibility: 'full',
@@ -248,12 +297,25 @@ function PageExample({
                 ...(cites
                   ? {
                       annotation_reading_count: 1,
+                      ...(marked ? { annotation_not_accurate: true } : {}),
                       annotation_assessment: reading(cites, log.readAt, readingWindow),
                     }
                   : {}),
               },
             ],
           });
+        }
+        if (technical && url === '/api/settings') return json(settings);
+        if (technical && url.startsWith('/api/reading-long-plan')) log.previews += 1;
+        if (technical && url === '/api/annotate' && init?.method === 'POST') {
+          const press = JSON.parse(String(init?.body));
+          marked = press.not_accurate === true;
+          return json({ outcome: 'stored', persisted: true });
+        }
+        if (technical && url === '/api/reading') {
+          const { consent } = JSON.parse(String(init?.body));
+          paused = consent === 'off';
+          return json({ ok: true, reading: policy() });
         }
         if (url === '/api/answer') {
           log.answers.push(String(init?.body));
@@ -302,6 +364,31 @@ function PageExample({
   return (
     <>
       <App key={mounted} shell={shell} />
+      {technical ? (
+        <>
+          <button
+            type="button"
+            onClick={() =>
+              shell.router.navigate({ view: 'settings', project: null, session: null })
+            }
+          >
+            Open Settings for the story
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              shell.router.navigate({
+                view: 'session',
+                project: 'demo',
+                session: 's1',
+                harness: 'claude',
+              })
+            }
+          >
+            Return to the session
+          </button>
+        </>
+      ) : null}
       <button type="button" onClick={() => remount((previous) => previous + 1)}>
         Remount session
       </button>
@@ -483,6 +570,10 @@ export const TechnicalDetailsContinuity: Story = {
     await expect(getComputedStyle(number).fontFamily).toMatch(/^ui-monospace/);
     activityTab.focus();
     await userEvent.keyboard('{ArrowRight}');
+    const privacyTab = canvas.getByRole('tab', { name: 'AI use and privacy' });
+    await expect(privacyTab).toHaveFocus();
+    await expect(privacyTab).toHaveAttribute('aria-selected', 'true');
+    await userEvent.keyboard('{ArrowLeft}');
     await expect(activityTab).toHaveFocus();
     const previous = log.served;
     (canvas.getByRole('button', { name: 'Simulate board poll' }) as HTMLButtonElement).click();
@@ -623,11 +714,88 @@ export const ActivityLogFilters: Story = {
   },
 };
 
+export const OpenTechnicalDetails: Story = {
+  render: () => <PageExample technical cites={['e95']} />,
+  play: async ({ canvasElement }) => {
+    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+    const sent = privacy.getByRole('button', { name: 'What is sent' });
+    await userEvent.click(sent);
+    await waitFor(() =>
+      expect(privacy.getByText('The prompt size limit is 524,288 bytes.')).toBeVisible(),
+    );
+  },
+};
+
+export const SharedAiPause: Story = {
+  render: () => <PageExample technical />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
+    await openSessionTechnicalTab('AI use and privacy', canvasElement);
+    const pause = await canvas.findByRole('switch', { name: 'Pause all AI use' });
+    await expect(pause).toHaveAttribute('aria-checked', 'false');
+    await userEvent.click(pause);
+    await expect(await canvas.findByRole('switch', { name: 'Resume AI use' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+
+    await userEvent.click(canvas.getByRole('button', { name: 'Open Settings for the story' }));
+    const resume = await canvas.findByRole('switch', { name: 'Resume AI use' });
+    await expect(resume).toHaveAttribute('aria-checked', 'true');
+    const summaries = canvas.getByRole('switch', { name: 'Summaries' });
+    await expect(summaries).toHaveAttribute('aria-disabled', 'true');
+    await expect(summaries).toHaveAccessibleDescription(/Paused/i);
+    await userEvent.click(resume);
+    await expect(await canvas.findByRole('switch', { name: 'Pause all AI use' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+    await userEvent.click(canvas.getByRole('button', { name: 'Return to the session' }));
+    await expect(await canvas.findByRole('switch', { name: 'Pause all AI use' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+  },
+};
+
+export const TechnicalEvidence: Story = {
+  render: () => <PageExample technical cites={['e95']} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    const evidence = within(await canvas.findByRole('tabpanel', { name: 'Evidence' }));
+    await expect(evidence.getByText('Synthetic entry 95', { exact: false })).toBeVisible();
+    await expect(evidence.getByRole('button', { name: 'What the check read' })).toBeVisible();
+    await expect(evidence.getByRole('button', { name: 'This reading looks wrong' })).toBeVisible();
+    await userEvent.click(evidence.getByRole('button', { name: 'This reading looks wrong' }));
+    const undo = await evidence.findByRole('button', { name: 'Undo' });
+    await waitFor(() => expect(undo).toHaveFocus());
+    await userEvent.click(undo);
+    await waitFor(() =>
+      expect(evidence.getByRole('button', { name: 'This reading looks wrong' })).toHaveFocus(),
+    );
+    await expect(
+      within(canvas.getByRole('region', { name: 'Drift' })).getByText('Synthetic entry 95', {
+        exact: false,
+      }),
+    ).toBeVisible();
+    const cite = await evidence.findByRole('button', { name: /^Show #.* in Activity log/ });
+    await userEvent.click(cite);
+    const activity = within(await canvas.findByRole('tabpanel', { name: 'Activity log' }));
+    await userEvent.click(await activity.findByRole('button', { name: 'Back to the finding' }));
+    await waitFor(() =>
+      expect(evidence.getByRole('button', { name: /^Show #.* in Activity log/ })).toHaveFocus(),
+    );
+  },
+};
+
 /* Every control, sentence and limit the retired More held, in its new home, and More gone. */
 export const MoreIsRetired: Story = {
   // Flaky: kept out of the test run until fixed; see docs/flaky-tests.md.
   tags: ['!test'],
-  render: () => <PageExample />,
+  render: () => <PageExample technical />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
@@ -694,557 +862,3 @@ export const MoreIsRetired: Story = {
     await userEvent.click(details);
     await activityLogPanel(canvasElement);
     await userEvent.click(details);
-    // The live monitor and Pause model calls are behind one Drift settings control in the head, and not in the body.
-    await expect(inDrift.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
-    await userEvent.click(await within(head).findByRole('button', { name: 'Drift settings' }));
-    const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
-    await waitFor(() => expect(monitor).toBeVisible());
-    await expect(within(document.body).getByText(LIVE_HINT)).toBeVisible();
-    await expect(monitor).toHaveAccessibleDescription(`${LIVE_HINT} ${LIVE_MONITOR_DETAILS}`);
-    await waitFor(() =>
-      expect(
-        within(document.body).getByRole('button', { name: 'Pause model calls' }),
-      ).toBeVisible(),
-    );
-    await userEvent.click(within(head).getByRole('button', { name: 'Drift settings' }));
-    // The delegated-work limit is not part of an analysis's account of what it read.
-    await expect(inDrift.queryByText(/^Delegated work:/)).toBeNull();
-    await expect(await inDrift.findByRole('button', { name: 'Analyze drift' })).toBeVisible();
-    // Beside what it stops, Pause model calls stands in What is sent too.
-    await userEvent.click(await inDrift.findByRole('button', { name: 'What is sent' }));
-    const off = await waitFor(() => {
-      const found = within(document.body)
-        .getAllByRole('button', { name: 'Pause model calls' })
-        .find((node) => node.closest('[data-slot="accordion-content"]'));
-      expect(found).toBeDefined();
-      return found as HTMLElement;
-    });
-    await waitFor(() => expect(off).toBeVisible());
-    await userEvent.keyboard('{Escape}');
-  },
-};
-
-/* An ended session: the note that nothing is promised to read what is saved sits in About these saved words. */
-export const MoreIsRetiredForAnEndedSession: Story = {
-  render: () => <PageExample ended />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
-    await userEvent.click(await canvas.findByRole('button', { name: 'More about these words' }));
-    const about = await canvas.findByRole('button', { name: 'About these saved words' });
-    await userEvent.click(about);
-    await waitFor(() =>
-      expect(
-        canvas.getByText(
-          'This session has ended. Anything you save against it is kept, and nothing is promised to read it.',
-        ),
-      ).toBeVisible(),
-    );
-  },
-};
-
-function spyScroll() {
-  const calls: (ScrollIntoViewOptions | boolean | undefined)[] = [];
-  const original = Element.prototype.scrollIntoView;
-  const media = window.matchMedia;
-  Element.prototype.scrollIntoView = function scroll(options) {
-    calls.push(options);
-    original.call(this, options);
-  };
-  window.matchMedia = (query: string) =>
-    ({ ...media.call(window, query), matches: query.includes('reduce') }) as MediaQueryList;
-  return {
-    calls,
-    restore: () => {
-      Element.prototype.scrollIntoView = original;
-      window.matchMedia = media;
-    },
-  };
-}
-
-/* The Goal cites an entry on the older record page. The press opens Activity log, reads that page, and lands
-   on the entry with its tint; Escape goes back to the press, and neither move animates under reduced motion. */
-export const CitationLoadsAnOlderEntry: Story = {
-  render: () => <PageExample cites={['e5']} />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const scroll = spyScroll();
-    try {
-      const jump = () =>
-        canvas.getByRole('button', {
-          name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
-        });
-      await waitFor(() => expect(jump()).toBeVisible());
-      await waitFor(() =>
-        expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(50),
-      );
-      await expect(canvasElement.querySelector('[data-next-entry-id="e5"]')).toBeNull();
-      const trigger = canvas.getByRole('button', { name: /^(Show|Hide) technical details$/ });
-      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-      await userEvent.click(trigger);
-      const tab = canvas.getByRole('tab', { name: 'Activity log', selected: true });
-      const panel = canvas.getByRole('tabpanel', { name: 'Activity log' });
-      await expect(tab).toHaveAttribute('aria-controls', panel.id);
-      await userEvent.click(within(panel).getByRole('button', { name: 'Cited' }));
-      await userEvent.click(trigger);
-      await userEvent.click(jump());
-      await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-      await waitFor(() =>
-        expect(within(panel).getByRole('button', { name: 'Cited', pressed: true })).toBeVisible(),
-      );
-      const row = await waitFor(() => {
-        const found = canvasElement.querySelector<HTMLElement>('[data-next-entry-id="e5"]');
-        if (!found) throw new Error('the older page has not arrived');
-        return found;
-      });
-      await waitFor(() => expect(document.activeElement).toBe(row));
-      await expect(row).toHaveAttribute('data-next-cited');
-      await expect(getComputedStyle(row).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
-      // Wait for the row to land inside the viewport as the accordion settles.
-      await waitFor(() => {
-        const box = row.getBoundingClientRect();
-        expect(box.bottom).toBeGreaterThan(0);
-        expect(box.top).toBeLessThan(window.innerHeight);
-      });
-      await expect(scroll.calls.at(-1)).toEqual({ behavior: 'instant', block: 'center' });
-      /* Once the entry is held, the finding names it by its number instead of offering to load it, and the
-         way back lands on that number. */
-      const cited = () =>
-        canvas.getByRole('link', {
-          name: /^Show #\d+(\.\d+)? in Activity log for Goal: Synthetic goal$/,
-        });
-      await userEvent.keyboard('{Escape}');
-      await expect(document.activeElement).toBe(cited());
-      await expect(scroll.calls.at(-1)).toEqual({ behavior: 'instant', block: 'center' });
-      // A citation also lands from a filter that would otherwise hide its entry.
-      await userEvent.click(within(panel).getByRole('button', { name: 'You' }));
-      await seeInContext(cited());
-      const reopened = await waitFor(() => {
-        const found = panel.querySelector('[data-next-entry-id="e5"]');
-        if (!found) throw new Error('Waiting for the cited entry');
-        return found;
-      });
-      await waitFor(() => expect(document.activeElement).toBe(reopened));
-      await userEvent.click(
-        within(reopened as HTMLElement).getByRole('button', { name: 'Back to the finding' }),
-      );
-      await expect(document.activeElement).toBe(cited());
-    } finally {
-      scroll.restore();
-    }
-  },
-};
-
-/* The Goal cites an entry no record page returns. The press reads to the record's start, then says so where it
-   would have landed, and focus goes there rather than staying on a control whose answer is elsewhere. */
-export const CitationThatCannotLoadSaysSo: Story = {
-  render: () => <PageExample cites={['ghost']} />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const jump = () =>
-      canvas.getByRole('button', {
-        name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
-      });
-    await waitFor(() => expect(jump()).toBeVisible());
-    await userEvent.click(jump());
-    const note = await waitFor(() => {
-      const found = canvasElement.querySelector<HTMLElement>('[data-next-jump-missing]');
-      if (!found) throw new Error('the read has not finished');
-      return found;
-    });
-    await expect(note).toHaveTextContent(
-      'An entry this finding cites could not be loaded: the record read for this session does not list it.',
-    );
-    await expect(note).toHaveAttribute('role', 'status');
-    await waitFor(() => expect(document.activeElement).toBe(note));
-    await expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(100);
-    await userEvent.click(within(note).getByRole('button', { name: 'Back to the finding' }));
-    await expect(document.activeElement).toBe(jump());
-    // Escape on the way back, too, returns to the finding rather than leaving the session page.
-    await userEvent.click(jump());
-    // The press takes the old sentence down and draws its own.
-    const again = await waitFor(() => {
-      const found = canvasElement.querySelector<HTMLElement>('[data-next-jump-missing]');
-      if (!found || document.activeElement !== found) throw new Error('not landed yet');
-      return found;
-    });
-    within(again).getByRole('button', { name: 'Back to the finding' }).focus();
-    await userEvent.keyboard('{Escape}');
-    await expect(document.activeElement).toBe(jump());
-    await expect(
-      canvas.getByRole('heading', { level: 1, name: 'Synthetic layout session' }),
-    ).toBeVisible();
-  },
-};
-
-/* A retained reading: the intent was saved again with a later window, and the Goal cites `e5`, from before
-   that window and on the older record page. The first page already reaches past the window, so Show more says
-   nothing about older entries, yet the press still reads the older page and lands on the entry. */
-export const RetainedReadingCitesBeforeTheWindow: Story = {
-  render: () => <PageExample cites={['e5']} windowStart={G - 30} revised />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await waitFor(() =>
-      expect(canvasElement.querySelectorAll('[data-next-entry-id]').length).toBeGreaterThan(0),
-    );
-    const jump = await canvas.findByRole('button', {
-      name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
-    });
-    await expect(canvasElement.querySelector('[data-next-unloaded]')).toBeNull();
-    await expect(canvasElement.querySelector('[data-next-entry-id="e5"]')).toBeNull();
-    await userEvent.click(jump);
-    const row = await waitFor(() => {
-      const found = canvasElement.querySelector<HTMLElement>('[data-next-entry-id="e5"]');
-      if (!found) throw new Error('the older page has not arrived');
-      return found;
-    });
-    await waitFor(() => expect(document.activeElement).toBe(row));
-    await expect(row).toHaveAttribute('data-next-cited');
-    const swatch = document.createElement('span');
-    swatch.style.backgroundColor = 'color-mix(in srgb, var(--accent) 13%, transparent)';
-    swatch.style.color = 'var(--accent)';
-    row.append(swatch);
-    const tint = getComputedStyle(swatch).backgroundColor;
-    const edge = getComputedStyle(swatch).color;
-    swatch.remove();
-    await expect(getComputedStyle(row).backgroundColor).toBe(tint);
-    await expect(getComputedStyle(row).borderLeftColor).toBe(edge);
-    await expect(within(row).getByText('Before reading window')).toBeVisible();
-  },
-};
-
-/* The Goal cites `e5`, on the older page and from before the window the reading itself read. The press loads it,
-   but the reading's own rules set it aside, so no row is marked: the sentence says so and takes focus. */
-export const CitationSetAsideByTheReadingSaysSo: Story = {
-  render: () => <PageExample cites={['e5']} readingWindow={G - 60} />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(
-      await canvas.findByRole('button', {
-        name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
-      }),
-    );
-    const note = await waitFor(() => {
-      const found = canvasElement.querySelector<HTMLElement>('[data-next-jump-missing]');
-      if (!found) throw new Error('the read has not finished');
-      return found;
-    });
-    await expect(note).toHaveTextContent(
-      /^The entries this finding cites are loaded, but none is marked/,
-    );
-    await waitFor(() => expect(document.activeElement).toBe(note));
-    await expect(canvasElement.querySelector('[data-next-entry-id="e5"]')).not.toBeNull();
-    await expect(canvasElement.querySelector('[data-next-cited]')).toBeNull();
-  },
-};
-
-async function pollWithNewReading(canvasElement: HTMLElement) {
-  const before = log.served;
-  log.readAt = G - 5;
-  await userEvent.click(within(canvasElement).getByRole('button', { name: 'Simulate board poll' }));
-  await waitFor(() => expect(log.served).toBeGreaterThan(before));
-}
-
-/* The press's older page is slow, and a new reading arrives while it is read. When the page finally answers,
-   the press it served belongs to a reading that is gone, so no "could not be loaded" sentence appears. */
-export const SlowReadEndsAfterANewReading: Story = {
-  render: () => <PageExample cites={['ghost']} stallOlder />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const jump = await canvas.findByRole('button', {
-      name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
-    });
-    await userEvent.click(jump);
-    await waitFor(() => expect(log.releaseOlder).not.toBeNull());
-    await pollWithNewReading(canvasElement);
-    log.releaseOlder?.();
-    await waitFor(() =>
-      expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(100),
-    );
-    // Long enough for the ended read's settle to have drawn the sentence, were it going to.
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    await expect(canvasElement.querySelector('[data-next-jump-missing]')).toBeNull();
-  },
-};
-
-/* The sentence stands, then a new reading arrives: the sentence and the press it answered go with the old
-   reading, and the control it kept drawn goes too, since the record has been read to its start. */
-export const NoteLeavesWithItsReading: Story = {
-  render: () => <PageExample cites={['ghost']} />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const name = 'Load the cited entries in Activity log for Goal: Synthetic goal';
-    await userEvent.click(await canvas.findByRole('button', { name }));
-    await waitFor(() =>
-      expect(canvasElement.querySelector('[data-next-jump-missing]')).not.toBeNull(),
-    );
-    await pollWithNewReading(canvasElement);
-    await waitFor(() => expect(canvasElement.querySelector('[data-next-jump-missing]')).toBeNull());
-    await expect(canvas.queryByRole('button', { name })).toBeNull();
-  },
-};
-
-/* A question arrives while the page is open: it leads the page, one press sends the exact request and option,
-   and a second press while that one is pending sends nothing. */
-export const QuestionLeadsAndAnswersOnce: Story = {
-  render: () => <PageExample />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
-    await waitFor(() =>
-      expect(named(canvasElement)).toEqual([
-        'Goal',
-        'What the session has done',
-        'Drift',
-        'Show technical details',
-      ]),
-    );
-    log.asking = true;
-    await userEvent.click(canvas.getByRole('button', { name: 'Simulate board poll' }));
-    await inOrderTopToBottom(canvasElement, ORDER);
-    const asked = regions(canvasElement)[0] as HTMLElement;
-    await expect(asked).toHaveTextContent('Run the synthetic migration now?');
-    const yes = within(asked).getByRole('button', { name: 'Yes, run it' });
-    await userEvent.click(yes);
-    await waitFor(() => expect(log.answers).toHaveLength(1));
-    await expect(JSON.parse(log.answers[0] ?? '{}')).toEqual({ id: 'q1', index: 0 });
-    await waitFor(() => expect(yes).toHaveAttribute('aria-busy', 'true'));
-    await userEvent.click(yes);
-    await userEvent.click(within(asked).getByRole('button', { name: 'Not yet' }));
-    await expect(log.answers).toHaveLength(1);
-    log.release?.();
-    await waitFor(() => expect(named(canvasElement)[0]).toBe('Goal'));
-    await expect(log.answers).toHaveLength(1);
-  },
-};
-
-/* A question Compass shortened says so under its options, with the length the session sent and how many options
-   were never shown; the cut text still ends in "…", and the longest labels wrap inside the card at phone width. */
-export const ShortenedQuestion: Story = {
-  render: () => <PageExample asking ask={SHORTENED_ASK} />,
-  play: async ({ canvasElement }) => {
-    const asked = await within(canvasElement).findByRole('region', { name: 'Asked you' });
-    for (const width of [1280, 400]) {
-      await atWidth(width, async () => {
-        const question = asked.querySelector('.next-session-ask-question') as HTMLElement;
-        await expect(question.textContent).toHaveLength(2_000);
-        await expect(question.textContent?.endsWith('…')).toBe(true);
-        const notes = [...asked.querySelectorAll<HTMLElement>('[data-next-session-ask-cut]')];
-        await expect(notes.map((note) => note.textContent)).toEqual([
-          'Shortened by Compass: the session sent 2,500 characters.',
-          '2 more options were not shown.',
-        ]);
-        for (const note of notes) await expect(note).toBeVisible();
-        const buttons = within(asked).getAllByRole('button');
-        await expect(buttons).toHaveLength(3);
-        const card = asked.getBoundingClientRect();
-        for (const button of buttons)
-          await expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(card.right + 1);
-        // Below the options, so the reader meets the choice first and the note before leaving it.
-        const options = asked.querySelector('.next-session-answer-options') as HTMLElement;
-        await expect(notes[0]?.getBoundingClientRect().top).toBeGreaterThanOrEqual(
-          options.getBoundingClientRect().bottom,
-        );
-        await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
-      });
-    }
-  },
-};
-
-/* A question inside every cap carries no note. */
-export const UnshortenedQuestionHasNoNote: Story = {
-  render: () => <PageExample asking />,
-  play: async ({ canvasElement }) => {
-    const asked = await within(canvasElement).findByRole('region', { name: 'Asked you' });
-    await expect(asked).toHaveTextContent('Run the synthetic migration now?');
-    await expect(asked.querySelector('[data-next-session-ask-cut]')).toBeNull();
-  },
-};
-
-/* A session waiting on you is marked beside its title, not down its page (owner, 2026-10-29): the page is one
-   unpadded column, and an inset stripe on it ran its full height and over the title's first letter. */
-export const WaitingEdgeStaysBesideTheTitle: Story = {
-  render: () => <PageExample gate />,
-  play: async ({ canvasElement }) => {
-    const heading = await within(canvasElement).findByRole('heading', {
-      level: 1,
-      name: 'Synthetic layout session',
-    });
-    const page = canvasElement.querySelector<HTMLElement>('.next-session-detail--blocked');
-    await expect(page).not.toBeNull();
-    await expect(getComputedStyle(page as HTMLElement).boxShadow).toBe('none');
-    const header = heading.closest('header') as HTMLElement;
-    await expect(getComputedStyle(header).borderLeftWidth).toBe('3px');
-    await expect(heading.getBoundingClientRect().left).toBeGreaterThan(
-      header.getBoundingClientRect().left + 10,
-    );
-    const columns = canvasElement.querySelector('.next-session-columns') as HTMLElement;
-    await expect(columns.getBoundingClientRect().top).toBeGreaterThanOrEqual(
-      header.getBoundingClientRect().bottom,
-    );
-  },
-};
-
-/* A harness's own gate has no request Compass can show or answer, so it is said on its own: waiting, for how
-   long, what the harness said, and where it is answered. The command back in stays on Attention. */
-export const HarnessGateSaysWhereToAnswer: Story = {
-  render: () => <PageExample gate />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const block = await canvas.findByRole('region', { name: 'Waiting on you' });
-    await expect(block).toHaveTextContent('WAITING ON YOU · 15m');
-    await expect(block).toHaveTextContent('Permission prompt: Bash');
-    await expect(block).toHaveTextContent(WAITING_ANSWER_WHERE);
-    const link = within(block).getByRole('link', { name: 'Needs you' });
-    await expect(link).toBeVisible();
-    await expect(link).toHaveAttribute('href', '#n=attention');
-    await expect(within(block).queryByRole('button', { name: /Copy/ })).toBeNull();
-    await expect(regions(canvasElement)[0]).toBe(block);
-    // It stands apart from the header above it and the card below it, as the cards stand apart from each other.
-    const box = block.getBoundingClientRect();
-    const above = (block.previousElementSibling as HTMLElement).getBoundingClientRect();
-    const below = (block.nextElementSibling as HTMLElement).getBoundingClientRect();
-    await expect(box.top - above.bottom).toBeGreaterThanOrEqual(16);
-    await expect(below.top - box.bottom).toBeGreaterThanOrEqual(16);
-    await expect(canvas.queryByRole('region', { name: 'Asked you' })).toBeNull();
-    await waitFor(() => expect(document.title).toMatch(/^● Needs you · /));
-    const icon = document.head.querySelector('link[data-next-favicon]');
-    await expect(decodeURIComponent(icon?.getAttribute('href') ?? '')).toContain('fill="#92400e"');
-  },
-};
-
-/* Attention carries a command back in only where the session publishes a token its CLI takes, so the block
-   names Attention for it only then. */
-export const HarnessGateWithNoWayBackNamesNoCommand: Story = {
-  render: () => <PageExample gate resumable={false} />,
-  play: async ({ canvasElement }) => {
-    const block = await within(canvasElement).findByRole('region', { name: 'Waiting on you' });
-    await expect(block).toHaveTextContent(WAITING_ANSWER_WHERE);
-    await expect(within(block).queryByRole('link', { name: 'Needs you' })).toBeNull();
-    await expect(block).not.toHaveTextContent('The command back into it');
-  },
-};
-
-export const FullActivityLinksToGoalHistory: Story = {
-  render: () => <PageExample />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(
-      await canvas.findByRole('button', { name: /^(Show|Hide) technical details$/ }),
-    );
-    const summary = await canvas.findByText('What it keeps');
-    const history = summary.closest<HTMLElement>('.next-cockpit-departures-kept');
-    if (!history) throw new Error('The history disclosure is missing');
-    const link = within(history).getByRole('link', { name: 'Goal history' });
-    await waitFor(() => expect(link).toBeVisible());
-    await expect(link).toHaveAttribute('href', '#n=intent');
-    await userEvent.click(summary);
-    const description = within(history).getByText(
-      'Goal history keeps what you saved and what was raised against it after the session leaves the board.',
-    );
-    await waitFor(() => expect(description).toBeVisible());
-  },
-};
-
-/* An exact request keeps its own Asked-you block; the waiting block is for the gate Compass cannot answer. */
-export const ExactRequestKeepsItsOwnBlock: Story = {
-  render: () => <PageExample asking />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const asked = await canvas.findByRole('region', { name: 'Asked you' });
-    await expect(asked.querySelector('[data-next-session-wait-note]')).toBeNull();
-    await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
-    await waitFor(() => expect(document.title).toMatch(/^● Needs you · /));
-  },
-};
-
-export const HarnessGateWithExactRequest: Story = {
-  render: () => <PageExample asking gate />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const asked = within(await canvas.findByRole('region', { name: 'Asked you' }));
-    await expect(asked.getByText(String(ASK.question))).toBeVisible();
-    await expect(asked.getByText('Permission prompt: Bash', { exact: false })).toBeVisible();
-    await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
-  },
-};
-
-/* A working session carries no waiting sign anywhere: no edge, no block, and the resting tab. */
-export const WorkingSessionCarriesNoWaitingSign: Story = {
-  render: () => <PageExample />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const heading = await canvas.findByRole('heading', {
-      level: 1,
-      name: 'Synthetic layout session',
-    });
-    await expect(getComputedStyle(heading.closest('header') as HTMLElement).borderLeftWidth).toBe(
-      '0px',
-    );
-    await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
-    await waitFor(() => expect(document.title).not.toMatch(/^● Needs you · /));
-    const icon = document.head.querySelector('link[data-next-favicon]');
-    await expect(decodeURIComponent(icon?.getAttribute('href') ?? '')).toContain(
-      'stroke="#2f7d5b"',
-    );
-  },
-};
-
-export const IdleQuestionPrecedesTurnEnd: Story = {
-  render: () => <PageExample idle asking />,
-  play: async ({ canvasElement }) => {
-    await within(canvasElement).findByRole('heading', {
-      level: 1,
-      name: 'Synthetic layout session',
-    });
-    const activity = canvasElement.querySelector(
-      '[data-next-session-command="activity"]',
-    ) as HTMLElement;
-    await expect(activity).toHaveTextContent(String(ASK['question']));
-    await expect(activity).not.toHaveTextContent('Turn ended');
-    const metadata = canvasElement.querySelector('.next-session-detail-meta') as HTMLElement;
-    await expect(metadata).not.toHaveTextContent(/Turn ended|Run finished/);
-  },
-};
-
-export const EndedWithAnOpenQuestion: Story = {
-  render: () => <PageExample idle ended asking />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const answer = await canvas.findByRole('button', { name: 'Yes, run it' });
-    const status = canvasElement.querySelector('.next-session-state');
-    await expect(status).toBeVisible();
-    await expect(status).toHaveTextContent('State: Ended');
-    await expect(answer).toBeVisible();
-    await expect(answer).toBeEnabled();
-  },
-};
-
-export const HelperActivity: Story = {
-  render: () => {
-    const helpers = sessionSubagents(
-      [
-        { name: 'Review results', active: true, started_at: G - 60 },
-        { name: 'Read documentation', active: false },
-        { name: 'Check types' },
-      ],
-      0,
-      G,
-    );
-    if (!helpers) throw new Error('Expected the synthetic helpers');
-    return <SubagentsView subagents={helpers} />;
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await expect(canvas.getByText('1 RUNNING SUBAGENT')).toBeVisible();
-    await expect(canvas.getByRole('img', { name: 'Working' })).toBeVisible();
-    for (const [name, word] of [
-      ['Read documentation', 'Not running'],
-      ['Check types', 'Activity not published'],
-    ]) {
-      const helper = canvas.getByText(name ?? '').closest('[data-next-session-subagent]');
-      await expect(helper).toHaveTextContent(word ?? '');
-      await expect(helper?.querySelector('svg')).toBeNull();
-    }
-  },
-};

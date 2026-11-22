@@ -12,6 +12,7 @@ export interface Jump {
   readonly readAt: unknown;
   readonly key: string;
   readonly origin: HTMLElement | null;
+  readonly fromTechnicalEvidence: boolean;
   /** The one cited entry a chip named, where focus lands; null for the finding's first cited row. */
   readonly entry: string | null;
 }

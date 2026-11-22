@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { expectSwitchPaint } from './switch.audit';
@@ -54,14 +55,13 @@ const HAIKU = (level: string) => ({
 
 const drawn = (canvasElement: HTMLElement) =>
   within(canvasElement).findByRole('region', { name: 'Drift' });
-const head = (card: HTMLElement) => card.querySelector('header') as HTMLElement;
 
-async function monitorSwitch(card: HTMLElement): Promise<HTMLElement> {
-  await userEvent.click(within(head(card)).getByRole('button', { name: 'Drift settings' }));
+async function monitorSwitch(): Promise<HTMLElement> {
+  await openSessionTechnicalTab('AI use and privacy');
   return within(document.body).findByRole('switch', { name: 'Live monitor' });
 }
-async function turnOn(card: HTMLElement): Promise<HTMLElement> {
-  const toggle = await monitorSwitch(card);
+async function turnOn(): Promise<HTMLElement> {
+  const toggle = await monitorSwitch();
   await userEvent.click(toggle);
   await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
   return toggle;
@@ -79,7 +79,7 @@ export const Off: Story = {
   }),
   play: async ({ canvasElement, args }) => {
     const card = await drawn(canvasElement);
-    const toggle = await monitorSwitch(card);
+    const toggle = await monitorSwitch();
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await expect(toggle).not.toHaveAttribute('aria-disabled');
     // Nothing is shown or sent while it is off, whatever the server may hold.
@@ -87,10 +87,11 @@ export const Off: Story = {
     await expect(actions(args.scenario.lease as LeaseScenario)).toEqual([]);
     const hint = document.querySelector('[data-next-live-hint]') as HTMLElement;
     await expectSwitchPaint(toggle, false);
+    toggle.scrollIntoView({ block: 'center', behavior: 'instant' });
     const box = toggle.getBoundingClientRect();
     for (const y of [box.top + 0.5, box.bottom - 0.5]) {
       const hit = document.elementFromPoint(box.left + box.width / 2, y);
-      await expect(toggle.contains(hit), 'Switch target inside the popover').toBe(true);
+      await expect(toggle.contains(hit), 'Switch target in technical details').toBe(true);
     }
     await expect(hint).toHaveTextContent(/^Checks progress about once a minute while you watch$/);
     await expect(toggle).toHaveAccessibleDescription(
@@ -108,24 +109,19 @@ export const OnWithTheHaikuLevel: Story = {
     work: { live_levels: [ESTIMATE('none_or_low')] },
     lease: leaseScenario(leaseState({ level: HAIKU('high'), now: 5000 })),
   }),
-  play: async ({ canvasElement, args }) => {
+  play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
-    const toggle = await monitorSwitch(card);
+    const toggle = await monitorSwitch();
     toggle.focus();
     await userEvent.keyboard(' ');
     await waitFor(() => expect(pill(card)).toBe('High'));
     await expectSwitchPaint(toggle, true);
-    // The header pill is labelled the monitor's, as the card is.
-    await expect(card.ownerDocument.querySelector('[data-next-drift-pill]')).toHaveTextContent(
+    await expect(card.ownerDocument.querySelector('[data-next-drift-pill]')).not.toHaveTextContent(
       'Live monitor · Haiku',
     );
     const level = card.querySelector('[data-next-drift-level]') as HTMLElement;
-    await expect(level).toHaveTextContent('Live monitor · Haiku');
-    await expect(level).toHaveTextContent('The latest turns wrote outside the saved folders.');
-    await expect(level).not.toHaveTextContent('Live estimate');
-    await expect(level).not.toHaveTextContent('No model assessment for this intent yet');
-    await expect(actions(args.scenario.lease as LeaseScenario)[0]).toBe('start');
-    // The server's own words about what is sent stand under the switch while it is on.
+    await expect(level).not.toHaveTextContent('Live monitor · Haiku');
+    await expect(within(document.body).getByText('Live monitor · Haiku')).toBeVisible();
     await expect(document.querySelector('[data-next-live-sent]')).toHaveTextContent(
       'api.anthropic.com',
     );
@@ -140,7 +136,7 @@ export const OnWithTheEstimateAsFallback: Story = {
   }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
-    await turnOn(card);
+    await turnOn();
     await waitFor(() => expect(pill(card)).toBe('Medium'));
     const level = card.querySelector('[data-next-drift-level]') as HTMLElement;
     await expect(level).toHaveTextContent('Live estimate');
@@ -156,8 +152,8 @@ export const EndedAndDisabled: Story = {
     lease: leaseScenario(),
   }),
   play: async ({ canvasElement, args }) => {
-    const card = await drawn(canvasElement);
-    const toggle = await monitorSwitch(card);
+    await drawn(canvasElement);
+    const toggle = await monitorSwitch();
     await expect(toggle).toHaveAttribute('aria-disabled', 'true');
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
     const track = toggle.querySelector('[data-slot="switch-track"]');
@@ -186,8 +182,8 @@ export const EndsWhileViewed: Story = {
     lease: leaseScenario(leaseState({ now: 5000 })),
   }),
   play: async ({ canvasElement, args }) => {
-    const card = await drawn(canvasElement);
-    const toggle = await turnOn(card);
+    await drawn(canvasElement);
+    const toggle = await turnOn();
     // The session ends while the reader is looking at it: no reload.
     ending.ended_at = 1200;
     await args.scenario.board?.refresh?.();
@@ -202,13 +198,9 @@ export const EndsWhileViewed: Story = {
 };
 
 /* A lease the server ends after the reader turned it on: the next beat finds it gone, and the card says why. */
-async function endsBy(
-  reason: string,
-  args: { readonly scenario: Scenario },
-  card: HTMLElement,
-): Promise<void> {
+async function endsBy(reason: string, args: { readonly scenario: Scenario }): Promise<void> {
   const lease = args.scenario.lease as LeaseScenario;
-  await turnOn(card);
+  await turnOn();
   lease.state = leaseState({ on: false, last_end: { reason, at: 1200 }, now: 9000 });
   lease.beat = 'gone';
   args.scenario.clock?.advance?.(20_000);
@@ -217,10 +209,10 @@ async function endsBy(
 export const TurnedOffBecauseTheReaderLeft: Story = {
   ...scenario({ facts: FACTS, clock: {}, lease: leaseScenario(leaseState({ now: 5000 })) }),
   play: async ({ canvasElement, args }) => {
-    const card = await drawn(canvasElement);
-    await endsBy('left', args, card);
+    await drawn(canvasElement);
+    await endsBy('left', args);
     await waitFor(() => expect(note()).toHaveTextContent(/stopped checking in/));
-    await expect(await monitorSwitch(card)).toHaveAttribute('aria-checked', 'false');
+    await expect(await monitorSwitch()).toHaveAttribute('aria-checked', 'false');
   },
 };
 
@@ -234,9 +226,9 @@ export const TurnedOffBecauseModelCallsWerePaused: Story = {
   }),
   play: async ({ canvasElement, args }) => {
     const card = await drawn(canvasElement);
-    const toggle = await turnOn(card);
+    const toggle = await turnOn();
     // The reader pauses model calls: the page's board says so, and the server ends the lease.
-    await userEvent.click(within(document.body).getByRole('button', { name: 'Pause model calls' }));
+    await userEvent.click(within(document.body).getByRole('switch', { name: 'Pause all AI use' }));
     const lease = args.scenario.lease as LeaseScenario;
     lease.state = leaseState({ on: false, last_end: { reason: 'paused', at: 1200 }, now: 9000 });
     lease.beat = 'gone';
@@ -261,7 +253,7 @@ export const TurnedOffByItsOwnLimit: Story = {
   }),
   play: async ({ canvasElement, args }) => {
     const card = await drawn(canvasElement);
-    await endsBy('cap', args, card);
+    await endsBy('cap', args);
     await waitFor(() => expect(note()).toHaveTextContent(/its own limit of checks/));
     // Its words are the monitor's, never Analyze's cap banner.
     await expect(note()).not.toHaveTextContent(/drift analyses/);
@@ -278,8 +270,8 @@ export const RefusedToStart: Story = {
     lease: { ...leaseScenario(leaseState({ on: false })), refuse: 'paused' },
   }),
   play: async ({ canvasElement, args }) => {
-    const card = await drawn(canvasElement);
-    const toggle = await monitorSwitch(card);
+    await drawn(canvasElement);
+    const toggle = await monitorSwitch();
     await userEvent.click(toggle);
     await waitFor(() => expect(note()).toHaveTextContent(/did not start.*paused/));
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
@@ -295,8 +287,8 @@ export const RefusedToStartByClaudeCodeSettings: Story = {
     lease: { ...leaseScenario(leaseState({ on: false })), refuse: 'settings-refused' },
   }),
   play: async ({ canvasElement, args }) => {
-    const card = await drawn(canvasElement);
-    const toggle = await monitorSwitch(card);
+    await drawn(canvasElement);
+    const toggle = await monitorSwitch();
     await userEvent.click(toggle);
     await waitFor(() =>
       expect(note()).toHaveTextContent(
@@ -314,14 +306,14 @@ export const RefusedToStartByClaudeCodeSettings: Story = {
 export const TurnedOffByClaudeCodeSettings: Story = {
   ...scenario({ facts: FACTS, clock: {}, lease: leaseScenario(leaseState({ now: 5000 })) }),
   play: async ({ canvasElement, args }) => {
-    const card = await drawn(canvasElement);
-    await endsBy('settings-refused', args, card);
+    await drawn(canvasElement);
+    await endsBy('settings-refused', args);
     await waitFor(() =>
       expect(note()).toHaveTextContent(
         'Live monitor turned off: your Claude Code settings could send its checks somewhere Compass cannot name, so that check was not sent or charged. Check the Claude Code settings your organization manages (for example apiKeyHelper, a login gateway, or telemetry that logs prompts or replies) and the folder CLAUDE_CONFIG_DIR names. Claude Code also refuses readings while its managed-mcp.json file exists. How to use Compass lists every cause under When Claude Code settings stop a check.',
       ),
     );
-    await expect(await monitorSwitch(card)).toHaveAttribute('aria-checked', 'false');
+    await expect(await monitorSwitch()).toHaveAttribute('aria-checked', 'false');
   },
 };
 
@@ -337,7 +329,7 @@ export const AnalyzeOutranksTheMonitor: Story = {
   }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
-    await turnOn(card);
+    await turnOn();
     await waitFor(() => expect(pill(card)).toBe('Medium'));
     await expect(card.ownerDocument.querySelector('[data-next-drift-pill]')).not.toHaveTextContent(
       'Live monitor',
@@ -354,8 +346,8 @@ export const HiddenTabHoldsTheLeaseAndResumes: Story = {
     lease: leaseScenario(leaseState({ now: 5000 })),
   }),
   play: async ({ canvasElement, args }) => {
-    const card = await drawn(canvasElement);
-    await turnOn(card);
+    await drawn(canvasElement);
+    await turnOn();
     const lease = args.scenario.lease as LeaseScenario;
     const beats = () =>
       lease.posts.filter((post) => post['action'] === 'beat').map((post) => post['visible']);
@@ -378,8 +370,8 @@ export const StartedFromAHiddenTab: Story = {
     lease: leaseScenario(leaseState({ now: 5000 })),
   }),
   play: async ({ canvasElement, args }) => {
-    const card = await drawn(canvasElement);
-    const toggle = await monitorSwitch(card);
+    await drawn(canvasElement);
+    const toggle = await monitorSwitch();
     args.scenario.tab?.hide?.();
     await userEvent.click(toggle);
     const lease = args.scenario.lease as LeaseScenario;
@@ -399,8 +391,8 @@ export const LeftWhileTheStartWasInFlight: Story = {
     lease: { ...leaseScenario(leaseState({ now: 5000 })), hold: true },
   }),
   play: async ({ canvasElement, args }) => {
-    const card = await drawn(canvasElement);
-    const toggle = await monitorSwitch(card);
+    await drawn(canvasElement);
+    const toggle = await monitorSwitch();
     await userEvent.click(toggle);
     const lease = args.scenario.lease as LeaseScenario;
     await waitFor(() => expect(actions(lease)).toEqual(['start']));

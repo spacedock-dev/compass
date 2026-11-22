@@ -132,11 +132,11 @@ export async function cancelSummary(shell: Shell, identity: SessionIdentity): Pr
    stood beside. */
 export async function setSummaries(
   shell: Shell,
-  identity: SessionIdentity,
+  identity: SessionIdentity | null,
   on: boolean,
 ): Promise<void> {
   if (shell.runtime.store.getSnapshot().data?.reading?.off === true) return;
-  const key = compatSessKey(identity);
+  const key = identity ? compatSessKey(identity) : 'settings';
   const held = summaryHeldFor(shell.runtime);
   const control = `summary-grant:${key}`;
   const token = shell.runtime.pending.start(

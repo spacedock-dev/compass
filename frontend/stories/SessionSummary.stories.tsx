@@ -1197,7 +1197,7 @@ export const ModelCallsPaused: Story = {
     await userEvent.click(toggle);
     await poll();
     await expect(script.posts).toHaveLength(0);
-    const resume = within(canvasElement).getByRole('button', { name: 'Resume model calls' });
+    const resume = within(canvasElement).getByRole('button', { name: 'Resume AI use' });
     await userEvent.click(resume);
     await waitFor(() => expect(script.masterPosts).toHaveLength(1));
     await waitFor(() => expect(script.paused).toBe(false));
@@ -1224,9 +1224,7 @@ export const ResumeKeepsSummariesOff: Story = {
     await expect(toggle).toHaveAttribute('aria-disabled', 'true');
     await userEvent.click(toggle);
     await expect(script.posts).toHaveLength(0);
-    await userEvent.click(
-      within(canvasElement).getByRole('button', { name: 'Resume model calls' }),
-    );
+    await userEvent.click(within(canvasElement).getByRole('button', { name: 'Resume AI use' }));
     await waitFor(() => expect(toggle).not.toHaveAttribute('aria-disabled', 'true'));
     await expect(within(region).getByText(SUMMARY_OFF)).toBeVisible();
     await expect(script.grant?.['off']).toBe(true);
@@ -1245,7 +1243,7 @@ export const PauseStopsARunningSummary: Story = {
     await userEvent.click(
       await waitFor(() => {
         const found = within(document.body)
-          .getAllByRole('button', { name: 'Pause model calls' })
+          .getAllByRole('button', { name: 'Pause all AI use' })
           .find((node) => node.closest('[data-slot="accordion-content"]'));
         expect(found).toBeDefined();
         return found as HTMLElement;

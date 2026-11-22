@@ -71,9 +71,31 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
   if (activityAccordion) {
     const recordedHeading = document.createElement('h2');
     recordedHeading.textContent = 'Session activity';
-    activityAccordion.querySelector(':scope > summary')?.remove();
-    activityAccordion.querySelector('[data-slot="tabs-list"]')?.remove();
-    technical?.replaceChildren(recordedHeading, ...activityAccordion.childNodes);
+    const tabs = [...activityAccordion.querySelectorAll('[role="tab"]')];
+    const panels = [...activityAccordion.querySelectorAll('[role="tabpanel"]')];
+    const panel = (name: string) =>
+      panels.find(
+        (item) => item.id === tabs.find((tab) => norm(tab) === name)?.getAttribute('aria-controls'),
+      );
+    const log = panel('Activity log');
+    const reports = panel('Reports');
+    if (log && reports) {
+      // 2026-11-23: compare the two tabs in the recording's order. The story proves where they appear today.
+      const kept = log.querySelector('.next-cockpit-departures-kept');
+      for (const selector of [
+        '[data-next-command-reports]',
+        '.next-session-delivery',
+        '.next-cockpit-landed',
+      ]) {
+        const block = reports.querySelector(selector);
+        if (block) log.insertBefore(block, kept);
+      }
+      technical?.replaceChildren(recordedHeading, ...log.childNodes);
+    } else {
+      activityAccordion.querySelector(':scope > summary')?.remove();
+      activityAccordion.querySelector('[data-slot="tabs-list"]')?.remove();
+      technical?.replaceChildren(recordedHeading, ...activityAccordion.childNodes);
+    }
   }
   const header = copy.querySelector('.next-session-detail-header');
   if (header) copy.prepend(header);

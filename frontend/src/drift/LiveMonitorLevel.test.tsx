@@ -1,3 +1,5 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
+import { screen, within } from '@testing-library/react';
 import { act } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { liveMonitorFor } from '../intent/liveMonitor';
@@ -115,16 +117,22 @@ const detail = () =>
 const card = () => document.querySelector('[data-next-drift-level]')?.textContent ?? '';
 
 describe('the level the monitor draws', () => {
-  it('labels the pill with the monitor, and not the estimate or an analysis', async () => {
+  it('labels the monitor only in technical details', async () => {
     const first = await open({
       work: {
         live_levels: [ESTIMATE('none_or_low')],
         live_monitor: monitorLease({ level: MONITOR('high'), now: LATER }),
       },
     });
-    expect(document.querySelector('[data-next-drift-pill]')?.textContent).toContain(
+    expect(document.querySelector('[data-next-drift-pill]')?.textContent).not.toContain(
       'Live monitor · Haiku',
     );
+    await openSessionTechnicalTab('AI use and privacy');
+    expect(
+      within(screen.getByRole('tabpanel', { name: 'AI use and privacy' })).getByText(
+        'Live monitor · Haiku',
+      ),
+    ).toBeVisible();
     first.unmount();
     await open({
       work: {
@@ -137,7 +145,7 @@ describe('the level the monitor draws', () => {
     );
   });
 
-  it('shows the monitor’s level in the pill and the card, labelled Live monitor · Haiku', async () => {
+  it('shows the monitor’s level in the pill and the card', async () => {
     await open({
       work: {
         live_levels: [ESTIMATE('none_or_low')],
@@ -145,7 +153,7 @@ describe('the level the monitor draws', () => {
       },
     });
     expect(pill()).toBe('High');
-    expect(source()).toMatch(/^Live monitor · Haiku/);
+    expect(source()).toBe('');
     expect(detail()).toMatch(/Haiku check of the latest turns/);
     expect(detail()).not.toMatch(/Reads checks and file paths/);
     expect(document.querySelector('[data-next-live-reason-line]')?.textContent).toBe(
@@ -265,6 +273,7 @@ describe('the estimate after the monitor ends', () => {
     expect(pill()).toBe('Medium');
     gone = true;
     await page.advance(20_000);
+    await openSessionTechnicalTab('AI use and privacy');
     expect(
       document
         .querySelector('[data-next-cockpit-action="live-monitor"]')

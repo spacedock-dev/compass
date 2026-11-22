@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, within, waitFor } from 'storybook/test';
 import { HISTORY_ITEM, LONG_HISTORY } from '../test/longHistory';
@@ -20,7 +21,8 @@ export const ExplicitInspectionAndConfirmedRemoval: Story = {
   args: { scenario: { longHistory: exact, reading } },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const opener = await canvas.findByRole('button', { name: 'Unfinished long analysis records' });
+    await openSessionTechnicalTab('Check settings', canvasElement);
+    const opener = await canvas.findByRole('button', { name: /^Unfinished long checks/ });
     await expect(exact.gets).toBe(0);
     await expect(exact.posts).toHaveLength(0);
     await userEvent.click(opener);
@@ -80,9 +82,8 @@ export const MinimumAndUnknownAreRetained: Story = {
   args: { scenario: { longHistory: uncertain, reading, unsaved: true } },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(
-      await canvas.findByRole('button', { name: 'Unfinished long analysis records' }),
-    );
+    await openSessionTechnicalTab('Check settings', canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: /^Unfinished long checks/ }));
     await waitFor(() =>
       expect(canvas.getByText(/Minimum recorded accounting: at least 4 calls/)).toBeVisible(),
     );
@@ -105,9 +106,8 @@ export const ServerRefusalKeepsTheRecord: Story = {
   args: { scenario: { longHistory: refused, reading } },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(
-      await canvas.findByRole('button', { name: 'Unfinished long analysis records' }),
-    );
+    await openSessionTechnicalTab('Check settings', canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: /^Unfinished long checks/ }));
     await userEvent.click(
       await canvas.findByRole('button', { name: 'Check and discard superseded record' }),
     );

@@ -1,5 +1,6 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { expect, userEvent, waitFor } from 'storybook/test';
 import { LONG_PLAN } from '../test/longPlan';
 import { DriftScenario, readingScenario } from './drift.scenario';
 
@@ -13,21 +14,25 @@ const reading = readingScenario([]);
 export const ExplicitPreviewThenOneStart: Story = {
   args: { scenario: { longPlan: preview, reading } },
   play: async ({ canvasElement }) => {
-    const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
-    const options = await within(root).findByRole('button', { name: 'Long analysis options' });
+    const checks = await openSessionTechnicalTab('Check settings', canvasElement);
+    const options = await checks.findByRole('button', {
+      name: 'Long check for very long sessions',
+    });
     await expect(preview.gets).toBe(0);
     await expect(reading.posts).toHaveLength(0);
     options.focus();
     await userEvent.keyboard('{Enter}');
-    const start = await within(root).findByRole('button', { name: 'Start long analysis' });
+    const start = await checks.findByRole('button', { name: 'Start long analysis' });
     await expect(preview.gets).toBe(1);
     await expect(reading.posts).toHaveLength(0);
-    await expect(root).toHaveTextContent('not process RSS');
-    await expect(root).toHaveTextContent('Source and analysis preparation: 60 seconds maximum.');
-    await expect(root).toHaveTextContent('model waits are excluded');
-    await expect(root).toHaveTextContent('not a guarantee');
-    await expect(root).toHaveTextContent('17 model calls total');
-    await expect(root).toHaveTextContent('GitHub checks: enabled');
+    await expect(canvasElement).toHaveTextContent('not process RSS');
+    await expect(canvasElement).toHaveTextContent(
+      'Source and analysis preparation: 60 seconds maximum.',
+    );
+    await expect(canvasElement).toHaveTextContent('model waits are excluded');
+    await expect(canvasElement).toHaveTextContent('not a guarantee');
+    await expect(canvasElement).toHaveTextContent('17 model calls total');
+    await expect(canvasElement).toHaveTextContent('GitHub checks: enabled');
     start.focus();
     await userEvent.keyboard('{Enter}');
     await expect(reading.posts).toHaveLength(1);
@@ -73,16 +78,17 @@ export const DraftedGoalSavesThenRequiresFreshPreview: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const root = await canvas.findByRole('region', { name: 'Drift' });
+    const checks = await openSessionTechnicalTab('Check settings', canvasElement);
     await userEvent.click(
-      await within(root).findByRole('button', { name: 'Long analysis options' }),
+      await checks.findByRole('button', { name: 'Long check for very long sessions' }),
     );
-    await userEvent.click(await within(root).findByRole('button', { name: 'Start long analysis' }));
+    await userEvent.click(await checks.findByRole('button', { name: 'Start long analysis' }));
     await waitFor(() =>
-      expect(root).toHaveTextContent('Your goal was saved. Refresh the long preview'),
+      expect(checks.getByText(/Your goal was saved. Refresh the long preview/)).toBeVisible(),
     );
-    await expect(root).toHaveTextContent('reading window');
+    await expect(
+      checks.getByText(/Your goal was saved. Refresh the long preview/),
+    ).toHaveTextContent('reading window');
     await expect(adoptionReading.posts).toHaveLength(0);
     await expect(adoption.posts).toHaveLength(1);
     await expect(adoption.posts[0]).toMatchObject({
@@ -95,12 +101,10 @@ export const DraftedGoalSavesThenRequiresFreshPreview: Story = {
     await expect(
       canvasElement.querySelector('textarea[data-next-cockpit-held-kind="goal"]'),
     ).toHaveValue('Ship the queue');
-    await userEvent.click(
-      await within(root).findByRole('button', { name: 'Refresh long preview' }),
-    );
-    await waitFor(() => expect(root).toHaveTextContent('Saved intent revision: 4'));
+    await userEvent.click(await checks.findByRole('button', { name: 'Refresh long preview' }));
+    await waitFor(() => expect(canvasElement).toHaveTextContent('Saved intent revision: 4'));
     await expect(adoptionReading.posts).toHaveLength(0);
-    await userEvent.click(await within(root).findByRole('button', { name: 'Start long analysis' }));
+    await userEvent.click(await checks.findByRole('button', { name: 'Start long analysis' }));
     await waitFor(() => expect(adoptionReading.posts).toHaveLength(1));
     await expect(adoptionReading.posts[0]).toMatchObject({
       mode: 'long',
@@ -113,15 +117,15 @@ export const DraftedGoalSavesThenRequiresFreshPreview: Story = {
 export const UnavailablePreviewDoesNotStart: Story = {
   args: { scenario: { longPlan: unavailable, reading: idle } },
   play: async ({ canvasElement }) => {
-    const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const checks = await openSessionTechnicalTab('Check settings', canvasElement);
     await userEvent.click(
-      await within(root).findByRole('button', { name: 'Long analysis options' }),
+      await checks.findByRole('button', { name: 'Long check for very long sessions' }),
     );
-    const start = await within(root).findByRole('button', { name: 'Start long analysis' });
+    const start = await checks.findByRole('button', { name: 'Start long analysis' });
     await expect(start).toHaveAttribute('aria-disabled', 'true');
     await userEvent.click(start);
     await expect(idle.posts).toHaveLength(0);
-    const refresh = await within(root).findByRole('button', { name: 'Refresh long preview' });
+    const refresh = await checks.findByRole('button', { name: 'Refresh long preview' });
     refresh.focus();
     await expect(refresh).toHaveFocus();
     await userEvent.keyboard('{Enter}');

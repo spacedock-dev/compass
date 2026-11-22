@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { EXCERPTED_DRIFT, PROMPT_LIMITED_DRIFT } from './driftCoverage.scenario';
@@ -165,11 +166,9 @@ export const PausedResultStillOffersResume: Story = {
   play: async ({ canvasElement }) => {
     const root = await card(canvasElement);
     await foot(root);
-    const resume = await within(root).findByRole('button', { name: 'Resume model calls' });
+    const resume = await within(root).findByRole('button', { name: 'Resume AI use' });
     await expect(resume).toBeVisible();
-    await expect(within(root).getAllByRole('button', { name: 'Resume model calls' })).toHaveLength(
-      1,
-    );
+    await expect(within(root).getAllByRole('button', { name: 'Resume AI use' })).toHaveLength(1);
     await expect(within(root).getByRole('button', { name: 'Analyze again' })).toHaveAttribute(
       'aria-disabled',
       'true',
@@ -310,8 +309,7 @@ export const MarkedInaccurateWithTheLiveMonitorOn: Story = {
   }),
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
-    const head = drift.querySelector('header') as HTMLElement;
-    await userEvent.click(within(head).getByRole('button', { name: 'Drift settings' }));
+    await openSessionTechnicalTab('AI use and privacy');
     const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
     await userEvent.click(monitor);
     await waitFor(() => expect(monitor).toHaveAttribute('aria-checked', 'true'));

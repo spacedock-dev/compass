@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { act, fireEvent, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BOARD, mountShell } from '../shell/testing';
@@ -26,6 +27,7 @@ describe('the sample session and the Live monitor', () => {
     const page = mountShell({ hash: SAMPLE_FRAGMENT, data: BOARD });
     await page.settle();
     await waitFor(() => expect(document.querySelector('[data-next-entry-id]')).not.toBeNull());
+    await openSessionTechnicalTab('AI use and privacy');
     const toggle = document.querySelector(
       '[data-next-cockpit-action="live-monitor"]',
     ) as HTMLButtonElement;

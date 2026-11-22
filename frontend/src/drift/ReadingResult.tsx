@@ -4,6 +4,7 @@ import { SampleBeside } from '../sample/SampleMark';
 import { Button } from '../ui/button';
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { nextNumber } from '../api/bootstrap';
+import { READING_NOT_A_VERIFICATION } from '../intent/logModel';
 import { contextKey } from '../api/identity';
 import { useDisplayed } from '../shell/context';
 import { useFocusKey } from '../controls';
@@ -63,6 +64,8 @@ import {
   RESULT_CANT_TELL,
   RESULT_DEPARTS,
   RESULT_MARK_UNSAVED,
+  RESULT_MARKED,
+  RESULT_UNMARK,
   RESULT_NOT_ACCURATE,
   RESULT_NOT_ACCURATE_HINT,
   RESULT_NOTHING_FOUND,
@@ -107,10 +110,12 @@ function jumpName(key: string): string {
 function CitedEntries({
   row,
   findingKey = row.key,
+  technical = false,
 }: {
   readonly row: Criterion;
   /** What a press names: the row's own key, or an earlier departure's (`PRIOR_FINDING`). */
   readonly findingKey?: string;
+  readonly technical?: boolean;
 }) {
   const { model, chooseFinding, jumpMissing } = useDrift();
   const record = useDisplayed((snapshot) =>
@@ -130,15 +135,29 @@ function CitedEntries({
   const link = (entry: WorkEntry) => {
     const id = String(entry.id || '');
     const where = resultWhere(entry, model.numbers) || 'Entry';
-    return (
+    const attrs = {
+      'data-next-cockpit-action': 'finding-jump',
+      'data-next-finding': findingKey,
+      'data-next-cite': id,
+      'aria-label': `Show ${where} in Activity log for ${named}`,
+    };
+    return technical ? (
+      <Button
+        key={id}
+        type="button"
+        variant="bare"
+        className="ml-1.5 text-cite underline"
+        {...attrs}
+        onClick={(event) => chooseFinding(findingKey, event.currentTarget, id)}
+      >
+        {where}
+      </Button>
+    ) : (
       <CitationLink
         key={id}
         id={id}
         className="ml-1.5"
-        data-next-cockpit-action="finding-jump"
-        data-next-finding={findingKey}
-        data-next-cite={id}
-        aria-label={`Show ${where} in Activity log for ${named}`}
+        {...attrs}
         onJump={(origin) => chooseFinding(findingKey, origin, id)}
       >
         {where}
@@ -186,7 +205,9 @@ function CitedEntries({
   return (
     <>
       {chips ? (
-        <SampleBeside id={row.key === 'goal' ? 'departure' : ''}>{chips}</SampleBeside>
+        <SampleBeside id={!technical && row.key === 'goal' ? 'departure' : ''}>
+          {chips}
+        </SampleBeside>
       ) : null}
       {load}
       {older ? (
@@ -491,7 +512,7 @@ function ResultAnswer({
 /* Where the work went, one click away under What the analysis read: the design's Drift card has no such block
    between the answer and its footer, and a list of folders with citations was what pushed Mark as inaccurate
    and Steer back down the card. Moved, never dropped. */
-function WorkSection() {
+function WorkSection({ technical = false }: { readonly technical?: boolean }) {
   const { model } = useDrift();
   const { shape } = model;
   if (!shape) return null;
@@ -506,15 +527,16 @@ function WorkSection() {
               {group.folder || 'The working directory'}
             </span>
             <span>{`${String(group.files)} file${group.files === 1 ? '' : 's'}`}</span>
-            <span>
-              <CitedText text={group.references} />
-            </span>
+            <span>{technical ? group.references : <CitedText text={group.references} />}</span>
           </li>
         ))}
       </ul>
       {/* Behind its count, so the list's own rows are what stands in view. */}
       {work.more ? (
-        <Why name="result-work-more" summary={`${String(work.more)} more`}>
+        <Why
+          name={technical ? 'technical-result-work-more' : 'result-work-more'}
+          summary={`${String(work.more)} more`}
+        >
           <p className="next-cockpit-reading-why">
             {`${String(work.more)} more written ${work.more === 1 ? 'file is' : 'files are'} counted and not listed.`}
           </p>
@@ -534,7 +556,7 @@ function WorkSection() {
    pressed it: the level and Steer back leave the column above, and the page would otherwise jump. */
 const HOLD_MS = 10_000;
 
-function ResultFoot() {
+function ResultFoot({ technical = false }: { readonly technical?: boolean }) {
   const { ctx, model } = useDrift();
   const readAt = nextNumber(model.raw?.['read_at']);
   const marked = model.annotation?.['not_accurate'] === true;
@@ -556,22 +578,23 @@ function ResultFoot() {
     driftAnswer(model.shape, model.entries, model.source.scan).kind === 'goal-unclear';
   if (readAt === null || !model.annotate || (refused && !marked)) return null;
   const unsaved = ctx.drift.notAccurate.has(model.key);
-  const hintId = `not-accurate-why:${model.key}`;
+  const hintId = `${technical ? 'technical-' : ''}not-accurate-why:${model.key}`;
+  const focusKey = `${technical ? 'technical-' : ''}not-accurate:${model.key}`;
   const control = (
     <ActionButton
       weight="quiet"
-      label={RESULT_NOT_ACCURATE}
+      label={marked ? RESULT_UNMARK : technical ? 'This reading looks wrong' : RESULT_NOT_ACCURATE}
       busyLabel="Saving…"
       pendingKey={`not-accurate:${model.key}`}
       action="not-accurate"
       arg={String(readAt)}
-      focusKey={`not-accurate:${model.key}`}
+      focusKey={focusKey}
       describes={hintId}
       onPress={() => {
         if (!model.identity) return;
         const top = foot.current?.getBoundingClientRect().top;
         held.current = top === undefined ? null : { top, from: marked, at: Date.now() };
-        void markNotAccurate(ctx, model.identity, readAt, marked);
+        void markNotAccurate(ctx, model.identity, readAt, marked, focusKey);
       }}
     />
   );
@@ -583,15 +606,15 @@ function ResultFoot() {
       className="next-cockpit-result-foot"
       data-next-result-mark={marked ? 'marked' : 'unmarked'}
     >
-      {marked ? null : (
+      {marked && !technical ? null : (
         <>
           {control}
           <span id={hintId} className="next-visually-hidden">
-            {RESULT_NOT_ACCURATE_HINT}
+            {marked ? RESULT_MARKED : RESULT_NOT_ACCURATE_HINT}
           </span>
         </>
       )}
-      {unsaved && !marked ? (
+      {unsaved && (!marked || technical) ? (
         <p className="next-cockpit-reading-why" role="status">
           {RESULT_MARK_UNSAVED}
         </p>
@@ -657,10 +680,12 @@ function Baseline({
   shape,
   raw,
   arrived,
+  technical = false,
 }: {
   readonly shape: Shape;
   readonly raw: Readonly<Record<string, unknown>>;
   readonly arrived: string;
+  readonly technical?: boolean;
 }) {
   const { model } = useDrift();
   /* The Goal is the only clause this cut note is drawn on, so the goal's own cap. */
@@ -705,7 +730,10 @@ function Baseline({
     arrived,
   ].filter(Boolean);
   return (
-    <Why name="reading-baseline" summary={READ_SUMMARY}>
+    <Why
+      name={technical ? 'reading-baseline-technical' : 'reading-baseline'}
+      summary={technical ? 'What the check read' : READ_SUMMARY}
+    >
       <div className="flex flex-col gap-[12px]" data-next-read>
         {/* The model alone: the stamp's "read at HH:MM" is the card header's "Analysis last run", said once. */}
         {stampModel(shape.stamp) ? (
@@ -746,19 +774,108 @@ function Baseline({
           <ReadSection name="session" title={READ_SESSION}>
             <ul className={READ_LIST}>
               {session.map((line) => (
-                <li key={line}>
-                  <CitedText text={line} />
-                </li>
+                <li key={line}>{technical ? line : <CitedText text={line} />}</li>
               ))}
             </ul>
           </ReadSection>
         ) : null}
-        <WorkSection />
+        <WorkSection technical={technical} />
         <ReadSection name="not-read" title={READ_NOT_READ}>
           <p className="next-cockpit-reading-why">{READ_NEVER}</p>
         </ReadSection>
       </div>
     </Why>
+  );
+}
+
+export function TechnicalReadingEvidence() {
+  const { model } = useDrift();
+  const { shape, raw, annotation, entries, source } = model;
+  if (!shape || shape.malformed || !raw || !annotation) {
+    return (
+      <p className="m-0 pt-3 text-body text-muted-foreground">
+        {raw || annotation?.['reading_refused'] === true
+          ? 'This build could not read the stored check.'
+          : 'No stored check yet.'}
+      </p>
+    );
+  }
+  const answer = driftAnswer(shape, entries, source.scan);
+  const refused = answer.kind === 'goal-unclear';
+  const rows = refused
+    ? []
+    : shape.criteria.filter(
+        (row) => row.key !== CLAIMS && (row.citedIds.length > 0 || row.unloaded > 0),
+      );
+  const claims = refused ? [] : claimsDrawn(shape);
+  const coverage = coverageLimits(shape);
+  const time = nextNumber(raw['read_at']);
+  const modelName = stampModel(shape.stamp);
+  const cited = new Set([...rows, ...claims].flatMap((row) => row.citedIds)).size;
+  const level = annotation['not_accurate'] === true ? '' : (model.analysis?.label ?? '');
+  return (
+    <div className="flex max-w-[var(--measure)] flex-col gap-3 pt-3" data-next-technical-evidence>
+      <div>
+        <h2 className="m-0 text-value font-semibold">
+          {level ? `Evidence for “${level}”` : 'Evidence'}
+        </h2>
+        {modelName || time || cited ? (
+          <p className="m-0 text-label text-muted-foreground">
+            {[
+              [modelName && `Reading by ${modelName}`, time && `at ${clock(time)}`]
+                .filter(Boolean)
+                .join(' '),
+              cited ? `${cited} ${cited === 1 ? 'entry' : 'entries'} cited` : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </p>
+        ) : null}
+      </div>
+      {coverage ? <p className={QUIET}>{coverage}</p> : null}
+      {rows.length ? (
+        <section className="flex flex-col gap-2">
+          <h3 className="m-0 text-body font-semibold">What the record says</h3>
+          {rows.map((row) => (
+            <div key={row.key} className="flex flex-col gap-1">
+              <CitedEntries row={row} technical />
+              {row.result === DEPARTURE ? (
+                <>
+                  <h4 className="m-0 text-body font-semibold">Why Compass reads this as drift</h4>
+                  <p className="m-0 text-body">{row.detail || NO_DETAIL}</p>
+                </>
+              ) : null}
+              {row.coverage ? <p className={QUIET}>{row.coverage}</p> : null}
+              <Qualifiers row={row} />
+            </div>
+          ))}
+        </section>
+      ) : (
+        <p className={QUIET}>
+          {refused
+            ? GOAL_UNCLEAR_VERDICT
+            : 'The stored check has no cited entries for the goal or its outcomes.'}
+        </p>
+      )}
+      {claims.length ? (
+        <section className="flex flex-col gap-2">
+          {claims.map((row) => (
+            <div key={row.key} className="flex flex-col gap-1">
+              <h3 className="m-0 text-body font-semibold">
+                {resultStatus(row, model.numbers, model.byId)}
+              </h3>
+              {row.clause ? <p className="m-0 text-body">{`“${row.clause}”`}</p> : null}
+              {row.detail ? <p className="m-0 text-body">{row.detail}</p> : null}
+              <CitedEntries row={row} technical />
+              <Qualifiers row={row} />
+            </div>
+          ))}
+        </section>
+      ) : null}
+      <ResultFoot technical />
+      <Baseline shape={shape} raw={raw} arrived={arrivedLine(annotation, entries)} technical />
+      <p className={QUIET}>{READING_NOT_A_VERIFICATION}</p>
+    </div>
   );
 }
 

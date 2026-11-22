@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { act, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { EXCERPTED_DRIFT, PROMPT_LIMITED_DRIFT } from '../../stories/driftCoverage.scenario';
@@ -69,6 +70,7 @@ describe('a stored reading', () => {
     await page.settle();
     const result = document.querySelector('[data-next-result]') as HTMLElement;
     expect(result).not.toBeNull();
+    await openSessionTechnicalTab('Check settings');
     expect(textOf('[data-next-reading-allowance]')).toContain(
       'Next Analyze prompt: Allowance unknown.',
     );
@@ -100,7 +102,7 @@ describe('a stored reading', () => {
     ).toBe(true);
     expect(textOf('[data-next-result]')).toContain('1 drift check requested');
     // Under the cap the budget is not mentioned anywhere.
-    expect(document.body.textContent).not.toMatch(/left today/);
+    expect(result.textContent).not.toMatch(/left today/);
     expect(document.querySelector('[data-next-reading-cap]')).toBeNull();
   });
 
@@ -242,10 +244,10 @@ describe('a current result while model calls are paused', () => {
     await page.settle();
     expect(document.querySelector('[data-next-result]')).not.toBeNull();
     /* By role, so a hidden popover node cannot stand in for the visible control. */
-    const resume = screen.getByRole('button', { name: 'Resume model calls' });
+    const resume = screen.getByRole('button', { name: 'Resume AI use' });
     expect(resume.closest('[hidden]')).toBeNull();
     expect(resume.closest('[data-closed]')).toBeNull();
-    expect(screen.queryAllByRole('button', { name: 'Resume model calls' })).toHaveLength(1);
+    expect(screen.queryAllByRole('button', { name: 'Resume AI use' })).toHaveLength(1);
     expect(byAction('reading-ask')?.getAttribute('aria-disabled')).toBe('true');
     expect(document.querySelectorAll('[data-next-cockpit-action="reading-ask"]')).toHaveLength(1);
   });

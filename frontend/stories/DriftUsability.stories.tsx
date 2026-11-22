@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { LIVE_HINT, LIVE_MONITOR_DETAILS } from '../src/drift/sentences';
@@ -109,7 +110,7 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
       drift.querySelector('[data-next-drift-level] .next-session-drift-range'),
     ).toBeNull();
     // The switch announces the cadence and model route in Drift settings.
-    await userEvent.click(within(headOf(drift)).getByRole('button', { name: 'Drift settings' }));
+    await openSessionTechnicalTab('AI use and privacy');
     await expect(
       await within(document.body).findByRole('switch', { name: 'Live monitor' }),
     ).toHaveAccessibleDescription(`${LIVE_HINT} ${LIVE_MONITOR_DETAILS}`);
@@ -212,14 +213,8 @@ export const PauseInTheHeadAndTheDisclosureCloses: Story = {
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
     const head = drift.querySelector('header') as HTMLElement;
-    const settings = within(head).getByRole('button', { name: 'Drift settings' });
-    await userEvent.click(settings);
-    await waitFor(() =>
-      expect(
-        within(document.body).getByRole('button', { name: 'Pause model calls' }),
-      ).toBeVisible(),
-    );
-    await userEvent.click(settings);
+    const privacy = await openSessionTechnicalTab('AI use and privacy');
+    await expect(privacy.getByRole('switch', { name: 'Pause all AI use' })).toBeVisible();
     await expect(drift).toHaveTextContent('2 drift checks requested');
     await expect(drift.textContent).not.toContain('model requests');
     const summary = within(drift).getByRole('button', { name: /^What is sent/ });
@@ -228,7 +223,7 @@ export const PauseInTheHeadAndTheDisclosureCloses: Story = {
       summary.getAttribute('aria-controls') ?? '',
     ) as HTMLElement;
     const inside = await waitFor(() => {
-      const found = within(sent).getByRole('button', { name: 'Pause model calls' });
+      const found = within(sent).getByRole('button', { name: 'Pause all AI use' });
       expect(found).toBeVisible();
       return found;
     });
@@ -236,16 +231,14 @@ export const PauseInTheHeadAndTheDisclosureCloses: Story = {
     await waitFor(() =>
       expect(
         within(document.body)
-          .queryAllByRole('button', { name: /model calls/ })
+          .queryAllByRole('button', { name: /AI use/ })
           .filter((node) => node.closest('[data-slot="accordion-content"]'))
           .filter((node) => node.checkVisibility()),
       ).toEqual([]),
     );
-    const resume = await within(head).findByRole('button', { name: 'Resume model calls' });
+    const resume = await within(head).findByRole('button', { name: 'Resume AI use' });
     await expect(resume).toBeVisible();
-    await expect(within(drift).getAllByRole('button', { name: 'Resume model calls' })).toEqual([
-      resume,
-    ]);
+    await expect(within(drift).getAllByRole('button', { name: 'Resume AI use' })).toEqual([resume]);
   },
 };
 

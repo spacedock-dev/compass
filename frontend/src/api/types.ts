@@ -76,6 +76,7 @@ export interface PayloadData {
     readonly off?: boolean;
     readonly reason?: string;
   };
+  readonly summaries?: unknown;
   readonly reading_jobs?: unknown;
   readonly reading_routes?: unknown;
 }

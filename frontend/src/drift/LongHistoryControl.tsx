@@ -129,7 +129,11 @@ export function LongHistoryControl() {
     <section data-next-long-history>
       <Disclosure
         disclosureKey={`long-history:${model.key}`}
-        summary="Unfinished long analysis records"
+        summary={
+          history && !history.incomplete
+            ? `Unfinished long checks (${history.items.length})`
+            : 'Unfinished long checks'
+        }
         focusKey={`long-history:${model.key}`}
         onOpenPress={() => {
           if (!history) void perform();

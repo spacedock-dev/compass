@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { AiUseSettings } from './AiUseSettings';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { ApiClient } from '../api/client';
 import type { ApiResult, SettingsBody } from '../api/types';
 import { allowanceText } from '../api/promptCapacity';
@@ -196,7 +197,13 @@ function SettingField({
   );
 }
 
-export function SettingsScreen({ client }: { readonly client: SettingsClient }) {
+export function SettingsScreen({
+  client,
+  aiUse,
+}: {
+  readonly client: SettingsClient;
+  readonly aiUse?: ReactNode;
+}) {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<Pending>(null);
@@ -321,6 +328,7 @@ export function SettingsScreen({ client }: { readonly client: SettingsClient }) 
   return (
     <section className="next-view" data-next-view-body="settings" data-next-settings-state="ready">
       <h1>Settings</h1>
+      {aiUse}
       {load.body.update_check ? (
         <section
           className="mt-4 flex max-w-[var(--measure)] flex-col gap-2"
@@ -430,5 +438,5 @@ export function SettingsScreen({ client }: { readonly client: SettingsClient }) 
 
 export function SettingsView() {
   const { runtime } = useShell();
-  return <SettingsScreen client={runtime.client} />;
+  return <SettingsScreen client={runtime.client} aiUse={<AiUseSettings />} />;
 }

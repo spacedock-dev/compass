@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, waitFor, within, userEvent } from 'storybook/test';
 import { useEffect, useState } from 'react';
@@ -202,9 +203,7 @@ export const ProjectShowsTheServersTaskCut: Story = {
 export const SharedDeliveryWordsKeepTheirOutcomes: Story = {
   args: { view: 'delivery' },
   play: async ({ canvasElement }) => {
-    await userEvent.click(
-      await within(canvasElement).findByRole('button', { name: /^(Show|Hide) technical details$/ }),
-    );
+    await openSessionTechnicalTab('Reports', canvasElement);
     await waitFor(() =>
       expect(canvasElement.querySelector('.next-session-delivery-why')).toBeVisible(),
     );
@@ -241,9 +240,7 @@ export const SkippedXmlStillDisclosesTheCut: Story = {
 export const MissingOptionalExplanationShowsNoToken: Story = {
   args: { view: 'delivery', missingExplanation: true },
   play: async ({ canvasElement }) => {
-    await userEvent.click(
-      await within(canvasElement).findByRole('button', { name: /^(Show|Hide) technical details$/ }),
-    );
+    await openSessionTechnicalTab('Reports', canvasElement);
     await waitFor(() => expect(canvasElement.textContent).toContain('Handed to this machine'));
     // Delivery outcome and count carry the fact. Identity binding is optional supporting detail.
     await expect(canvasElement.querySelector('.next-session-delivery-why')).toHaveTextContent(

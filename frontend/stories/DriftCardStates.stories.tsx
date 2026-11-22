@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { JOB_TITLE, LIVE_HINT, LIVE_MONITOR_DETAILS, RESULT_DEPARTS } from '../src/drift/sentences';
@@ -91,13 +92,11 @@ export const Empty: Story = {
       /^Reads the work so far; the session is still running\.$/,
     );
     // The settings are one press away, in the header.
-    await userEvent.click(within(head(card)).getByRole('button', { name: 'Drift settings' }));
+    await openSessionTechnicalTab('AI use and privacy');
     const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
     await expect(monitor).toHaveAccessibleDescription(`${LIVE_HINT} ${LIVE_MONITOR_DETAILS}`);
     await waitFor(() =>
-      expect(
-        within(document.body).getByRole('button', { name: 'Pause model calls' }),
-      ).toBeVisible(),
+      expect(within(document.body).getByRole('switch', { name: 'Pause all AI use' })).toBeVisible(),
     );
     await expect(card.querySelector('[data-next-drift-body]')?.contains(monitor)).toBe(false);
   },
@@ -378,9 +377,7 @@ export const Paused: Story = {
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
     await readingDrawn(card);
-    await expect(
-      within(head(card)).getByRole('button', { name: 'Resume model calls' }),
-    ).toBeVisible();
+    await expect(within(head(card)).getByRole('button', { name: 'Resume AI use' })).toBeVisible();
     const again = rerun(head(card));
     await expect(again).toHaveLength(1);
     await expect(again[0]).toHaveAttribute('aria-disabled', 'true');
@@ -434,7 +431,7 @@ export const NoticeCollapsesOnceRead: Story = {
     if (!panel || !card.contains(panel)) throw new Error('What is sent did not open in the card');
     await waitFor(() => expect(panel).toHaveTextContent('Words go to: first.example'));
     await waitFor(() =>
-      expect(within(panel).getByRole('button', { name: 'Pause model calls' })).toBeVisible(),
+      expect(within(panel).getByRole('button', { name: 'Pause all AI use' })).toBeVisible(),
     );
     await expect(rerun(card)).toHaveLength(1);
   },

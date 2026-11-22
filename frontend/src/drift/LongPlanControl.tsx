@@ -1,9 +1,9 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { Disclosure, disclosureKey } from '../controls';
+import { useEffect, useRef, useState } from 'react';
 import { readingLongPlan, type LongPlanDescriptor } from '../api/longPlan';
 import { nextNumber } from '../api/bootstrap';
 import { isSampleSession } from '../intent/liveMonitor';
 import { ActionButton } from '../intent/ActionButton';
-import { Button } from '../ui/button';
 import { useDrift } from './context';
 import { askForReading } from './actions';
 import type { Board } from './flip';
@@ -107,7 +107,6 @@ function PlanDetails({ preview }: { readonly preview: LongPlanDescriptor }) {
 /** Fetch only in explicit handlers. Navigation/unmount cancels and ignores late answers. */
 export function LongPlanControl({ board }: { readonly board: Board }) {
   const { ctx, model } = useDrift();
-  const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<LongPlanDescriptor | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -115,7 +114,6 @@ export function LongPlanControl({ board }: { readonly board: Board }) {
   const attempted = useRef(false);
   const active = useRef(true);
   const request = useRef<AbortController | null>(null);
-  const panel = useId();
   const focusKey = `long-start:${model.key}`;
   useEffect(() => {
     active.current = true;
@@ -160,21 +158,22 @@ export function LongPlanControl({ board }: { readonly board: Board }) {
   const blocked =
     used || loading || !preview?.can_start || Boolean(board.reason || model.job || model.unsettled);
   const answer = ctx.intent.held.requests.get(model.key)?.message;
+
   return (
     <section className="flex flex-col gap-2" data-next-long-plan>
-      <Button
-        type="button"
-        aria-expanded={open}
-        aria-controls={panel}
-        onClick={() => {
-          setOpen(!open);
-          if (!open && !preview) void load();
+      <Disclosure
+        disclosureKey={disclosureKey({
+          project: model.project,
+          scope: model.key,
+          name: 'long-plan',
+        })}
+        summary="Long check for very long sessions"
+        searchable={false}
+        onOpenPress={() => {
+          if (!preview) void load();
         }}
       >
-        Long analysis options
-      </Button>
-      {open ? (
-        <div id={panel} className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2">
           {loading ? <p role="status">Reading the long analysis preview…</p> : null}
           {error ? <p role="status">{error}</p> : null}
           {preview ? <PlanDetails preview={preview} /> : null}
@@ -213,7 +212,7 @@ export function LongPlanControl({ board }: { readonly board: Board }) {
             />
           ) : null}
         </div>
-      ) : null}
+      </Disclosure>
     </section>
   );
 }

@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { json, mountIntent, type RecordedRequest } from './testing';
@@ -53,6 +54,7 @@ const actions = (server: ReturnType<typeof leaseServer>) =>
 const busy = () => new Response('', { status: 503, headers: { 'Retry-After': '1' } });
 
 const press = async (page: ReturnType<typeof mountSession>) => {
+  await openSessionTechnicalTab('AI use and privacy');
   await act(async () => {
     fireEvent.click(switchButton());
   });
@@ -60,9 +62,10 @@ const press = async (page: ReturnType<typeof mountSession>) => {
 };
 
 describe('the live monitor switch', () => {
-  it('is off by default, drawn beside the Drift heading, and drawing it sends nothing', async () => {
+  it('is off by default in AI use and privacy, and drawing it sends nothing', async () => {
     const page = mountSession();
     await page.settle();
+    await openSessionTechnicalTab('AI use and privacy');
     expect(switchButton().getAttribute('role')).toBe('switch');
     expect(switchButton().getAttribute('aria-checked')).toBe('false');
     expect(text('#next-session-drift-monitor-label')).toBe('Live monitor');
@@ -72,7 +75,7 @@ describe('the live monitor switch', () => {
   it('shows the cadence and discloses the model and provider before activation', async () => {
     const page = mountSession();
     await page.settle();
-    fireEvent.click(screen.getByRole('button', { name: 'Drift settings' }));
+    await openSessionTechnicalTab('AI use and privacy');
     await page.settle();
     const hint = text('[data-next-live-hint]');
     expect(hint).toBe('Checks progress about once a minute while you watch');
@@ -165,6 +168,7 @@ describe('the live monitor switch', () => {
     await page.go('#n=session:alpha%2Fapp:claude:s2');
     expect(actions(server)).toEqual(['start', 'stop']);
     expect(server.calls[1]).toMatchObject({ sid: 's1' });
+    await openSessionTechnicalTab('AI use and privacy');
     expect(switchButton().getAttribute('aria-checked')).toBe('false');
     await page.advance(60_000);
     expect(actions(server)).toEqual(['start', 'stop']);
@@ -197,6 +201,7 @@ describe('the live monitor switch', () => {
     first.unmount();
     const second = mountSession({ routes: { '/api/live-monitor': server.handler } });
     await second.settle();
+    await openSessionTechnicalTab('AI use and privacy');
     expect(switchButton().getAttribute('aria-checked')).toBe('false');
     expect(second.posts()).toBe(0);
   });
@@ -309,8 +314,9 @@ describe('the switch when there is nothing live to monitor', () => {
       routes: { '/api/live-monitor': server.handler },
     });
     await page.settle();
-    fireEvent.click(screen.getByRole('button', { name: 'Drift settings' }));
+    await openSessionTechnicalTab('AI use and privacy');
     await page.settle();
+    await openSessionTechnicalTab('AI use and privacy');
     expect(switchButton().getAttribute('aria-disabled')).toBe('true');
     expect(switchButton().getAttribute('aria-checked')).toBe('false');
     expect(reason()).toBe('The session has ended');
@@ -352,6 +358,7 @@ describe('the switch when there is nothing live to monitor', () => {
       data: { ...board(), reading: { off: true, reason: 'model-calls-paused' } },
     });
     await paused.settle();
+    await openSessionTechnicalTab('AI use and privacy');
     expect(switchButton().getAttribute('aria-disabled')).toBe('true');
     expect(reason()).toBe('Model calls are paused');
   });
@@ -362,6 +369,7 @@ describe('the switch when there is nothing live to monitor', () => {
       data: { ...board(), reading: { off: false, reason: 'run-disabled' } },
     });
     await off.settle();
+    await openSessionTechnicalTab('AI use and privacy');
     expect(switchButton().getAttribute('aria-disabled')).toBe('true');
     expect(reason()).toBe('Model calls are off for this run');
   });
@@ -420,6 +428,7 @@ describe('a tab that is hidden is never ticked for', () => {
       },
     });
     await page.settle();
+    await openSessionTechnicalTab('AI use and privacy');
     await act(async () => {
       fireEvent.click(switchButton());
     });
@@ -456,6 +465,7 @@ describe('leaving while the start is in flight', () => {
       },
     });
     await page.settle();
+    await openSessionTechnicalTab('AI use and privacy');
     await act(async () => {
       fireEvent.click(switchButton());
     });
