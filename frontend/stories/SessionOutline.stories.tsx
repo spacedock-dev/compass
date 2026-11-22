@@ -71,7 +71,7 @@ export const Outline: Story = {
     await expect(failure).toHaveTextContent(
       'Failed as the tool reported: pytest tests/test_webhook.py',
     );
-    await expect(getComputedStyle(failure).color).toBe('rgb(228, 136, 106)');
+    await expect(getComputedStyle(failure).color).toBe('rgb(154, 52, 18)');
     await expect(within(failure).queryByRole('button')).toBeNull();
     // No entry anchors on a part: not "Starts at #1", not "Entries #3 to #4", and no number the reader has not seen.
     await expect(region.querySelector('[data-next-outline-span]')).toBeNull();

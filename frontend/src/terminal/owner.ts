@@ -108,16 +108,21 @@ export function createTerminalOwner(deps: TerminalOwnerDeps) {
   }
 
   function build(current: Live, Terminal: XtermConstructor): void {
+    const palette = getComputedStyle(deps.document.documentElement);
+    const background = palette.getPropertyValue('--sunk').trim();
     const terminal = new Terminal({
       disableStdin: true,
       cursorBlink: false,
       // The cursor matches the background because stdin is disabled and a blinking block on read-only
-      // output reads as an input affordance. xterm takes colours, not tokens, so these three repeat
-      // --sunk and --ink from the page's tokens.
+      // output reads as an input affordance. xterm needs resolved CSS colours for its canvas.
       scrollback: 500,
       fontSize: 13,
       fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
-      theme: { background: '#0f0f0a', foreground: '#f6f3ea', cursor: '#0f0f0a' },
+      theme: {
+        background,
+        foreground: palette.getPropertyValue('--ink').trim(),
+        cursor: background,
+      },
     });
     current.terminal = terminal;
     current.screen.textContent = '';

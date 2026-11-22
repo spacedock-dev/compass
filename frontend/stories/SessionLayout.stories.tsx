@@ -9,7 +9,7 @@ import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
 import { WHAT_IT_DID_PLACEHOLDER } from '../src/sessions/WhatItDid';
 import { createShell } from '../src/shell/createShell';
-import { RESTING_ICON, WAITING_ICON, WAITING_TITLE_PREFIX } from '../src/shell/favicon';
+import { WAITING_TITLE_PREFIX } from '../src/shell/favicon';
 import { WAITING_ANSWER_WHERE } from '../src/sessions/WaitingBlock';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
@@ -878,7 +878,7 @@ export const HarnessGateSaysWhereToAnswer: Story = {
     await expect(canvas.queryByRole('region', { name: 'Asked you' })).toBeNull();
     await waitFor(() => expect(document.title.startsWith(WAITING_TITLE_PREFIX)).toBe(true));
     const icon = document.head.querySelector('link[data-next-favicon]');
-    await expect(icon?.getAttribute('href')).toBe(WAITING_ICON);
+    await expect(decodeURIComponent(icon?.getAttribute('href') ?? '')).toContain('fill="#92400e"');
   },
 };
 
@@ -920,7 +920,9 @@ export const WorkingSessionCarriesNoWaitingSign: Story = {
     await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
     await waitFor(() => expect(document.title.startsWith(WAITING_TITLE_PREFIX)).toBe(false));
     const icon = document.head.querySelector('link[data-next-favicon]');
-    await expect(icon?.getAttribute('href')).toBe(RESTING_ICON);
+    await expect(decodeURIComponent(icon?.getAttribute('href') ?? '')).toContain(
+      'stroke="#2f7d5b"',
+    );
   },
 };
 

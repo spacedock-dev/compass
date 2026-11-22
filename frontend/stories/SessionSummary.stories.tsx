@@ -147,7 +147,7 @@ export const Ready: Story = {
     await expect(summary).toHaveTextContent('The agent said: Reverting the test edit.');
     // A failed bullet takes the failure colour.
     const failed = summary.querySelector('[data-next-summary-bullet="failed"]') as HTMLElement;
-    await expect(getComputedStyle(failed).color).toBe('rgb(228, 136, 106)');
+    await expect(getComputedStyle(failed).color).toBe('rgb(154, 52, 18)');
     // The outline stays one press away, below the summary.
     await expect(
       within(region).getByRole('button', { name: "Compass's outline of this session" }),
@@ -420,6 +420,7 @@ export const CitationCardShowsTheEntry: Story = {
       '',
     );
     await expect(shown).toHaveTextContent('#2.1');
+    await expect(getComputedStyle(shown).boxShadow).toContain('rgba(31, 41, 51, 0.18)');
     // Seeing the entry did not open Full activity or move focus to it.
     await expect(
       canvasElement
@@ -2127,7 +2128,7 @@ export const WithheldRunCollapses: Story = {
     );
     // Muted, and no result label even on the withheld failed line.
     await expect(first).not.toHaveTextContent(/^Failed/);
-    await expect(getComputedStyle(first).color).not.toBe('rgb(228, 136, 106)');
+    await expect(getComputedStyle(first).color).not.toBe('rgb(154, 52, 18)');
     // Each hidden line's own reason and citations, reachable from the keyboard.
     const why = within(first).getByRole('button', { name: 'Why each was hidden' });
     why.focus();

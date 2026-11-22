@@ -21,9 +21,8 @@ export interface GalleryHandle {
 
 /* Read from `?strict=0` so a browser test can compare StrictMode with a plain mount. */
 export function mountGallery(root: HTMLElement): GalleryHandle {
-  // The shell owns the page ground; the gallery paints the released one so the controls are legible.
   document.body.style.cssText =
-    'margin:0;padding:0 1rem;background:#14140f;color:#f6f3ea;font-family:system-ui,sans-serif;overflow-wrap:anywhere';
+    'margin:0;padding:0 1rem;background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;overflow-wrap:anywhere';
   const hooks: Hooks = { announced: [], copied: [] };
   const region = document.createElement('div');
   region.id = 'gallery-live';

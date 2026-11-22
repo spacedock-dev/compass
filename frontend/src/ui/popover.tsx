@@ -55,7 +55,7 @@ export function PopoverContent({
         <PopoverPrimitive.Popup
           data-slot="popover-content"
           className={cn(
-            'box-border min-w-0 w-[min(var(--measure),calc(100vw-32px))] max-w-full max-h-[var(--available-height)] overflow-y-auto [overflow-wrap:anywhere] rounded-control border border-solid border-[var(--line)] bg-[var(--raise)] px-3 py-[10px] text-body text-foreground text-start shadow-[0_18px_44px_-22px_#000] outline-none opacity-100 transition-opacity duration-[var(--disclose-pop-dur)] ease-[var(--disclose-ease)] data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-none motion-reduce:data-[starting-style]:opacity-100 motion-reduce:data-[ending-style]:opacity-100',
+            'box-border min-w-0 w-[min(var(--measure),calc(100vw-32px))] max-w-full max-h-[var(--available-height)] overflow-y-auto [overflow-wrap:anywhere] rounded-control border border-solid border-[var(--line)] bg-[var(--raise)] px-3 py-[10px] text-body text-foreground text-start shadow-[var(--e-pop)] outline-none opacity-100 transition-opacity duration-[var(--disclose-pop-dur)] ease-[var(--disclose-ease)] data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-none motion-reduce:data-[starting-style]:opacity-100 motion-reduce:data-[ending-style]:opacity-100',
             className,
           )}
           {...props}

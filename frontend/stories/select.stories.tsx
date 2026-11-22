@@ -54,6 +54,9 @@ export const KeyboardAndLongText: Story = {
     await expect(await page.findByRole('option', { name: long })).toHaveAttribute('title', long);
     const list = await page.findByRole('listbox');
     await expect(list).toBeVisible();
+    const popup = list.closest('[data-slot="select-content"]');
+    if (!popup) throw new Error('Expected the listbox inside a select popup');
+    await expect(getComputedStyle(popup).boxShadow).toContain('rgba(31, 41, 51, 0.18)');
     await waitFor(() =>
       expect(list.contains(canvasElement.ownerDocument.activeElement)).toBe(true),
     );

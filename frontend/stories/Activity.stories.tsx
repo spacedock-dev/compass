@@ -57,8 +57,8 @@ export const Marks: Story = {
     );
     await expect(unknown.querySelector('polyline')).toBeNull();
     const style = getComputedStyle(unknown);
-    // The muted absence ink on the dark panel is shared with the record's captions.
-    await expect(style.color).toBe('rgb(205, 199, 180)');
+    // The muted absence ink is shared with the record's captions.
+    await expect(style.color).toBe('rgb(82, 96, 109)');
   },
 };
 

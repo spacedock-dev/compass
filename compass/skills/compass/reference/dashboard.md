@@ -81,7 +81,7 @@ or model input. Goals and drift readings remain each session's own.
 
 ## Dashboard views
 
-The dark-only dashboard opens on **Sessions**, which keeps active work first and recent history
+The light dashboard opens on **Sessions**, which keeps active work first and recent history
 below it. Its two counters show active now and working; exact requests and reported blocks are
 counted in Attention. A Find sessions bar under the counters narrows both lists: a search over
 titles, goals and prompts (`/` jumps to it, and a pasted session id finds its session), eight filters

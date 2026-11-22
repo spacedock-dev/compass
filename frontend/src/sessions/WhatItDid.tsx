@@ -79,7 +79,7 @@ export function EntryChip({
     ...(outside ? { 'data-next-entry-outside': '' } : {}),
     ...(n ? {} : { 'data-next-entry-unnumbered': '' }),
   };
-  const tone = outside ? ' text-muted-foreground opacity-70' : '';
+  const tone = outside ? ' text-muted-foreground' : '';
   const chip = cite ? (
     <CitationLink
       id={id}

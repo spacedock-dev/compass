@@ -21,7 +21,9 @@ export const Keyboard: Story = {
     const trigger = canvas.getByRole('button', { name: 'Why' });
     trigger.focus();
     await userEvent.keyboard('{Enter}');
-    await waitFor(() => expect(body.getByRole('dialog', { name: 'Why' })).toBeVisible());
+    const popup = await body.findByRole('dialog', { name: 'Why' });
+    await waitFor(() => expect(popup).toBeVisible());
+    await expect(getComputedStyle(popup).boxShadow).toContain('rgba(31, 41, 51, 0.18)');
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'false'));
     await waitFor(() => expect(trigger).toHaveFocus());

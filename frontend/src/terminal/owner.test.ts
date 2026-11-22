@@ -219,6 +219,8 @@ describe('opening is an explicit act', () => {
 
   it('configures the renderer read-only: no stdin, no blinking cursor, a labelled input that cannot be edited', async () => {
     const t = setup();
+    t.doc.documentElement.style.setProperty('--sunk', '#eef1f4');
+    t.doc.documentElement.style.setProperty('--ink', '#1f2933');
     await register(t);
     t.owner.open(ALPHA_KEY);
     t.owner.attach(viewportElement(), ALPHA_KEY);
@@ -229,6 +231,7 @@ describe('opening is an explicit act', () => {
       disableStdin: true,
       cursorBlink: false,
       scrollback: 500,
+      theme: { background: '#eef1f4', foreground: '#1f2933', cursor: '#eef1f4' },
     });
     expect(terminal?.options.theme.cursor).toBe(terminal?.options.theme.background);
     expect(terminal?.textarea?.readOnly).toBe(true);

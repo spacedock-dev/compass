@@ -47,7 +47,7 @@ export function TooltipContent({
           data-slot="tooltip-content"
           role="tooltip"
           className={cn(
-            'box-border w-fit max-w-[min(20rem,calc(100vw-32px))] [overflow-wrap:anywhere] rounded-control border border-solid border-[var(--line)] bg-[var(--raise)] px-2.5 py-1.5 text-label text-foreground shadow-[0_18px_44px_-22px_#000] opacity-100 transition-opacity duration-[var(--disclose-pop-dur)] ease-[var(--disclose-ease)] data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-none',
+            'box-border w-fit max-w-[min(20rem,calc(100vw-32px))] [overflow-wrap:anywhere] rounded-control border border-solid border-[var(--line)] bg-[var(--raise)] px-2.5 py-1.5 text-label text-foreground shadow-[var(--e-pop)] opacity-100 transition-opacity duration-[var(--disclose-pop-dur)] ease-[var(--disclose-ease)] data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-none',
             className,
           )}
           {...props}

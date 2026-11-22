@@ -600,8 +600,9 @@ allowlist changes only in a PR that makes a reviewed ownership decision.
 - Keep stylesheet edits inside the file of the surface you are changing (`frontend/src/<area>/<area>.css`; the
   tokens are in `@theme static` in `frontend/src/styles/tailwind.css`; page chrome is in
   `frontend/src/styles/shell.css`), including its media queries.
-  [The stylesheet contract](docs/design-next-ui.md#nui-2-one-stylesheet-owns-the-interface) records the
-  dark-only palette and the type floor, which the React sheets keep. Board sentences use
+  The React sheets use a light palette. The control border clears 3:1 on the white card and the page
+  ground. [The stylesheet contract](docs/design-next-ui.md#nui-2-one-stylesheet-owns-the-interface)
+  records the type floor. Board sentences use
   `--fs-body` (0.9375rem); compact labels and source metadata sit on one tier, `--fs-label`
   (0.8125rem). The scale is rem against a `100%` root, so the board follows the reader's own
   font-size setting; the rem figures are computed against 16px, which is what makes a default
