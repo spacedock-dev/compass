@@ -257,6 +257,10 @@ scope, using KB for first-layer sizes and exact bytes in technical details and
 
 ## Accessibility floor
 
+The [Calm Compass Storybook guide](../frontend/stories/CalmCompass.stories.tsx) uses live
+palette and type tokens and the shared Button and Card. Its labelled sections give the
+remaining examples a place to land as their components ship.
+
 Use the measured text and boundary pairs above. Preserve visible focus, keyboard operation
 and reading order, including at phone widths. Labels, shapes and the visible legend carry
 the meaning independently of color. Keep the 44 px target size when a glyph, a tag or a short
