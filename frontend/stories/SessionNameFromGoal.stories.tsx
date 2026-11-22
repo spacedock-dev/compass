@@ -137,7 +137,10 @@ export const UntitledWaitingSession: Story = {
     const trail = within(canvas.getByRole('navigation', { name: 'Breadcrumb' }));
     await expect(trail.getByText(fallback)).toHaveAttribute('aria-current', 'page');
     await waitFor(() => expect(document.title).toBe(`● Needs you · ${fallback} — demo — Compass`));
-    await expect(canvas.getByText('0 running · 1 subagent observed')).toBeVisible();
-    await expect(canvas.getByRole('button', { name: '1 reported block' })).toBeVisible();
+    await expect(canvas.getByRole('status', { name: 'Working sessions' })).toHaveTextContent(
+      'Nothing working right now',
+    );
+    const nav = within(canvas.getByRole('navigation', { name: 'Primary' }));
+    await expect(nav.getByRole('link', { name: 'Needs you 1' })).toBeVisible();
   },
 };

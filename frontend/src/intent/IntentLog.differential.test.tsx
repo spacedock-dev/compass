@@ -109,7 +109,8 @@ describe('the Intent log reads as the legacy log does, over generated boards', (
       const input = genLogCase(seed);
       // The legacy page shows "unread" and "loading" the same way (it has no rows), so one request that
       // never answers stands for both here.
-      const old = legacyShape(input);
+      const recorded = legacyShape(input);
+      const old = { ...recorded, head: recorded.head.replace(/^Intent log$/, 'Goal history') };
       const mine = await reactShape(input);
       for (const block of old.blocks) {
         if (block.kind === 'row') {

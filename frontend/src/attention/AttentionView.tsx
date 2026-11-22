@@ -1,3 +1,4 @@
+import { SHOWN } from '../language/glossary';
 import { UnaskedAttentionCue } from '../drift/UnaskedPermission';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
@@ -114,7 +115,7 @@ function Title() {
   return (
     <header className="next-attention-heading">
       <h1 ref={ref} tabIndex={-1}>
-        Attention
+        {SHOWN.attention}
       </h1>
       <p>what is observed, and what the board could not see</p>
     </header>

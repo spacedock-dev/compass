@@ -16,6 +16,19 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-23, the header names the `attention` and `intent` destinations Needs you and Goal history.
+The active link gets a fill and Compass links to Sessions. The browser proof projects the recorded
+nav, breadcrumb and tab-title words onto these names and still checks every fragment and its
+history. The Needs you and Goal history view comparisons apply the same heading replacements.
+
+One Working pill uses the displayed session state on every route. It replaces the event-backed
+running count, the header's subagent total and the copy of those totals in the project More menu.
+Readers can find observed subagents per session in Full activity. The Needs you badge replaces
+the reported-block button and counts Waiting on you plus Worth a look, with one row per waiting
+session. The keyboard proof uses `n` for Needs you and checks that `a` leaves the route alone.
+The update notice keeps the release link and version-specific dismissal in a light banner.
+The recorded answers stay fixed.
+
 2026-11-23, Sessions shows one inline Worth a look flag beside the evidence-based status tile.
 The dirty-end warning and its git evidence move from Now to that line on the copy with the
 measurement. A session that counts as a wait keeps its request and one plain dirty-end fact.

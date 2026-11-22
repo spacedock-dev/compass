@@ -37,7 +37,7 @@ async function revise(page: Awaited<ReturnType<typeof open>>, data: unknown) {
 describe('before a board, and without one', () => {
   it('says the first payload has not arrived, and draws no queue and no zero', () => {
     mountShell({ hash: '#n=attention', data: attentionBoard() });
-    expect(screen.getByRole('heading', { level: 1, name: 'Attention' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Needs you' })).toBeInTheDocument();
     expect(screen.getByText('The first payload has not arrived yet.')).toBeInTheDocument();
     expect(document.querySelector('[data-next-attention-section]')).toBeNull();
     expect(document.body.textContent).not.toMatch(/\b0 of 0\b/);

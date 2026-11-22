@@ -63,7 +63,12 @@ export const DismissesOneRelease: Story = {
   render: () => <NoticeExample />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByText('Compass 2.9.0 is available')).toBeVisible();
+    const banner = within(canvas.getByRole('status', { name: 'Compass update' }));
+    await expect(banner.getByText('Compass 2.9.0 is available')).toBeVisible();
+    await expect(banner.getByRole('link', { name: 'View release' })).toBeVisible();
+    await expect(canvas.getByRole('status', { name: 'Compass update' })).toHaveStyle({
+      backgroundColor: 'rgb(230, 242, 236)',
+    });
     await userEvent.click(canvas.getByRole('button', { name: 'Dismiss update notice' }));
     await expect(canvas.queryByText('Compass 2.9.0 is available')).toBeNull();
     await userEvent.click(canvas.getByRole('button', { name: 'Refresh and remount' }));

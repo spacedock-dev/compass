@@ -227,7 +227,12 @@ describe('the Attention screen reads as the legacy screen does, over generated p
             )
             .filter((key) => !existing.has(key)),
         );
-        const left = JSON.stringify(unchangedView(old, restored));
+        const left = JSON.stringify(
+          unchangedView(
+            { ...old, heading: old.heading.replace(/^Attention/, 'Needs you') },
+            restored,
+          ),
+        );
         const right = JSON.stringify(unchangedView(mine, restored));
         if (left !== right && !DEVIATIONS.some((d) => d.seed === seed)) {
           failures.push(

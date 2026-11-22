@@ -59,10 +59,10 @@ describe('Escape walks up to where the reader came from', () => {
   });
 });
 
-describe('a, p and s open the top-level views', () => {
+describe('n, p and s open the top-level views', () => {
   it.each([
-    ['a', 'attention'],
-    ['A', 'attention'],
+    ['n', 'attention'],
+    ['N', 'attention'],
     ['p', 'projects'],
     ['P', 'projects'],
     ['s', 'sessions'],
@@ -71,8 +71,8 @@ describe('a, p and s open the top-level views', () => {
     expect(shortcutTarget(key(letter), route('#n=intent'))).toEqual(top(view));
   });
 
-  it('ignores every other key, including the retired dashboard key', () => {
-    for (const letter of ['d', 'x', 'Enter', ' ', 'Tab', 'ArrowLeft']) {
+  it('ignores every other key, including retired bindings and Help', () => {
+    for (const letter of ['a', 'A', 'd', 'h', 'x', 'Enter', ' ', 'Tab', 'ArrowLeft']) {
       expect(shortcutTarget(key(letter), route('#n=intent')), letter).toBeNull();
     }
   });
@@ -80,14 +80,14 @@ describe('a, p and s open the top-level views', () => {
 
 describe('a shortcut never fires where the reader is typing or using a modifier', () => {
   it.each(['INPUT', 'SELECT', 'TEXTAREA', 'input'])('is ignored over a %s', (tagName) => {
-    for (const k of ['a', 'p', 's', 'Escape'])
+    for (const k of ['n', 'p', 's', 'Escape'])
       expect(shortcutTarget(key(k, { tagName }), route('#n=intent')), `${tagName} ${k}`).toBeNull();
   });
 
   it.each(['combobox', 'listbox', 'option', 'checkbox', 'radio'])(
     'leaves choice keys with the %s',
     (role) => {
-      for (const k of ['a', 'p', 's', 'Escape'])
+      for (const k of ['n', 'p', 's', 'Escape'])
         expect(shortcutTarget(key(k, { tagName: 'SPAN', role }), route('#n=intent'))).toBeNull();
     },
   );
@@ -114,11 +114,11 @@ describe('a shortcut never fires where the reader is typing or using a modifier'
   });
 
   it('is ignored over editable content', () => {
-    expect(shortcutTarget(key('a', { isContentEditable: true }), route('#n=intent'))).toBeNull();
+    expect(shortcutTarget(key('n', { isContentEditable: true }), route('#n=intent'))).toBeNull();
   });
 
   it.each(['metaKey', 'ctrlKey', 'altKey'] as const)('is ignored with %s held', (modifier) => {
-    for (const k of ['a', 'p', 's', 'Escape'])
+    for (const k of ['n', 'p', 's', 'Escape'])
       expect(shortcutTarget(key(k, { [modifier]: true }), route('#n=intent'))).toBeNull();
   });
 
@@ -129,6 +129,6 @@ describe('a shortcut never fires where the reader is typing or using a modifier'
   });
 
   it('reads a capital letter as its lower case, which is how Shift types it', () => {
-    expect(shortcutTarget(key('A'), route('#n=sessions'))).toEqual(top('attention'));
+    expect(shortcutTarget(key('N'), route('#n=sessions'))).toEqual(top('attention'));
   });
 });

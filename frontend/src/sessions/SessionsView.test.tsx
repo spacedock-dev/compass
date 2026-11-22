@@ -498,7 +498,7 @@ describe('the goal link opens the session at its goal', () => {
 });
 
 describe('the header counts and the screen are one reading of one payload', () => {
-  it('reports the same running and blocked sessions in the header as the rows show', async () => {
+  it('uses the displayed session states for Working and Waiting on you', async () => {
     await open(
       board([
         {
@@ -513,10 +513,11 @@ describe('the header counts and the screen are one reading of one payload', () =
         { harness: 'claude', sid: 'c', project: 'p', state: 'working', active: true, ended_at: 5 },
       ]),
     );
-    expect(document.querySelector('.next-running')?.textContent).toContain(
-      '1 running · 2 subagents observed',
+    expect(screen.getByRole('status', { name: 'Working sessions' }).textContent).toBe(
+      '1 session working',
     );
-    expect(document.querySelector('.next-gate')?.textContent).toBe('1 reported block');
+    const primary = within(screen.getByRole('navigation', { name: 'Primary' }));
+    expect(primary.getByRole('link', { name: 'Needs you 1' })).toBeVisible();
     expect(document.querySelector('[data-next-fleet-fact="reported-blocks"]')).toBeNull();
   });
 });

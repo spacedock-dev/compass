@@ -284,8 +284,6 @@ export function GalleryBoard({ world }: { world: World }) {
         <MoreMenu
           projectKey={project}
           focus={null}
-          running={sessions.rows.filter((row) => row.active === true).length}
-          subagents={0}
           briefingText={() => `Briefing for ${project}`}
           addHumanContext={{ memoKey: memoKey(project, null, 'outcome') }}
         />

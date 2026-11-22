@@ -11,8 +11,6 @@ export interface MoreMenuProps {
   readonly projectKey: string;
   /** The exact focused session, or null at project scope. */
   readonly focus: SessionIdentity | null;
-  readonly running: number;
-  readonly subagents: number;
   /** Read only inside the press that copies it: the briefing is never built, let alone sent, on a render. */
   readonly briefingText: () => string;
   /** Present only while the note is empty and the briefing complete, so the utility is offered where it adds something. */
@@ -21,23 +19,12 @@ export interface MoreMenuProps {
 
 const MORE_KEY = disclosureKey({ project: null, scope: null, name: 'more' });
 
-/* Project-only: the caller draws it on a project route and nowhere else. It
-   keeps the all-project status the project page would otherwise hide, which is
-   why it is not just a Copy button.
-
-   Copy briefing's result is held with no expiry and keyed by the project and
+/* Copy briefing's result is held with no expiry and keyed by the project and
    session context, so the control keeps reading Copied or Copy unavailable until
    the scope changes. Unlike the two confirmation cues, nothing deletes it: the
    briefing is a snapshot the reader chose to take, and an expired "Copied" would
    invite a second press to learn what the first did. */
-export function MoreMenu({
-  projectKey,
-  focus,
-  running,
-  subagents,
-  briefingText,
-  addHumanContext,
-}: MoreMenuProps) {
+export function MoreMenu({ projectKey, focus, briefingText, addHumanContext }: MoreMenuProps) {
   const controls = useControls();
   const key = contextKey(projectKey, focus);
   const state = useKeyedValue(controls.briefing, key);
@@ -73,9 +60,6 @@ export function MoreMenu({
       focusKey="more"
     >
       <div className="ctl-menu-items">
-        <span className="ctl-menu-status">
-          {`All projects · ${String(running)} running · ${String(subagents)} ${subagents === 1 ? 'subagent' : 'subagents'} observed`}
-        </span>
         <Button variant="menu" type="button" onClick={() => void copy()}>
           {label}
         </Button>

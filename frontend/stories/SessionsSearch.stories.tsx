@@ -295,9 +295,9 @@ export const StatusLegend: Story = {
     const unknown = rowOf(canvasElement, 'J')?.querySelector('[data-next-row-state]');
     await expect(unknown).toHaveTextContent('State not published');
     await expect(unknown?.querySelector('svg')).toBeNull();
-    await expect(
-      canvasElement.querySelector('.next-running svg[data-icon="working"]'),
-    ).toBeVisible();
+    await expect(canvas.getByRole('status', { name: 'Working sessions' })).toHaveTextContent(
+      '2 sessions working',
+    );
   },
 };
 
@@ -760,7 +760,8 @@ export const AWaitingSessionIsNeverHiddenSilently: Story = {
     history.flush();
     await waitFor(() => expect(shell.router.getRoute().view).toBe('sessions'));
     await waitFor(() => expect(chips(canvasElement)).toEqual(['Project: recce-cloud-infra']));
-    await expect(canvas.getByRole('button', { name: /1 reported block/ })).toBeVisible();
+    const primary = within(canvas.getByRole('navigation', { name: 'Primary' }));
+    await expect(primary.getByRole('link', { name: /^Needs you [1-9]\d*$/ })).toBeVisible();
     const back = canvasElement.querySelector('[data-sessions-hidden-waiting]') as HTMLElement;
     await userEvent.click(within(back).getByRole('button', { name: 'Clear filters' }));
     await waitFor(() => expect(shownRows(canvasElement)).toHaveLength(12));

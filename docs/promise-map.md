@@ -254,8 +254,8 @@ Compass can reach it, and the ask lane: a session calls one tool, the question l
 on the dashboard, the answer goes back, and the session continues. An arriving
 question raises a notification rather than sitting there unseen. Filtering Sessions never hides a
 waiting session silently: while the filters hide one, a warning under the Find sessions bar says how
-many and offers to open it (or, for several, to see them on Attention) or to clear the filters, and the header's reported blocks keep counting
-the whole board.
+many and offers to open it, go to Needs you, or clear the filters. The Needs you badge counts
+sessions that are Waiting on you or Worth a look across the whole board.
 
 Where it stops: six of the ten harnesses can report a wait: Claude Code, Codex, Copilot, Cursor,
 OpenCode and Pi. OpenCode requires its project adapter and covers parent permissions only. Pi

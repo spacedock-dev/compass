@@ -175,11 +175,9 @@ wording when its redesign ships. Route tokens still belong to the router.
 | ● Needs you · | Keeps current label | Published request or block on the open session | The Needs you navigation destination | Browser tab title prefix |
 | Title not published | Keeps current label | Missing or identifier-only session title | A session ID or a command-only opening | Session heading, breadcrumb and browser tab title |
 | No name: the session opened with a command | Keeps current label | The opening prompt was a harness command | A missing published title | Session heading, breadcrumb and browser tab title |
-| {count} running | Keeps current label | Observed running session count | Observed subagents or an unread board | Released header wording |
-| {count} subagent observed | Keeps current label | One observed subagent | Declared child sessions | Released header wording |
-| {count} subagents observed | Keeps current label | Observed subagent count | Declared child sessions | Released header wording for zero or more than one |
-| {count} reported block | Keeps current label | One session with a reported block or request | Total running sessions | Released header button |
-| {count} reported blocks | Keeps current label | Sessions with reported blocks or requests | Total running sessions | Released header button for more than one |
+| Working sessions | Names the pill for assistive technology | Displayed Working state | The event-backed running count | Header status |
+| {count} session working | Singular Working count | One session displays Working | Observed subagents | Header pill |
+| {count} sessions working | Plural Working count | More than one session displays Working | Observed subagents | Header pill |
 | Goal | Intent, Intent and drift | Saved intent, source, revision and lines read | An agent's task or a provisional prompt | The `intent` slug and technical names keep their spelling |
 | What "done" looks like | Expected outcome (optional) | An outcome line and its evidence | The goal itself or proof of completion | Technical fields retain their names |
 | Goal history | Intent log | Saved goal revisions and source | A session's current progress | The `#n=intent` fragment survives |

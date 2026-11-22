@@ -4,7 +4,8 @@ import type { LegacyStorage } from '../storage';
 import { useFocusKey } from '../controls/useFocusKey';
 import type { FocusLane } from '../controls/focusLane';
 import { Alert } from '../ui/alert';
-import { Button } from '../ui/button';
+import { cn } from '../lib/utils';
+import { Button, buttonVariants } from '../ui/button';
 
 export function UpdateNotice({
   update,
@@ -22,9 +23,17 @@ export function UpdateNotice({
   const version = update?.version;
   if (!version || storage.updateDismissals.dismissed(version)) return null;
   return (
-    <Alert variant="intent-note" className="flex flex-wrap items-center gap-3">
-      <span>{`Compass ${version} is available`}</span>
+    <Alert
+      aria-label="Compass update"
+      variant="notice"
+      className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 py-2"
+    >
+      <strong>{`Compass ${version} is available`}</strong>
       <a
+        className={cn(
+          buttonVariants({ variant: 'native' }),
+          'inline-flex items-center text-[color:var(--accent-dim)] underline',
+        )}
         href="https://github.com/spacedock-dev/compass/releases/latest"
         target="_blank"
         rel="noreferrer"
@@ -34,7 +43,8 @@ export function UpdateNotice({
       <Button
         ref={dismissRef}
         type="button"
-        variant="quiet"
+        emphasis="quiet"
+        className="ml-auto text-[color:var(--accent-dim)]"
         aria-label="Dismiss update notice"
         onClick={() => {
           storage.updateDismissals.dismiss(version);
