@@ -258,6 +258,10 @@ On 2026-11-23, readable times and summary sizes brought the restacked page from
 put the build 688 bytes above the 2,365,003-byte bound. The allowance rises by those
 688 bytes to 2,365,691 bytes. The fixture allowance stays at 250,000 bytes.
 
+On 2026-11-23, spelling out the duration in the unconfirmed wait note brought the page from
+2,365,691 to 2,365,695 bytes on Node 26.10.0. The allowance rises by those four bytes, to
+2,365,695 bytes. The fixture allowance stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.
