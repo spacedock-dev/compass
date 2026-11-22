@@ -2,8 +2,8 @@
 /* The React page's chrome: the page frame, primary navigation, breadcrumb, notices, the header
    counts and the visually hidden live regions. Ported from the legacy sheet's FOUNDATION and CHROME
    sections, rule for rule where the page still draws the same thing, so the two renderers look alike
-   and a reader who switches does not see the board move. The fifteen font faces are not here: the build
-   (and the development server) prepend them, and a font URL in this sheet would be an external request.
+   and a reader who switches does not see the board move. The build and development server prepend
+   the embedded Inter subsets. Keep font URLs out of this sheet.
 
    Layout is checked at 320 and 375 CSS px and at 200% zoom with no horizontal page scroll: every row
    that can be long wraps (`overflow-wrap:anywhere`) and every flex row can wrap. */

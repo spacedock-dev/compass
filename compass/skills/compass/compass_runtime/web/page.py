@@ -13,66 +13,9 @@ WEB_DIR = Path(__file__).resolve().parent
 # build (`frontend/build/package.mjs`, `readFonts`) parses it and the `@font-face` rows of
 # `styles.css`, pairing each file with its slot, and embeds the decoded subsets in `react.html`.
 FONT_ASSETS: tuple[tuple[str, str], ...] = (
-    (
-        "fonts/space-grotesk-v22-vietnamese.woff2.b64",
-        "{{COMPASS_FONT_SPACE_GROTESK_V22_VIETNAMESE}}",
-    ),
-    (
-        "fonts/space-grotesk-v22-latin-ext.woff2.b64",
-        "{{COMPASS_FONT_SPACE_GROTESK_V22_LATIN_EXT}}",
-    ),
-    (
-        "fonts/space-grotesk-v22-latin.woff2.b64",
-        "{{COMPASS_FONT_SPACE_GROTESK_V22_LATIN}}",
-    ),
-    (
-        "fonts/ibm-plex-mono-v20-regular-vietnamese.woff2.b64",
-        "{{COMPASS_FONT_IBM_PLEX_MONO_V20_REGULAR_VIETNAMESE}}",
-    ),
-    (
-        "fonts/ibm-plex-mono-v20-regular-latin-ext.woff2.b64",
-        "{{COMPASS_FONT_IBM_PLEX_MONO_V20_REGULAR_LATIN_EXT}}",
-    ),
-    (
-        "fonts/ibm-plex-mono-v20-regular-latin.woff2.b64",
-        "{{COMPASS_FONT_IBM_PLEX_MONO_V20_REGULAR_LATIN}}",
-    ),
-    (
-        "fonts/ibm-plex-mono-v20-medium-vietnamese.woff2.b64",
-        "{{COMPASS_FONT_IBM_PLEX_MONO_V20_MEDIUM_VIETNAMESE}}",
-    ),
-    (
-        "fonts/ibm-plex-mono-v20-medium-latin-ext.woff2.b64",
-        "{{COMPASS_FONT_IBM_PLEX_MONO_V20_MEDIUM_LATIN_EXT}}",
-    ),
-    (
-        "fonts/ibm-plex-mono-v20-medium-latin.woff2.b64",
-        "{{COMPASS_FONT_IBM_PLEX_MONO_V20_MEDIUM_LATIN}}",
-    ),
-    (
-        "fonts/ibm-plex-mono-v20-semibold-vietnamese.woff2.b64",
-        "{{COMPASS_FONT_IBM_PLEX_MONO_V20_SEMIBOLD_VIETNAMESE}}",
-    ),
-    (
-        "fonts/ibm-plex-mono-v20-semibold-latin-ext.woff2.b64",
-        "{{COMPASS_FONT_IBM_PLEX_MONO_V20_SEMIBOLD_LATIN_EXT}}",
-    ),
-    (
-        "fonts/ibm-plex-mono-v20-semibold-latin.woff2.b64",
-        "{{COMPASS_FONT_IBM_PLEX_MONO_V20_SEMIBOLD_LATIN}}",
-    ),
-    (
-        "fonts/ibm-plex-mono-v20-italic-vietnamese.woff2.b64",
-        "{{COMPASS_FONT_IBM_PLEX_MONO_V20_ITALIC_VIETNAMESE}}",
-    ),
-    (
-        "fonts/ibm-plex-mono-v20-italic-latin-ext.woff2.b64",
-        "{{COMPASS_FONT_IBM_PLEX_MONO_V20_ITALIC_LATIN_EXT}}",
-    ),
-    (
-        "fonts/ibm-plex-mono-v20-italic-latin.woff2.b64",
-        "{{COMPASS_FONT_IBM_PLEX_MONO_V20_ITALIC_LATIN}}",
-    ),
+    ("fonts/inter-v20-vietnamese.woff2.b64", "{{COMPASS_FONT_INTER_V20_VIETNAMESE}}"),
+    ("fonts/inter-v20-latin-ext.woff2.b64", "{{COMPASS_FONT_INTER_V20_LATIN_EXT}}"),
+    ("fonts/inter-v20-latin.woff2.b64", "{{COMPASS_FONT_INTER_V20_LATIN}}"),
 )
 
 

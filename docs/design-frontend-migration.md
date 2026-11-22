@@ -765,8 +765,8 @@ must prove that boundary on the served page. Packaging smoke proves the embedded
 build identity. The page reads only that origin through the typed client. The existing framing policy
 remains in force.
 
-The fifteen packaged font faces and their ranges come from the existing canonical descriptors and
-WOFF2 payloads. Their licenses and source records remain packaged. Bundled JavaScript has its own
+The three packaged Inter subsets and their ranges come from the canonical descriptors and WOFF2
+payloads. The Inter license and source record ship with them. Bundled JavaScript has its own
 full license inventory derived from actual compiler module ownership, not the list of development
 dependencies. Missing ownership or licenses refuse packaging. Build provenance uses relative paths
 and content hashes; release versions, machine paths, timestamps and per-run capabilities do not

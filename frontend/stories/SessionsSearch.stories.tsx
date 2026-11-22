@@ -224,6 +224,12 @@ export const DefaultBoard: Story = {
     const page = canvasElement.ownerDocument;
     await expect(page.documentElement).toHaveStyle({ colorScheme: 'light' });
     await expect(page.body).toHaveStyle({ backgroundColor: 'rgb(244, 246, 248)' });
+    await expect(getComputedStyle(page.body).fontFamily).toMatch(/^Inter,/);
+    await page.fonts.ready;
+    await expect(page.fonts.check('15px Inter', 'Sessions')).toBe(true);
+    await expect(
+      [...page.fonts].some((face) => face.family === 'Inter' && face.status === 'loaded'),
+    ).toBe(true);
     const search = canvas.getByRole('search', { name: 'Find sessions' });
     const fleet = canvas.getByRole('region', { name: 'Fleet facts' });
     const active = canvas.getByRole('heading', { level: 2, name: 'Active now' });

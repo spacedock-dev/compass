@@ -29,15 +29,22 @@ test('hostile JavaScript and CSS values remain exact embedded bytes', () => {
   assert.equal(document.querySelectorAll('meta[name="compass-focus"]').length, 0);
 });
 
-test('canonical font descriptors and all fifteen WOFF2 subsets are embedded', async () => {
+test('one variable Inter face is embedded across its three WOFF2 subsets', async () => {
   const fonts = await readFonts(root);
-  assert.equal(fonts.provenance.length, 15);
-  assert.equal(fonts.css.match(/@font-face/g).length, 15);
-  assert.equal(fonts.css.match(/data:font\/woff2;base64,/g).length, 15);
+  assert.deepEqual(
+    fonts.provenance.map(({ file }) => file),
+    ['vietnamese', 'latin-ext', 'latin'].map((subset) => `fonts/inter-v20-${subset}.woff2.b64`),
+  );
+  assert.equal(
+    fonts.css.match(/@font-face\{font-family:'Inter';font-style:normal;font-weight:100 900;/g)
+      .length,
+    3,
+  );
+  assert.equal(fonts.css.match(/data:font\/woff2;base64,/g).length, 3);
   assert.equal(fonts.css.includes('{{COMPASS_FONT_'), false);
   assert.equal(
     fonts.provenance.reduce((total, font) => total + font.bytes, 0),
-    142840,
+    143576,
   );
 });
 
@@ -47,7 +54,12 @@ test('production packaging includes full licenses and a matching document digest
   assert.equal(packed.metadata.frontend, 'react');
   assert.equal(packed.metadata.document.bytes, Buffer.byteLength(packed.document));
   assert.ok(packed.licenses.includes('MIT License'));
-  assert.ok(packed.licenses.includes('SIL OPEN FONT LICENSE'));
+  assert.ok(packed.licenses.includes('Inter\nSource: fonts/Inter-OFL.txt\n'));
+  const interLicense = await readFile(
+    join(root, 'compass/skills/compass/compass_runtime/web/fonts/Inter-OFL.txt'),
+    'utf8',
+  );
+  assert.ok(packed.licenses.includes(interLicense.trimEnd()));
   assert.ok(packed.metadata.provenance.packages.some((pkg) => pkg.name === 'react'));
   assert.ok(packed.metadata.provenance.packages.some((pkg) => pkg.name === 'react-dom'));
   assert.ok(packed.metadata.provenance.packages.some((pkg) => pkg.name === 'scheduler'));
@@ -157,8 +169,23 @@ test('check mode leaves outputs untouched and rejects each stale one without rew
 
 test('a corrupt canonical font fails instead of silently falling back', async () => {
   await copiedSource('compass-package-font-', async (copy, web) => {
-    await writeFile(join(copy, web, 'fonts/space-grotesk-v22-latin.woff2.b64'), 'not-a-font');
+    const { provenance } = await readFonts(copy);
+    await writeFile(join(copy, web, provenance[0].file), 'not-a-font');
     await assert.rejects(readFonts(copy), /invalid base64/);
+  });
+});
+
+test('a WOFF2 whose recorded size or digest changes is rejected', async () => {
+  await copiedSource('s1-02-compass-font-provenance-', async (copy, web) => {
+    const file = join(copy, web, 'fonts/SOURCES.txt');
+    const original = await readFile(file, 'utf8');
+    for (const [field, replacement] of [
+      [/Decoded bytes: \d+/, 'Decoded bytes: 1'],
+      [/SHA-256: [a-f0-9]{64}/, `SHA-256: ${'0'.repeat(64)}`],
+    ]) {
+      await writeFile(file, original.replace(field, replacement));
+      await assert.rejects(readFonts(copy), /font differs from SOURCES\.txt/);
+    }
   });
 });
 

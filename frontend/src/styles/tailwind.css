@@ -117,8 +117,8 @@
   --fs-head: 1.5rem;
   --fs-hero: 2.125rem;
   --measure: 33.75rem;
-  --sans: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --sans: Inter, system-ui, -apple-system, sans-serif;
+  --mono: ui-monospace, monospace;
   --r-control: 0.25rem;
   --r-card: 0.625rem;
   --r-shell: 1rem;

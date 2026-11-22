@@ -118,7 +118,7 @@ export function createTerminalOwner(deps: TerminalOwnerDeps) {
       // output reads as an input affordance. xterm needs resolved CSS colours for its canvas.
       scrollback: 500,
       fontSize: 13,
-      fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+      fontFamily: 'ui-monospace, monospace',
       theme: {
         background,
         foreground: palette.getPropertyValue('--ink').trim(),

@@ -1,83 +1,25 @@
-Sources for Compass's embedded next-UI fonts
+Sources for Compass's embedded Inter font
 
-The design requests Space Grotesk weights 400, 500, 600, and 700 and
-IBM Plex Mono weights 400, 500, and 600 upright plus 400 italic. The files
-below are the Latin, Latin Extended, and Vietnamese WOFF2 subsets returned by
-the Google Fonts CSS v2 endpoint. IBM Plex Mono came from:
-https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap
+Inter v20, one upright variable face (weights 100 to 900). The files below
+are the Latin, Latin Extended, and Vietnamese WOFF2 subsets returned by the
+Google Fonts CSS v2 endpoint:
+https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap
 
-The Space Grotesk subsets are unchanged. They came from the earlier combined
-request, which also carried the retired Space Mono family:
-https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap
+Copyright 2020 The Inter Project Authors
+Upstream: https://github.com/rsms/inter
+License: Inter-OFL.txt (https://github.com/google/fonts/blob/main/ofl/inter/OFL.txt)
 
-Space Grotesk v22
-Copyright 2020 The Space Grotesk Project Authors
-Upstream: https://github.com/floriankarsten/space-grotesk
-License: SpaceGrotesk-OFL.txt
+inter-v20-vietnamese.woff2.b64
+  Source: https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2pL7SUc.woff2
+  Decoded bytes: 10252
+  SHA-256: 5c66f9e07e90c6d4ac4922cc68d60de26c17b1858e677fb5e603fce3952b3ff2
 
-space-grotesk-v22-vietnamese.woff2.b64
-  Source: https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPb54C_k3HqUtEw.woff2
-  Decoded bytes: 6772
-  SHA-256: d699664b145bfeeccc66a4cce7fa55e14eb63efd7ec6b0b2ec52e25dd98f3917
-space-grotesk-v22-latin-ext.woff2.b64
-  Source: https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPb94C_k3HqUtEw.woff2
-  Decoded bytes: 18924
-  SHA-256: 054c266fbb441ee059365dba0885d206f67ca05b375de869b88e02ebfccc9b9d
-space-grotesk-v22-latin.woff2.b64
-  Source: https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4C_k3HqU.woff2
-  Decoded bytes: 22320
-  SHA-256: a0d054c4af557de20afd6ca59f47ab353bcaec49c63ff04b6c9d39d0f8910557
+inter-v20-latin-ext.woff2.b64
+  Source: https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7SUc.woff2
+  Decoded bytes: 85068
+  SHA-256: 34b9c504cab7a73e37b746343a449132e56cf7b5481af2cb81dc74dcff25c956
 
-IBM Plex Mono v20
-Copyright 2017 IBM Corp. with Reserved Font Name "Plex"
-Upstream: https://github.com/IBM/plex
-License: IBMPlexMono-OFL.txt
-
-ibm-plex-mono-v20-regular-vietnamese.woff2.b64
-  Source: https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1iAq131nj-otFQ.woff2
-  Decoded bytes: 4000
-  SHA-256: 0a8b854cc18641bd1b8222afa7ec82a75e59bc6501f777744ec87db1b6cd7a2c
-ibm-plex-mono-v20-regular-latin-ext.woff2.b64
-  Source: https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1iEq131nj-otFQ.woff2
-  Decoded bytes: 8860
-  SHA-256: f1050dc5317b43434c0aeda599d4624c774ffc162e87a8cf204b949b6a85816d
-ibm-plex-mono-v20-regular-latin.woff2.b64
-  Source: https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q131nj-o.woff2
-  Decoded bytes: 10052
-  SHA-256: c36f509c0a8f9f85f29cb44bc8701d8a9e0b14c499e77a884f789ead7093a7ac
-ibm-plex-mono-v20-medium-vietnamese.woff2.b64
-  Source: https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwl9FgsAXHNlYzg.woff2
-  Decoded bytes: 4036
-  SHA-256: b2529fba93fd07a50ffb8fc3d103eb04b0c298d4f6564d2833c44fde286de7e4
-ibm-plex-mono-v20-medium-latin-ext.woff2.b64
-  Source: https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwl5FgsAXHNlYzg.woff2
-  Decoded bytes: 8848
-  SHA-256: 77f03e26f981c582bdba3a7abed4baa2d3149211c01366bb3ab3ba7622ec4ae5
-ibm-plex-mono-v20-medium-latin.woff2.b64
-  Source: https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwlBFgsAXHNk.woff2
-  Decoded bytes: 10060
-  SHA-256: a76f53ca6612e7b3828eec2311098675b7f9849ae4169a8bcef6302aec02a6c0
-ibm-plex-mono-v20-semibold-vietnamese.woff2.b64
-  Source: https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3vAOwl9FgsAXHNlYzg.woff2
-  Decoded bytes: 4116
-  SHA-256: 69744cabbccc9faf77516ce9b744361e1e6be7f8081400006035a153797d2965
-ibm-plex-mono-v20-semibold-latin-ext.woff2.b64
-  Source: https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3vAOwl5FgsAXHNlYzg.woff2
-  Decoded bytes: 8960
-  SHA-256: 1b6b18fd0fd240bc6d5850f4df621484722d4b5d3650ebdd1e3a8bbd81c75854
-ibm-plex-mono-v20-semibold-latin.woff2.b64
-  Source: https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3vAOwlBFgsAXHNk.woff2
-  Decoded bytes: 10120
-  SHA-256: ad4580d8cb4b5f627c2d18457656732f7f7b070f7837fbc380e08054157e6f6c
-ibm-plex-mono-v20-italic-vietnamese.woff2.b64
-  Source: https://fonts.gstatic.com/s/ibmplexmono/v20/-F6pfjptAgt5VM-kVkqdyU8n1ioa2ndgregdFOFh.woff2
-  Decoded bytes: 4416
-  SHA-256: fe88a1e1a9cdb5b50308f09aaf573987f4ba2177bc6faa5feeb82a47df277bbb
-ibm-plex-mono-v20-italic-latin-ext.woff2.b64
-  Source: https://fonts.gstatic.com/s/ibmplexmono/v20/-F6pfjptAgt5VM-kVkqdyU8n1ioa23dgregdFOFh.woff2
-  Decoded bytes: 9788
-  SHA-256: c590f625acd1a18021f23486445b03b8435879b406db1003d3fdd7804e9319fb
-ibm-plex-mono-v20-italic-latin.woff2.b64
-  Source: https://fonts.gstatic.com/s/ibmplexmono/v20/-F6pfjptAgt5VM-kVkqdyU8n1ioa1XdgregdFA.woff2
-  Decoded bytes: 11568
-  SHA-256: 2665f5fbbb334780fa135c7f1dc6e2459061a2d6d44c32b7c1fdbc34cde65ede
+inter-v20-latin.woff2.b64
+  Source: https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2
+  Decoded bytes: 48256
+  SHA-256: 3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62

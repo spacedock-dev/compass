@@ -6,8 +6,7 @@ import '../src/styles/controls.css';
 const preview: Preview = {
   parameters: { layout: 'padded', backgrounds: { disable: true } },
   beforeEach: async () => {
-    await document.fonts.load('15px "Space Grotesk"');
-    await document.fonts.load('13px "IBM Plex Mono"');
+    await document.fonts.load('15px Inter');
     await document.fonts.ready;
   },
 };
