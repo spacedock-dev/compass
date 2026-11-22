@@ -313,7 +313,9 @@ pace whose projected end falls before the reset. Codex reads rate-limit snapshot
 session files. Claude and Cursor use the harness credential to poll their vendor endpoint at most once
 per five minutes while a page is open, and never refresh, write, log, or serve the token. This is on
 until you turn it off: one line beside the windows says the quota is read with the logins on this
-machine and that no session content is sent, beside Turn off quota reading. When quota reading is off, Sessions shows no percentage or bar.
+machine and that no session content is sent, beside Turn off quota reading. Turning it off stops
+credential-backed fetches in this browser and hides their percentages and bars. Fresh Codex disk
+readings and Antigravity receipts can still appear in Your AI allowance.
 Cursor fetching is macOS-only, and because Cursor publishes a cycle end with no start, its row shows
 a level and no clock.
 Copilot contributes per-session AI Units from disk but no percentage because its entitlement is not

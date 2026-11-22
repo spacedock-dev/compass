@@ -183,12 +183,15 @@ not a claim that its resumable session ended; later work withdraws it. The count
 at the top always cover the whole board. If a filter hides a session that is waiting on you, a warning
 links to it, or to Needs you when there are several. Filters reset when you reload the tab.
 Open How filter counts work under the filters for the counting rules. The earlier group names the
-window the board published, and How session history works explains what those rows can tell you.
+published window on a bounded board and reads Session history when you open all history.
+How session history works explains what those rows can tell you.
 The [Find sessions design record](design-sessions-search.md) owns the counting rules.
 
 At the foot of Sessions, Your AI allowance shows the selected quota window, its published reset
 and the amount used. The bar marks how far the window has elapsed when the clock is available.
-Open How the AI allowance works for the pace, reset time and source. The [quota policy](../SECURITY.md#usage-quota-reads-the-quota-fetcher)
+Open How the AI allowance works for the pace, local reset date and time, and source. Turning off
+quota reading stops credential-backed fetches in this browser. Fresh Codex disk readings and
+Antigravity receipts can still appear. The [quota policy](../SECURITY.md#usage-quota-reads-the-quota-fetcher)
 describes what Compass reads and how to stop it.
 
 A launcher can [declare a parent and assign a group](../HOW_TO_USE.md#nest-a-launched-run-under-its-coordinator).

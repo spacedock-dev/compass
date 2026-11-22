@@ -144,9 +144,11 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
   const heading = history?.querySelector('h2');
   if (heading) {
     heading.textContent =
-      typeof hours === 'number' && hours > 0
-        ? `Earlier in the last ${String(hours)} ${hours === 1 ? 'hour' : 'hours'}`
-        : 'Recently active';
+      data['show_all'] === true
+        ? 'Session history'
+        : typeof hours === 'number' && hours > 0
+          ? `Earlier in the last ${String(hours)} ${hours === 1 ? 'hour' : 'hours'}`
+          : 'Recently active';
   }
   const routes = data['reading_routes'];
   const canAnalyze =

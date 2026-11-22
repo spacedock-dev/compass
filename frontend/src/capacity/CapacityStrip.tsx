@@ -17,9 +17,9 @@ import {
   projectSpread,
   rowKey,
   selectRows,
-  SLOT_LABELS,
   stripRows,
   untimedCount,
+  windowLabel,
   type Ends,
   type Spread,
   type StripRow,
@@ -30,6 +30,7 @@ import './capacity.css';
 /* The board publishes the reading. The tab holds the window selection and disclosure state. */
 const NONE: Row = {};
 const allowanceKey = disclosureKey({ project: null, scope: null, name: 'ai-allowance' });
+const allowanceFocusKey = 'capacity:explanation';
 
 const FILL = {
   ok: 'var(--accent)',
@@ -45,11 +46,11 @@ function Bar({ row, label }: { readonly row: StripRow; readonly label: string })
       ? 'this window publishes no clock'
       : `${String(Math.round(row.elapsed * 100))}% of the window elapsed`;
   return (
-    <div className="next-capacity-bar relative h-2 overflow-hidden rounded-pill bg-muted">
+    <div className="next-capacity-bar relative h-2.5 overflow-hidden rounded-pill border border-input bg-muted">
       <progress
         className="block h-full w-full appearance-none border-0 bg-transparent [--allowance-fill:var(--line)] [&::-webkit-progress-bar]:bg-transparent [&::-webkit-progress-value]:rounded-pill [&::-moz-progress-bar]:rounded-pill [&::-webkit-progress-value]:bg-[color:var(--allowance-fill)] [&::-moz-progress-bar]:bg-[color:var(--allowance-fill)]"
         style={{ '--allowance-fill': FILL[fillInk(row)] } as CSSProperties}
-        aria-label={`${label} ${SLOT_LABELS[row.slot]} allowance used`}
+        aria-label={`${label} ${windowLabel(row)} allowance used`}
         aria-valuetext={`${used}, ${clock}`}
         value={row.pct}
         max={100}
@@ -98,7 +99,10 @@ function WindowChoice({
 }) {
   const { controls } = useShell();
   const key = rowKey(row);
-  const buttonRef = useFocusKey<HTMLButtonElement>(controls.focusLane, `capacity:${key}`);
+  const window = windowLabel(row);
+  const buttonRef = useFocusKey<HTMLButtonElement>(controls.focusLane, `capacity:${key}`, {
+    fallback: allowanceFocusKey,
+  });
   return (
     <Button
       ref={buttonRef}
@@ -107,11 +111,11 @@ function WindowChoice({
       data-next-capacity-pick={key}
       data-next-focus={`capacity:${key}`}
       aria-pressed={selected}
-      aria-label={`Read ${label} ${SLOT_LABELS[row.slot]} window`}
-      className="aria-pressed:bg-accent aria-pressed:text-accent-foreground"
+      aria-label={`Read ${label} ${window}${window === 'plan window' ? '' : ' window'}`}
+      className="aria-pressed:border-2 aria-pressed:border-foreground aria-pressed:bg-accent aria-pressed:text-accent-foreground"
       onClick={() => onPick(key)}
     >
-      {label} · {SLOT_LABELS[row.slot]}
+      {label} · {window}
     </Button>
   );
 }
@@ -199,7 +203,7 @@ function WindowDetails({
   readonly payload: Row;
 }) {
   const generated = nextNumber(payload['generated']);
-  const reset = clockWords(row.resetAt, generated);
+  const reset = clockWords(row.resetAt, generated, true);
   const asOf = clockWords(row.asOf, generated);
   const facts = [
     ['Pace', row.paceRatio === null ? 'Pace not measured' : `${row.paceRatio.toFixed(1)}×`],
@@ -209,7 +213,7 @@ function WindowDetails({
     ],
     [
       'Window',
-      `${SLOT_LABELS[row.slot]} · ${row.windowSec === null ? 'length not published' : duration(row.windowSec)}`,
+      `${windowLabel(row)} · ${row.windowSec === null || row.windowSec <= 0 ? 'length not published' : duration(row.windowSec)}`,
     ],
     ['Source', asOf ? `${label} · read at ${asOf}` : label],
     [
@@ -241,12 +245,20 @@ export function CapacityStrip() {
   const { runtime } = useShell();
   const body = useDisplayed((snapshot) => snapshot.data);
   const payload = (body ?? NONE) as Row;
-  const rows = useMemo(() => stripRows(payload), [payload]);
+  const published = useMemo(() => stripRows(payload), [payload]);
   const labels = useMemo(() => harnessLabels(payload), [payload]);
   const key = useSelectedWindow();
   const offered = useUsageOffered();
   const off = useConsent('usage') === 'declined';
+  // The browser switch gates credential fetches. Codex reads disk and Antigravity receives quota locally.
+  const rows = off
+    ? published.filter(({ harness }) => harness === 'codex' || harness === 'antigravity')
+    : published;
   const picked = selectRows(rows, key);
+  const cached =
+    off && !picked
+      ? published.find(({ harness }) => harness === 'claude' || harness === 'cursor')
+      : undefined;
   const lane = heldFor(runtime).selection;
   const selectedKey = picked ? rowKey(picked.selected) : '';
   /* A refresh keeps the vendor and window key while it is still published. Before the first
@@ -254,7 +266,7 @@ export function CapacityStrip() {
   useEffect(() => {
     if (body !== null) lane.set(selectedKey);
   }, [lane, body, selectedKey]);
-  if (!picked && !offered) return null;
+  if (!picked && !cached && !offered) return null;
 
   const labelOf = (harness: string): string =>
     labels.get(harness) || harness || 'Source not identified';
@@ -269,7 +281,7 @@ export function CapacityStrip() {
   return (
     <Card
       as="section"
-      className="mt-5 grid gap-3"
+      className="mt-5 grid min-w-0 gap-3 [overflow-wrap:anywhere]"
       data-next-capacity=""
       aria-labelledby="next-ai-allowance-heading"
     >
@@ -278,15 +290,15 @@ export function CapacityStrip() {
           <h2 id="next-ai-allowance-heading" className="m-0 text-value font-semibold">
             {ALLOWANCE_LABEL}
           </h2>
-          {selected ? (
+          {selected || cached ? (
             <p className="m-0 mt-1 text-body text-muted-foreground">
-              {off
-                ? `Last cached window: ${label} ${SLOT_LABELS[selected.slot]}`
-                : allowanceSentence(selected, label)}
+              {selected
+                ? allowanceSentence(selected, label)
+                : cached && `Last cached window: ${labelOf(cached.harness)} ${windowLabel(cached)}`}
             </p>
           ) : null}
         </div>
-        {selected && !off ? (
+        {selected ? (
           <div className="min-w-0">
             <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-2">
               <strong className="text-body tabular-nums">{String(selected.pct)}% used</strong>
@@ -298,7 +310,7 @@ export function CapacityStrip() {
           </div>
         ) : null}
       </div>
-      {picked && !off && picked.shown.length > 1 ? (
+      {picked && picked.shown.length > 1 ? (
         <div
           role="group"
           aria-label="Allowance windows"
@@ -325,12 +337,25 @@ export function CapacityStrip() {
           ) : null}
         </div>
       ) : null}
-      {selected && ends && !off ? (
-        <Disclosure explanation disclosureKey={allowanceKey} summary={EXPLANATIONS.aiAllowance}>
+      {selected && ends ? (
+        <Disclosure
+          explanation
+          disclosureKey={allowanceKey}
+          summary={EXPLANATIONS.aiAllowance}
+          focusKey={allowanceFocusKey}
+        >
           <WindowDetails row={selected} label={label} ends={ends} payload={payload} />
         </Disclosure>
       ) : null}
-      <UsageSwitch windows={picked !== null} />
+      <UsageSwitch
+        offNote={
+          selected
+            ? 'Quota reading is off for Claude Code and Cursor. Local readings are still shown.'
+            : cached
+              ? 'Quota reading is off. The last cached read will lapse.'
+              : 'Quota reading is off. No window has been read.'
+        }
+      />
     </Card>
   );
 }

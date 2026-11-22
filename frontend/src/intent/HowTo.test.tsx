@@ -1,4 +1,4 @@
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { mountDrift, ROUTE } from '../drift/testing';
 import { GLOSSARY } from '../language/glossary';
@@ -16,6 +16,19 @@ async function openHowTo(page: { settle: () => Promise<void> }) {
 }
 
 describe('the Intent how-to', () => {
+  it('keeps one read-only Goal disclosure when annotations are off', async () => {
+    const page = mountDrift({ payload: { annotate: false } });
+    await page.settle();
+    const goal = screen.getByRole('region', { name: GLOSSARY.goal.plain });
+    expect(within(goal).getByRole('button', { name: GLOSSARY.howGoalsWork.plain })).toBe(summary());
+    expect(within(goal).queryByRole('textbox')).toBeNull();
+    await openHowTo(page);
+    expect(explanation()).toBeVisible();
+    expect(explanation()?.textContent).toContain('Annotations are off for this run.');
+    expect(page.gets('/api/annotations')).toBe(0);
+    expect(page.posts()).toBe(0);
+  });
+
   it('keeps the one Goal disclosure open across a refresh and a session remount', async () => {
     const page = mountDrift();
     await page.settle();
@@ -47,6 +60,7 @@ describe('the Intent how-to', () => {
   });
   for (const [harness, reader, steer] of [
     ['claude', true, true],
+    ['codex', true, false],
     ['pi', true, false],
     ['cursor', false, false],
   ] as const) {
@@ -59,8 +73,8 @@ describe('the Intent how-to', () => {
             [harness]: reader
               ? {
                   ...ROUTE,
-                  provider: harness === 'pi' ? 'codex' : 'claude',
-                  label: harness === 'pi' ? 'Codex' : 'Claude Code',
+                  provider: harness === 'claude' ? 'claude' : 'codex',
+                  label: harness === 'claude' ? 'Claude Code' : 'Codex',
                 }
               : { provider: '', note: 'No reader on this machine.' },
           },
@@ -83,12 +97,19 @@ describe('the Intent how-to', () => {
       expect(popup.textContent).toContain(
         "A session's /goal is used until you edit it; else Compass drafts from your first prompt.",
       );
-      expect(popup.textContent).toContain('A progress check asks once to allow reading');
       expect(popup.textContent).toContain('3. Read where the work left your goal.');
-      expect(popup.textContent).toContain('Progress levels: Claude Code, Codex and Pi only.');
+      expect(popup.textContent).toContain(
+        'Compass can read recorded work from Claude Code, Codex and Pi.',
+      );
+      expect(popup.textContent).toContain(
+        'Progress levels appear only for Claude Code and Pi sessions.',
+      );
+      expect(popup.textContent).toContain(
+        'When a progress check is available, one press starts it. It uses AI and counts against a daily cap.',
+      );
       expect(popup.textContent).toContain(
         reader
-          ? `Reader here: ${harness === 'pi' ? 'Codex' : 'Claude Code'}.`
+          ? `Reader here: ${harness === 'claude' ? 'Claude Code' : 'Codex'}.`
           : 'Reader here: No reader on this machine.',
       );
       expect(popup.textContent).toContain(

@@ -77,9 +77,7 @@ describe('the quota fetch is on until it is turned off', () => {
     await page.advance(120_000);
     expect(dataUrls(page).length).toBeGreaterThan(1);
     expect(withUsage(page)).toEqual([]);
-    expect(line()?.textContent).toContain(
-      'Quota reading is off. Windows above are the last cached read and will lapse.',
-    );
+    expect(line()?.textContent).toContain('Quota reading is off. The last cached read will lapse.');
     expect(line()?.querySelector('button')?.textContent).toBe('Turn on quota reading');
   });
 
@@ -91,12 +89,14 @@ describe('the quota fetch is on until it is turned off', () => {
     expect(line()?.querySelector('button')?.textContent).toBe('Turn on quota reading');
   });
 
-  it('declined with windows published keeps the last-cached-read sentence', async () => {
+  it('names a cached credential window without displaying its figures', async () => {
     const page = mount({ storage: { [CONSENT]: 'declined' } });
     await page.settle();
-    expect(line()?.textContent).toContain(
-      'Quota reading is off. Windows above are the last cached read and will lapse.',
+    expect(line()?.textContent).toContain('Quota reading is off. The last cached read will lapse.');
+    expect(document.querySelector('[data-next-capacity]')?.textContent).toContain(
+      'Last cached window: Claude Code 5-hour',
     );
+    expect(document.querySelector('progress')).toBeNull();
   });
 
   it('the Console rail, declined with no window published, does not describe a cached read', async () => {

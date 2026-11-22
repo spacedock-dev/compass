@@ -519,6 +519,19 @@ export const ExplanationsOpenInPlace: Story = {
   },
 };
 
+export const AllHistoryNamesTheScope: Story = {
+  args: { showAll: true, annotate: false },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole('heading', { name: 'Session history' })).toBeVisible();
+    await expect(canvasElement.querySelector('[data-next-session="6a7b8c9d0e1f"]')).toBeVisible();
+    await userEvent.click(canvas.getByRole('button', { name: 'How session history works' }));
+    await waitFor(() =>
+      expect(canvas.getByText(/Annotations are off, so goals cannot be typed/)).toBeVisible(),
+    );
+  },
+};
+
 export const FilterChoicesCloseTheirSiblings: Story = {
   play: async ({ canvasElement }) => {
     await ready(canvasElement);

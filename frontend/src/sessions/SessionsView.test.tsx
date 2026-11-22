@@ -71,6 +71,30 @@ it('explains the filter counts and published history window in place', async () 
   }
 });
 
+it('shows a three-day-old row in all history without a 24-hour heading', async () => {
+  await open({
+    generated: 73 * 3600,
+    show_all: true,
+    window_hours: 24,
+    sessions: [{ harness: 'codex', sid: 'old', project: 'p', state: 'ended', ended_at: 3600 }],
+  });
+  expect(rows('history')).toEqual(['codex/old']);
+  expect(screen.getByRole('heading', { name: 'Session history' })).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'Earlier in the last 24 hours' })).toBeNull();
+});
+
+it('explains what disappears from session history when annotations are off', async () => {
+  await open(
+    board([{ harness: 'claude', sid: 'a', project: 'p', state: 'idle' }], { annotate: false }),
+  );
+  fireEvent.click(screen.getByRole('button', { name: GLOSSARY.howSessionHistoryWorks.plain }));
+  expect(
+    screen.getByText(
+      'Annotations are off, so goals cannot be typed and progress pills are not shown.',
+    ),
+  ).toBeVisible();
+});
+
 describe('what the screen says when it has nothing to draw', () => {
   it('says the first payload has not arrived rather than drawing an empty board', async () => {
     mountSessions({ data: board([]), strict: false });

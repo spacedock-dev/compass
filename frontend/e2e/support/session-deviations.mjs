@@ -203,9 +203,11 @@ export function normaliseSessionRecord(record, evidence = {}) {
     const hours = evidence.window_hours;
     if (history?.header.startsWith('Recent historyWhat recent means')) {
       history.header =
-        typeof hours === 'number' && Number.isFinite(hours) && hours > 0
-          ? `Earlier in the last ${hours} ${hours === 1 ? 'hour' : 'hours'}`
-          : 'Recently active';
+        evidence.show_all === true
+          ? 'Session history'
+          : typeof hours === 'number' && Number.isFinite(hours) && hours > 0
+            ? `Earlier in the last ${hours} ${hours === 1 ? 'hour' : 'hours'}`
+            : 'Recently active';
     }
   }
   return result;

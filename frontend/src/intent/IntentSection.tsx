@@ -212,7 +212,7 @@ function Kept() {
   );
 }
 
-export function IntentSection() {
+export function IntentSection({ editable }: { readonly editable: boolean }) {
   const { input, session, payload } = usePanel();
   const { ctx } = usePanel();
   const heading = useFocusKey<HTMLHeadingElement>(
@@ -247,7 +247,7 @@ export function IntentSection() {
           <SampleMark id="intent" />
         </span>
         <span className="ms-auto flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          {status ? (
+          {editable && status ? (
             <span
               className={`[font-family:var(--mono)] text-label ${status === 'Saved' || status === DRAFT_UNSAVED ? 'text-muted-foreground' : 'text-[var(--amber)]'}`}
               data-next-intent-status
@@ -257,24 +257,27 @@ export function IntentSection() {
           ) : null}
         </span>
       </header>
-      {/* Under the heading rather than in its header, so the revision line keeps the sentence tier. */}
-      {why ? (
-        <p className="next-cockpit-held-lede" data-next-intent-no-draft>
-          {why}
-        </p>
+      {editable ? (
+        <>
+          {why ? (
+            <p className="next-cockpit-held-lede" data-next-intent-no-draft>
+              {why}
+            </p>
+          ) : null}
+          {unreadable ? <p className="next-cockpit-held-absent">{unreadable}</p> : null}
+          {stamp ? (
+            <div className="next-cockpit-held-stamp">
+              <span className="next-cockpit-held-revision">{stamp}</span>
+            </div>
+          ) : null}
+          <div className="next-cockpit-held-fields max-[760px]:gap-1">
+            <GoalField />
+            <OutcomeLines />
+          </div>
+          <Footer />
+          <Kept />
+        </>
       ) : null}
-      {unreadable ? <p className="next-cockpit-held-absent">{unreadable}</p> : null}
-      {stamp ? (
-        <div className="next-cockpit-held-stamp">
-          <span className="next-cockpit-held-revision">{stamp}</span>
-        </div>
-      ) : null}
-      <div className="next-cockpit-held-fields max-[760px]:gap-1">
-        <GoalField />
-        <OutcomeLines />
-      </div>
-      <Footer />
-      <Kept />
       <GoalExplanation />
     </Card>
   );

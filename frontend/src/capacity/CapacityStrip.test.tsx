@@ -44,6 +44,46 @@ const pressed = (): string[] =>
 const rowOf = (key: string): HTMLElement =>
   document.querySelector(`[data-next-capacity-row="${key}"]`) as HTMLElement;
 
+describe('turning off credential-backed quota reads', () => {
+  const declined = { 'compass.next.usage.consent': 'declined' };
+  const claude = entry('claude', { fiveH: window(90, 9000, 18000) });
+  const codex = (pct: number) => entry('codex', { fiveH: window(pct, 9000, 18000) });
+  const antigravity = entry('antigravity', { fiveH: window(34, 9000, 18000) });
+
+  it.each([
+    ['Codex', codex(71), 71],
+    ['antigravity', antigravity, 34],
+  ] as const)('keeps the fresh %s window on a local-only board', async (label, reading, pct) => {
+    const page = mountPanels(<CapacityStrip />, { data: board([reading]), storage: declined });
+    await page.settle();
+    expect(screen.getByRole('progressbar', { name: new RegExp(label) }).getAttribute('value')).toBe(
+      String(pct),
+    );
+    expect(screen.queryByRole('button', { name: 'Turn on quota reading' })).toBeNull();
+    expect(screen.queryByText(/last cached window/i)).toBeNull();
+  });
+
+  it('keeps fresh disk and receipt windows available on a mixed board after turning off the fetch', async () => {
+    const data = (pct: number) => board([claude, codex(pct), antigravity], { usage_fetch: true });
+    const page = mountPanels(<CapacityStrip />, { data: data(61), strict: false });
+    await page.settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off quota reading' }));
+    await page.poll(data(71));
+    expect(rowKeys().sort()).toEqual(['antigravity:fiveH', 'codex:fiveH']);
+    fireEvent.click(rowOf('codex:fiveH'));
+    expect(screen.getByText('71% used')).toBeVisible();
+    expect(
+      screen.getByText(
+        'Quota reading is off for Claude Code and Cursor. Local readings are still shown.',
+      ),
+    ).toBeVisible();
+    const dataRequests = page.state.requests.filter((request) => request.path === '/api/data');
+    expect(dataRequests[0]?.url).toContain('usage=1');
+    expect(dataRequests.length).toBeGreaterThan(1);
+    expect(dataRequests.slice(1).every(({ url }) => !url.includes('usage=1'))).toBe(true);
+  });
+});
+
 // Six windows, ranked by when each budget ends: the three last are untimed or slow.
 const six = () =>
   board([
@@ -161,6 +201,27 @@ describe('the selected window is the reader’s', () => {
     await page.settle();
     expect(document.activeElement?.getAttribute('data-next-capacity-pick')).toBe(target);
   });
+
+  it('moves focus to the explanation when a refresh removes the focused picker', async () => {
+    const codex = entry('codex', { fiveH: window(30, 9000, 18000) });
+    const claude = entry('claude', { fiveH: window(50, 9000, 18000) });
+    const page = mountPanels(<CapacityStrip />, { data: board([codex, claude]), strict: false });
+    await page.settle();
+    const choice = screen.getByRole('button', { name: 'Read Codex 5-hour window' });
+    choice.focus();
+    fireEvent.click(choice);
+    await page.poll(board([codex]));
+    const explanation = screen.getByRole('button', { name: 'How the AI allowance works' });
+    expect(document.activeElement).toBe(explanation);
+    expect(screen.getByRole('progressbar', { name: /Codex/ })).toBeVisible();
+    expect(screen.queryByRole('group', { name: 'Allowance windows' })).toBeNull();
+
+    await page.poll(board([codex, claude], { usage_fetch: true }));
+    const outsidePicker = screen.getByRole('button', { name: 'Turn off quota reading' });
+    outsidePicker.focus();
+    await page.poll(board([codex], { usage_fetch: true }));
+    expect(document.activeElement).toBe(outsidePicker);
+  });
 });
 
 describe('absent, stale, expired and true zero are four different things', () => {
@@ -249,11 +310,14 @@ describe('absent, stale, expired and true zero are four different things', () =>
     expect(document.querySelector('.next-capacity-prospect small')).toBeNull();
   });
 
-  it('a thin basis qualifies the time and the spare together', async () => {
-    const page = only({ fiveH: window(2, 17700, 18000) });
+  it('qualifies the spare at reset before the reader opens the explanation', async () => {
+    const page = only({ fiveH: window(1, 17700, 18000) });
     await page.settle();
-    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
-    expect(screen.getByText(/based on 5m observed/)).toBeVisible();
+    const trigger = screen.getByRole('button', { name: 'How the AI allowance works' });
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByText('About 40% left at reset · based on 5m observed')).toBeVisible();
+    fireEvent.click(trigger);
+    expect(screen.getByText(/^(?!About).*based on 5m observed/)).toBeVisible();
   });
 
   it('a window whose entry is an error publishes no row at all', async () => {
@@ -263,6 +327,50 @@ describe('absent, stale, expired and true zero are four different things', () =>
     });
     await page.settle();
     expect(document.querySelector('[data-next-capacity]')).toBeNull();
+  });
+});
+
+describe('the card names the published window and reset', () => {
+  it('names a 180-minute Codex window consistently in each place', async () => {
+    const page = mountPanels(<CapacityStrip />, {
+      data: board([
+        entry('codex', { fiveH: window(65, 9000, 10800) }),
+        entry('claude', { fiveH: window(30, 9000, 18000) }),
+      ]),
+    });
+    await page.settle();
+    const choice = screen.getByRole('button', { name: 'Read Codex 3-hour window' });
+    expect(choice.textContent).toBe('Codex · 3-hour');
+    fireEvent.click(choice);
+    expect(screen.getByText('Codex 3-hour plan · resets in 2h 30m.')).toBeVisible();
+    expect(screen.getByRole('progressbar', { name: 'Codex 3-hour allowance used' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
+    expect(screen.getByText('3-hour · 3h 0m')).toBeVisible();
+    expect(heldFor(page.shell.runtime).selection.read()).toBe('codex:fiveH');
+  });
+
+  it('does not name a duration the short-window slot did not publish', async () => {
+    const page = mountPanels(<CapacityStrip />, {
+      data: board([entry('codex', { fiveH: window(65, 9000, null) })]),
+    });
+    await page.settle();
+    expect(screen.getByText('Codex plan window · resets in 2h 30m.')).toBeVisible();
+    expect(
+      screen.getByRole('progressbar', { name: 'Codex plan window allowance used' }),
+    ).toBeVisible();
+  });
+
+  it('names a Cursor billing cycle and gives the local reset date and minute beyond seven days', async () => {
+    const resetAt = new Date(2026, 11, 13, 4, 45).getTime() / 1000;
+    const page = mountPanels(<CapacityStrip />, {
+      data: board([entry('cursor', { month: { pct: 20, resetAt } })], {
+        generated: resetAt - 20 * 86400,
+      }),
+    });
+    await page.settle();
+    expect(screen.getByText('Cursor billing cycle · resets in 20d 0h.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
+    expect(screen.getByText('Dec 13, 2026 at 04:45')).toBeVisible();
   });
 });
 

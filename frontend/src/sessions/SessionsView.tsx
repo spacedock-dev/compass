@@ -463,7 +463,8 @@ const RECENT_CAVEATS = [
   [RECENT_WHY, BOARD_WHY, GOAL_SOURCES_ON],
 ] as const;
 
-function historyHeading(hours: number | null) {
+function historyHeading({ hours, showAll }: FilterBoard) {
+  if (showAll) return 'Session history';
   if (hours === null || hours <= 0) return 'Recently active';
   return `Earlier in the last ${String(hours)} ${hours === 1 ? 'hour' : 'hours'}`;
 }
@@ -676,7 +677,7 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
       />
       <Group
         kind="history"
-        title={historyHeading(board.hours)}
+        title={historyHeading(board)}
         label=""
         rows={screen.history}
         empty="No recent-history rows in this payload."

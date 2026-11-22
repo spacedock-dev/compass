@@ -74,7 +74,13 @@ export const SentAndSettingsStayInFlow: Story = {
     const inCard = within(card);
     const settings = await inCard.findByRole('button', { name: 'Drift settings' });
     const analyze = await analyzeButton(card);
+    const title = inCard.getByRole('heading', { name: 'Drift' });
+    const subtitle = card.querySelector('.next-session-drift-sub') as HTMLElement;
+    const subtitleOffset = () =>
+      subtitle.getBoundingClientRect().top - title.getBoundingClientRect().top;
+    const before = subtitleOffset();
     await openInFlow(settings, analyze);
+    await expect(Math.abs(subtitleOffset() - before)).toBeLessThan(2);
     await userEvent.click(settings);
     const sent = await inCard.findByRole('button', { name: /^What is sent/ });
     const activity = within(canvasElement).getByRole('heading', { name: 'Full activity' });

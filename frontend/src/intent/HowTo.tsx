@@ -1,9 +1,15 @@
 import { compatSessKey } from '../api/identity';
 import { Disclosure, disclosureKey } from '../controls';
 import { readingRoute, routeRefusal } from '../drift/route';
-import { CLAUDE_READER_LIMIT, STEER_HARNESSES, WORK_HARNESSES } from '../drift/sentences';
+import {
+  ANNOTATIONS_OFF,
+  CLAUDE_READER_LIMIT,
+  STEER_HARNESSES,
+  WORK_HARNESSES,
+} from '../drift/sentences';
 import { EXPLANATIONS } from '../language/glossary';
 import { harnessLabels } from '../sessions/rows';
+import { annotateOn } from './annotation';
 import { usePanel } from './useIntent';
 
 export function GoalExplanation() {
@@ -27,6 +33,9 @@ export function GoalExplanation() {
   const steer = STEER_HARNESSES.includes(harness)
     ? 'available here'
     : `${STEER_HARNESSES.map(label).join(' and ')} only`;
+  const availability = annotateOn(payload)
+    ? `Reader here: ${reader}${reader.endsWith('.') ? '' : '.'} Steer back: ${steer}.`
+    : ANNOTATIONS_OFF;
   return (
     <Disclosure
       disclosureKey={disclosureKey({
@@ -46,13 +55,16 @@ export function GoalExplanation() {
           1. Give the goal. Expected outcome is optional. A session's /goal is used until you edit
           it; else Compass drafts from your first prompt.
         </p>
-        <p>2. A progress check asks once to allow reading and counts against a daily cap.</p>
+        <p>
+          2. When a progress check is available, one press starts it. It uses AI and counts against
+          a daily cap.
+        </p>
         <p>
           3. Read where the work left your goal. On Claude Code, copy a correction to steer back.
         </p>
         <p
           data-next-intent-howto-limit
-        >{`Progress levels: ${listed(WORK_HARNESSES)} only. Reader here: ${reader}${reader.endsWith('.') ? '' : '.'} Steer back: ${steer}. Compass never writes into sessions.`}</p>
+        >{`Compass can read recorded work from ${listed(WORK_HARNESSES)}. Progress levels appear only for ${listed(WORK_HARNESSES.filter((key) => key !== 'codex'))} sessions. ${availability} Compass never writes into sessions.`}</p>
         <p data-next-intent-howto-no-line>
           With no outcome line, Compass reads your goal's end state; a goal too vague to read is
           refused.

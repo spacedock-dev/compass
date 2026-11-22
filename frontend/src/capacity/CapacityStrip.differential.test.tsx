@@ -19,7 +19,7 @@ const CONSENT = 'compass.next.usage.consent';
 
 describe('the allowance card keeps the recorded choice and measured figure', () => {
   it(`over ${String(SEEDS)} generated boards in every consent state`, async () => {
-    const seen = { read: 0, off: 0, absent: 0, multiple: 0 };
+    const seen = { read: 0, local: 0, absent: 0, multiple: 0 };
     for (let seed = 1; seed <= SEEDS; seed += 1) {
       const rnd = mulberry32(seed * 31 + 7);
       const { payload, keys } = genCapacity(seed);
@@ -29,11 +29,12 @@ describe('the allowance card keeps the recorded choice and measured figure', () 
       recorded.innerHTML = legacy.view(payload, { consent, selected });
       const picked = legacy.selected();
       const windows = [...recorded.content.querySelectorAll('[data-next-capacity-row]')];
-      const measured = windows
-        .find((node) => node.getAttribute('data-next-capacity-row') === picked)
-        ?.querySelector('.next-capacity-pct')
-        ?.textContent?.replace(/^USED\s*/, '')
-        .trim();
+      const measured = (key: string) =>
+        windows
+          .find((node) => node.getAttribute('data-next-capacity-row') === key)
+          ?.querySelector('.next-capacity-pct')
+          ?.textContent?.replace(/^USED\s*/, '')
+          .trim();
 
       const page = mountPanels(
         (shell) => {
@@ -43,15 +44,24 @@ describe('the allowance card keeps the recorded choice and measured figure', () 
         { data: payload, strict: false, storage: consent ? { [CONSENT]: consent } : {} },
       );
       await page.settle();
-      expect(heldFor(page.shell.runtime).selection.read(), `seed ${String(seed)}`).toBe(picked);
+      const held = heldFor(page.shell.runtime).selection.read();
       const bars = page.container.querySelectorAll('progress');
       if (consent === 'declined') {
-        seen.off += 1;
-        expect(bars).toHaveLength(0);
+        // Removing fetched windows can surface a local row beyond the recorded table's initial three.
+        expect(bars).toHaveLength(held ? 1 : 0);
+        if (held) {
+          expect(held).toMatch(/^(codex|antigravity):/);
+          const value = measured(held);
+          if (value) {
+            seen.local += 1;
+            expect(value).toBe(`${bars[0]?.getAttribute('value')}%`);
+          }
+        }
       } else if (picked) {
+        expect(held, `seed ${String(seed)}`).toBe(picked);
         seen.read += 1;
         expect(bars).toHaveLength(1);
-        expect(measured).toBe(`${bars[0]?.getAttribute('value')}%`);
+        expect(measured(picked)).toBe(`${bars[0]?.getAttribute('value')}%`);
         const choices = [...page.container.querySelectorAll('button[data-next-capacity-row]')];
         if (windows.length > 1) {
           seen.multiple += 1;
@@ -62,6 +72,7 @@ describe('the allowance card keeps the recorded choice and measured figure', () 
           expect(choices).toHaveLength(0);
         }
       } else {
+        expect(held).toBe('');
         seen.absent += 1;
         expect(bars).toHaveLength(0);
       }

@@ -1010,6 +1010,21 @@ async function controlsTogether(card: HTMLElement, outcomes: 'open' | 'closed') 
 
 const inert = (node: HTMLElement) => node.getAttribute('aria-disabled') === 'true';
 
+export const AnnotationsOffKeepsTheGoalExplanation: Story = {
+  args: { setup: { payload: { annotate: false } } },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const card = await page.findByRole('region', { name: 'Goal' });
+    const view = within(card);
+    const trigger = view.getByRole('button', { name: 'How goals work' });
+    await expect(trigger.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+    await userEvent.click(trigger);
+    await waitFor(() => expect(view.getByText(/Give the goal/)).toBeVisible());
+    await expect(view.queryByRole('textbox')).toBeNull();
+    await expect(page.getAllByRole('button', { name: 'How goals work' })).toHaveLength(1);
+  },
+};
+
 export const StateEmpty: Story = {
   args: {
     setup: {

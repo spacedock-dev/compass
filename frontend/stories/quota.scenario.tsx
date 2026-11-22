@@ -17,18 +17,27 @@ export let refreshQuota: (() => Promise<void>) | undefined;
 export const CLAUDE_WINDOW = [
   { harness: 'claude', state: 'ok', asOf: 1, fiveH: { pct: 34, windowSec: 18000, resetAt: 9060 } },
 ];
+export const CODEX_WINDOW = [
+  { harness: 'codex', state: 'ok', asOf: 1, fiveH: { pct: 71, windowSec: 10800, resetAt: 9060 } },
+];
+const HARNESSES = [
+  { key: 'claude', label: 'Claude Code' },
+  { key: 'codex', label: 'Codex' },
+];
 export function QuotaExample({
   declined = false,
   strip = false,
   rail = false,
   usage = [],
+  history = [],
 }: {
   readonly declined?: boolean;
   readonly strip?: boolean;
   readonly rail?: boolean;
   readonly usage?: readonly unknown[];
+  readonly history?: readonly unknown[];
 }) {
-  const railPayload = { generated: 1, harnesses: [{ key: 'claude', label: 'Claude Code' }], usage };
+  const railPayload = { generated: 1, harnesses: HARNESSES, usage };
   const [shell] = useState(() => {
     requests.length = 0;
     let generated = 1;
@@ -46,9 +55,10 @@ export function QuotaExample({
         return json({
           generated: generated++,
           sessions: [],
-          harnesses: [{ key: 'claude', label: 'Claude Code' }],
+          harnesses: HARNESSES,
           usage_fetch: true,
           usage,
+          history,
         });
       },
     });

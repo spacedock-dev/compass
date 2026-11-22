@@ -915,8 +915,10 @@ Compass reads the credential that harness already stored and sends it to that ve
 numbers. The request carries the vendor's own token and nothing else, behind a five minute floor, and no
 session content is sent.
 
-Choose Turn off quota reading in Your AI allowance at the foot of Sessions. Turn on quota reading
-resumes it without a restart. `--no-usage` disables credential-backed reads for a whole run.
+Choose Turn off quota reading in Your AI allowance at the foot of Sessions to stop
+credential-backed fetches from this browser. Fresh Codex disk readings and Antigravity receipts
+can still appear. Turn on quota reading resumes fetching without a restart.
+`--no-usage` disables credential-backed reads for a whole run.
 [SECURITY.md](SECURITY.md#usage-quota-reads-the-quota-fetcher) owns the contract, including what is
 sent, what comes back, and what is never touched.
 
