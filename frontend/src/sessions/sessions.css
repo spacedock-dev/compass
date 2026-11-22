@@ -120,7 +120,7 @@
 .next-attention-section>ol{display:grid;gap:10px;margin:0;padding:0;list-style:none}
 .next-attention-section>ol>li[hidden]{display:none}
 .next-attention-risk-identity h3{margin:0 0 5px;font-size:var(--fs-body);font-weight:600;line-height:1.4}
-.next-attention-risk-identity>span,.next-attention-risk-source{color:var(--ink2);font-family:var(--mono);font-size:var(--fs-label);line-height:1.5}
+.next-attention-risk-identity>span,.next-attention-risk-source{color:var(--ink2);font-size:var(--fs-label);line-height:1.5}
 .next-attention-risk-assignment{margin:5px 0 0;color:var(--ink2);font-size:var(--fs-body);font-weight:500;line-height:1.55;max-width:var(--measure)}
 .next-attention-risk-identity a,.next-attention-why a{display:flex;align-items:center;color:var(--ink);text-decoration-color:var(--line);text-underline-offset:4px}
 .next-attention-risk-observation p{margin:0;color:var(--ink2);font-size:var(--fs-body);line-height:1.5}

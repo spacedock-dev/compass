@@ -186,5 +186,28 @@
     "unreported": [
       "Gemini CLI: Harness does not report blocks"
     ]
-  }
+  },
+  "unownedWaits": [
+    ["ask-fixture-2", "4 minutes"]
+  ],
+  "unusableAges": [
+    {
+      "generated": 0,
+      "stamp": 100000,
+      "ended": [["Session reported its own end", ""]],
+      "waiting": [null]
+    },
+    {
+      "generated": 100000,
+      "stamp": 1e+100,
+      "ended": [["Session reported its own end", ""]],
+      "waiting": [null]
+    },
+    {
+      "generated": 100000,
+      "stamp": 100001,
+      "ended": [["Session reported its own end", ""]],
+      "waiting": [null]
+    }
+  ]
 }

@@ -114,6 +114,10 @@ function summarize(root: ParentNode): Summary {
       )?.firstChild;
       if (source?.nodeType === Node.TEXT_NODE)
         source.textContent = maskSourceTime(source.textContent ?? '');
+      if (article.dataset['nextBoardRisk'] === 'ask') {
+        const source = content.querySelector('.next-attention-risk-source > span:last-child');
+        if (source) source.textContent = maskSourceTime(norm(source));
+      }
       if (article.dataset['nextAttentionKind'] === 'quota') {
         const next = content.querySelector('.next-attention-risk-next');
         if (next) next.textContent = maskQuotaDuration(norm(next));

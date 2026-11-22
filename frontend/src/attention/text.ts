@@ -1,5 +1,5 @@
 import { nextNumber } from '../api/bootstrap';
-import { delegatedWork, isRecord, promptCopied, type Row } from '../observed';
+import { type BoardRisk, delegatedWork, isRecord, promptCopied, type Row } from '../observed';
 import { UNCONFIRMED_WAIT_NOTE } from '../observed/session';
 import type { RouteInput } from '../router/grammar';
 import { expandDurationUnits, formatDurationWords, formatTimestamp } from '../shell/format';
@@ -218,7 +218,7 @@ function signalNow(signal: Signal, subject: Subject, model: AttentionModel): Now
   }
   if (signal.kind === 'quiet-launch') {
     return {
-      text: delegatedAttentionText(subject, model),
+      text: delegatedAttentionText(detail.session, model.generated),
       note: 'Recorded activity only; not a process check.',
     };
   }
@@ -311,10 +311,13 @@ export function subjectSource(subject: Subject, model: AttentionModel): string {
   return parts.join(' · ');
 }
 
-export function delegatedAttentionText(subject: Subject, model: AttentionModel): string {
-  return delegatedWork(subject.session, model.generated, (stamp) =>
-    formatTimestamp(stamp, model.generated),
-  ).text;
+export function riskSourceText(risk: BoardRisk): string {
+  const age = formatDurationWords(risk.waitAge);
+  return `source · ${risk.src}${age ? ` · waiting ${age}` : ''}`;
+}
+
+export function delegatedAttentionText(session: Row | undefined, generated: number | null): string {
+  return delegatedWork(session, generated, (stamp) => formatTimestamp(stamp, generated)).text;
 }
 
 /* The session a subject opens, or the Sessions list when the subject names none exactly. A display id is

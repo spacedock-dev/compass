@@ -456,6 +456,8 @@ class FreeReadTest(unittest.TestCase):
         self.assertEqual(0, board.readings_started())
         self.assertIn("Level: Medium", out)
         self.assertNotIn("Next Analyze prompt", out)
+        read_clock = time.strftime("%H:%M", time.localtime(NOW - 600))
+        self.assertIn(f"Read at {read_clock}, 10m ago", out)
 
     def test_a_person_who_runs_it_twice_with_nothing_new_spends_only_the_first_time(self) -> None:
         board = FakeBoard()

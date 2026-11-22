@@ -33,11 +33,15 @@ export function formatDurationWords(seconds: unknown): string | null {
   return compact === null ? null : expandDurationUnits(compact);
 }
 
-function publishedDate(stamp: unknown): Date | null {
+function publishedSeconds(stamp: unknown): number | null {
   const seconds = nextNumber(stamp);
-  if (seconds === null || seconds <= 0) return null;
-  const date = new Date(seconds * 1000);
-  return Number.isFinite(date.getTime()) ? date : null;
+  return seconds !== null && seconds > 0 && seconds <= 8_640_000_000_000 ? seconds : null;
+}
+
+export function observationAge(generated: unknown, stamp: unknown): number | null {
+  const at = publishedSeconds(stamp);
+  const clock = publishedSeconds(generated);
+  return at !== null && clock !== null && at <= clock ? clock - at : null;
 }
 
 /* Use the local calendar's dates to count days, including across a daylight-saving change. */
@@ -62,12 +66,13 @@ export function formatTimestamp(
   generated: unknown,
   { locale, timeZone, style }: TimeFormat = {},
 ): string | null {
-  const date = publishedDate(stamp);
-  const boardTime = publishedDate(generated);
-  if (!date || !boardTime) return null;
-  const age = (boardTime.getTime() - date.getTime()) / 1000;
+  const at = publishedSeconds(stamp);
+  const boardTime = publishedSeconds(generated);
   const clock = style === 'clock';
-  if (!clock && age >= 0 && age < 3600) return `${formatDurationWords(age)} ago`;
+  if (at === null || (!clock && boardTime === null)) return null;
+  const age = boardTime === null ? null : boardTime - at;
+  if (age !== null && age < 0 && !clock) return null;
+  if (!clock && age !== null && age < 3600) return `${formatDurationWords(age)} ago`;
 
   const calendar = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -75,12 +80,13 @@ export function formatTimestamp(
     month: 'numeric',
     day: 'numeric',
   });
-  const today = calendarDay(boardTime, calendar);
+  const date = new Date(at * 1000);
+  const today = boardTime === null ? null : calendarDay(new Date(boardTime * 1000), calendar);
   const observed = calendarDay(date, calendar);
-  const daysAgo = today.day - observed.day;
+  const daysAgo = today ? today.day - observed.day : null;
   const localTime = () => date.toLocaleTimeString(locale, { timeZone, timeStyle: 'short' });
   if (daysAgo === 0) {
-    return style === 'same-day-relative' && age >= 0
+    return style === 'same-day-relative' && age !== null && age < 86400
       ? `${formatDurationWords(age)} ago`
       : `at ${localTime()}`;
   }
@@ -89,9 +95,9 @@ export function formatTimestamp(
     timeZone,
     month: 'short',
     day: 'numeric',
-    year: observed.year === today.year ? undefined : 'numeric',
+    year: observed.year === today?.year ? undefined : 'numeric',
   });
-  return daysAgo < 0 || clock ? `on ${shortDate} at ${localTime()}` : `on ${shortDate}`;
+  return clock ? `on ${shortDate} at ${localTime()}` : `on ${shortDate}`;
 }
 
 /* Compass's existing 1,024-byte scale, with reader-facing units. Exact counts belong in
@@ -103,6 +109,6 @@ export function formatSize(value: unknown, locale?: string): string | null {
   const mb = kb * kb;
   if (bytes > 0 && bytes < kb) return '<1 KB';
   const large = bytes >= mb;
-  const amount = bytes / (large ? mb : kb);
+  const amount = Math.abs(bytes) / (large ? mb : kb);
   return `${amount.toLocaleString(locale, { maximumFractionDigits: large ? 1 : 0 })} ${large ? 'MB' : 'KB'}`;
 }

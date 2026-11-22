@@ -219,8 +219,7 @@ describe('the sentences a subject is read through agree with the legacy builders
               note: maskTimePhrases(note),
             }));
           const maskSource = (source: string) => maskSourceTime(maskTimePhrases(source));
-          const maskCheckpoints = (rows: string[]) =>
-            rows.filter((row) => maskTimePhrases(row) !== 'Reset <time>');
+          const maskCheckpoints = (rows: string[]) => rows.map(maskTimePhrases);
           const recorded = [
             maskNow(legacy.call('nextAttentionSubjectNow', old, oldModel)),
             legacy.call('nextAttentionOutcome', old, oldModel),

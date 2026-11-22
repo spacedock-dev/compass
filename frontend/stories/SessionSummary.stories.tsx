@@ -1143,7 +1143,7 @@ export const RefusedTooLarge: Story = {
     await userEvent.click(within(none).getByRole('button', { name: 'Summarize' }));
     await waitFor(() =>
       expect(region.querySelector('[data-next-summary-reason="planned_calls"]')).toHaveTextContent(
-        'This session is larger than one summary may read: at most 32 parts of 16 KiB, 37 model calls and 10 minutes. Nothing was sent.',
+        'This session is larger than one summary may read: at most 32 parts of 16 KB, 37 model calls and 10 minutes. Nothing was sent.',
       ),
     );
   },

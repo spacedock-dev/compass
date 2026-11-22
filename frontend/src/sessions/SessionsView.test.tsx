@@ -166,6 +166,40 @@ describe('the groups', () => {
     expect(screen.getByText('ended 20 seconds ago')).toBeVisible();
   });
 
+  it.each([
+    [NOW, NOW + 86400],
+    [0, NOW],
+    [NOW, 1e100],
+  ])(
+    'shows a reported end without an unusable age against %s for %s',
+    async (generated, endedAt) => {
+      await open(
+        board([{ harness: 'claude', sid: 'done', project: 'p', ended_at: endedAt }], { generated }),
+      );
+      expect(rows('history')).toEqual(['claude/done']);
+      expect(screen.getByText('Session reported its own end')).toBeVisible();
+      expect(screen.queryByText(/ended \d+ .* ago/)).toBeNull();
+    },
+  );
+
+  it('keeps a finished run and a quiet session without an age when their observations are in the future', async () => {
+    await open(
+      board([
+        {
+          harness: 'codex',
+          sid: 'run',
+          project: 'p',
+          state: 'idle',
+          headless: true,
+          turn_end_at: NOW + 10,
+        },
+        { harness: 'claude', sid: 'quiet', project: 'p', state: 'idle', last_activity: NOW + 10 },
+      ]),
+    );
+    expect(screen.getByText('run finished', { exact: true })).toBeVisible();
+    expect(screen.queryByText(/last active \d+ .* ago/)).toBeNull();
+  });
+
   it('keeps one sid under two harnesses as two rows, each opening its own exact route', async () => {
     await open(
       board([

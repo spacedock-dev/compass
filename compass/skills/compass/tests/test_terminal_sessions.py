@@ -28,9 +28,8 @@ PAYLOAD: dict[str, Any] = expand(
         (FIXTURES / "client-contract" / "data-session-states.json").read_text(encoding="utf-8")
     )["response"]["body"]
 )
-EXPECTED: dict[str, Any] = json.loads(
-    (FIXTURES / "session-groups.json").read_text(encoding="utf-8")
-)["board"]
+GROUPS: dict[str, Any] = json.loads((FIXTURES / "session-groups.json").read_text(encoding="utf-8"))
+EXPECTED: dict[str, Any] = GROUPS["board"]
 VOCABULARY: dict[str, Any] = json.loads((FIXTURES / "vocabulary.json").read_text(encoding="utf-8"))
 NOTHING = "Nothing is reported as waiting on you."
 LEVEL_WORDS = ("None or low", "Low", "Medium", "High", "Not enough recorded yet")
@@ -315,6 +314,39 @@ class BoardParityTest(unittest.TestCase):
 
         self.assertEqual(EXPECTED["waiting"], got)
 
+    def test_an_unowned_request_keeps_the_age_the_board_shows(self) -> None:
+        self.assertEqual(
+            GROUPS["unownedWaits"],
+            [
+                [waiter.asks[0]["id"], waiter.age]
+                for waiter in board().waiting
+                if waiter.entry is None
+            ],
+        )
+
+    def test_unusable_timestamps_keep_the_end_and_wait_without_an_age(self) -> None:
+        for case in GROUPS["unusableAges"]:
+            generated, stamp = case["generated"], case["stamp"]
+            payload = {
+                "generated": generated,
+                "sessions": [
+                    {"harness": "claude", "sid": "end", "project": "p", "ended_at": stamp},
+                    {
+                        "harness": "claude",
+                        "sid": "wait",
+                        "project": "p",
+                        "state": "needs_input",
+                        "blocked_since": stamp,
+                    },
+                ],
+            }
+            for projected in (False, True):
+                with self.subTest(generated=generated, stamp=stamp, projected=projected):
+                    data = terminal_sessions.list_payload(payload) if projected else payload
+                    shown = terminal_sessions.board(data)
+                    self.assertEqual(case["ended"], [[row.now, row.ended] for row in shown.history])
+                    self.assertEqual(case["waiting"], [waiter.age for waiter in shown.waiting])
+
     def test_an_idle_row_with_a_recorded_departure_is_promoted_into_the_active_group(self) -> None:
         self.assertIn(["claude", "f6a7b8c9"], keys(board().active))
 
@@ -508,7 +540,33 @@ class SessionsRenderTest(unittest.TestCase):
 
         self.assertTrue(any("ended 30 minutes ago" in line for line in lines))
         working = lines.index(next(x for x in lines if "Wire the parser" in x))
-        self.assertNotRegex("\n".join(lines[working : working + 4]), r"\b\d+[smhd]\b")
+        self.assertNotRegex(
+            "\n".join(lines[working : working + 4]),
+            r"\b\d+(?:[smhd]| (?:seconds?|minutes?|hours?|days?))\b",
+        )
+
+    def test_an_end_age_uses_whole_units_and_skips_a_zero_remainder(self) -> None:
+        for seconds, words in (
+            (0, "0 seconds"),
+            (1, "1 second"),
+            (60, "1 minute"),
+            (3600, "1 hour"),
+            (86400, "1 day"),
+            (90000, "1 day 1 hour"),
+        ):
+            with self.subTest(seconds=seconds):
+                payload = {
+                    "generated": 100000,
+                    "sessions": [
+                        {
+                            "harness": "claude",
+                            "sid": "end",
+                            "project": "p",
+                            "ended_at": 100000 - seconds,
+                        },
+                    ],
+                }
+                self.assertIn(f"ended {words} ago", "\n".join(self.render(payload)))
 
     def test_a_board_with_no_active_or_recent_rows_says_so_in_the_boards_own_sentences(
         self,

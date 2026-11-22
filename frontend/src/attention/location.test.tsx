@@ -241,6 +241,35 @@ describe('a label is interpreted by measured locations', () => {
     },
   );
 
+  it.each([true, false])(
+    'shows distinct published member start times with a board clock: %s',
+    async (hasClock) => {
+      const data = locationBoard(2);
+      locationRow(data, 1)['project_key'] = 'path:other';
+      const starts = [new Date(2026, 10, 23, 9), new Date(2026, 10, 23, 10)];
+      for (const [index, start] of starts.entries()) {
+        locationRow(data, index)['started_at'] = start.getTime() / 1000;
+      }
+      if (hasClock) data['generated'] = new Date(2026, 10, 23, 12).getTime() / 1000;
+      else delete data['generated'];
+      const page = mountShell({ hash: '#n=attention', data });
+      await page.settle();
+      const card = document.querySelector('[data-next-board-risk="collision"]') as HTMLElement;
+      for (const [index, start] of starts.entries()) {
+        const date = start.toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+        const time = start.toLocaleTimeString(undefined, { timeStyle: 'short' });
+        const words = hasClock ? `at ${time}` : `on ${date} at ${time}`;
+        expect(
+          within(card).getByRole('link', { name: new RegExp(`Audit ${index} ·`) }),
+        ).toHaveTextContent(`Start time ${words}`);
+      }
+    },
+  );
+
   it('a person sees shared-label stops and tasks in the queues counted by the summary', async () => {
     const data = locationBoard();
     for (const row of locationRows(data).slice(0, 3)) row['finished_at'] = 1899999999;

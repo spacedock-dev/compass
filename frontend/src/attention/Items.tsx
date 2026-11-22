@@ -8,6 +8,7 @@ import { riskRow } from './subjects';
 import {
   checkpointRows,
   delegatedAttentionText,
+  riskSourceText,
   subjectNow,
   subjectOutcome,
   subjectSource,
@@ -143,8 +144,8 @@ export function RiskItem({
   const outcome = row.subject ? subjectOutcome(row.subject, model) : null;
   let observation = risk.nowText;
   if (risk.kind === 'long-turn') observation = expandDurationUnits(observation);
-  if (risk.kind === 'quiet-launch' && row.subject) {
-    observation = delegatedAttentionText(row.subject, model);
+  if (risk.delegatedSession) {
+    observation = delegatedAttentionText(risk.delegatedSession, model.generated);
   }
   return (
     <li>
@@ -227,7 +228,7 @@ export function RiskItem({
               </span>
             ))
           )}
-          <span>{`source · ${risk.src}`}</span>
+          <span>{riskSourceText(risk)}</span>
           {row.subject?.section === 'needs' ? <GateControls session={row.subject.session} /> : null}
         </div>
       </Card>

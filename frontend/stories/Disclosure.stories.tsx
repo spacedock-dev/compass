@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Disclosure } from '../src/controls/Disclosure';
 import { ControlsProvider } from '../src/controls/ControlsProvider';
 import { testControls } from '../src/controls/testControls';
-import { formatSize } from '../src/shell/format';
+import { ABSENT, SummaryPage, grant } from './summary.scenario';
 import { Button } from '../src/ui/button';
 const meta = { title: 'Controls/Disclosure', component: Example } satisfies Meta<typeof Example>;
 export default meta;
@@ -59,30 +59,33 @@ export const Popover: Story = {
   },
 };
 
-function SizeExample() {
-  const [kit] = useState(() => testControls());
-  const bytes = 16_384;
-  return (
-    <ControlsProvider controls={kit.controls}>
-      <Disclosure disclosureKey="story:sent" summary="What is sent">
-        <p>{`Up to ${formatSize(bytes, 'en-US')} at a time`}</p>
-        <Disclosure disclosureKey="story:sent-detail" summary="Show technical details">
-          <p>{`${bytes.toLocaleString('en-US')} bytes`}</p>
-        </Disclosure>
-      </Disclosure>
-    </ControlsProvider>
-  );
-}
-
 export const WhatIsSentSize: Story = {
-  render: () => <SizeExample />,
+  render: () => (
+    <SummaryPage
+      ended={false}
+      grant={grant({ disclosure: 'Sends redacted session text through Claude Code to Anthropic.' })}
+      summary={{
+        ...ABSENT,
+        plan: {
+          complete: true,
+          parts: 4,
+          windows: 3,
+          calls: 8,
+          minutes: 10,
+          largest_read: { windows: 32, window_bytes: 16384, calls: 37, seconds: 600 },
+        },
+      }}
+    />
+  ),
   args: { variant: 'accordion' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole('button', { name: 'What is sent' }));
-    await waitFor(() => expect(canvas.getByText('Up to 16 KB at a time')).toBeVisible());
-    await expect(canvas.getByText('16,384 bytes')).not.toBeVisible();
-    await userEvent.click(canvas.getByRole('button', { name: 'Show technical details' }));
-    await waitFor(() => expect(canvas.getByText('16,384 bytes')).toBeVisible());
+    await userEvent.click(
+      await canvas.findByRole('button', { name: 'What is sent to Claude Code' }),
+    );
+    await waitFor(() => expect(canvas.getByText('Up to 16 KB per part.')).toBeVisible());
+    await expect(canvas.queryByText('16,384 bytes per part.')).not.toBeVisible();
+    await userEvent.click(canvas.getByText('Show technical details', { exact: true }));
+    await waitFor(() => expect(canvas.getByText('16,384 bytes per part.')).toBeVisible());
   },
 };

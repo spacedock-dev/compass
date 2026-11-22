@@ -2,9 +2,8 @@ import { declaredRelations } from './declared';
 import { nextNumber } from '../api/bootstrap';
 import { stableProjectKey } from '../api/identity';
 import type { RouteInput } from '../router/grammar';
-import { formatDurationWords } from '../shell/format';
+import { formatDurationWords, observationAge } from '../shell/format';
 import {
-  ageSeconds,
   endedAt,
   exactAskOwner,
   isRecord,
@@ -184,7 +183,7 @@ export function driftMark(source: Row | undefined, context: SessionsContext): Dr
   if (!records.length || !source) return null;
   const dated = records.map((row) => row.at).filter((at): at is number => at !== null && at > 0);
   const age = dated.length
-    ? formatDurationWords(ageSeconds(context.generated, Math.max(...dated)))
+    ? formatDurationWords(observationAge(context.generated, Math.max(...dated)))
     : null;
   const current = nextNumber(source['annotation_revision']);
   const changedAt = nextNumber(source['annotation_at']);
@@ -400,7 +399,7 @@ export function buildSessionsScreen(
     const ask = source ? askFor(payload, source, asks) : null;
     const since =
       session.isEnded && source
-        ? formatDurationWords(ageSeconds(context.generated, endedAt(source)))
+        ? formatDurationWords(observationAge(context.generated, endedAt(source)))
         : null;
     return {
       key: unique(session),

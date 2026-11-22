@@ -41,15 +41,52 @@ describe('a reader sees time relative to the board or in their own time zone', (
 
   it('reads today in the reader’s locale and zone, including a scheduled time', () => {
     expect(
-      format.formatTimestamp(generated + 3600, generated, { locale: 'de-DE', timeZone: 'UTC' }),
+      format.formatTimestamp(generated + 3600, generated, {
+        locale: 'de-DE',
+        timeZone: 'UTC',
+        style: 'clock',
+      }),
     ).toBe('at 05:00');
   });
 
   it('leaves missing and invalid clocks or observations blank', () => {
-    for (const value of [null, NaN, Infinity, -Infinity, Number.MAX_VALUE]) {
+    for (const value of [null, 0, -1, NaN, Infinity, -Infinity, Number.MAX_VALUE]) {
       expect(format.formatTimestamp(value, generated, local)).toBeNull();
       expect(format.formatTimestamp(generated, value, local)).toBeNull();
     }
+  });
+
+  it('withholds a future observation and keeps a scheduled reset', () => {
+    const future = generated + 86400;
+    expect(
+      format.formatTimestamp(future, generated, { ...local, style: 'same-day-relative' }),
+    ).toBeNull();
+    expect(format.formatTimestamp(future, generated, { ...local, style: 'clock' })).toBe(
+      'on Nov 23 at 8:00 PM',
+    );
+  });
+
+  it('withholds a future observation even when both timestamps share a millisecond', () => {
+    expect(format.formatTimestamp(generated + 0.0001, generated, local)).toBeNull();
+  });
+
+  it('shows an absolute time with its year when the board clock is missing', () => {
+    expect(format.formatTimestamp(generated, undefined, { ...local, style: 'clock' })).toBe(
+      'on Nov 22, 2026 at 8:00 PM',
+    );
+  });
+
+  it.each([
+    ['2026-11-01T00:15:00-07:00', '2026-11-01T23:30:00-08:00', 'at 12:15 AM'],
+    ['2026-03-07T23:30:00-08:00', '2026-03-08T22:30:00-07:00', 'yesterday'],
+    ['2026-11-22T23:30:00-08:00', '2026-11-23T00:15:00-08:00', '45 minutes ago'],
+  ])('uses the local calendar for %s against %s', (stamp, board, words) => {
+    expect(
+      format.formatTimestamp(Date.parse(stamp) / 1000, Date.parse(board) / 1000, {
+        ...local,
+        style: 'same-day-relative',
+      }),
+    ).toBe(words);
   });
 
   it('gives the same words when the system clock moves 400 days', () => {
@@ -79,6 +116,7 @@ describe('a reader sees time relative to the board or in their own time zone', (
 describe('a reader sees a size in KB or MB', () => {
   it.each([
     [0, '0 KB'],
+    [-0, '0 KB'],
     [1, '<1 KB'],
     [16384, '16 KB'],
     [1_048_575, '1,024 KB'],

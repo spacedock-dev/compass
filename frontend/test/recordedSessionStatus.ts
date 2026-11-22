@@ -52,6 +52,7 @@ export function recordedSessionStatus(value: unknown): unknown {
     projected['scanOnly'] = false;
     // Sessions renders this new spelling. Its mounted and terminal parity tests check the words.
     delete projected['nowWords'];
+    delete projected['nowWordsKnown'];
   }
   if (
     projected['blockNote'] ===

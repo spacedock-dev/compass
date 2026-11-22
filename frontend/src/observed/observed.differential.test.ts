@@ -51,8 +51,12 @@ function withoutHistory(input: Record<string, unknown>): Record<string, unknown>
     totals,
     coverage: { ...coverage, quiet: omitAttentionQuietSubtotals(coverage['quiet'] as string) },
     // Location cards are proven by their distinct linked members, not the recorded duplicate counts.
-    boardRisks: (model['boardRisks'] as Record<string, unknown>[]).filter(
-      (risk) => !['collision', 'checkout'].includes(String(risk['kind'])),
+    boardRisks: (model['boardRisks'] as Record<string, unknown>[])
+      .filter((risk) => !['collision', 'checkout'].includes(String(risk['kind'])))
+      .map(({ waitAge: _waitAge, ...risk }) => risk),
+    // Needs you proves the originating launch row through the sentence it renders.
+    risks: (model['risks'] as Record<string, unknown>[]).map(
+      ({ delegatedSession: _delegatedSession, ...risk }) => risk,
     ),
     projects,
     activeProjects: grouped(model['activeProjects']),

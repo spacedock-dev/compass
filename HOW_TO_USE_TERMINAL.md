@@ -147,7 +147,9 @@ Droid: Harness does not report blocks
 ```
 
 When you run this yourself, ignore the first two lines. They are for an agent. Questions a session
-asked come first, then other waits, oldest first.
+asked come first, then other waits, oldest first. A question can show its published wait even
+when Compass cannot identify its session. If an observation has no usable age, the listing
+still shows the reported wait or end.
 
 - Answer a question through its `Answer on the board:` link. A question nobody answers within five
   minutes expires, and the session decides for itself.

@@ -8,11 +8,21 @@ import { createShell } from '../src/shell/createShell';
 import { createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
 
-const generated = Date.UTC(2026, 10, 23, 12) / 1000;
+const generated = new Date(2026, 10, 23, 12).getTime() / 1000;
 const claude = { project: 'acme/api', harness: 'claude' };
 const board = {
   generated,
   window_hours: 24,
+  ask: true,
+  asks: [{ id: 'question', harness: 'claude', question: 'Proceed?', age_sec: 360 }],
+  usage: [
+    {
+      harness: 'claude',
+      state: 'ok',
+      fiveH: { pct: 95, resetAt: generated + 3960, windowSec: 18000 },
+      models: [{ pct: 95, label: 'fast', resetAt: generated + 3960 }],
+    },
+  ],
   irreversible_enabled: true,
   command_reports: [
     {
@@ -65,6 +75,16 @@ const board = {
       finished_at: generated - 240,
       dirty: false,
     },
+    {
+      ...claude,
+      sid: 'delegated',
+      title: 'Inspect query plans',
+      state: 'idle',
+      delegated_launches: 2,
+      delegated_unpaired: 1,
+      delegated_quiet_since: generated - 3600,
+      delegated_latest_launch_at: generated - 360,
+    },
     { ...claude, sid: 'untimed', state: 'needs_input', state_detail: 'Awaiting confirmation' },
     {
       ...claude,
@@ -76,7 +96,36 @@ const board = {
   ],
 };
 
-function Example() {
+const absoluteTimes = [new Date(2026, 10, 23, 9), new Date(2026, 10, 23, 10)];
+const absoluteReset = new Date(2026, 10, 23, 13);
+const withoutClock = {
+  sessions: absoluteTimes.map((time, index) => ({
+    ...claude,
+    sid: `checkout-${index + 1}`,
+    title: `Checkout ${index + 1}`,
+    project_key: `path:checkout-${index + 1}`,
+    started_at: time.getTime() / 1000,
+  })),
+  usage: [
+    {
+      harness: 'claude',
+      state: 'ok',
+      models: [{ pct: 95, label: 'fast', resetAt: absoluteReset.getTime() / 1000 }],
+    },
+  ],
+};
+
+function absoluteTime(time: Date) {
+  const date = time.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const clock = time.toLocaleTimeString(undefined, { timeStyle: 'short' });
+  return `on ${date} at ${clock}`;
+}
+
+function Example({ missingClock = false }: { readonly missingClock?: boolean }) {
   const [shell] = useState(() => {
     const backend = fakeBackend();
     return createShell({
@@ -87,7 +136,13 @@ function Example() {
       search: '',
       reducedMotion: () => true,
       fetch: (url) =>
-        Promise.resolve(new Response(url.startsWith('/api/data') ? JSON.stringify(board) : '{}')),
+        Promise.resolve(
+          new Response(
+            url.startsWith('/api/data')
+              ? JSON.stringify(missingClock ? withoutClock : board)
+              : '{}',
+          ),
+        ),
     });
   });
   useEffect(
@@ -128,8 +183,33 @@ export const ReadableTimes: Story = {
     await expect(canvas.getByText(/ended 4 minutes ago/)).toBeVisible();
     await expect(canvas.getByText(/Sources disagree .*stop observed at/)).toBeVisible();
     await expect(canvas.getByText(/1 hour 10 minutes into turn/)).toBeVisible();
-    await expect(canvas.getByText(/Bash · 4 minutes ago/)).toBeVisible();
+    await expect(canvas.getByText('1 hour 6 minutes')).toBeVisible();
+    const reset = new Date((generated + 3960) * 1000).toLocaleTimeString(undefined, {
+      timeStyle: 'short',
+    });
+    await expect(canvas.getByText(`Reset at ${reset}`)).toBeVisible();
+    const launch = canvasElement.querySelector(
+      '[data-next-attention-kind="quiet-launch"] .next-attention-risk-observation > p',
+    );
+    await expect(launch).toHaveTextContent('2 recorded launches');
+    await expect(launch).toHaveTextContent('Latest launch 6 minutes ago');
+    await expect(canvas.getByText('source · claude · waiting 6 minutes')).toBeVisible();
+    const report = canvas.getByText(/Bash · 4 minutes ago/);
+    await expect(report).toBeVisible();
+    await expect(getComputedStyle(report).fontFamily).toMatch(/\bInter\b/i);
     const view = canvasElement.querySelector<HTMLElement>('[data-next-view-body="attention"]');
     await expect(view?.innerText).not.toMatch(/\b(?:\d{10}|\d{4}-\d{2}-\d{2}T|KiB|\d+[smhd]\b)/);
+  },
+};
+
+export const AbsoluteTimesWithoutBoardClock: Story = {
+  args: { missingClock: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText(`Reset ${absoluteTime(absoluteReset)}`);
+    for (const [index, time] of absoluteTimes.entries()) {
+      const member = canvas.getByRole('link', { name: new RegExp(`Checkout ${index + 1} ·`) });
+      await expect(member).toHaveTextContent(`Start time ${absoluteTime(time)}`);
+    }
   },
 };

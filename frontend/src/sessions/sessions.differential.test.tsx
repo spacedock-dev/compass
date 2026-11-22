@@ -2,6 +2,7 @@ import { restateRecordedLocationNotes } from '../../test/location_departure';
 import { disclosureReadings, normalizeDisclosures } from '../../test/disclosures';
 import { withoutCodexRecordedStops } from '../../test/codexRecordedStop';
 import { describe, expect, it } from 'vitest';
+import { payloadSessionRows, sessionKey } from '../observed';
 import { genPayload } from '../observed/generate.test.helper';
 import { loadLegacyViews } from '../observed/legacy.test.helper';
 import { mountShell } from '../shell/testing';
@@ -220,6 +221,38 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
     value.textContent = project;
     node.append(label, value);
   });
+  // The retired page clamped future observations to zero. Project just those recorded ages.
+  const generated = data['generated'];
+  if (typeof generated === 'number') {
+    const sources = new Map(payloadSessionRows(data).map((source) => [sessionKey(source), source]));
+    for (const row of template.content.querySelectorAll<HTMLElement>(
+      'article.next-operation-row',
+    )) {
+      const source = sources.get(
+        sessionKey({
+          harness: row.dataset['nextHarness'],
+          sid: row.dataset['nextSession'],
+        }),
+      );
+      const at = source?.['last_activity'];
+      const end = source?.['ended_at'];
+      const values = row.querySelectorAll('[data-next-operation-fact="now"] :is(strong, em)');
+      for (const value of values) {
+        if (value.textContent === 'ended 0s ago' && typeof end === 'number' && end > generated) {
+          value.remove();
+        }
+        if (
+          value.textContent === 'last active 0s ago' &&
+          typeof at === 'number' &&
+          at > generated
+        ) {
+          value.textContent = String(source?.['state_detail'] ?? '').trim()
+            ? 'quiet'
+            : 'Activity not published';
+        }
+      }
+    }
+  }
   return summarize(template.content);
 }
 

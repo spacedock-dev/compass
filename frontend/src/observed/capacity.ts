@@ -36,6 +36,8 @@ export interface BoardRisk {
   readonly sid?: string;
   readonly harness?: string;
   readonly project?: string;
+  readonly delegatedSession?: Row;
+  readonly waitAge?: number | null;
 }
 
 const SLOTS: readonly (readonly [string, string])[] = [

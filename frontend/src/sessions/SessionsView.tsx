@@ -282,7 +282,7 @@ const RowView = memo(function RowView({
       kind="now"
       label={nowKind}
       text={session.nowWords}
-      known={session.nowKnown}
+      known={session.nowWordsKnown}
       note={row.endedSince}
     />
   );

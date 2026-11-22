@@ -42,12 +42,15 @@ visible on the first layer.
 Write out elapsed units in first-layer text, as in "waiting 6 minutes" and "ended 25 minutes
 ago". Use the displayed payload's generated time as the reference. The reader's locale and time
 zone determine clock times and short dates. When a timestamp is missing or unusable, leave its
-reading out. Needs you uses the formatter for observed times, and Sessions and its terminal
-listing share the elapsed spelling.
+age out. An absolute start or scheduled reset can still use its published date and time.
+Needs you uses the formatter for observed times, and Sessions and its terminal listing share
+the elapsed spelling.
 
 First-layer sizes use KB or MB on Compass's 1,024-byte scale. What is sent gives its limits in
 KB. Exact byte limits belong in technical details and [`SECURITY.md`](../SECURITY.md). The
-[`format.ts`](../frontend/src/shell/format.ts) size formatter supplies the board spelling.
+[`format.ts`](../frontend/src/shell/format.ts) size formatter supplies the board spelling. The
+summary disclosure uses the window limit published with its plan or last attempt. Server-authored
+disclosure copy follows in DRC-5524.
 
 ## Tokens and type
 

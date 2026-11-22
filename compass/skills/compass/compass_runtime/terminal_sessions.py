@@ -236,28 +236,37 @@ def printable_text(value: object) -> str:
     )
 
 
-def _duration_part(count: int, unit: str) -> str:
-    return f"{count} {unit}" if count == 1 else f"{count} {unit}s"
+def _duration_parts(seconds: object) -> tuple[tuple[int, str], ...]:
+    number = _num(seconds)
+    if number is None or number < 0:
+        return ()
+    whole = math.floor(number)
+    if whole < 60:
+        return ((whole, "second"),)
+    if whole < 3600:
+        return ((whole // 60, "minute"),)
+    if whole < 86400:
+        hours, minutes = divmod(whole // 60, 60)
+        return ((hours, "hour"), (minutes, "minute"))
+    days, hours = divmod(whole // 3600, 24)
+    return ((days, "day"), (hours, "hour"))
 
 
 def format_duration(seconds: object) -> str | None:
-    """Match the board's elapsed wording, with up to two units and no zero remainder."""
-    if isinstance(seconds, bool) or not isinstance(seconds, int | float):
-        return None
-    if not math.isfinite(seconds) or seconds < 0:
-        return None
-    whole = math.floor(seconds)
-    if whole < 60:
-        return _duration_part(whole, "second")
-    if whole < 3600:
-        return _duration_part(whole // 60, "minute")
-    if whole < 86400:
-        hours, minutes = divmod(whole // 60, 60)
-        major = _duration_part(hours, "hour")
-        return f"{major} {_duration_part(minutes, 'minute')}" if minutes else major
-    days, hours = divmod(whole // 3600, 24)
-    major = _duration_part(days, "day")
-    return f"{major} {_duration_part(hours, 'hour')}" if hours else major
+    """The compact duration that Project and stored Drift still display."""
+    return " ".join(f"{count}{unit[0]}" for count, unit in _duration_parts(seconds)) or None
+
+
+def _format_duration_words(seconds: object) -> str | None:
+    parts = _duration_parts(seconds)
+    return (
+        " ".join(
+            f"{count} {unit}{'' if count == 1 else 's'}"
+            for index, (count, unit) in enumerate(parts)
+            if index == 0 or count > 0
+        )
+        or None
+    )
 
 
 def _rec(value: object) -> bool:
@@ -309,7 +318,11 @@ def _age(generated: float | None, stamp: object) -> float | None:
 
 
 def _since(generated: float | None, stamp: object) -> str | None:
-    return format_duration(_age(generated, stamp))
+    at = _num(stamp)
+    # The browser's Date range, in seconds. Older CLI callers keep their own age rules.
+    if generated is None or at is None or not 0 < at <= generated <= 8_640_000_000_000:
+        return None
+    return _format_duration_words(generated - at)
 
 
 def _key(source: Row) -> tuple[str, str]:
@@ -957,7 +970,9 @@ def _waiter(subject: _Subject, seen: _Seen | None, generated: float | None) -> W
     entry = seen.entry if seen else None
     if subject.asks:
         ages = [a for a in map(_ask_age, subject.asks) if a is not None]
-        return Waiter(entry, subject.asks, "", "", format_duration(max(ages)) if ages else None)
+        return Waiter(
+            entry, subject.asks, "", "", _format_duration_words(max(ages)) if ages else None
+        )
     source = subject.owner or {}
     detail = _trimmed(source.get("state_detail")) or "Needs-input state reported"
     note = _UNCONFIRMED if source.get("wait_unconfirmed") else ""
