@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2349059,
+    "bytes": 2349611,
     "file": "react.html",
-    "sha256": "32d43402334c575eafc91e991af4f35a6425c6c4459367fd3c8e6977385d107e"
+    "sha256": "20a4bf730d2bb1187828d7b905429111bf4cefa03805139f6c9d568c24320104"
   },
   "format": 1,
   "frontend": "react",
@@ -899,7 +899,7 @@
       },
       {
         "file": "frontend/src/language/glossary.ts",
-        "sha256": "8957df487682897283a5cb3247d4b9433fa0c55dda8e8652af33daf146a156a8"
+        "sha256": "dce349356b441e2e8bd831e3b6334639f50730ea36ec446d7f26dcde14db23d4"
       },
       {
         "file": "frontend/src/lib/utils.ts",
@@ -967,7 +967,7 @@
       },
       {
         "file": "frontend/src/observed/session.ts",
-        "sha256": "ac21a5c7441245ec858b9988d19a5decf4e0ab80547eef096bed4fe7f3ca1a12"
+        "sha256": "d60da3277045e89a95fe222a24cec2ab96647090cab3d0f34978e0fb0e3fb10a"
       },
       {
         "file": "frontend/src/observed/values.ts",
@@ -1307,7 +1307,7 @@
       },
       {
         "file": "frontend/src/shell/Header.tsx",
-        "sha256": "d19747ae08157a7a5b198ccfd109efff72d2fefe471485f0f28f0c2d7a4405d4"
+        "sha256": "c501c0207f81e08e6835d40cbb6c7a8ec4bb6c7931dcb3af46d5daad0d28b5e0"
       },
       {
         "file": "frontend/src/shell/LiveRegions.tsx",
@@ -1319,7 +1319,7 @@
       },
       {
         "file": "frontend/src/shell/Page.tsx",
-        "sha256": "951f5dd57f2df2f5d8e1529410b3bad0c6107708059e0361677d64c4fad03ee9"
+        "sha256": "b64800ab74145197482e81170b81fc2bcb71deab6539b23aae25be3fd573fb4b"
       },
       {
         "file": "frontend/src/shell/ProjectTabs.tsx",
@@ -1351,11 +1351,11 @@
       },
       {
         "file": "frontend/src/shell/derive.ts",
-        "sha256": "556351da14c75ff55d5f8b3d84bbe4da5ff4e99fd02963405993a51d6f5f5701"
+        "sha256": "c60f2babf31019a05a51ccb572b3627f47e03082b7228323f4949aaad7c71baf"
       },
       {
         "file": "frontend/src/shell/favicon.ts",
-        "sha256": "e8fcc0a45d508c4e0cb9b730f8e84086d015d8e556df575f4a38da6fcf0ade1b"
+        "sha256": "074f3053a7d625b69a4e43e3903fa7a43e813709a9792c4584aa523f2f3fe23d"
       },
       {
         "file": "frontend/src/shell/format.ts",
