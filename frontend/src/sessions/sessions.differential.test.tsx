@@ -11,7 +11,6 @@ import { projectRecordedRowOpener } from '../../test/recordedCommandOpener';
 import { maskRevisionWords } from '../../test/revisionWordDeviation';
 import { maskSessionRowPresentation } from '../../test/sessionRowDeviation';
 import { attentionSelectionFor } from '../attention/select';
-import { sessionKey } from '../observed';
 
 /* The Sessions screen, held to the legacy page by what a reader can read. The legacy `nextSessionsView`
    runs unchanged over a generated payload and this screen renders the same payload in the real shell;
