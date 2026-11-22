@@ -243,6 +243,11 @@ test('first-layer utility debt counts variants, recipes and repeated tokens', as
     ['font-mono', 'monospace'],
     ['[font-family:var(--mono)]', 'monospace'],
     ['font-[family-name:var(--mono)]', 'monospace'],
+    ['font-(family-name:--mono)', 'monospace'],
+    ['[font-family:ui-monospace]', 'monospace'],
+    ['[font-family:monospace]', 'monospace'],
+    ['font-[ui-monospace]', 'monospace'],
+    ['font-[monospace]', 'monospace'],
   ]) {
     assert.deepEqual(
       firstLayerTokens(
@@ -253,6 +258,13 @@ test('first-layer utility debt counts variants, recipes and repeated tokens', as
       token,
     );
   }
+  assert.deepEqual(
+    firstLayerTokens(
+      'const classes = "font-[family-name:Inter] [font-family:sans-serif]";',
+      'row.tsx',
+    ),
+    {},
+  );
   assert.deepEqual(firstLayerTokens('const label = "Tracking shipments";', 'row.tsx'), {});
 });
 
@@ -264,11 +276,22 @@ test('first-layer CSS debt counts declarations and ignores comments', async () =
       'rows.css',
     ),
     {
-      monospace: ['font-family: var(--mono)'],
+      monospace: ['FONT-FAMILY: var( --mono )'],
       uppercase: ['text-transform: uppercase'],
       tracking: ['letter-spacing'],
     },
   );
+});
+
+test('direct CSS generic monospace families count once per declaration', async () => {
+  const { firstLayerTokens } = await import('./style-policy.mjs');
+  for (const family of ['ui-monospace, monospace', 'monospace', 'Inter, monospace']) {
+    assert.equal(
+      firstLayerTokens(`.row { font-family: ${family}; }`, 'rows.css').monospace?.length,
+      1,
+    );
+  }
+  assert.deepEqual(firstLayerTokens('.row { font-family: Inter, sans-serif; }', 'rows.css'), {});
 });
 
 test('inline SVG is allowed in UI and rejected in feature source', async () => {
@@ -352,6 +375,7 @@ test('the first record bootstraps style counts from base sources', async () => {
   const base = bootstrapFirstLayer([row], readBase);
   assert.deepEqual(base, {
     counts: { [row]: { uppercase: 1 } },
+    stories: [],
   });
   assert.deepEqual(
     compareFirstLayer(
@@ -362,5 +386,31 @@ test('the first record bootstraps style counts from base sources', async () => {
       base,
     ),
     [`${row}: first-layer uppercase rose 1 -> 2 (uppercase, hover:uppercase)`],
+  );
+});
+
+test('the first exemption list admits only stories already in the base', async () => {
+  const { bootstrapFirstLayer, compareFirstLayer } = await import('./style-policy.mjs');
+  const path = 'frontend/stories/Legacy.stories.tsx';
+  const base = bootstrapFirstLayer(
+    [path],
+    () => 'export default { title: "Board/Legacy" }; export const Existing = {};',
+  );
+  const record = {
+    counts: {},
+    technical: {},
+    stories: ['board-legacy--existing', 'board-legacy--new'],
+  };
+  assert.deepEqual(compareFirstLayer({}, record, base), [
+    'Story audit exemption added against the PR base: board-legacy--new',
+  ]);
+});
+
+test('the Sessions grouping story runs the first-layer audit', async () => {
+  const budget = JSON.parse(await readFile(join(root, 'frontend/first-layer-budget.json'), 'utf8'));
+  assert.ok(
+    !budget.stories.includes(
+      'sessions-declared-children-and-groups--grouping-remains-visibly-pressed',
+    ),
   );
 });

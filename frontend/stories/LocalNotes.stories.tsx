@@ -91,13 +91,13 @@ function LocalNotesExample({
               <HumanContextField
                 memoKey={MEMO_KEY}
                 kind="outcome"
-                label="OUTCOME"
+                label="Outcome"
                 placeholder="A local memo"
               />
               <HumanContextField
                 memoKey={memoKey(PROJECT, null, 'focus')}
                 kind="focus"
-                label="FOCUS"
+                label="Focus"
                 placeholder="A local focus memo"
               />
             </>
@@ -182,7 +182,7 @@ function editorLimit(kind: 'steer' | 'tripwire' | 'memo'): Story {
       if (kind === 'tripwire')
         await userEvent.click(await canvas.findByRole('button', { name: '+ set a tripwire' }));
       if (kind === 'memo')
-        await userEvent.click(await canvas.findByRole('button', { name: 'Edit OUTCOME' }));
+        await userEvent.click(await canvas.findByRole('button', { name: 'Edit Outcome' }));
       const box = canvas.getByRole('textbox');
       if (kind === 'memo') await expect(box).toHaveValue('m'.repeat(500));
       await expect(box).not.toHaveAttribute('maxlength');
@@ -354,12 +354,12 @@ export const UntouchedMemoReopensLatest: Story = {
   args: { kind: 'memo' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Edit OUTCOME' }));
-    await userEvent.click(canvas.getByRole('button', { name: 'Edit FOCUS' }));
+    await userEvent.click(await canvas.findByRole('button', { name: 'Edit Outcome' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'Edit Focus' }));
     const backend = backendOf(canvasElement);
     createLegacyStorage(() => backend).memo.write(MEMO_KEY, 'Saved in another tab');
     const writes = backend.writes.length;
-    await userEvent.click(canvas.getByRole('button', { name: 'Edit OUTCOME' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'Edit Outcome' }));
     await expect(canvas.getByRole('textbox')).toHaveValue('Saved in another tab');
     await userEvent.keyboard('{Escape}');
     await expect(canvas.getByText('Saved in another tab')).toBeVisible();
@@ -372,7 +372,7 @@ export const MemoEscapeKeepsAnotherTabSave: Story = {
   args: { kind: 'memo' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Edit OUTCOME' }));
+    await userEvent.click(await canvas.findByRole('button', { name: 'Edit Outcome' }));
     const box = canvas.getByRole('textbox');
     await replace(box, 'My autosaved words');
     // Commit the edit before Escape removes the box: otherwise user-event fires its own

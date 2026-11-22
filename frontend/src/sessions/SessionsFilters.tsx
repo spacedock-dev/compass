@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useId,
   useLayoutEffect,
@@ -202,6 +203,10 @@ export function WindowNote({
   );
 }
 
+function publishesFilterLabel(facet: Facet, value: string): boolean {
+  return (facet === 'project' || facet === 'group') && Boolean(value.trim());
+}
+
 function OptionRow({
   option,
   checked,
@@ -226,7 +231,12 @@ function OptionRow({
         onCheckedChange={onToggle}
       />
       <span className="flex min-w-0 flex-1 flex-col">
-        <span data-filter-label>{option.label}</span>
+        <span
+          data-filter-label
+          data-authored={publishesFilterLabel(facet, option.value) || undefined}
+        >
+          {option.label}
+        </span>
         {option.note ? (
           <span className={NOTE} data-filter-note>
             {option.note}
@@ -619,6 +629,7 @@ export function SessionsFilters({
     readonly key: string;
     readonly full: string;
     readonly short: string;
+    readonly shortLabel?: ReactNode;
     readonly inert: string;
     readonly clear: () => void;
   }[] = [];
@@ -677,13 +688,33 @@ export function SessionsFilters({
     'progress',
   ] as const) {
     if (!filters[facet].length) continue;
+    const options = ordered(facet).map((value) => ({
+      value,
+      label: optionLabel(facet, value, board.harnesses),
+    }));
+    const name = facetNames[facet];
     const text = chipText(
-      facetNames[facet],
-      ordered(facet).map((value) => optionLabel(facet, value, board.harnesses)),
+      name,
+      options.map(({ label }) => label),
     );
+    const shortened = text.full !== text.short;
+    const visible = shortened ? options.slice(0, 1) : options;
     chips.push({
       key: facet,
       ...text,
+      shortLabel:
+        facet === 'project' || facet === 'group' ? (
+          <>
+            {`${name}: `}
+            {visible.map(({ value, label }, index) => (
+              <Fragment key={value}>
+                {index ? ', ' : ''}
+                <span data-authored={publishesFilterLabel(facet, value) || undefined}>{label}</span>
+              </Fragment>
+            ))}
+            {shortened ? ` +${String(options.length - 1)} more` : ''}
+          </>
+        ) : undefined,
       inert:
         facet === 'progress' || facet === 'goal'
           ? progressExplanation
@@ -1151,7 +1182,7 @@ export function SessionsFilters({
                   chip.clear();
                 }}
               >
-                <span>{chip.short}</span>
+                <span>{chip.shortLabel ?? chip.short}</span>
                 {fullId ? (
                   <span id={fullId} className="sr-only">
                     {chip.full}

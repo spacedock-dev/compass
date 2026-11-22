@@ -56,3 +56,89 @@ export const DetectsRegressions: Story = {
     await expect(auditCalm(canvasElement)).toEqual([]);
   },
 };
+
+export const PaintedBorder: Story = {
+  render: () => (
+    <section style={{ backgroundColor: '#aaa', padding: '10px' }}>
+      <input
+        aria-label="Border over fill"
+        style={{ border: '4px solid rgb(0 0 0 / 50%)', backgroundColor: '#fff' }}
+      />
+      <input
+        aria-label="Border outside fill"
+        style={{
+          border: '4px solid rgb(0 0 0 / 50%)',
+          backgroundColor: '#fff',
+          backgroundClip: 'padding-box',
+        }}
+      />
+    </section>
+  ),
+  play: async ({ canvasElement }) => {
+    const control = canvasElement.querySelector<HTMLInputElement>('input');
+    try {
+      expect(auditCalm(canvasElement)).toEqual([
+        'control border 1.72:1 < 3:1 on input "Border over fill"',
+      ]);
+    } finally {
+      control?.style.setProperty('background-clip', 'padding-box');
+    }
+  },
+};
+
+export const VisibleTextKeepsItsOrigin: Story = {
+  render: () => (
+    <section>
+      <p>Source [{3}]</p>
+      <p>
+        With <span>source [</span>
+        <b>4</b>]
+      </p>
+      <p>SESSION SUMMARY</p>
+      <p>AI and ID</p>
+      <p>KB</p>
+      <p>
+        Source [<span data-authored>5</span>]
+      </p>
+      <p>
+        <span data-authored>DEADBEEF [6]</span> Source [7]
+      </p>
+      <p
+        data-authored
+        style={{
+          fontFamily: 'ui-monospace, monospace',
+          textTransform: 'uppercase',
+          letterSpacing: '.12em',
+        }}
+      >
+        Run 1795327749000 [8]
+      </p>
+      <style>{'.calm-placeholder::placeholder { font-family: ui-monospace, monospace; }'}</style>
+      <input className="calm-placeholder" placeholder="Find a session" style={{ border: '0' }} />
+      <input
+        className="calm-placeholder"
+        placeholder="Filled search"
+        defaultValue="Query"
+        style={{ border: '0' }}
+      />
+      <p hidden>HIDDEN LABEL [9]</p>
+    </section>
+  ),
+  play: async ({ canvasElement }) => {
+    try {
+      expect(auditCalm(canvasElement)).toEqual([
+        expect.stringMatching(/citation.*Source \[3\]/),
+        expect.stringMatching(/citation.*With source \[4\]/),
+        expect.stringMatching(/all-capital.*SESSION SUMMARY/),
+        expect.stringMatching(/citation.*Source \[7\]/),
+        expect.stringMatching(/monospace.*Run 1795327749000/),
+        expect.stringMatching(/uppercase.*Run 1795327749000/),
+        expect.stringMatching(/letter-spacing.*Run 1795327749000/),
+        expect.stringMatching(/monospace.*Find a session/),
+      ]);
+    } finally {
+      const fixture = canvasElement.querySelector('section');
+      if (fixture) fixture.hidden = true;
+    }
+  },
+};

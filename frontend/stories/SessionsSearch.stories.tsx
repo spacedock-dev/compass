@@ -101,6 +101,7 @@ function Board({
   annotate = true,
   showAll = false,
   rowExamples = false,
+  auditPayload = false,
   goalEvidence = false,
   flagBoard,
   hash = '#n=sessions',
@@ -108,6 +109,7 @@ function Board({
   readonly annotate?: boolean;
   readonly showAll?: boolean;
   readonly rowExamples?: boolean;
+  readonly auditPayload?: boolean;
   readonly goalEvidence?: boolean;
   readonly flagBoard?:
     | 'mixed'
@@ -131,6 +133,8 @@ function Board({
       annotate,
       showAll,
       rowExamples,
+      auditPayload,
+      bWaiting: auditPayload,
     };
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
     const made = createShell({
@@ -932,6 +936,35 @@ export const FiltersStayOpenWhileChoosing: Story = {
     await expect(panel.getBoundingClientRect().bottom).toBeLessThan(
       rightNow.getBoundingClientRect().top,
     );
+  },
+};
+
+export const CompassLabelsAndPayloadWordsCoexist: Story = {
+  args: { auditPayload: true },
+  play: async ({ canvasElement }) => {
+    const canvas = await ready(canvasElement);
+    const glance = canvas.getByRole('region', { name: 'At a glance' });
+    for (const words of [
+      'Approve deadbeef at 1795327749000 [3]?',
+      'Decision on branch deadbeef [11]',
+    ]) {
+      await expect(glance).toHaveTextContent(words);
+      await expect(
+        canvasElement.querySelector('[data-next-operation-group="active"]'),
+      ).toHaveTextContent(words);
+    }
+    const row = canvas
+      .getByRole('link', { name: 'Open session Parser cleanup' })
+      .closest('article');
+    for (const words of [
+      'Review deadbeef [4]',
+      'Ship deadbeef [5]',
+      'project [6]',
+      'worktree branch [7]',
+    ]) {
+      await expect(row).toHaveTextContent(words);
+    }
+    await expect(auditCalm(canvasElement)).toEqual([]);
   },
 };
 

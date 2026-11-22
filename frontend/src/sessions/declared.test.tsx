@@ -91,7 +91,9 @@ describe('declared process children', () => {
   it('a child page states its parent and inherited group while an unmatched declaration says not linked', async () => {
     const page = await open('#n=session:demo:codex:child');
     expect(screen.getByRole('link', { name: 'Child of Coordinate release' })).toBeInTheDocument();
-    expect(screen.getByText(fixture.expected.child[0] ?? '')).toBeInTheDocument();
+    expect(
+      screen.getByText((_text, node) => node?.textContent === fixture.expected.child[0]),
+    ).toBeInTheDocument();
     await act(async () =>
       page.router.navigate({
         view: 'session',

@@ -12,7 +12,7 @@ import { WorthALookFlag } from '../attention/WorthALookFlag';
 import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 'react';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
-import { gapNames, sessionStateLimit, type Row } from '../observed';
+import { SESSION_TEXT_ORIGIN, gapNames, sessionStateLimit, type Row } from '../observed';
 import { selectObserved } from '../observed/select';
 import { selectHarnessSources } from '../store/selectors';
 import { useDisplayed, useShell } from '../shell/context';
@@ -44,7 +44,8 @@ import { buildSessionsScreen, rowState, type SessionRow } from './rows';
 import { SessionsGlance } from './SessionsGlance';
 import { assignmentOf, type PromptCandidate } from './intent';
 import { goalFocusFor } from './heldState';
-import { worktreeLabel } from './worktree';
+import { worktreeOf } from './worktree';
+import type { ReactNode } from 'react';
 import {
   BOARD_WHY,
   DUPLICATE_LABEL_LIMIT,
@@ -90,13 +91,17 @@ function Fact({
   kind,
   label,
   value,
-  detail = '',
+  valueAuthored,
+  detail,
+  detailAuthored,
   tone = '',
 }: {
   readonly kind: string;
   readonly label: string;
   readonly value: string;
-  readonly detail?: string;
+  readonly valueAuthored?: boolean;
+  readonly detail?: ReactNode;
+  readonly detailAuthored?: boolean;
   readonly tone?: string;
 }) {
   return (
@@ -105,9 +110,18 @@ function Fact({
       data-next-operation-fact={kind}
     >
       <small>{label}</small>
-      <strong {...(tone === 'unknown' ? { className: 'next-absence' } : {})}>{value}</strong>
+      <strong
+        className={tone === 'unknown' ? 'next-absence' : undefined}
+        data-authored={valueAuthored || undefined}
+      >
+        {value}
+      </strong>
       {/* A held question can run to 2,000 characters: the row shows its opening, the session page all of it. */}
-      {detail ? <em className="line-clamp-3">{detail}</em> : null}
+      {detail ? (
+        <em className="line-clamp-3" data-authored={detailAuthored || undefined}>
+          {detail}
+        </em>
+      ) : null}
     </span>
   );
 }
@@ -119,18 +133,30 @@ function ObservedFact({
   label,
   text,
   known,
+  authored = false,
   note = '',
+  noteAuthored = false,
   tone = '',
 }: {
   readonly kind: string;
   readonly label: string;
   readonly text: string;
   readonly known: boolean;
+  readonly authored?: boolean;
   readonly note?: string;
+  readonly noteAuthored?: boolean;
   readonly tone?: string;
 }) {
   return (
-    <Fact kind={kind} label={label} value={text} detail={note} tone={known ? tone : 'unknown'} />
+    <Fact
+      kind={kind}
+      label={label}
+      value={text}
+      valueAuthored={authored}
+      detail={note}
+      detailAuthored={noteAuthored}
+      tone={known ? tone : 'unknown'}
+    />
   );
 }
 
@@ -271,6 +297,7 @@ const RowView = memo(function RowView({
   readonly depth?: number;
 }) {
   const { session, history } = row;
+  const worktree = worktreeOf(row.source);
   const outcomeTone =
     session.outcomeIcon === 'worth-a-look' ? '' : ` next-operation-outcome--${session.tone}`;
   const outcome = row.showOutcome ? (
@@ -296,6 +323,7 @@ const RowView = memo(function RowView({
       label="Now"
       text={session.nowWords}
       known={session.nowWordsKnown}
+      authored={session[SESSION_TEXT_ORIGIN].now}
       note={row.endedSince}
     />
   );
@@ -316,7 +344,15 @@ const RowView = memo(function RowView({
         kind="where"
         label="Project"
         value={session.project}
-        detail={worktreeLabel(row.source)}
+        valueAuthored={Boolean(session.project.trim())}
+        detail={
+          worktree ? (
+            <>
+              {'worktree '}
+              <span data-authored>{worktree}</span>
+            </>
+          ) : null
+        }
       />
       <GoalCellView row={row} />
       {history ? (
@@ -334,6 +370,7 @@ const RowView = memo(function RowView({
             label="Next"
             text={session.nextText}
             known={session.nextKnown}
+            authored={session.nextKnown}
           />
           <ObservedFact
             kind="blocked"
@@ -341,6 +378,7 @@ const RowView = memo(function RowView({
             text={session.blockText}
             known={session.blockKnown}
             note={session.blockNote}
+            noteAuthored={session[SESSION_TEXT_ORIGIN].blockNote}
             tone={session.isNeeds || session.askKnown ? 'blocked' : 'clear'}
           />
           {outcome ? <div className="next-operation-end-note">{outcome}</div> : null}
@@ -460,7 +498,10 @@ const Group = memo(function Group({
             buckets.map((bucket) => (
               <Fragment key={bucket.group}>
                 {byGroup ? (
-                  <h3 className="my-2 text-label font-semibold [overflow-wrap:anywhere]">
+                  <h3
+                    className="my-2 text-label font-semibold [overflow-wrap:anywhere]"
+                    data-authored={Boolean(bucket.group) || undefined}
+                  >
                     {groupName(bucket.group)}
                   </h3>
                 ) : null}

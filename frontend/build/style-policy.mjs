@@ -86,6 +86,15 @@ const sourceModule = (file) =>
 const styleSource = (file) => sourceModule(file) || file.endsWith('.css');
 const storySource = (file) => file.startsWith('frontend/stories/') && file.endsWith('.stories.tsx');
 
+const MONO_FAMILY =
+  /var\(\s*--mono\s*(?:[,)]|$)|(?:^|[\s,'"])(?:ui-monospace|monospace)(?=$|[\s,'"!])/i;
+
+function monospaceDeclarations(css) {
+  return [...css.matchAll(/(?:^|(?<=[;{]))\s*font-family\s*:\s*([^;{}]+)/gi)].filter(([, value]) =>
+    MONO_FAMILY.test(value),
+  );
+}
+
 export function firstLayerTokens(source, file) {
   const found = {};
   const add = (kind, token) => {
@@ -94,8 +103,8 @@ export function firstLayerTokens(source, file) {
   };
   if (file.endsWith('.css')) {
     const css = source.replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const [declaration] of monospaceDeclarations(css)) add('monospace', declaration.trim());
     const declarations = [
-      ['monospace', 'font-family: var(--mono)', /[;{]\s*font-family\s*:\s*var\(\s*--mono\s*\)/gi],
       ['uppercase', 'text-transform: uppercase', /[;{]\s*text-transform\s*:\s*uppercase\b/gi],
       ['tracking', 'letter-spacing', /[;{]\s*letter-spacing\s*:/gi],
     ];
@@ -108,7 +117,10 @@ export function firstLayerTokens(source, file) {
       if (/^(?:-?tracking-|\[letter-spacing:)/.test(utility)) add('tracking', token);
       if (
         utility === 'font-mono' ||
-        /^(?:\[font-family:|font-\[(?:family-name:)?)var\(--mono\)\]$/.test(utility)
+        (/^(?:\[font-family:|font-\[|font-\()/.test(utility) &&
+          utilityTypes
+            .candidatesToCss([utility])
+            .some((css) => css && monospaceDeclarations(css).length))
       )
         add('monospace', token);
     });
@@ -154,6 +166,7 @@ export function bootstrapFirstLayer(paths, readBase) {
         paths.filter(styleSource).map((file) => [file, firstLayerTokens(readBase(file), file)]),
       ),
     ),
+    stories: paths.filter(storySource).flatMap((file) => storyIds(readBase(file), file)),
   };
 }
 
@@ -172,9 +185,9 @@ export function compareFirstLayer(tokensByFile, record, base) {
     }
   }
   // The first record seeds the measured exemptions for the legacy views already on the stack.
-  const priorStories = base.stories && new Set(base.stories);
+  const priorStories = new Set(base.stories);
   for (const id of record.stories) {
-    if (priorStories && !priorStories.has(id))
+    if (!priorStories.has(id))
       problems.push(`Story audit exemption added against the PR base: ${id}`);
   }
   return problems;

@@ -20,7 +20,12 @@ import {
 export const UNCONFIRMED_WAIT_NOTE =
   'Unconfirmed: no positive observation in 5m; prompt may still be standing';
 
+/* Rendering metadata travels with a session through row spreads. It has no string key
+   because it is internal to the reader and does not change the observed answer. */
+export const SESSION_TEXT_ORIGIN = Symbol('session text origin');
+
 export type ObservedSession = {
+  readonly [SESSION_TEXT_ORIGIN]: { readonly now: boolean; readonly blockNote: boolean };
   readonly sid: string;
   readonly harness: string;
   /** The published label, exactly: whitespace and the empty label are groups of their own. */
@@ -229,6 +234,7 @@ export function observeSession(
     : 'Harness does not report turn bounds';
   const goal = goalOf(source);
   const stateDetail = trimmed(source['state_detail']);
+  const publishedBlock = question || (needs && !source['wait_unconfirmed'] ? stateDetail : '');
   const runFinish = finishedRunAt(source);
   const runAge = formatDuration(ageSeconds(generated, runFinish));
   const runIsNow = runFinish !== null && !question && !source['waiting_on_child'];
@@ -275,6 +281,11 @@ export function observeSession(
     ...now,
     nowWords: words.nowText,
     nowWordsKnown: words.nowKnown,
+    [SESSION_TEXT_ORIGIN]: {
+      now:
+        words.nowKnown && !ended && !runIsNow && stateKnown && Boolean(doing || !quiet || question),
+      blockNote: Boolean(publishedBlock),
+    },
     ...pair('next', pending?.['subject'], 'No pending step published'),
     ...pair('where', '', 'Exact location not published'),
     ...pair('turn', turnText, turnReason),
@@ -287,12 +298,8 @@ export function observeSession(
           : 'Harness does not report blocks',
     blockKnown,
     blockNote:
-      question ||
-      (needs
-        ? source['wait_unconfirmed']
-          ? UNCONFIRMED_WAIT_NOTE
-          : trimmed(source['state_detail']) || 'Block reported'
-        : ''),
+      publishedBlock ||
+      (needs ? (source['wait_unconfirmed'] ? UNCONFIRMED_WAIT_NOTE : 'Block reported') : ''),
     // Stops and ends are published; readership and termination cause are not. Their absence belongs in
     // open and coverage, never in an inferred outcome.
     ...pair('outcome', outcome, 'No stop or end observed'),

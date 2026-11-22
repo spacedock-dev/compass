@@ -373,7 +373,10 @@ function WordsWeUseNow() {
               <th scope="row" style={{ ...cell, fontWeight: 650 }}>
                 {plain}
               </th>
-              <td style={{ ...cell, color: 'var(--ink2)' }}>{replaces}</td>
+              <td style={{ ...cell, color: 'var(--ink2)' }}>
+                {/* The old wording is quoted verbatim. The guide still sets its typography. */}
+                <span data-authored>{replaces}</span>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -521,6 +524,7 @@ export const StyleGuide: Story = {
       ['Needs you', 'Attention'],
       ['Goal history', 'Intent log'],
       ['Quiet', 'Idle'],
+      ['Working', 'WORKING'],
       ['Update my goal instead', 'Update intent instead'],
     ] as const) {
       const item = within(words.getByRole('row', { name: plain + ' ' + earlier }));

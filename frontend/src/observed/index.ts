@@ -34,6 +34,7 @@ export {
   noTitleText,
   observeSession,
   pageTitleOf,
+  SESSION_TEXT_ORIGIN,
   sessionState,
   sessionStateLimit,
   type ObservedSession,
