@@ -220,5 +220,5 @@ privately, as described in [SECURITY.md](SECURITY.md).
 ## 6. License
 
 Compass's code and documentation are licensed under the [Apache License 2.0](LICENSE). See
-[NOTICE](NOTICE) for attribution. The bundled Space Grotesk and IBM Plex Mono font subsets retain their
-SIL Open Font License notices in `compass/skills/compass/compass_runtime/web/fonts/`.
+[NOTICE](NOTICE) for attribution. Compass bundles one variable Inter face in three subsets. Its
+SIL Open Font License is in `compass/skills/compass/compass_runtime/web/fonts/`.

@@ -96,7 +96,8 @@ try {
   });
   await page.goto(dev.origin);
   await page.getByText('Compass fixture marker').waitFor();
-  assert.equal(await page.evaluate(() => globalThis.document.fonts.size), 15);
+  const fonts = await page.evaluate(() => globalThis.document.fonts.size);
+  assert.equal(fonts, 3);
   await page.getByRole('button', { name: 'Fixture count 0' }).click();
   await page.evaluate(() => {
     globalThis.__devDocumentSentinel = 'same document';
@@ -265,7 +266,7 @@ try {
         development: {
           realPython: true,
           hotRefreshPreservedState: true,
-          fonts: 15,
+          fonts,
           collectorFixtureObserved: true,
           realSseRevision: true,
           backendRestart: true,

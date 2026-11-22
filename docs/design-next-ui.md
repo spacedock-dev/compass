@@ -520,9 +520,8 @@ no size of its own so it inherits the value's.
 `AnAbsentVariantBorrowsItsSizeFromTheValueItReplacesTest` holds that form, and holds the delegation
 pair beside it, because a stamp that adds no size still says nothing about the base rule it sits on.
 
-Space Grotesk and IBM Plex Mono subsets travel inside the assembled page as data URLs. A missing or
-malformed font is a canonical asset failure and prevents startup before the socket binds. There is
-no font route or browser request to a provider. Licenses and source hashes live under `web/fonts/`.
+The assembled page carries the three Inter subsets as data URLs. The font contract is recorded in
+[NUI-14](#nui-14-the-specified-fonts-travel-inside-the-page).
 
 ### Amended 2026-11-22 (owner): light only and Inter only
 
@@ -1030,15 +1029,14 @@ stalled notice. The server stream budget and revision rules do not change.
 
 ## NUI-14: the specified fonts travel inside the page
 
-The design names Space Grotesk at weights 400 through 700 and IBM Plex Mono at weights 400, 500
-and 600 upright plus 400 italic.
-The canonical bundle ships upstream Latin, Latin Extended, and Vietnamese WOFF2 subsets. `page.py`
-validates each packaged payload and embeds it as a data URL while assembling the one-page response.
+The 2026-11-22 redesign uses Inter for headings and prose and reserves `ui-monospace` for technical
+details. One upright variable Inter face covers weights 100 through 900. The five type steps and
+13 px floor in [NUI-2](#current-tailwind-tokens-and-type-scale) still apply.
 
-There is no font route, provider request, or optional font failure boundary. Missing or malformed
-font data prevents the canonical page from loading before bind. Each family keeps its upstream SIL
-Open Font License beside the assets, and `web/fonts/SOURCES.txt` records source URLs, decoded sizes,
-and hashes.
+The build checks each upstream Latin, Latin Extended, and Vietnamese WOFF2 subset against the
+decoded size and SHA-256 in `web/fonts/SOURCES.txt`. It embeds the three subsets as data URLs and
+includes Inter's SIL Open Font License in `react-licenses.txt`. `page.py` verifies the bundled page
+and notices before serving them. The browser loads the fonts from the page itself.
 
 ## NUI-15: command facts keep their source and their scope
 

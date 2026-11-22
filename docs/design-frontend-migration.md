@@ -471,6 +471,12 @@ undated cards say Published instruction and saved rows say Your saved words. Ord
 use plain attention states. The wording adapters change named UI regions and protect published
 quoted values, including instructions containing an old label. The recorded fixtures stay intact.
 
+The typography change to Inter updates the expected font families in the browser comparisons.
+The Sessions chrome proof translates the recorded Space Grotesk stack to the Inter stack and
+the recorded IBM Plex Mono stack to `ui-monospace, monospace`. The Project proof applies the same
+monospace substitution to the Course workstream toggle at 375 and 1280 px. Both proofs keep
+comparing the other computed styles and widths against the original fixtures.
+
 While the legacy page existed, each port was proved against it: the pure functions by running the
 legacy function next to its TypeScript twin over generated inputs, and each rendered surface by
 serving one board to both pages in one Chromium and comparing what a reader can read. Those
@@ -765,8 +771,8 @@ must prove that boundary on the served page. Packaging smoke proves the embedded
 build identity. The page reads only that origin through the typed client. The existing framing policy
 remains in force.
 
-The fifteen packaged font faces and their ranges come from the existing canonical descriptors and
-WOFF2 payloads. Their licenses and source records remain packaged. Bundled JavaScript has its own
+The three packaged Inter subsets and their ranges come from the canonical descriptors and WOFF2
+payloads. The Inter license and source record ship with them. Bundled JavaScript has its own
 full license inventory derived from actual compiler module ownership, not the list of development
 dependencies. Missing ownership or licenses refuse packaging. Build provenance uses relative paths
 and content hashes; release versions, machine paths, timestamps and per-run capabilities do not

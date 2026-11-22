@@ -2076,7 +2076,7 @@ async function checkButtonGallery(browser) {
             };
           });
           assert.equal(popup.px, 15);
-          assert.match(popup.font, /Space Grotesk/);
+          assert.match(popup.font, /^Inter,/);
           assert.equal(popup.ink, 'rgb(31, 41, 51)');
           assert.equal(popup.background, 'rgb(255, 255, 255)');
           for (const option of await page.getByRole('option').all()) {

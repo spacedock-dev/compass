@@ -8,6 +8,28 @@ const table = JSON.parse(
   await readFile(new URL('../session-chrome-reference.json', import.meta.url), 'utf8'),
 );
 
+for (const [key, family] of [
+  ['row|wide|next-operation-row--want', 'Inter, system-ui, -apple-system, sans-serif'],
+  ['state|wide|', 'ui-monospace, monospace'],
+]) {
+  const recorded = table.instances[key];
+  const row = { key, ...recorded, chrome: { ...recorded.chrome, 'font-family': family } };
+
+  test(`the recorded ${key} accepts the ruled ${family} stack`, () => {
+    assert.deepEqual(sessionChromeDifferences([row], table.instances), []);
+  });
+
+  test(`the recorded ${key} still rejects another family, a style change, or a width change`, () => {
+    for (const changed of [
+      { ...row, chrome: { ...row.chrome, 'font-family': 'Georgia, serif' } },
+      { ...row, chrome: { ...row.chrome, 'font-size': '1px' } },
+      { ...row, inlineSize: { ...row.inlineSize, ratio: recorded.inlineSize.ratio + 0.5 } },
+    ]) {
+      assert.equal(sessionChromeDifferences([changed], table.instances).length, 1);
+    }
+  });
+}
+
 test('a collapsed delivery surface fails the recorded width gate', () => {
   const dom = new JSDOM(
     '<div style="display:none"><section data-next-delivery><div data-slot="separator"></div></section></div>',

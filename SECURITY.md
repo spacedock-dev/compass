@@ -16,9 +16,8 @@ starts a Haiku check about once a minute while the session is viewed or a termin
 every model call.
 [Observer model calls](#observer-model-calls) states its bounds;
 [Light harness usage](#light-harness-usage-asking-a-harness-a-bounded-question) states the notice rule.
-The opt-in UI's Space fonts are
-packaged into its page, so
-loading either interface makes no request to a font provider. Four small forwarders ship beside it,
+The dashboard embeds three subsets of one variable Inter face. Loading the page makes no request
+to a font provider. Four small forwarders ship beside it,
 each wired into a harness's own configuration by the user or by the plugin: `notify_hook.py` POSTs
 a Claude `Notification` payload to the dashboard, `event_hook.py` posts command-hook lifecycle
 events for Claude and Codex, `agy_hook.py` posts Antigravity's hook events, and

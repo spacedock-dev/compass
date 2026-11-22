@@ -145,8 +145,9 @@ Three things were not what the plan assumed.
 
 ### The single-file build and the CSS gates
 
-- `pnpm build` passes: one chunk, one CSS asset, no `@import` and no non-`data:` `url()` in the built CSS, the
-  fifteen fonts, and a thirteenth bundled licence (Base UI, its utilities and floating-positioning packages,
+- The spike build produced one chunk and one CSS asset with no `@import` or non-`data:` `url()`.
+  It included the fifteen font subsets used at the time and a thirteenth bundled licence (Base UI,
+  its utilities and floating-positioning packages,
   tailwind-merge, clsx and cva) found and written by the existing notices step. The notices step covers
   packages, not copied source: the copied shadcn licence text was absent from `react-licenses.txt` in the
   spike; the toolchain layer now ships the full copied-source notice.
@@ -1040,7 +1041,7 @@ Storybook is a development dependency and is never imported by the shipped entry
 lives under `frontend/.storybook` and its asserted examples under `frontend/stories`, outside the
 Tailwind source scan. No docs, MDX, onboarding or hosted service addon is installed. The static output
 is ignored and kept outside `frontend/src`. The component explorer reuses the page's styles, Tailwind
-plugin, light palette and embedded font faces.
+plugin, light palette and three embedded Inter subsets.
 
 On 2026-10-11 the npm registry dated Storybook 10.6.0 to September 2 and 10.6.1 to September 29.
 The two-week delay therefore selects 10.6.0 for `storybook`, `@storybook/react-vite` and

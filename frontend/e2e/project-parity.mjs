@@ -1479,7 +1479,14 @@ try {
             ...old,
             panelWidth: old.panelWidth + 2,
             ...(old.toggle && {
-              toggle: { ...old.toggle, width: `${Number.parseFloat(old.toggle.width) + 2}px` },
+              toggle: {
+                ...old.toggle,
+                'font-family':
+                  old.toggle['font-family'] === '"IBM Plex Mono", ui-monospace, monospace'
+                    ? 'ui-monospace, monospace'
+                    : old.toggle['font-family'],
+                width: `${Number.parseFloat(old.toggle.width) + 2}px`,
+              },
             }),
           };
           assert.equal(firstDifference(expected, mine), null, `${width}px ${tab}`);

@@ -87,12 +87,27 @@ export async function readFonts(root) {
   ];
   const styles = lf(await readFile(join(root, WEB, 'styles.css')));
   const faces = styles.match(/^@font-face\{.*\}$/gm) || [];
+  const sources = lf(await readFile(join(root, WEB, 'fonts/SOURCES.txt')));
+  const sourceRows = [
+    ...sources.matchAll(
+      /^([a-z0-9.-]+\.woff2\.b64)\n {2}Source: https:\/\/\S+\n {2}Decoded bytes: (\d+)\n {2}SHA-256: ([a-f0-9]{64})$/gm,
+    ),
+  ];
+  const sourcePins = new Map(
+    sourceRows.map(([, file, bytes, digest]) => [
+      `fonts/${file}`,
+      { bytes: Number(bytes), digest },
+    ]),
+  );
+  const subsetCount = 3;
   if (
-    pairs.length !== 15 ||
-    faces.length !== 15 ||
-    new Set(pairs.map((pair) => pair[1])).size !== 15
+    pairs.length !== subsetCount ||
+    faces.length !== subsetCount ||
+    new Set(pairs.map((pair) => pair[1])).size !== subsetCount ||
+    sourceRows.length !== subsetCount ||
+    sourcePins.size !== subsetCount
   )
-    fail('canonical fifteen-font shape changed');
+    fail('canonical three-subset font shape changed');
   const provenance = [],
     output = [];
   for (const [, file, slot] of pairs) {
@@ -105,7 +120,11 @@ export async function readFonts(root) {
     const payload = Buffer.from(encoded, 'base64');
     if (payload.subarray(0, 4).toString() !== 'wOF2' || payload.toString('base64') !== encoded)
       fail(`invalid WOFF2 ${file}`);
-    provenance.push({ file, bytes: payload.length, sha256: sha256(payload), face: matching[0] });
+    const digest = sha256(payload);
+    const pin = sourcePins.get(file);
+    if (pin?.bytes !== payload.length || pin.digest !== digest)
+      fail(`font differs from SOURCES.txt: ${file}`);
+    provenance.push({ file, bytes: payload.length, sha256: digest, face: matching[0] });
     output.push(matching[0].replace(slot, 'data:font/woff2;base64,' + encoded));
   }
   return { css: output.join('\n') + '\n', provenance };
@@ -153,8 +172,7 @@ async function authoredSources(root) {
     `${WEB}/styles.css`,
     `${WEB}/page.py`,
     `${WEB}/fonts/SOURCES.txt`,
-    `${WEB}/fonts/SpaceGrotesk-OFL.txt`,
-    `${WEB}/fonts/IBMPlexMono-OFL.txt`,
+    `${WEB}/fonts/Inter-OFL.txt`,
     `${WEB}/vendor/SOURCES.txt`,
     `${WEB}/vendor/xterm-LICENSE.txt`,
   ];
@@ -271,8 +289,7 @@ export async function packageFrontend({ root = ROOT, write = true, check = false
     `shadcn/ui copied source (MIT)\nSource: https://github.com/shadcn-ui/ui/blob/main/LICENSE.md\n\n${copiedLicense.trimEnd()}\n`,
   );
   for (const [title, file] of [
-    ['Space Grotesk', 'fonts/SpaceGrotesk-OFL.txt'],
-    ['IBM Plex Mono', 'fonts/IBMPlexMono-OFL.txt'],
+    ['Inter', 'fonts/Inter-OFL.txt'],
     ['Optional xterm.js@6.0.0', 'vendor/xterm-LICENSE.txt'],
   ]) {
     const text = lf(await readFile(join(root, WEB, file)));
