@@ -179,13 +179,6 @@ The posture rests on two invariants:
    because any local process can rewrite the file. Everything else a reading holds is a value the
    code selected from a closed set or composed from counts it measured.
 
-   The Sessions snapshot revalidates a stored Claude Code assessment using the local transcript
-   and an in-memory preview of its semantic history. The read writes neither store and starts no
-   model call or network connection. Recorded CI polls can use the focused view's read-only Git
-   identity probes. The board snapshot publishes the derived `stored_progress` field, which stays
-   out of hook patches, observation history and the reading route's context. The board withholds
-   progress when it cannot establish the focused view's evidence within the snapshot's read bounds.
-
    Since 2026-10-30 the entry can also hold up to seven **earlier departures**, one per Goal or
    outcome line: a departure a reading found that the reading replacing it no longer finds, kept
    so the page can list it beside the later reading. Each carries the same scrubbed `detail` and

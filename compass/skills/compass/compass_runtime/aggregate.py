@@ -18,7 +18,6 @@ from . import (
     deliveries,
     departures,
     dismissals,
-    focused_reading,
     notifications,
     observer,
     quota,
@@ -1781,17 +1780,6 @@ class Application:
             # write it may have missed, so its body is not kept (DRC-4760).
             generation = self.snapshot.generation()
             collection = self.collect(show_all=show_all)
-            if collection.get("annotate") is True:
-                collection = {
-                    **collection,
-                    "sessions": [
-                        {**row, **focused_reading.published(self, collection, row)}
-                        if row.get("annotation_assessment") is not None
-                        or row.get("annotation_reading_refused")
-                        else row
-                        for row in collection.get("sessions", [])
-                    ],
-                }
             body = json.dumps(board_explanations.compact(collection, _BOARD_EXPLANATIONS)).encode()
             revision, kept = self.snapshot.publish(
                 key, body, now=self.clock(), generation=generation

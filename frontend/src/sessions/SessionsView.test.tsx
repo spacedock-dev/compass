@@ -125,7 +125,8 @@ describe('the groups', () => {
       }),
     );
     expect(rows('active')).toEqual(['claude/raised']);
-    expect(document.querySelector('[data-next-row-drift-level]')).toBeNull();
+    const raised = document.querySelector('article[data-next-session="raised"]');
+    expect(raised?.querySelector('[data-variant="progress"]')).toBeNull();
     // Counted with the cards listed under Active now, and still not called working.
     expect(document.querySelector('[data-next-fleet-fact="active"] strong')?.textContent).toBe('1');
     expect(document.querySelector('[data-next-fleet-fact="working"] strong')?.textContent).toBe(
@@ -190,7 +191,7 @@ describe('the groups', () => {
     ['medium', 'Slightly off course'],
     ['high', 'Off course'],
   ])(
-    'shows exactly one pill for a stored %s departure on the first visit',
+    'shows no progress copy for a stored %s departure on the first visit',
     async (level, label) => {
       const page = await open(
         board(
@@ -210,9 +211,9 @@ describe('the groups', () => {
       );
       const row = document.querySelector<HTMLElement>('article[data-next-session="read"]');
       if (!row) throw new Error('Missing row');
-      const pill = within(row).getByText(label);
-      expect(pill.getAttribute('data-variant')).toBe('progress');
-      expect(row.querySelectorAll('[data-slot="badge"]')).toHaveLength(1);
+      expect(within(row).queryByText(label)).not.toBeInTheDocument();
+      expect(row.querySelector('[data-slot="badge"]')).toBeNull();
+      expect(row.querySelector('[data-next-row-progress-absence]')).toBeNull();
       expect(
         page.state.requests.some((request) => request.url.startsWith('/api/project-context')),
       ).toBe(false);
@@ -220,46 +221,42 @@ describe('the groups', () => {
   );
 
   it.each([
-    ['none or low', { ...assessed, stored_progress: 'none_or_low' }],
-    ['Codex', { ...assessed, harness: 'codex', stored_progress: 'high' }],
-    ['without a validated result', assessed],
-    ['with annotations disabled', { ...assessed, stored_progress: 'medium' }],
-    ['with an unknown level', { ...assessed, stored_progress: 'extreme' }],
+    ['a saved departure', assessed],
     [
-      'with a withdrawn reading',
+      'a non-departing reading',
+      {
+        ...assessed,
+        annotation_assessment: {
+          ...reading,
+          criteria: {
+            goal: { ...reading.criteria.goal, result: 'consistent with the evidence read' },
+          },
+        },
+      },
+    ],
+    ['a Codex reading', { ...assessed, harness: 'codex' }],
+    [
+      'a withdrawn reading',
       {
         ...assessed,
         annotation_assessment: { ...reading, scope: 'withdrawn' },
-        stored_progress: 'medium',
       },
     ],
-    [
-      'with an inaccurate reading',
-      { ...assessed, annotation_not_accurate: true, stored_progress: 'medium' },
-    ],
-    ['with a raise only', { departures: [{ at: NOW - 60, revision: 2 }] }],
-    [
-      'with a mismatched revision',
-      { ...assessed, annotation_revision: 3, stored_progress: 'medium' },
-    ],
-  ])('shows no pill for a row %s', async (kind, fields) => {
+    ['an inaccurate reading', { ...assessed, annotation_not_accurate: true }],
+    ['a mismatched revision', { ...assessed, annotation_revision: 3 }],
+    ['a refused reading', { annotation_goal: 'Ship it', annotation_reading_refused: true }],
+  ])('leaves the progress slot blank for %s', async (_kind, fields) => {
     await open(
-      board([{ harness: 'claude', sid: 'read', state: 'working', ...fields }], {
-        annotate: kind !== 'with annotations disabled',
-      }),
+      board([{ harness: 'claude', sid: 'read', state: 'working', ...fields }], { annotate: true }),
     );
-    expect(
-      document.querySelector('article[data-next-session="read"] [data-slot="badge"]'),
-    ).toBeNull();
+    const row = document.querySelector('article[data-next-session="read"]');
+    expect(row).toBeInTheDocument();
+    expect(row?.querySelector('.next-operation-progress')).toBeNull();
   });
 
   it.each([
     ['No goal yet', {}],
-    ['Not checked yet', { annotation_goal: 'Ship it', stored_progress: null }],
-    ['Too early to tell', { ...assessed, stored_progress: 'not_enough' }],
-    ["Can't tell", { ...assessed, stored_progress: 'cant_tell' }],
-    ['Goal too vague to check', { ...assessed, stored_progress: 'goal_unclear' }],
-    ['Out of date', { ...assessed, stored_progress: 'out_of_date' }],
+    ['Not checked yet', { annotation_goal: 'Ship it' }],
   ])('shows %s in plain text without an icon or a pill', async (label, fields) => {
     await open(
       board([{ harness: 'claude', sid: 'read', state: 'working', ...fields }], { annotate: true }),
@@ -270,6 +267,16 @@ describe('the groups', () => {
     expect(absence.classList.contains('text-muted-foreground')).toBe(true);
     expect(absence.closest('[data-slot="badge"]')).toBeNull();
     expect(absence.querySelector('svg')).toBeNull();
+  });
+
+  it.each([
+    { annotate: false },
+    { annotate: true, annotate_unreadable: 'The store cannot be read' },
+  ])('omits progress copy when saved goals are unavailable (%j)', async (metadata) => {
+    await open(board([{ harness: 'claude', sid: 'read', state: 'working' }], metadata));
+    const row = document.querySelector('article[data-next-session="read"]');
+    expect(row).toBeInTheDocument();
+    expect(row?.querySelector('.next-operation-progress')).toBeNull();
   });
 
   it('uses saved goals and actual attempts for progress absence', async () => {
@@ -285,8 +292,6 @@ describe('the groups', () => {
       ['completed', { annotation_goal: 'Ship it', departure_checked: true }, null],
       ['attempted', { annotation_goal: 'Ship it', annotation_reading_count: 1 }, null],
       ['unchecked', { annotation_goal: 'Ship it' }, 'Not checked yet'],
-      ['withheld', { ...assessed, stored_progress: 'withheld' }, null],
-      ['checked', { ...assessed, stored_progress: 'checked' }, null],
     ] as const;
     await open(
       board(

@@ -39,18 +39,18 @@ const current = (): Rig => {
 function Board({
   annotate = true,
   showAll = false,
-  progressPills = false,
+  rowExamples = false,
   hash = '#n=sessions',
 }: {
   readonly annotate?: boolean;
   readonly showAll?: boolean;
-  readonly progressPills?: boolean;
+  readonly rowExamples?: boolean;
   readonly hash?: string;
 }) {
   const [shell] = useState(() => {
     const history = fakeRouterEnvironment(hash);
     const clock = createFakeClock();
-    const live: Rig['live'] = { generated: GENERATED, annotate, showAll, progressPills };
+    const live: Rig['live'] = { generated: GENERATED, annotate, showAll, rowExamples };
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
     const made = createShell({
       env: createFakeEnvironment({ clock }),
@@ -178,51 +178,51 @@ export const StatusLegend: Story = {
   },
 };
 
-export const StatusTilesAndProgressPills: Story = {
-  args: { progressPills: true },
+export const StatusTilesAndProgressAbsences: Story = {
+  args: { rowExamples: true },
   play: async ({ canvasElement }) => {
     await ready(canvasElement);
-    for (const [id, state, progress] of [
-      ['D', 'Quiet', 'Slightly off course'],
-      ['E', 'Ended', 'Off course'],
+    for (const [id, state] of [
+      ['D', 'Quiet'],
+      ['E', 'Ended'],
     ] as const) {
       const row = rowOf(canvasElement, id);
       if (!row) throw new Error(`Missing row ${id}`);
       const reads = within(row);
       const tile = reads.getByRole('img', { name: state });
       const title = reads.getByRole('link', { name: /^Open session/ });
-      const pill = reads.getByText(progress);
-      await expect(pill).toHaveAttribute('data-variant', 'progress');
-      await expect(getComputedStyle(pill).fontSize).toBe('13px');
-      await expect(pill.getBoundingClientRect().height).toBeLessThan(30);
-      const colors = paintedColors(pill);
-      if (!colors) throw new Error(`Missing painted colours for ${progress}`);
-      await expect(contrastOf(colors.foreground, colors.background)).toBeGreaterThanOrEqual(4.5);
       await expect(tile.getBoundingClientRect().right).toBeLessThanOrEqual(
         title.getBoundingClientRect().left,
       );
+      await expect(row.querySelector('.next-operation-progress')).toBeNull();
+    }
+    for (const [id, label] of [
+      ['B', 'Not checked yet'],
+      ['C', 'No goal yet'],
+    ] as const) {
+      const row = rowOf(canvasElement, id);
+      if (!row) throw new Error(`Missing row ${id}`);
+      const absence = within(row).getByText(label, { exact: true });
+      await expect(absence).toBeVisible();
+      await expect(getComputedStyle(absence).fontSize).toBe('13px');
+      await expect(absence.closest('[data-slot="badge"]')).toBeNull();
+      await expect(absence.querySelector('svg')).toBeNull();
+      const colors = paintedColors(absence);
+      if (!colors) throw new Error(`Missing painted colours for ${label}`);
+      await expect(contrastOf(colors.foreground, colors.background)).toBeGreaterThanOrEqual(4.5);
       if (window.innerWidth > 1100) {
         await expect(
-          row.getBoundingClientRect().right - pill.getBoundingClientRect().right,
+          row.getBoundingClientRect().right - absence.getBoundingClientRect().right,
         ).toBeLessThanOrEqual(16);
       }
-      await expect(row.querySelectorAll('[data-slot="badge"]')).toHaveLength(1);
     }
-    const codex = rowOf(canvasElement, 'C');
-    await expect(codex?.querySelector('[data-slot="badge"]')).toBeNull();
-    await expect(codex?.querySelector('[data-next-row-progress-absence]')).toHaveTextContent(
-      'No goal yet',
-    );
-    const absence = rowOf(canvasElement, 'B')?.querySelector('[data-next-row-progress-absence]');
-    await expect(absence).toHaveTextContent('Not checked yet');
-    await expect(absence?.querySelector('svg')).toBeNull();
     const checked = rowOf(canvasElement, 'K');
-    await expect(checked?.querySelector('[data-next-row-progress-absence]')).toBeNull();
+    await expect(checked?.querySelector('.next-operation-progress')).toBeNull();
   },
 };
 
 export const AssignmentAndLocation: Story = {
-  args: { progressPills: true },
+  args: { rowExamples: true },
   play: async ({ canvasElement }) => {
     await ready(canvasElement);
     const row = rowOf(canvasElement, 'B');
@@ -717,9 +717,7 @@ export const StateAndDrift: Story = {
     for (const one of listed) await expect(one.label).not.toMatch(/no drift|on track/i);
     await pick(drift, 'Drift recorded');
     await waitFor(() => expect(shownRows(canvasElement)).toBe('D'));
-    await expect(
-      rowOf(canvasElement, 'D')?.querySelector('[data-next-row-drift-level]'),
-    ).toBeNull();
+    await expect(rowOf(canvasElement, 'D')?.querySelector('[data-variant="progress"]')).toBeNull();
     await expect(options(drift, 'drift')[0]?.box).toHaveAttribute('aria-checked', 'true');
     await expect(canvas.getByRole('button', { name: 'Drift recorded' })).toHaveAttribute(
       'aria-pressed',

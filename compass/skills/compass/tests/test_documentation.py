@@ -1688,7 +1688,7 @@ class HistoryStoreContractDocumentationTest(unittest.TestCase):
         self.assertEqual(8, len(entries))
 
     def test_a_reserved_name_is_not_an_admitted_one(self) -> None:
-        # The contract names assessment fields it has NOT admitted, so a
+        # The contract names five assessment fields it has NOT admitted, so a
         # later change does not re-argue the naming. A reserved name that
         # reached the record without its own allowlist line would be the
         # admission happening by accident.
@@ -1698,7 +1698,6 @@ class HistoryStoreContractDocumentationTest(unittest.TestCase):
             "assessment_revision_read",
             "assessment_goal_result",
             "assessment_output_result",
-            "stored_progress",
         ):
             with self.subTest(field=name):
                 self.assertIn(name, self.SECURITY)

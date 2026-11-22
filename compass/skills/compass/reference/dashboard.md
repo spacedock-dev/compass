@@ -37,10 +37,10 @@ Pi relocation: `PI_CODING_AGENT_SESSION_DIR` is an authoritative direct session-
 
 ## Session states
 
-Sessions rows show the observed state in a named icon tile beside the title. The progress
-pill appears for a saved check that still shows a departure, with Slightly off course or
-Off course. An absence appears as grey text or leaves the space blank. Live estimates stay
-on the session page, and Codex rows carry no level.
+Sessions rows show the observed state in a named icon tile beside the title. If the board
+can tell that the session has no saved goal or that a check has yet to run, the row says
+No goal yet or Not checked yet in grey. Open the session page to see the progress reading
+and any live estimate the session supports.
 
 The Sessions legend pairs Working with a pulse, Waiting on you with a clock, Quiet with a moon
 and Ended with a checkmark. The warning triangle means Worth a look. A wait on a child, an

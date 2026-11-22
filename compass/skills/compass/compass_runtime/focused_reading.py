@@ -1,8 +1,7 @@
-"""Local evidence shared by the focused reading and Sessions snapshot."""
+"""Local evidence for the focused session reading and record."""
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING, Any
 
 from . import annotations as annotation_store
@@ -11,25 +10,16 @@ from . import (
     compass_turns,
     copied_corrections,
     correction,
-    drift_view,
     entry_numbers,
     levels,
-    live_estimate,
     record_pages,
 )
-from . import io as runtime_io
 from . import observer as runtime_observer
 from . import project_context as runtime_project_context
 from . import reading as runtime_reading
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-
-    from .aggregate import Application
-
-
-# Board polls can revalidate a small record with the same evidence as the focused view.
-BOARD_TRANSCRIPT_MAX_BYTES = 1024 * 1024
 
 
 def record_page(
@@ -234,113 +224,3 @@ def stored_work(
             request_sources=requests,
         ),
     }
-
-
-def _stored_progress(
-    application: Application,
-    payload: dict[str, Any],
-    row: dict[str, Any],
-    entry: annotation_store.Annotation,
-) -> str:
-    """Read the stored result on the same local record the focused view uses."""
-    config, state = application.config, application.state
-    harness, sid = row["harness"], row["sid"]
-    rows = payload["sessions"]
-    label = str(row.get("project") or "")
-    project = str(row.get("project_key") or label)
-    # The page opens a shared display label under the label itself. That can
-    # bring in another history bucket even if the other location is quiet.
-    if (
-        not project
-        or len(project) > config.ask_project_cap_chars
-        or any(
-            peer.get("project") == label and str(peer.get("project_key") or label) != project
-            for peer in rows
-        )
-    ):
-        return "withheld"
-    path = runtime_observer.resolve_transcript(config, state, harness, sid)
-    stamp = runtime_project_context.transcript_stamp(path) if path else None
-    if not path or stamp is None or stamp[2] > BOARD_TRANSCRIPT_MAX_BYTES:
-        return "withheld"
-    context = runtime_project_context.collect(
-        config,
-        state,
-        rows,
-        project,
-        focus=(harness, sid),
-        now=payload["generated"],
-        read_only=True,
-    )
-    if not context:
-        return "withheld"
-    context = copied_corrections.mark(context, rows)
-    context = compass_turns.mark(config, state, context, [row])
-    context = with_message_ordinals(application, context, (harness, sid))
-    context["sources"]["work"].update(stored_work(application, context, row, entry))
-    page = record_page(
-        application, [row], harness, sid, cursor_key=b"", limit=record_pages.PAGE_SIZE, before=None
-    )
-    if page["state"] != "ok" or runtime_project_context.transcript_stamp(path) != stamp:
-        return "withheld"
-    # The focused view reads a board decoded from JSON. In this pre-serialization row,
-    # annotations still hold tuples (for example, the stored criteria's citations).
-    board_row: dict[str, Any] = json.loads(json.dumps(row))
-    return drift_view.stored_progress(board_row, payload, context, page["entries"])
-
-
-def published(
-    application: Application, payload: dict[str, Any], row: dict[str, Any]
-) -> dict[str, str | None]:
-    """Only a current saved assessment asks the board to open any evidence."""
-    return {"stored_progress": _progress_for_row(application, payload, row)}
-
-
-def _progress_for_row(
-    application: Application, payload: dict[str, Any], row: dict[str, Any]
-) -> str | None:
-    if payload.get("annotate") is not True or row["harness"] not in live_estimate.HARNESSES:
-        return None
-    raw = row.get("annotation_assessment")
-    if not isinstance(raw, dict):
-        return "withheld" if row.get("annotation_reading_refused") else None
-    revision = row.get("annotation_revision")
-    revision_read = raw.get("revision_read")
-    if payload.get("annotate_unreadable") or row.get("annotation_not_accurate"):
-        return "withheld"
-    if raw.get("scope") == runtime_reading.SCOPE_WITHDRAWN:
-        return "out_of_date"
-    if revision is None or revision_read != revision:
-        return "out_of_date" if revision is not None and revision_read is not None else "withheld"
-    return _revalidate(application, payload, row, raw, revision)
-
-
-def _revalidate(
-    application: Application,
-    payload: dict[str, Any],
-    row: dict[str, Any],
-    raw: dict[str, Any],
-    revision: int,
-) -> str:
-    config, state = application.config, application.state
-    identity = (row["harness"], row["sid"])
-    try:
-        entry = annotation_store.find(annotation_store.active(config, state), *identity)
-        if (
-            not entry
-            or entry.get("not_accurate")
-            or not entry["revisions"]
-            or entry["revisions"][-1]["n"] != revision
-            or entry.get("assessment") != raw
-        ):
-            return "withheld"
-        result = _stored_progress(application, payload, row, entry)
-        current = annotation_store.find(annotation_store.active(config, state), *identity)
-    except Exception as exc:  # noqa: BLE001 - a failed revalidation cannot cost the board
-        runtime_io.diag(
-            f"Compass: stored progress could not be read ({exc.__class__.__name__}).",
-            application.diagnostic_sink,
-        )
-        return "withheld"
-    else:
-        return result if current == entry else "withheld"

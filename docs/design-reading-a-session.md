@@ -8381,15 +8381,10 @@ level words and six distinct absences. DEC-17 rule 4, DEC-20 item 3 and DEC-26 i
 | Terminal status-line footer | The row rule. It may also say the Live monitor is on. |
 | Sessions Filters | Progress check chips read Slightly off course, Off course, Way off course and No goal yet, with no counts. |
 
-The Sessions implementation of 2026-11-23 replaces the old "Medium or higher" fallback.
-The snapshot derives `stored_progress` with the focused level, citation-shape and freshness
-rules using the current local record and its newest page. It can recover earlier directions
-within the board's read bounds on the first visit. A standing stored departure can publish
-Medium or High. A missing reading yields null, and a checked reading without a departure
-carries a neutral result. A superseded, withdrawn or work-stale reading shows Out of date.
-When the evidence cannot support the focused result within those bounds, the slot can stay
-blank. The live estimate stays on the focused path.
-See the [runtime module map](design-runtime-architecture.md) for how publication shares evidence.
+The Sessions implementation of 2026-11-23 shows No goal yet or Not checked yet
+when the published goal and check metadata supports the claim. The coordinator deferred
+the stored departure pill. Exact levels stay on the session page. The snapshot uses the
+ordinary board collection without reopening evidence to fill the row's progress slot.
 
 Codex sessions show neither a level nor a correction. The
 [installed skill](../compass/skills/compass/SKILL.md) states the limit.

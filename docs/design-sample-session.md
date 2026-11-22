@@ -235,6 +235,9 @@ the page to 2,359,323 bytes on Node 26.10.0, 552 bytes above the previous build 
 above its allowance. The allowance rises by 1 KiB to the same baseline plus 464 KiB, or
 2,359,883 bytes, with 560 bytes to spare. The fixture allowance stays at 250,000 bytes.
 
+Removing progress levels from Sessions rows on 2026-11-23 reduced the page by 768 bytes
+to 2,358,555 bytes on Node 26.10.0. The 2,359,883-byte allowance leaves 1,328 bytes to spare.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

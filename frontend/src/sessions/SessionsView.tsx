@@ -4,7 +4,6 @@ import { RelationshipLabels } from './DeclaredRelationships';
 import { Card } from '../ui/card';
 import { titleLink } from '../ui/link';
 import { Button } from '../ui/button';
-import { Badge } from '../ui/badge';
 import { StatusTile } from '../ui/status-tile';
 import { TooltipProvider } from '../ui/tooltip';
 import { SESSION_ROW_WORDS } from '../language/glossary';
@@ -12,7 +11,7 @@ import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 're
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
-import { gapNames, isRecord, sessionStateLimit, trimmed, type Row } from '../observed';
+import { gapNames, sessionStateLimit, trimmed, type Row } from '../observed';
 import { nextNumber } from '../api/bootstrap';
 import { selectObserved } from '../observed/select';
 import { selectHarnessSources } from '../store/selectors';
@@ -43,7 +42,6 @@ import {
   analysisAvailable,
   buildSessionsScreen,
   NOT_CHECKED,
-  readingDeparts,
   rowState,
   type SessionRow,
 } from './rows';
@@ -242,23 +240,12 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
 const PROGRESS_SLOT =
   'next-operation-progress col-span-full max-w-full self-start justify-self-start px-3 pb-2 text-left [overflow-wrap:anywhere] min-[1101px]:[grid-area:1/-2/2/-1] min-[1101px]:justify-self-end min-[1101px]:pt-[13px] min-[1101px]:pb-0 min-[1101px]:text-right';
 
-const PROGRESS_WORDS = {
-  medium: SESSION_ROW_WORDS.slightlyOffCourse,
-  high: SESSION_ROW_WORDS.offCourse,
-} as const;
-
-const PROGRESS_ABSENCES = {
-  not_enough: SESSION_ROW_WORDS.tooEarlyToTell,
-  cant_tell: SESSION_ROW_WORDS.cantTell,
-  goal_unclear: SESSION_ROW_WORDS.goalTooVague,
-  out_of_date: SESSION_ROW_WORDS.outOfDate,
-} as const;
-
-function progressAbsence(source: Row, result: unknown): string | null {
-  if (typeof result === 'string' && Object.hasOwn(PROGRESS_ABSENCES, result)) {
-    return PROGRESS_ABSENCES[result as keyof typeof PROGRESS_ABSENCES];
-  }
-  if (result != null || source['annotation_assessment'] || source['annotation_reading_refused']) {
+function progressAbsence(source: Row): string | null {
+  if (
+    source['annotation_assessment'] ||
+    source['annotation_reading_refused'] ||
+    source['annotation_not_accurate']
+  ) {
     return null;
   }
   if (!trimmed(source['annotation_goal'])) return SESSION_ROW_WORDS.noGoalYet;
@@ -269,34 +256,18 @@ function progressAbsence(source: Row, result: unknown): string | null {
   return checked ? null : SESSION_ROW_WORDS.notCheckedYet;
 }
 
-function Progress({ row, enabled }: { readonly row: SessionRow; readonly enabled: boolean }) {
+function ProgressAbsence({
+  row,
+  enabled,
+}: {
+  readonly row: SessionRow;
+  readonly enabled: boolean;
+}) {
   const { source, session } = row;
   if (!enabled || !source || (session.harness !== 'claude' && session.harness !== 'codex')) {
     return null;
   }
-  const result = source['stored_progress'];
-  const raw = source['annotation_assessment'];
-  const current =
-    isRecord(raw) &&
-    nextNumber(raw['revision_read']) !== null &&
-    nextNumber(raw['revision_read']) === nextNumber(source['annotation_revision']) &&
-    raw['scope'] !== 'withdrawn' &&
-    source['annotation_not_accurate'] !== true;
-  if (
-    (result === 'medium' || result === 'high') &&
-    session.harness === 'claude' &&
-    current &&
-    readingDeparts(source)
-  ) {
-    return (
-      <span className={PROGRESS_SLOT}>
-        <Badge variant="progress" tone={result} data-next-row-drift-level={result}>
-          {PROGRESS_WORDS[result]}
-        </Badge>
-      </span>
-    );
-  }
-  const absence = progressAbsence(source, result);
+  const absence = progressAbsence(source);
   return absence ? (
     <span
       className={`${PROGRESS_SLOT} [font-family:var(--sans)] text-label text-muted-foreground`}
@@ -361,7 +332,7 @@ const RowView = memo(function RowView({
       {...(history ? { 'data-next-operation-history': 'true' } : {})}
     >
       <Identity row={row} hints={hints} />
-      <Progress row={row} enabled={progressEnabled} />
+      <ProgressAbsence row={row} enabled={progressEnabled} />
       {/* The project label alone: "Exact location not published" sat hatched on every row and read as an
           error, for a location no harness publishes here. */}
       <Fact

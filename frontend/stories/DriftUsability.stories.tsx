@@ -289,12 +289,12 @@ export const CopiedLapsesBackToCopy: Story = {
   },
 };
 
-/* The row reads the snapshot on arrival and after the reader visits the session. */
+/* The level belongs to the focused session, including after the reader returns to Sessions. */
 const SESSIONS_NAV: { back?: () => void } = {};
-export const TheSessionsRowSaysTheLevel: Story = {
+export const TheLevelStaysOnTheSessionPage: Story = {
   ...scenario({
     initialView: 'sessions',
-    session: { ...TWO_DEPARTURES, stored_progress: 'medium' },
+    session: TWO_DEPARTURES,
     facts: [PERSON, PASSED, AGENT],
     work: MEDIUM,
     nav: SESSIONS_NAV,
@@ -310,8 +310,8 @@ export const TheSessionsRowSaysTheLevel: Story = {
     await expect(within(first).getByRole('img', { name: 'Working' })).toBeVisible();
     await expect(first.textContent).not.toContain('Exact location not published');
     await expect(first.textContent).not.toMatch(/NOW · |QUIET/);
-    const stored = within(first).getByText('Slightly off course');
-    await expect(stored).toHaveAttribute('data-variant', 'progress');
+    await expect(within(first).queryByText('Slightly off course')).toBeNull();
+    await expect(first.querySelector('.next-operation-progress')).toBeNull();
     await userEvent.click(first.querySelector('a.next-operation-route') as HTMLElement);
     await card(canvasElement);
     await waitFor(() =>
@@ -321,10 +321,8 @@ export const TheSessionsRowSaysTheLevel: Story = {
     );
     SESSIONS_NAV.back?.();
     const back = await row();
-    await expect(within(back).getByText('Slightly off course')).toHaveAttribute(
-      'data-variant',
-      'progress',
-    );
+    await expect(within(back).queryByText('Slightly off course')).toBeNull();
+    await expect(back.querySelector('.next-operation-progress')).toBeNull();
   },
 };
 

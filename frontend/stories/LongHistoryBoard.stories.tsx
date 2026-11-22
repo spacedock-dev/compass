@@ -58,10 +58,6 @@ function Board({
             ? project.response.body
             : shared.response.body,
     ) as MutableRow;
-    if (reading) {
-      const row = (data['sessions'] as MutableRow[]).find((one) => one['sid'] === 'a1b2c3d4');
-      if (row) row['stored_progress'] = reading === 'current' ? 'medium' : 'out_of_date';
-    }
     if (missingExplanation) {
       const rows = data['sessions'] as MutableRow[];
       const token = rows.find((row) => row['sid'] === '33333333')?.['delivery_binding_why'];
@@ -127,11 +123,12 @@ export const StoredReadingNamesItsLevel: Story = {
     );
     if (!mounted) throw new Error('Board not mounted');
     mounted.router.navigate({ view: 'sessions' });
-    await waitFor(() =>
-      expect(
-        canvasElement.querySelector('[data-next-session="a1b2c3d4"] [data-next-row-drift-level]'),
-      ).toHaveTextContent('Slightly off course'),
-    );
+    const row = await waitFor(() => {
+      const session = canvasElement.querySelector('[data-next-session="a1b2c3d4"]');
+      expect(session).not.toBeNull();
+      return session;
+    });
+    await expect(row?.querySelector('.next-operation-progress')).toBeNull();
     await expect(canvasElement.textContent).not.toContain('why:');
   },
 };
@@ -145,10 +142,7 @@ async function absentReading(canvasElement: HTMLElement) {
     expect(canvasElement.querySelector('[data-next-session="a1b2c3d4"]')).not.toBeNull(),
   );
   const row = canvasElement.querySelector('[data-next-session="a1b2c3d4"]');
-  await expect(row?.querySelector('[data-next-row-drift-level]')).toBeNull();
-  await expect(row?.querySelector('[data-next-row-progress-absence]')).toHaveTextContent(
-    'Out of date',
-  );
+  await expect(row?.querySelector('.next-operation-progress')).toBeNull();
 }
 export const StaleReadingNamesNoRowLevel: Story = {
   args: { view: 'rows', reading: 'stale' },
@@ -183,7 +177,9 @@ export const LiveEstimateNamesNoRowLevel: Story = {
         '[data-next-session="44444444"] [data-next-row-progress-absence]',
       ),
     ).toBeNull();
-    await expect(canvasElement.querySelector('[data-next-row-drift-level]')).toBeNull();
+    await expect(
+      canvasElement.querySelector('.next-operation-progress [data-variant="progress"]'),
+    ).toBeNull();
   },
 };
 export const ProjectShowsTheServersTaskCut: Story = {

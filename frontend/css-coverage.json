@@ -1595,8 +1595,8 @@
   "exceptions": {
     "frontend/src/sessions/sessions.css|@keyframes next-status-tile-pulse|0%,100%": "The Working tile returns to full size during its pulse. Status Legend tests its live and reduced-motion triggers.",
     "frontend/src/sessions/sessions.css|@keyframes next-status-tile-pulse|50%": "The Working tile shrinks its glyph midway through the pulse to keep its ink contrast. Status Legend checks the painted glyph.",
-    "frontend/src/sessions/sessions.css||.next-operations-columns,#app .next-operation-row": "The active row and its headings share the grid with a rightmost progress slot. Status Tiles And Progress Pills exercises the layout.",
-    "frontend/src/sessions/sessions.css||.next-operation-group--history .next-operations-columns,#app .next-operation-row[data-next-operation-history=\"true\"]": "The recent-history grid aligns the shorter set of facts with the same rightmost progress slot. Status Tiles And Progress Pills shows an ended row with a pill.",
+    "frontend/src/sessions/sessions.css||.next-operations-columns,#app .next-operation-row": "The active row and its headings share the grid with a rightmost progress slot. Status Tiles And Progress Absences exercises the layout.",
+    "frontend/src/sessions/sessions.css||.next-operation-group--history .next-operations-columns,#app .next-operation-row[data-next-operation-history=\"true\"]": "The recent-history grid aligns the shorter set of facts with the same rightmost progress slot. Status Tiles And Progress Absences shows an ended row with a blank progress slot.",
     "frontend/src/sessions/sessions.css|@media (max-width:1100px)|.next-operation-fact:not([data-next-operation-fact=\"where\"])": "The visible progress slot changes the child order. The fact separator stays tied to the fact kind when rows wrap.",
     "frontend/src/attention/attention.css||.next-attention-risk-assignment": "Items.tsx retains assignment evidence on a risk item; the proof risk fixtures do not publish this assignment.",
     "frontend/src/capacity/capacity.css||.next-capacity-fill.unknown": "CapacityStrip Bar retains the unknown pace band when a window has elapsed time but no measured pace.",

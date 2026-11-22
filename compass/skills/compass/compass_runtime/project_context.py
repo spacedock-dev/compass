@@ -11596,7 +11596,6 @@ def _incremental_history_events(
     sid: str,
     *,
     now: float,
-    preview: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     signature = _transcript_signature(transcript_path)
     if signature is None:
@@ -11609,7 +11608,6 @@ def _incremental_history_events(
         source_identity,
         signature,
         full_max_bytes=SEMANTIC_BACKFILL_MAX_BYTES,
-        preview=preview,
     )
     if not scan_bytes:
         return [], None
@@ -13764,43 +13762,27 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
     focus: tuple[str, str] | None = None,
     model_consent: bool = False,
     message_reach: PressWindow | None = None,
-    read_only: bool = False,
 ) -> dict[str, Any]:
     """Observer results and a real project event log for exact-label sessions.
 
     `message_reach` is a reader's Analyze press only: the focused Claude session's messages are
     read back to its window start instead of from the 400,000-byte tail, and the result's
     `sources.message_reach` says how far that got once the project cap has been applied.
-    A board read previews the same incremental history scan and merge in memory. It skips
-    discovery, refresh and persistent history updates. Wider scopes may require reading other
-    sessions on every poll, so an empty context asks the board to withhold its answer.
     """
     sessions = [declared_sessions.model_row(row) for row in sessions]
     analysis_sessions, omitted, scope, surrounding_active = _analysis_context_sessions(
         sessions, project, focus
     )
     attention_sessions, attention_coverage = _attention_context_sessions(sessions, project)
-    history_preview = None
-    if read_only:
-        if len(analysis_sessions) != 1:
-            return {}
-        (only,) = analysis_sessions
-        if (only.get("harness"), only.get("sid")) != focus:
-            return {}
-        history_project, aliases = _history_identity(sessions, project)
-        history_preview = semantic_history.preview_project(config, state, history_project, aliases)
-        workflow_discovery = {}
-        refresh = False
-    else:
-        history_project = _history_project(config, state, sessions, project)
-        workflow_discovery = _project_workflow_discovery(
-            config,
-            state,
-            analysis_sessions,
-            project,
-            now=now,
-            refresh=refresh,
-        )
+    history_project = _history_project(config, state, sessions, project)
+    workflow_discovery = _project_workflow_discovery(
+        config,
+        state,
+        analysis_sessions,
+        project,
+        now=now,
+        refresh=refresh,
+    )
     observers: list[dict[str, Any]] = []
     events: list[dict[str, Any]] = []
     history_events: list[dict[str, Any]] = []
@@ -13846,8 +13828,6 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
             harness in observer.DIRECTION_HARNESSES
             or (transcript_path := observer.resolve_transcript(config, state, harness, sid)) is None
         ):
-            if read_only:
-                return {}
             _collect_without_transcript(
                 config,
                 state,
@@ -13914,14 +13894,7 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
             codex_cache=state.codex_check_cache,
         )
         backfill_rows, signature = _incremental_history_events(
-            config,
-            state,
-            history_project,
-            transcript_path,
-            harness,
-            sid,
-            now=now,
-            preview=history_preview,
+            config, state, history_project, transcript_path, harness, sid, now=now
         )
         history_events.extend(backfill_rows)
         source_identity = f"{harness}:{sid}"
@@ -13941,9 +13914,7 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
         gate_events,
         None,
         child_assignments,
-        history_preview
-        if history_preview is not None
-        else semantic_history.read(config, state, history_project),
+        semantic_history.read(config, state, history_project),
     )
 
     timeline = _project_timeline(
@@ -13965,7 +13936,6 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
         child_assignments,
         now=now,
         source_scans=history_source_scans,
-        preview=history_preview,
     )
     semantic = _with_command_attention(
         _semantic_for_focus(
