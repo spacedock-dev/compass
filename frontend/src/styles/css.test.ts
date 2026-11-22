@@ -76,10 +76,22 @@ const PALETTE = {
   'e-dialog': '0 16px 48px rgb(31 41 51 / 24%)',
   hatch: 'repeating-linear-gradient(135deg, transparent 0 5px, rgb(31 41 51 / 9%) 5px 6px)',
 };
+// The production optimizer shortens opaque white and serializes these alpha colours as hex.
+const COMPILED_PALETTE = {
+  ...PALETTE,
+  panel: '#fff',
+  'on-accent': '#fff',
+  scrim: '#1f293366',
+  'e-raise': '0 1px 2px #1f29331f',
+  'e-pop': '0 8px 24px #1f29332e',
+  'e-dialog': '0 16px 48px #1f29333d',
+  hatch: 'repeating-linear-gradient(135deg, transparent 0 5px, #1f293317 5px 6px)',
+};
 const source = (path: string) =>
   clean(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'));
 const theme = source('styles/tailwind.css');
 const paletteBlock = /@theme static\s*\{[^}]+\}/;
+const hexColour = /#(?:[\da-f]{8}|[\da-f]{6}|[\da-f]{4}|[\da-f]{3})(?![\da-z-])/i;
 const tokens = new Map(
   [...(theme.match(paletteBlock)?.[0] ?? '').matchAll(/--([\w-]+):\s*([^;]+);/g)].map(
     ([, name, value]) => [name, value],
@@ -131,8 +143,19 @@ export function builtProblems(input: string): string[] {
   const text = clean(input);
   const problems: string[] = [];
   const properties = new Map<string, string>();
-  for (const match of text.matchAll(/(--[\w-]+)\s*:\s*([^;}]+)/g))
-    properties.set(match[1] as string, (match[2] ?? '').trim());
+  const paletteDeclarations = new Map(Object.keys(PALETTE).map((name) => [`--${name}`, 0]));
+  for (const [, name, value] of text.matchAll(/(--[\w-]+)\s*:\s*([^;}]+)/g)) {
+    if (name === undefined || value === undefined) continue;
+    properties.set(name, value.trim());
+    const count = paletteDeclarations.get(name);
+    if (count !== undefined) paletteDeclarations.set(name, count + 1);
+  }
+  // The ruled value must be the sole declaration so no other rule can override it.
+  for (const [token, expected] of Object.entries(COMPILED_PALETTE)) {
+    const name = `--${token}`;
+    if (paletteDeclarations.get(name) !== 1 || properties.get(name) !== expected)
+      problems.push(`palette declaration ${name}`);
+  }
   for (const match of text.matchAll(
     /@property\s+(--[\w-]+)\s*\{[^}]*initial-value\s*:\s*([^;}]+)/g,
   ))
@@ -197,9 +220,19 @@ export function builtProblems(input: string): string[] {
 }
 
 describe('the light board palette', () => {
+  it.each([
+    ['--bg', ':root { --bg: rgb(20 20 15); }'],
+    ['--ink-caption', ':root { --ink-caption: rgb(205 199 180) !important; }'],
+  ])('rejects a compiled override of %s', (name, override) => {
+    expect(builtProblems(css + override)).toContain(`palette declaration ${name}`);
+  });
+
+  it('recognizes hex colours followed by a Tailwind underscore separator', () => {
+    expect('[box-shadow:#000_0_18px_44px_-22px]').toMatch(hexColour);
+  });
+
   it.each(Object.entries(PALETTE))('keeps the ruled --%s token', (name, value) => {
     expect(tokens.get(name)).toBe(value);
-    expect(css).toContain(`--${name}:`);
   });
 
   it.each(['panel', 'bg'])('makes control boundaries visible on --%s at 3:1 or more', (surface) => {
@@ -226,7 +259,7 @@ describe('the light board palette', () => {
       'ui/select.tsx',
     ].map((path) => [path, source(path)]),
   ])('keeps hard-coded hex colours out of %s', (_path, text) => {
-    expect(text).not.toMatch(/#(?:[\da-f]{8}|[\da-f]{6}|[\da-f]{4}|[\da-f]{3})(?![\w-])/i);
+    expect(text).not.toMatch(hexColour);
   });
 });
 

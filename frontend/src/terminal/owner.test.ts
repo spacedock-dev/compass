@@ -221,6 +221,8 @@ describe('opening is an explicit act', () => {
     const t = setup();
     t.doc.documentElement.style.setProperty('--sunk', '#eef1f4');
     t.doc.documentElement.style.setProperty('--ink', '#1f2933');
+    t.doc.documentElement.style.setProperty('--line-hi', '#52606d');
+    t.doc.documentElement.style.setProperty('--on-accent', '#ffffff');
     await register(t);
     t.owner.open(ALPHA_KEY);
     t.owner.attach(viewportElement(), ALPHA_KEY);
@@ -231,7 +233,14 @@ describe('opening is an explicit act', () => {
       disableStdin: true,
       cursorBlink: false,
       scrollback: 500,
-      theme: { background: '#eef1f4', foreground: '#1f2933', cursor: '#eef1f4' },
+      minimumContrastRatio: 4.5,
+      theme: {
+        background: '#eef1f4',
+        foreground: '#1f2933',
+        cursor: '#eef1f4',
+        selectionBackground: '#52606d',
+        selectionForeground: '#ffffff',
+      },
     });
     expect(terminal?.options.theme.cursor).toBe(terminal?.options.theme.background);
     expect(terminal?.textarea?.readOnly).toBe(true);

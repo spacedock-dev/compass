@@ -17,7 +17,7 @@
  *   controls    every control is at least at the label step, `[data-slot="button"]` is at the sentence step, and
  *               controls that touch agree on a size;
  *   variables   every `var(--x)` any rule uses resolves to a declared custom property;
- *   palette     the page is dark only: no `prefers-color-scheme` rule, and a light-scheme browser draws the
+ *   palette     the page is light only: no `prefers-color-scheme` rule, and a dark-scheme browser draws the
  *               same page;
  *   focus       every focusable element shows a ring of its own authoring when focused from the keyboard.
  *
@@ -962,7 +962,7 @@ async function measure(opened, view, { walk = false } = {}) {
   return { rows: rows.length, focusable: count };
 }
 
-/* The page under a light colour scheme: every element's colour and background must be what the dark run drew. */
+/* Both browser colour preferences must produce the same paint and root scheme. */
 async function lightCheck(opened, origin, fragment) {
   const { page } = opened;
   await page.goto('about:blank');
@@ -1875,12 +1875,19 @@ function checks() {
     exactly(unresolved, UNRESOLVED_VARIABLES, 'custom properties used and never declared');
   });
 
-  step_('palette: dark only, and a light-scheme browser draws the same page', () => {
+  step_('palette: light only under both browser colour preferences', () => {
     const named = measured.sheets.flatMap((sheet) => sheet.schemes);
     assert.deepEqual([...new Set(named)], [], 'a rule keyed to prefers-color-scheme');
-    assert.equal(measured.scheme, 'dark');
-    assert.deepEqual(measured.lightDiffers, [], 'the page changed under a light colour scheme');
-    assert.ok(measured.lightChecked >= 2, 'the light scheme was never tried');
+    assert.equal(measured.scheme, 'light');
+    assert.deepEqual(
+      measured.lightDiffers,
+      [],
+      'the page changed with the browser colour preference',
+    );
+    assert.ok(
+      measured.lightChecked >= 2,
+      'the palette was not compared across browser preferences',
+    );
   });
 
   step_('focus: every focusable element shows a ring when the keyboard reaches it', () => {
@@ -2070,8 +2077,8 @@ async function checkButtonGallery(browser) {
           });
           assert.equal(popup.px, 15);
           assert.match(popup.font, /Space Grotesk/);
-          assert.equal(popup.ink, 'rgb(246, 243, 234)');
-          assert.equal(popup.background, 'rgb(36, 35, 27)');
+          assert.equal(popup.ink, 'rgb(31, 41, 51)');
+          assert.equal(popup.background, 'rgb(255, 255, 255)');
           for (const option of await page.getByRole('option').all()) {
             const metrics = await option.evaluate((node) => ({
               height: node.getBoundingClientRect().height,
@@ -2096,7 +2103,7 @@ async function checkButtonGallery(browser) {
         await hover.hover();
         assert.equal(
           await hover.evaluate((el) => getComputedStyle(el).borderColor),
-          'rgb(138, 136, 116)',
+          'rgb(82, 96, 109)',
         );
         assert.equal(await opened.page.getByRole('link', { name: 'Linked action' }).count(), 1);
         const raise = opened.page.locator('[data-example="raise-primary"]');
@@ -2106,14 +2113,14 @@ async function checkButtonGallery(browser) {
             border: getComputedStyle(el).borderColor,
             ink: getComputedStyle(el).color,
           })),
-          { border: 'rgb(116, 114, 95)', ink: 'rgb(205, 199, 180)' },
+          { border: 'rgb(123, 135, 148)', ink: 'rgb(82, 96, 109)' },
           'primary Raise keeps its declined cue',
         );
         for (const state of ['throttled', 'stale']) {
           await raise.evaluate((el, value) => el.setAttribute('data-raise-state', value), state);
           assert.equal(
             await raise.evaluate((el) => getComputedStyle(el).borderColor),
-            'rgb(240, 185, 94)',
+            'rgb(146, 64, 14)',
             `primary Raise keeps its ${state} amber cue`,
           );
         }
@@ -2134,11 +2141,11 @@ async function checkButtonGallery(browser) {
             };
           }),
           {
-            ink: 'rgb(246, 243, 234)',
+            ink: 'rgb(31, 41, 51)',
             background: 'rgba(0, 0, 0, 0)',
             padding: '9px 14px',
             font: '15px',
-            border: '1px solid rgb(116, 114, 95)',
+            border: '1px solid rgb(123, 135, 148)',
           },
         );
         const reserved = opened.page.locator('[data-example="reserved"]');

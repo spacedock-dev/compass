@@ -132,7 +132,7 @@ export function SelectItem({ className, children, ...props }: SelectPrimitive.It
       data-value={typeof props.value === 'string' ? props.value : undefined}
       title={typeof children === 'string' ? children : undefined}
       className={cn(
-        'relative box-border flex w-full min-h-[44px] cursor-pointer items-center rounded-control ps-[8px] pe-[28px] py-[8px] text-body text-foreground outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:cursor-default data-[disabled]:text-muted-foreground',
+        'relative box-border flex w-full min-h-[44px] cursor-pointer items-center rounded-control ps-[8px] pe-[28px] py-[8px] text-body text-foreground outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[highlighted]:[box-shadow:inset_0_0_0_2px_var(--line-hi)] data-[disabled]:cursor-default data-[disabled]:text-muted-foreground',
         className,
       )}
       {...props}

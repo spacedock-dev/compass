@@ -113,6 +113,7 @@ export function createTerminalOwner(deps: TerminalOwnerDeps) {
     const terminal = new Terminal({
       disableStdin: true,
       cursorBlink: false,
+      minimumContrastRatio: 4.5,
       // The cursor matches the background because stdin is disabled and a blinking block on read-only
       // output reads as an input affordance. xterm needs resolved CSS colours for its canvas.
       scrollback: 500,
@@ -122,6 +123,8 @@ export function createTerminalOwner(deps: TerminalOwnerDeps) {
         background,
         foreground: palette.getPropertyValue('--ink').trim(),
         cursor: background,
+        selectionBackground: palette.getPropertyValue('--line-hi').trim(),
+        selectionForeground: palette.getPropertyValue('--on-accent').trim(),
       },
     });
     current.terminal = terminal;
