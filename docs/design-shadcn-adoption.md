@@ -1160,24 +1160,18 @@ owns which component draws each part.
 | Part | Component |
 |---|---|
 | Search field and Find a project | Input, through `DraftInput`: uncontrolled, with field memory, as the form-controls layer requires of every typed field |
-| Six filter buttons and their popovers | The popover variant of `Disclosure`, so open state stays in the keyed store and Escape and blur follow the Popover layer |
-| Filter options | Checkbox for Project, Harness, State, Drift and Goal and the no-stamp checkbox; Radio Group for Date's Filter by and When |
-| A count on a filter button | Badge |
-| Presets | Button `variant="native"` with `aria-pressed` in a named group, the activity filter's idiom, instead of Toggle Group |
+| Status tabs | Button `variant="segment"` with `aria-pressed` in a named group, following the activity filter's pressed-button idiom |
+| Filters | Button with the shared funnel Icon, driving a keyed in-flow panel |
+| Primary filter options | Button `variant="filter-option"` with `aria-pressed` |
+| Advanced filters | Disclosure, Checkbox for independent choices and Radio Group for Date's Filter by and When |
 | Chips | Button `variant="filter-chip"` |
-| Show all stored sessions, and back | `buttonVariants({ variant: 'native' })` on a plain `<a>`, so the link keeps its role |
+| Show older sessions, and back | `buttonVariants({ variant: 'native' })` on a plain `<a>`, so the link keeps its role |
 | The hidden-waiting guard | Alert, static (`announce={false}`), on the amber token |
-| Dividers inside popovers | Separator |
+| Dividers inside the advanced panel | Separator |
 
-The filter popovers keep the Popover layer's contract: non-modal, initial and final focus left alone,
-and Escape through `popoverEscape.ts`, which closes all popovers and returns focus to the trigger. The
-popover variant of `Disclosure` gains three props for them. `triggerClassName` adds the border, since
-the trigger's own class is only a minimum size and a focus outline and the chevron stays. `vertical`
-turns off side flipping (`side: 'none'`, `align: 'shift'`, `fallbackAxisSide: 'none'`), so a list
-opens below its button and scrolls inside the available height; in a short window the tall Date list
-had flipped beside its button, over the search field. `holdPaint` marks the trigger with
-`data-hold-paint`, which holds the board's background paint while the popover is open, as an open
-Select does ([An open option list](design-reader-state.md#an-open-option-list)).
+Filters opens in the page flow and keeps focus on its button. The display gate reads the
+button's `aria-expanded` and `data-hold-paint`. Escape closes the panel and focuses Filters.
+The date and project options retain their native directions and selection behaviors.
 
 Not added, with the reasons the Sessions search record gives: Kbd, Input Group, Toggle Group,
 Calendar, Command, Combobox, DropdownMenu, Sheet, Drawer and Empty.
