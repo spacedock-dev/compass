@@ -234,7 +234,9 @@ The press layer is `ViewOnly`. It stops a press that would edit, save, allow or 
 a handler, and says in one line why, so a reader sees a sentence and not an error from a request that
 was never going to work. Links, disclosures, the select, the marks, a finding's cited entry numbers and
 Back to the finding, a summary line's cited entries and its links to a departure card, Steer back and
-Copy stay live, because they only read or compose words. Every summary control is held: Summarize,
+Copy stay live, because they only read or compose words. The Live monitor switch shows or hides the
+sample's estimate without taking a lease. The guard allows the hidden checkbox beside that switch
+because Base UI sends activation through it. Every summary control is held: Summarize,
 Update summary, Summarize again, Cancel, Delete summary, Turn off summaries and Turn summaries on, and
 Pause model calls and Resume model calls beside them. The finished sample shows only some of them, so
 its stories draw it in each state that offers the others and press each one. A control inside a

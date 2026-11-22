@@ -684,8 +684,9 @@ export const LIVE_LINE =
 /* What the switch does, in the monitor notice's words: a model call, how often, to whom, and what it falls back
    to. The server's own "What is sent" sentence, naming the destination, stands beside it while the monitor
    is on. */
-export const LIVE_HINT =
-  'Asks Haiku, through your Claude Code, where the latest turns are heading, about once a minute while this session is on screen. Until a check returns, the level comes from checks and file paths. The level shows here and in the header.';
+export const LIVE_HINT = 'Checks progress about once a minute while you watch';
+export const LIVE_MONITOR_DETAILS =
+  'Asks Haiku, through your Claude Code, where the latest turns are heading. Until a check returns, the level comes from checks and file paths. The level shows here and in the header.';
 /* The monitor level's source line: what a Haiku check read, and what it does not say. The estimate's own line
    above stays the line for the level computed from checks and paths. */
 export const LIVE_MONITOR_LINE =

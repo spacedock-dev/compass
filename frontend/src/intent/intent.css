@@ -1,6 +1,6 @@
 @layer legacy {
 /* The Intent log and the Intent panel's own parts: the goal and outcome editor, the prompt menu, the later
-   directions, the live monitor switch and the discard offer. Ported rule for rule from the legacy sheet's
+   directions and the discard offer. Ported rule for rule from the legacy sheet's
    COCKPIT section so the two renderers look alike (the browser parity test compares their layout at 320,
    375 and 1280 CSS px). What is left behind belongs to the Analyze step: the level meter, the reading, the
    departures and the re-entry row. Selectors are copied as written, `#app` included. */
@@ -11,13 +11,6 @@
 .next-cockpit-held-stamp [data-slot="accordion-content"]>span{display:block}
 .next-session-drift-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:16px 12px;padding:16px 16px 12px}
 .next-session-drift-titles{min-width:0}
-.next-session-drift-monitor{display:flex;align-items:center;gap:8px;flex-shrink:0;margin-top:-13px;color:var(--ink);font-size:var(--fs-label);font-weight:500}
-.next-session-drift-switch{display:inline-flex;align-items:center;justify-content:center;padding:0;border:0;background:transparent;cursor:pointer}
-.next-session-drift-track{display:flex;align-items:center;justify-content:flex-start;box-sizing:border-box;width:40px;height:24px;padding:2px;border:1px solid var(--line);border-radius:var(--r-pill);background:var(--sunk)}
-.next-session-drift-track>span{width:18px;height:18px;border-radius:50%;background:var(--ink2)}
-.next-session-drift-switch[aria-checked="true"]>.next-session-drift-track{justify-content:flex-end;border-color:var(--accent-dim);background:var(--accent-dim)}
-.next-session-drift-switch[aria-checked="true"]>.next-session-drift-track>span{background:var(--ink)}
-.next-session-drift-switch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .next-session-drift-heading{margin:0;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
 .next-cockpit-direction-whole{margin:6px 0 8px;padding:0;list-style:none;display:grid;gap:6px}
 .next-cockpit-direction-whole-item{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:8px;align-items:baseline;color:var(--ink);font-size:var(--fs-body);line-height:1.5;overflow-wrap:anywhere}

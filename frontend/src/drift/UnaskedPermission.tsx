@@ -7,7 +7,7 @@ import { endedAt, isRecord, type Row } from '../observed';
 import { revisionNewer } from '../transport/revision';
 import { RouteAnchor } from '../sessions';
 import { useDisplayed, useShell } from '../shell/context';
-import { Button } from '../ui/button';
+import { Switch } from '../ui/switch';
 import { DisclosureParts } from './ModelNotice';
 import { overlaid, showReading } from './overlay';
 import { policyReason, unaskedRoute } from './route';
@@ -179,21 +179,13 @@ export function UnaskedPermission({
           </p>
         )}
         <div className="flex items-center gap-2">
-          <Button
-            variant="native"
-            type="button"
-            className="next-session-drift-switch"
-            role="switch"
-            aria-checked={allowed}
+          <span id={labelId}>Allow Codex to run unasked checks</span>
+          <Switch
+            checked={allowed}
             aria-labelledby={labelId}
             disabled={blocked || pending}
-            onClick={() => void change()}
-          >
-            <span className="next-session-drift-track" aria-hidden="true">
-              <span />
-            </span>
-          </Button>
-          <span id={labelId}>Allow Codex to run unasked checks</span>
+            onCheckedChange={() => void change()}
+          />
         </div>
         {blocked ? <p className="next-cockpit-reading-why">{refusal}</p> : null}
         {!dormant ? (

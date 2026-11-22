@@ -119,7 +119,7 @@ const isHatch = (backgroundImage: string): boolean => {
   return backgroundImage === hatchValue;
 };
 
-function resolve(
+export function paintedColors(
   element: Element,
   textColor?: string,
 ): { foreground: Rgb; background: Rgb } | null {
@@ -189,7 +189,7 @@ export function auditContrast(root: ParentNode): ContrastReport {
       continue;
     }
     const style = getComputedStyle(element);
-    const seen = resolve(element);
+    const seen = paintedColors(element);
     if (!seen) {
       unmeasured.push(label);
       continue;
@@ -212,7 +212,7 @@ export function auditContrast(root: ParentNode): ContrastReport {
   )) {
     if (field.value || isHidden(field) || field.closest('[data-a11y-fixture], [disabled]'))
       continue;
-    const seen = resolve(field, getComputedStyle(field, '::placeholder').color);
+    const seen = paintedColors(field, getComputedStyle(field, '::placeholder').color);
     if (!seen) continue;
     measured.push({
       text: field.placeholder,

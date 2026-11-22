@@ -13,13 +13,6 @@
 .next-steer-receipts,.next-guardrail-rows{display:grid;gap:8px}
 .next-steer-receipt strong{display:block;overflow-wrap:anywhere;font-size:var(--fs-label);font-weight:500}
 .next-steer-receipt p{margin:5px 0 0;color:var(--ink2);font-size:var(--fs-label)}
-.next-guardrail-row{display:grid;grid-template-columns:10px minmax(0,1fr);gap:10px;width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:var(--r-control);background:transparent;color:var(--ink2);font:inherit;text-align:left;cursor:pointer}
-.next-guardrail-row:hover{border-color:var(--line-hi)}
-.next-guardrail-row[aria-checked="false"]{color:var(--ink3)}
-.next-guardrail-glyph{margin-top:2px;color:var(--ink2);font:var(--fs-label) var(--sans)}
-.next-guardrail-copy strong,.next-guardrail-copy small{display:block;overflow-wrap:anywhere;font-weight:500}
-.next-guardrail-copy strong{font-size:var(--fs-body);line-height:1.55}
-.next-guardrail-copy small{margin:0;color:var(--ink2);font-size:var(--fs-label);line-height:1.5}
 .next-guardrail-empty{margin:0;color:var(--ink2);font-size:var(--fs-body);line-height:1.5}
 .next-guardrail-add-input{display:flex;align-items:center;gap:9px}
 .next-guardrail-add-input button{flex-shrink:0}

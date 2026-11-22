@@ -11,8 +11,10 @@ const LIVE_ACTIONS = new Set([
    control, so "Clear" in the Intent popover is held. Whole popovers and disclosures were once exempt, and
    that let a press on Clear empty the sample's goal. */
 /* Back to the finding only moves focus back to the cited entry a reader pressed, so it is as live as that press. */
-const LIVE_REGIONS =
-  '[data-sample-tour], [data-next-jump-back], a[href], [data-slot="popover-trigger"], [data-slot="accordion-trigger"], [data-slot="collapsible-trigger"], [role="combobox"], [role="listbox"], [role="option"]';
+// Base UI forwards a switch press to its hidden checkbox. Only the Live monitor may toggle in the sample.
+const LIVE_MONITOR_INPUT =
+  'button[data-slot="switch"][data-next-cockpit-action="live-monitor"] + input[type="checkbox"][aria-hidden="true"]';
+const LIVE_REGIONS = `[data-sample-tour], [data-next-jump-back], a[href], [data-slot="popover-trigger"], [data-slot="accordion-trigger"], [data-slot="collapsible-trigger"], [role="combobox"], [role="listbox"], [role="option"], ${LIVE_MONITOR_INPUT}`;
 const CONTROL =
   'button, input, textarea, select, [role="button"], [role="switch"], [role="checkbox"]';
 

@@ -116,6 +116,20 @@ export const MarksTeachThePage: Story = {
   },
 };
 
+export const LiveMonitorCanToggleInViewOnly: Story = {
+  render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
+  play: async ({ canvasElement }) => {
+    await loaded(canvasElement);
+    await userEvent.click(within(canvasElement).getByRole('button', { name: 'Drift settings' }));
+    const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
+    await expect(monitor).toHaveAttribute('aria-checked', 'true');
+    await userEvent.click(monitor);
+    await expect(monitor).toHaveAttribute('aria-checked', 'false');
+    await userEvent.keyboard(' ');
+    await expect(monitor).toHaveAttribute('aria-checked', 'true');
+  },
+};
+
 /* The marks follow their parts down the one-column page, so the numbers read in order from the top: the
    tour's order is the page's. Full activity's mark sits beside its trigger, in view while it is collapsed. */
 export const MarksFollowThePage: Story = {

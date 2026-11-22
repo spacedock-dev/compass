@@ -138,9 +138,10 @@ const summarizeEditor = () => {
       : null,
     caveats: norm(document.querySelector('.next-session-drift-caveats')),
     later: norm(document.querySelector('.next-cockpit-conflict')),
-    monitor: document.querySelector('.next-session-drift-switch')
-      ? document.querySelector('.next-session-drift-switch').getAttribute('aria-checked')
-      : null,
+    monitor:
+      document
+        .querySelector('[data-next-cockpit-action="live-monitor"]')
+        ?.getAttribute('aria-checked') ?? null,
     question: question
       ? {
           said: norm(question.querySelector('.next-cockpit-direction-said')),
@@ -1027,7 +1028,7 @@ try {
       const more = react.page.getByRole('button', { name: 'More', exact: true });
       if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click();
       const key = 'compass.next.live-estimate:claude:intent-2';
-      const sw = react.page.locator('.next-session-drift-switch');
+      const sw = react.page.getByRole('switch', { name: 'Live monitor' });
       react.reset();
       assert.equal(await sw.getAttribute('aria-checked'), 'false');
       await sw.click();
@@ -1037,18 +1038,15 @@ try {
       /* Predates the one-column page (2026-10-19): the session More button is gone, so this fails when the
          proof is run on demand until it is brought forward to the Intent card that now holds these parts. */
       await react.page.getByRole('button', { name: 'More', exact: true }).click();
-      await react.page.waitForSelector('.next-session-drift-switch');
-      assert.equal(
-        await react.page.locator('.next-session-drift-switch').getAttribute('aria-checked'),
-        'true',
-      );
+      await sw.waitFor();
+      assert.equal(await sw.getAttribute('aria-checked'), 'true');
       assert.equal(
         await react.page.evaluate(() =>
           globalThis.localStorage.getItem('compass.next.live-estimate:claude:intent-1'),
         ),
         null,
       );
-      await react.page.locator('.next-session-drift-switch').click();
+      await sw.click();
       assert.equal(await react.page.evaluate((k) => globalThis.localStorage.getItem(k), key), null);
       assert.deepEqual(react.log.nonGet, []);
     },

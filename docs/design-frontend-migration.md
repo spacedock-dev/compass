@@ -240,6 +240,11 @@ reads them. The unit proofs that held the old behaviour (`flags.test.ts`, `reads
 `LiveMonitor.test.tsx`) now hold the new one, and `frontend_inventory.py` checks the reader-state row against
 the code that exists.
 
+2026-11-22, the Live monitor's switch helper reads "Checks progress about once a minute while
+you watch". Drift settings retains the Haiku and Claude Code explanation before activation and
+shows the server's sending disclosure while the switch is on. `LiveMonitor.test.tsx` and the
+Live monitor and Session layout stories read the new helper. The recorded answers stay frozen.
+
 2026-10-23, a session whose only prompt was a harness command is not said to have an unpublished title: on the
 session page's heading, the browser tab title and the breadcrumb, a session with no title whose first prompt
 was a command (`first_prompt_control`) reads "No name: the session opened with a command" where the

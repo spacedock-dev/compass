@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { expectSwitchPaint } from './switch.audit';
 import {
   DriftScenario,
   fact,
@@ -84,12 +85,20 @@ export const Off: Story = {
     // Nothing is shown or sent while it is off, whatever the server may hold.
     await expect(pill(card)).toBeNull();
     await expect(actions(args.scenario.lease as LeaseScenario)).toEqual([]);
-    // The hint names the model call, how often it runs and where the text goes.
     const hint = document.querySelector('[data-next-live-hint]') as HTMLElement;
-    await expect(hint).toHaveTextContent(/Haiku/);
-    await expect(hint).toHaveTextContent(/about once a minute/);
-    await expect(hint).toHaveTextContent(/Claude Code/);
-    await expect(hint).not.toHaveTextContent(/no model call/);
+    await expectSwitchPaint(toggle, false);
+    const box = toggle.getBoundingClientRect();
+    for (const y of [box.top + 0.5, box.bottom - 0.5]) {
+      const hit = document.elementFromPoint(box.left + box.width / 2, y);
+      await expect(toggle.contains(hit), 'Switch target inside the popover').toBe(true);
+    }
+    await expect(hint).toHaveTextContent(/^Checks progress about once a minute while you watch$/);
+    await expect(toggle).toHaveAccessibleDescription(
+      'Checks progress about once a minute while you watch',
+    );
+    await expect(
+      within(document.body).getByText(/^Asks Haiku, through your Claude Code/),
+    ).toBeVisible();
   },
 };
 
@@ -101,8 +110,11 @@ export const OnWithTheHaikuLevel: Story = {
   }),
   play: async ({ canvasElement, args }) => {
     const card = await drawn(canvasElement);
-    await turnOn(card);
+    const toggle = await monitorSwitch(card);
+    toggle.focus();
+    await userEvent.keyboard(' ');
     await waitFor(() => expect(pill(card)).toBe('High'));
+    await expectSwitchPaint(toggle, true);
     // The header pill is labelled the monitor's, as the card is.
     await expect(card.ownerDocument.querySelector('[data-next-drift-pill]')).toHaveTextContent(
       'Live monitor · Haiku',

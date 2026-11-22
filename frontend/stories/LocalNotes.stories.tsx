@@ -11,6 +11,7 @@ import { steeringHeldFor } from '../src/steering/held';
 import { createLegacyStorage, guardrailKey, memoKey } from '../src/storage';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend, type FakeBackend } from '../test/storage_backends';
+import { expectSwitchPaint } from './switch.audit';
 
 const PROJECT = 'alpha/app';
 const MEMO_KEY = memoKey(PROJECT, null, 'outcome');
@@ -225,13 +226,28 @@ export const NoteKeepsOverLimitText = editorLimit('steer');
 export const TripwireKeepsOverLimitText = editorLimit('tripwire');
 export const MemoKeepsOverLimitText = editorLimit('memo');
 
+export const TripwireSwitch: Story = {
+  args: { kind: 'tripwire', initialRules: ['Watch the tests'] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const toggle = await canvas.findByRole('switch', { name: 'Watch the tests' });
+    await expectSwitchPaint(toggle, true);
+    await userEvent.click(canvas.getByText('Watch the tests'));
+    await expect(canvas.getByText('Disabled in this browser.')).toBeVisible();
+    await expect(toggle).toHaveAccessibleName('Watch the tests Disabled in this browser.');
+    await expectSwitchPaint(toggle, false);
+    await userEvent.keyboard(' ');
+    await expect(toggle).toHaveAccessibleName('Watch the tests');
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  },
+};
+
 function concurrentTripwire(action: 'remove' | 'toggle'): Story {
   return {
     args: { kind: 'tripwire', initialRules: ['A', 'B', 'C'] },
     play: async ({ canvasElement }) => {
       const canvas = within(canvasElement);
-      const tripwire = await canvas.findByRole('switch', { name: 'B' });
-      await expect(tripwire.querySelector('svg[data-icon="tripwire"]')).toBeVisible();
+      await canvas.findByRole('switch', { name: 'B' });
       const backend = backendOf(canvasElement);
       const other = createLegacyStorage(() => backend).guardrails;
       const first = other.rules(PROJECT)[0];

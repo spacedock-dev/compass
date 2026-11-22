@@ -92,10 +92,8 @@ describe('the rules', () => {
       },
     });
     await page.settle();
-    expect(rows().map((row) => row.textContent)).toEqual([
-      'an old string rule',
-      'keptDisabled in this browser.',
-    ]);
+    expect(screen.getByRole('switch', { name: 'an old string rule' })).toBeVisible();
+    expect(screen.getByRole('switch', { name: 'kept Disabled in this browser.' })).toBeVisible();
     for (const row of rows()) {
       expect(row.querySelector('svg[data-icon="tripwire"]')?.getAttribute('aria-hidden')).toBe(
         'true',

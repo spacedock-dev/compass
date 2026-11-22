@@ -5,6 +5,7 @@ import { GLOSSARY } from '../src/language/glossary';
 import { Alert } from '../src/ui/alert';
 import { Button } from '../src/ui/button';
 import { Card } from '../src/ui/card';
+import { Switch } from '../src/ui/switch';
 import { contrastOf } from './a11y.audit';
 
 const palette = [
@@ -299,8 +300,16 @@ function ReservedExamples() {
   return (
     <Panel id="calm-reserved" title="Reserved examples">
       <div style={columns}>
+        <section style={row}>
+          <h3 style={subheading}>Switch</h3>
+          <Switch className="w-full justify-between" defaultChecked={false}>
+            Off
+          </Switch>
+          <Switch className="w-full justify-between" defaultChecked>
+            On
+          </Switch>
+        </section>
         {[
-          ['Switch', 'The shared Switch will appear here when it ships.'],
           ['How … works', 'A short explanation opens beside the words it explains.'],
           [GLOSSARY.showTechnicalDetails.plain, 'Activity log, AI use, limits and raw evidence.'],
           ['Stepped slider', 'Choose how much a progress check reads.'],
@@ -517,8 +526,13 @@ export const StyleGuide: Story = {
       'Forget everything',
     ])
       await expect(reserved.getByRole('heading', { name: heading })).toBeVisible();
-    await expect(
-      reserved.getByText('The shared Switch will appear here when it ships.'),
-    ).toBeVisible();
+    await expect(reserved.getByRole('switch', { name: 'Off' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+    await expect(reserved.getByRole('switch', { name: 'On' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
   },
 };

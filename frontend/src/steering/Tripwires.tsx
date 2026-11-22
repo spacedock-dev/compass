@@ -1,6 +1,7 @@
-import { Icon } from '../ui/icons';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
+import { Icon } from '../ui/icons';
+import { Switch } from '../ui/switch';
 import { useId, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { CharacterCount } from '../ui/CharacterCount';
 import { DraftInput } from '../controls/DraftField';
@@ -91,27 +92,38 @@ function RuleRow({
     `guardrail:${project}:${index}:remove`,
     { fallback },
   );
+  const labelId = useId();
+  const disabledNoteId = useId();
   return (
     <div className="flex items-center gap-2">
-      <Button
-        variant="native"
+      <Switch
         ref={toggle}
-        type="button"
-        className="next-guardrail-row"
-        role="switch"
-        aria-checked={rule.enabled}
+        className="w-full justify-between gap-2 rounded-control border border-solid border-input px-[11px] py-1.5 text-left text-muted-foreground hover:border-[var(--line-hi)] data-unchecked:text-[color:var(--ink3)]"
+        checked={rule.enabled}
+        aria-labelledby={rule.enabled ? labelId : `${labelId} ${disabledNoteId}`}
         data-next-guardrail-toggle={index}
         data-next-controls-project={project}
-        onClick={() => {
+        onCheckedChange={() => {
           onChange(runtime.storage.guardrails.toggle(project, rule));
         }}
       >
-        <Icon name="tripwire" className="next-guardrail-glyph shrink-0" />
-        <span className="next-guardrail-copy">
-          <strong>{rule.text}</strong>
-          {rule.enabled ? null : <small>Disabled in this browser.</small>}
+        <span className="flex min-w-0 items-start gap-2">
+          <Icon name="tripwire" className="mt-0.5 shrink-0 text-label text-muted-foreground" />
+          <span className="min-w-0 font-medium [overflow-wrap:anywhere]">
+            <strong id={labelId} className="block text-body leading-[1.55] font-medium">
+              {rule.text}
+            </strong>
+            {rule.enabled ? null : (
+              <small
+                id={disabledNoteId}
+                className="block text-label leading-[1.5] text-muted-foreground"
+              >
+                Disabled in this browser.
+              </small>
+            )}
+          </span>
         </span>
-      </Button>
+      </Switch>
       <Button
         ref={remove}
         type="button"

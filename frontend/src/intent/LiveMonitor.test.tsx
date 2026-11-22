@@ -1,4 +1,4 @@
-import { act, fireEvent } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { json, mountIntent, type RecordedRequest } from './testing';
 import { board, mountSession, SESSION_HASH, text } from './panel.testing';
@@ -69,14 +69,14 @@ describe('the live monitor switch', () => {
     expect(page.posts()).toBe(0);
   });
 
-  it('names the model call, the cadence and the provider in its hint', async () => {
+  it('shows the cadence and discloses the model and provider before activation', async () => {
     const page = mountSession();
     await page.settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Drift settings' }));
+    await page.settle();
     const hint = text('[data-next-live-hint]');
-    expect(hint).toMatch(/Haiku/);
-    expect(hint).toMatch(/about once a minute/);
-    expect(hint).toMatch(/Claude Code/);
-    expect(hint).not.toMatch(/no model call/);
+    expect(hint).toBe('Checks progress about once a minute while you watch');
+    expect(screen.getByText(/^Asks Haiku, through your Claude Code/)).toBeVisible();
   });
 
   it('starts a lease when turned on, with this tab’s id, then beats it every twenty seconds', async () => {
