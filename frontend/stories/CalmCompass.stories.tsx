@@ -232,54 +232,6 @@ function StatusLanguage() {
   );
 }
 
-function Terminology() {
-  const words = [
-    ['Goal', 'Intent'],
-    ['What “done” looks like', 'Expected outcome (optional)'],
-    ['Check progress / Check progress again', 'Analyze drift / Check again'],
-    ['This reading looks wrong', 'Mark as inaccurate'],
-    ['Where it went off course', 'Departure + Goal'],
-    ['Helpers', 'Subagents'],
-    ['Agent', 'Harness'],
-    ['Needs you', 'Attention'],
-    ['Goal history', 'Intent log'],
-    ['Quiet', 'Idle'],
-    ['Pause all AI use / Resume AI use', 'Pause model calls / Resume model calls'],
-    ['Live monitor', 'Live monitor'],
-    ['Your AI allowance (the plan quota only)', 'Quota strip'],
-    ['How much a progress check reads', 'Estimated prompt allowances'],
-  ];
-  return (
-    <Panel id="calm-terminology" title="Words we use now">
-      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'start' }}>
-        <thead>
-          <tr>
-            <th scope="col" style={{ textAlign: 'start' }}>
-              Now
-            </th>
-            <th scope="col" style={{ textAlign: 'start' }}>
-              Before
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {words.map(([current, previous]) => (
-            <tr key={current}>
-              <th
-                scope="row"
-                style={{ ...row, textAlign: 'start', paddingInlineEnd: 'var(--sp-3)' }}
-              >
-                {current}
-              </th>
-              <td style={{ ...row, color: 'var(--ink2)' }}>{previous}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Panel>
-  );
-}
-
 function Pieces() {
   const buttons: CSSProperties = {
     display: 'flex',
@@ -420,9 +372,8 @@ function Guide() {
         <TypeSamples />
       </div>
       <StatusLanguage />
-      <RadiusSamples />
       <div style={columns}>
-        <Terminology />
+        <RadiusSamples />
         <Pieces />
       </div>
       <ReservedExamples />
@@ -513,6 +464,7 @@ export const StyleGuide: Story = {
     await expect(words.getByRole('columnheader', { name: 'Replaces' })).toBeVisible();
     for (const [plain, earlier] of [
       ['Goal', 'Intent, Intent and drift'],
+      ['Helpers', 'Subagents'],
       ['Needs you', 'Attention'],
       ['Goal history', 'Intent log'],
       ['Quiet', 'Idle'],
@@ -538,17 +490,6 @@ export const StyleGuide: Story = {
       }
     } finally {
       corner.remove();
-    }
-
-    const words = within(canvas.getByRole('region', { name: 'Words we use now' }));
-    for (const [current, previous] of [
-      ['Goal', 'Intent'],
-      ['Helpers', 'Subagents'],
-      ['Needs you', 'Attention'],
-      ['Quiet', 'Idle'],
-    ]) {
-      const item = words.getByRole('row', { name: `${current} ${previous}` });
-      await expect(item).toBeVisible();
     }
 
     const pieces = within(canvas.getByRole('region', { name: 'Pieces' }));
