@@ -300,6 +300,7 @@ export interface SessionRow {
   readonly endedSince: string;
   readonly responsibility: string;
   readonly history: boolean;
+  readonly worthALook: string | undefined;
   readonly relations: ReturnType<typeof declaredRelations>;
 }
 
@@ -337,6 +338,7 @@ export function buildSessionsScreen(
   payload: Row,
   model: Observed,
   chosenFor?: (session: Row) => PromptCandidate | null,
+  worthALook?: ReadonlyMap<ObservedSession, string>,
 ): SessionsScreen {
   const context = sessionsContext(payload);
   const rows = payloadSessionRows(payload);
@@ -383,6 +385,7 @@ export function buildSessionsScreen(
       goal: goalCell(source, context, source && chosenFor ? chosenFor(source) : null),
       drift: driftMark(source, context),
       endedSince: since ? `ended ${since} ago` : '',
+      worthALook: worthALook?.get(session),
       responsibility: ask ? ` · ${askResponsibility(payload, ask)}` : '',
       history,
       relations: declaredRelations(payload, source),

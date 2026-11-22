@@ -7,6 +7,8 @@ import { Button } from '../ui/button';
 import { StatusTile } from '../ui/status-tile';
 import { TooltipProvider } from '../ui/tooltip';
 import { SESSION_ROW_WORDS } from '../language/glossary';
+import { selectAttentionSelection } from '../attention/select';
+import { WorthALookFlag } from '../attention/WorthALookFlag';
 import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 'react';
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
@@ -77,7 +79,10 @@ function StatusLegend() {
       </h2>
       <ul aria-labelledby="sessions-icon-legend" className="flex flex-wrap gap-x-4 gap-y-1">
         {SESSION_LEGEND.map(([word, icon]) => (
-          <li key={word} className="inline-flex items-center gap-2">
+          <li
+            key={word}
+            className={`inline-flex items-center gap-2${icon === 'worth-a-look' ? ' text-[var(--progress-off-course)]' : ''}`}
+          >
             <Icon name={icon} />
             {word}
           </li>
@@ -203,6 +208,7 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
             {`Source not fully read: ${names.join(', ')}`}
           </span>
         ) : null}
+        {row.worthALook ? <WorthALookFlag reason={row.worthALook} /> : null}
       </div>
     </div>
   );
@@ -252,23 +258,25 @@ const RowView = memo(function RowView({
 }) {
   const { session, history } = row;
   const nowKind = 'NOW';
-  const outcome = session.outcomeKnown ? (
-    <span className={`next-operation-outcome next-operation-outcome--${session.tone}`}>
-      {session.outcomeIcon ? (
-        <Icon name={session.outcomeIcon} className="mr-1 inline-block align-text-bottom" />
-      ) : null}
-      {session.outcomeText}
-      <span
-        className={
-          session.gitKnown
-            ? 'next-operation-outcome'
-            : 'next-operation-outcome next-operation-outcome--unknown'
-        }
-      >
-        {session.gitText}
+  const hasDirtyEndFlag = session.outcomeIcon === 'worth-a-look' && row.worthALook;
+  const outcome =
+    session.outcomeKnown && !hasDirtyEndFlag ? (
+      <span className={`next-operation-outcome next-operation-outcome--${session.tone}`}>
+        {session.outcomeIcon === 'ended' ? (
+          <Icon name={session.outcomeIcon} className="mr-1 inline-block align-text-bottom" />
+        ) : null}
+        {session.outcomeText}
+        <span
+          className={
+            session.gitKnown
+              ? 'next-operation-outcome'
+              : 'next-operation-outcome next-operation-outcome--unknown'
+          }
+        >
+          {session.gitText}
+        </span>
       </span>
-    </span>
-  ) : null;
+    ) : null;
   const now = (
     <ObservedFact
       kind="now"
@@ -548,9 +556,13 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
   const shell = useShell();
   const data = useDisplayed((snapshot) => snapshot.data);
   const model = useDisplayed(selectObserved);
+  const attention = useDisplayed(selectAttentionSelection);
   const screen = useMemo(
-    () => (data ? buildSessionsScreen(data as unknown as Row, model, chosenFor) : null),
-    [data, model, chosenFor],
+    () =>
+      data
+        ? buildSessionsScreen(data as unknown as Row, model, chosenFor, attention?.worthALook)
+        : null,
+    [data, model, chosenFor, attention],
   );
   const [filters, store] = useFilterState(shell.controls);
   /* The rows follow the choices a frame behind under load. The keystroke's own render keeps the deferred
@@ -613,6 +625,18 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
           </section>
         ))}
       </section>
+      {attention ? (
+        <Button
+          type="button"
+          className="mt-3 aria-pressed:bg-accent"
+          aria-pressed={filters.worthALookOnly}
+          onClick={() =>
+            actions.change({ ...filters, worthALookOnly: !filters.worthALookOnly }, 'press')
+          }
+        >
+          {SESSION_ROW_WORDS.worthALook} {attention.counts.worthALook}
+        </Button>
+      ) : null}
       {/* No toolbar over an empty board: the existing sentences say why there is nothing to find. */}
       {indexed.length ? (
         <SessionsFilters

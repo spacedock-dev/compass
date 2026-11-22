@@ -66,7 +66,7 @@ The lighter surfaces, dividers and fills can group content decoratively.
 | Waiting card accent border | `#F6D9A8` | `#FFFFFF` | 1.36:1 | Below 3:1. NUI-18 requires an independent cue for the clickable card. |
 | Working glyph on blue tile | `#1D4ED8` | `#E8F0FE` | 5.85:1 | Pulse shape carries state. |
 | Waiting glyph on amber tile | `#92400E` | `#FEF3E2` | 6.46:1 | Clock shape carries state. |
-| Worth a look flag on card | `#92400E` | `#FFFFFF` | 7.09:1 | Amber warning glyph and text. |
+| Worth a look flag on card | `#C2410C` | `#FFFFFF` | 5.18:1 | Off-course orange warning glyph and text. |
 | Quiet glyph on grey tile | `#3E4C59` | `#EEF1F4` | 7.77:1 | Moon shape carries state. |
 | Ended glyph on green tile | `#21573F` | `#E6F2EC` | 7.31:1 | Checkmark shape carries state. |
 | Working tile fill on card | `#E8F0FE` | `#FFFFFF` | 1.15:1 | Below 3:1. Decorative under NUI-18. The glyph identifies the state. |
@@ -79,9 +79,8 @@ The lighter surfaces, dividers and fills can group content decoratively.
 | Off course text on orange | `#FFFFFF` | `#C2410C` | 5.18:1 | Filled pill. |
 | Way off course text on deep orange | `#FFFFFF` | `#7C2D12` | 9.37:1 | Filled pill. |
 
-Blue identifies Working. Orange indicates a progress reading that found a departure. Amber is
-reserved for Waiting on you and Worth a look. A reader has a word, a shape or both alongside
-color.
+Blue identifies Working. Orange marks a progress departure or the Worth a look flag. Amber
+identifies Waiting on you. Each cue has a word, a shape or both alongside color.
 
 In the read-only terminal, xterm adjusts ANSI foregrounds to at least 4.5:1 on the light
 ground. The selection uses the strong boundary color behind white text and remains visible
@@ -106,7 +105,7 @@ against the goal. Worth a look is a flag that can coexist with a state.
 | Waiting on you | Needs input, has an exact request or reports a workflow gate. | Clock tile. Count a gate-reporting session once. |
 | Quiet | The agent finished its turn and is waiting for your next message. | Moon tile on observed quiet state. A scan-only absence does not establish a turn end. |
 | Ended | The session reported that it ended. | Checkmark tile. Ended alone carries no claim about success. |
-| Worth a look | A published at-risk signal or a dirty end. | Amber warning flag with a reason. |
+| Worth a look | A published at-risk signal or a dirty end. | Orange warning flag with a reason. |
 
 On Sessions, Project and Needs you rows, the tile carries the state with an accessible name.
 The Session page header keeps the written state. A second text line keeps **State not published**,
@@ -343,7 +342,10 @@ into a reassuring state.
 Keep the population of each count visible in its wording. The header pill and Working now
 card count Working sessions. The Needs you badge counts Waiting on you plus Worth a look
 from the rows that render. Worth a look uses published risk signals or dirty ends. A reading
-against the goal supplies no attention count. The
+against the goal supplies no attention count. The shared selector gives a waiting session one
+place in the badge even when other risk evidence exists. It flags the measured members of a
+shared-label collision and keeps location gaps and harness-level quota windows off the session
+count. The dirty-end reason names changed git entries when a count was published. The
 [Sessions counters amendment](design-next-ui.md#amended-2026-11-22-owner-sessions-counters)
 bounds the change to NUI-16. The terminal follows the same terms when its slice lands.
 

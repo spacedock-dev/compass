@@ -9,6 +9,7 @@ import { createShell } from '../src/shell/createShell';
 import type { Shell } from '../src/shell/context';
 import { createFakeClock, createFakeEnvironment, type FakeClock } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
+import { worthALookBoard } from '../test/worthALookBoard';
 import {
   GENERATED,
   SIDS,
@@ -40,11 +41,13 @@ function Board({
   annotate = true,
   showAll = false,
   rowExamples = false,
+  flagBoard,
   hash = '#n=sessions',
 }: {
   readonly annotate?: boolean;
   readonly showAll?: boolean;
   readonly rowExamples?: boolean;
+  readonly flagBoard?: 'mixed' | 'empty';
   readonly hash?: string;
 }) {
   const [shell] = useState(() => {
@@ -62,7 +65,15 @@ function Board({
       reducedMotion: () => true,
       fetch: (url) =>
         Promise.resolve(
-          url.startsWith('/api/data') ? json(sessionsSearchPayload({ ...live })) : json({}),
+          url.startsWith('/api/data')
+            ? json(
+                flagBoard === 'mixed'
+                  ? worthALookBoard()
+                  : flagBoard === 'empty'
+                    ? { sessions: [] }
+                    : sessionsSearchPayload({ ...live }),
+              )
+            : json({}),
         ),
     });
     rig = { shell: made, history, clock, live };
@@ -84,6 +95,56 @@ const meta = {
 } satisfies Meta<typeof Board>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+export const WorthALook: Story = {
+  args: { flagBoard: 'mixed' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const toggle = await canvas.findByRole('button', { name: 'Worth a look 9' });
+    const dirty = canvas.getByRole('link', { name: 'Open session dirty-end' }).closest('article');
+    if (!dirty) throw new Error('Missing the ended row');
+    const tile = within(dirty).getByRole('img', { name: 'Ended' });
+    const flag = within(dirty)
+      .getByText('Worth a look: Ended with uncommitted work (2 changed entries)')
+      .closest('[data-next-row-worth-a-look]');
+    if (!flag) throw new Error('Missing the flag line');
+    await expect(tile).toBeVisible();
+    await expect(flag).toBeVisible();
+    await expect(flag.querySelector('svg[data-icon="worth-a-look"]')).toBeVisible();
+    await expect(dirty.querySelectorAll('svg[data-icon="worth-a-look"]')).toHaveLength(1);
+    for (const line of canvasElement.querySelectorAll('[data-next-row-worth-a-look]')) {
+      const colors = paintedColors(line);
+      if (!colors) throw new Error('Missing painted colours for the flag');
+      await expect(contrastOf(colors.foreground, colors.background)).toBeGreaterThanOrEqual(4.5);
+    }
+    const state = await openFilter(canvasElement, 'state', 'State');
+    await expect(within(state).queryByText('Worth a look', { exact: true })).toBeNull();
+    await userEvent.keyboard('{Escape}');
+    for (const name of ['drift-high', 'gate', 'clean-end']) {
+      await expect(canvas.getByRole('link', { name: `Open session ${name}` })).toBeVisible();
+    }
+    await expect(canvas.queryByText('Off course', { exact: true })).toBeNull();
+    await userEvent.click(toggle);
+    const rows = () => canvasElement.querySelectorAll('article.next-operation-row');
+    await waitFor(() => expect(rows()).toHaveLength(9));
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    for (const name of ['drift-high', 'gate', 'clean-end']) {
+      await expect(canvas.queryByRole('link', { name: `Open session ${name}` })).toBeNull();
+    }
+    await userEvent.click(toggle);
+    await waitFor(() => expect(rows()).toHaveLength(18));
+  },
+};
+
+export const WorthALookEmptyBoard: Story = {
+  args: { flagBoard: 'empty' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole('button', { name: 'Worth a look 0' })).toBeVisible();
+    await expect(canvasElement.querySelector('[data-next-row-worth-a-look]')).toBeNull();
+    await expect(canvas.getByText('No recent-history rows in this payload.')).toBeVisible();
+  },
+};
 
 export const StatusLegend: Story = {
   play: async ({ canvasElement }) => {

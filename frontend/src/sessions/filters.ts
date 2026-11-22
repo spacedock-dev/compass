@@ -34,6 +34,7 @@ export interface FilterState {
   readonly harness: readonly string[];
   readonly headless: readonly string[];
   readonly state: readonly string[];
+  readonly worthALookOnly: boolean;
   readonly drift: readonly string[];
   readonly goal: readonly string[];
 }
@@ -49,6 +50,7 @@ export const EMPTY_FILTERS: FilterState = {
   harness: [],
   headless: [],
   state: [],
+  worthALookOnly: false,
   drift: [],
   goal: [],
 };
@@ -391,6 +393,7 @@ export function passes(indexed: IndexedRow, prepared: Prepared, skip: Part | nul
   const { filters, terms, edges } = prepared;
   if (skip !== 'search' && terms.length && !searchRow(indexed, terms).match) return false;
   if (skip !== 'date' && !datePasses(indexed, filters, edges)) return false;
+  if (filters.worthALookOnly && !indexed.row.worthALook) return false;
   for (const facet of FACETS) {
     if (facet === skip) continue;
     const chosen = filters[facet];
@@ -408,6 +411,7 @@ export function filtersActive(prepared: Prepared): boolean {
   const { filters, terms, edges, annotated } = prepared;
   return (
     terms.length > 0 ||
+    filters.worthALookOnly ||
     (edges !== null && filters.when !== 'any') ||
     FACETS.some(
       (facet) => (annotated || !ANNOTATION_FACETS.has(facet)) && filters[facet].length > 0,
@@ -746,6 +750,7 @@ export function resultLine(
 export function hasChoices(filters: FilterState): boolean {
   return (
     queryTerms(filters.query).length > 0 ||
+    filters.worthALookOnly ||
     filters.when !== 'any' ||
     FACETS.some((facet) => filters[facet].length > 0)
   );

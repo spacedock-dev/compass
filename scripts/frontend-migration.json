@@ -826,7 +826,7 @@
         "frontend/src/controls/fieldMemory.test.tsx",
         "frontend/stories/SessionsSearch.stories.tsx"
       ],
-      "contract": "The words, the Date mode and choice, the no-stamp checkbox, the Project, Harness, State, Drift, Goal and Group choices and the group-by toggle are one snapshot held per controls instance for the life of the tab, across polls, view changes and session round trips, and never written to browser storage or the fragment. The uncontrolled search field takes back its words from the store and its caret through field memory under sessions-search; Clear all empties the live node and the store. Row, trigger and option focus keys are re-emitted, and a focused row that leaves the filtered set falls back to the search field.",
+      "contract": "The words, the Date mode and choice, the no-stamp checkbox, the Project, Harness, State, Drift, Goal and Group choices the Worth a look filter and the group-by toggle are one snapshot held per controls instance for the life of the tab, across polls, view changes and session round trips, and never written to browser storage or the fragment. The uncontrolled search field takes back its words from the store and its caret through field memory under sessions-search; Clear all empties the live node and the store. Row, trigger and option focus keys are re-emitted, and a focused row that leaves the filtered set falls back to the search field.",
       "disposition": "store-held"
     },
     {

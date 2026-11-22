@@ -16,6 +16,11 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-23, Sessions shows one inline Worth a look flag beside the evidence-based status tile.
+The dirty-end warning and its git evidence move from Now to that line. The Sessions
+differential sets aside the flag and the replaced outcome and compares the surrounding row facts.
+The Sessions shell test compares the counted filter and each flag to the same selector.
+
 2026-11-23, Sessions rows lead with an accessible status tile. The harness follows the
 title. The progress slot is blank. The board data can represent unreadable evidence in
 the same way as a missing goal or check. The differential comparison uses

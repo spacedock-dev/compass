@@ -67,6 +67,11 @@ const DEVIATIONS = {
 
 function summarize(source: Element | DocumentFragment): Summary {
   restateRecordedLocationNotes(source);
+  // The flag and the dirty-end outcome it replaces have their own reason and membership proofs.
+  source.querySelectorAll('[data-next-row-worth-a-look]').forEach((flag) => flag.remove());
+  for (const outcome of source.querySelectorAll('.next-operation-outcome--bad')) {
+    if (outcome.textContent?.includes('Session ended with uncommitted work')) outcome.remove();
+  }
   const root = normalizeDisclosures(source);
   return {
     header: (() => {

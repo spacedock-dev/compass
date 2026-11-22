@@ -13,4 +13,11 @@ export {
   type Signal,
   type Subject,
 } from './model';
-export { attentionFor, selectAttention } from './select';
+export {
+  attentionFor,
+  attentionSelectionFor,
+  selectAttention,
+  selectAttentionSelection,
+  type AttentionSelection,
+} from './select';
+export { WorthALookFlag } from './WorthALookFlag';

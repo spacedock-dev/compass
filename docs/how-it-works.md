@@ -193,6 +193,11 @@ including Quiet for an observed turn stop and Ended for a reported session end. 
 cannot see a turn end, the row explains that in words. The progress slot on the row is
 blank. Open the session page to see the progress reading and any live estimate the session
 supports.
+
+A Worth a look flag explains a reported risk or an end with uncommitted work. Use the
+counted Worth a look button to show those rows. The count covers all sessions on the
+loaded board. A progress reading by itself leaves the count unchanged.
+
 An unmatched declaration says the parent is not on the board and is not linked. Open
 a parent to see its linked children and their states, or a child to open its parent. Group labels
 stay separate from goals; inherited labels say "from parent". Group by group arranges the kept
