@@ -37,6 +37,18 @@ logs, identifiers, AI use and privacy, exact limits or raw evidence. Sessions ho
 and Settings use their own inline explanations for what they show. What Compass can't see stays
 visible on the first layer.
 
+## Times and sizes
+
+Write out elapsed units in first-layer text, as in "waiting 6 minutes" and "ended 25 minutes
+ago". Use the displayed payload's generated time as the reference. The reader's locale and time
+zone determine clock times and short dates. When a timestamp is missing or unusable, leave its
+reading out. Needs you uses the formatter for observed times, and Sessions and its terminal
+listing share the elapsed spelling.
+
+First-layer sizes use KB or MB on Compass's 1,024-byte scale. What is sent gives its limits in
+KB. Exact byte limits belong in technical details and [`SECURITY.md`](../SECURITY.md). The
+[`format.ts`](../frontend/src/shell/format.ts) size formatter supplies the board spelling.
+
 ## Tokens and type
 
 The board is light only. Keep palette roles so another palette could use the same roles later.

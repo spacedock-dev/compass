@@ -16,6 +16,25 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-23, Needs you writes out waiting, end, stop and turn ages using the displayed payload's
+clock. Older observations use the reader's clock or a short date. The comparison in
+[`attention/model.differential.test.ts`](../frontend/src/attention/model.differential.test.ts)
+sets aside bare source ages such as `8m`, compact end and turn ages, the `5m` wait caution,
+the numeric `stop observed:` stamp, delegated-work clock values and the ISO quota reset.
+[`attention/view.differential.test.tsx`](../frontend/src/attention/view.differential.test.tsx)
+also sets aside the command report stamp, the quota countdown and the `24h` empty-board spelling.
+The existing location-card tests check the start-time line directly.
+
+Sessions writes out the run, quiet, end and departure ages. Its
+[`sessions.differential.test.tsx`](../frontend/src/sessions/sessions.differential.test.tsx)
+projects the Now duration and the wait caution. The board's
+[`terminalParity.test.ts`](../frontend/src/sessions/terminalParity.test.ts) and the terminal's
+[`test_terminal_sessions.py`](../compass/skills/compass/tests/test_terminal_sessions.py) read
+the same hand-updated parity fixtures. The
+[`recordedSessionStatus`](../frontend/test/recordedSessionStatus.ts) projection sets aside the
+new Sessions-only Now wording and compares the wait caution in its written-out spelling.
+No recorded answer was regenerated.
+
 2026-11-23, the Sessions filter and history explanations open below their triggers and keep
 their open state across a refresh. The earlier sessions heading names the published window on a
 bounded board. An all-history board uses Session history.
