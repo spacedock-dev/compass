@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2347559,
+    "bytes": 2347567,
     "file": "react.html",
-    "sha256": "e4c13a0fe811aff73ac5ba66cdf32aa1e6176b1059ca7ae6ea6448279b889f7e"
+    "sha256": "391c1c5f903760ab575c61096c17ec1f5834bd06088857f85441632abe9f9e5c"
   },
   "format": 1,
   "frontend": "react",
@@ -955,7 +955,7 @@
       },
       {
         "file": "frontend/src/observed/project.ts",
-        "sha256": "96df7251bca5eb9b2698c246116416a02bcb608d5fb3b84c2f8e9e69fc2a3f69"
+        "sha256": "30fd83d30722210074b06e76be1d060ba74af9363996f126b5c73a1edea1b723"
       },
       {
         "file": "frontend/src/observed/relationships.ts",
