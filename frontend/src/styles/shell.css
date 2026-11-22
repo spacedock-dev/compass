@@ -38,7 +38,7 @@ body {
 }
 
 #app a,
-#app summary,
+summary,
 #app [role='link'] {
   min-block-size: 44px;
   min-inline-size: 44px;

@@ -275,15 +275,15 @@ function Pieces() {
   return (
     <Panel id="calm-pieces" title="Pieces">
       <div style={buttons}>
-        <Button variant="primary">Check progress</Button>
-        <Button>Edit goal</Button>
-        <Button variant="quiet">Not now</Button>
+        <Button emphasis="primary">Check progress</Button>
+        <Button emphasis="secondary">Edit goal</Button>
+        <Button emphasis="quiet">Not now</Button>
       </div>
       <p style={{ ...caption, marginBlock: 'var(--sp-2) var(--sp-4)' }}>
         Uses AI · The daily count appears when 10 or fewer checks remain.
       </p>
       <div style={buttons}>
-        <Button variant="primary" disabled>
+        <Button emphasis="primary" disabled>
           Check progress unavailable
         </Button>
         <span style={caption}>Disabled</span>

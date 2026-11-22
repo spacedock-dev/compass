@@ -14,10 +14,15 @@ const refused =
   'disabled:border-dashed disabled:bg-[image:var(--hatch)] disabled:text-[color:var(--ink3)] disabled:cursor-not-allowed aria-disabled:not-aria-busy:border-dashed aria-disabled:not-aria-busy:bg-[image:var(--hatch)] aria-disabled:not-aria-busy:text-[color:var(--ink3)] aria-disabled:not-aria-busy:cursor-not-allowed aria-busy:border-solid aria-busy:bg-none aria-busy:text-foreground aria-busy:cursor-progress';
 const solid =
   'border-[var(--accent)] bg-primary text-primary-foreground hover:border-[var(--accent)] aria-busy:text-primary-foreground disabled:bg-transparent aria-disabled:not-aria-busy:bg-transparent';
+const emphasized = cn(
+  action,
+  refused,
+  'rounded-card font-semibold disabled:border-border disabled:bg-transparent aria-disabled:not-aria-busy:border-border aria-disabled:not-aria-busy:bg-transparent',
+);
 const raiseState =
   'data-[raise-state=sent]:border-[var(--accent)] data-[raise-state=declined]:border-[var(--line)] data-[raise-state=failed]:border-[var(--line)] data-[raise-state=throttled]:border-[var(--amber)] data-[raise-state=stale]:border-[var(--amber)] data-[raise-state=refused]:border-[var(--amber)] data-[raise-state]:not-data-[raise-state=sent]:not-data-[raise-state=sending]:text-muted-foreground data-[raise-state]:not-data-[raise-state=sent]:not-data-[raise-state=sending]:bg-muted aria-disabled:not-aria-busy:bg-none aria-disabled:not-aria-busy:bg-transparent data-[raise-state=sending]:cursor-progress';
 const buttonVariants = cva(
-  'min-h-[44px] min-w-[44px] max-w-full box-border [overflow-wrap:anywhere] focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-[var(--accent)] focus-visible:outline-offset-1 [&[hidden]]:hidden',
+  'min-h-[44px] min-w-[44px] max-w-full box-border [overflow-wrap:anywhere] focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-2 [&[hidden]]:hidden',
   {
     variants: {
       variant: {
@@ -55,24 +60,44 @@ const buttonVariants = cva(
         copy: cn(
           action,
           refused,
-          'text-muted-foreground hover:border-[var(--accent)] hover:text-foreground data-[copy-state=copied]:border-[var(--accent)] data-[copy-state=copied]:text-foreground data-[copy-state=failed]:border-[var(--amber)] data-[copy-state=failed]:text-muted-foreground focus-visible:outline-offset-2',
+          'text-muted-foreground hover:border-[var(--accent)] hover:text-foreground data-[copy-state=copied]:border-[var(--accent)] data-[copy-state=copied]:text-foreground data-[copy-state=failed]:border-[var(--amber)] data-[copy-state=failed]:text-muted-foreground',
         ),
         raise: cn(
           action,
           refused,
-          'px-[7px] py-1 border-[var(--amber)] bg-[var(--sunk)] font-[family-name:var(--mono)] font-bold hover:border-[var(--ink)] focus-visible:outline-offset-2',
+          'px-[7px] py-1 border-[var(--amber)] bg-[var(--sunk)] font-[family-name:var(--mono)] font-bold hover:border-[var(--ink)]',
           raiseState,
         ),
         'raise-primary': cn(
           action,
           refused,
           solid,
-          'font-[family-name:var(--mono)] font-bold focus-visible:outline-[var(--ink)] focus-visible:outline-offset-2',
+          'font-[family-name:var(--mono)] font-bold',
           raiseState,
         ),
         terminal: cn(
           action,
-          'px-2.5 py-[7px] text-muted-foreground text-label leading-normal hover:bg-[var(--panel)] hover:text-foreground focus-visible:outline-offset-3',
+          'px-2.5 py-[7px] text-muted-foreground text-label leading-normal hover:bg-[var(--panel)] hover:text-foreground',
+        ),
+      },
+      emphasis: {
+        primary: cn(
+          emphasized,
+          solid,
+          'hover:not-disabled:not-aria-disabled:bg-[var(--accent-dim)]',
+        ),
+        secondary: cn(emphasized, 'bg-card hover:bg-accent'),
+        quiet: cn(
+          emphasized,
+          'border-transparent text-primary hover:border-transparent hover:bg-accent',
+        ),
+        danger: cn(
+          emphasized,
+          'border-destructive bg-card text-destructive hover:border-destructive hover:bg-[color-mix(in_srgb,var(--clay)_7%,var(--panel))]',
+        ),
+        'danger-solid': cn(
+          emphasized,
+          'border-destructive bg-[var(--destructive-solid)] text-primary-foreground hover:border-destructive hover:not-disabled:not-aria-disabled:bg-[color-mix(in_srgb,var(--destructive-solid)_85%,var(--ink))] aria-busy:text-primary-foreground',
         ),
       },
       tone: {
@@ -86,7 +111,7 @@ const buttonVariants = cva(
       accentBorder: { true: 'border-[var(--accent)]', false: '' },
       strongBorder: { true: 'border-2', false: '' },
     },
-    defaultVariants: { variant: 'default' },
+    compoundVariants: [{ variant: undefined, emphasis: undefined, className: cn(action, refused) }],
   },
 );
 
@@ -121,7 +146,8 @@ function Spinner({ idle = false }: { readonly idle?: boolean }) {
 
 function Button({
   className,
-  variant = 'default',
+  variant,
+  emphasis,
   tone,
   size,
   accentBorder,
@@ -141,6 +167,7 @@ function Button({
       {...props}
       data-slot="button"
       data-variant={variant ?? 'default'}
+      data-emphasis={emphasis ?? undefined}
       disabled={!busy && disabled}
       aria-disabled={busy ? true : props['aria-disabled']}
       // Base UI's focusable disabled path cancels shell navigation keys as well as activation.
@@ -157,7 +184,7 @@ function Button({
         else onClick?.(event);
       }}
       className={cn(
-        buttonVariants({ variant, tone, size, accentBorder, strongBorder }),
+        buttonVariants({ variant, emphasis, tone, size, accentBorder, strongBorder }),
         (busy && busyLabel !== undefined) || reserve
           ? 'relative inline-grid items-center justify-items-center [&>span]:[grid-area:1/1]'
           : '',
