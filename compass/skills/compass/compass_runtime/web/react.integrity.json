@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2347411,
+    "bytes": 2349207,
     "file": "react.html",
-    "sha256": "1d073c6df22a3879c78760e10e63d907c8ebe3222ff5fd7fc7f412bb5d91c5f2"
+    "sha256": "d5fcbd13725c55750d19ac172ea1f4bf572ba75b17a62d1120d54e12e865793c"
   },
   "format": 1,
   "frontend": "react",
@@ -351,7 +351,7 @@
       },
       {
         "file": "frontend/src/controls/Disclosure.tsx",
-        "sha256": "823c99f1920325c32272dc5873bd74a1263b7268c561ea82a1a392ed7321ae73"
+        "sha256": "c0d0ba7d2c161bd24db3879ee93267a205a669c9b74f356359d2ff05ba915e3f"
       },
       {
         "file": "frontend/src/controls/DraftField.tsx",
@@ -367,7 +367,7 @@
       },
       {
         "file": "frontend/src/controls/MoreMenu.tsx",
-        "sha256": "e36ec5c424f69134127099900f4f59183997ee1558eb590acd09f164bb9b9ec8"
+        "sha256": "c78377fb89291c0d774bb921c61d3191a65e5d8c3bc13af0b0c4935cfc2b5f45"
       },
       {
         "file": "frontend/src/controls/RaiseControl.tsx",
@@ -539,7 +539,7 @@
       },
       {
         "file": "frontend/src/drift/EntrySource.tsx",
-        "sha256": "8e6bc6613ee5f316a6a0dd269e726cc611c211d5f32feeb08b99bbfd0bf57d22"
+        "sha256": "895d71d593e83819db2355fb30d3022530d14070dde0e10f96e5a99117f466bd"
       },
       {
         "file": "frontend/src/drift/Evidence.tsx",
@@ -899,7 +899,7 @@
       },
       {
         "file": "frontend/src/lib/utils.ts",
-        "sha256": "e4fac79e8a0c5a2989f8e85b9c2473bd4de9374ab1d419dd8086e95db6410757"
+        "sha256": "10d67de54d89339af4d220dc5fcbb7706800aaf81d9e19599ab9f40d7729d945"
       },
       {
         "file": "frontend/src/main.tsx",
@@ -935,7 +935,7 @@
       },
       {
         "file": "frontend/src/observed/index.ts",
-        "sha256": "a729c54a48c977e0b9103b6600e81eaedc0d639d6a35f1d6aab84d0fad2c1b9f"
+        "sha256": "75fcf2ead66f0cfac09ab66e2ca28072e92f1b8ef57af4c7839e956cfb8848d3"
       },
       {
         "file": "frontend/src/observed/landing.ts",
@@ -947,7 +947,7 @@
       },
       {
         "file": "frontend/src/observed/model.ts",
-        "sha256": "c1de486d442c8bfbe4e3cea9ad81a0a4836f7cce78b1bdd04fb9c55bbff38b37"
+        "sha256": "4b4a87a7487245fd2e2e795477a08e22c27032470900d3ce90f266346c2b12fb"
       },
       {
         "file": "frontend/src/observed/native.ts",
@@ -955,11 +955,7 @@
       },
       {
         "file": "frontend/src/observed/project.ts",
-        "sha256": "8f5109987f5282d7669a72598ef136c9b051d6d8f32f5bb1ac8f72cd5ef718b0"
-      },
-      {
-        "file": "frontend/src/observed/relationships.ts",
-        "sha256": "02095ccab674e0817565ccf0e4e8fd90b305120e695c3d9a578876b25ac77e0a"
+        "sha256": "96df7251bca5eb9b2698c246116416a02bcb608d5fb3b84c2f8e9e69fc2a3f69"
       },
       {
         "file": "frontend/src/observed/select.ts",
@@ -967,7 +963,7 @@
       },
       {
         "file": "frontend/src/observed/session.ts",
-        "sha256": "0fb48b800b3f348b8c2df43c3077dee3d9d304540634c1663c0283df348b7319"
+        "sha256": "ac21a5c7441245ec858b9988d19a5decf4e0ab80547eef096bed4fe7f3ca1a12"
       },
       {
         "file": "frontend/src/observed/values.ts",
@@ -975,7 +971,7 @@
       },
       {
         "file": "frontend/src/project/ActivityViews.tsx",
-        "sha256": "fcd6a19206899a973e34c7dbf137e3db7b9ecb64376d0fdbd8f424c626446a2f"
+        "sha256": "501989ffcc980248f504f817050c5e61df4c16878b57ef15d4ad96a01893cbd1"
       },
       {
         "file": "frontend/src/project/ConsoleParts.tsx",
@@ -987,15 +983,15 @@
       },
       {
         "file": "frontend/src/project/PlanView.tsx",
-        "sha256": "6d0aeeb793d8f6256bcd6d0fb3b147e1cc0c4ca5fcffeb519957a5c97fef5130"
+        "sha256": "7cdfbc7e9cb9157f97bffb7a68cdedd55775d688f80dc4ca1f1d49462fb52780"
       },
       {
         "file": "frontend/src/project/ProjectDetail.tsx",
-        "sha256": "47f1fcfb6bb91778fb59408500680a4d444cf58b327259aa38997288facb9428"
+        "sha256": "ed2b68c5b31e9bf230915f51914af94e3763989c7422d6f6839892d83f525161"
       },
       {
         "file": "frontend/src/project/ProjectsView.tsx",
-        "sha256": "d8845f1403b38d0d0037f4cec6d32ce6e40d84ca4d7287b784dcc6950a9884fc"
+        "sha256": "f38e1d02bc8a6e2204c51d1d20ccf0a28a930a66ed7e544d5730b953b5c41656"
       },
       {
         "file": "frontend/src/project/RecoveryStrip.tsx",
@@ -1003,7 +999,7 @@
       },
       {
         "file": "frontend/src/project/ScopeNav.tsx",
-        "sha256": "45904f71ee3d66f62e41d5c38550840cff9ea7b83e43ee213e000f18e2128f3e"
+        "sha256": "d2acd45b4e660ee8b945ca2cb760f157e7a1d7f42c407996aab874406e899da4"
       },
       {
         "file": "frontend/src/project/SlotPlaceholders.tsx",
@@ -1043,7 +1039,7 @@
       },
       {
         "file": "frontend/src/project/parts.tsx",
-        "sha256": "2bb9e0395d0ba02f69bb853f8a33226f17def0b7dde0267860b47d26c7ec2e6f"
+        "sha256": "47a569d502658ac4e4df7864d6137f3ffeecd9a122381ae772414fb14822cb8d"
       },
       {
         "file": "frontend/src/project/plans.ts",
@@ -1051,7 +1047,7 @@
       },
       {
         "file": "frontend/src/project/project.css",
-        "sha256": "6b0c12c43ce604164c20b9aa76eef20dd0797aa32acd762f1c877868be0afda9"
+        "sha256": "948f5100ef8a4e85c5fd83ac0f4733f0add6d9b32b0ef4ceeafc900f8dbf3c21"
       },
       {
         "file": "frontend/src/project/raw.ts",
@@ -1067,7 +1063,7 @@
       },
       {
         "file": "frontend/src/project/scope.ts",
-        "sha256": "d9023b1cc2955b46032a59134f80b1f1d94801318567d03ac08402994a611014"
+        "sha256": "a673fd3c671a1f1b304d3e90e239579ac8c912594b37d55ebad2f10de9a91b9e"
       },
       {
         "file": "frontend/src/project/slots.ts",
@@ -1095,7 +1091,7 @@
       },
       {
         "file": "frontend/src/sample/SampleInvite.tsx",
-        "sha256": "8d6766fe52eb68b6d670ae1a387cfafa95026d7411e4dbeae974440607134586"
+        "sha256": "d5d732a0f279a5c9372801467ab7be415eaa1670257a43f2bd312b354b952948"
       },
       {
         "file": "frontend/src/sample/SampleMark.tsx",
@@ -1151,7 +1147,7 @@
       },
       {
         "file": "frontend/src/sessions/DeclaredRelationships.tsx",
-        "sha256": "0cdbbff3c8bda9ae05315bf7d6521ac68948e27c45e0ba1b253f0f7f872f7f2e"
+        "sha256": "789bd5109bb3bbee34701030127d15b8747d8c0dbaf3428fe0310403a76d9a80"
       },
       {
         "file": "frontend/src/sessions/DepartureParts.tsx",
@@ -1159,7 +1155,7 @@
       },
       {
         "file": "frontend/src/sessions/DetailParts.tsx",
-        "sha256": "485218e96344f279049850d6e135f6d531431e8d2ecf0ae0c955d90975cd9631"
+        "sha256": "6646628509297637524e952e224d92b2acb6b63bfe04f1282f301cc78aaaccde"
       },
       {
         "file": "frontend/src/sessions/DriftSlot.tsx",
@@ -1179,7 +1175,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionDetail.tsx",
-        "sha256": "17bc35ed594fef677a2a32f372854a8702b1bc7b057cbe7ac385fc79adb84213"
+        "sha256": "a21e7672c8eb2a76ebc3aeacde8491d8a7066fbd8c84dfc80cf701d342a219c5"
       },
       {
         "file": "frontend/src/sessions/SessionsFilters.tsx",
@@ -1187,7 +1183,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionsView.tsx",
-        "sha256": "4ef845b8234c002b127a48d356f7a676fe4f02ee721261ab3989f78727401ffd"
+        "sha256": "5d28b3ef0032d3a9b6b8d5f0caa3074d46dca4894e710af51ff41fd4fb027a7a"
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",
@@ -1203,11 +1199,11 @@
       },
       {
         "file": "frontend/src/sessions/declared.ts",
-        "sha256": "18b550358cb862adb5a883d652633576dc9a77958700874655b6d46b817fa70a"
+        "sha256": "c4f72fb9ee9e83e6c77582561a64e40b972fbaa759f9c170cfa80d15a6b366d5"
       },
       {
         "file": "frontend/src/sessions/detail.ts",
-        "sha256": "cca5b6808e17760e7d8a7b14e7d8cd95137933c0b31e23cf9851eba995d0d312"
+        "sha256": "cf0657d7fe5d7aecf5ec39c5435ae37e2dcb9f8ba6bf7659f13e8d74ed76ea79"
       },
       {
         "file": "frontend/src/sessions/filterStore.ts",
@@ -1215,7 +1211,7 @@
       },
       {
         "file": "frontend/src/sessions/filters.ts",
-        "sha256": "42a837f17096874feb5f48b276f0cc223d2630f3304a0328830367a49e3d4462"
+        "sha256": "b7be7bd0239da0777e5f9fc5a75902c3d06b68177b2f24e9468988532f430b31"
       },
       {
         "file": "frontend/src/sessions/fullActivityKey.ts",
@@ -1235,7 +1231,7 @@
       },
       {
         "file": "frontend/src/sessions/notes.ts",
-        "sha256": "5a14c96acdfb04339c7d7e8812e54dd3f6993b7fe43f0c43fe7513f56203ad1d"
+        "sha256": "046d973e1137a488c97e23558f015e5c3ddfa62fdce1a0390e4a95151cee38a2"
       },
       {
         "file": "frontend/src/sessions/outline.ts",
@@ -1247,7 +1243,7 @@
       },
       {
         "file": "frontend/src/sessions/sessions.css",
-        "sha256": "a56203156f72d4bcb792a2835043aeef1b20adbf7a4445b5b329474d17954755"
+        "sha256": "ff1fd759aca5c27172c95d04bba628e1f509d62441119ab9ec5b9222a78754b3"
       },
       {
         "file": "frontend/src/sessions/steadyOutline.ts",
@@ -1495,15 +1491,15 @@
       },
       {
         "file": "frontend/src/styles/controls.css",
-        "sha256": "43cd99245eed0229e1f7443c22406f94a41eb21abeb98e7ea4714c780fcfd33f"
+        "sha256": "765302df0fc865d30a56ba7d99c6944d7f336f92afa82d3c4f5d04f6fb8635e4"
       },
       {
         "file": "frontend/src/styles/shell.css",
-        "sha256": "2327a7ffddb4a00e14f2860f070762bb999a4780e5dd7bef02a3326e4db1a4bb"
+        "sha256": "d9515ed311c75b796740816438db7b7fdc49e1dec874e32a859e6da7b0746ae3"
       },
       {
         "file": "frontend/src/styles/tailwind.css",
-        "sha256": "8a941140fec42ba07856cee963badc30263fe543f521b2d48402eb3e598dbe8a"
+        "sha256": "8860a00c30c874837936c14b6d2ee9d5757ce09e7e4b0ba3ac43595def301790"
       },
       {
         "file": "frontend/src/terminal/TerminalSurface.tsx",
@@ -1655,7 +1651,7 @@
       },
       {
         "file": "frontend/src/ui/alert.tsx",
-        "sha256": "802317f61bbe7860d96c665bbc7573a71551f08f14119eee16dd497f1e2b3806"
+        "sha256": "18b7c9ef6bccaddbe63253dba82d3fb6b2efd63a43a4a0c73e057293d8d91d33"
       },
       {
         "file": "frontend/src/ui/badge.tsx",
@@ -1663,11 +1659,11 @@
       },
       {
         "file": "frontend/src/ui/button.tsx",
-        "sha256": "9d986f442aac5417e80f5ed523ac94d2d53fb644afb06fd2ead82677d45a8c4f"
+        "sha256": "183b58b7f5e1fcb8bb9011a39f6b7cb9e4c3e6c5a866b15755ade3049769783b"
       },
       {
         "file": "frontend/src/ui/card.tsx",
-        "sha256": "916ffe351ce8abf93da02277a4d407e39031e59b9aa05affd931d23b607952ad"
+        "sha256": "31c00f70c13d493e22ed0022696e4050385dd68bc2020835587cd5ae06d75202"
       },
       {
         "file": "frontend/src/ui/checkbox.tsx",
@@ -1692,6 +1688,10 @@
       {
         "file": "frontend/src/ui/label.tsx",
         "sha256": "a723fe54893471e1aa566c018c6ebe0b160e923c5f85db0c312309dc206d258b"
+      },
+      {
+        "file": "frontend/src/ui/link.ts",
+        "sha256": "b0018bfe984b652a63cbd9f46bfd9f64dc0ec8a99e2a4fdd7ccce17954222afe"
       },
       {
         "file": "frontend/src/ui/popover.tsx",
