@@ -15,7 +15,7 @@ const alertVariants = cva('block', {
     variant: {
       notice: cn(notice, 'bg-[var(--status-ended-bg)]'),
       warning: cn(notice, 'bg-[var(--status-waiting-bg)]'),
-      danger: cn(notice, 'bg-[color-mix(in_srgb,var(--clay)_8%,var(--panel))]'),
+      danger: cn(notice, 'bg-danger-tint'),
       'session-health':
         'px-[16px] py-[14px] [border-left:3px_solid_var(--amber)] bg-card text-muted-foreground text-body leading-[1.5]',
       'observer-status': 'm-0',

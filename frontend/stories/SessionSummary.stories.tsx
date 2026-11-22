@@ -427,7 +427,11 @@ export const CitationCardShowsTheEntry: Story = {
         .querySelector('[data-next-full-activity-trigger]')
         ?.getAttribute('aria-expanded'),
     ).toBe('false');
-    await userEvent.click(within(shown).getByText('See in context of the session'));
+    const contextLink = within(shown).getByRole('link', { name: 'See in context of the session' });
+    const { width, height } = contextLink.getBoundingClientRect();
+    await expect(width).toBeGreaterThanOrEqual(44);
+    await expect(height).toBeGreaterThanOrEqual(44);
+    await userEvent.click(contextLink);
     await waitFor(() => expect(document.querySelector('[data-next-citation-card]')).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'c1')));
   },

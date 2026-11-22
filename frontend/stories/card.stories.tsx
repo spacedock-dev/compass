@@ -87,13 +87,30 @@ export const SummaryCards: Story = {
         const style = getComputedStyle(card);
         return [style.borderTopColor, style.boxShadow];
       };
-      const resting = edge(route);
+      const away = page.getByText('Update the onboarding guide');
+      await away.hover();
+      const resting = ['rgb(123, 135, 148)', 'none'];
+      await expect(edge(route)).toEqual(resting);
+      await expect(edge(filter)).toEqual(resting);
       await page.getByRole('link', { name: /Open in Needs you/ }).hover();
       const hovered = edge(route);
       await expect(hovered[0]).not.toBe(resting[0]);
       await expect(hovered[1]).not.toBe('none');
       await page.getByRole('button', { name: /Show in the list below/ }).hover();
       await expect(edge(filter)).toEqual(hovered);
+      await away.hover();
+      await expect(edge(route)).toEqual(resting);
+      await expect(edge(filter)).toEqual(resting);
+    }
+    for (const label of [
+      'Waiting on you',
+      'Open in Needs you',
+      'Working now',
+      'Show in the list below',
+    ]) {
+      await expect(getComputedStyle(canvas.getByText(label)).fontFamily.split(',')[0]).toBe(
+        'Inter',
+      );
     }
     await expect(filter).toHaveAttribute('aria-pressed', 'false');
     await userEvent.click(filter);

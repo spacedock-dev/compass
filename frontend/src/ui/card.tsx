@@ -17,10 +17,6 @@ const cardVariants = cva('min-w-0', {
   variants: {
     variant: {
       base: baseCard,
-      summary: cn(
-        baseCard,
-        'flex cursor-pointer flex-col items-start gap-3 border-border text-start text-body text-foreground no-underline hover:border-[var(--line-hi)] hover:shadow-[0_1px_0_var(--rule)] aria-pressed:bg-[var(--status-ended-bg)]',
-      ),
       'session-row':
         'grid w-full p-0 text-foreground [border-bottom:1px_solid_var(--line)] hover:bg-card [@media(max-width:620px)]:[border:1px_solid_var(--line)] [@media(max-width:620px)]:rounded-control [@media(max-width:620px)]:bg-card',
       'session-current':
@@ -97,6 +93,14 @@ function Card({
   );
 }
 
+function summaryCardClassName(className?: string) {
+  return cn(
+    cardVariants({ variant: 'base' }),
+    'flex cursor-pointer flex-col items-start gap-3 border-border text-start font-[family-name:var(--sans)] text-body text-foreground no-underline hover:border-[var(--line-hi)] hover:[box-shadow:0_1px_var(--rule)] aria-pressed:bg-[var(--status-ended-bg)]',
+    className,
+  );
+}
+
 function SummaryCue({ children, icon }: { readonly children: string; readonly icon: IconName }) {
   return (
     <span className="flex max-w-full items-center gap-2 text-label font-semibold text-[color:var(--accent-dim)]">
@@ -113,7 +117,7 @@ function SummaryRouteCard({
   route,
 }: RouteLinkProps & { readonly cue: string }) {
   return (
-    <RouteLink route={route} className={cn(cardVariants({ variant: 'summary' }), className)}>
+    <RouteLink route={route} className={summaryCardClassName(className)}>
       {children}
       <SummaryCue icon="go-to-page">{cue}</SummaryCue>
     </RouteLink>
@@ -135,7 +139,7 @@ function SummaryFilterCard({
     <Button
       type="button"
       variant="native"
-      className={cn(cardVariants({ variant: 'summary' }), className)}
+      className={summaryCardClassName(className)}
       aria-controls={controls}
       aria-pressed={pressed}
       onClick={onClick}

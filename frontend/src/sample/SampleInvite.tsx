@@ -17,7 +17,7 @@ export function SampleInvite() {
       >
         See a sample session (view only)
       </RouteLink>{' '}
-      to learn what the Session page and Intent and drift show.
+      to see how Compass shows a session’s goal and the results of progress checks.
     </Alert>
   );
 }

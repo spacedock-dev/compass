@@ -113,6 +113,9 @@
   --progress-way-off-course: #7c2d12;
   --worth-a-look: #92400e;
   --destructive-solid: #9a3412;
+  --color-danger-hover: #883217;
+  --color-danger-outline-hover: #f8f1ee;
+  --color-danger-tint: #f7efec;
   /* type: five steps, floor 13px, sentences 15px */
   --fs-label: 0.8125rem;
   --fs-body: 0.9375rem;

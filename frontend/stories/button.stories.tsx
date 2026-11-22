@@ -57,6 +57,33 @@ export const QuietEmphasis = emphasisStory('quiet', 'Not now');
 export const Danger = emphasisStory('danger', 'Remove item');
 export const DangerSolid = emphasisStory('danger-solid', 'Delete item');
 
+export const DefaultModifiers: Story = {
+  render: () => (
+    <>
+      <Button tone="muted">Save draft</Button>
+      <Button size="consent">Allow</Button>
+      <Button strongBorder>Strong border</Button>
+      <Button accentBorder>Accent border</Button>
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('button', { name: 'Save draft' })).toHaveStyle({
+      color: 'rgb(82, 96, 109)',
+    });
+    await expect(canvas.getByRole('button', { name: 'Allow' })).toHaveStyle({
+      paddingBlockStart: '6px',
+      paddingBlockEnd: '6px',
+    });
+    await expect(canvas.getByRole('button', { name: 'Strong border' })).toHaveStyle({
+      borderWidth: '2px',
+    });
+    await expect(canvas.getByRole('button', { name: 'Accent border' })).toHaveStyle({
+      borderColor: 'rgb(47, 125, 91)',
+    });
+  },
+};
+
 export const UnavailableEmphasis: Story = {
   render: () => (
     <>

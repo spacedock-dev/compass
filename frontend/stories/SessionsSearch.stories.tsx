@@ -324,6 +324,9 @@ export const TitlesOpenSessions: Story = {
     await expect(decoration(title)).toBe('none');
     await expect(decoration(sentence)).toBe('underline');
     const invite = sentence.closest('[data-sample-invite]');
+    await expect(invite).toHaveTextContent(
+      'to see how Compass shows a session’s goal and the results of progress checks.',
+    );
     await expect(invite).toHaveStyle({
       backgroundColor: 'rgb(230, 242, 236)',
       borderLeftWidth: '1px',

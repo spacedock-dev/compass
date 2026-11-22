@@ -326,15 +326,22 @@ export const EveryControlTakesFocusInReadingOrderWithARing: Story = {
   ),
   play: async ({ canvasElement }) => {
     const shared = within(canvasElement).getByRole('region', { name: 'Shared controls' });
-    const controls = reachable(shared);
-    await expect(controls).toHaveLength(8);
+    await within(canvasElement).findByRole('button', { name: 'Steer back' });
+    await settled();
+    await expect(reachable(shared)).toHaveLength(8);
+    const controls = reachable(canvasElement).filter((control) =>
+      control.matches('a[href], button, summary'),
+    );
     for (const control of controls) {
-      await expect(control.getBoundingClientRect().width).toBeGreaterThanOrEqual(44);
-      await expect(control.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+      const { width, height } = control.getBoundingClientRect();
+      const label = control.getAttribute('aria-label') ?? control.textContent;
+      await expect(width, `${label} target width`).toBeGreaterThanOrEqual(44);
+      await expect(height, `${label} target height`).toBeGreaterThanOrEqual(44);
     }
     await everyControlTakesFocus(canvasElement, '[data-next-result]', async (control) => {
-      if (!shared.contains(control)) return;
-      await expect(control).toHaveStyle({
+      if (!control.matches('a[href], button, summary')) return;
+      const label = control.getAttribute('aria-label') ?? control.textContent;
+      await expect(control, `${label} keyboard focus ring`).toHaveStyle({
         outlineWidth: '2px',
         outlineStyle: 'solid',
         outlineColor: 'rgb(47, 125, 91)',
@@ -387,9 +394,26 @@ export const FocusInTheSteerBackBox: Story = {
   play: async ({ canvasElement }) => {
     const driver = await tabber();
     if (!driver) return;
-    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const session = within(canvasElement);
+    const card = await session.findByRole('region', { name: 'Drift' });
+    const primaryActions = () =>
+      session
+        .getAllByRole('button')
+        .filter((button) =>
+          button.matches(
+            '[data-emphasis="primary"], [data-variant="primary"], [data-variant="raise-primary"]',
+          ),
+        );
+    await expect(
+      primaryActions().length,
+      'primary actions on the Session page',
+    ).toBeLessThanOrEqual(1);
     await userEvent.click(await within(card).findByRole('button', { name: 'Steer back' }));
     const copy = await within(card).findByRole('button', { name: 'Copy correction' });
+    await expect(
+      primaryActions().length,
+      'primary actions with Steer back open',
+    ).toBeLessThanOrEqual(1);
     await settled();
     const box = copy.closest('[data-next-steer-section], section') ?? card;
     await expect(box.contains(document.activeElement), 'focus moved into the box').toBe(true);

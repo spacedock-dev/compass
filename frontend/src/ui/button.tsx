@@ -12,8 +12,9 @@ const action =
   'inline-flex items-center justify-center rounded-control border border-solid border-[var(--line)] bg-transparent text-foreground font-[family-name:var(--sans)] text-body leading-[1.55] px-3.5 py-[.5625rem] cursor-pointer hover:border-[var(--line-hi)] [.next-rail-wait-controls_&]:px-2.5 [.next-rail-wait-controls_&]:py-[5px]';
 const refused =
   'disabled:border-dashed disabled:bg-[image:var(--hatch)] disabled:text-[color:var(--ink3)] disabled:cursor-not-allowed aria-disabled:not-aria-busy:border-dashed aria-disabled:not-aria-busy:bg-[image:var(--hatch)] aria-disabled:not-aria-busy:text-[color:var(--ink3)] aria-disabled:not-aria-busy:cursor-not-allowed aria-busy:border-solid aria-busy:bg-none aria-busy:text-foreground aria-busy:cursor-progress';
-const solid =
-  'border-[var(--accent)] bg-primary text-primary-foreground hover:border-[var(--accent)] aria-busy:text-primary-foreground disabled:bg-transparent aria-disabled:not-aria-busy:bg-transparent';
+const solidLabel = 'text-primary-foreground aria-busy:text-primary-foreground';
+const solid = `border-[var(--accent)] bg-primary hover:border-[var(--accent)] disabled:bg-transparent aria-disabled:not-aria-busy:bg-transparent ${solidLabel}`;
+const dangerEdge = 'border-destructive hover:border-destructive';
 const emphasized = cn(
   action,
   refused,
@@ -93,11 +94,14 @@ const buttonVariants = cva(
         ),
         danger: cn(
           emphasized,
-          'border-destructive bg-card text-destructive hover:border-destructive hover:bg-[color-mix(in_srgb,var(--clay)_7%,var(--panel))]',
+          dangerEdge,
+          'bg-card text-destructive hover:bg-danger-outline-hover',
         ),
         'danger-solid': cn(
           emphasized,
-          'border-destructive bg-[var(--destructive-solid)] text-primary-foreground hover:border-destructive hover:not-disabled:not-aria-disabled:bg-[color-mix(in_srgb,var(--destructive-solid)_85%,var(--ink))] aria-busy:text-primary-foreground',
+          dangerEdge,
+          solidLabel,
+          'bg-[var(--destructive-solid)] hover:not-disabled:not-aria-disabled:bg-danger-hover',
         ),
       },
       tone: {
@@ -111,7 +115,7 @@ const buttonVariants = cva(
       accentBorder: { true: 'border-[var(--accent)]', false: '' },
       strongBorder: { true: 'border-2', false: '' },
     },
-    compoundVariants: [{ variant: undefined, emphasis: undefined, className: cn(action, refused) }],
+    defaultVariants: { variant: 'default' },
   },
 );
 
