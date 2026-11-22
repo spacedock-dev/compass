@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2349207,
+    "bytes": 2347439,
     "file": "react.html",
-    "sha256": "d5fcbd13725c55750d19ac172ea1f4bf572ba75b17a62d1120d54e12e865793c"
+    "sha256": "e1dc5c51e2a5ae103a8b7d39bd9b3407854601bb77dafa97b5932bfb48a0ffe0"
   },
   "format": 1,
   "frontend": "react",
@@ -507,7 +507,7 @@
       },
       {
         "file": "frontend/src/drift/CitationLink.tsx",
-        "sha256": "993a9f7a0c5c10ea713fad9380d4565d3ada5d0b732d0c98660b2bac40c9c032"
+        "sha256": "339c078f48864c126bef3901f8c0cc075944ac3b2804f6dc127d922311ea9bd1"
       },
       {
         "file": "frontend/src/drift/CitedText.tsx",
@@ -1091,7 +1091,7 @@
       },
       {
         "file": "frontend/src/sample/SampleInvite.tsx",
-        "sha256": "d5d732a0f279a5c9372801467ab7be415eaa1670257a43f2bd312b354b952948"
+        "sha256": "7de1a2f65cc8910ef00472e245fa07f6778675dc28b3599948e2f345a12fff68"
       },
       {
         "file": "frontend/src/sample/SampleMark.tsx",
@@ -1499,7 +1499,7 @@
       },
       {
         "file": "frontend/src/styles/tailwind.css",
-        "sha256": "8860a00c30c874837936c14b6d2ee9d5757ce09e7e4b0ba3ac43595def301790"
+        "sha256": "be558d7eae8805ef56c2a172ccd82d04540818201db9c1b3fd1011b2e990ecdb"
       },
       {
         "file": "frontend/src/terminal/TerminalSurface.tsx",
@@ -1651,7 +1651,7 @@
       },
       {
         "file": "frontend/src/ui/alert.tsx",
-        "sha256": "18b7c9ef6bccaddbe63253dba82d3fb6b2efd63a43a4a0c73e057293d8d91d33"
+        "sha256": "bff503613508e067722e3cf984cef294683eacdeeffc31265424b9906d8e5a5f"
       },
       {
         "file": "frontend/src/ui/badge.tsx",
@@ -1659,11 +1659,11 @@
       },
       {
         "file": "frontend/src/ui/button.tsx",
-        "sha256": "183b58b7f5e1fcb8bb9011a39f6b7cb9e4c3e6c5a866b15755ade3049769783b"
+        "sha256": "388fc1a386eb6554491e83c3f68fab6867b161db2007e255745f8e40f7aa8e84"
       },
       {
         "file": "frontend/src/ui/card.tsx",
-        "sha256": "31c00f70c13d493e22ed0022696e4050385dd68bc2020835587cd5ae06d75202"
+        "sha256": "6e61a300f7c34f8862ff655ca40894efc6787b91bb31f78ca27620f3344c20f4"
       },
       {
         "file": "frontend/src/ui/checkbox.tsx",
