@@ -48,7 +48,7 @@ export function UsageSwitch({ windows }: { readonly windows: boolean }) {
         data-next-usage-answer={on ? 'declined' : 'granted'}
         onClick={() => answer(on ? 'declined' : 'granted')}
       >
-        {`Turn ${on ? 'off' : 'on'}`}
+        {`Turn ${on ? 'off' : 'on'} quota reading`}
       </Button>
     </p>
   );

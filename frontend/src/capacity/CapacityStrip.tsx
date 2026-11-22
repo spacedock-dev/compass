@@ -1,12 +1,15 @@
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
-import { Fragment, useEffect, useMemo, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, type CSSProperties, type ReactNode } from 'react';
 import { nextNumber } from '../api/bootstrap';
-import { useFocusKey } from '../controls/useFocusKey';
+import { Disclosure, disclosureKey, useFocusKey } from '../controls';
+import { ALLOWANCE_LABEL, EXPLANATIONS } from '../language/glossary';
 import type { Row } from '../observed';
 import { useDisplayed, useShell } from '../shell/context';
-import { heldFor, useSelectedWindow } from './held';
+import { heldFor, useConsent, useSelectedWindow, useUsageOffered } from './held';
 import {
+  allowanceSentence,
+  clockWords,
   duration,
   endsOf,
   fillInk,
@@ -17,173 +20,99 @@ import {
   SLOT_LABELS,
   stripRows,
   untimedCount,
+  type Ends,
   type Spread,
   type StripRow,
 } from './model';
 import { UsageSwitch } from './UsageConsent';
 import './capacity.css';
 
-/* The capacity strip: each quota window the board published as the budget spent against the clock spent,
-   ranked by when the budget ends, with the selected window's remaining budget in the unit the decision is
-   made in. Nothing here composes a verdict ([DEC-12](docs/design-usage-quota.md#q-12)): the budget's end time
-   and the window's reset time sit next to each other and the reader compares them. A window with no clock
-   draws no tick and prints its absence, an unmeasured pace is never a zero, and a spent budget says so.
-
-   A pure render of the board being shown, apart from the selected window, which is the reader's and is held
-   by vendor and window key for the life of the tab. Nothing here fetches, polls or acts. */
-
-/* Before the first board there is nothing to read, and a constant keeps the memos below from rebuilding. */
+/* The board publishes the reading. The tab holds the window selection and disclosure state. */
 const NONE: Row = {};
+const allowanceKey = disclosureKey({ project: null, scope: null, name: 'ai-allowance' });
 
-function Absent({ children }: { readonly children: ReactNode }) {
-  return <span className="next-capacity-absent">{children}</span>;
-}
+const FILL = {
+  ok: 'var(--accent)',
+  warn: 'var(--amber)',
+  crit: 'var(--clay)',
+  unknown: 'var(--line)',
+} as const;
 
-function Bar({ row }: { readonly row: StripRow }) {
-  if (row.elapsed === null) {
-    return (
-      <div
-        className="next-capacity-noclock"
-        role="img"
-        aria-label={`${String(row.pct)}% of budget used; this window publishes no clock`}
-      />
-    );
-  }
-  const ink = fillInk(row);
+function Bar({ row, label }: { readonly row: StripRow; readonly label: string }) {
+  const used = `${String(row.pct)}% of budget used`;
+  const clock =
+    row.elapsed === null
+      ? 'this window publishes no clock'
+      : `${String(Math.round(row.elapsed * 100))}% of the window elapsed`;
   return (
-    <div
-      className="next-capacity-bar"
-      role="img"
-      aria-label={`${String(row.pct)}% of budget used, ${String(Math.round(row.elapsed * 100))}% of the window elapsed`}
-    >
-      <div
-        className={`next-capacity-fill${ink === 'ok' ? '' : ` ${ink}`}`}
-        style={{ width: `${String(row.pct)}%` }}
+    <div className="next-capacity-bar relative h-2 overflow-hidden rounded-pill bg-muted">
+      <progress
+        className="block h-full w-full appearance-none border-0 bg-transparent [--allowance-fill:var(--line)] [&::-webkit-progress-bar]:bg-transparent [&::-webkit-progress-value]:rounded-pill [&::-moz-progress-bar]:rounded-pill [&::-webkit-progress-value]:bg-[color:var(--allowance-fill)] [&::-moz-progress-bar]:bg-[color:var(--allowance-fill)]"
+        style={{ '--allowance-fill': FILL[fillInk(row)] } as CSSProperties}
+        aria-label={`${label} ${SLOT_LABELS[row.slot]} allowance used`}
+        aria-valuetext={`${used}, ${clock}`}
+        value={row.pct}
+        max={100}
       />
-      <div className="next-capacity-tick" style={{ left: `${(row.elapsed * 100).toFixed(2)}%` }} />
+      {row.elapsed === null ? null : (
+        <span
+          className="next-capacity-tick pointer-events-none absolute inset-y-0 w-[2px] bg-foreground outline-1 outline-solid outline-[color:var(--panel)]"
+          style={{ left: `clamp(0px, ${(row.elapsed * 100).toFixed(2)}%, calc(100% - 2px))` }}
+          aria-hidden="true"
+        />
+      )}
     </div>
-  );
-}
-
-function Ends({ row, generated }: { readonly row: StripRow; readonly generated: number | null }) {
-  const ends = endsOf(row, generated);
-  if (ends.kind === 'spent') return <span className="next-capacity-spent">already spent</span>;
-  if (ends.kind === 'not-projected') return <Absent>not projected</Absent>;
-  return (
-    <>
-      {ends.clock}
-      {ends.basis === null ? null : (
-        <>
-          {' '}
-          <em>{`based on ${ends.basis} observed`}</em>
-        </>
-      )}
-      {ends.spare === null ? null : (
-        <>
-          {' '}
-          <span className="next-capacity-slack">{`· ~${String(ends.spare)}% spare at reset`}</span>
-        </>
-      )}
-    </>
   );
 }
 
 function ModelLine({ row }: { readonly row: StripRow }) {
   if (!row.models.length) return null;
   return (
-    <div className="next-capacity-models" data-next-capacity-models={rowKey(row)}>
-      <small>WITHIN THIS WEEKLY BUDGET</small>
+    <div
+      className="flex flex-wrap gap-x-3 gap-y-1 text-label"
+      data-next-capacity-models={rowKey(row)}
+    >
+      <strong>Within this weekly budget</strong>
       {row.models.map((model, index) => (
-        <span
-          // A label is the vendor's text and two models can share one, so the position keeps them apart.
-          key={`${model.label}\u0000${String(index)}`}
-          className="next-capacity-model"
-        >
-          <b>{model.label}</b> {`${String(model.pct)}%`}
+        <span key={`${model.label}:${String(index)}`} className="[overflow-wrap:anywhere]">
+          <b>{model.label}</b> {String(model.pct)}%
         </span>
       ))}
-      <i>Per-model sub-limits · these publish no clock, so no pace and no projected end</i>
+      <p className="basis-full">
+        Per-model sub-limits · these publish no clock, so no pace and no projected end
+      </p>
     </div>
   );
 }
 
-function WindowRow({
+function WindowChoice({
   row,
-  generated,
   selected,
   label,
   onPick,
 }: {
   readonly row: StripRow;
-  readonly generated: number | null;
   readonly selected: boolean;
   readonly label: string;
   readonly onPick: (key: string) => void;
 }) {
   const { controls } = useShell();
   const key = rowKey(row);
-  const slotLabel = SLOT_LABELS[row.slot];
   const buttonRef = useFocusKey<HTMLButtonElement>(controls.focusLane, `capacity:${key}`);
-  const usedInk = row.pct >= 80 ? ' high' : row.pct >= 50 ? ' mid' : '';
   return (
-    // The whole row is a pointer target for its window, as the legacy row was; the button inside it is the
-    // one a keyboard and a screen reader reach, and both name the same key.
-    <Card
-      variant="capacity-band"
-      className="next-capacity-row"
+    <Button
+      ref={buttonRef}
+      type="button"
       data-next-capacity-row={key}
       data-next-capacity-pick={key}
+      data-next-focus={`capacity:${key}`}
+      aria-pressed={selected}
+      aria-label={`Read ${label} ${SLOT_LABELS[row.slot]} window`}
+      className="aria-pressed:bg-accent aria-pressed:text-accent-foreground"
       onClick={() => onPick(key)}
     >
-      <div className="next-capacity-window">
-        <Button
-          variant="window"
-          ref={buttonRef}
-          type="button"
-          data-next-capacity-pick={key}
-          data-next-focus={`capacity:${key}`}
-          aria-pressed={selected}
-          aria-label={`Read ${label} ${slotLabel} window`}
-        >
-          <b>{label}</b>
-          <i>
-            {slotLabel} ·{' '}
-            {row.windowSec === null ? (
-              <Absent>Window length not published</Absent>
-            ) : (
-              duration(row.windowSec)
-            )}
-          </i>
-        </Button>
-      </div>
-      <div className={`next-capacity-pct${usedInk}`}>
-        <small>USED</small>
-        {`${String(row.pct)}%`}
-      </div>
-      <Bar row={row} />
-      <div
-        className={`next-capacity-pace${row.paceRatio !== null && row.paceRatio > 1 ? ' hot' : ''}`}
-      >
-        <small>PACE</small>
-        {row.paceRatio === null ? (
-          <Absent>Pace not measured</Absent>
-        ) : (
-          `${row.paceRatio.toFixed(1)}×`
-        )}
-      </div>
-      <div className="next-capacity-ends">
-        <small>BUDGET ENDS</small>
-        <Ends row={row} generated={generated} />
-      </div>
-      <div className="next-capacity-resets">
-        <small>RESETS</small>
-        {row.remainingSec === null ? (
-          <Absent>none published</Absent>
-        ) : (
-          duration(Math.max(0, row.remainingSec))
-        )}
-      </div>
-    </Card>
+      {label} · {SLOT_LABELS[row.slot]}
+    </Button>
   );
 }
 
@@ -207,15 +136,7 @@ function SpreadSentence({ spread }: { readonly spread: Spread }) {
    concurrency beside it: "measured while N agents were working" counted every working session on the
    machine, read at render, and stood as the provenance of one vendor's historical window average, so the
    claim is withdrawn rather than narrowed. */
-function Prospect({
-  row,
-  label,
-  spread,
-}: {
-  readonly row: StripRow;
-  readonly label: string;
-  readonly spread: Spread | null;
-}) {
+function Prospect({ row, spread }: { readonly row: StripRow; readonly spread: Spread | null }) {
   const parts: ReactNode[] = [];
   if (row.windowMinutesLeft !== null) {
     parts.push(
@@ -245,10 +166,7 @@ function Prospect({
       : 'Recent pace not measured: no second reading yet from this vendor.';
   }
   return (
-    <Card variant="capacity-prospect" className="next-capacity-prospect">
-      <p>
-        <span className="next-capacity-scope">{`${label} · ${SLOT_LABELS[row.slot]}`}</span>
-      </p>
+    <div className="next-capacity-prospect grid gap-2">
       <p>
         The remaining {row.left}% buys{' '}
         {parts.map((part, index) => (
@@ -258,12 +176,6 @@ function Prospect({
           </Fragment>
         ))}
         .
-        {row.remainingSec === null ? null : (
-          <>
-            {' '}
-            Resets in <b>{duration(Math.max(0, row.remainingSec))}</b>.
-          </>
-        )}
       </p>
       {spread ? (
         <p>
@@ -271,14 +183,60 @@ function Prospect({
         </p>
       ) : null}
       {stale === null ? null : <small>{stale}</small>}
-    </Card>
+    </div>
   );
 }
 
-/* The disclosure that asks before any quota is fetched, the strip, and the switch that changes the answer.
-   With no window published there is no panel and no placeholder: a machine whose harnesses publish none has
-   nothing withheld from it, and an empty strip reads as a fault. The disclosure can still stand alone, as the
-   reason there is no row yet. */
+function WindowDetails({
+  row,
+  label,
+  ends,
+  payload,
+}: {
+  readonly row: StripRow;
+  readonly label: string;
+  readonly ends: Ends;
+  readonly payload: Row;
+}) {
+  const generated = nextNumber(payload['generated']);
+  const reset = clockWords(row.resetAt, generated);
+  const asOf = clockWords(row.asOf, generated);
+  const facts = [
+    ['Pace', row.paceRatio === null ? 'Pace not measured' : `${row.paceRatio.toFixed(1)}×`],
+    [
+      'Reset time',
+      reset ? `${reset}${(row.remainingSec ?? 0) <= 0 ? ' (passed)' : ''}` : 'Not published',
+    ],
+    [
+      'Window',
+      `${SLOT_LABELS[row.slot]} · ${row.windowSec === null ? 'length not published' : duration(row.windowSec)}`,
+    ],
+    ['Source', asOf ? `${label} · read at ${asOf}` : label],
+    [
+      'Projected budget end',
+      ends.kind === 'projected'
+        ? `${ends.clock}${ends.basis === null ? '' : ` · based on ${ends.basis} observed`}`
+        : ends.kind === 'spent'
+          ? 'Already spent'
+          : 'Not projected',
+    ],
+  ] as const;
+  return (
+    <div className="grid gap-3 pb-2 text-body text-muted-foreground">
+      <dl className="grid gap-2">
+        {facts.map(([name, value]) => (
+          <div className="flex flex-wrap gap-x-2" key={name}>
+            <dt className="font-semibold">{name}</dt>
+            <dd className="m-0">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <ModelLine row={row} />
+      <Prospect row={row} spread={projectSpread(payload, row.harness)} />
+    </div>
+  );
+}
+
 export function CapacityStrip() {
   const { runtime } = useShell();
   const body = useDisplayed((snapshot) => snapshot.data);
@@ -286,73 +244,99 @@ export function CapacityStrip() {
   const rows = useMemo(() => stripRows(payload), [payload]);
   const labels = useMemo(() => harnessLabels(payload), [payload]);
   const key = useSelectedWindow();
+  const offered = useUsageOffered();
+  const off = useConsent('usage') === 'declined';
   const picked = selectRows(rows, key);
   const lane = heldFor(runtime).selection;
   const selectedKey = picked ? rowKey(picked.selected) : '';
-  const read = body !== null;
-  /* The selection the board resolved, written back so a fallback holds: held by identity for the life of
-     the tab, defaulting to an existing window only when its key is gone, and cleared when none remain. A
-     board that has not arrived is not a board with no windows, so it clears nothing. A write after commit
-     rather than during render, so StrictMode's second render writes nothing twice. */
+  /* A refresh keeps the vendor and window key while it is still published. Before the first
+     board arrives there is no evidence on which to replace or clear the held choice. */
   useEffect(() => {
-    if (read) lane.set(selectedKey);
-  }, [lane, read, selectedKey]);
-  if (!picked) {
-    return <UsageSwitch windows={false} />;
-  }
-  const { selected, shown } = picked;
-  const generated = nextNumber(payload['generated']);
-  const rest = rows.length - shown.length;
-  const untimed = untimedCount(rows, shown);
+    if (body !== null) lane.set(selectedKey);
+  }, [lane, body, selectedKey]);
+  if (!picked && !offered) return null;
+
   const labelOf = (harness: string): string =>
     labels.get(harness) || harness || 'Source not identified';
+  const selected = picked?.selected;
+  const label = selected ? labelOf(selected.harness) : '';
+  const ends = selected ? endsOf(selected, nextNumber(payload['generated'])) : null;
+  const spare =
+    ends?.kind === 'projected' && ends.spare !== null
+      ? `About ${String(ends.spare)}% left at reset${ends.basis === null ? '' : ` · based on ${ends.basis} observed`}`
+      : null;
   const seen = new Map<string, number>();
   return (
-    <>
-      <section className="next-capacity" data-next-capacity="" aria-label="Capacity">
-        {/* Decorative: every cell below carries its own label, which is what keeps the narrow layout readable when this row is hidden. */}
-        <div className="next-capacity-head" aria-hidden="true">
-          <span>WINDOW</span>
-          <span>USED</span>
-          <span>BUDGET AGAINST CLOCK</span>
-          <span>PACE</span>
-          <span>BUDGET ENDS</span>
-          <span>RESETS</span>
+    <Card
+      as="section"
+      className="mt-5 grid gap-3"
+      data-next-capacity=""
+      aria-labelledby="next-ai-allowance-heading"
+    >
+      <div className="grid gap-3 min-[761px]:grid-cols-2 min-[761px]:items-center">
+        <div className="min-w-0 [overflow-wrap:anywhere]">
+          <h2 id="next-ai-allowance-heading" className="m-0 text-value font-semibold">
+            {ALLOWANCE_LABEL}
+          </h2>
+          {selected ? (
+            <p className="m-0 mt-1 text-body text-muted-foreground">
+              {off
+                ? `Last cached window: ${label} ${SLOT_LABELS[selected.slot]}`
+                : allowanceSentence(selected, label)}
+            </p>
+          ) : null}
         </div>
-        {shown.map((row) => {
-          const id = rowKey(row);
-          const occurrence = seen.get(id) ?? 0;
-          seen.set(id, occurrence + 1);
-          return (
-            <Fragment key={`${id}\u0000${String(occurrence)}`}>
-              <WindowRow
-                row={row}
-                generated={generated}
-                selected={row === selected}
-                label={labelOf(row.harness)}
-                onPick={(next) => lane.set(next)}
-              />
-              <ModelLine row={row} />
-            </Fragment>
-          );
-        })}
-        {rest > 0 ? (
-          <div className="next-capacity-row next-capacity-more">
-            <i>
-              {`${String(rest)} more ${rest === 1 ? 'window' : 'windows'}${
-                untimed ? `, ${String(untimed)} of them not timed` : ''
-              }`}
-            </i>
+        {selected && !off ? (
+          <div className="min-w-0">
+            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-2">
+              <strong className="text-body tabular-nums">{String(selected.pct)}% used</strong>
+              {spare === null ? null : (
+                <span className="text-label text-muted-foreground">{spare}</span>
+              )}
+            </div>
+            <Bar row={selected} label={label} />
           </div>
         ) : null}
-        {/* Scoped to the harness whose budget the paragraph is about. Drawn across every harness it invited a division nobody measured. */}
-        <Prospect
-          row={selected}
-          label={labelOf(selected.harness)}
-          spread={projectSpread(payload, selected.harness)}
-        />
-      </section>
-      <UsageSwitch windows />
-    </>
+      </div>
+      {picked && !off && picked.shown.length > 1 ? (
+        <div
+          role="group"
+          aria-label="Allowance windows"
+          className="flex flex-wrap items-center gap-2"
+        >
+          {picked.shown.map((row) => {
+            const id = rowKey(row);
+            const occurrence = seen.get(id) ?? 0;
+            seen.set(id, occurrence + 1);
+            return (
+              <WindowChoice
+                key={`${id}\u0000${String(occurrence)}`}
+                row={row}
+                selected={row === selected}
+                label={labelOf(row.harness)}
+                onPick={lane.set}
+              />
+            );
+          })}
+          {rows.length > picked.shown.length ? (
+            <span className="next-capacity-more text-label text-muted-foreground">
+              {moreWindows(rows, picked.shown)}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {selected && ends && !off ? (
+        <Disclosure explanation disclosureKey={allowanceKey} summary={EXPLANATIONS.aiAllowance}>
+          <WindowDetails row={selected} label={label} ends={ends} payload={payload} />
+        </Disclosure>
+      ) : null}
+      <UsageSwitch windows={picked !== null} />
+    </Card>
   );
+}
+
+function moreWindows(rows: readonly StripRow[], shown: readonly StripRow[]): string {
+  const rest = rows.length - shown.length;
+  const untimed = untimedCount(rows, shown);
+  return `${String(rest)} more ${rest === 1 ? 'window' : 'windows'}${untimed ? `, ${String(untimed)} of them not timed` : ''}`;
 }

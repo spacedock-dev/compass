@@ -1560,10 +1560,10 @@ Token handling is read-only, one way, and never expands:
   that vendor stays out of the band as it does when no token can be read.
 
 Consent and the off switch: the feature is on until the reader turns it off, and the line saying so is
-on screen whenever it can act. Wherever the quota windows are drawn, on Session operations below the
-session groups and in the Console rail, one line says the quota is read with the Claude Code and Cursor
-logins on this machine and that no session content is sent, beside a Turn off button. Turned off, the line
-says so and offers Turn on. `--no-usage` disables the feature for a run regardless of the stored setting.
+on screen whenever it can act. Your AI allowance at the foot of Sessions and the Console rail say
+that quota is read with the Claude Code and Cursor logins on this machine and that no session
+content is sent. Choose Turn off quota reading to stop it for this browser origin. The line then
+states the off state and offers Turn on quota reading. `--no-usage` disables the feature for a run regardless of the stored setting.
 With the feature off, Compass's network surface is exactly the three loopback-bound kinds of component
 described above, and nothing is fetched.
 

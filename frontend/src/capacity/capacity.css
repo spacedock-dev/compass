@@ -1,6 +1,5 @@
 @layer legacy {
-/* Capacity and consent use the shared theme tokens. The repeated .next-capacity-pct and
-   .next-capacity-pace rules retain the legacy override order. */
+/* Shared quota consent line, also drawn in the Console rail. */
 .next-usage-consent{margin-top:22px}
 .next-usage-consent p{margin:0}
 .next-usage-consent strong{font-weight:500}
@@ -8,62 +7,4 @@
 .next-usage-consent-actions button:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
 .next-usage-consent p.next-usage-consent-note{margin-top:11px;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-body);line-height:1.45}
 .next-usage-switch{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:12px;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label)}
-.next-capacity{margin-top:22px;border-top:1px solid var(--rule)}
-.next-capacity-head{display:grid}
-.next-capacity-head,.next-capacity-row{align-items:center;grid-template-columns:190px 56px minmax(0,1fr) 74px 190px 92px;gap:0 14px}
-.next-capacity-head{padding:9px 4px 8px;border-bottom:1px solid var(--rule)}
-.next-capacity-head span{color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
-.next-capacity-row{position:relative}
-.next-capacity-window{min-width:0}
-.next-capacity-window b{display:block;font-family:var(--mono);font-weight:700;font-size:var(--fs-label);overflow-wrap:anywhere}
-.next-capacity-window i{display:block;margin-top:2px;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label);font-style:normal}
-.next-capacity-pct{font-family:var(--mono);font-size:var(--fs-body);font-variant-numeric:tabular-nums}
-.next-capacity-bar{position:relative;height:14px;background:var(--sunk);border:1px solid var(--line);border-radius:var(--r-control);overflow:hidden}
-.next-capacity-fill{position:absolute;inset:0 auto 0 0;background:var(--accent-dim)}
-.next-capacity-fill.warn{background:var(--amber)}
-.next-capacity-fill.crit{background:var(--clay)}
-.next-capacity-fill.unknown{background:var(--line)}
-.next-capacity-tick{position:absolute;top:-1px;bottom:-1px;width:2px;background:var(--ink);outline:1px solid var(--panel)}
-.next-capacity-noclock{height:16px;border:1px dashed var(--rule);background:repeating-linear-gradient(135deg,var(--sunk) 0 5px,transparent 5px 10px)}
-.next-capacity-pace,.next-capacity-ends,.next-capacity-resets{font-family:var(--mono);font-size:var(--fs-label);font-variant-numeric:tabular-nums;color:var(--ink2);min-width:0}
-.next-capacity-pace{font-size:var(--fs-label);text-align:right;color:var(--ink2)}
-.next-capacity-pace.hot{color:var(--amber)}
-.next-capacity-absent{color:var(--ink-absence);font-family:var(--sans);font-size:var(--fs-label)}
-.next-capacity-slack{color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label)}
-.next-capacity-ends em{font-family:var(--sans);font-size:var(--fs-label)}
-.next-capacity-spent{color:var(--clay)}
-.next-capacity-row small{display:none}
-.next-capacity-ends em{font-style:normal;color:var(--ink2)}
-.next-capacity-models{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 14px;margin-left:12px;padding:8px 4px 10px 10px;border-bottom:1px solid var(--rule);border-left:2px solid var(--rule);font-family:var(--mono);font-size:var(--fs-label);color:var(--ink2)}
-.next-capacity-models small{color:var(--ink-label);font-weight:600;letter-spacing:.07em}
-.next-capacity-models b{font-weight:500;color:var(--ink)}
-.next-capacity-models i{flex-basis:100%;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label);font-style:normal}
-.next-capacity-more{display:grid;padding:13px 4px;border-bottom:1px solid var(--line)}
-.next-capacity-more:hover{background:var(--panel)}
-.next-capacity-more i{color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label);font-style:normal}
-.next-capacity-prospect{margin-top:24px;overflow-wrap:anywhere}
-.next-capacity-prospect p{margin:0}
-.next-capacity-prospect p+p{margin-top:7px}
-.next-capacity-prospect b{font-weight:500;font-family:var(--mono);font-variant-numeric:tabular-nums}
-.next-capacity-prospect small{display:block;margin-top:9px;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-body);font-weight:500;line-height:1.55}
-.next-capacity-scope{color:var(--ink2);font-family:var(--mono);font-size:var(--fs-label)}
-.next-capacity-window button{text-align:left}
-.next-capacity-window button::after{content:"";position:absolute;inset:0;z-index:1}
-.next-capacity-window button[aria-pressed="true"]::after{border-left:2px solid var(--accent-dim)}
-.next-capacity-window button:focus-visible{outline:none}
-.next-capacity-window button:focus-visible::after{outline:2px solid var(--accent);outline-offset:2px}
-.next-capacity-pct{color:var(--ink);font-size:var(--fs-label);font-weight:700}
-.next-capacity-pct.mid{color:var(--ink2)}
-.next-capacity-pct.high{color:var(--amber)}
-.next-capacity-prospect>p:nth-child(2){color:var(--ink)}
-@media (max-width: 980px) {
-  .next-capacity-head{display:none}
-  /* The head row is gone, so each value states its own column the way the session cards do. */
-  .next-capacity-more{padding:15px 4px}
-  .next-capacity-row small{display:block;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
-  .next-capacity-row{grid-template-columns:minmax(0,1fr) auto;gap:6px 12px}
-  .next-capacity-pct{text-align:right}
-  .next-capacity-bar,.next-capacity-noclock{grid-column:1/-1;margin-top:4px}
-  .next-capacity-ends,.next-capacity-resets{grid-column:1/-1}
-}
 }

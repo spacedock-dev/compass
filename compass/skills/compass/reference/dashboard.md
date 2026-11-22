@@ -7,7 +7,7 @@ Return to [start, status and stop](../SKILL.md#start).
 ## About Compass
 
 Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
-goal and press `Analyze drift`. The `How Intent and drift works` entry in the Intent card's `More` menu explains the steps, the
+goal and press `Analyze drift`. The Goal card's `How goals work` disclosure explains the steps, the
 reading's limits and what a goal with no expected outcome line is read against.
 New to it? `See a sample session (view only)`, above the Sessions list, opens an anonymized session
 that drifted, with a stored summary of what it did, its stored reading, the correction Compass
@@ -107,8 +107,8 @@ option is selected by default, so all sessions show. The counters keep counting 
 When the filters hide a
 session that is waiting on you, a warning under the bar says so and offers to open it (or, for several,
 to see them on Needs you) or to clear the filters. Filters last for the tab, across refreshes and trips into a session and back; a reload
-clears them, and they are never saved or put in the URL. One paragraph and the `How Intent and drift works` entry in the Intent card's `More` menu stay visible
-after a session has been checked. The paragraph explains how to open a session. Where annotations
+clears them, and they are never saved or put in the URL. The Sessions orientation stays visible after a session has been checked.
+It explains how to open a session. The history and filter count explanations open in place. Where annotations
 are on, the store is readable and a reading route names a provider, it explains how to set a goal and
 analyze drift, adding that no session has been checked while that is true. **Projects**, one
 click away, groups sessions by the label their harness publishes. **Goal history** lists every
@@ -301,24 +301,19 @@ observed records, not commands sent to a harness.
 
 ## Usage and rate limits
 
-The capacity strip sits on Session operations below the two session groups, so the first screen
-carries values rather than its consent and budget sentences. Each readable window shows
-how much of its allowance is spent against how much of its own time is gone, so the two can be
-compared: a window a third spent with an eighth of its time gone runs out long before one that is
-nine-tenths spent with nine-tenths of its time gone. Rows are ordered by when the budget runs out at
-the pace measured so far, which is not the same order as by percentage. Beneath them, what the
-remaining budget buys in minutes, and how long sessions have actually worked in the project that
-consumed the most measured working time, counting the intervals that opened working and were
-seen to close.
-Compass never states which of the two times arrives first: the budget's end and the window's reset
-sit side by side and the comparison is yours.
+Your AI allowance sits below the session groups. It names the selected plan window and reset
+beside the percentage used and a bar. The tick marks how much of the window has elapsed when
+the vendor published a clock. Choose another window when several are available. How the AI
+allowance works shows the pace, reset time, source, and the projected budget end. It also
+shows what the remaining budget buys at the measured paces and observed working time for the
+project with the most measured work. Compare the budget's projected end with the reset.
 
 Quota evidence also appears in Needs you, raised either by a level at or above 70 percent or by a
 pace whose projected end falls before the reset. Codex reads rate-limit snapshots from its own
 session files. Claude and Cursor use the harness credential to poll their vendor endpoint at most once
 per five minutes while a page is open, and never refresh, write, log, or serve the token. This is on
 until you turn it off: one line beside the windows says the quota is read with the logins on this
-machine and that no session content is sent, with a Turn off button, and turning it off sends nothing.
+machine and that no session content is sent, beside Turn off quota reading. When quota reading is off, Sessions shows no percentage or bar.
 Cursor fetching is macOS-only, and because Cursor publishes a cycle end with no start, its row shows
 a level and no clock.
 Copilot contributes per-session AI Units from disk but no percentage because its entitlement is not

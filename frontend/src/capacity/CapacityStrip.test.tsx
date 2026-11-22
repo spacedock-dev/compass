@@ -1,4 +1,4 @@
-import { fireEvent } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { mountPanels } from '../steering/testing';
 import { CapacityStrip } from './CapacityStrip';
@@ -75,9 +75,10 @@ describe('the selected window is the reader’s', () => {
   it('survives a poll that reorders every window', async () => {
     const page = mountPanels(<CapacityStrip />, { data: six(), strict: false });
     await page.settle();
-    fireEvent.click(rowOf(rowKeys()[1] as string).querySelector('button') as HTMLElement);
+    fireEvent.click(rowOf(rowKeys()[1] as string));
     const chosen = pressed()[0];
     expect(chosen).toBeDefined();
+    const name = screen.getByRole('progressbar').getAttribute('aria-label');
     await page.poll(
       board([
         entry('codex', { fiveH: window(95, 1000, 18000), week: window(30, 4 * 86400, 604800) }),
@@ -86,14 +87,16 @@ describe('the selected window is the reader’s', () => {
       ]),
     );
     expect(pressed()).toEqual([chosen]);
+    expect(screen.getByRole('progressbar').getAttribute('aria-label')).toBe(name);
+    expect(heldFor(page.shell.runtime).selection.read()).toBe(chosen);
   });
 
-  it('a click anywhere on the row chooses it, and a press acts on nothing', async () => {
+  it('a window button chooses it without a request', async () => {
     const page = mountPanels(<CapacityStrip />, { data: six(), strict: false });
     await page.settle();
     const before = page.state.requests.length;
     const target = rowKeys()[2] as string;
-    fireEvent.click(rowOf(target).querySelector('.next-capacity-bar') as HTMLElement);
+    fireEvent.click(rowOf(target));
     expect(pressed()).toEqual([target]);
     expect(page.state.requests.length).toBe(before);
     expect(page.allPosts()).toEqual([]);
@@ -133,7 +136,7 @@ describe('the selected window is the reader’s', () => {
     const page = mountPanels(<CapacityStrip />, { data: six() });
     await page.settle();
     const target = rowKeys()[1] as string;
-    fireEvent.click(rowOf(target).querySelector('button') as HTMLElement);
+    fireEvent.click(rowOf(target));
     page.show(<p>Elsewhere</p>);
     await page.settle();
     page.show(<CapacityStrip />);
@@ -145,7 +148,7 @@ describe('the selected window is the reader’s', () => {
     const page = mountPanels(<CapacityStrip />, { data: six(), strict: false });
     await page.settle();
     const target = rowKeys()[0] as string;
-    const button = rowOf(target).querySelector('button') as HTMLElement;
+    const button = rowOf(target);
     button.focus();
     fireEvent.click(button);
     await page.poll(
@@ -170,17 +173,15 @@ describe('absent, stale, expired and true zero are four different things', () =>
   it('a window with no clock draws no tick, no pace and no projection, and says each is absent', async () => {
     const page = only({ month: window(40, null, null) });
     await page.settle();
-    const row = rowOf('claude:month');
-    expect(row.querySelector('.next-capacity-tick')).toBeNull();
-    expect(row.querySelector('.next-capacity-noclock')?.getAttribute('aria-label')).toBe(
-      '40% of budget used; this window publishes no clock',
+    expect(document.querySelector('.next-capacity-tick')).toBeNull();
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuetext')).toBe(
+      '40% of budget used, this window publishes no clock',
     );
-    expect(row.querySelector('.next-capacity-pace')?.textContent).toContain('Pace not measured');
-    expect(row.querySelector('.next-capacity-ends')?.textContent).toContain('not projected');
-    expect(row.querySelector('.next-capacity-resets')?.textContent).toContain('none published');
-    expect(row.querySelector('.next-capacity-window')?.textContent).toContain(
-      'Window length not published',
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
+    expect(screen.getByText('Pace not measured')).toBeVisible();
+    expect(screen.getByText('Not projected')).toBeVisible();
+    expect(screen.getByText('Not published', { exact: true })).toBeVisible();
+    expect(screen.getByText('billing cycle · length not published')).toBeVisible();
     // With no pace there is no prospect to state.
     expect(document.querySelector('.next-capacity-prospect')).toBeNull();
   });
@@ -188,29 +189,30 @@ describe('absent, stale, expired and true zero are four different things', () =>
   it('a reset already past leaves the window untimed rather than clamping it into a false all-clear', async () => {
     const page = only({ fiveH: window(30, -60, 18000) });
     await page.settle();
-    const row = rowOf('claude:fiveH');
-    expect(row.querySelector('.next-capacity-tick')).toBeNull();
-    expect(row.querySelector('.next-capacity-ends')?.textContent).toContain('not projected');
-    expect(row.querySelector('.next-capacity-resets')?.textContent).toContain('0s');
+    expect(document.querySelector('.next-capacity-tick')).toBeNull();
+    expect(
+      screen.getByText('Claude Code 5-hour plan · the published reset has passed.'),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
+    expect(screen.getByText('Not projected')).toBeVisible();
+    expect(screen.getByText(/\(passed\)/)).toBeVisible();
     expect(document.body.textContent).not.toContain('spare');
   });
 
   it('a spent budget says so and does not print the present minute as a deadline', async () => {
     const page = only({ fiveH: window(100, 9000, 18000) });
     await page.settle();
-    expect(rowOf('claude:fiveH').querySelector('.next-capacity-spent')?.textContent).toBe(
-      'already spent',
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
+    expect(screen.getByText('Already spent')).toBeVisible();
   });
 
   it('a true zero used is a figure, not an absence', async () => {
     const page = only({ fiveH: window(0, 9000, 18000) });
     await page.settle();
-    const row = rowOf('claude:fiveH');
-    expect(row.querySelector('.next-capacity-pct')?.textContent).toBe('USED0%');
-    expect(row.querySelector('.next-capacity-pace')?.textContent).toBe('PACE0.0×');
-    // No spend means no projected end, and that is said as such, not as a clock time.
-    expect(row.querySelector('.next-capacity-ends')?.textContent).toContain('not projected');
+    expect(screen.getByText('0% used')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
+    expect(screen.getByText('0.0×')).toBeVisible();
+    expect(screen.getByText('Not projected')).toBeVisible();
   });
 
   it('a recent pace measured at zero is evidence; an absent one is only absence', async () => {
@@ -243,15 +245,15 @@ describe('absent, stale, expired and true zero are four different things', () =>
     const prospect = document.querySelector('.next-capacity-prospect')?.textContent ?? '';
     expect(prospect).toContain("at this window's average pace, or");
     expect(prospect).toContain('at the recent pace (last 10m)');
-    expect(prospect).toContain('Resets in 2h 30m.');
+    expect(screen.getByText('Claude Code 5-hour plan · resets in 2h 30m.')).toBeVisible();
     expect(document.querySelector('.next-capacity-prospect small')).toBeNull();
   });
 
   it('a thin basis qualifies the time and the spare together', async () => {
     const page = only({ fiveH: window(2, 17700, 18000) });
     await page.settle();
-    const ends = rowOf('claude:fiveH').querySelector('.next-capacity-ends')?.textContent ?? '';
-    expect(ends).toContain('based on 5m observed');
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
+    expect(screen.getByText(/based on 5m observed/)).toBeVisible();
   });
 
   it('a window whose entry is an error publishes no row at all', async () => {
@@ -285,6 +287,8 @@ describe('model sub-limits', () => {
       strict: false,
     });
     await page.settle();
+    fireEvent.click(rowOf('claude:week'));
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
     expect(document.querySelectorAll('[data-next-capacity-models]')).toHaveLength(1);
     const line = document.querySelector('[data-next-capacity-models="claude:week"]') as HTMLElement;
     expect(line.textContent).toContain('Opus 0%');
@@ -296,6 +300,8 @@ describe('model sub-limits', () => {
     expect([...line.querySelectorAll('b')].some((b) => (b.textContent ?? '').length === 40)).toBe(
       true,
     );
-    expect(line.previousElementSibling).toBe(rowOf('claude:week'));
+    expect(screen.getByRole('progressbar').getAttribute('aria-label')).toBe(
+      'Claude Code weekly allowance used',
+    );
   });
 });

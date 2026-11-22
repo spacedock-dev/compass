@@ -173,6 +173,13 @@ export function duration(seconds: unknown): string {
   return formatDuration(seconds) || 'an unmeasured span';
 }
 
+export function allowanceSentence(row: StripRow, source: string): string {
+  const window = `${source} ${SLOT_LABELS[row.slot]} plan`;
+  if (row.remainingSec === null) return `${window} · reset time not published.`;
+  if (row.remainingSec <= 0) return `${window} · the published reset has passed.`;
+  return `${window} · resets in ${duration(row.remainingSec)}.`;
+}
+
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 const MONTHS = [
   'Jan',

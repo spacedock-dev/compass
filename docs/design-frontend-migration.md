@@ -16,6 +16,23 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-23, the Sessions filter and history explanations open below their triggers and keep
+their open state across a refresh. The earlier sessions heading names the published window.
+The old Sessions how-to body moved to the Goal card as **How goals work**. The two board-specific
+caveats moved to **How session history works**. The Sessions parity readers project the recorded
+heading and set aside the relocated text. The mounted and story proofs assert the new copies in
+their destinations. The Goal card's More, Drift settings, and the two What is sent disclosures open
+inline. Closing a disclosure uses its own trigger.
+
+The former quota table is now **Your AI allowance** on Sessions. One selected window supplies the
+percentage and reset sentence. The native bar keeps the elapsed-time tick. **How the AI allowance
+works** holds the pace, exact reset time, window, source, per-model sub-limits and projections.
+When quota reading is off, the card names a cached window if one exists and suppresses its figures.
+The mounted capacity comparison still checks the chosen window, its measured percentage and the
+order of the available window choices against the recorded rows. It leaves the table layout and
+the off-state figures out of the comparison. The model comparison still checks the recorded
+figures and ranking directly. QuotaLine stories check the reader-facing card and the consent action.
+
 2026-11-23, the header names the `attention` and `intent` destinations Needs you and Goal history.
 The active link gets a fill and Compass links to Sessions. The browser proof projects the recorded
 nav, breadcrumb and tab-title words onto these names and still checks every fragment and its
