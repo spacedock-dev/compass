@@ -1,8 +1,9 @@
 import { act } from '@testing-library/react';
 import { withoutCodexRecordedStops } from '../../test/codexRecordedStop';
-import { omitAttentionQuietSubtotals } from '../../test/recordedSessionStatus';
 import { describe, expect, it } from 'vitest';
 import { genPayload } from '../observed/generate.test.helper';
+import { sessionKey } from '../observed';
+import { attentionSelectionFor } from './select';
 import { mountShell } from '../shell/testing';
 import { expansionFor } from './expansion';
 import { loadLegacyAttention } from './legacy.test.helper';
@@ -109,6 +110,7 @@ function summarize(root: ParentNode): Summary {
           );
         }
       }
+      content.querySelector('[data-next-native-wait]')?.remove();
       const source = content.querySelector(
         '[data-next-attention-part="source"] > span:last-child',
       )?.firstChild;
@@ -145,7 +147,7 @@ function summarize(root: ParentNode): Summary {
   const projectsLink = attention.querySelector('.next-attention-projects-link');
   return {
     heading: norm(attention.querySelector('.next-attention-heading')),
-    brief: omitAttentionQuietSubtotals(norm(attention.querySelector('.next-attention-brief > p'))),
+    brief: norm(attention.querySelector('.next-attention-brief > p')),
     empty:
       norm(attention.querySelector('.next-attention-empty')).replace(
         /^(No sessions in this [\d.-]+)h payload$/,
@@ -211,26 +213,66 @@ function firstDifference(left: string, right: string): string {
   return `near ${JSON.stringify(left.slice(Math.max(0, at - 90), at + 160))} vs ${JSON.stringify(right.slice(Math.max(0, at - 90), at + 160))}`;
 }
 
-function unchangedView(summary: Summary, restored: Set<string>): Summary {
-  const sections = summary.sections
-    .map((section) => {
-      const items = section.items.filter(
-        (item) =>
-          item.kind !== 'collision' && item.kind !== 'checkout' && !restored.has(item.subjectKey),
+function unchangedView(summary: Summary, counterpart: Summary, restored: Set<string>): Summary {
+  const sections = summary.sections.flatMap((section) => {
+    const other = counterpart.sections.find(({ name }) => name === section.name);
+    if (['needs', 'risk', 'close'].includes(section.name)) {
+      if (!other) return [];
+      // Only subjects whose membership and leading signal still match retain their legacy row contract.
+      const keys = (items: readonly Item[]) =>
+        items.map(({ subjectKey, kind }) => JSON.stringify([subjectKey, kind]));
+      const own = keys(section.items);
+      const peer = keys(other.items);
+      const sameRows = new Set(
+        peer.filter(
+          (key) =>
+            peer.indexOf(key) === peer.lastIndexOf(key) &&
+            own.indexOf(key) === own.lastIndexOf(key),
+        ),
       );
-      if (!['close', 'next'].includes(section.name)) return { ...section, items };
-      return {
+      const items = section.items
+        .filter(({ subjectKey, kind }) => sameRows.has(JSON.stringify([subjectKey, kind])))
+        .map((item) => ({ ...item, hidden: false }))
+        .sort((left, right) => left.subjectKey.localeCompare(right.subjectKey));
+      return [{ ...section, heading: '', note: '', toggle: null, items }];
+    }
+    const items = section.items.filter(
+      ({ kind, subjectKey }) =>
+        kind !== 'collision' && kind !== 'checkout' && !restored.has(subjectKey),
+    );
+    if (!items.length) return [];
+    if (section.name !== 'next') return [{ ...section, items }];
+    return [
+      {
         ...section,
-        items: items.map((item) => ({ ...item, hidden: false })),
-        heading: section.heading.replace(/ \(\d+\)$/, ''),
+        heading: 'Coming next',
         toggle: null,
-      };
-    })
-    .filter((section) => section.items.length || section.name === 'risk');
-  // A repeated identity now counts once, so a label shared only by repeats is no longer shared.
-  // frontend/test/location_departure.ts restates the same caveat departure for the other views.
-  const caveats = summary.caveats.filter((text) => text !== 'No shared display label observed');
-  return { ...summary, sections, caveats };
+        items: items.map((item) => ({ ...item, hidden: false })),
+      },
+    ];
+  });
+  return {
+    ...summary,
+    brief: '',
+    // A repeated identity now counts once, so a label shared only by repeats is no longer shared.
+    caveats: summary.caveats.filter((text) => text !== 'No shared display label observed'),
+    sections: sections.sort((left, right) => left.name.localeCompare(right.name)),
+  };
+}
+
+function selectedQueues(summary: Summary, payload: object) {
+  const selection = attentionSelectionFor(payload);
+  if (!selection) throw new Error('Expected selection for a generated board');
+  for (const [name, rows] of [
+    ['needs', selection.waitingOnYou],
+    ['risk', [...selection.worthALook.keys()]],
+    ['close', selection.readyToWrapUp],
+  ] as const) {
+    const items = summary.sections.find((section) => section.name === name)?.items ?? [];
+    expect(items.map(({ subjectKey }) => subjectKey).sort(), name).toEqual(
+      rows.map(sessionKey).sort(),
+    );
+  }
 }
 
 const CASES = 40;
@@ -242,7 +284,7 @@ describe('the Attention screen reads as the legacy screen does, over generated p
     let controls = 0;
     let hiddenRows = 0;
     let boardRows = 0;
-    for (let seed = 1; seed <= SEEDS && failures.length < 3; seed += 1) {
+    for (let seed = 1; seed <= SEEDS; seed += 1) {
       const payload = genPayload(seed, { wellFormed: true });
       const arms: [readonly string[], string][] = [
         [[], ''],
@@ -250,12 +292,11 @@ describe('the Attention screen reads as the legacy screen does, over generated p
       ];
       for (const [expanded, capability] of arms) {
         const old = legacySummary(payload, expanded, capability);
-        const mine = await reactSummary(withoutCodexRecordedStops(payload), expanded, capability);
+        const board = withoutCodexRecordedStops(payload) as object;
+        const mine = await reactSummary(board, expanded, capability);
+        selectedQueues(mine, board);
         const existing = new Set(
-          old.sections
-            .flatMap((section) => section.items)
-            .filter((item) => item.kind !== 'collision')
-            .map((item) => item.subjectKey),
+          old.sections.flatMap((section) => section.items.map(({ subjectKey }) => subjectKey)),
         );
         const labels = new Map<string, Record<string, unknown>[]>();
         for (const row of payload['sessions'] as Record<string, unknown>[]) {
@@ -265,21 +306,16 @@ describe('the Attention screen reads as the legacy screen does, over generated p
         const restored = new Set(
           [...labels.values()]
             .filter((rows) => rows.length > 1)
-            .flatMap((rows) =>
-              rows.map(
-                (row) =>
-                  `session:${JSON.stringify([String(row['harness'] || ''), String(row['sid'] || '')])}`,
-              ),
-            )
-            .filter((key) => !existing.has(key)),
+            .flatMap((rows) => rows.map(sessionKey).filter((key) => !existing.has(key))),
         );
         const left = JSON.stringify(
           unchangedView(
             { ...old, heading: old.heading.replace(/^Attention/, 'Needs you') },
+            mine,
             restored,
           ),
         );
-        const right = JSON.stringify(unchangedView(mine, restored));
+        const right = JSON.stringify(unchangedView(mine, old, restored));
         if (left !== right && !DEVIATIONS.some((d) => d.seed === seed)) {
           failures.push(
             `seed ${String(seed)} (${expanded.length ? 'expanded' : 'collapsed'}, capability ${capability || 'none'}): ${firstDifference(left, right)}`,

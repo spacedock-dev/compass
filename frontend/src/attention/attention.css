@@ -9,7 +9,6 @@
 .next-attention-brief p{margin:0;color:var(--ink2);font-size:var(--fs-body);line-height:1.6}
 .next-attention-brief>p,.next-attention-coverage>p{display:grid;grid-template-columns:104px minmax(0,1fr);gap:16px;align-items:baseline}
 .next-attention-brief>p>span:last-child{color:var(--ink)}
-.next-attention-quiet{color:var(--ink2)}
 .next-attention-coverage{padding-top:10px;border-top:1px solid var(--rule)}
 .next-attention-brief-label,.next-attention-label{display:block;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em;text-transform:uppercase}
 .next-attention-coverage-details{margin:10px 0 0 120px;color:var(--ink2);font-size:var(--fs-label)}

@@ -278,7 +278,7 @@ export interface SessionRow {
   readonly history: boolean;
   readonly worthALook: string | undefined;
   readonly showOutcome: boolean;
-  readonly stateSegment: StateSegment | undefined;
+  readonly stateSegments: readonly StateSegment[] | undefined;
   readonly relations: ReturnType<typeof declaredRelations>;
 }
 
@@ -349,7 +349,7 @@ export function buildSessionsScreen(
     context,
     new Set([...flaggedRows, ...dirtyOutcomes]),
   );
-  const segments = new Map<ObservedSession, StateSegment>();
+  const segments = new Map<ObservedSession, StateSegment[]>();
   if (selection) {
     for (const [segment, members] of [
       ['waiting', selection.waitingOnYou],
@@ -357,7 +357,11 @@ export function buildSessionsScreen(
       ['quiet', selection.quiet],
       ['ended', selection.ended],
     ] as const) {
-      for (const member of members) segments.set(member, segment);
+      for (const member of members) {
+        const memberships = segments.get(member) ?? [];
+        memberships.push(segment);
+        segments.set(member, memberships);
+      }
     }
   }
   const projectKeys = new Map<string, string>();
@@ -405,7 +409,7 @@ export function buildSessionsScreen(
       showOutcome:
         session.outcomeKnown &&
         (session.outcomeIcon !== 'worth-a-look' || dirtyOutcomes.has(session)),
-      stateSegment: segments.get(session),
+      stateSegments: segments.get(session),
       responsibility: ask ? ` · ${askResponsibility(payload, ask)}` : '',
       history,
       relations: declaredRelations(payload, source),

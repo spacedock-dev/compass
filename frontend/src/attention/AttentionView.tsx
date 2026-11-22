@@ -1,13 +1,14 @@
-import { SHOWN } from '../language/glossary';
+import { SESSION_ROW_WORDS, SHOWN } from '../language/glossary';
 import { UnaskedAttentionCue } from '../drift/UnaskedPermission';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { useMemo } from 'react';
-import { payloadSessions } from '../api/bootstrap';
 import { useControls } from '../controls';
 import { useFocusKey } from '../controls/useFocusKey';
 import { selectObserved } from '../observed/select';
-import type { Observed } from '../observed';
+import { sessionKey, type Observed } from '../observed';
+import { sessionRisk } from '../observed/project';
+import { formatTimestamp } from '../shell/format';
 import { useDisplayed } from '../shell/context';
 import { selectDataStatus } from '../store/selectors';
 import { RouteAnchor } from '../sessions';
@@ -15,7 +16,7 @@ import { CommandReportsSection, CoverageBlock } from './Coverage';
 import { RiskItem, SubjectItem } from './Items';
 import { type AttentionModel, type Section, type Subject } from './model';
 import { boardReports } from './reports';
-import { selectAttention } from './select';
+import { selectAttention, selectAttentionSelection, type AttentionSelection } from './select';
 import { riskSubject, modelQuotaRisk } from './subjects';
 import { useExpansion } from './expansion';
 import './attention.css';
@@ -125,31 +126,71 @@ function Title() {
 function Board({
   model,
   observed,
-  collection,
+  selection,
 }: {
   readonly model: AttentionModel;
   readonly observed: Observed;
-  readonly collection: boolean;
+  readonly selection: AttentionSelection | null;
 }) {
   const data = useDisplayed((snapshot) => snapshot.data);
   const reports = useMemo(() => boardReports(data), [data]);
-  const risks = observed.risks;
-  const boardRisks = observed.boardRisks;
+  const offCountKeys = new Set(selection?.offCountRisks.map((subject) => subject.key));
+  const sourceRisks = new Map(
+    observed.risks.map((risk) => [sessionKey({ harness: risk.harness, sid: risk.sid }), risk]),
+  );
+  const collisions = new Map(
+    model.risk
+      .filter((subject) => subject.primaryKind === 'collision' && !offCountKeys.has(subject.key))
+      .flatMap((subject) => subject.sessions.map((row) => [sessionKey(row), subject] as const)),
+  );
+  const risks = [...(selection?.worthALook ?? [])].map(([session, reason]) => {
+    const key = sessionKey(session);
+    const source = sourceRisks.get(key);
+    const collision = collisions.get(key);
+    if (!collision) return source ?? sessionRisk(session, 'risk', session.titleText, reason);
+    const warning = collision.signals[0]?.detail.text;
+    if (source && reason !== 'Shared project label') return source;
+    const member = collision.sessions.find((row) => sessionKey(row) === key);
+    const started = formatTimestamp(member?.['started_at'], model.generated, { style: 'clock' });
+    const title = `${session.titleKnown ? session.titleText : 'Title not published'} · ${String(member?.['worktree'] || 'No worktree published')} · ${session.harness}:${session.sid} · Start time ${started ?? 'not published'}`;
+    const risk = sessionRisk(
+      session,
+      'collision',
+      title,
+      [reason, warning].filter(Boolean).join(' · '),
+    );
+    return { ...risk, src: 'Published project location evidence' };
+  });
+  const boardRisks = observed.boardRisks.filter((risk) => {
+    if (!selection || risk.kind !== 'collision') return true;
+    const subject = riskSubject(risk, model);
+    return !subject || offCountKeys.has(subject.key);
+  });
   const modelQuotas = model.risk.filter(
     (subject) => subject.kind === 'quota' && subject.identity?.project.startsWith('model:'),
   );
-  const rendered = new Set([...risks, ...boardRisks].map((risk) => riskSubject(risk, model)?.key));
-  // A payload can publish one session twice, and each copy keeps its own row: the key is the exact identity
-  // and which copy it is, never the position, so a reorder moves nodes instead of replacing them.
-  const riskKeys = occurrences(risks.map((risk) => `${risk.harness ?? ''}\u0000${risk.sid ?? ''}`));
   const boardKeys = occurrences(boardRisks.map((risk) => `${risk.kind}\u0000${risk.identity}`));
-  const remaining = (subjects: readonly Subject[]) =>
-    subjects.filter((subject) => !rendered.has(subject.key));
+  const alreadyShown = new Set(
+    [...observed.risks, ...observed.boardRisks].map((risk) => riskSubject(risk, model)?.key),
+  );
+  const next = model.next.filter((subject) => !alreadyShown.has(subject.key));
+  const waitingKeys = new Set(selection?.waitingOnYou.map(sessionKey));
+  const needs = model.needs.filter((subject) => waitingKeys.has(subject.key));
+  const subjects = new Map(
+    [...model.needs, ...model.risk, ...model.close].map((subject) => [subject.key, subject]),
+  );
+  const close = (selection?.readyToWrapUp ?? []).flatMap((row): Subject[] => {
+    const subject = subjects.get(sessionKey(row));
+    const signal = subject?.signals.find(({ kind }) => kind === 'end-clean');
+    return subject && signal
+      ? [{ ...subject, section: 'close', primaryKind: signal.kind, signals: [signal] }]
+      : [];
+  });
   return (
     <section className="next-attention" data-next-view-body="attention">
       <Title />
       {data ? <UnaskedAttentionCue payload={data as unknown as Record<string, unknown>} /> : null}
-      {collection ? (
+      {selection ? (
         <section
           className="mt-6 grid grid-cols-2 divide-x divide-[var(--rule)] border-y border-[var(--rule)]"
           aria-label="Request and block facts"
@@ -174,13 +215,19 @@ function Board({
       <Card variant="attention-brief" className="next-attention-brief">
         <p>
           <span className="next-attention-brief-label">OBSERVED</span>
-          {collection ? (
+          {selection?.counts ? (
             <span>
-              {observed.coverage.observed}{' '}
-              <span className="next-attention-quiet">{observed.coverage.quiet}</span>
+              {`${selection.counts.waitingOnYou} waiting on you · ${selection.counts.worthALook} worth a look · ${selection.counts.readyToWrapUp} ready to wrap up.`}
+              {selection.limitedStateCount
+                ? ` ${selection.limitedStateCount} with limited state evidence.`
+                : ''}
             </span>
           ) : (
-            <span className="next-absence">The board published no session collection.</span>
+            <span className="next-absence">
+              {selection
+                ? 'Session counts are unavailable because the sources could not be read.'
+                : 'The board published no session collection.'}
+            </span>
           )}
         </p>
         <CoverageBlock model={model} observed={observed} />
@@ -191,39 +238,34 @@ function Board({
           View all projects
         </RouteAnchor>
       </Card>
-      {observed.sessions.length || !collection ? null : (
+      {observed.sessions.length || !selection ? null : (
         <p className="next-attention-empty">
           {`No sessions in this ${model.windowHours == null ? 'payload' : `${String(model.windowHours)}-hour payload`}`}
         </p>
       )}
       <section className="next-attention-section" data-next-attention-section="risk">
         <div className="next-attention-section-heading">
-          <Heading section="risk">At risk</Heading>
-          <p>{`${String(risks.length)} of ${String(observed.sessions.length)} sessions · every one names the source that published it`}</p>
+          <Heading section="risk">{`${SESSION_ROW_WORDS.worthALook} (${risks.length})`}</Heading>
+          <p>{`${String(risks.length)} of ${String(selection?.sessionCount ?? 0)} sessions`}</p>
         </div>
         <ol>
           {risks.map((risk, index) => (
-            <RiskItem key={riskKeys[index]} risk={risk} index={index} model={model} />
+            <RiskItem
+              key={sessionKey({ harness: risk.harness, sid: risk.sid })}
+              risk={risk}
+              index={index}
+              model={model}
+            />
           ))}
         </ol>
         <QueueSection
           section="needs"
-          title="Needs you now"
-          subjects={remaining(model.needs)}
+          title={SESSION_ROW_WORDS.waitingOnYou}
+          subjects={needs}
           model={model}
         />
-        <QueueSection
-          section="close"
-          title="Close the loop"
-          subjects={remaining(model.close)}
-          model={model}
-        />
-        <QueueSection
-          section="next"
-          title="Coming next"
-          subjects={remaining(model.next)}
-          model={model}
-        />
+        <QueueSection section="close" title="Ready to wrap up" subjects={close} model={model} />
+        <QueueSection section="next" title="Coming next" subjects={next} model={model} />
       </section>
       <section className="next-attention-section" data-next-attention-section="board-risk">
         <div className="next-attention-section-heading">
@@ -273,6 +315,7 @@ export function AttentionView() {
   const snapshot = useDisplayed((current) => current);
   const model = useDisplayed(selectAttention);
   const observed = useDisplayed(selectObserved);
+  const selection = useDisplayed(selectAttentionSelection);
   if (!snapshot.data || !model) {
     return (
       <section className="next-attention" data-next-view-body="attention">
@@ -281,7 +324,5 @@ export function AttentionView() {
       </section>
     );
   }
-  return (
-    <Board model={model} observed={observed} collection={payloadSessions(snapshot.data).present} />
-  );
+  return <Board model={model} observed={observed} selection={selection} />;
 }

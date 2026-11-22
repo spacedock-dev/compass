@@ -36,8 +36,15 @@ the bar. M is the group's unfiltered size.
 
 The 2026-10-29 decision keeps the summary and all three At a glance cards board-wide while filtering.
 Working now uses the same Working sessions as the header pill. Waiting on you and Worth a look open
-Needs you, and a reported gate counts once even if its session has also asked a question. Working now
-selects Working in the filter store and moves focus to the list. Search and other filters still apply.
+the corresponding queues on Needs you. A reported gate and an exact question on the same session
+count once. An ended session with an open question appears in both lifecycle and waiting counts, and the
+Waiting on you preset includes it.
+When a source cannot be read, the summary describes the rows Compass could read. Rows without a
+published state or waiting on a child appear in the limited state count.
+
+Working now selects Working in the filter store, clears a conflicting state choice and moves focus
+to the list. Search and other filters still apply. Press Working now again to clear the Working
+selection, including when the list is empty.
 The result line reads "Showing 4 of 12 sessions. At a glance counts the whole board."
 
 The toolbar sits outside the group headers, empty sentences and rows compared by

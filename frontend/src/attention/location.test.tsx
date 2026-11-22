@@ -10,6 +10,12 @@ import { EMPTY_FILTERS, indexScreen, prepare, projectOptions } from '../sessions
 
 expect.extend({ toHaveTextContent, toHaveAttribute });
 
+const measuredCards = () => [
+  ...document.querySelectorAll<HTMLElement>(
+    '[data-next-attention-section="risk"] > ol [data-next-attention-kind="collision"]',
+  ),
+];
+
 describe('a label is interpreted by measured locations', () => {
   it.each(['directory', 'worktrees'])(
     'a person sees nine %s sessions without a location warning',
@@ -44,18 +50,16 @@ describe('a label is interpreted by measured locations', () => {
     locationRow(data, 1)['project_key'] = 'path:other';
     const page = mountShell({ hash: '#n=attention', data });
     await page.settle();
-    const card = document.querySelector('[data-next-board-risk="collision"]') as HTMLElement;
-    expect(card).toHaveTextContent('2 measured locations');
-    expect(card).toHaveTextContent('title, worktree, id and start time');
-    expect(card).not.toHaveTextContent('path:other');
+    expect(screen.getByRole('heading', { name: 'Worth a look (2)' })).toBeInTheDocument();
+    expect(document.querySelector('[data-next-board-risk="collision"]')).toBeNull();
+    const cards = measuredCards();
+    expect(cards).toHaveLength(2);
     for (const row of locationRows(data)) {
-      expect(
-        within(card).getByRole('link', { name: new RegExp(String(row['title'])) }),
-      ).toHaveAttribute('href', `#n=session:audits:claude:${String(row['sid'])}`);
+      const link = screen.getByRole('link', { name: new RegExp(String(row['title'])) });
+      expect(link).toHaveAttribute('href', `#n=session:audits:claude:${String(row['sid'])}`);
+      expect(link.closest('article')).toHaveTextContent('2 measured locations');
+      expect(link.closest('article')).not.toHaveTextContent('path:other');
     }
-    expect(
-      within(card).getByRole('link', { name: 'Label shared across locations' }),
-    ).toHaveAttribute('href', '#n=project:audits');
   });
 
   it.each(
@@ -104,9 +108,14 @@ describe('a label is interpreted by measured locations', () => {
       '2 sessions share this display label across 2 measured locations. Location not measured for 1 session with this display label';
     const attention = mountShell({ hash: '#n=attention', data });
     await attention.settle();
-    const card = document.querySelector('[data-next-board-risk="collision"]') as HTMLElement;
-    expect(card.querySelector('.next-attention-risk-observation > p')?.textContent).toBe(expected);
-    expect(within(card).getAllByRole('link', { name: /Audit \d/ })).toHaveLength(3);
+    expect(measuredCards()).toHaveLength(2);
+    for (const card of measuredCards()) {
+      expect(card.querySelector('.next-attention-risk-observation > p')).toHaveTextContent(
+        expected,
+      );
+      expect(within(card).getAllByRole('link', { name: /Audit \d/ })).toHaveLength(1);
+    }
+    expect(screen.queryByRole('link', { name: /Audit 2/ })).toBeNull();
     attention.unmount();
     const sessions = mountShell({ hash: '#n=sessions', data });
     await sessions.settle();
@@ -227,16 +236,13 @@ describe('a label is interpreted by measured locations', () => {
       });
       const page = mountShell({ hash: '#n=attention', data });
       await page.settle();
-      const card = document.querySelector('[data-next-board-risk="collision"]') as HTMLElement;
-      const link = within(card).getByRole('link', {
+      const link = screen.getByRole('link', {
         name: /Title not published · No worktree published · claude:audit-1 · Start time/,
       });
       expect(link).toHaveAttribute('href', '#n=session:audits:claude:audit-1');
       expect(link).toHaveTextContent(started > 0 ? /Start time at \d/ : 'Start time not published');
-      expect(within(card).getByRole('link', { name: /Audit 0/ })).toHaveTextContent(
-        /Start time at \d/,
-      );
-      expect(card).not.toHaveTextContent(/\d{4}-\d{2}-\d{2}T/);
+      expect(screen.getByRole('link', { name: /Audit 0/ })).toHaveTextContent(/Start time at \d/);
+      expect(link).not.toHaveTextContent(/\d{4}-\d{2}-\d{2}T/);
       expect(link).not.toHaveTextContent('1970-01-01');
     },
   );
@@ -270,25 +276,23 @@ describe('a label is interpreted by measured locations', () => {
     },
   );
 
-  it('a person sees shared-label stops and tasks in the queues counted by the summary', async () => {
+  it('a person sees clean ends and tasks separately from shared-label flags', async () => {
     const data = locationBoard();
     for (const row of locationRows(data).slice(0, 3)) row['finished_at'] = 1899999999;
-    locationRow(data, 3)['ended_at'] = 1899999999;
+    Object.assign(locationRow(data, 3), { ended_at: 1899999999, dirty: false });
     locationRow(data, 4)['tasks'] = [{ status: 'in_progress', subject: 'Inspect the next target' }];
     // Keep a real label warning present while checking it cannot own stops or tasks.
     locationRow(data, 8)['project_key'] = 'path:other';
     const page = mountShell({ hash: '#n=attention', data });
     await page.settle();
-    expect(screen.getByRole('heading', { name: 'Close the loop (4)' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ready to wrap up (1)' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Coming next (1)' })).toBeInTheDocument();
     expect(
       document.querySelectorAll('[data-next-attention-section="close"] > ol > li'),
-    ).toHaveLength(4);
+    ).toHaveLength(1);
     expect(document.querySelector('[data-next-attention-section="next"]')).toHaveTextContent(
       'Inspect the next target',
     );
-    expect(document.querySelector('.next-attention-brief')).toHaveTextContent(
-      '4 to close the loop',
-    );
+    expect(document.querySelector('.next-attention-brief')).toHaveTextContent('1 ready to wrap up');
   });
 });

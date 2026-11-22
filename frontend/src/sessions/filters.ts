@@ -376,6 +376,10 @@ export function facetValue(indexed: IndexedRow, facet: Facet): string | null {
   return indexed.goal;
 }
 
+function hasEndedRequest(row: IndexedRow) {
+  return row.row.session.isEnded && row.row.stateSegments?.includes('waiting');
+}
+
 type Part = 'search' | 'date' | Facet;
 
 export interface Prepared {
@@ -410,7 +414,7 @@ export function passes(indexed: IndexedRow, prepared: Prepared, skip: Part | nul
   if (
     segment === 'worth'
       ? !indexed.row.worthALook
-      : segment !== 'all' && indexed.row.stateSegment !== segment
+      : segment !== 'all' && !indexed.row.stateSegments?.includes(segment)
   )
     return false;
   if (skip !== 'search' && terms.length && !searchRow(indexed, terms).match) return false;
@@ -421,7 +425,14 @@ export function passes(indexed: IndexedRow, prepared: Prepared, skip: Part | nul
     const chosen = filters[facet];
     if (!chosen.length) continue;
     const value = facetValue(indexed, facet);
-    if (value !== null && !chosen.includes(value)) return false;
+    if (value === null || chosen.includes(value)) continue;
+    if (
+      facet === 'state' &&
+      chosen.includes(SESSION_ROW_WORDS.waitingOnYou) &&
+      hasEndedRequest(indexed)
+    )
+      continue;
+    return false;
   }
   return true;
 }
@@ -493,6 +504,10 @@ export function facetCounts(
     const value = facetValue(one, facet);
     if (value === null) continue;
     counts.set(value, (counts.get(value) ?? 0) + 1);
+    if (facet === 'state' && hasEndedRequest(one)) {
+      const waiting = SESSION_ROW_WORDS.waitingOnYou;
+      counts.set(waiting, (counts.get(waiting) ?? 0) + 1);
+    }
   }
   return counts;
 }
@@ -703,15 +718,18 @@ export function hiddenWaiting(
   filtered: Filtered,
 ): readonly IndexedRow[] {
   if (!filtered.active) return [];
-  return indexed.filter((one) => one.state === 'Waiting on you' && !filtered.keys.has(one.row.key));
+  return indexed.filter(
+    (one) =>
+      (one.state === SESSION_ROW_WORDS.waitingOnYou || hasEndedRequest(one)) &&
+      !filtered.keys.has(one.row.key),
+  );
 }
 
 /* Who could be waiting without the page knowing, by cause. A harness is named as not reporting a wait only
    when the payload says so; a row of a harness that does report one, but whose wait state could not be read
    (the server's "block state" gap, which a Pi or OpenCode row carries until its adapter sends an event), is
    counted on a line of its own, as its BLOCKED cell says. Then the harnesses on the board whose reporting
-   holds only in some setups. An ended session waits on nobody (the order `rowState` ranks by), so it is
-   never counted as one that could be waiting. */
+   holds only in some setups. A reported end rules out an inferred wait. Exact requests are counted separately. */
 export function waitCoverage(
   indexed: readonly IndexedRow[],
   harnesses: readonly HarnessMeta[],

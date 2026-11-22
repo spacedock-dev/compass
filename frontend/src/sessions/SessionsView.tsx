@@ -9,7 +9,7 @@ import { TooltipProvider } from '../ui/tooltip';
 import { EXPLANATIONS, SESSION_LIST_WORDS, SESSION_ROW_WORDS } from '../language/glossary';
 import { selectAttentionSelection } from '../attention/select';
 import { WorthALookFlag } from '../attention/WorthALookFlag';
-import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 'react';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
 import { gapNames, sessionStateLimit, type Row } from '../observed';
@@ -340,10 +340,8 @@ const Group = memo(function Group({
   caveat,
   filter,
   byGroup = false,
-  progressEnabled,
 }: {
   readonly byGroup?: boolean;
-  readonly progressEnabled: boolean;
   readonly kind: 'active' | 'history';
   readonly title: string;
   readonly label: string;
@@ -366,9 +364,8 @@ const Group = memo(function Group({
     : [{ group: '', rows: kept }];
   return (
     <section
-      className={`next-operation-group next-operation-group--${kind} [--operation-progress-track:0px] data-[next-progress-enabled]:[--operation-progress-track:176px]`}
+      className={`next-operation-group next-operation-group--${kind}`}
       data-next-operation-group={kind}
-      data-next-progress-enabled={progressEnabled ? true : undefined}
     >
       <header>
         <h2>{title}</h2>
@@ -417,7 +414,6 @@ const Group = memo(function Group({
             <span>BLOCKED</span>
           </>
         )}
-        {progressEnabled ? <span /> : null}
       </div>
       <TooltipProvider>
         <div className="next-operation-rows">
@@ -467,9 +463,11 @@ const SESSIONS_LIST_ID = 'sessions-list';
 
 /* The harnesses whose store could not be read, named, because "no sessions" under one of them would be
    a claim about a store nobody could open. */
-function SourceGaps() {
-  const harnesses = useDisplayed(selectHarnessSources);
-  const failed = harnesses.rows.filter((row) => row.error !== null);
+function SourceGaps({
+  failed,
+}: {
+  readonly failed: ReturnType<typeof selectHarnessSources>['rows'];
+}) {
   if (!failed.length) return null;
   return (
     <ul className="next-sessions-sources" data-next-source-gaps>
@@ -561,11 +559,12 @@ function useFilterActions(
 
 export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
   const shell = useShell();
-  const [hour] = useState(() => new Date(shell.clock.now()).getHours());
   const list = useRef<HTMLElement>(null);
   const data = useDisplayed((snapshot) => snapshot.data);
   const model = useDisplayed(selectObserved);
   const attention = useDisplayed(selectAttentionSelection);
+  const harnesses = useDisplayed(selectHarnessSources);
+  const failedSources = harnesses.rows.filter((row) => row.error !== null);
   const screen = useMemo(
     () => (data ? buildSessionsScreen(data as unknown as Row, model, chosenFor, attention) : null),
     [data, model, chosenFor, attention],
@@ -611,18 +610,23 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
       {attention ? (
         <SessionsGlance
           selection={attention}
-          hour={hour}
+          hour={new Date(shell.clock.now()).getHours()}
+          incompleteSources={failedSources.length > 0}
           listId={SESSIONS_LIST_ID}
           working={filters.segment === 'working'}
           showWorking={() => {
-            actions.change({ ...filters, segment: 'working' }, 'press');
+            if (filters.segment === 'working') {
+              actions.change({ ...filters, segment: 'all' }, 'press');
+              return;
+            }
+            actions.change({ ...filters, state: [], segment: 'working' }, 'press');
             list.current?.focus({ preventScroll: true });
             list.current?.scrollIntoView?.({ block: 'start' });
           }}
         />
       ) : null}
       <StatusLegend />
-      <SourceGaps />
+      <SourceGaps failed={failedSources} />
       {Array.isArray(data?.sessions) ? (
         <Button
           type="button"
@@ -666,7 +670,6 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
           empty="No exact session has active evidence right now."
           filter={groupFilter}
           byGroup={filters.byGroup}
-          progressEnabled={annotated}
         />
         <Group
           kind="history"
@@ -677,7 +680,6 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
           caveat={RECENT_CAVEATS[screen.context.annotate ? 1 : 0]}
           filter={groupFilter}
           byGroup={filters.byGroup}
-          progressEnabled={annotated}
         />
       </section>
       <CapacityStrip />

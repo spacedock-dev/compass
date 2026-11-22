@@ -664,3 +664,35 @@ describe('two sessions in two worktrees of one repository', () => {
     expect(facts('s3')).toBe('PROJECTone/compass');
   });
 });
+
+it('keeps each card preview title and reason together when a title is missing', async () => {
+  await open(
+    board([
+      {
+        harness: 'claude',
+        sid: 'deploy',
+        project: 'ops',
+        state: 'needs_input',
+        state_detail: 'Approve production?',
+      },
+      {
+        harness: 'claude',
+        sid: 'docs',
+        project: 'manual',
+        title: 'Edit handbook',
+        state: 'needs_input',
+        state_detail: 'Choose chapter?',
+      },
+    ]),
+  );
+  const card = screen.getByRole('link', { name: /Waiting on you 2/ });
+  const row = document.querySelector('article[data-next-session="deploy"]');
+  const title = row?.querySelector('.next-operation-route strong')?.textContent?.trim();
+  expect(title).toBeTruthy();
+  const deploy = within(card).getByText('Approve production?');
+  const handbook = within(card).getByText('Choose chapter?');
+  expect(deploy.parentElement?.textContent).toContain(title ?? '');
+  expect(deploy.parentElement?.textContent).not.toContain('Edit handbook');
+  expect(handbook.parentElement?.textContent).toContain('Edit handbook');
+  expect(handbook.parentElement?.textContent).not.toContain('Approve production?');
+});

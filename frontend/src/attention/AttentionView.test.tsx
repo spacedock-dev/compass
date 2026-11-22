@@ -76,9 +76,10 @@ describe('the four queues', () => {
         .filter((row) => row.sid === 'scan')
         .map((row) => ({ ...row, harness: 'goose' })),
     });
-    expect(
-      screen.getByText('The other 1: 1 in no counted state; of these, 0 partially read.'),
-    ).toBeInTheDocument();
+    expect(document.querySelector('.next-attention-brief')?.textContent).toContain(
+      '1 with limited state evidence.',
+    );
+    expect(section('risk').querySelectorAll(':scope > ol > li')).toHaveLength(0);
   });
 
   it('shows three rows of a longer queue and the rest on request, and the request is the reader’s', async () => {

@@ -37,7 +37,11 @@ import { goldenFor } from './support/golden.mjs';
 import { unchangedAttentionLocations } from './support/location-deviations.mjs';
 import { focusedLabel, openPage, REPOSITORY, tabTo } from './support/browser.mjs';
 import { PRODUCTION } from './support/world.mjs';
-import { omitAttentionQuietSubtotals } from '../test/recordedSessionStatus.ts';
+import {
+  maskReportTime,
+  maskSourceTime,
+  maskTimePhrases,
+} from '../src/attention/timing.test.helper.ts';
 
 const golden = goldenFor('attention-parity');
 const patience = (ms) => (process.env.CI ? ms * 3 : ms);
@@ -275,7 +279,11 @@ const readAttention = () => {
           items: [...section.querySelectorAll(':scope > ol > li')].map((li) => ({
             hidden: li.hasAttribute('hidden'),
             subject: li.querySelector('article')?.dataset.nextAttentionSubject ?? '',
-            text: norm(li),
+            text: (() => {
+              const copy = li.cloneNode(true);
+              copy.querySelector('[data-next-native-wait]')?.remove();
+              return norm(copy);
+            })(),
           })),
         };
       }),
@@ -283,6 +291,49 @@ const readAttention = () => {
     open: [...root.querySelectorAll('[data-next-open]')].map(norm),
   };
 };
+// Membership and the new counts are asserted on the fixture itself. Compare the recorded
+// evidence text for rows that still appear in the same section.
+function unchangedAttention(summary, counterpart) {
+  const projected = unchangedAttentionLocations(summary);
+  return {
+    ...projected,
+    brief: '',
+    reports: projected.reports.replace(
+      / · (?:\d{4}-\d{2}-\d{2}T(?:[\d:.]+|<clock>:[\d.]+)Z|on [A-Z][a-z]{2} \d{1,2}(?:, \d{4})? at \d{1,2}:\d{2}(?: [AP]M)?)(?=Command shape reported|A shape match)/g,
+      (stamp) => maskReportTime(stamp.replace('<clock>', '00:00')),
+    ),
+    sections: projected.sections.flatMap((section) => {
+      if (!['needs', 'risk', 'close'].includes(section.name)) return [section];
+      const peer = counterpart.sections.find(({ name }) => name === section.name);
+      if (!peer) return [];
+      const common = section.items.filter((item) =>
+        peer.items.some(({ subject }) => subject === item.subject),
+      );
+      return [
+        {
+          ...section,
+          heading: '',
+          toggle: null,
+          items: common
+            .map((item) => ({
+              ...item,
+              hidden: false,
+              text: maskTimePhrases(
+                item.text
+                  .replace(/^\d+(?=\D)/, '')
+                  .replace(/(Latest launch|Last recorded activity) <clock>\./g, '$1 00:00.'),
+              ).replace(
+                / · (?:waiting )?(?:\d+[smhd](?: \d+[mh])?|\d+ (?:seconds?|minutes?|hours?|days?)(?: \d+ (?:minutes?|hours?))?)(?=Copy command|$)/g,
+                maskSourceTime,
+              ),
+            }))
+            .sort((left, right) => left.subject.localeCompare(right.subject)),
+        },
+      ];
+    }),
+  };
+}
+
 const statusText = (page) =>
   page.evaluate(
     () => globalThis.document.getElementById('next-attention-status')?.textContent ?? '',
@@ -476,12 +527,24 @@ try {
       assert.ok(counters[0].includes('EXACT REQUESTS'));
       assert.ok(counters[1].includes('REPORTED BLOCKS'));
       const recorded = withRecordedFixtureWaits(golden.observe('the screen, collapsed'));
-      const unchangedAttention = (summary) =>
-        unchangedAttentionLocations({
-          ...summary,
-          brief: omitAttentionQuietSubtotals(summary.brief),
-        });
-      assert.deepEqual(unchangedAttention(clockless(mine)), unchangedAttention(recorded));
+      assert.deepEqual(
+        clockless(unchangedAttention(mine, recorded)),
+        unchangedAttention(recorded, mine),
+      );
+      for (const [name, label, sids] of [
+        ['needs', 'Waiting on you', ['gate-1', 'gate-2', 'gate-3', 'gate-4', 'gate-5']],
+        ['risk', 'Worth a look', ['delegated', 'ended-1', 'ended-4', 'long-turn']],
+        ['close', 'Ready to wrap up', ['ended-2']],
+      ]) {
+        const section = mine.sections.find((section) => section.name === name);
+        assert.equal(section.heading, `${label} (${sids.length})`);
+        assert.deepEqual(
+          section.items
+            .map(({ subject }) => JSON.parse(subject.slice('session:'.length))[1])
+            .sort(),
+          sids,
+        );
+      }
       arms.collapsed = mine.sections.map((section) => [section.name, section.items.length]);
       assert.ok(
         mine.sections.some((section) => section.items.some((item) => item.hidden)),
@@ -492,7 +555,10 @@ try {
       const recordedOpen = withRecordedFixtureWaits(
         golden.observe('the screen, every section expanded'),
       );
-      assert.deepEqual(unchangedAttention(clockless(mineOpen)), unchangedAttention(recordedOpen));
+      assert.deepEqual(
+        clockless(unchangedAttention(mineOpen, recordedOpen)),
+        unchangedAttention(recordedOpen, mineOpen),
+      );
       assert.ok(
         mineOpen.sections
           .find((section) => section.name === 'needs')

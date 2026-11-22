@@ -92,8 +92,9 @@ or model input. Goals and drift readings remain each session's own.
 
 The light dashboard opens on **Sessions** with a greeting and a summary of the board. The
 **At a glance** cards count Waiting on you, Working now and Worth a look. Waiting on you and
-Worth a look open **Needs you**. Working now selects Working and takes you to the list. Below the
-cards, active work comes before recent history. A Find sessions bar narrows both groups with a search over
+Worth a look open **Needs you**. Working now selects Working and takes you to the list.
+Press it again to clear that selection. The summary says when the figures cover only the
+sources Compass could read. Below the cards, active work comes before recent history. A Find sessions bar narrows both groups with a search over
 titles, goals and prompts (`/` jumps to it, and a pasted session id finds its session), eight filters
 (Date, by when a session started or was last active; Project; Group; Harness; Headless; State; Drift; Goal) with a
 count beside each choice, and three presets: Waiting on you, Started today and Drift recorded. A
@@ -247,17 +248,15 @@ The terminal session and project lists use the same group, parent and waiting wo
 
 ## Needs you
 
-Needs you is a triage view. **At risk** names session evidence alongside **Needs you now**,
-**Close the loop**, and **Coming next**. The opening brief counts the sessions these categories
-claim and describes the remainder as moving, quiet, ended, or without a counted state.
-**Also at risk, off the session count** holds quota pressure, measured location warnings, concurrent
-checkout warnings and requests whose session ownership is not established. Those subjects never inflate the session denominator.
-**Not on this board yet** names the capabilities no source supports. Coverage details explain
-missing observations instead of treating an unmeasured harness as an all-clear.
+The Needs you brief counts **Waiting on you**, **Worth a look** and **Ready to wrap up**.
+**Also at risk, off the session count** holds quota pressure, location gaps, concurrent checkout
+warnings and requests whose session ownership is not established.
+**Not on this board yet** names the capabilities no source supports. Coverage details describe
+which harnesses and observations Compass could read.
 
-**Needs you now** combines native harness gates with questions registered through `ask_operator`.
-When one session has both, its row and session page show the question and the reported reason
-for the native wait. The session counts once.
+**Waiting on you** combines native harness gates with questions registered through `ask_operator`.
+Both reasons can appear on the same row and session page, and the session counts once. An open exact request keeps the session in this queue
+even if it reported an end.
 Native permission prompts, plan approvals, and harness questions must still be answered in that
 session's terminal; Compass does not mark them answered on the session's behalf. A Claude Code or
 Codex row therefore carries a control that copies the command that harness's own CLI takes to
@@ -270,15 +269,15 @@ one terminal attached to it. Rows outside it carry no raise control at all, and 
 details say how far the feature reached rather than repeating the absence on every row. A raise
 changes what that terminal displays; it does not bring the window in front of other applications,
 and nothing is ever typed into the session. The item leaves when the harness publishes evidence that the wait ended. A
-question registered through `ask_operator` is different: its offered options are buttons in
-Needs you and in the exact session detail, and choosing one returns that option to the waiting
-agent. Free-form replies are not
+question registered through `ask_operator` has answer buttons in the session detail. Choosing
+one returns that option to the waiting agent. Free-form replies are not
 accepted, unanswered questions expire, and `--no-ask` disables this lane.
 
-**At risk** names detected failed-tool loops, long-running turns, uncommitted work and conflicting
-completion evidence. Waiting on the reader takes precedence over those categories; the session
-still carries its observed details. The separate board group warns when a label covers multiple
-measured locations, or when some members' locations were not measured. Sessions in one measured
+**Worth a look** names detected failed-tool loops, long-running turns, quiet launches, uncommitted
+work at a reported end, conflicting source evidence and labels shared across measured locations.
+Waiting on the reader takes precedence. When a label spans multiple measured locations, each
+measured member has its own exact session link. The warning also reports how many locations
+Compass could not measure. Sessions in one measured
 directory or repository need no label warning. A multi-location sentence counts only measured
 sessions, followed by a separate count of unknown locations. A missing Claude worktree layout
 keeps its label and worktree name but counts as unknown. Worktree names are display text.
@@ -290,12 +289,12 @@ It never absorbs their stops, ends or tasks. A quiet row is never promoted into 
 conditions. OpenCode covers parent permissions with its project adapter; Pi covers persisted-session
 extension UI prompts on 0.85.1. Neither proves installation or reconstructs a wait after restart.
 
-**Close the loop** identifies observed stops and session ends after waiting and risk take
-precedence. The outcome vocabulary has six readings: stop or end, each with uncommitted work,
-clean git state, or unmeasured git state. A stop is not a session end, and neither tells Compass
-whether you read the result, whether commits reached a remote, or why the process ended. A live end mark clears when later lifecycle activity for the same id arrives, including a prompt, a finished tool call, a session start or a Stop. Stop followed by SessionEnd still reads ended. A late SessionEnd after resumed activity also reads ended: hooks cannot identify which process sent it.
-**Coming next** groups the strongest available next action by project. Both are advisory views of
-observed records, not commands sent to a harness.
+**Ready to wrap up** lists sessions that reported an end and clean git state after any exact
+request has cleared. A stop leaves the session available for another turn. A session end conveys
+no readership, remote commit or termination cause. Later lifecycle activity for the same id can
+clear an end mark. Stop followed by SessionEnd still reads ended. A late SessionEnd after resumed
+activity also reads ended because hooks cannot identify which process sent it. **Coming next**
+groups the strongest published next action by project.
 
 ## Usage and rate limits
 

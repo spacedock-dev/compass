@@ -9,6 +9,7 @@ import {
   checkpointRows,
   delegatedAttentionText,
   riskSourceText,
+  inputNow,
   subjectNow,
   subjectOutcome,
   subjectSource,
@@ -70,7 +71,12 @@ export function SubjectItem({
 }) {
   const { title, secondary } = subjectTitle(subject);
   const outcome = subjectOutcome(subject, model);
+  const hasNativeWait =
+    subject.section === 'needs' &&
+    subject.asks.length > 0 &&
+    subject.session?.['state'] === 'needs_input';
   const now = subjectNow(subject, model);
+  const nativeWait = hasNativeWait ? inputNow(subject.session) : null;
   const checkpoints = checkpointRows(subject, model);
   return (
     <li {...(hidden ? { hidden: true } : {})}>
@@ -99,6 +105,12 @@ export function SubjectItem({
           <span className="next-attention-label">NOW</span>
           <span>
             <NowValues rows={now} className="next-attention-now-value" />
+            {nativeWait ? (
+              <span className="next-attention-now-value" data-next-native-wait>
+                {nativeWait.text}
+                {nativeWait.note ? <small>{nativeWait.note}</small> : null}
+              </span>
+            ) : null}
           </span>
         </div>
         {checkpoints.length ? (
