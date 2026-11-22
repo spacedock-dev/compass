@@ -41,6 +41,10 @@ docs/roadmap-burndown/_mods/
 docs/screenshots/*
 !docs/screenshots/.gitkeep
 
+# Redesign reference captures of the live board: they show real prompts, tracker keys and
+# private repository names, so they stay local.
+docs/reference_shots/
+
 # Feedback studies: local session write-ups that name real session IDs and quote real
 # prompts, so they stay on the machine that made them. The .gitkeep keeps the directory.
 docs/feedback/*
