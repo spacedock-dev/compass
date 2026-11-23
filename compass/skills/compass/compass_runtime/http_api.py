@@ -1106,6 +1106,8 @@ def _with_stored_progress(
     row = session_progress.matching(collected["sessions"], focus, project)
     work = context["sources"]["work"]
     view = work["drift_views"][0]
+    if view.get("state") == "unavailable":
+        return context
     verdict = (
         session_progress.evaluate(application, collected, [row], cursor_key).get(
             session_progress.identity(row)

@@ -30,6 +30,7 @@ import unittest
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest import mock
+from urllib.parse import urlencode
 
 from compass_runtime import (
     aggregate,
@@ -42,6 +43,7 @@ from compass_runtime import (
     reading_route,
     records,
     semantic_history,
+    snapshot,
     summary_store,
     unasked,
 )
@@ -587,6 +589,7 @@ GET_ROUTES = {
     "/api/session": f"/api/session?harness=claude&sid={SHORT}",
     "/api/summary": f"/api/summary?harness=claude&sid={SHORT}",
     "/api/session-record": f"/api/session-record?project=billing&session=claude:{SHORT}",
+    "/api/session-progress": "/api/session-progress",
     "/api/data": "/api/data?all=1",
     "/api/observe": f"/api/observe?harness=claude&sid={SHORT}",
     "/api/reading-long-plan": f"/api/reading-long-plan?harness=claude&sid={SHORT}",
@@ -643,6 +646,7 @@ class EveryPageRouteDropsTheWordsTest(_Collected):
 
     def test_no_get_route_answers_with_the_words(self) -> None:
         refuse_real_models(self)
+        application = self.application()
         with (
             mock.patch.object(project_context, "collect", self.context),
             mock.patch.object(
@@ -650,17 +654,32 @@ class EveryPageRouteDropsTheWordsTest(_Collected):
                 "transcript_user_facts",
                 return_value=self.context()["semantic"]["facts"],
             ),
-            self.serving() as port,
+            self.serving(application) as port,
         ):
             for route, path in GET_ROUTES.items():
                 with self.subTest(route=route):
-                    status, body = self.request(port, "GET", path)
+                    target = path
+                    if route == "/api/session-progress":
+                        revision, _ = application.collect_json(show_all=False)
+                        query = urlencode(
+                            {
+                                "revision": snapshot.format_revision(revision),
+                                "row": json.dumps(["claude", SHORT, "billing"]),
+                            }
+                        )
+                        target = f"{path}?{query}"
+                    status, body = self.request(port, "GET", target)
                     if route == "/api/sessions":
                         self.assertEqual(200, status, body)
                         self.assertIn(SHORT, [row["sid"] for row in json.loads(body)["sessions"]])
                     if route in {"/api/session", "/api/summary"}:
                         self.assertEqual(200, status, body)
                         self.assertEqual(SHORT, json.loads(body)["session"]["sid"])
+                    if route == "/api/session-progress":
+                        self.assertEqual(200, status, body)
+                        (row,) = json.loads(body)["rows"]
+                        self.assertEqual({"harness", "sid", "project", "stored_progress"}, set(row))
+                        self.assertEqual(SHORT, row["sid"])
                     if route in {"/api/reading-long-plan", "/api/reading-long-history"}:
                         # Exercise real successful metadata, never a word-free 400/503 refusal.
                         self.assertEqual(200, status, body)

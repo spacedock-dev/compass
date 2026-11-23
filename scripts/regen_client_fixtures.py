@@ -68,6 +68,7 @@ from compass_runtime import claude_settings as runtime_claude_settings  # noqa: 
 from compass_runtime import copied_corrections as runtime_copied_corrections  # noqa: E402
 from compass_runtime import deliveries as runtime_deliveries  # noqa: E402
 from compass_runtime import departures as runtime_departures  # noqa: E402 - runtime path
+from compass_runtime import http_api as runtime_http  # noqa: E402 - runtime path
 from compass_runtime import levels as runtime_levels  # noqa: E402 - skill runtime path
 from compass_runtime import notifications as runtime_notifications  # noqa: E402 - runtime path
 from compass_runtime import observation as observation_module  # noqa: E402 - skill runtime path
@@ -433,7 +434,8 @@ class Rig:
             connection.request(request["method"], target, body=payload, headers=headers)
             response = connection.getresponse()
             body = response.read()
-            return _response_record(response.status, response.getheaders(), body)
+            record = _response_record(response.status, response.getheaders(), body)
+            return _legacy_progress_shape(request["path"], record)
         finally:
             connection.close()
 
@@ -461,6 +463,27 @@ def _response_record(status: int, headers: list[tuple[str, str]], body: bytes) -
         }
     else:
         record["text"] = text
+    return record
+
+
+def _legacy_progress_shape(path: str, record: dict[str, Any]) -> dict[str, Any]:
+    """Keep the format-1 client fixtures on their recorded progress contract."""
+    payload = record.get("body")
+    if path not in ("/api/data", "/api/session", "/api/sessions") or not isinstance(payload, dict):
+        return record
+    rows = payload.get("sessions", [payload.get("session")])
+    for row in rows:
+        if isinstance(row, dict):
+            value = row.pop("stored_progress")
+            if path != "/api/sessions" and value is not None:
+                msg = "an ordinary board row published progress"
+                raise AssertionError(msg)
+    body = (
+        json.dumps(payload)
+        if path == "/api/data"
+        else json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    )
+    record["headers"]["Content-Length"] = str(len(body.encode()))
     return record
 
 
@@ -2431,6 +2454,12 @@ def guarded() -> Iterator[None]:
     resolve_controls = runtime_claude_settings.resolve
     with (
         tempfile.TemporaryDirectory(prefix="compass-capacity-fixture-") as settings_root,
+        # Focused progress is verified over real records by test_analysis_result.
+        # This recorder still exercises the format-1 focused view used by the
+        # client fixture oracle until the session-page layer adopts the batch.
+        mock.patch.object(
+            runtime_http, "_with_stored_progress", side_effect=lambda _app, view, *_rest: view
+        ),
         mock.patch.object(
             runtime_claude_settings,
             "resolve",

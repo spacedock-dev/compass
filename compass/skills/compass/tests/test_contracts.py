@@ -2073,6 +2073,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.live_estimate",
             # Shared record paging and stored-reading evidence for focused and board reads.
             "compass_runtime.focused_reading",
+            "compass_runtime.session_progress",
             # Resolves the one provider a press may reach (DRC-4650).
             "compass_runtime.reading_route",
             "compass_runtime.tripwires",
@@ -2349,6 +2350,28 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         "compass_runtime.probe": {"compass_runtime.config"},
         "compass_runtime.records": set(),
+        # The progress producer refers to Application only for typing. The runtime
+        # aggregate path has no import of, or call to, the producer.
+        "compass_runtime.session_progress": {
+            "compass_runtime.aggregate",
+            "compass_runtime.annotations",
+            "compass_runtime.config",
+            "compass_runtime.copied_corrections",
+            "compass_runtime.correction",
+            "compass_runtime.drift_view",
+            "compass_runtime.focused_reading",
+            "compass_runtime.git_status",
+            "compass_runtime.io",
+            "compass_runtime.levels",
+            "compass_runtime.project_context",
+            "compass_runtime.project_scripts",
+            "compass_runtime.reader_checks",
+            "compass_runtime.reading",
+            "compass_runtime.record_pages",
+            "compass_runtime.semantic_history",
+            "compass_runtime.sessions",
+            "compass_runtime.state",
+        },
         "compass_runtime.sessions": {"compass_runtime.config"},
         # The published snapshot is a passive container: it holds bytes and a
         # revision and takes a lock. It imports no runtime module, which is what
@@ -2361,6 +2384,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.asks",
             "compass_runtime.config",
             "compass_runtime.git_status",
+            "compass_runtime.session_progress",  # cache value type only
             "compass_runtime.snapshot",
             "compass_runtime.stream",
         },

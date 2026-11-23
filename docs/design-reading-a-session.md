@@ -7431,6 +7431,11 @@ generation moves while the answer is being prepared, the producer withholds that
 Reuse is bounded, process-local and outside board collection. The batch makes no model call and
 writes no history. See the [loopback API boundary](../SECURITY.md#operator-cockpit-prototype).
 
+The format-1 frontend recordings still cover their original client contract. The fixture
+recorder checks the ordinary board's null default and removes the new slot from those recorded
+responses. It captures the original focused view before stored progress is applied. Live
+runtime tests verify the new wire fields and the focused verdict until the frontend adopts them.
+
 The owner answered two questions from review the same day, and both answers are part of this ruling
 rather than an amendment. A shell command that is neither a check nor read-only, run after any
 check's latest passing run, blocks the live estimate's "None or low" and is never drift (item 1, and DEC-23 item
