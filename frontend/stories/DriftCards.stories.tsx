@@ -1489,7 +1489,12 @@ export const ProgressBeforeEvidence: Story = {
       'aria-expanded',
       'false',
     );
-    await userEvent.click(first.getByRole('button', { name: 'See the 2 quotes behind this' }));
+    const quotes = first.getByRole('button', { name: 'See the 2 quotes behind this' });
+    await expect(quotes).toHaveStyle({
+      backgroundColor: 'rgba(0, 0, 0, 0)',
+      textDecorationLine: 'underline',
+    });
+    await userEvent.click(quotes);
     const evidence = within(await canvas.findByRole('tabpanel', { name: 'Evidence' }));
     const quote = await evidence.findByRole('link', {
       name: /Activity log for Goal: Ship the queue/,

@@ -813,7 +813,7 @@ export function ReadingResult() {
         <Button
           type="button"
           variant="bare"
-          className="justify-self-start text-[var(--accent-dim)] underline"
+          className="justify-self-start border-transparent bg-transparent px-0 text-[var(--accent-dim)] underline hover:border-transparent"
           data-next-cockpit-action="finding-jump"
           onClick={openEvidence}
         >

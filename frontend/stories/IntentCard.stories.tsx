@@ -1121,7 +1121,7 @@ export const StateSaved: Story = {
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
-    await expect(view.getByRole('heading', { name: 'Goal', exact: true })).toHaveStyle({
+    await expect(view.getByRole('heading', { name: /^Goal$/ })).toHaveStyle({
       fontSize: '24px',
     });
     await expect(view.getByText('Keep the parser small and pure')).toBeVisible();
