@@ -742,6 +742,12 @@ class MonitorFooterTest(ReadLineTest):
                 self.assertEqual("Live monitor on", self.footer(monitor=True, level=level))
         self.assertEqual("", self.footer(monitor="true", level="high"))
 
+    def test_a_codex_footer_cannot_name_even_a_published_departure(self) -> None:
+        line_file(self.home, "codex", "sess-1", good_line(waiting=1, stored_progress="high"))
+        session = terminal_client.Session("codex", "sess-1", "status line")
+        line = terminal_client.read_line(self.home, session, NOW)
+        self.assertEqual("1 waiting", terminal_client.compose_footer(None, line, NOW))
+
     def test_a_persons_unknown_live_level_never_revives_an_old_end_note(self) -> None:
         self.assertEqual(
             "Live monitor on · waits not reported for Antigravity",

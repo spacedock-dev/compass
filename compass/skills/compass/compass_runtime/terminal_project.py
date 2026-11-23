@@ -30,6 +30,9 @@ from compass_runtime.terminal_sessions import (
     _records as records,
 )
 from compass_runtime.terminal_sessions import (
+    _trimmed as trimmed,
+)
+from compass_runtime.terminal_sessions import (
     format_duration,
     printable,
     relationship_lines,
@@ -220,7 +223,7 @@ def questions_by_session(payload: Row) -> dict[str, list[str]]:
     by_owner: dict[str, list[str]] = {}
     all_rows = records(payload.get("sessions"))
     for ask in asks:
-        question = str(ask.get("question") or "").strip()
+        question = trimmed(ask.get("question"))
         owner = ask_owner(all_rows, ask) if question else None
         if owner is not None:
             by_owner.setdefault(key(owner), []).append(question)
@@ -568,7 +571,6 @@ def derive(payload: Row, context: Row | None, *, label: str) -> dict[str, Any]:
                 **(
                     {"state_limit": limit}
                     if (limit := row_state_limit(row, states[key(row)]))
-                    and limit != states[key(row)]
                     else {}
                 ),
                 **(

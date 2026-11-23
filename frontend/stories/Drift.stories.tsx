@@ -674,7 +674,7 @@ export const ModelCallsPausedUntilResume: Story = {
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
     await expect(
-      await within(card).findByText('Model calls are paused. Nothing is sent until you resume.'),
+      await within(card).findByText('AI use is paused. Nothing is sent until you resume.'),
     ).toBeVisible();
     /* Analyze stays in its place, refused; Resume is the Drift card head's alone (usability review,
        2026-10-20). */
@@ -721,7 +721,7 @@ export const ReadingsOffWithARunningJobAndAnOpenDirection: Story = {
     await expect(within(card).getAllByText(JOB_TITLE)).toHaveLength(1);
     await expect(within(card).getAllByRole('button', { name: 'Cancel' })).toHaveLength(1);
     await expect(
-      within(card).getByText('Model calls are paused. Nothing is sent until you resume.'),
+      within(card).getByText('AI use is paused. Nothing is sent until you resume.'),
     ).toBeVisible();
     // Resume changes permission alone while the earlier analysis unwinds.
     await expect(within(card).getByRole('button', { name: 'Resume AI use' })).toBeVisible();

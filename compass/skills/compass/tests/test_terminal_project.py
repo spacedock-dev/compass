@@ -207,6 +207,32 @@ class ProjectTest(unittest.TestCase):
         brief = terminal_project.derive({"sessions": rows}, {}, label="p")
         self.assertEqual("4 sessions · 2 quiet · 2 in no counted state", brief["counts"])
 
+    def test_an_unreadable_question_does_not_make_a_working_member_wait(self) -> None:
+        payload = {
+            "sessions": [{"harness": "claude", "sid": "work", "project": "p", "state": "working"}],
+            "ask": True,
+            "asks": [{"harness": "claude", "session_id": "work", "question": {"pending": True}}],
+        }
+        brief = terminal_project.derive(terminal_sessions.list_payload(payload), {}, label="p")
+        self.assertEqual("1 session · 1 working", brief["counts"])
+        self.assertEqual("Working", brief["members"][0]["state"])
+        self.assertNotIn(
+            "pending", "\n".join(terminal_project.render(brief, caller=("claude", "work")))
+        )
+
+    def test_an_unpublished_state_is_printed_below_the_member_identity(self) -> None:
+        brief = terminal_project.derive(
+            recorded("data-terminal-project-fo"),
+            recorded("context-terminal-project-fo"),
+            label="terminal-project",
+        )
+        lines = terminal_project.render(brief, caller=("claude", "a1b2c3d4"))
+        member = next(i for i, line in enumerate(lines) if "[this session]" in line)
+        self.assertEqual(
+            "  claude:a1b2c3d4 [this session] · Claude Code · 2m · Build the parser", lines[member]
+        )
+        self.assertEqual("    State not published", lines[member + 1])
+
     def test_an_open_request_and_a_child_wait_take_precedence_over_a_turn_stop(self) -> None:
         rows = [
             {"harness": "claude", "sid": "ask", "project": "p", "state": "idle", "finished_at": 2},

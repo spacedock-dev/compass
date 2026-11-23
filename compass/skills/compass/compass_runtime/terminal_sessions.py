@@ -126,9 +126,10 @@ def list_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     ):
         if key in result:
             result[key] = _project(result[key], fields)
+    progress_available = payload.get("annotate") is True and not payload.get("annotate_unreadable")
     for row in _records(result.get("sessions")):
         if "stored_progress" in row:
-            row["stored_progress"] = stored_departure(row)
+            row["stored_progress"] = stored_departure(row) if progress_available else None
         # Unknown assessment keys invalidate a reading; trimming them would invent a departure.
         # Keep the assessment intact so the board's schema rejection remains the same.
         for key, nested_fields in _NESTED_FIELDS.items():
@@ -818,6 +819,7 @@ def _observe(
     known, outcome, git = _outcome(source, ended=ended, state=state)
     note = _block_note(source, needs=needs, question=question)
     goal_label, goal = _goal(source, annotate=annotate, unreadable=unreadable)
+    progress = stored_departure(source) if annotate and not unreadable else None
     harness_key = _text(source.get("harness"))
     entry = Entry(
         harness=harness_key,
@@ -838,7 +840,7 @@ def _observe(
             if ended and (since := _since(generated, _ended_at(source)))
             else ""
         ),
-        drift=STORED_DEPARTURE_LEVELS.get(stored_departure(source) or ""),
+        drift=STORED_DEPARTURE_LEVELS.get(progress or ""),
         source=source,
     )
     return _Seen(

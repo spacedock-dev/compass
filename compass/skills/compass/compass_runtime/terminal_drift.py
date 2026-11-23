@@ -931,6 +931,7 @@ def adapt(view: Mapping[str, Any]) -> View:
     )
     # The progress absence is for a mid-flight reading that found an outcome not reached yet.
     # A withheld level, unclear goal or unsettled direction keeps its own explanation.
+    unsettled = view.get("unsettled") is True
     too_early = (
         level == "not_enough"
         and _rec(analysis)
@@ -938,6 +939,7 @@ def adapt(view: Mapping[str, Any]) -> View:
         and analysis.get("reasons") == ["outcome-not-reached"]
         and view.get("so_far") is True
         and stale is None
+        and not unsettled
     )
     drawn = (
         isinstance(level, str)
@@ -953,7 +955,7 @@ def adapt(view: Mapping[str, Any]) -> View:
         departures=departures,
         priors=priors,
         stale=stale,
-        unsettled=view.get("unsettled") is True,
+        unsettled=unsettled,
         unsettled_count=count if type(count) is int and count >= 0 else None,
     )
 
@@ -1060,14 +1062,16 @@ def render(  # noqa: C901, PLR0912 - one optional block per field, in the order 
         so_far = " · so far" if view.so_far else ""
         lines.append(f"Read at {clock_text(read_at)}, {age} ago{so_far}")
     if view.stale is not None:
+        lines.append("Out of date")
         lines.append(f"{stale_head(view.stale)} {again_hint}")
-    if view.so_far:
+    elif view.so_far:
         lines.append(SO_FAR_LINE)
     if said := unsettled_line(view):
         lines.append(said)
     lines.append(PROVENANCE)
     if view.level is not None:
-        lines.append(f"Level: {LEVEL_NAMES[view.level]}{' so far' if view.level_so_far else ''}")
+        label = "Earlier level" if view.stale is not None else "Level"
+        lines.append(f"{label}: {LEVEL_NAMES[view.level]}{' so far' if view.level_so_far else ''}")
     if view.lines:
         lines.append("Outcome lines:")
         lines.extend(_outcome_line(row, line) for line in view.lines)

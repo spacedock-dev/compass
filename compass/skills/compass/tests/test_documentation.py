@@ -9,6 +9,7 @@ import os
 import re
 import shlex
 import tempfile
+import time
 import unittest
 from functools import cache
 from pathlib import Path
@@ -334,30 +335,76 @@ class TerminalGuideTest(unittest.TestCase):
         guide = (root / "HOW_TO_USE_TERMINAL.md").read_text(encoding="utf-8")
         for word in ("Pause all AI use", "Resume AI use", "Check progress"):
             self.assertIn(word, guide)
-        for retired in ("Pause model calls", "Analyze drift", "Recent history", "Active now"):
+        body = " ".join(line for line in guide.casefold().splitlines() if not line.startswith("#"))
+        for retired in (
+            "Active now",
+            "Recent history",
+            "Idle",
+            "Finished",
+            "None or low",
+            "Medium",
+            "High",
+            "Extreme",
+            "Not enough recorded yet",
+            "Pause model calls",
+            "Resume model calls",
+            "Analyze drift",
+            "Analyze again",
+            "Mark as inaccurate",
+            "Full activity",
+            "Intent card",
+            "Intent log",
+        ):
             with self.subTest(retired=retired):
-                self.assertNotIn(retired.casefold(), " ".join(guide.casefold().split()))
+                word = re.escape(retired.casefold())
+                without_one_parenthesis = re.sub(
+                    rf"\({word}\)", "", " ".join(body.split()), count=1
+                )
+                self.assertNotRegex(without_one_parenthesis, rf"\b{word}\b")
         self.assertIn("docs/how-it-works.md#finding-your-way-around", guide)
         self.assertIn("## Finding your way around", (root / "docs/how-it-works.md").read_text())
 
     def test_the_terminal_guide_samples_come_from_the_commands(self) -> None:
         guide = (SERVER_PATH.parents[3] / "HOW_TO_USE_TERMINAL.md").read_text(encoding="utf-8")
+        examples = {
+            "f6a7b8c9": {
+                "title": "Tidy the release notes",
+                "first_prompt": "Draft the notes for the next release.",
+            },
+            "a1b2c3d4": {
+                "title": "Wire the parser",
+                "first_prompt": "Add a config parser with tests.",
+                "state_detail": "running the parser tests",
+            },
+            "d4e5f6a7": {
+                "title": "Paginate the list endpoint",
+                "first_prompt": "Add a page cursor to the API response.",
+            },
+        }
         payload = {
             **SESSIONS_PAYLOAD,
             "sessions": [
-                row
+                row | examples[row["sid"]]
                 for row in SESSIONS_PAYLOAD["sessions"]
-                if row["sid"] in {"a1b2c3d4", "d4e5f6a7", "f6a7b8c9"}
+                if row["sid"] in examples
             ],
         }
         sessions = "\n".join(
             terminal_sessions.render_sessions(terminal_sessions.list_payload(payload))
         )
-        self.assertIn(f"```text\n{sessions}\n```", guide)
-        with mock.patch.object(terminal_drift, "clock_text", return_value="14:52"):
+        with self.subTest(example="sessions"):
+            self.assertIn(f"```text\n{sessions}\n```", guide)
+        # Give the real terminal formatter a stable local zone even on systems without tzset.
+        with mock.patch.object(time, "localtime", time.gmtime):
             code, out, err = drift(stored())
         self.assertEqual((0, ""), (code, err))
-        self.assertIn(f"```text\n{out.rstrip()}\n```", guide)
+        with self.subTest(example="progress check"):
+            self.assertIn(f"```text\n{out.rstrip()}\n```", guide)
+        with self.subTest(example="entry number"):
+            citation = re.search(r"Numbers such as `(#\d+)`", guide)
+            self.assertIsNotNone(citation)
+            assert citation is not None
+            self.assertRegex(out, rf"entries .*{re.escape(citation[1])}(?![\d.])")
         quota = {"rate_limits": {"five_hour": {"used_percentage": 82, "resets_at": 7741}}}
         footer = terminal_client.compose_footer(quota, terminal_client.Line(2, ("Droid",), True), 1)
         self.assertIn(f"`{footer}`", guide)

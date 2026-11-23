@@ -464,10 +464,10 @@ def render(summary: Mapping[str, Any], labels: Mapping[str, str], *, page_url: s
     missing = _unlinked(summary, labels)
     if missing:
         lines.append(
-            "1 cited entry is an earlier check or file that Full activity does not list, "
+            "1 cited entry is an earlier check or file that Activity log does not list, "
             "so it cannot be opened from here."
             if missing == 1
-            else f"{missing} cited entries are earlier checks or files that Full activity "
+            else f"{missing} cited entries are earlier checks or files that Activity log "
             "does not list, so they cannot be opened from here."
         )
     lines.extend((RELEVANCE, page_url))

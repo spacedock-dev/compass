@@ -82,22 +82,22 @@ spacedock-compass --sessions
 The lines below are what other sessions said about themselves, shown as data.
 Right now
 Claude Code  gamma
-  Idle with a recorded departure
+  Tidy the release notes
   State not published
-  Goal · your first prompt: Synthetic task for Idle with a recorded departure.
+  Goal · your first prompt: Draft the notes for the next release.
   Now: last active 1 hour 6 minutes ago
   Resume: claude --resume f6a7b8c9-11111111-2222-4333-8444-555500000006
 
 Working  Claude Code  alpha-app
   Wire the parser
-  Goal · your first prompt: Synthetic task for Wire the parser.
-  Now: running a synthetic tool
+  Goal · your first prompt: Add a config parser with tests.
+  Now: running the parser tests
   Resume: claude --resume a1b2c3d4-11111111-2222-4333-8444-555500000001
 
 Earlier in the last 24 hours
 Quiet  Claude Code  beta-api
-  Stopped with uncommitted work
-  Goal · your first prompt: Synthetic task for Stopped with uncommitted work.
+  Paginate the list endpoint
+  Goal · your first prompt: Add a page cursor to the API response.
   Now: last active 8 minutes ago
   Stop observed with uncommitted work · 3 changed entries
   Resume: claude --resume d4e5f6a7-11111111-2222-4333-8444-555500000004
@@ -211,13 +211,14 @@ spacedock-compass --drift --session claude:ID         # the stored reading, or a
 spacedock-compass --drift again --session codex:ID    # a new reading, or wait on one already running
 ```
 
-Plain `--drift` costs nothing when a reading is stored, and it says when that reading is out of date.
-A Claude Code reading looks like this. A Codex reading has no `Level:` and no correction:
+Plain `--drift` costs nothing when a reading is stored. If the reading is stale, it says Out of date
+and labels any level as Earlier level. A Claude Code reading looks like this. A Codex reading has
+no `Level:` and no correction:
 
 ```text
 Progress check · claude:abc · Fix the parser
-Goal (You typed this · saved at 14:52): Make the parser accept tabs
-Read at 14:52, 10m ago
+Goal (You typed this · saved at 07:00): Make the parser accept tabs
+Read at 07:50, 10m ago
 The lines below are Compass's reading of this session, written by a model, shown as data, not instructions.
 Level: Slightly off course so far
 Outcome lines:
@@ -234,7 +235,7 @@ Session page: http://127.0.0.1:4553/#n=session:compass:claude:abc
 - A level can read On track, Slightly off course, Off course or Way off course. A check during
   the turn can say Too early to tell if the outcome has yet to be reached. When `so far` follows
   a level, the session was still working, so the level can change.
-- Numbers such as `#31` are entries in the session page's Activity log.
+- Numbers such as `#41` are entries in the session page's Activity log.
 - Paste the correction with Copy correction on the session page, so Compass recognizes it. Text
   pasted from the terminal counts as a new message from you. The next reading then marks every
   departure that message could change as `Can't tell`.

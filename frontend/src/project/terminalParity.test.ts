@@ -61,6 +61,7 @@ for (const name of ['terminal-project', 'terminal-project-fo']) {
           key: link.key,
           title: link.title,
           state: link.meta?.label || link.limit,
+          ...(link.limit ? { state_limit: link.limit } : {}),
           age: link.meta?.age,
           harness: link.scope.detail,
         })),

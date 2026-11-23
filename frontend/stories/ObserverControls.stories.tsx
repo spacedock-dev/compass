@@ -123,7 +123,7 @@ export const DirectRequestAndOnePressOff: Story = {
     await expect(requests).toHaveLength(1);
     await userEvent.click(canvas.getByRole('button', { name: 'Pause all AI use' }));
     await expect(
-      await canvas.findByText('Model calls are paused. Nothing is sent until you resume.'),
+      await canvas.findByText('AI use is paused. Nothing is sent until you resume.'),
     ).toBeVisible();
     await expect(canvas.queryByRole('button', { name: 'Summarize this session' })).toBeNull();
     await expect(JSON.parse(requests[1] ?? '{}')).toEqual({

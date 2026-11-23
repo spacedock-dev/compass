@@ -279,6 +279,11 @@ exact requests and idle rows without turn ends move between those buckets. The t
 comparison expects the revised web subtotals for its idle rows, which publish no turn end.
 `Projects Quiet Rollup` and `Project Displayed State Rollup` in Storybook check both web surfaces.
 
+The terminal Project brief prints State not published below the member identity. Its parity
+fixture records the board's separate limit. The progress-check and summary parity tests use the
+board's AI use pause notice and Activity log citation notice directly. The paused progress-check
+stories assert the new notice on the page.
+
 Attention's coverage requires the same state evidence. `omitAttentionQuietSubtotals` masks
 only the quiet and unclassified subtotals in the recorded comparisons. The observed-model
 comparison also omits the board-wide Quiet total. A mounted test and `Attention Quiet Coverage`

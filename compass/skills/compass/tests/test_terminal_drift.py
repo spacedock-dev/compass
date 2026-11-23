@@ -343,7 +343,11 @@ class APersonReadsPageWordingTest(unittest.TestCase):
             expected["controls"][0] + " opens while this session runs or once it ends.",
             terminal_drift._press_line({"acquisition": "event"}, {"reason": "idle-unknown"}),
         )
-        self.assertEqual("Progress check", expected["heading"])
+        code, out, err = drift(stored())
+        self.assertEqual((0, ""), (code, err))
+        self.assertEqual(
+            f"{expected['heading']} · claude:abc · Fix the parser", out.splitlines()[0]
+        )
         self.assertEqual(expected["pressEvents"], terminal_drift.PRESS_EVENTS)
         self.assertEqual(expected["levels"], terminal_drift.LEVEL_NAMES)
         self.assertEqual(expected["why"], terminal_drift.WHY_WORDS)
@@ -545,6 +549,84 @@ class FreeReadTest(unittest.TestCase):
         code, out, err = drift(board)
         self.assertEqual((0, ""), (code, err))
         self.assertIn("Level: Too early to tell", out.splitlines())
+
+    def test_only_an_unwithheld_current_in_progress_reading_can_say_too_early(self) -> None:
+        for changes in (
+            {"stale": {"kind": "work", "before": None}},
+            {"so_far": False},
+            {"unsettled": True, "unsettled_count": 1},
+            {
+                "analysis": {
+                    "level": "not_enough",
+                    "reasons": ["outcome-not-reached"],
+                    "withheld": True,
+                }
+            },
+        ):
+            with self.subTest(changes=changes):
+                fields: dict[str, Any] = {
+                    "departures": [],
+                    "pill": None,
+                    "so_far": True,
+                    "analysis": {
+                        "level": "not_enough",
+                        "reasons": ["outcome-not-reached"],
+                        "withheld": False,
+                    },
+                }
+                view = a_view(**(fields | changes))
+                view["lines"][0].update(state="not-reached")
+                board = FakeBoard(
+                    a_payload(a_row(annotation_assessment=dict(ASSESSMENT))), view=view
+                )
+                code, out, err = drift(board)
+                self.assertEqual((0, ""), (code, err))
+                self.assertNotIn("Too early to tell", out)
+                if changes.get("stale"):
+                    self.assertNotIn(terminal_drift.SO_FAR_LINE, out)
+                if changes.get("unsettled"):
+                    self.assertIn("1 message you sent after your goal was left unsettled", out)
+
+    def test_the_recorded_completed_reading_is_out_of_date_when_new_work_arrives(self) -> None:
+        fixtures = ROOT / "frontend/test/fixtures/client-contract"
+
+        def recorded(prefix: str) -> dict[str, Any]:
+            body: dict[str, Any] = json.loads(
+                (fixtures / f"{prefix}-focused-drift-completed.json").read_text(encoding="utf-8")
+            )["response"]["body"]
+            return body
+
+        payload = recorded("data")
+        view = recorded("context")["sources"]["work"]["drift_views"][0]
+        board = FakeBoard(payload, view=view)
+        clock = Clock(payload["generated"])
+        out, err = io.StringIO(), io.StringIO()
+        code = terminal_drift.run(
+            view["harness"],
+            view["sid"],
+            again=False,
+            at_shell=True,
+            in_session=False,
+            board=board,
+            port=PORT,
+            out=out,
+            err=err,
+            clock=clock,
+            sleep=clock.sleep,
+        )
+        self.assertEqual((0, ""), (code, err.getvalue()))
+        lines = out.getvalue().splitlines()
+        words = json.loads((fixtures.parent / "terminal-wording.json").read_text(encoding="utf-8"))[
+            "drift"
+        ]
+        self.assertEqual(
+            [words["outOfDate"], f"Earlier level: {words['levels']['medium']}"],
+            [
+                line
+                for line in lines
+                if line == words["outOfDate"] or line.startswith(("Level:", "Earlier level:"))
+            ],
+        )
 
     def test_a_person_over_a_drafted_goal_reads_no_level_as_the_page_draws_none(self) -> None:
         board = FakeBoard(

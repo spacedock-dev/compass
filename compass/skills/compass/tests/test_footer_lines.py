@@ -594,7 +594,9 @@ class MonitorLinesTest(unittest.TestCase):
         self.lines = footer_lines.Lines(
             self.home, pid=1, monitor=self.source, diagnostic_sink=lambda _m: None
         )
-        self.collection = board([row("claude", "short-id") | {"resume_id": "short-id-full"}])
+        self.collection = board([row("claude", "short-id") | {"resume_id": "short-id-full"}]) | {
+            "annotate": True,
+        }
         self.source.leases["short-id"] = {"on": True, "episode": 1, "started_at": NOW}
 
     def body(self, sid: str = "short-id-full") -> dict[str, Any]:
@@ -651,6 +653,21 @@ class MonitorLinesTest(unittest.TestCase):
         self.assertIsNone(self.body("other")["stored_progress"])
         self.assertEqual(NOW + 70, self.body("other")["at"])
 
+    def test_unavailable_annotations_clear_the_footer_level_without_stopping_the_monitor(
+        self,
+    ) -> None:
+        self.collection["sessions"][0]["stored_progress"] = "high"
+        for availability in (
+            {"annotate": False},
+            {"annotate_unreadable": "Annotations store could not be read."},
+        ):
+            with self.subTest(availability=availability):
+                self.publish()
+                self.assertEqual("high", self.body()["stored_progress"])
+                self.lines.update(self.collection | availability, NOW + 1)
+                self.assertIsNone(self.body()["stored_progress"])
+                self.assertTrue(self.body()["monitor"])
+
     def test_a_person_whose_monitor_ends_while_idle_keeps_waits(self) -> None:
         self.publish()
         self.end()
@@ -700,11 +717,33 @@ class MonitorLinesTest(unittest.TestCase):
         self.assertEqual(NOW + 2, self.body()["at"])
 
     def test_a_person_never_gets_a_guessed_monitor_for_duplicate_session_rows(self) -> None:
-        self.collection["sessions"].append(dict(self.collection["sessions"][0]))
+        source = self.collection["sessions"][0]
+        source["stored_progress"] = "high"
+        self.publish()
+        self.assertEqual("high", self.body()["stored_progress"])
+        self.collection["sessions"].append(dict(source))
         self.publish()
         self.assertIs(self.body()["monitor"], False)
         self.assertIsNone(self.body()["stored_progress"])
         self.assertEqual([], self.source.calls)
+
+    def test_a_departed_unmonitored_row_retries_one_clearing_write_for_stored_progress(
+        self,
+    ) -> None:
+        self.source.leases.clear()
+        self.collection["sessions"][0]["stored_progress"] = "high"
+        self.publish()
+        self.assertEqual("high", self.body()["stored_progress"])
+        self.assertFalse(self.body()["monitor"])
+        with mock.patch.object(runtime_io, "atomic_write_owner_only", side_effect=OSError("full")):
+            self.lines.update(board([]), NOW + 1)
+        self.assertEqual("high", self.body()["stored_progress"])
+        self.lines.touch(NOW + 2)
+        final = self.body()
+        self.assertIsNone(final["stored_progress"])
+        self.assertEqual(NOW + 2, final["at"])
+        self.lines.touch(NOW + 400)
+        self.assertEqual(final, self.body())
 
     def test_a_persons_departure_retries_an_end_that_failed_while_the_row_was_present(self) -> None:
         self.publish()

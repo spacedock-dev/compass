@@ -126,6 +126,7 @@ def build(collection: Mapping[str, Any], *, pid: int, now: float) -> Built:
     )
     queue, owners = terminal_sessions.waiting_queue(collection)
     blind = _blind_labels(harnesses, rows)
+    show_progress = collection.get("annotate") is True and not collection.get("annotate_unreadable")
     built: Built = {}
     for row in rows:
         key = (row["harness"], _identity(row))
@@ -139,7 +140,7 @@ def build(collection: Mapping[str, Any], *, pid: int, now: float) -> Built:
             "waiting": queue - own if measured else None,
             "blind": list(blind),
             "monitor": False,
-            "stored_progress": terminal_sessions.stored_departure(row),
+            "stored_progress": terminal_sessions.stored_departure(row) if show_progress else None,
             "last_end": None,
             "model_calls_paused": None,
         }

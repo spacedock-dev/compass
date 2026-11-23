@@ -19,10 +19,7 @@ import { observe, sessionKey, type Row } from '../observed';
 import { asPayload } from '../observed/values';
 import { buildSessionsScreen } from './rows';
 import { groupLabel } from './declared';
-import { PROGRESS_OPTIONS } from './filters';
 import { mountSessions } from './testing';
-
-const departingLabels = PROGRESS_OPTIONS.slice(0, 3).map(({ label }) => label);
 
 const read = (path: string): unknown =>
   JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
@@ -44,17 +41,18 @@ function boardView(payload: Row, root: HTMLElement, needsYou: HTMLElement) {
   const model = observe(payload);
   const screen = buildSessionsScreen(payload, model);
   const rows = (list: typeof screen.active) =>
-    list.map((row) => ({
-      key: keyOf(row.session),
-      state: sessionRow(root, row.session.sid)
-        .querySelector('[data-next-row-state]')
-        ?.getAttribute('data-next-row-state'),
-      outcome: row.session.outcomeKnown ? row.session.outcomeText : null,
-      git: row.session.outcomeKnown ? row.session.gitText : null,
-      command: resumeCommand(row.session.harness, String(row.session.resume_id ?? '')),
-      ended: row.endedSince,
-      drift: rowProgress(root, row.session.sid),
-    }));
+    list.map((row) => {
+      const rendered = sessionRow(root, row.session.harness, row.session.sid);
+      return {
+        key: keyOf(row.session),
+        state: rendered.querySelector('[data-next-row-state]')?.getAttribute('data-next-row-state'),
+        outcome: row.session.outcomeKnown ? row.session.outcomeText : null,
+        git: row.session.outcomeKnown ? row.session.gitText : null,
+        command: resumeCommand(row.session.harness, String(row.session.resume_id ?? '')),
+        ended: row.endedSince,
+        drift: rowProgress(rendered),
+      };
+    });
   const attention = attentionModel(payload);
   const drawn = new Set(
     [...model.risks, ...model.boardRisks].map((risk) => riskSubject(risk, attention)?.key),
@@ -82,17 +80,20 @@ function boardView(payload: Row, root: HTMLElement, needsYou: HTMLElement) {
   };
 }
 
-function sessionRow(root: HTMLElement, sid: string) {
+function sessionRow(root: HTMLElement, harness: string, sid: string) {
   const row = [...root.querySelectorAll('article[data-next-session]')].find(
-    (node) => node.getAttribute('data-next-session') === sid,
+    (node) =>
+      node.getAttribute('data-next-harness') === harness &&
+      node.getAttribute('data-next-session') === sid,
   );
-  if (!row) throw new Error(`Session row not rendered: ${sid}`);
+  if (!row) throw new Error(`Session row not rendered: ${harness}:${sid}`);
   return row;
 }
 
-function rowProgress(root: HTMLElement, sid: string) {
-  const row = sessionRow(root, sid);
-  return departingLabels.find((label) => row.textContent?.includes(label)) ?? null;
+function rowProgress(row: HTMLElement) {
+  const pills = row.querySelectorAll('[data-next-drift-pill], .next-session-drift-pill');
+  expect(pills.length).toBeLessThanOrEqual(1);
+  return pills[0]?.textContent?.trim() ?? null;
 }
 
 /* An ownerless request is drawn as a board risk row on the Attention screen; the terminal still lists it,
@@ -144,7 +145,20 @@ describe('the board against the terminal listing', () => {
     );
     const board = mountSessions({ data: { ...payload, sessions } });
     await board.settle();
-    expect(rowProgress(board.container, sid)).toBe(mark);
+    expect(
+      rowProgress(sessionRow(board.container, String(fields['harness'] ?? 'claude'), sid)),
+    ).toBe(mark);
+  });
+
+  it('reads the progress pill independently of the session title', async () => {
+    const sid = 'f6a7b8c9';
+    const sessions = (payload['sessions'] as Row[]).map((row) =>
+      row['sid'] === sid ? { ...row, title: 'Off course recovery notes' } : row,
+    );
+    const board = mountSessions({ data: { ...payload, sessions } });
+    await board.settle();
+    expect(board.container.textContent).toContain('Off course recovery notes');
+    expect(rowProgress(sessionRow(board.container, 'claude', sid))).toBeNull();
   });
 
   it.each(finishedRuns)('holds the terminal Now reading: $name', ({ payload, now }) => {

@@ -112,9 +112,9 @@ refreshes the files every 15 s (`footer_lines.REFRESH_SEC`) and checks lease end
 including idle and probe-skip paths. Updates and idle touches sample the shared permission store
 outside the writer lock. The additive v1 `model_calls_paused` field is true, false or null.
 Unknown replaces an old assertion. The writer uses the snapshot's validated `stored_progress`
-token and reads the lease independently. This path can run without focused context or record
-reads. Older files can still supply waits and monitor state. The client ignores their live
-`level` token and drops any invalid or missing stored verdict.
+token while annotations are enabled and readable. It reads the lease independently. This path can
+run without focused context or record reads. Older files can still supply waits and monitor state.
+The client ignores their live `level` token and drops any invalid or missing stored verdict.
 
 The writer looks up leases by row `sid` and names files by the full `resume_id` when available.
 A departed session with a stored level or standing monitor gets a final write that clears both,

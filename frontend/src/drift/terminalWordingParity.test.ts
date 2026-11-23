@@ -190,6 +190,7 @@ it('a person reads the page wording and derived reading in their terminal', () =
         press: PRESS_LINES,
         pressEvents: PRESS_EVENTS,
         heading: SESSION_LIST_WORDS.progressCheck,
+        outOfDate: GLOSSARY.outOfDate.plain,
         controls: [GLOSSARY.checkProgress.shown, GLOSSARY.checkProgressAgain.shown],
         levels: {
           none_or_low: GLOSSARY.onTrack.plain,
@@ -206,8 +207,7 @@ it('a person reads the page wording and derived reading in their terminal', () =
           MODEL_UNREAD: sentences.MODEL_UNREAD,
           MODEL_OFF: sentences.MODEL_OFF,
           ROUTE_UNREAD: sentences.ROUTE_UNREAD,
-          // The status sentence uses the same subject as the shared pause switch.
-          READINGS_OFF: `${GLOSSARY.pauseAi.plain.replace(/^Pause all /, '')} is paused. Nothing is sent until you resume.`,
+          READINGS_OFF: policyReason({ off: true, reason: 'model-calls-paused' }),
           STORE_BUSY: sentences.STORE_BUSY_PRESS,
           STORE_UNUSABLE: sentences.STORE_UNREADABLE_PRESS,
           POLICY_UNREADABLE: policyReason({ reason: 'store-unavailable' }),
@@ -223,10 +223,6 @@ it('a person reads the page wording and derived reading in their terminal', () =
         ...summaryCases(),
       },
     };
-    // The Session view renamed its destination. The terminal fixture still uses its current label.
-    for (const row of actual.summary.unlinked) {
-      row.expected = row.expected.replace('Activity log', 'Full activity');
-    }
     if (process.env['COMPASS_WRITE_WORDING_PARITY'] === '1') {
       const candidate = join(
         mkdtempSync(join(tmpdir(), 'compass-terminal-wording-')),

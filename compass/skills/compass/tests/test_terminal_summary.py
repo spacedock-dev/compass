@@ -140,12 +140,12 @@ class APersonReadsASummary(unittest.TestCase):
             _, out, _ = self.run_command(Board(summary))
             if count == 1:
                 self.assertIn(
-                    "1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.",
+                    "1 cited entry is an earlier check or file that Activity log does not list, so it cannot be opened from here.",
                     out,
                 )
             elif count:
                 self.assertIn(
-                    "3 cited entries are earlier checks or files that Full activity does not list, so they cannot be opened from here.",
+                    "3 cited entries are earlier checks or files that Activity log does not list, so they cannot be opened from here.",
                     out,
                 )
             else:

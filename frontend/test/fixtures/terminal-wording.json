@@ -118,6 +118,7 @@
     },
     "pressEvents": "{control} opens while this session runs or once it ends.",
     "heading": "Progress check",
+    "outOfDate": "Out of date",
     "controls": [
       "Check progress",
       "Check progress again"
@@ -209,11 +210,11 @@
     "unlinked": [
       {
         "count": 1,
-        "expected": "1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here."
+        "expected": "1 cited entry is an earlier check or file that Activity log does not list, so it cannot be opened from here."
       },
       {
         "count": 3,
-        "expected": "3 cited entries are earlier checks or files that Full activity does not list, so they cannot be opened from here."
+        "expected": "3 cited entries are earlier checks or files that Activity log does not list, so they cannot be opened from here."
       }
     ],
     "ledeReasons": {

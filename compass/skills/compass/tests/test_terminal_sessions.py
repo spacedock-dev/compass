@@ -546,6 +546,23 @@ class SessionsRenderTest(unittest.TestCase):
                     )
                 )
 
+    def test_annotation_availability_withholds_stored_progress_from_the_api_and_output(
+        self,
+    ) -> None:
+        sid = "f6a7b8c9"
+        source = with_rows(**{sid: {"stored_progress": "high"}})
+        for availability in (
+            {"annotate": False},
+            {"annotate": True, "annotate_unreadable": "Annotations store could not be read."},
+        ):
+            with self.subTest(availability=availability):
+                payload = source | availability
+                self.assertNotIn("  Off course", self.render(payload))
+                projected = terminal_sessions.list_payload(payload)
+                row = next(row for row in projected["sessions"] if row["sid"] == sid)
+                self.assertIsNone(row.get("stored_progress"))
+                self.assertNotIn("  Off course", self.render(projected))
+
     def test_a_command_prints_only_for_a_claude_or_codex_row_with_a_valid_published_id(
         self,
     ) -> None:
