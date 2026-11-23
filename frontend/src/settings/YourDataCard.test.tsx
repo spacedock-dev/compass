@@ -53,7 +53,6 @@ describe('Forget everything in Settings', () => {
   it('names each store the terminal command deletes or keeps, including dismissals', async () => {
     const cli = readFileSync('compass/skills/compass/compass_runtime/cli.py', 'utf8');
     const manual = readFileSync('MANUAL.md', 'utf8');
-    const security = readFileSync('SECURITY.md', 'utf8');
     const forget = cli.slice(cli.indexOf('def _forget_stores'), cli.indexOf('def _forget(config'));
     const contract = [
       ['Observation history', 'history.forget(config)'],
@@ -66,8 +65,10 @@ describe('Forget everything in Settings', () => {
     ];
     for (const [, source] of contract) expect(forget).toContain(source);
     expect(forget).toContain('unexpired spend timestamps remain');
-    expect(manual.match(/^\| `--forget` .*$/m)?.[0]).toContain('compass-typed-presses.json');
-    expect(security).toContain('group labels');
+    expect(forget).not.toContain('dismissals.forget(config)');
+    const manualRow = manual.match(/^\| `--forget` .*$/m)?.[0];
+    expect(manualRow).toContain('the words and group labels you typed');
+    expect(manualRow).toContain('compass-typed-presses.json');
 
     const page = mount(6226);
     try {

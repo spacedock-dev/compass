@@ -32,6 +32,25 @@ const ESTIMATE = {
   can_lower_prompt_setting: true,
 };
 
+const BLOCKS = {
+  'context-config': ['context-config', 'The context settings could not be checked.'],
+  'context-no-room': ['', 'The current context settings leave no room for a progress check.'],
+  'settings-refused': [
+    'managed-mcp',
+    'Claude Code cannot run a progress check while managed-mcp.json is present.',
+  ],
+  'context-compaction': [
+    'compaction-policy-conflict',
+    'Managed settings conflict with keeping compaction off for a progress check.',
+  ],
+  'context-fallback': [
+    'fallback-policy-conflict',
+    'Managed settings conflict with keeping automatic model switching off for a progress check.',
+  ],
+  unavailable: ['', 'No route is selected for progress checks.'],
+} as const;
+type Block = keyof typeof BLOCKS;
+
 type Scenario =
   | 'recommended'
   | 'changed'
@@ -49,7 +68,7 @@ type Scenario =
 const posted: unknown[] = [];
 let finishPost: (() => void) | undefined;
 
-function answers(scenario: Scenario, codexBytes: number) {
+function answers(scenario: Scenario, codexBytes: number, block: Block) {
   switch (scenario) {
     case 'missing-capacity':
       return undefined;
@@ -61,8 +80,8 @@ function answers(scenario: Scenario, codexBytes: number) {
         claude: {
           ...ESTIMATE,
           maximum_prompt_bytes: 0,
-          reason: scenario === 'blocked' ? 'context-config' : 'context-dynamic',
-          configuration_reason: scenario === 'blocked' ? 'context-config' : 'dynamic-policy',
+          reason: scenario === 'blocked' ? block : 'context-dynamic',
+          configuration_reason: scenario === 'blocked' ? BLOCKS[block][0] : 'dynamic-policy',
           can_lower_prompt_setting: false,
         },
       };
@@ -79,9 +98,11 @@ function answers(scenario: Scenario, codexBytes: number) {
 function PromptSizeExample({
   scenario,
   codexBytes,
+  block,
 }: {
   readonly scenario: Scenario;
   readonly codexBytes: number;
+  readonly block: Block;
 }) {
   const [kit] = useState(testControls);
   const [client] = useState(() => {
@@ -114,7 +135,11 @@ function PromptSizeExample({
             if (value !== undefined) values[limit.key] = value ?? limit.default;
           }
         }
-        return Response.json({ values, limits: LIMITS, capacities: answers(scenario, codexBytes) });
+        return Response.json({
+          values,
+          limits: LIMITS,
+          capacities: answers(scenario, codexBytes, block),
+        });
       },
     });
   });
@@ -128,7 +153,7 @@ function PromptSizeExample({
 const meta = {
   title: 'Views/Settings prompt size',
   component: PromptSizeExample,
-  args: { scenario: 'recommended', codexBytes: 524288 },
+  args: { scenario: 'recommended', codexBytes: 524288, block: 'context-config' },
 } satisfies Meta<typeof PromptSizeExample>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -276,17 +301,29 @@ const unknown: Story['play'] = async ({ canvasElement }) => {
 export const MissingCapacity: Story = { args: { scenario: 'missing-capacity' }, play: unknown };
 export const MalformedCapacity: Story = { args: { scenario: 'malformed-capacity' }, play: unknown };
 
-export const BlockedCapacity: Story = {
-  args: { scenario: 'blocked' },
-  play: async ({ canvasElement }) => {
-    const limits = await customize(canvasElement);
-    await expect(limits.getByText('The context settings could not be checked.')).toBeVisible();
-    await expect(limits.getAllByText(UNKNOWN)).toHaveLength(1);
-    await expect(
-      limits.queryByText(/Estimated capacity:|The policy can change when it starts/),
-    ).toBeNull();
-  },
-};
+function blocked(block: Block): Story {
+  return {
+    args: { scenario: 'blocked', block },
+    play: async ({ canvasElement }) => {
+      const limits = await customize(canvasElement);
+      const words = BLOCKS[block][1];
+      await expect(limits.getByText(words)).toBeVisible();
+      await expect(limits.getAllByText(UNKNOWN)).toHaveLength(1);
+      await expect(
+        limits.queryByText(/Estimated capacity:|The policy can change when it starts/),
+      ).toBeNull();
+      for (const [, alternative] of Object.values(BLOCKS))
+        if (words !== alternative) await expect(limits.queryByText(alternative)).toBeNull();
+    },
+  };
+}
+
+export const BlockedCapacity = blocked('context-config');
+export const NoRoomForThePrompt = blocked('context-no-room');
+export const ManagedMcpRefusesThePrompt = blocked('settings-refused');
+export const CompactionConflictsWithThePrompt = blocked('context-compaction');
+export const ModelFallbackConflictsWithThePrompt = blocked('context-fallback');
+export const NoProgressCheckRoute = blocked('unavailable');
 
 export const DynamicCapacity: Story = {
   args: { scenario: 'dynamic' },

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { UpdateNotice } from '../src/shell/UpdateNotice';
+import { ControlsProvider } from '../src/controls';
+import { testControls } from '../src/controls/testControls';
 import { SettingsScreen } from '../src/settings/SettingsView';
 import { createLegacyStorage } from '../src/storage';
 import { createApiClient } from '../src/api/client';
@@ -23,6 +25,7 @@ function NoticeExample() {
 }
 
 function SettingsExample() {
+  const [kit] = useState(testControls);
   const [revision, setRevision] = useState(0);
   const [client] = useState(() => {
     let disabled = false;
@@ -49,7 +52,9 @@ function SettingsExample() {
   });
   return (
     <>
-      <SettingsScreen key={revision} client={client} />
+      <ControlsProvider controls={kit.controls}>
+        <SettingsScreen key={revision} client={client} />
+      </ControlsProvider>
       <Button onClick={() => setRevision((value) => value + 1)}>Reopen settings</Button>
     </>
   );
@@ -82,20 +87,19 @@ export const SavesTheOffSwitch: Story = {
   render: () => <SettingsExample />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const checkbox = await canvas.findByRole('checkbox', { name: 'Turn off daily update checks' });
-    await expect(checkbox).not.toBeChecked();
-    await expect(canvas.queryByText('Update checks are off by default in this build.')).toBeNull();
-    await userEvent.click(checkbox);
-    await waitFor(() => expect(checkbox).toBeChecked());
+    const name = 'Look for new versions once a day';
+    const switchInForce = () => canvas.getByRole('switch', { name });
+    const control = await canvas.findByRole('switch', { name });
+    await expect(control).toBeChecked();
+    await expect(canvas.getByText('Asks spacedock.md at most once a day.')).toBeVisible();
+    await userEvent.click(control);
+    await waitFor(() => expect(control).not.toBeChecked());
+    await expect(canvas.getByText('Update checks are off.')).toBeVisible();
     await userEvent.click(canvas.getByRole('button', { name: 'Reopen settings' }));
-    await expect(
-      await canvas.findByRole('checkbox', { name: 'Turn off daily update checks' }),
-    ).toBeChecked();
-    await userEvent.click(canvas.getByRole('checkbox', { name: 'Turn off daily update checks' }));
-    await waitFor(() =>
-      expect(
-        canvas.getByRole('checkbox', { name: 'Turn off daily update checks' }),
-      ).not.toBeChecked(),
-    );
+    await expect(await canvas.findByRole('switch', { name })).not.toBeChecked();
+    await expect(canvas.getByText('Update checks are off.')).toBeVisible();
+    await userEvent.click(switchInForce());
+    await waitFor(() => expect(switchInForce()).toBeChecked());
+    await expect(canvas.queryByText('Update checks are off.')).toBeNull();
   },
 };

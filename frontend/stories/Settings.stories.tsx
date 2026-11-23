@@ -27,7 +27,7 @@ interface Scenario {
   readonly usage: 'allowed' | 'declined' | 'unavailable';
   readonly harness: 'claude' | 'codex';
   readonly annotations: boolean;
-  readonly port: 'known' | 'missing';
+  readonly port: 'known' | 'missing' | 'loading';
   readonly copy: 'ok' | 'refused';
 }
 
@@ -97,6 +97,8 @@ function SettingsExample(props: Scenario) {
         },
       }),
       fetch: async (url, init) => {
+        if (url === '/api/health' && props.port === 'loading')
+          return new Promise<Response>(() => undefined);
         if (url === '/api/health')
           return Response.json(props.port === 'known' ? { port: 6226 } : {});
         if (url.startsWith('/api/data')) {
@@ -774,5 +776,16 @@ export const ForgetPortUnavailable: Story = {
     );
     await expect(card.queryByRole('button', { name: 'Copy' })).toBeNull();
     await expect(card.queryByText(/spacedock-compass --port/)).toBeNull();
+  },
+};
+
+export const ForgetPortLoading: Story = {
+  args: { port: 'loading' },
+  play: async ({ canvas }) => {
+    const card = within(canvas.getByRole('region', { name: 'Your data' }));
+    await userEvent.click(card.getByRole('button', { name: 'Forget everything' }));
+    await waitFor(() => expect(card.getByText('Reading the dashboard port.')).toBeVisible());
+    await expect(card.queryByRole('button', { name: 'Copy' })).toBeNull();
+    await expect(card.queryByText(/could not read the dashboard port/i)).toBeNull();
   },
 };
