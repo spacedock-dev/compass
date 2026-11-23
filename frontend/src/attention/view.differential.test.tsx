@@ -117,6 +117,9 @@ function summarize(root: ParentNode): Summary {
       if (source?.nodeType === Node.TEXT_NODE)
         source.textContent = maskSourceTime(source.textContent ?? '');
       if (article.dataset['nextBoardRisk'] === 'ask') {
+        // Request identifiers are still available in the technical layer.
+        content.querySelector('.next-attention-risk-identity > span')?.remove();
+        content.querySelector('.technical-details')?.remove();
         const source = content.querySelector('.next-attention-risk-source > span:last-child');
         if (source) source.textContent = maskSourceTime(norm(source));
       }
@@ -133,7 +136,7 @@ function summarize(root: ParentNode): Summary {
         board: article.dataset['nextBoardRisk'] ?? '',
         text: maskTimePhrases(norm(content)),
         links: links(article),
-        buttons: [...article.querySelectorAll('button')].map((button) =>
+        buttons: [...content.querySelectorAll('button')].map((button) =>
           button.getAttribute('aria-label'),
         ),
       };

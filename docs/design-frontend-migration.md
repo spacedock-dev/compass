@@ -25,7 +25,8 @@ and the distinction between the saved goal store and the session history copy.
 Departure (2026-11-23): Needs you starts with Waiting on you, Worth a look and Ready to
 wrap up. The view differential checks their membership against the board selector and
 masks the replaced layouts, headings and action wording. The unchanged coverage, reports
-and independent risk evidence retain their recorded answers. Coming next belongs on the
+and independent risk evidence retain their recorded answers. Raw request and session
+identifiers in other warnings open with Show technical details. Coming next belongs on the
 session page. Dismiss and Mark as read both use the server dismissals store.
 
 Settings adds an inline Your data explanation. Its Copy button copies the terminal commands for

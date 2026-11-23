@@ -227,6 +227,13 @@ export function RiskItem({
 }) {
   const row = riskRow(risk, model, board, retained);
   const outcome = row.subject ? subjectOutcome(row.subject, model) : null;
+  const members = row.subject?.kind === 'collision' ? row.subject.sessions : [];
+  const identifiers =
+    risk.kind === 'ask'
+      ? [risk.identity].filter(Boolean)
+      : members.map(
+          (session) => `${String(session['harness'] || '')}:${String(session['sid'] || '')}`,
+        );
   let observation = risk.nowText;
   if (risk.kind === 'long-turn') observation = expandDurationUnits(observation);
   if (risk.delegatedSession) {
@@ -258,16 +265,16 @@ export function RiskItem({
               {risk.title}
             </AttentionLink>
           </h3>
-          <span data-authored>{risk.identity}</span>
+          {risk.kind === 'ask' ? null : <span data-authored>{risk.identity}</span>}
           {outcome?.label === 'OUTCOME' ? (
             <p className="next-attention-risk-assignment">{outcome.text}</p>
           ) : null}
         </div>
         <div className="next-attention-risk-observation">
           <p data-authored>{observation}</p>
-          {row.subject?.kind === 'collision' ? (
+          {members.length ? (
             <ul>
-              {row.subject.sessions.map((session) => {
+              {members.map((session) => {
                 const harness = String(session['harness'] || '');
                 const sid = String(session['sid'] || '');
                 const stamp =
@@ -285,7 +292,7 @@ export function RiskItem({
                       focusKey={`attention:subject:${row.key}:member:${harness}:${sid}`}
                       fallback="attention:section:risk"
                     >
-                      {`${String(session['title'] || '').trim() || 'Title not published'} · ${String(session['worktree'] || 'No worktree published')} · ${harness}:${sid} · Start time ${stamp}`}
+                      {`${String(session['title'] || '').trim() || 'Title not published'} · ${String(session['worktree'] || 'No worktree published')} · Start time ${stamp}`}
                     </AttentionLink>
                   </li>
                 );
@@ -315,6 +322,15 @@ export function RiskItem({
           )}
           <span>{riskSourceText(risk)}</span>
         </div>
+        {identifiers.length ? (
+          <div className="col-span-full">
+            <TechnicalDetails disclosureKey={`attention-other:${row.key}`}>
+              {identifiers.map((identity, index) => (
+                <p key={index}>{identity}</p>
+              ))}
+            </TechnicalDetails>
+          </div>
+        ) : null}
       </Card>
     </li>
   );

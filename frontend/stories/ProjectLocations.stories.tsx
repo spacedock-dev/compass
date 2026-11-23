@@ -170,6 +170,9 @@ export const SharedCheckout: Story = {
     const card = canvasElement.querySelector('[data-next-board-risk="checkout"]') as HTMLElement;
     await expect(within(card).getAllByRole('link', { name: /Audit \d/ })).toHaveLength(2);
     await expect(card).toHaveTextContent('2 sessions working or waiting in the same checkout');
+    await expect(card.innerText).not.toContain('claude:audit-0');
+    await userEvent.click(within(card).getByRole('button', { name: 'Show technical details' }));
+    await waitFor(() => expect(within(card).getByText('claude:audit-0')).toBeVisible());
     await expect(card.textContent).not.toContain('checkout:shared-evidence');
   },
 };
