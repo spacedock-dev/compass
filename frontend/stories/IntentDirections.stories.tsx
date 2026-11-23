@@ -165,10 +165,10 @@ export const OutsideSearch: Story = {
       'direction-keep',
       `${prefix} Nothing was settled and no analysis was started.`,
     );
-    // The row's own control is in Full activity, which starts collapsed.
-    await userEvent.click(canvas.getByRole('button', { name: 'Full activity' }));
+    // The log keeps the evidence, and the progress card owns the direction action.
+    await userEvent.click(canvas.getByRole('button', { name: /^(Show|Hide) technical details$/ }));
     const row = canvasElement.querySelector('[data-next-entry-id="f2"]') as HTMLElement;
-    await failedPress(row, 'direction-add', `${prefix} No outcome line was added.`);
+    await expect(row.querySelector('[data-next-cockpit-action="direction-add"]')).toBeNull();
     await expect(canvas.getByRole('textbox', { name: 'Goal' })).toHaveValue('Ship synthetic work');
   },
 };

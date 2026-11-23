@@ -188,7 +188,7 @@ export function collectedPartialSummary() {
 
 /* The outline's record, then the work after the reader's intent was saved: a failed check, which the stored
    reading's departure cites, and one more reply of the agent's. */
-export function summaryRecord() {
+export function summaryRecord(foldedChecks = false) {
   const after = (id: string, type: string, ordinal: number, at: number, extra = {}) => ({
     fact_id: id,
     at,
@@ -201,6 +201,17 @@ export function summaryRecord() {
   });
   return [
     ...recordFor('claude'),
+    ...(foldedChecks
+      ? [1, 2, 3].map((n) =>
+          after(`fold-${n}`, 'tool_report', 4, G - 239 + n, {
+            ordinal_sub: n + 1,
+            result: 'passed',
+            result_source: 'passed flag',
+            subject: 'check',
+            summary: `Passing check ${n}`,
+          }),
+        )
+      : []),
     after('c3', 'tool_report', 4, G - 240, {
       summary: 'pytest tests/test_webhook.py',
       ordinal_sub: 1,
@@ -330,6 +341,7 @@ export function SummaryPage({
   answer = defaultAnswer,
   outline = claudeOutline({}, true),
   counted = false,
+  foldedChecks = false,
 }: {
   readonly grant?: Record<string, unknown> | null;
   readonly summary?: Record<string, unknown> | null;
@@ -340,6 +352,7 @@ export function SummaryPage({
   readonly outline?: Record<string, unknown>;
   /** The record carries no fixed numbers, so the page counts its entries from the intent's window. */
   readonly counted?: boolean;
+  readonly foldedChecks?: boolean;
 }) {
   const [shell] = useState(() => {
     script.grant =
@@ -362,11 +375,13 @@ export function SummaryPage({
     let generation = G;
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
     const record: { readonly ordinal: number | null }[] = counted
-      ? summaryRecord().map(({ ordinal_sub: _sub, ...row }: Record<string, unknown>) => ({
-          ...row,
-          ordinal: null,
-        }))
-      : summaryRecord();
+      ? summaryRecord(foldedChecks).map(
+          ({ ordinal_sub: _sub, ...row }: Record<string, unknown>) => ({
+            ...row,
+            ordinal: null,
+          }),
+        )
+      : summaryRecord(foldedChecks);
     const shell = createShell({
       env: createFakeEnvironment({ clock: createFakeClock() }),
       router: createRouter(history.env),

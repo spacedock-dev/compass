@@ -709,6 +709,9 @@ export const PromptMenuPick: Story = {
     const doc = within(canvasElement.ownerDocument.body);
     await waitFor(async () => {
       await expect(doc.getByText('Your prompts in this session')).toBeVisible();
+      await expect(
+        getComputedStyle(doc.getByText('Your prompts in this session')).fontFamily,
+      ).toMatch(/^Inter\b/);
     });
     const option = await doc.findByRole('option', {
       name: /Latest prompt · \d\d:\d\d · excerpt Add streaming tokenizer benchmarks/,

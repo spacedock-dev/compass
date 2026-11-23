@@ -2,6 +2,7 @@ import { contextKey } from '../api/identity';
 import { isRecord, type Row } from '../observed';
 import type { BoardSnapshot } from '../store/board';
 import { recordPastWindow, workSource } from '../intent/work';
+import type { DriftModel } from './model';
 
 /* Every id a stored reading cites, whichever criterion cites it. The list the reader's own press may send the
    page to read older record pages for. */
@@ -13,6 +14,17 @@ export function citedIdsOf(assessment: Row | null | undefined): string[] {
     for (const id of row['cites']) if (id !== '') ids.add(String(id));
   }
   return [...ids];
+}
+
+/* Cited uses the IDs that survived reading validation, including still-linked quiet and retained findings. */
+export function readingCitationIds({
+  shape,
+  priors,
+}: Pick<DriftModel, 'shape' | 'priors'>): string[] {
+  return [
+    ...(shape?.criteria ?? []).flatMap((row) => row.citedIds),
+    ...priors.flatMap(({ row }) => row.citedIds),
+  ];
 }
 
 /* When the pages read for a finished press have done their work: every cited id is one the page holds, or

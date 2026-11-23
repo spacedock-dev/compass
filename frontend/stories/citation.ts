@@ -1,6 +1,6 @@
 import { userEvent, waitFor, within } from 'storybook/test';
 
-/* A citation opens a card with the entry's words; the jump to Full activity is the card's own link. */
+/* A citation opens a card with the entry's words; the jump to Activity log is the card's own link. */
 export async function seeInContext(citation: HTMLElement): Promise<void> {
   await userEvent.click(citation);
   const link = await waitFor(() =>

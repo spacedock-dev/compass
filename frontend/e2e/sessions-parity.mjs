@@ -216,7 +216,7 @@ const summarizeDetail = () => {
     .forEach((node) => node.remove());
   /* Predates the one-column page (2026-10-19): the two-column next-session-columns and next-session-activity
      layout is gone, so this fails when the proof is run on demand until it is brought forward to Intent,
-     What the session has done, Drift and the collapsed Full activity. */
+     What the session has done, Drift and the collapsed Activity log. */
   // The activity column, child by child, for the parts this step owns. The activity list the panel feeds is not one.
   const own = [
     '.next-session-activity-heading',
@@ -1189,7 +1189,7 @@ try {
             sessionFragment(real.sessions.find((row) => row.sid === 'live-work')),
         );
         await reactReady(o.page);
-        await o.page.getByRole('button', { name: /^Full activity/ }).click();
+        await o.page.getByRole('button', { name: /^Show technical details/ }).click();
         await o.page.waitForSelector('.next-session-subagent.next-live');
         return await o.page.evaluate(
           () =>

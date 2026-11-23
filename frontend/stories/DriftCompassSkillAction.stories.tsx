@@ -1,12 +1,12 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, waitFor, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 import published from '../test/fixtures/compass-skill-action.json';
 import { DEPARTURE_READING, DriftScenario, fact, type Scenario } from './drift.scenario';
 import { OutlinePage } from './outline.scenario';
 
 /* The reader typed `/compass:compass sessions` inside the session, after saving their goal. The agent ran Compass
    and repeated what it printed. That asked Compass a question: it is not a message the reader sent the session,
-   so the Drift card asks nothing about it, and the outline opens no phase for it. Full activity still lists what
+   so the Drift card asks nothing about it, and the outline opens no phase for it. Activity log still lists what
    the agent ran and said, because it happened.
 
    The facts and the outline are not written here. They are what the server published for a transcript in
@@ -93,7 +93,7 @@ export const ACompassSkillActionAddsNothingToTheGoal: Story = {
     await expect(drift).not.toHaveTextContent(/message adds:/);
     await expect(drift).not.toHaveTextContent(/messages after your goal/);
     await expect(drift.querySelector('[data-next-cockpit-direction-question]')).toBeNull();
-    // Full activity still lists what the agent repeated, as the agent's.
+    // Activity log still lists what the agent repeated, as the agent's.
     const echo = await waitFor(() => {
       const node = document.querySelector<HTMLElement>(
         `[data-next-entry-id="${ECHO?.fact_id ?? ''}"]`,
@@ -134,15 +134,18 @@ export const TheSameTurnWithoutTheMarkIsNewWork: Story = {
   },
 };
 
-/* Full activity says whose answer the agent's echo and the command it ran are, and says nothing of the reader's own
+/* Activity log says whose answer the agent's echo and the command it ran are, and says nothing of the reader's own
    work. */
 export const FullActivityLabelsTheEntriesAsCompassAnswer: Story = {
   args: { scenario: scenario(placed) },
   play: async ({ canvasElement }) => {
     await driftOf(canvasElement);
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: 'Show technical details' }));
+    const panel = await canvas.findByRole('tabpanel', { name: 'Activity log' });
     const labelled = async (id: string | undefined) => {
       const row = await waitFor(() => {
-        const node = document.querySelector<HTMLElement>(`[data-next-entry-id="${id ?? ''}"]`);
+        const node = panel.querySelector<HTMLElement>(`[data-next-entry-id="${id ?? ''}"]`);
         expect(node).not.toBeNull();
         return node as HTMLElement;
       });
@@ -152,17 +155,16 @@ export const FullActivityLabelsTheEntriesAsCompassAnswer: Story = {
     await expect(echoFlag).toHaveTextContent('Compass’s answer, not read');
     await expect(await labelled(RAN?.fact_id)).toHaveTextContent('Compass’s answer, not read');
     await expect(await labelled(CHECK?.fact_id)).toBeNull();
-    await expect(document.querySelectorAll('[data-next-entry-flag="compass"]')).toHaveLength(2);
-    // The summary line counts the numbered entries, as it counts every other kind, and the command the agent
-    // ran is listed without a number, so it is labelled and not counted there.
-    const numbered = document.querySelectorAll('[data-next-entry][data-next-entry-id]');
+    await expect(panel.querySelectorAll('[data-next-entry-flag="compass"]')).toHaveLength(2);
+    // The command has no number and still counts in the loaded record breakdown.
+    const numbered = panel.querySelectorAll('[data-next-entry][data-next-entry-id]');
     const numberedLabels = [...numbered].filter((row) =>
       row.querySelector('[data-next-entry-flag="compass"]'),
     ).length;
     await expect(numberedLabels).toBe(1);
-    await expect(document.querySelector('.next-cockpit-work-mix')).toHaveTextContent(
-      new RegExp(`${String(numberedLabels)} marked as Compass’s answer`),
-    );
+    const activity = within(panel);
+    await userEvent.click(activity.getByRole('button', { name: 'About this record' }));
+    await waitFor(() => expect(activity.getByText(/2 marked as Compass’s answer/)).toBeVisible());
   },
 };
 

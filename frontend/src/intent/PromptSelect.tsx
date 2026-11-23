@@ -82,7 +82,7 @@ export function PromptSelect() {
           />
         </PopoverPrimitive.Trigger>
         <PopoverContent align="end" className="p-0 px-0 py-1 w-[min(24rem,calc(100vw-32px))]">
-          <div className="px-3.5 pt-2.5 pb-1 [font-family:var(--mono)] text-label text-muted-foreground">
+          <div className="px-3.5 pt-2.5 pb-1 text-label text-muted-foreground">
             Your prompts in this session
           </div>
           <div role="listbox" aria-label="Your prompts in this session" aria-busy={menu.pending}>
@@ -132,7 +132,7 @@ export function PromptSelect() {
                       >
                         {head ? (
                           <>
-                            <span className="block [font-family:var(--mono)] text-label text-muted-foreground">
+                            <span className="block text-label text-muted-foreground">
                               {head}
                             </span>{' '}
                           </>

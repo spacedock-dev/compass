@@ -45,6 +45,8 @@ const scanned = (scan: Record<string, unknown>): Pick<Story, 'args'> => {
 
 const sentence = async (canvasElement: HTMLElement): Promise<HTMLElement> => {
   const canvas = within(canvasElement);
+  const trigger = await canvas.findByRole('button', { name: /^(Show|Hide) technical details$/ });
+  if (trigger.getAttribute('aria-expanded') !== 'true') await userEvent.click(trigger);
   const about = await canvas.findByRole('button', { name: /About this record/ }, { timeout: 8000 });
   if (about.getAttribute('aria-expanded') !== 'true') await userEvent.click(about);
   return waitFor(() => {
@@ -167,12 +169,16 @@ export const TheListingNoteComesAfterTheRest: Story = {
   },
 };
 
-/* A pass the scan could not fully back. The row in Full activity says so beside "Passed", and the sentence
+/* A pass the scan could not fully back. The row in Activity log says so beside "Passed", and the sentence
    states how much was not read instead of implying nothing ran. Sign-off prototype: the wording and the mark
    are the proposal. */
 const fullActivity = async (canvasElement: HTMLElement): Promise<HTMLElement> => {
   const canvas = within(canvasElement);
-  const trigger = await canvas.findByRole('button', { name: 'Full activity' }, { timeout: 8000 });
+  const trigger = await canvas.findByRole(
+    'button',
+    { name: /^(Show|Hide) technical details$/ },
+    { timeout: 8000 },
+  );
   if (trigger.getAttribute('aria-expanded') !== 'true') await userEvent.click(trigger);
   return waitFor(
     () => {

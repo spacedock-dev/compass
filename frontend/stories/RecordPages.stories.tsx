@@ -18,9 +18,11 @@ const meta = {
 } satisfies Meta<typeof ShowMore>;
 export default meta;
 type Story = StoryObj<typeof meta>;
-/* Full activity starts collapsed; a reader opens it before reading or paging the record. */
+/* Activity log starts collapsed; a reader opens it before reading or paging the record. */
 const openActivity = async (element: HTMLElement) => {
-  const trigger = await within(element).findByRole('button', { name: 'Full activity' });
+  const trigger = await within(element).findByRole('button', {
+    name: /^(Show|Hide) technical details$/,
+  });
   if (trigger.getAttribute('aria-expanded') !== 'true') await userEvent.click(trigger);
 };
 const ready = { ...EMPTY_RECORD, status: 'loaded' as const, pages: 1, next: 'older' };
@@ -337,25 +339,12 @@ export const OlderDirectionDraftSurvivesNavigation: Story = {
     await openActivity(canvasElement);
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole('button', { name: 'Show 50 older entries' }));
-    await waitFor(() =>
-      expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(100),
+    const log = within(canvas.getByRole('tabpanel', { name: 'Activity log' }));
+    await expect(await log.findByText('Synthetic entry 50')).toBeVisible();
+    await expect(log.queryByRole('button', { name: /Add to my (goal|intent)/ })).toBeNull();
+    await expect(canvas.getByRole('textbox', { name: 'Goal' })).not.toHaveValue(
+      'Synthetic older direction',
     );
-    const row = canvasElement.querySelector('[data-next-entry-id="e50"]') as HTMLElement;
-    await userEvent.click(within(row).getByRole('button', { name: 'Add to my intent' }));
-    // The pending line opens the Expected outcome accordion, which eases open.
-    const opened = await canvas.findByDisplayValue('Synthetic older direction');
-    await waitFor(() => expect(opened).toBeVisible());
-    // Primary links belong to browser hashchange; this isolated router owns its keyboard path.
-    await userEvent.click(canvas.getByRole('heading', { name: 'Drift' }));
-    await userEvent.keyboard('s');
-    await userEvent.click(await canvas.findByRole('link', { name: /Synthetic record/ }));
-    await waitFor(() =>
-      expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(50),
-    );
-    // The pending line opens the Expected outcome accordion, which eases open.
-    const pending = await canvas.findByDisplayValue('Synthetic older direction');
-    await waitFor(() => expect(pending).toBeVisible());
-    await expect(canvasElement.querySelector('[data-next-entry-id="e50"]')).toBeNull();
   },
 };
 

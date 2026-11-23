@@ -16,7 +16,7 @@ export const OUTLINE_EMPTY = 'The part of the record Compass read holds no entri
 export const NO_PROMPT_OPENING = 'Work before your first message';
 export const NO_PROMPT_CONTINUED = 'Work carrying on from earlier in this session';
 /* The prompt is the person's own words, masked by the server; a block head is a glance, and the whole message
-   is one press away in Full activity. */
+   is one press away in Activity log. */
 export const PROMPT_CHARS = 180;
 
 export type OutlineView =
@@ -64,7 +64,7 @@ export function trimPrompt(title: string): string {
 /* Why there is no outline, in the reader's words. `harness` is the harness's display name. */
 export function noOutline(outline: Outline, harness: string): string {
   if (outline.state === 'unsupported')
-    return `${harness} keeps no record Compass can page through, so this session has no outline. Full activity below lists what the harness reported.`;
+    return `${harness} keeps no record Compass can page through, so this session has no outline. Activity log below lists what the harness reported.`;
   if (outline.state === 'stale')
     return "The session's record changed while Compass was reading it. Compass reads it again on the next update.";
   if (outline.reason === 'outline_busy')
@@ -253,11 +253,10 @@ export function outlineStamp(revision: number | null, running: boolean, failed =
   return [at, running ? 'still running' : ''].filter(Boolean).join(' · ');
 }
 
-/* Why Full activity could not show a chip's entry. One from before the intent's start is not listed there by
-   design, so it is not said to have failed to load. */
+/* The record can hold entries from either side of the reading window. */
 export function missingSentence(n: string | null, outside: boolean): string {
   const what = n ? `entry #${n}` : 'that entry';
   return outside
-    ? `Full activity lists entries from your intent’s start, so it does not show ${what}.`
-    : `Full activity does not show ${what}: it could not be loaded, or it sits in a folded run of checks.`;
+    ? `The Activity log could not show ${what} from before the reading window.`
+    : `Activity log does not show ${what}: it could not be loaded, or it sits in a folded run of checks.`;
 }

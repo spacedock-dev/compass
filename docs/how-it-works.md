@@ -73,6 +73,13 @@ Each session's page has three cards, one under another:
   Update summary can continue an interrupted message; older summaries made from excerpts offer Summarize again.
 - Drift: the check described above, and what became of anything it raised.
 
+At the foot of the page, Show technical details opens the Activity log. A citation opens the
+log and takes you to its entry. The log keeps your filter if it includes the entry and switches
+to All if needed. Choose You, Agent, Commands, Files or Cited to narrow the loaded record.
+Cited includes entries linked from readings and summaries. The log says how many loaded entries
+the filter hides. Entries marked "Before reading window" fall outside the progress check for
+your current goal.
+
 On a Claude Code session, open Drift settings in the Drift card to find the Live monitor switch.
 It says "Checks progress about once a minute while you watch". With it on, Compass asks
 Haiku, through your Claude Code, about once a minute while you view the page where the latest turns

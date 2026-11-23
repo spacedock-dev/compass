@@ -101,7 +101,7 @@ function jumpName(key: string): string {
    "…"', 'Failed check: …', 'File write: …'), then its number in the activity list and when it was recorded: the
    way the citation card says it, the same on a departure card, the claims row and every quiet row (owner,
    2026-10-23: the citations are the source, so nothing repeats them behind a fold, and an entry reads as the
-   agent's or yours, never as the result's). A number opens Full activity at that entry; an entry the page does
+   agent's or yours, never as the result's). A number opens Activity log at that entry; an entry the page does
    not hold yet keeps the press that reads older pages for it. The shape demotes a departure with no held
    citation, so a departure always reaches at least one number. */
 function CitedEntries({
@@ -138,10 +138,10 @@ function CitedEntries({
         data-next-cockpit-action="finding-jump"
         data-next-finding={findingKey}
         data-next-cite={id}
-        aria-label={`Show ${where} in Full activity for ${named}`}
+        aria-label={`Show ${where} in Activity log for ${named}`}
         onJump={(origin) => chooseFinding(findingKey, origin, id)}
       >
-        {where.startsWith('#') ? `[${where.slice(1)}]` : `[${where}]`}
+        {where}
       </CitationLink>
     );
   };
@@ -177,7 +177,7 @@ function CitedEntries({
         data-next-cockpit-action="finding-jump"
         data-next-finding={findingKey}
         data-next-cite=""
-        aria-label={`Load the cited entries in Full activity for ${named}`}
+        aria-label={`Load the cited entries in Activity log for ${named}`}
         onClick={(event) => chooseFinding(findingKey, event.currentTarget)}
       >
         Load the cited entries

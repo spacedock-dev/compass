@@ -1,7 +1,7 @@
 import { nativeSession } from '../observed/native';
 import { nextNumber } from '../api/bootstrap';
 import {
-  conflictCandidates,
+  entryLabel,
   entryNumbering,
   labelOrder,
   laterDirections,
@@ -31,8 +31,8 @@ import {
 } from './sentences';
 import { readingAuthor, readingCopied } from './shape';
 
-/* The session's activity, numbered. It sits right after CURRENT ACTIVITY in Full activity, under that
-   section's own heading, and the numbers are the ones every "#<n>" on the page names: a
+/* The numbered session record shown in Activity log. The numbers are the ones every "#<n>"
+   on the page names: a
    reading cites an entry by this list's number, so a citation resolves against the same list the reader is
    looking at rather than against a second collection assembled from the same facts. `cited` is the set of
    fact ids the current reading's surviving departures rest on. The legacy cockpit's `nextCockpitWorkEvidence`
@@ -312,7 +312,7 @@ function unreadSentence(scan: Row | null | undefined): string {
   return `${parts.join(' and ')} ${subagents + calls === 1 ? 'was' : 'were'} not read`;
 }
 
-/* A passing check gets one more mark when the scan left subagent transcripts unread, so Full activity does not
+/* A passing check gets one more mark when the scan left subagent transcripts unread, so Activity log does not
    show a bare "Passed" for a session whose subagent work was not read. Only a pass: a failure stands whatever
    else was unread, and a check with no recorded result claims nothing to qualify. Unread calls get no mark: each
    one is recorded as a change, so a pass before it already carries the stale mark and a pass after it saw it. */
@@ -427,17 +427,6 @@ export function entryActor(entry: WorkEntry): string {
   return author === 'derived' ? 'Compass’s summary' : 'Agent';
 }
 
-/* The clause for entries that are counted and not listed, naming the ones a departure cites, which are listed
-   anyway with their time and no number. An untimed entry has no time to list it with. */
-function unlistedClause(count: number, what: string, cited: number, timed = true): string {
-  const are = count === 1 ? 'is' : 'are';
-  const how = timed ? `with ${cited === 1 ? 'its' : 'their'} time and no number` : 'with no number';
-  const except = !cited
-    ? ''
-    : `, except ${cited === 1 ? 'the one' : `the ${String(cited)}`} the analysis cites, listed ${how}`;
-  return `${String(count)} ${what} ${are} counted and not listed${except}.`;
-}
-
 /* What the rows actually are, counted from the rows themselves. The block was headed WORK EVIDENCE, and on
    Claude and Codex every entry is a `user_message`, so a reader comparing their words against "work evidence"
    was reading their own sentences back on both sides of the comparison. The heading names the record rather
@@ -522,7 +511,6 @@ export interface WorkRow {
   readonly source: string;
   readonly at: string;
   readonly turn: boolean;
-  readonly add: boolean;
 }
 
 export interface CheckRunModel {
@@ -609,7 +597,6 @@ export interface WorkList {
   /** Said where no row is drawn and the record is not merely unnumbered. */
   readonly absent: string;
   readonly mix: string;
-  readonly unlisted: readonly string[];
   readonly checks: string;
   readonly bound: string;
   readonly reads: boolean;
@@ -625,40 +612,23 @@ export interface WorkListInput {
   readonly annotation: Annotation | null;
   readonly draft: Draft | null;
   readonly cited: ReadonlySet<string>;
-  readonly revealed?: ReadonlySet<string>;
   readonly generated: number;
 }
 
 export function workList(input: WorkListInput): WorkList {
   const { session, payload, source, annotation, cited } = input;
   const numbering = entryNumbering(session, source, payload);
-  const { all, numbers, earlier, untimed, unnumbered: noNumber, opened, ordinals } = numbering;
+  const { all, numbers, earlier, untimed, opened, ordinals } = numbering;
   const annotate = payload['annotate'] === true;
   const ann = annotate ? annotation : null;
   const later = new Set(laterDirections(ann, all, session, input.draft));
-  /* Every unsettled later direction is drawn at its own number, as a cited entry is, so the "#<n>" the
-     question before the press names is always a row on screen. One from before the window has no number and
-     is drawn with its time, as a cited earlier entry is, and is not counted among the earlier entries left
-     unlisted. A settled one takes the bound. */
-  const open = new Set(conflictCandidates(ann, all, session, input.draft));
-  const numbered = all.filter((entry) => numbers.has(entry));
   const isCited = (entry: WorkEntry): boolean => cited.has(entry.id);
-  const isRevealed = (entry: WorkEntry): boolean => Boolean(input.revealed?.has(entry.id));
-  /* An entry a fixed-number session published no number for (a workflow fact, say) is still in the window, so it
-     is drawn, without a number and with its time, as a cited earlier entry is. */
-  const unnumberedHere = new Set(noNumber);
-  const entries = all.filter(
-    (entry) =>
-      numbers.has(entry) ||
-      unnumberedHere.has(entry) ||
-      isCited(entry) ||
-      isRevealed(entry) ||
-      open.has(entry),
-  );
+  const datedEarlier = new Set(earlier);
   const turnOf = lastTurn(session, all);
-  const rows = entries.map((entry): WorkRow => {
+  const rows = all.map((entry): WorkRow => {
     const stamp = nextNumber(entry.at);
-    const n = numbers.get(entry);
+    const n =
+      numbers.get(entry) ?? (ordinals && datedEarlier.has(entry) ? entryLabel(entry) : null);
     const copied = readingCopied(entry);
     const row: WorkRow = {
       entry,
@@ -701,7 +671,6 @@ export function workList(input: WorkListInput): WorkList {
           stamp <= turnOf.to &&
           !personAuthored(entry),
       ),
-      add: later.has(entry),
     };
     return incompletePass(row, source.scan);
   });
@@ -724,35 +693,15 @@ export function workList(input: WorkListInput): WorkList {
         ? 'No entry in the record read here sits where your intent’s window opens, so #1 is the first entry after that point.'
         : 'The record read here no longer reaches back to where your intent’s window opens, so #1 is the first entry it holds after that point.'
       : '';
-  const unlisted: string[] = [];
-  const unasked = earlier.filter((entry) => !open.has(entry));
-  if (unasked.length) {
-    unlisted.push(
-      unlistedClause(
-        unasked.length,
-        `earlier ${unasked.length === 1 ? 'entry' : 'entries'}, from before your intent’s window opened,`,
-        unasked.filter((entry) => isCited(entry) || isRevealed(entry)).length,
-      ),
-    );
-  }
-  if (untimed.length) {
-    unlisted.push(
-      unlistedClause(
-        untimed.length,
-        `${untimed.length === 1 ? 'entry' : 'entries'} with no published time`,
-        untimed.filter((entry) => isCited(entry) || isRevealed(entry)).length,
-        false,
-      ),
-    );
-  }
-  // Every timed entry in the loaded window is drawn; there is no hidden readability slice.
   const bound = '';
   /* Nothing numbered while the record holds entries is a fact about the window, not an empty record: "No entry
      names this session" beside a count of the entries it holds was false. */
   const unnumbered =
     !numbers.size && (earlier.length || untimed.length)
       ? earlier.length
-        ? 'No entry in the record read here is from after your intent’s window opened, so none is numbered.'
+        ? ordinals
+          ? ''
+          : 'No entry in the record read here is from after your intent’s window opened, so none is numbered.'
         : 'No entry in the record read here has a published time, so none is numbered.'
       : '';
   const harness = String(session['harness'] || '');
@@ -765,8 +714,7 @@ export function workList(input: WorkListInput): WorkList {
     unnumbered,
     rows,
     absent: rows.length || unnumbered ? '' : workAbsence(source),
-    mix: numbered.length ? workMix(numbered) : '',
-    unlisted,
+    mix: all.length ? workMix(all) : '',
     checks: source.scan ? checkScan(source.scan) : '',
     bound,
     reads,

@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { contextKey } from '../api/identity';
 import { parseOutline } from '../api/outline';
-import { useControls } from '../controls';
 import { entriesHeld } from '../drift/citations';
-import { afterPanelSettles } from '../drift/panelSettle';
 import { CitationLink } from '../drift/CitationLink';
-import { landOnEntry } from '../drift/jumpToEntry';
+import { openEntry } from '../drift/jumpToEntry';
 import { useDrift } from '../drift/context';
 import { SampleMark } from '../sample/SampleMark';
 import { useDisplayed, useShell } from '../shell/context';
@@ -14,7 +12,6 @@ import { Card } from '../ui/card';
 import { Disclosure, disclosureKey } from '../controls';
 import { SummaryControls, SummaryView } from './SummaryParts';
 import { summaryHeader, useOpenSummary, useSummaryState } from './summaryState';
-import { fullActivityKey } from './fullActivityKey';
 import {
   missingSentence,
   OUTLINE_EMPTY,
@@ -28,9 +25,9 @@ import {
 import { useSteadyOutline } from './steadyOutline';
 
 export const WHAT_IT_DID_PLACEHOLDER =
-  'An outline of what this session did is not drawn here yet. Full activity below shows the recorded activity available to this page.';
+  'An outline of what this session did is not drawn here yet. Activity log below shows the recorded activity available to this page.';
 
-/* An entry chip: its `#n` where the page holds and numbers the entry. Pressing it opens Full activity and lands
+/* An entry chip: its `#n` where the page holds and numbers the entry. Pressing it opens Activity log and lands
    on the entry, reading older record pages for it first when the page does not hold it, as Show cited entries
    does (docs/design-reader-state.md#the-inventory). An entry from before the intent's window keeps its number,
    muted, and says why Analyze does not read it. */
@@ -53,7 +50,8 @@ export function EntryChip({
   /** A citation in a line of text: its number in brackets, as a footnote. Otherwise `#n` in running words. */
   readonly cite?: boolean;
 }) {
-  const { model } = useDrift();
+  const drift = useDrift();
+  const { model } = drift;
   const n = model.labels.get(id) ?? null;
   const outside = model.outside.has(id);
   /* A command is on the page and takes no number, so it is not an older entry the page has yet to read. */
@@ -72,7 +70,7 @@ export function EntryChip({
         : outside
           ? UNNUMBERED_BEFORE
           : UNNUMBERED_OLDER;
-  const label = `Open ${n ? `entry #${n}` : command ? 'a command, not numbered' : outside ? 'the entry before your intent’s start' : 'an older entry the page has not read yet'}, ${purpose}, in Full activity${outside ? `. ${OUTSIDE_WINDOW}` : ''}`;
+  const label = `Open ${n ? `entry #${n}` : command ? 'a command, not numbered' : outside ? 'the entry before your intent’s start' : 'an older entry the page has not read yet'}, ${purpose}, in Activity log${outside ? `. ${OUTSIDE_WINDOW}` : ''}`;
   const marks = {
     'data-next-outline-entry': id,
     'data-next-cockpit-action': 'finding-jump',
@@ -126,7 +124,8 @@ function Block({
   readonly block: BlockView;
   readonly onOpen: (id: string, n: string | null) => void;
 }) {
-  const { model } = useDrift();
+  const drift = useDrift();
+  const { model } = drift;
   return (
     <li
       className="flex flex-col gap-1 border-l-2 border-[var(--rule)] pl-3"
@@ -197,9 +196,9 @@ export function WhatItDid({
   readonly running: boolean;
   readonly harness: string;
 }) {
-  const { model } = useDrift();
+  const drift = useDrift();
+  const { model } = drift;
   const { runtime } = useShell();
-  const controls = useControls();
   const read = useDisplayed((snapshot) =>
     snapshot.contexts.get(contextKey(model.projectKey, model.session as never)),
   );
@@ -229,8 +228,6 @@ export function WhatItDid({
     readonly what: string;
     readonly from: 'summary' | 'outline';
   } | null>(null);
-  // The latest press: a read that ends after another press began says nothing about the one now standing.
-  const latestPress = useRef<object | null>(null);
   const summary = useSummaryState(entry, running, harness);
   useOpenSummary(summary);
   /* A summary's citations read as numbers, and a message the page has not read yet has none until its record
@@ -268,36 +265,11 @@ export function WhatItDid({
       ? outlineStamp(entry?.revision ?? null, running, Boolean(entry?.error))
       : '';
 
-  const land = landOnEntry;
   const open = (from: 'summary' | 'outline') => (id: string, n: string | null) => {
-    const press = {};
-    latestPress.current = press;
     setMissing(null);
-    controls.disclosures.set(fullActivityKey(model.project, model.session), true);
-    /* After Full activity has finished opening. A smooth scroll begun while its panel still grew was clamped
-       at the foot of a page not yet tall enough, and left the row at the bottom edge (top 728 of 729 px). */
-    const settle = () =>
-      requestAnimationFrame(() => {
-        if (latestPress.current !== press) return;
-        const panel = document.querySelector('[data-next-full-activity-body]');
-        const growing = panel?.getAnimations?.() ?? [];
-        void Promise.allSettled(growing.map((animation) => animation.finished)).then(() => {
-          afterPanelSettles(() => {
-            if (latestPress.current !== press) return;
-            if (!land(id)) setMissing({ what: missingSentence(n, model.outside.has(id)), from });
-          });
-        });
-      });
-    if (model.byId.has(id) || !identity) {
-      settle();
-      return;
-    }
-    const scope = { projectKey: model.projectKey, session: model.session, cited: [id] };
-    void runtime
-      .resolveRecord({ projectKey: model.projectKey, focus: identity }, (snapshot) =>
-        entriesHeld(snapshot, scope),
-      )
-      .finally(settle);
+    void openEntry(drift, id).then((landed) => {
+      if (landed === false) setMissing({ what: missingSentence(n, model.outside.has(id)), from });
+    });
   };
 
   /* The notice and controls stay above what they act on, before and after a summary exists: they once sat below
@@ -435,7 +407,7 @@ function Outline({
   );
 }
 
-/* A chip whose entry Full activity could not show, said where the press was made. */
+/* A chip whose entry Activity log could not show, said where the press was made. */
 function MissingLine({ missing }: { readonly missing: string }) {
   return (
     <p className="next-cockpit-define" role="status" data-next-outline-missing>

@@ -26,7 +26,7 @@ export const TOUR: readonly TourNote[] = [
   {
     id: 'departure',
     title: 'A departure, and its evidence',
-    body: 'Analyze drift compares your goal with the record. Each departure shows what it rests on under What, every cited entry in its own words with its entry number, and says why in one sentence. Press a number and Full activity opens on that entry, with every cited entry lit up. It is an account of the evidence, never a verification that the work was done.',
+    body: 'Analyze drift compares your goal with the record. Each departure shows what it rests on under What, every cited entry in its own words with its entry number, and says why in one sentence. Press a number and Activity log opens on that entry, with every cited entry lit up. It is an account of the evidence, never a verification that the work was done.',
   },
   {
     id: 'steer',
@@ -40,7 +40,7 @@ export const TOUR: readonly TourNote[] = [
   },
   {
     id: 'activity',
-    title: 'Full activity: everything the session did',
+    title: 'Activity log: everything the session did',
     body: 'Collapsed at the foot of the page. Every message the agent wrote, every check it ran and every file it wrote since your intent’s start, numbered from #1 for the session’s oldest entry. A number never moves, so an entry a summary line or a correction cites still points at it later; one from before your intent’s start keeps its number, muted, because Analyze does not read it. A check or file takes the number of the message it follows, such as #50.1.',
   },
 ];

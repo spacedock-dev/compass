@@ -106,14 +106,13 @@ export const MatchedIdsFutureCase: Story = {
     })) as HTMLElement;
     await expect(first.querySelector('[data-next-outline-span]')).toBeNull();
     const chip = await within(region).findByRole('link', {
-      name: 'Open entry #2.1, the failed check, in Full activity',
+      name: 'Open entry #2.1, the failed check, in Activity log',
     });
     await userEvent.click(chip);
     await waitFor(() =>
-      expect(canvas.getByRole('button', { name: 'Full activity' })).toHaveAttribute(
-        'aria-expanded',
-        'true',
-      ),
+      expect(
+        canvas.getByRole('button', { name: /^(Show|Hide) technical details$/ }),
+      ).toHaveAttribute('aria-expanded', 'true'),
     );
     await waitFor(() =>
       expect(document.activeElement).toBe(
@@ -199,7 +198,7 @@ export const PiHasNoOutline: Story = {
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     await within(region).findByText(
-      'Pi keeps no record Compass can page through, so this session has no outline. Full activity below lists what the harness reported.',
+      'Pi keeps no record Compass can page through, so this session has no outline. Activity log below lists what the harness reported.',
     );
     await expect(region.querySelector('[data-next-outline-block]')).toBeNull();
     await expect(region.querySelector('[data-next-outline-stamp]')).toBeNull();
@@ -533,7 +532,9 @@ export const PartialProgressBecomesComplete: Story = {
       'This outline is partial. Compass will try to read more on later updates.',
     );
     const opening = box.getByText('Add retry with backoff to the webhook handler.');
-    const full = within(canvasElement).getByRole('button', { name: 'Full activity' });
+    const full = within(canvasElement).getByRole('button', {
+      name: /^(Show|Hide) technical details$/,
+    });
     await userEvent.click(full);
     await expect(document.activeElement).toBe(full);
     summaryScript.outline = progressiveOutline(1);
@@ -558,9 +559,7 @@ export const PartialProgressBecomesComplete: Story = {
     await expect(region.querySelector('[data-next-summary-size]')).toHaveTextContent(
       'Compass plans the parts when the summary starts',
     );
-    await expect(region).not.toHaveTextContent(
-      /Full activity lists every entry|first message and the newest/,
-    );
+    await expect(region).not.toHaveTextContent(/Activity log|first message and the newest/);
     await expect(full).toHaveAttribute('aria-expanded', 'true');
     await expect(document.activeElement).toBe(full);
     await expect(summaryScript.posts).toEqual([]);

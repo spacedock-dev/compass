@@ -6,13 +6,12 @@ import { citedLine } from './result';
 
 /* A citation: its number as a link. Hovering or focusing it shows the cited entry's own words in place, so
    reading a summary never means leaving it; "See in context of the session" is the press that closes the card,
-   opens Full activity and lands on the entry. Pressing the number itself opens the card and does not jump, so
+   opens Activity log and lands on the entry. Pressing the number itself opens the card and does not jump, so
    a citation is never a surprise scroll. A keyboard press puts focus on the context link, because the card
    is drawn outside the line it belongs to. The card is a convenience only: the context link is the same press
    the number used to be, and an entry the page does not hold yet says so and keeps that press, which reads the
    older pages for it. */
-const LINK =
-  'justify-center rounded-control font-[family-name:var(--mono)] text-label text-cite no-underline hover:underline';
+const LINK = 'justify-center rounded-control text-label text-cite no-underline hover:underline';
 
 export function CitationLink({
   id,
@@ -22,7 +21,7 @@ export function CitationLink({
   ...props
 }: {
   readonly id: string;
-  /** The jump to the entry in Full activity; `origin` is the number the reader pressed, where focus returns. */
+  /** The jump to the entry in Activity log; `origin` is the number the reader pressed, where focus returns. */
   readonly onJump: (origin: HTMLElement | null) => void;
   readonly className?: string;
   readonly children: ReactNode;
@@ -67,9 +66,7 @@ export function CitationLink({
           >
             {entry && row ? (
               <>
-                <p className="m-0 text-label text-muted-foreground [font-family:var(--mono)]">
-                  {row.shown.head}
-                </p>
+                <p className="m-0 text-label text-muted-foreground">{row.shown.head}</p>
                 <p
                   className="m-0 line-clamp-6 text-body leading-[1.5] [overflow-wrap:anywhere]"
                   data-next-citation-snippet

@@ -12,7 +12,6 @@ import { useDrift } from '../drift/context';
 import { ModelNotice, NoticeBody } from '../drift/ModelNotice';
 import { Why } from '../drift/Why';
 import { ActionButton } from '../intent/ActionButton';
-import { SHOWN } from '../language/glossary';
 import { SampleMark } from '../sample/SampleMark';
 import { clock } from '../observed';
 import { useShell } from '../shell/context';
@@ -173,7 +172,7 @@ function Sent({ state }: { readonly state: SummaryState }) {
               scope: model.key,
               name: 'summary-sent-limit',
             })}
-            summary={SHOWN.showTechnicalDetails}
+            summary="Exact byte limits"
           >
             <Line>{`${bytes.toLocaleString()} bytes per part.`}</Line>
           </Disclosure>

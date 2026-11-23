@@ -13,7 +13,13 @@ import { monitorLevel, parseLease } from './monitor';
 import { useHeldVersion } from '../intent/useIntent';
 import type { Row } from '../observed';
 import { useDisplayed, useShell } from '../shell/context';
-import { DriftContext, type DriftValue, type Jump, type JumpMissing } from './context';
+import {
+  DriftContext,
+  type DriftValue,
+  type EntryJump,
+  type Jump,
+  type JumpMissing,
+} from './context';
 import { buildModel, type DriftModel } from './model';
 import { overlaid } from './overlay';
 import { PRIOR_FINDING } from './prior';
@@ -22,7 +28,7 @@ import { driftCtxFor, useDriftVersion, type DriftCtx } from './state';
 import { clearFlipLines } from './flip';
 import { entryWindow } from '../intent/work';
 import { citationsHeld, citedIdsOf, citesOf, entriesHeld, heldIds } from './citations';
-import { fullActivityKey } from '../sessions/fullActivityKey';
+import { showActivityLog } from '../sessions/fullActivityKey';
 import { trackJobs } from './jobs';
 import { syncPaused } from './steerActions';
 
@@ -113,8 +119,25 @@ export function DriftProvider({
   const [chosen, setChosen] = useState<Jump | null>(null);
   const [settled, setSettled] = useState<Jump | null>(null);
   const [missing, setMissing] = useState<JumpMissing | null>(null);
+  const [entryJump, setEntryJump] = useState<EntryJump | null>(null);
   // The latest press: a read that ends after another press began says nothing about the one now standing.
-  const latestPress = useRef<Jump | null>(null);
+  const latestPress = useRef<Jump | EntryJump | null>(null);
+  useEffect(
+    () => () => {
+      if (latestPress.current?.session === key) latestPress.current = null;
+    },
+    [key],
+  );
+  const revealEntry = (id: string) => {
+    const next = { session: key, id };
+    latestPress.current = next;
+    setEntryJump(next);
+    setChosen(null);
+    setMissing(null);
+    showActivityLog(ctx.shell.controls, project, session);
+    return () => latestPress.current === next;
+  };
+  if (entryJump && entryJump.session !== key) setEntryJump(null);
   const readAt = model.raw?.['read_at'];
   /* An earlier departure's card presses under its own key, so its citations, its "Cited for" and its way back
      are its own and never the standing row's for the same line. */
@@ -140,7 +163,7 @@ export function DriftProvider({
   // The note answers one press on one reading; a new reading or another session takes it down, as it does `chosen`.
   if (missing && (missing.press.session !== key || missing.press.readAt !== readAt))
     setMissing(null);
-  /* A press of a cited entry opens Full activity and, where an entry it cites is not one the page holds,
+  /* A press of a cited entry opens Activity log and, where an entry it cites is not one the page holds,
      reads older record pages until it is, the record's start, or the page cap. The reader asked for these
      entries, so this is their read, as Show more is; docs/design-reader-state.md#the-inventory owns it.
      Whatever is still not held when the read ends is counted, and the list says so. */
@@ -151,10 +174,11 @@ export function DriftProvider({
   ) => {
     const next: Jump = { session: key, readAt, key: findingKey, origin, entry };
     latestPress.current = next;
+    setEntryJump(null);
     setChosen(next);
     setSettled(null);
     setMissing(null);
-    ctx.shell.controls.disclosures.set(fullActivityKey(project, session), true);
+    showActivityLog(ctx.shell.controls, project, session);
     const cited = priorOf(findingKey)?.cites.slice() ?? citesOf(model.raw, findingKey);
     const identity = model.identity;
     const scope = { projectKey: model.projectKey, session: model.session, cited };
@@ -207,6 +231,8 @@ export function DriftProvider({
     finding,
     cleared,
     jump: finding ? chosen : null,
+    entryJump,
+    revealEntry,
     jumpMissing: missing,
     chooseFinding,
   };

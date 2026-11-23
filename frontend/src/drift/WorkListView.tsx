@@ -1,7 +1,4 @@
 import { Card } from '../ui/card';
-import { openDirection } from '../intent/directions';
-import { DirectionActionButton } from '../intent/DirectionActionButton';
-import { compatSessKey } from '../api/identity';
 import { useDrift } from './context';
 import { missingCites, WORK_AS_REPORTED } from './sentences';
 import {
@@ -21,12 +18,52 @@ import { TooltipProvider } from '../ui/tooltip';
 import { disclosureKey, useControls } from '../controls';
 import { useControlledDisclosureState } from '../controls/useDisclosureState';
 import { Why } from './Why';
-import { useEffect, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { Button } from '../ui/button';
 import { contextKey } from '../api/identity';
-import { activityStamp, entryWindow, recordPastWindow } from '../intent/work';
+import { parseFocusedSummary } from '../api/summary';
+import { activityStamp, entryWindow, personAuthored, recordPastWindow } from '../intent/work';
 import { useDisplayed, useShell } from '../shell/context';
 import { ShowMore } from './ShowMore';
+import { ACTIVITY_LOG_FILTER_LABELS, GLOSSARY } from '../language/glossary';
+import { fullActivityKey } from '../sessions/fullActivityKey';
+import { readingCitationIds } from './citations';
+import { summaryCitationIds } from '../sessions/summary';
+import { agentMessage, evidenceAt } from './shape';
+import type { WorkRow } from './workList';
+import { cn } from '../lib/utils';
+
+type ActivityFilter = keyof typeof ACTIVITY_LOG_FILTER_LABELS;
+const filters = Object.keys(ACTIVITY_LOG_FILTER_LABELS) as ActivityFilter[];
+
+function matchesFilter(row: WorkRow, filter: ActivityFilter, cited: ReadonlySet<string>): boolean {
+  const { entry } = row;
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'you':
+      return personAuthored(entry);
+    case 'agent':
+      return agentMessage(entry);
+    case 'commands':
+      return (
+        (entry.type === 'tool_report' &&
+          ['command', 'ci_command', 'check'].includes(entry.subject)) ||
+        (entry.work && entry.type === 'result' && entry.subject === 'check')
+      );
+    case 'files':
+      return entry.type === 'tool_report' && entry.subject === 'write';
+    case 'cited':
+      return cited.has(entry.id);
+  }
+}
 
 function HeldCheckRun({
   run,
@@ -61,22 +98,36 @@ function HeldCheckRun({
   );
 }
 
-/* The numbered activity list, drawn under CURRENT ACTIVITY. It sits in Full activity under that
-   section's own heading, so it has none of its own. The record's footer is tiered: where the harness's work
+function land(node: HTMLElement): void {
+  if (!node.isConnected || node.closest('[hidden]')) return;
+  node.focus({ preventScroll: true });
+  node.scrollIntoView({
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    block: 'center',
+  });
+}
+
+/* The numbered activity list in technical details. The record's footer is tiered: where the harness's work
    results are read, one clause stays in view and the mix, the bounds, the scan and the full limit sit behind
    "About this record"; where none are read, the limit is the absence and stays in view. The route's
    tool-output sentence is not repeated here: "What is sent" beside the control owns it.
 
    Newest first: the rows are drawn from the last entry to the first, so a reader opens on what just happened.
    The numbers stay the ones the list assigns oldest-first, which every "#<n>" on the page and every citation
-   names, so the column reads #32 down to #1. "Add to my intent" is always drawn: a control shown only on
-   hover is one a reader does not know is there. */
+   names, so the column reads #32 down to #1. */
 export function WorkListView() {
-  const { ctx, model, finding, jump, jumpMissing } = useDrift();
-  const { runtime } = useShell();
-  const record = useDisplayed((snapshot) =>
-    snapshot.records.get(contextKey(model.projectKey, model.identity)),
+  const { model, finding, jump, jumpMissing, entryJump } = useDrift();
+  const { runtime, controls } = useShell();
+  const filterKey = fullActivityKey(model.project, model.session);
+  const filterStore = controls.activityLogFilters;
+  const savedFilter = useSyncExternalStore(filterStore.subscribe, () =>
+    filterStore.read(filterKey),
   );
+  const filter = filters.find((choice) => choice === savedFilter) ?? 'all';
+  const focusedKey = contextKey(model.projectKey, model.identity);
+  const record = useDisplayed((snapshot) => snapshot.records.get(focusedKey));
+  const focused = useDisplayed((snapshot) => snapshot.contexts.get(focusedKey));
+  const summary = parseFocusedSummary(focused?.data)?.summary;
   const harness = model.identity?.harness;
   const sid = model.identity?.sid;
   useEffect(() => {
@@ -101,6 +152,10 @@ export function WorkListView() {
   const pagingFocus = useRef<{ button: HTMLElement; before: ReadonlySet<string> } | null>(null);
   const opened = entryWindow(model.session, model.payload);
   const pastWindow = recordPastWindow(record, opened);
+  const beforeWindow = ({ entry }: WorkRow) => {
+    const time = evidenceAt(entry);
+    return opened !== null && time !== null && time > 0 && time < opened;
+  };
   const readMore = () => {
     if (!model.identity || pastWindow) return;
     const before = new Set(list.rows.map((row) => row.entry.id));
@@ -109,40 +164,6 @@ export function WorkListView() {
     // An appended older page stays below the existing rows. Focus must never scroll that page into view.
     void runtime.readMoreRecord({ projectKey: model.projectKey, focus: model.identity });
   };
-  const land = (node: HTMLElement) => {
-    node.focus({ preventScroll: true });
-    node.scrollIntoView({
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        ? 'instant'
-        : 'smooth',
-      block: 'center',
-    });
-  };
-  /* A press of a cited entry lands once, on the row it named or else the first cited row drawn, as soon as one is: the rows may
-     arrive with an older page the press asked for. A press whose pages are read with none of its entries drawn
-     lands on the sentence saying so instead, so focus never stays on a control whose result is elsewhere. */
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a newly read page is the retry trigger, not a value the body reads.
-  useEffect(() => {
-    if (finding && jump && jumped.current !== jump) {
-      const rows = [
-        ...(panel.current?.querySelectorAll<HTMLElement>('[data-next-entry-id]') ?? []),
-      ];
-      const target =
-        rows.find((node) => jump.entry !== null && node.dataset['nextEntryId'] === jump.entry) ??
-        rows.find((node) => finding.citedIds.includes(node.dataset['nextEntryId'] ?? ''));
-      if (target) {
-        jumped.current = jump;
-        afterPanelSettles(() => land(target));
-        return;
-      }
-    }
-    if (!jumpMissing || noted.current === jumpMissing || jumped.current === jumpMissing.press)
-      return;
-    const note = panel.current?.querySelector<HTMLElement>('[data-next-jump-missing]');
-    if (!note) return;
-    noted.current = jumpMissing;
-    land(note);
-  }, [finding, jump, jumpMissing, record]);
   /* Back to the control the jump was pressed on, or, when a redraw replaced it, the one that names the same
      finding now. */
   const press = jump ?? jumpMissing?.press ?? null;
@@ -167,7 +188,7 @@ export function WorkListView() {
     <Button
       type="button"
       variant="bare"
-      className="inline underline"
+      className="inline border-[var(--line-hi)] underline"
       data-next-jump-back
       onClick={back}
       onKeyDown={(event) => {
@@ -180,6 +201,7 @@ export function WorkListView() {
       Back to the finding
     </Button>
   ) : null;
+  const cited = new Set([...readingCitationIds(model), ...summaryCitationIds(summary)]);
   const list = workList({
     session: model.session,
     payload: model.payload,
@@ -187,7 +209,6 @@ export function WorkListView() {
     annotation: model.annotation,
     draft: model.draft,
     cited: model.cited,
-    revealed: new Set(finding?.citedIds),
     generated: model.generated,
   });
   useLayoutEffect(() => {
@@ -210,35 +231,121 @@ export function WorkListView() {
     (retained ?? firstNew ?? boundary)?.focus({ preventScroll: true });
   }, [record]);
   const ordered = rowsByNumber(list.rows);
-  const folded = foldRuns(newestFirst(ordered), new Set(finding?.citedIds));
-  const turnLead = lastTurnLead(ordered, folded);
+  const shown = newestFirst(ordered).filter((row) => matchesFilter(row, filter, cited));
+  const reveal = entryJump ?? jump;
+  const explicitId = entryJump?.id ?? jump?.entry ?? null;
+  const requested = new Set(explicitId === null ? finding?.citedIds : [explicitId]);
+  const hasTarget = ordered.some((row) => requested.has(row.entry.id));
+  const targetId = shown.find((row) => requested.has(row.entry.id))?.entry.id;
+  const adjusted = useRef<typeof reveal>(null);
+  useLayoutEffect(() => {
+    if (!reveal || adjusted.current === reveal || !hasTarget) return;
+    adjusted.current = reveal;
+    if (targetId === undefined) filterStore.forget(filterKey);
+  }, [reveal, hasTarget, targetId, filterStore, filterKey]);
+  const visibleIds = new Set(shown.map((row) => row.entry.id));
+  const datedEarlier = shown.filter(beforeWindow);
+  // A filtered count has one visible row per match. All keeps the record's compact command groups.
+  const items =
+    filter === 'all'
+      ? foldRuns(
+          shown,
+          new Set([
+            ...requested,
+            ...(finding?.citedIds ?? []),
+            ...datedEarlier.map((row) => row.entry.id),
+          ]),
+        )
+      : shown.map((row) => ({ kind: 'row' as const, row }));
+  const turnLead = lastTurnLead(
+    ordered.filter((row) => visibleIds.has(row.entry.id)),
+    items,
+  );
+  /* A finding press lands once the requested row is visible. A finished read with no drawn target
+     leaves focus on the sentence that explains where it stopped. */
+  useEffect(() => {
+    if (jump && jumped.current !== jump && targetId !== undefined) {
+      const target = panel.current?.querySelector<HTMLElement>(
+        `[data-next-entry-id="${CSS.escape(targetId)}"]`,
+      );
+      if (target && !target.closest('[hidden]')) {
+        let cancelled = false;
+        afterPanelSettles(() => {
+          if (cancelled || !target.isConnected || target.closest('[hidden]')) return;
+          jumped.current = jump;
+          land(target);
+        });
+        return () => {
+          cancelled = true;
+        };
+      }
+    }
+    if (
+      !jumpMissing ||
+      noted.current === jumpMissing ||
+      jumped.current === jumpMissing.press ||
+      (jump && hasTarget)
+    )
+      return;
+    const note = panel.current?.querySelector<HTMLElement>('[data-next-jump-missing]');
+    if (!note) return;
+    noted.current = jumpMissing;
+    land(note);
+  }, [jump, jumpMissing, targetId, hasTarget]);
+  const hidden = ordered.length - shown.length;
+  const countKnown = ordered.length > 0 || model.source.state === 'empty';
+  const partial = record?.reachedStart !== true;
+  const count = (size: number) => `${size} ${size === 1 ? 'entry' : 'entries'}`;
   const hasChecks = list.rows.some((row) => 'check' in row.head && row.head.check);
   const about = (
     <>
       {hasChecks ? <ActivityLegend /> : null}
       {list.mix ? <p className="next-cockpit-work-mix">{list.mix}</p> : null}
-      {list.unlisted.map((said) => (
-        <p key={said} className="next-cockpit-work-earlier">
-          {said}
-        </p>
-      ))}
       {list.checks ? <p className="next-cockpit-work-checks">{list.checks}</p> : null}
       {list.bound ? <p className="next-cockpit-work-dropped">{list.bound}</p> : null}
       {list.reads ? <p className="next-cockpit-work-limit">{list.limit}</p> : null}
     </>
   );
-  const hasAbout = Boolean(
-    hasChecks || list.mix || list.unlisted.length || list.checks || list.bound || list.reads,
-  );
+  const hasAbout = Boolean(hasChecks || list.mix || list.checks || list.bound || list.reads);
   return (
     <TooltipProvider>
       <Card
         ref={panel}
         variant="work-panel"
         as="section"
-        className="next-cockpit-work"
+        className="next-cockpit-work px-0"
         data-next-cockpit-work
       >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="m-0 text-value font-semibold">
+            {GLOSSARY.activityLog.plain}
+            {countKnown ? ` · ${count(ordered.length)}${partial ? ' loaded' : ''}` : null}
+          </h3>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Filter activity log">
+            {filters.map((choice) => (
+              <Button
+                key={choice}
+                type="button"
+                variant="filter-option"
+                className="rounded-pill aria-pressed:bg-[var(--ink)] aria-pressed:text-[var(--raise)]"
+                aria-pressed={filter === choice}
+                disabled={!countKnown}
+                onClick={() =>
+                  choice === 'all'
+                    ? filterStore.forget(filterKey)
+                    : filterStore.remember(filterKey, choice)
+                }
+              >
+                {ACTIVITY_LOG_FILTER_LABELS[choice]}
+              </Button>
+            ))}
+          </div>
+        </div>
+        {countKnown && filter !== 'all' ? (
+          <p className="next-cockpit-work-limit" role="status">
+            {count(hidden)} hidden
+          </p>
+        ) : null}
         {list.anchor ? <p className="next-cockpit-work-anchor">{list.anchor}</p> : null}
         {jumpMissing ? (
           <p
@@ -252,24 +359,27 @@ export function WorkListView() {
           </p>
         ) : null}
         {list.unnumbered ? <p className="next-cockpit-work-absent">{list.unnumbered}</p> : null}
-        {list.rows.length ? (
+        {shown.length ? (
           <div className="next-cockpit-work-rows" role="list">
-            {folded.map((item) => {
+            {items.map((item) => {
               const renderRow = (row: (typeof list.rows)[number]) => {
                 const { entry } = row;
                 const type = entry.type;
+                const before = beforeWindow(row);
+                const highlighted = finding?.citedIds.includes(entry.id) === true;
                 return (
                   <div
                     key={entry.id}
-                    className={
-                      finding?.citedIds.includes(entry.id)
-                        ? /* The entries a reading rests on, found at a glance: a tint across the row and an accent
-                             edge, over the rule line every row has. The important marks beat the row's own border. */
-                          'next-cockpit-work-row !border-l-[3px] !border-l-[var(--accent)] !pl-[7px] rounded-r-control bg-[color-mix(in_srgb,var(--accent)_13%,transparent)]'
-                        : 'next-cockpit-work-row'
-                    }
-                    {...(finding?.citedIds.includes(entry.id) ? { 'data-next-cited': '' } : {})}
+                    className={cn(
+                      'next-cockpit-work-row border-t border-t-[var(--rule)] border-l-0 py-1',
+                      before && 'text-muted-foreground',
+                      before && !highlighted && 'bg-muted',
+                      highlighted &&
+                        'border-l-[3px] border-l-[var(--accent)] pl-[7px] rounded-r-control bg-[color-mix(in_srgb,var(--accent)_13%,transparent)]',
+                    )}
+                    data-next-cited={highlighted ? '' : undefined}
                     role="listitem"
+                    data-before-window={before ? '' : undefined}
                     data-next-cockpit-work-type={type}
                     {...(row.n === null ? {} : { 'data-next-entry': String(row.n) })}
                     data-next-entry-id={entry.id}
@@ -278,7 +388,7 @@ export function WorkListView() {
                     }
                     data-next-entry-turn={row.turn ? 'true' : undefined}
                     tabIndex={-1}
-                    {...(finding?.citedIds.includes(entry.id) ? { onKeyDown: backOnEscape } : {})}
+                    onKeyDown={highlighted ? backOnEscape : undefined}
                   >
                     <span className="next-cockpit-work-n">
                       {row.n === null ? (
@@ -293,47 +403,30 @@ export function WorkListView() {
                         turnRange={turnLead?.id === entry.id ? turnLead.range : null}
                         project={model.project}
                         scope={model.key}
+                        summary={
+                          entry.modelDerived ? (
+                            <em className="next-cockpit-work-derived">{rowWords(entry)}</em>
+                          ) : (
+                            <span
+                              className={`next-cockpit-work-summary ${type === 'tool_report' ? '[font-family:var(--mono)]' : ''}`}
+                            >
+                              {rowWords(entry)}
+                            </span>
+                          )
+                        }
                       />
-                      {finding?.citedIds.includes(entry.id) ? (
+                      {before ? (
+                        <span className="text-label text-muted-foreground">
+                          Before reading window
+                        </span>
+                      ) : null}
+                      {highlighted && finding ? (
                         <p className="next-cockpit-reading-evidence" data-next-finding-entry>
                           {`Cited for “${finding.detail || finding.clause || finding.label}” · ${row.n === null ? 'Entry not numbered in this view' : `#${String(row.n)}`}`}
                         </p>
                       ) : null}
-                      {finding?.citedIds.includes(entry.id) && backButton ? (
+                      {highlighted && backButton ? (
                         <span className="self-start">{backButton}</span>
-                      ) : null}
-                      {/* A model's paraphrase takes the third treatment, not the mono of a string a source
-                      published: the reader must be able to tell the record from an account of it. */}
-                      {entry.modelDerived ? (
-                        <em className="next-cockpit-work-derived">{rowWords(entry)}</em>
-                      ) : (
-                        <span className="next-cockpit-work-summary">{rowWords(entry)}</span>
-                      )}
-                      {row.add ? (
-                        <DirectionActionButton
-                          feedbackKey={`direction-row:${compatSessKey(model.session)}:${entry.id}`}
-                          focusKey={`direction-row:${compatSessKey(model.session)}:${entry.id}`}
-                          pendingKey={`direction-row:${compatSessKey(model.session)}:${entry.id}`}
-                          className="self-start"
-                          weight="quiet"
-                          label="Add to my intent"
-                          busyLabel="Opening…"
-                          action="direction-add"
-                          arg={entry.id}
-                          onPress={() => {
-                            if (model.identity && entry.id) {
-                              void openDirection(
-                                ctx.intent,
-                                model.session,
-                                entry.id,
-                                row.n,
-                                true,
-                                'direction-add',
-                                `direction-row:${compatSessKey(model.session)}:${entry.id}`,
-                              );
-                            }
-                          }}
-                        />
                       ) : null}
                     </div>
                   </div>
@@ -355,9 +448,16 @@ export function WorkListView() {
               );
             })}
           </div>
+        ) : list.rows.length ? (
+          <p className="next-cockpit-work-absent">No loaded entries match this filter.</p>
         ) : list.unnumbered ? null : (
           <p className="next-cockpit-work-absent">{list.absent}</p>
         )}
+        {datedEarlier.length ? (
+          <p className="next-cockpit-work-limit">
+            A progress check for your current goal leaves out entries before the reading window.
+          </p>
+        ) : null}
         <ShowMore
           {...(record ? { record } : {})}
           pastWindow={pastWindow}

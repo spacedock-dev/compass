@@ -41,6 +41,5 @@ export function activityRow(
     source: 'transcript',
     at: `${String(100 - n)}s ago`,
     turn: false,
-    add: false,
   };
 }

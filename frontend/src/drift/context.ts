@@ -25,6 +25,11 @@ export interface JumpMissing {
   readonly reason: 'start' | 'stopped' | 'unshown';
 }
 
+export interface EntryJump {
+  readonly session: string;
+  readonly id: string;
+}
+
 export interface DriftValue {
   readonly ctx: DriftCtx;
   readonly model: DriftModel;
@@ -32,6 +37,9 @@ export interface DriftValue {
   /** The departures of the reading before this one that this reading no longer finds, while it stands. */
   readonly cleared: ClearedDeparture | null;
   readonly jump: Jump | null;
+  readonly entryJump: EntryJump | null;
+  /** Reveals one entry and returns whether the reader's press still stands. */
+  readonly revealEntry: (id: string) => () => boolean;
   /** What the last press could not load, kept until the next press, a new reading or another session. */
   readonly jumpMissing: JumpMissing | null;
   readonly chooseFinding: (key: string, origin?: HTMLElement | null, entry?: string | null) => void;

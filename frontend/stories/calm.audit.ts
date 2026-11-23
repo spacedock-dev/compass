@@ -174,3 +174,7 @@ function auditControlBoundaries(root: HTMLElement): string[] {
 export function auditCalm(root: HTMLElement): string[] {
   return [...auditText(root), ...auditControlBoundaries(root)];
 }
+
+export function auditTechnicalMonospace(root: HTMLElement): string[] {
+  return auditText(root).filter((failure) => failure.includes('monospace'));
+}

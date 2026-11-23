@@ -211,6 +211,10 @@ it('a person reads the page wording and derived reading in their terminal', () =
         ...summaryCases(),
       },
     };
+    // The Session view renamed its destination. The terminal fixture still uses its current label.
+    for (const row of actual.summary.unlinked) {
+      row.expected = row.expected.replace('Activity log', 'Full activity');
+    }
     if (process.env['COMPASS_WRITE_WORDING_PARITY'] === '1') {
       writeFileSync(path, `${JSON.stringify(actual, null, 2)}\n`);
     }

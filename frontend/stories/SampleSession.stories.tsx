@@ -131,7 +131,7 @@ export const LiveMonitorCanToggleInViewOnly: Story = {
 };
 
 /* The marks follow their parts down the one-column page, so the numbers read in order from the top: the
-   tour's order is the page's. Full activity's mark sits beside its trigger, in view while it is collapsed. */
+   tour's order is the page's. Activity log's mark sits beside its trigger, in view while it is collapsed. */
 export const MarksFollowThePage: Story = {
   render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
   play: async ({ canvasElement }) => {
@@ -142,7 +142,7 @@ export const MarksFollowThePage: Story = {
     const activity = canvasElement.querySelector('[data-sample-mark="activity"]') as HTMLElement;
     await expect(activity).toBeVisible();
     await expect(
-      within(canvasElement).getByRole('button', { name: 'Full activity' }),
+      within(canvasElement).getByRole('button', { name: /^(Show|Hide) technical details$/ }),
     ).toHaveAttribute('aria-expanded', 'false');
   },
 };
@@ -408,7 +408,7 @@ export const HeldAtTheFootIsDrawnAboveThePress: Story = {
   },
 };
 
-/* A citation anywhere in the session opens in Full activity. The record arrives in two pages, newest first,
+/* A citation anywhere in the session opens in Activity log. The record arrives in two pages, newest first,
    and the board's context holds only the newest page's messages, so the earliest citation is found only by
    reading the older page, which the sample's server answers from the capture. */
 function citationOpens(id: string): Story {
@@ -428,9 +428,9 @@ function citationOpens(id: string): Story {
         ) as HTMLElement | null;
       await waitFor(() => expect(document.activeElement).toBe(row()), { timeout: 10000 });
       await expect(
-        within(canvasElement).getByRole('button', { name: 'Full activity' }),
+        within(canvasElement).getByRole('button', { name: /^(Show|Hide) technical details$/ }),
       ).toHaveAttribute('aria-expanded', 'true');
-      // Full activity opens with a short height transition, so the row is visible once it settles.
+      // Activity log opens with a short height transition, so the row is visible once it settles.
       await waitFor(() => expect(row()).toBeVisible(), { timeout: 5000 });
       await expect(canvasElement.querySelector('[data-next-jump-missing]')).toBeNull();
       await expect(canvasElement.querySelector('[data-sample-held]')?.textContent ?? '').toBe('');
@@ -469,7 +469,7 @@ export const FindingCitingTheOlderPageTintsIt: Story = {
       ) as HTMLElement | null;
     await waitFor(() => expect(row()).not.toBeNull(), { timeout: 10000 });
     await expect(
-      within(canvasElement).getByRole('button', { name: 'Full activity' }),
+      within(canvasElement).getByRole('button', { name: /^(Show|Hide) technical details$/ }),
     ).toHaveAttribute('aria-expanded', 'true');
     await waitFor(() => expect(row()).toBeVisible(), { timeout: 5000 });
     await expect(getComputedStyle(row() as HTMLElement).backgroundColor).not.toBe(

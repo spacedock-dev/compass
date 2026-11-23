@@ -1,5 +1,5 @@
 import { Icon } from '../ui/icons';
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 import { ActivityHead } from './ActivityHead';
 import type { WorkRow } from './workList';
 import { disclosureKey, useControls } from '../controls';
@@ -58,17 +58,20 @@ export function EntryHead({
   turnRange,
   project,
   scope,
+  summary,
 }: {
   readonly row: WorkRow;
   readonly turnRange: string | null;
   readonly project: string;
   readonly scope: string;
+  readonly summary: ReactNode;
 }) {
   const source = useEntrySource(project, scope, row.entry.id);
   return (
     <>
       <ActivityHead
         row={row}
+        summary={summary}
         turnRange={turnRange}
         source={
           <EntrySourceToggle

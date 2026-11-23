@@ -53,7 +53,7 @@ export function FindGoalNote() {
 
 /* The prompts a found goal was found in, each as its entry number with the words quoted from it beneath. The
    number is drawn as the Drift card draws a cited entry:
-   hovering or focusing one shows the entry in place, and "See in context of the session" opens Full activity at
+   hovering or focusing one shows the entry in place, and "See in context of the session" opens Activity log at
    that entry, reading older pages for it first where the page does not hold it yet. */
 export function FoundCites() {
   const { input } = usePanel();
@@ -80,12 +80,12 @@ export function FoundCites() {
                 data-next-cockpit-action="finding-jump"
                 data-next-finding="found-goal"
                 data-next-cite={cite.factId}
-                aria-label={`Show ${where} in Full activity for the detected goal`}
+                aria-label={`Show ${where} in Activity log for the detected goal`}
                 onJump={() => {
                   if (!drift) return;
                   setMissing('');
                   void openEntry(drift, cite.factId).then((landed) => {
-                    if (!landed) setMissing(missingSentence(n, false));
+                    if (landed === false) setMissing(missingSentence(n, false));
                   });
                 }}
               >

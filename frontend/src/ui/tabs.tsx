@@ -2,7 +2,7 @@
    Registry: https://ui.shadcn.com/r/styles/base-nova/tabs.json
    Upstream content SHA-256: 958b817b256cffae986d046168b70dd0153d542b4c521ee8bbdda349010011ef
    MIT; the full upstream notice ships in react-licenses.txt.
-   The route owns selection; recipes preserve the pre-swap tab chrome. */
+   Cockpit selection stays route-owned. Technical details own their inline panels. */
 import { Tabs as TabsPrimitive } from '@base-ui/react/tabs';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from './button';
@@ -35,4 +35,7 @@ function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
     />
   );
 }
-export { Tabs, TabsList, TabsTrigger };
+function TabsContent(props: TabsPrimitive.Panel.Props) {
+  return <TabsPrimitive.Panel data-slot="tabs-content" {...props} />;
+}
+export { Tabs, TabsList, TabsTrigger, TabsContent };

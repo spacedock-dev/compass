@@ -37,7 +37,7 @@ describe('a Compass turn after a reading', () => {
   });
 });
 
-describe('the Full activity summary line', () => {
+describe('the Activity log summary line', () => {
   it('counts the marked entries as Compass’s answer, from the same entries it counts', () => {
     const entries = [
       message(),

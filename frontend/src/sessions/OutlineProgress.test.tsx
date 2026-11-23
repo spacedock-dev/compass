@@ -122,7 +122,7 @@ describe('a reader watching automatic outline progress', () => {
     const opening = box.getByText('Add retry with backoff to the webhook handler.');
     expect(box.getByText('Keep the diff small and leave the tests alone.')).toBeVisible();
     expect(region.querySelectorAll('[data-next-outline-block]')).toHaveLength(2);
-    const full = screen.getByRole('button', { name: 'Full activity' });
+    const full = screen.getByRole('button', { name: /^(Show|Hide) technical details$/ });
     await act(async () => {
       fireEvent.click(full);
       full.focus();
@@ -151,7 +151,7 @@ describe('a reader watching automatic outline progress', () => {
       'Compass plans the parts when the summary starts',
     );
     expect(region.textContent).not.toMatch(
-      /Full activity lists every entry|first message and the newest/,
+      /Activity log lists every entry|first message and the newest/,
     );
     expect(full.getAttribute('aria-expanded')).toBe('true');
     expect(document.activeElement).toBe(full);

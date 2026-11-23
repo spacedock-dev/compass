@@ -109,6 +109,8 @@ export function createControls(deps: ControlsDeps) {
     cues,
     briefing,
     disclosures: createDisclosureStore(),
+    technicalTabs: createKeyedState<string>({ clock: deps.clock, ttlMs: null, limit: null }),
+    activityLogFilters: createKeyedState<string>({ clock: deps.clock, ttlMs: null, limit: null }),
     fields: createFieldMemory(),
     focusLane: createFocusLane(),
     memoEditing,

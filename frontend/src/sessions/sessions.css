@@ -115,14 +115,13 @@
 
 /* ===== SESSION ===== */
 /* One column at every width (owner, 2026-10-19): the header, the answer
-   block, Intent, What the session has done, Drift and Full activity, in that
+   block, Intent, What the session has done, Drift and Activity log, in that
    order, with no second track. The page scrolls as one document with no
    scroll container; only the spent-budget banner sticks, and it holds no
    state. */
-.next-session-detail{margin:12px 0 0;padding:0 0 34px;box-shadow:none}
+.next-session-detail{--mono:var(--sans);margin:12px 0 0;padding:0 0 34px;box-shadow:none}
 .next-session-panel{display:flex;flex-direction:column;gap:var(--sp-5);min-width:0}
 .next-session-activity{min-width:0}
-.next-session-activity-heading{margin:0 0 var(--sp-3);color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
 
 /* Two rows: state, name and id; then the measured line with the controls on
    its right. One element per line took 205px and pushed Analyze drift to

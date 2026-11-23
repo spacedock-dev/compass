@@ -60,6 +60,8 @@ export const SHOWN = {
   attention: 'Needs you',
   intent: 'Goal history',
   showTechnicalDetails: 'Show technical details',
+  hideTechnicalDetails: 'Hide technical details',
+  activityLog: 'Activity log',
 } as const;
 
 export const SESSION_ROW_WORDS = {
@@ -106,6 +108,15 @@ export const EXPLANATIONS = {
   filterCounts: how('filter counts', 'work'),
   sessionHistory: how('session history'),
   aiAllowance: how('the AI allowance'),
+} as const;
+
+export const ACTIVITY_LOG_FILTER_LABELS = {
+  all: 'All',
+  you: 'You',
+  agent: 'Agent',
+  commands: 'Commands',
+  files: 'Files',
+  cited: 'Cited',
 } as const;
 
 export const GLOSSARY = /* @__PURE__ */ (() =>
@@ -859,6 +870,23 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Opens in place on the surfaces with technical evidence',
       ],
       SHOWN.showTechnicalDetails,
+    ),
+    hideTechnicalDetails: kept([
+      SHOWN.hideTechnicalDetails,
+      'Keeps the same subject as Show technical details',
+      'Closes the inline disclosure',
+      'Other collapsible sections',
+      'Only while the layer is open',
+    ]),
+    activityLog: ruled(
+      [
+        SHOWN.activityLog,
+        'Full activity',
+        'Session record',
+        'Session summary',
+        'Names the technical tab and citation destination',
+      ],
+      null,
     ),
     aiUse: ruled(
       [

@@ -846,6 +846,11 @@ panel keeps its children and their owners. No TabsContent is vendored because a 
 lifecycle would duplicate the route's ownership. Unit keyboard assertions await Base UI's focus
 microtask rather than assuming synchronous focus.
 
+2026-11-23. The shared technical details control adopts the pinned Base UI Tabs Panel as
+`TabsContent`. Its tabs switch content inside the current page, with per-disclosure selection held in
+the controls provider. Keeping the panels mounted preserves the Session record and its citations
+across disclosure closes and tab changes. ProjectTabs retains its route-owned panel.
+
 ### Project and Console cascade audit
 
 | Surface | Component chrome and retained layout |

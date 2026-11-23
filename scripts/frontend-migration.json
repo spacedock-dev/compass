@@ -277,14 +277,6 @@
       "name": "sessions-first-screen",
       "owner": "DRC-4824",
       "oracles": [
-        "frontend/src/sessions/SessionsView.test.tsx",
-        "frontend/src/sessions/sessions.differential.test.tsx",
-        "frontend/e2e/sessions-parity.mjs",
-        "frontend/stories/SessionsSearch.stories.tsx"
-      ],
-      "contract": "Sessions rows link to their goals and use status tiles where evidence permits. Tab and At a glance counts use the full loaded board. Filters and search narrow the displayed rows. The hidden-waiting guard links to the session or Needs you. A search with no matches offers Show everything, and Show older sessions widens the collection on reload.",
-      "owner": "DRC-4824",
-      "oracles": [
         "frontend/src/sessions/SessionDetail.test.tsx",
         "frontend/e2e/sessions-parity.mjs"
       ],
@@ -1148,7 +1140,7 @@
         "frontend/stories/SessionOutline.stories.tsx",
         "frontend/src/sessions/outline.test.ts"
       ],
-      "contract": "A chip press opens the Full activity disclosure and focuses the entry's row, reading older record pages for a prompt the page does not hold; only the latest press settles. The \"Full activity does not show\" sentence stays across board refreshes until the next press and goes with the session page. The outline is the focused context's, redrawn each board revision, and nothing is stored.",
+      "contract": "A chip press opens the Activity log tab in technical details and focuses the entry's row, reading older record pages for a prompt the page does not hold; only the latest press settles. The \"Activity log does not show\" sentence stays across board refreshes until the next press and goes with the session page. The outline is the focused context's, redrawn each board revision, and nothing is stored.",
       "disposition": "stable-identity"
     },
     {
@@ -1178,17 +1170,49 @@
         "frontend/stories/SessionSummary.stories.tsx",
         "frontend/src/sessions/summary.test.ts"
       ],
-      "contract": "As an outline chip: the press opens Full activity and focuses the entry's row, reading older record pages by fact id within the page cap, so every chip lands or says it could not be loaded. Only the latest press settles. The sentence a press leaves stays until the next press.",
+      "contract": "As an outline chip: the press opens Activity log and focuses the entry's row, reading older record pages by fact id within the page cap, so every chip lands or says it could not be loaded. Only the latest press settles. The sentence a press leaves stays until the next press.",
       "disposition": "stable-identity"
     },
     {
-      "name": "The Full activity target, and the jumps between a summary phase and a departure",
+      "name": "Technical details open state",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/stories/SessionLayout.stories.tsx",
+        "frontend/stories/TechnicalDetails.stories.tsx"
+      ],
+      "contract": "The inline disclosure starts closed and keeps its scoped open state through board updates and remounts. A citation press or browser fragment into the panel opens it.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "Technical details selected tab",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/stories/SessionLayout.stories.tsx",
+        "frontend/stories/TechnicalDetails.stories.tsx",
+        "frontend/src/sessions/fullActivityKey.test.ts"
+      ],
+      "contract": "The controls provider holds the selected inline tab by disclosure key. A citation press selects Activity log before focusing a row.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "Activity log filter",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/src/drift/WorkListView.test.tsx",
+        "frontend/stories/SessionLayout.stories.tsx"
+      ],
+      "contract": "The selected filter starts at All and survives board updates and remounts per session. A citation press keeps a filter that includes the target and selects All if the filter hides it.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "The Activity log target, and the jumps between a summary phase and a departure",
       "owner": "DRC-4825",
       "oracles": [
         "frontend/stories/SessionSummary.stories.tsx",
-        "frontend/src/sessions/summary.test.ts"
+        "frontend/src/sessions/summary.test.ts",
+        "frontend/src/sessions/SummaryLede.test.tsx"
       ],
-      "contract": "The full-activity disclosure key is written open and the entry focused on the reader's press only; a summary that lands moves no focus and replaces no node an edit lives in. The phase and departure headings are focused only by the jump buttons. Which phase holds a departure is derived each render; nothing is stored.",
+      "contract": "A citation press opens the full-activity disclosure, selects Activity log, reveals the target and focuses its row; a summary that lands moves no focus and replaces no node an edit lives in. The phase and departure headings are focused only by the jump buttons. Which phase holds a departure is derived each render; nothing is stored.",
       "disposition": "stable-identity"
     },
     {
@@ -1455,7 +1479,7 @@
       "disposition": "store-held"
     },
     {
-      "name": "A Full activity row's Source sentence",
+      "name": "An Activity log row's Source sentence",
       "owner": "DRC-4823",
       "oracles": [
         "frontend/stories/SessionSummary.stories.tsx"

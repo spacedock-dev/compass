@@ -186,9 +186,9 @@ it('names and opens Needs you from the native wait', async () => {
   expect(screen.getByRole('heading', { level: 1, name: 'Needs you' })).toBeVisible();
 });
 
-it('names and opens Goal history from Full activity', async () => {
+it('names and opens Goal history from Activity log', async () => {
   const page = await open(board([ONE], { annotate: true }));
-  fireEvent.click(screen.getByRole('button', { name: 'Full activity' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Show|Hide) technical details$/ }));
   const history = screen.getByText('What it keeps').closest('.next-cockpit-departures-kept');
   if (!history) throw new Error('The history disclosure is missing');
   const link = within(history as HTMLElement).getByRole('link', { name: 'Goal history' });

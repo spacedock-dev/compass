@@ -7,12 +7,12 @@ import { createHeld } from '../intent/held';
 import { createAnnouncer } from '../shell/announcer';
 import { createFakeClock } from '../transport/testing';
 import { genSession } from '../intent/generate.test.helper';
-import { baselineAt, workSource, type WorkSource } from '../intent/work';
+import { baselineAt, entryNumbering, workSource, type WorkSource } from '../intent/work';
 import type { ContextEntry } from '../store/board';
 import { genEntries, mulberry32, pick, type Rng } from './generate.test.helper';
 import { loadLegacyDrift } from './legacy.test.helper';
 import { WORK_READ_FROM } from './sentences';
-import { LAST_TURN_MARK, workList } from './workList';
+import { LAST_TURN_MARK, workList, workMix } from './workList';
 import { harnessLabels } from '../sessions/rows';
 import { recordedActivityActor } from '../../test/recorded-activity';
 import { projectRecordedLoadedActivity } from '../../test/recorded-loaded-activity';
@@ -94,13 +94,12 @@ function assemble(list: ReturnType<typeof workList>, disclosed: boolean): string
     if (row.flags.includes('cited')) out.push('Cited');
     out.push(row.entry.summary, row.source, row.at);
     if (row.turn) out.push('from the last turn');
-    if (row.add) out.push('Add to my intent');
   }
   if (!list.rows.length && !list.unnumbered) out.push(list.absent);
   out.push(list.reads ? 'Results are as the tool reported; not inspected.' : list.limit);
-  if (list.mix || list.unlisted.length || list.checks || list.bound || list.reads) {
+  if (list.mix || list.checks || list.bound || list.reads) {
     out.push('About this record');
-    out.push(list.mix, ...list.unlisted, list.checks, list.bound);
+    out.push(list.mix, list.checks, list.bound);
     if (list.reads) out.push(list.limit);
   }
   void disclosed;
@@ -220,22 +219,49 @@ describe('the numbered list reads as the legacy page reads it', () => {
         generated: 1000,
       });
       if (mine.rows.length) drew += 1;
-      const recorded = text(
-        projectRecordedLoadedActivity(
-          html,
-          legacySource,
-          session,
-          payload,
-          cited,
-          baselineAt(annotation, session, draft),
+      const recordedPanel = document.createElement('div');
+      recordedPanel.innerHTML = projectRecordedLoadedActivity(
+        html,
+        legacySource,
+        session,
+        payload,
+        cited,
+        baselineAt(annotation, session, draft),
+      );
+      // Compare the previously listed rows and common caveats. The Activity log story owns newly visible rows.
+      const oldIds = new Set(
+        [...recordedPanel.querySelectorAll('[data-next-entry-id]')].map((row) =>
+          row.getAttribute('data-next-entry-id'),
         ),
       );
+      for (const note of recordedPanel.querySelectorAll('.next-cockpit-work-earlier')) {
+        if (
+          note.textContent?.match(/from before your intent’s window opened|with no published time/)
+        )
+          note.remove();
+      }
+      const about = [...recordedPanel.querySelectorAll('summary')].find(
+        (summary) => summary.textContent === 'About this record',
+      );
+      if (about?.parentElement?.textContent === about?.textContent) about?.parentElement?.remove();
+      const recorded = text(recordedPanel.innerHTML).replaceAll('Addtomyintent', '');
+      // The live log includes all loaded rows. Keep the old rows and numbered mix in this comparison.
+      const { numbers } = entryNumbering(session as never, source, payload as never);
+      const numbered = [...numbers.keys()];
+      const comparable = {
+        ...mine,
+        rows: mine.rows.filter(({ entry }) => oldIds.has(entry.id)),
+        mix: numbered.length ? workMix(numbered) : '',
+      };
       const a = recorded.replace(squash(RECORDED_READ_FROM), squash(WORK_READ_FROM));
       /* Departure, 2026-11-02: a Codex session at a turn stop is read through its last turn, so its list
          carries the "from the last turn" words the retired page drew only for Claude Code
          (docs/design-frontend-migration.md#held-to-recorded-answers). Those words are taken out of this
          page's text and everything else is held to the recording; the label is held by the Drift stories. */
-      const assembled = assemble(asRecorded(mine, String(session['harness']), payload), false);
+      const assembled = assemble(
+        asRecorded(comparable, String(session['harness']), payload),
+        false,
+      );
       const b =
         session['harness'] === 'codex'
           ? assembled.replaceAll(squash(LAST_TURN_MARK.words), '')

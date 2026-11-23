@@ -1,4 +1,4 @@
-/* Runs `then` once Full activity's panel has finished easing open. While it eases its height is a measured pixel
+/* Runs `then` once Activity log's panel has finished easing open. While it eases its height is a measured pixel
    value under `overflow: clip`, so a scroll begun then is clamped at the foot of a page not yet tall enough. The
    row's visually hidden source line once hid that: absolutely placed, it escaped the clip and stretched the
    page, and taking the line out of every row exposed the clamp. Base UI publishes `auto` once the panel rests. A
@@ -6,8 +6,10 @@
 const SETTLE_MS = 400;
 
 export function afterPanelSettles(then: () => void): void {
-  const panel = document.querySelector<HTMLElement>('[data-next-full-activity-body]');
-  const height = panel?.style.getPropertyValue('--collapsible-panel-height').trim() ?? 'auto';
+  const panel = document.querySelector<HTMLElement>(
+    '[data-next-session-full-activity] [data-slot="accordion-content"]',
+  );
+  const height = panel?.style.getPropertyValue('--accordion-panel-height').trim() ?? 'auto';
   if (!panel || height === '' || height === 'auto') {
     then();
     return;

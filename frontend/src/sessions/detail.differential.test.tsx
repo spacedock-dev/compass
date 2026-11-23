@@ -58,7 +58,7 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
   maskDetailLifecycle(copy);
   /* The one-column page (owner, 2026-10-19; docs/design-frontend-migration.md#held-to-recorded-answers): the
      state badge moved under the title beside a new line that restates CURRENT ACTIVITY and the turn, and the
-     activity heading became the Full activity trigger. Read back in the recorded order and words; the rest of
+     activity heading became the Activity log trigger. Read back in the recorded order and words; the rest of
      the activity, in its recorded order, is compared unchanged. */
   const status = copy.querySelector('[data-next-session-status]');
   if (status) {
@@ -66,8 +66,15 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
     if (badge) copy.querySelector('.next-session-detail-title')?.prepend(badge);
     status.remove();
   }
-  const activityHeading = copy.querySelector('[data-next-full-activity-heading]');
-  if (activityHeading) activityHeading.textContent = 'Session activity';
+  const technical = copy.querySelector('[data-next-session-full-activity] > section');
+  const activityAccordion = technical?.querySelector(':scope > details');
+  if (activityAccordion) {
+    const recordedHeading = document.createElement('h2');
+    recordedHeading.textContent = 'Session activity';
+    activityAccordion.querySelector(':scope > summary')?.remove();
+    activityAccordion.querySelector('[data-slot="tabs-list"]')?.remove();
+    technical?.replaceChildren(recordedHeading, ...activityAccordion.childNodes);
+  }
   const header = copy.querySelector('.next-session-detail-header');
   if (header) copy.prepend(header);
   /* The numbered activity list and the header's drift pill and entry count belong to the Drift step: the legacy
