@@ -1,4 +1,4 @@
-import { render, within } from '@testing-library/react';
+import { fireEvent, render, within } from '@testing-library/react';
 import { expect, it } from 'vitest';
 import states from '../../test/fixtures/client-contract/data-session-states.json';
 import focused from '../../test/fixtures/client-contract/data-focused-drift.json';
@@ -57,6 +57,7 @@ it.each([
     heading: 'alpha-app',
     tab: 'Usage and alerts',
   },
+  { name: 'Settings', hash: '#n=settings', heading: 'Settings' },
 ])('keeps Compass copy on $name current', async ({ hash, heading, link, tab }) => {
   const page = mountShell({ hash, data: states.response.body });
   await page.settle();
@@ -64,6 +65,40 @@ it.each([
   expect(view.getByRole('heading', { name: heading, level: 1 })).toBeVisible();
   if (link) expect(view.getAllByRole('link', { name: link })[0]).toBeVisible();
   if (tab) expect(view.getByRole('tab', { name: new RegExp(tab), selected: true })).toBeVisible();
+  expect(boardCopyViolations(page.container)).toEqual([]);
+});
+
+it('keeps Compass copy in the Settings disclosures current', async () => {
+  const limits = [
+    { key: 'analyze_prompt_bytes', default: 524288, minimum: 16384, maximum: 2097152 },
+    { key: 'analyze_record_events', default: 2000, minimum: 100, maximum: 20000 },
+    { key: 'analyze_listed_checks', default: 1000, minimum: 12, maximum: 5000 },
+    { key: 'analyze_scan_megabytes', default: 512, minimum: 8, maximum: 1024 },
+  ];
+  const page = mountShell({
+    hash: '#n=settings',
+    data: states.response.body,
+    getResponses: {
+      '/api/settings': {
+        limits,
+        values: Object.fromEntries(limits.map((limit) => [limit.key, limit.default])),
+        update_check: { disabled: false, default_enabled: true, cli_disabled: false },
+        store_readable: true,
+      },
+      '/api/health': { port: 6237 },
+    },
+  });
+  await page.settle();
+
+  const view = within(page.container);
+  const yourData = within(view.getByRole('region', { name: 'Your data' }));
+  fireEvent.click(yourData.getByRole('button', { name: 'Forget everything' }));
+  fireEvent.click(view.getByRole('button', { name: 'What is sent, and where' }));
+  fireEvent.click(view.getByRole('button', { name: 'Customize' }));
+  expect(yourData.getByText('This cannot be undone.')).toBeVisible();
+  expect(yourData.getByRole('button', { name: 'Copy' })).toBeVisible();
+  expect(view.getByText('Saved prompt size limit: 512 KB.')).toBeVisible();
+  expect(view.getByRole('slider', { name: 'Prompt size' })).toBeVisible();
   expect(boardCopyViolations(page.container)).toEqual([]);
 });
 

@@ -18,6 +18,8 @@ export interface TestShellOptions {
   readonly hash?: string;
   /** The body /api/data answers with, or null for a board that has not answered. */
   readonly data?: unknown;
+  /** Bodies for additional GET endpoints reached by the mounted view. */
+  readonly getResponses?: Readonly<Record<string, unknown>>;
   readonly search?: string;
   readonly strict?: boolean;
   readonly streamSupported?: boolean;
@@ -45,6 +47,8 @@ export function mountShell(options: TestShellOptions = {}) {
     backend.requests.push({ method: init?.method ?? 'GET', url });
     if (init?.method === 'POST' && options.postResponse)
       return Promise.resolve(options.postResponse());
+    if ((!init?.method || init.method === 'GET') && Object.hasOwn(options.getResponses ?? {}, url))
+      return Promise.resolve(Response.json(options.getResponses?.[url]));
     if (url.startsWith('/api/session-record')) {
       const session = new URLSearchParams(url.split('?')[1]).get('session') ?? ':';
       const split = session.indexOf(':');
