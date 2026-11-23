@@ -321,7 +321,7 @@ export function observe(input: unknown): Observed {
                 ? `, ${String(row['reports_needs_input_when'])}`
                 : '')
           : '',
-        row['error'] ? 'Harness source could not be read' : 'Harness does not report blocks',
+        row['error'] ? 'Harness source could not be read' : 'Waits not reported',
       ),
       ...pair(
         'rate',

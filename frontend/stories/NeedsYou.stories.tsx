@@ -433,9 +433,8 @@ export const ReadableTimes: Story = {
     await expect(
       canvas.getByText('needs-input reporting, where approvals are enabled · token-rate reporting'),
     ).toBeVisible();
-    await expect(
-      canvas.getByText('Harness does not report blocks · Token rate not reported'),
-    ).toBeVisible();
+    await expect(canvas.getByText('Waits not reported · Token rate not reported')).toBeVisible();
+    await expect(canvas.queryByText(/Harness does not report blocks/)).toBeNull();
     await waitFor(() =>
       expect(canvas.getByRole('heading', { name: 'Not on this board yet' })).toBeVisible(),
     );

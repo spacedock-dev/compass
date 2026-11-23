@@ -159,6 +159,10 @@ outside the session count. The view differential checks the new membership and c
 for rows that keep their leading signal. It sets aside the old opening brief, queue counts and
 the native wait reason newly shown alongside exact requests. The recordings stay fixed.
 
+The Needs you coverage row says "Waits not reported" when an agent does not publish waits.
+The view comparison projects that label onto the recorded row and still checks the rate and
+coverage indicators.
+
 2026-11-23, Needs you writes out waiting, end, stop and turn ages using the displayed payload's
 clock. Older observations use the reader's clock or a short date. Absolute starts and scheduled
 resets include the date and year when the payload has no usable clock. Impossible ages are

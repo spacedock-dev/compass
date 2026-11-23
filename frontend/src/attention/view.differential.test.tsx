@@ -180,7 +180,13 @@ function legacySummary(payload: unknown, expanded: readonly string[], capability
   legacy.setFocusCapability(capability);
   const template = document.createElement('template');
   template.innerHTML = legacy.attentionHtml(payload, expanded);
-  return summarize(template.content);
+  const summary = summarize(template.content);
+  return {
+    ...summary,
+    coverageRows: summary.coverageRows.map((row) =>
+      row.replace('Harness does not report blocks', 'Waits not reported'),
+    ),
+  };
 }
 
 async function reactSummary(
