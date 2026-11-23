@@ -138,6 +138,7 @@ class ListProjectionTest(unittest.TestCase):
         row.update(
             {
                 "future_field": "not a terminal field",
+                "stored_progress": None,
                 "tasks": [{"status": "pending", "subject": "Ship it", "details": "large"}],
                 "turn": {"long": True, "details": "large"},
                 "instruction": {"label": "Goal", "text": "Ship it", "at": 10, "details": "large"},
@@ -221,6 +222,7 @@ class ListProjectionTest(unittest.TestCase):
             "annotation_goal",
             "annotation_goal_source",
             "annotation_assessment",
+            "stored_progress",
             "departures",
             "loop",
             "delegated_launches",

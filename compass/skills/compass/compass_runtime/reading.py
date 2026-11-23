@@ -1660,6 +1660,9 @@ class Job:
     sealed: bool = False
     notice: reading_policy.Notice | None = None
     permission: reading_policy.LongPermission | None = None
+    attempt_started: float = 0.0
+    attempt_revision: int = 0
+    progress_marker_failed: bool = False
     # Encoded private snapshots cannot share mutable dictionaries with a caller.
     _long_plan: str | None = field(default=None, repr=False)
     _long_progress: str | None = field(default=None, repr=False)
@@ -1728,7 +1731,9 @@ def start_job(
     prepared_job_id: str | None = None,
 ) -> Job | None:
     """Take the shared slot. A prepared identity alone conveys no long authority."""
-    return _start_job(
+    from . import reading_jobs  # noqa: PLC0415 - the worker owns its durable marker
+
+    started = _start_job(
         config,
         session_key,
         provider=provider,
@@ -1736,6 +1741,9 @@ def start_job(
         now=now,
         prepared_job_id=prepared_job_id,
     )
+    if started is not None and prepared_job_id is None:
+        reading_jobs.admit_progress(config, started)
+    return started
 
 
 def _start_long_job(
@@ -1936,12 +1944,16 @@ def end_job(config: RuntimeConfig, session_key: str, *, expected_job: Job | None
     which `supervise.run` guarantees by returning only then.
     Supplying an expected job leaves any replacement slot untouched.
     """
+    from . import reading_jobs  # noqa: PLC0415 - the worker owns its durable marker
+
     key = (str(config.state_dir), session_key)
     with _FLIGHT_LOCK:
         if expected_job is not None and _JOBS.get(key) is not expected_job:
             return
-        _JOBS.pop(key, None)
+        ended = _JOBS.pop(key, None)
         _IN_FLIGHT.discard(key)
+    if ended is not None and ended.attempt_started:
+        reading_jobs.end_progress(config, ended)
 
 
 def published_jobs(config: RuntimeConfig) -> dict[str, dict[str, Any]]:

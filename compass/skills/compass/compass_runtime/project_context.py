@@ -14096,6 +14096,7 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
         attention_sessions,
         child_assignments,
         now=now,
+        preserve_unavailable=bool(focus and focus[0] == "claude"),
         source_scans=history_source_scans,
     )
     semantic = _with_command_attention(

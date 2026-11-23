@@ -1249,7 +1249,7 @@ class Application:
         _mine, today = departures.counts(raised, "", "", since=now - departures.DAY_SEC)
         source = {
             "started": self.state.server_started,
-            "annotations": entries,
+            "annotations": [annotation_store.intent_log_entry(entry) for entry in entries],
             "departures": raised,
             "session_cap": self.config.unasked_session_cap,
             "daily_cap": self.config.unasked_daily_cap,

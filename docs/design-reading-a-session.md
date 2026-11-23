@@ -7424,12 +7424,19 @@ revision and each requested row's exact harness, session and canonical project i
 closed progress token or null. The browser can discard a response when its board revision moves.
 
 The verdict needs readable native evidence, including the current child inventory, coverage of
-the direction and evidence windows, and a readable newest record page. A retained direction can
-veto publication. A missing link in the native record stays a gap even after history disappears.
-Current annotation and attempt state comes from the locked store on disk. If any checked source
-generation moves while the answer is being prepared, the producer withholds that answer.
-Reuse is bounded, process-local and outside board collection. The batch makes no model call and
-writes no history. See the [loopback API boundary](../SECURITY.md#operator-cockpit-prototype).
+the direction and evidence windows, and a readable newest record page. A saved Claude check holds
+the identities and digests of its bounded native inputs and the IDs of retained evidence present
+when it ran. Proof of a surviving parent chain alone cannot cover a removed branch or tail. A
+reading saved without this proof stays in Goal history and cannot establish a current row level.
+Later native or retained work and a newer pending or withheld check can also veto a current level.
+Focus preserves unreadable history and restores only verified citations to the view when its usual
+activity window omits them. Valid historical analysis and the current progress token answer
+different questions. History loss and a reader's overrule withdraw the associated technical score.
+
+The producer parses one atomically published annotation generation and checks it again before
+publication. The cache retains per-reading inputs and source versions, so another session's goal
+save does not reopen evidence. A healthy ordinary poll does not evaluate progress. The batch makes
+no model call and writes no history. See the [loopback API boundary](../SECURITY.md#operator-cockpit-prototype).
 
 The format-1 frontend recordings still cover their original client contract. The fixture
 recorder checks the ordinary board's null default and removes the new slot from those recorded

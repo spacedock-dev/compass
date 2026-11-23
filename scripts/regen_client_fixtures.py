@@ -2458,7 +2458,9 @@ def guarded() -> Iterator[None]:
         # This recorder still exercises the format-1 focused view used by the
         # client fixture oracle until the session-page layer adopts the batch.
         mock.patch.object(
-            runtime_http, "_with_stored_progress", side_effect=lambda _app, view, *_rest: view
+            runtime_http,
+            "_with_stored_progress",
+            side_effect=runtime_http._with_drift_view,  # noqa: SLF001 - recorded wire seam
         ),
         mock.patch.object(
             runtime_claude_settings,

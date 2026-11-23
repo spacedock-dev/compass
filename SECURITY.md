@@ -320,6 +320,11 @@ The posture rests on two invariants:
    harness, session and canonical project tuples. The response contains that revision and the
    requested identities with one closed `stored_progress` token or null for each. A superseded
    revision receives an empty list. No caller-supplied filesystem path is used.
+   Current Claude progress needs positive native evidence that still stands. The annotation store
+   keeps bounded native file identities, prefix digests and retained event IDs alongside the reading.
+   They contain no transcript text or filesystem paths and stay private to the local store. Older
+   readings without this evidence can still be read in Goal history. The progress route makes no
+   model call and writes no history. Focus preserves history that the reader cannot open or validate.
    One `GET` reads wider than the rest, and is named here for that reason rather than for the
    count above. `GET /api/annotations` serves the prose you composed, for every session you have
    annotated, including sessions no longer on the board. That is a wider scope than `/api/data`
@@ -3054,6 +3059,11 @@ whose pid no state file of a running dashboard on this state directory names (it
 as an earlier run), is recorded from the job ledger: spent when the budget store holds a
 charge for that job's id or cannot answer, and unspent ("stopping", or "cancelled-unsent" when the
 marker says cancelled) when it holds none.
+An ordinary Claude check also leaves a private marker in `reading-progress-jobs/` while it runs.
+It names the local process and session. A second dashboard checks it before publishing a stored
+level. Shared annotation writes keep the newer attempt's outcome when an earlier worker finishes
+later. Both attempts still count their own spend.
+
 A recovery pass holds an OS lock on `reading-jobs.lock` beside that directory (`flock` on POSIX,
 `msvcrt.locking` on Windows), each marker is claimed by a rename before it is recorded, and an entry
 that already holds the job's id counts nothing, so one job is one attempt however many dashboards

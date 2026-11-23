@@ -691,7 +691,25 @@ def attach(config: RuntimeConfig, state: RuntimeState, rows: Iterable[dict[str, 
         ]
 
 
-def mark(context: Mapping[str, Any], rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+def current_prompts(
+    row: Mapping[str, Any], held: Mapping[tuple[str, str], Held]
+) -> list[dict[str, Any]]:
+    """A board mark may count only while its durable match still stands."""
+    key = _key(row.get("harness"), row.get("sid"))
+    entry = held.get(key)
+    if entry is None:
+        return []
+    known = {(match["fact_id"], match["at"]) for match in entry.matches}
+    return [
+        item
+        for item in row.get(reading.COPIED_PROMPTS) or ()
+        if isinstance(item, dict) and (item.get("fact_id"), item.get("at")) in known
+    ]
+
+
+def mark(
+    context: Mapping[str, Any], rows: Iterable[Mapping[str, Any]], *, current: bool = False
+) -> dict[str, Any]:
     """The project context with each recognised user message marked `copied`.
 
     A copy of each marked fact, never the fact itself, so a cached context another caller holds
@@ -704,7 +722,7 @@ def mark(context: Mapping[str, Any], rows: Iterable[Mapping[str, Any]]) -> dict[
             if isinstance(entry, dict)
         }
         for row in rows
-        if row.get(reading.COPIED_PROMPTS)
+        if current or row.get(reading.COPIED_PROMPTS)
     }
     raw = context.get("semantic")
     semantic: dict[str, Any] = raw if isinstance(raw, dict) else {}
@@ -719,6 +737,10 @@ def mark(context: Mapping[str, Any], rows: Iterable[Mapping[str, Any]]) -> dict[
         if not isinstance(session, dict):
             return fact
         ids = wanted.get(_key(session.get("harness"), session.get("sid")), set())
-        return {**fact, reading.COPIED_FLAG: True} if str(fact.get("fact_id")) in ids else fact
+        if str(fact.get("fact_id")) in ids:
+            return {**fact, reading.COPIED_FLAG: True}
+        if current and ids is not None and fact.get(reading.COPIED_FLAG):
+            return {key: value for key, value in fact.items() if key != reading.COPIED_FLAG}
+        return fact
 
     return {**context, "semantic": {**semantic, "facts": [marked(fact) for fact in facts]}}

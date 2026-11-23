@@ -118,6 +118,8 @@ def withheld(
                 reason=reason,
                 spent=inspected.exact.calls > 0,
                 job_id=marker["job_id"],
+                attempt_started=marker["header"]["started_at"],
+                attempt_revision=publication["revision"],
                 long_target=annotation_store.LongTarget(
                     publication["incarnation"], publication["revision"]
                 ),
@@ -348,6 +350,8 @@ def _write_completed(  # noqa: PLR0913 - one already-locked publication and its 
             assessment=assessment,
             on_a_check=on_a_check,
             job_id=marker["job_id"],
+            attempt_started=marker["header"]["started_at"],
+            attempt_revision=publication["revision"],
             long_target=annotation_store.LongTarget(
                 publication["incarnation"], publication["revision"]
             ),

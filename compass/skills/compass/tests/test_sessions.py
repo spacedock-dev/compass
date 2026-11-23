@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from compass_runtime import aggregate, observer, reading, records
+from compass_runtime import aggregate, observer, reading, records, session_progress
 from compass_runtime import annotations as annotation_store
 from compass_runtime import events as runtime_events
 from compass_runtime import sessions as runtime_sessions
@@ -1091,6 +1091,14 @@ class CompassServerTest(RuntimeTestCase):
             with self.subTest(harness=harness):
                 row = runtime_sessions.base_session(harness, f"{harness}-1", "proj")
                 self.assertSetEqual(set(DECLARED_SESSION_FIELDS), set(row))
+
+    def test_stored_progress_producer_and_row_agree_on_their_declaration(self) -> None:
+        projected = session_progress.published()
+        self.assertEqual({"stored_progress": None}, projected)
+        row = runtime_sessions.base_session("claude", "x", "p")
+        self.assertEqual(projected, {key: row[key] for key in projected})
+        self.assertLessEqual(projected.keys(), DECLARED_SESSION_FIELDS)
+        self.assertEqual(projected, session_progress.published("unknown-progress"))
 
     def test_a_resume_token_is_admitted_only_in_a_shape_a_shell_reads_as_one_word(
         self,

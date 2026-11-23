@@ -1045,7 +1045,7 @@ def _with_levels(
     return {**context, "sources": {**sources, "work": work}}
 
 
-def assemble_project_drift(
+def assemble_project_drift(  # noqa: PLR0913 - the page and footer share this assembly
     application: Any,
     collected: dict[str, Any],
     project: str,
@@ -1055,6 +1055,7 @@ def assemble_project_drift(
     refresh: bool = False,
     model_consent: bool = False,
     lease: Mapping[str, Any] | None = None,
+    progress: bool = False,
 ) -> dict[str, Any]:
     """The page's context assembly, shared with the footer without collecting the board again.
 
@@ -1088,7 +1089,11 @@ def assemble_project_drift(
             if lease is None
             else _attach_lease(result, lease)
         )
-        result = _with_drift_view(application, result, collected, focus, project, cursor_key)
+        result = (
+            _with_stored_progress(application, result, collected, focus, project, cursor_key)
+            if progress
+            else _with_drift_view(application, result, collected, focus, project, cursor_key)
+        )
     return result
 
 
@@ -1100,14 +1105,14 @@ def _with_stored_progress(
     project: str,
     cursor_key: bytes,
 ) -> dict[str, Any]:
-    """Apply the shared current verdict to the focused reading and its pill."""
+    """Assemble the stored Focus answer from the same reading and citations as rows."""
     if focus[0] != "claude":
+        context = _with_drift_view(application, context, collected, focus, project, cursor_key)
+        context["sources"]["work"]["drift_views"][0].update(session_progress.published())
         return context
-    row = session_progress.matching(collected["sessions"], focus, project)
+
     work = context["sources"]["work"]
-    view = work["drift_views"][0]
-    if view.get("state") == "unavailable":
-        return context
+    row = session_progress.matching(collected["sessions"], focus, project)
     verdict = (
         session_progress.evaluate(application, collected, [row], cursor_key).get(
             session_progress.identity(row)
@@ -1115,24 +1120,32 @@ def _with_stored_progress(
         if row is not None
         else None
     )
+    work["analysis_levels"] = []
+    work["line_requests"] = []
+    payload = collected
+    if verdict and verdict.row is not None:
+        payload = {
+            **collected,
+            "sessions": [verdict.row if item is row else item for item in collected["sessions"]],
+        }
+        if verdict.work is not None:
+            work.update(copy.deepcopy(verdict.work))
+        context = copied_corrections.mark(context, [verdict.row], current=True)
+        if verdict.citations:
+            facts = context["semantic"]["facts"]
+            existing = {fact["fact_id"] for fact in facts}
+            facts.extend(
+                copy.deepcopy(fact) for fact in verdict.citations if fact["fact_id"] not in existing
+            )
+            context = _with_message_ordinals(application, context, focus)
+    context = _with_drift_view(application, context, payload, focus, project, cursor_key)
+    view = context["sources"]["work"]["drift_views"][0]
     value = verdict.value if verdict else None
+    if value in session_progress.DEPARTURES:
+        pill = view.get("pill")
+        if not pill or pill.get("source") != "analysis" or pill.get("level") != value:
+            value = None
     view.update(session_progress.published(value))
-    pill = view.get("pill")
-    if verdict and value in session_progress.DEPARTURES and verdict.work:
-        work.update(copy.deepcopy(verdict.work))
-        view["analysis"] = copy.deepcopy(verdict.analysis)
-        view["pill"] = copy.deepcopy(verdict.pill)
-    elif (
-        pill
-        and pill.get("source") == "analysis"
-        and pill.get("level") in session_progress.DEPARTURES
-    ):
-        view["pill"] = None
-    if value not in session_progress.DEPARTURES and (
-        row is None or session_progress.claims_departure(row)
-    ):
-        work["analysis_levels"] = []
-        view["analysis"] = None
     return context
 
 
@@ -2222,6 +2235,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             focus,
             self.server.record_cursor_key,
             refresh=refresh,
+            progress=True,
             model_consent=(
                 refresh
                 and parse_qs(url.query).get("observer_model") == ["1"]
@@ -2272,9 +2286,6 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 result = _with_prompt_choices(
                     application, result, collected["sessions"], focus, project
                 )
-            result = _with_stored_progress(
-                application, result, collected, focus, project, self.server.record_cursor_key
-            )
         # The page shows titles; a reader message whole is for a reading only.
         result = runtime_project_context.for_page(result)
         self._send(
@@ -5181,6 +5192,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reading_permission_reply(exc.answer, route=route)
             return
         job.notice = notice
+        job.attempt_revision = entry["revisions"][-1]["n"]
         # Taken before the thread starts, which may finish before this reply.
         started = runtime_reading.published_jobs(config)[key]
         try:

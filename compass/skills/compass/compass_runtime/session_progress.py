@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import re
 import stat
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 from urllib.parse import parse_qs
@@ -26,6 +27,7 @@ from . import (
     project_scripts,
     reader_checks,
     reading,
+    reading_jobs,
     record_pages,
     semantic_history,
 )
@@ -47,6 +49,15 @@ MAX_BATCH_SECONDS = 4.0
 MAX_WORKSPACE_INPUTS = 256
 RULE_VERSION = 1
 DEPARTURES = frozenset({levels.MEDIUM, levels.HIGH, levels.EXTREME})
+TOKENS = DEPARTURES | {
+    "no-goal",
+    "unchecked",
+    "too-early",
+    "cant-tell",
+    "goal-unclear",
+    "out-of-date",
+    "checked",
+}
 _Identity = tuple[str, str, str]
 _Stamp = tuple[int, ...]
 _MISSING: _Stamp = ()
@@ -83,7 +94,8 @@ def _requested_row(value: str, project_cap: int) -> _Identity:
         or len(row) != 3
         or not all(isinstance(part, str) for part in row)
         or not _SID.fullmatch(row[0])
-        or not _SID.fullmatch(row[1])
+        or not (0 < len(row[1]) <= 128 and row[1].isprintable())
+        or (row[0] == "claude" and not _SID.fullmatch(row[1]))
         or not 0 < len(row[2]) <= project_cap
     ):
         msg = "expected harness, session id and canonical project"
@@ -129,31 +141,10 @@ def admitted_rows(rows: Sequence[dict[str, Any]]) -> dict[_Identity, dict[str, A
 
 
 def published(value: str | None = None) -> dict[str, Any]:
-    return {"stored_progress": value}
+    return {"stored_progress": value if value in TOKENS else None}
 
 
-def claims_departure(row: Mapping[str, Any]) -> bool:
-    assessment = row.get("annotation_assessment")
-    criteria = assessment.get("criteria") if isinstance(assessment, dict) else None
-    return isinstance(criteria, dict) and any(
-        key != reading.CONSTRAINT_CLAIMS
-        and isinstance(value, dict)
-        and value.get("result") == reading.RESULT_DEPARTURE
-        for key, value in criteria.items()
-    )
-
-
-def _stamp(path: str, *, directory: bool = False) -> _Stamp:
-    try:
-        found = os.lstat(path)
-    except FileNotFoundError:
-        return _MISSING
-    except OSError:
-        return _UNAVAILABLE
-    valid = stat.S_ISDIR(found.st_mode) if directory else stat.S_ISREG(found.st_mode)
-    access = os.R_OK | (os.X_OK if directory else 0)
-    if not valid or not os.access(path, access):
-        return _UNAVAILABLE
+def _stat_mark(found: os.stat_result) -> _Stamp:
     return (
         found.st_size,
         found.st_dev,
@@ -167,15 +158,32 @@ def _stamp(path: str, *, directory: bool = False) -> _Stamp:
     )
 
 
+def _stamp(
+    path: str, *, directory: bool = False, link: bool = False, declaration: bool = False
+) -> _Stamp:
+    try:
+        leaf = os.lstat(path)
+        found = os.stat(path) if link and stat.S_ISLNK(leaf.st_mode) else leaf
+    except FileNotFoundError:
+        return _MISSING
+    except OSError:
+        return _UNAVAILABLE
+    valid = stat.S_ISDIR(found.st_mode) if directory else stat.S_ISREG(found.st_mode)
+    access = os.R_OK | (os.X_OK if directory else 0)
+    if not valid or not os.access(path, access):
+        # Tier-three inputs are interpreted by their no-follow owner. A
+        # refused declaration contributes no evidence; still fence its identity.
+        return _stat_mark(leaf) if declaration else _UNAVAILABLE
+    mark = _stat_mark(found)
+    return mark if found is leaf else (*mark, *_stat_mark(leaf))
+
+
 def _state_stamps(config: RuntimeConfig) -> tuple[_Stamp, ...]:
-    return tuple(
-        _stamp(owner(config))
-        for owner in (
-            annotation_store.store_path,
-            semantic_history.store_path,
-            copied_corrections.store_path,
-            reader_checks.store_path,
-        )
+    return (
+        _stamp(annotation_store.store_path(config)),
+        _stamp(semantic_history.store_path(config)),
+        _stamp(copied_corrections.store_path(config)),
+        _stamp(reader_checks.store_path(config), link=True),
     )
 
 
@@ -220,15 +228,23 @@ def _native_path(sid: str, resume_id: object, inventory: tuple[str, ...]) -> str
 class _Sources(NamedTuple):
     files: tuple[tuple[str, _Stamp], ...]
     directories: tuple[tuple[str, _Stamp], ...]
+    native: bool = False
+    declarations: frozenset[str] = frozenset()
 
     @property
     def size(self) -> int:
         return sum(stamp[0] for _, stamp in self.files)
 
     def unchanged(self) -> bool:
-        return all(_stamp(path) == mark for path, mark in self.files) and all(
-            _stamp(path, directory=True) == mark for path, mark in self.directories
-        )
+        return all(
+            _stamp(
+                path,
+                link=self.native and path == self.files[0][0],
+                declaration=path in self.declarations,
+            )
+            == mark
+            for path, mark in self.files
+        ) and all(_stamp(path, directory=True) == mark for path, mark in self.directories)
 
 
 def _sources(path: str) -> _Sources | None:
@@ -257,10 +273,84 @@ def _sources(path: str) -> _Sources | None:
             if not is_dir
             and project_context.stored_child_path(path, candidate := os.path.join(directory, name))
         )
-    files = tuple((name, _stamp(name)) for name in (path, *sorted(children)))
+    # A leaf link can lead outside the inventory's walked directories. A
+    # warm hit still needs the target's native directory admission.
+    if os.path.islink(path) and not runtime_io.harness_directory_readable(os.path.realpath(path)):
+        return None
+    files = tuple((name, _stamp(name, link=name == path)) for name in (path, *sorted(children)))
     if any(mark in (_MISSING, _UNAVAILABLE) for _, mark in files):
         return None
-    return _Sources(files, directory_stamps)
+    return _Sources(files, directory_stamps, native=True)
+
+
+def _source_prefix(path: str, size: int, dev: int, inode: int) -> str | None:
+    """Hash bounded native bytes from their admitted descriptor."""
+    try:
+        with os.fdopen(runtime_io.open_harness(path), "rb") as handle:
+            found = os.fstat(handle.fileno())
+            if (found.st_dev, found.st_ino) != (dev, inode) or found.st_size < size:
+                return None
+            data = handle.read(size)
+            return hashlib.sha256(data).hexdigest() if len(data) == size else None
+    except OSError:
+        return None
+
+
+def capture_sources(config: RuntimeConfig, sid: str) -> annotation_store.ProgressEvidence | None:
+    """Bind a saved check to its native file identities and append-only prefixes."""
+    path = _native_path(sid, None, _inventory(config) or ())
+    sources = _sources(path) if path else None
+    if sources is None or not 0 < sources.size <= config.turn_scan_max_bytes:
+        return None
+    proof = []
+    for path, mark in sources.files:
+        size, dev, inode, _mtime, ctime = mark[:5]
+        digest = _source_prefix(path, size, dev, inode)
+        if digest is None:
+            return None
+        proof.append((size, dev, inode, ctime, digest))
+    status, retained = semantic_history.read_only(config)
+    witness = semantic_history.progress_event_ids(retained, sid)
+    if status == "unavailable" or witness is None or not sources.unchanged():
+        return None
+    return annotation_store.ProgressEvidence(proof, witness)
+
+
+def capture_is_current(
+    config: RuntimeConfig, sid: str, evidence: annotation_store.ProgressEvidence
+) -> bool:
+    path = _native_path(sid, None, _inventory(config) or ())
+    sources = _sources(path) if path else None
+    proof = evidence.sources
+    return bool(
+        sources
+        and len(proof) == len(sources.files)
+        and all(
+            saved[:4] == (*mark[:3], mark[4])
+            for saved, (_, mark) in zip(proof, sources.files, strict=True)
+        )
+    )
+
+
+def _prefixes_stand(
+    proof: list[annotation_store.ProgressSource] | None, sources: _Sources, limit: int
+) -> bool:
+    if not proof or sum(item[0] for item in proof) > limit:
+        return False
+    children = {(mark[1], mark[2]): (path, mark) for path, mark in sources.files[1:]}
+    for index, (size, dev, inode, ctime, digest) in enumerate(proof):
+        found = sources.files[0] if index == 0 else children.get((dev, inode))
+        if found is None:
+            return False
+        path, mark = found
+        if mark[1:3] != (dev, inode) or mark[0] < size:
+            return False
+        if mark[0] == size:
+            if mark[4] != ctime and _source_prefix(path, size, dev, inode) != digest:
+                return False
+        elif _source_prefix(path, size, dev, inode) != digest:
+            return False
+    return True
 
 
 def _git_markers(folder: str) -> list[tuple[str, bool]]:
@@ -338,6 +428,7 @@ def _workspace(config: RuntimeConfig, folders: tuple[str, ...]) -> _Sources | No
     if len(folders) > 16:
         return None
     paths: dict[tuple[str, bool], None] = {}
+    declarations: set[str] = set()
     for directory in folders:
         markers = _git_markers(directory)
         paths.update(dict.fromkeys(markers))
@@ -347,12 +438,22 @@ def _workspace(config: RuntimeConfig, folders: tuple[str, ...]) -> _Sources | No
             if dependencies is None:
                 return None
             paths.update(dict.fromkeys(dependencies))
+            declarations.update(
+                os.path.join(os.path.dirname(dot_git), name)
+                for name in project_scripts.DECLARING_FILES
+            )
         if len(paths) > MAX_WORKSPACE_INPUTS:
             return None
-    files = tuple((path, _stamp(path)) for path, is_dir in paths if not is_dir)
+    files = tuple(
+        (path, _stamp(path, declaration=path in declarations))
+        for path, is_dir in paths
+        if not is_dir
+    )
     dirs = tuple((path, _stamp(path, directory=True)) for path, is_dir in paths if is_dir)
     return (
-        None if any(mark == _UNAVAILABLE for _, mark in (*files, *dirs)) else _Sources(files, dirs)
+        None
+        if any(mark == _UNAVAILABLE for _, mark in (*files, *dirs))
+        else _Sources(files, dirs, declarations=frozenset(declarations))
     )
 
 
@@ -360,8 +461,8 @@ def _workspace(config: RuntimeConfig, folders: tuple[str, ...]) -> _Sources | No
 class Verdict:
     value: str | None = None
     work: dict[str, Any] | None = None
-    analysis: dict[str, Any] | None = None
-    pill: dict[str, Any] | None = None
+    row: dict[str, Any] | None = None
+    citations: tuple[dict[str, Any], ...] = ()
 
 
 _EMPTY = Verdict()
@@ -411,7 +512,10 @@ def _row_inputs(row: Mapping[str, Any]) -> tuple[Any, ...]:
 
 def _attempt_absence(entry: annotation_store.Annotation | None, row: dict[str, Any]) -> str | None:
     if entry and entry.get("withheld") == reading.WITHHELD[reading.WITHHELD_LEDGER_EMPTY]:
-        return "too-early"
+        if entry.get("withheld_revision") == row.get("annotation_revision"):
+            return "too-early"
+        if entry.get("withheld_revision") and entry.get("written") == entry["revisions"][-1]["at"]:
+            return "unchecked" if row["annotation_goal"] else "no-goal"
     if entry and any(
         entry.get(name)
         for name in (
@@ -432,7 +536,7 @@ def _attempt_absence(entry: annotation_store.Annotation | None, row: dict[str, A
     return None
 
 
-def _verdict(  # noqa: PLR0911 - each closed result has its own proof
+def _verdict(
     application: Application,
     payload: dict[str, Any],
     row: dict[str, Any],
@@ -440,36 +544,49 @@ def _verdict(  # noqa: PLR0911 - each closed result has its own proof
     context: dict[str, Any],
     record: list[dict[str, Any]],
 ) -> Verdict:
-    sources = reading.listed_request_sources(focused_reading.facts_of(context), [])
+    facts = focused_reading.facts_of(context)
+    sources = reading.listed_request_sources(facts, [])
     work = focused_reading.stored_work(application, context, row, entry, sources=sources)
     context["sources"]["work"].update(work)
     view = drift_view.derive(row, payload, context, record)
     if view["malformed"]:
         return _EMPTY
+    # Both consumers must be able to display the cited shape. Carry only the
+    # revalidated citations so Focus can render facts outside its activity window.
+    wanted = {
+        cite
+        for criterion in entry["assessment"]["criteria"].values()
+        for cite in criterion.get("cites", ())
+    }
+    citations = tuple(fact for fact in facts if fact.get("fact_id") in wanted)
+    return Verdict(_verdict_value(view), work, row, citations)
+
+
+def _verdict_value(view: dict[str, Any]) -> str | None:  # noqa: PLR0911 - closed outcomes
     if view["stale"]:
-        return Verdict("out-of-date", work)
+        return "out-of-date"
     analysis = view["analysis"]
     if analysis is None:
-        return _EMPTY
+        return None
     if analysis["withheld"] or view["unsettled"]:
-        return Verdict(work=work)
+        return None
     level, reasons = analysis["level"], set(analysis["reasons"])
     if level in DEPARTURES and view["pill"] and view["pill"]["source"] == "analysis":
-        return Verdict(level, work, analysis, view["pill"])
+        return cast("str", level)
     if levels.REASON_GOAL_UNCLEAR in reasons:
-        return Verdict("goal-unclear", work)
+        return "goal-unclear"
     if reasons & {
         levels.REASON_FAILED_CHECK,
         levels.REASON_PASS_THEN_WRITE,
         levels.REASON_CLAIM_CONTRADICTED,
         levels.REASON_CLAIM_NOT_SHOWN,
     }:
-        return Verdict(work=work)
+        return None
     if levels.REASON_OUTCOME_NOT_REACHED in reasons:
-        return Verdict("too-early", work)
+        return "too-early"
     if reasons == {levels.REASON_LINE_NOT_SHOWN}:
-        return Verdict("cant-tell", work)
-    return Verdict("checked" if level == levels.NONE_OR_LOW else None, work)
+        return "cant-tell"
+    return "checked" if level == levels.NONE_OR_LOW else None
 
 
 def _superseded(row: Mapping[str, Any], entry: annotation_store.Annotation) -> str | None:
@@ -510,6 +627,24 @@ def _has_retained_gap(
     return False
 
 
+def _retained_later_work(
+    retained: dict[str, Any], row: dict[str, Any], context: dict[str, Any], through: float
+) -> bool:
+    project = semantic_history.retained_events(retained, {identity(row)[2], str(row["project"])})
+    if project is None:
+        return True
+    own = {fact.get("fact_id") for fact in focused_reading.facts_of(context)}
+    session = f"{row['harness']}:{row['sid']}"
+    return any(
+        isinstance(fact := event.get("fact"), dict)
+        and event.get("source_identity") == session
+        and fact.get("type") in {"user_message", "result"}
+        and fact.get("fact_id") not in own
+        and (reading.valid_prompt_time(fact.get("at")) or 0) > through
+        for event in project
+    )
+
+
 class _Batch:
     def __init__(
         self, application: Application, payload: dict[str, Any], cursor_key: bytes
@@ -524,9 +659,10 @@ class _Batch:
         self.remaining = MAX_BATCH_BYTES
         self.source_count = MAX_SOURCES
         self.history: tuple[str, dict[str, Any]] | None = None
+        self.copies: dict[tuple[str, str], copied_corrections.Held] | None = None
         self.proofs: dict[_Identity, _Sources] = {}
         self.workspaces: dict[_Identity, _Sources] = {}
-        self.jobs = reading.published_jobs(self.config)
+        self.jobs = reading_jobs.pending_keys(self.config)
 
     def entries(self) -> dict[tuple[str, str], annotation_store.Annotation | None] | None:
         state = self.application.state
@@ -536,11 +672,13 @@ class _Batch:
             cached = state.progress_annotations
             if cached is not None and cached[0] == self.stamps[0]:
                 return cast("dict[tuple[str, str], annotation_store.Annotation | None]", cached[1])
-            entries = annotation_store.progress_entries(self.config)
-            if entries is not None and self.stamps == _state_stamps(self.config):
-                state.progress_annotations = (self.stamps[0], entries)
-                return entries
-            return None
+        # Writers replace the complete file atomically. The first fence
+        # ensures the writer is available; decoding needs only a held file.
+        entries = annotation_store.progress_entries(self.config)
+        if entries is not None and self.stamps == _state_stamps(self.config):
+            state.progress_annotations = (self.stamps[0], entries)
+            return entries
+        return None
 
     def evaluate(self, row: dict[str, Any], entry: annotation_store.Annotation | None) -> Verdict:
         key = identity(row)
@@ -556,12 +694,18 @@ class _Batch:
         ):
             return _EMPTY
         row = _saved_row(row, entry)
+        if row.get(reading.COPIED_PROMPTS):
+            if self.copies is None:
+                self.copies = copied_corrections.load(self.config)
+            row[reading.COPIED_PROMPTS] = copied_corrections.current_prompts(row, self.copies)
         if entry is None or not entry.get("assessment"):
-            return _EMPTY if self._live_only(row) else Verdict(_attempt_absence(entry, row))
+            return (
+                _EMPTY if self._live_only(row) else Verdict(_attempt_absence(entry, row), row=row)
+            )
         return self._evaluate_reading(key, row, entry, sources)
 
     def _pending(self, key: _Identity) -> bool:
-        return f"{key[0]}:{key[1]}" in self.jobs
+        return self.jobs is None or f"{key[0]}:{key[1]}" in self.jobs
 
     def _evaluate_reading(
         self,
@@ -570,17 +714,16 @@ class _Batch:
         entry: annotation_store.Annotation,
         sources: _Sources,
     ) -> Verdict:
-        if value := _superseded(row, entry):
-            return Verdict(value)
         if entry.get("not_accurate") or entry.get("withheld"):
-            return _EMPTY
+            return Verdict(row=row)
 
         state = self.application.state
         stamp = (
             RULE_VERSION,
-            self.stamps,
+            self.stamps[1:],
             self.payload.get("reading_routes"),
             _row_inputs(row),
+            entry,
             sources,
         )
         cached = state.progress_verdicts.get(key)
@@ -588,11 +731,17 @@ class _Batch:
             self.workspaces[key] = cached.workspace
             return cached.verdict
 
-        if sources.size > self.remaining or len(sources.files) > self.source_count:
+        if (
+            sources.size > min(self.remaining, self.config.turn_scan_max_bytes)
+            or len(sources.files) > self.source_count
+        ):
             return _EMPTY
         self.remaining -= sources.size
         self.source_count -= len(sources.files)
+        self.workspaces[key] = _Sources((), ())
         verdict = self._derive(row, entry, sources)
+        if verdict.work is not None and (value := _superseded(row, entry)):
+            verdict = replace(verdict, value=value)
         workspace = self.workspaces.get(key)
         if (
             time.monotonic() >= self.deadline
@@ -616,19 +765,22 @@ class _Batch:
     def _admit_workspace(
         self, row: dict[str, Any], began_in: str, folders: tuple[str, ...]
     ) -> bool:
-        workspace = _workspace(self.config, tuple(dict.fromkeys((began_in, *folders))))
+        workspace = _workspace(
+            self.config, tuple(dict.fromkeys(path for path in (began_in, *folders) if path))
+        )
         if workspace is None:
+            self.workspaces.pop(identity(row), None)
             return False
+        self.workspaces[identity(row)] = workspace
         if row.get("project_identity_source") not in (None, "collector project label"):
             verified = copy.copy(row)
             verified["project_key"] = ""
             runtime_sessions.apply_project_identity(self.config, verified, began_in)
             if verified["project_key"] != identity(row)[2]:
                 return False
-        self.workspaces[identity(row)] = workspace
         return True
 
-    def _derive(
+    def _derive(  # noqa: PLR0911 - refusal points share the source proof
         self, row: dict[str, Any], entry: annotation_store.Annotation, sources: _Sources
     ) -> Verdict:
         path, *children = (name for name, _ in sources.files)
@@ -654,6 +806,20 @@ class _Batch:
             return _EMPTY
         if _has_retained_gap(retained, row, entry, context):
             return _EMPTY
+        witness = entry.get("progress_history")
+        current = semantic_history.progress_event_ids(retained, row["sid"])
+        if (
+            witness is None
+            or current is None
+            or not set(witness).issubset(current)
+            or not _prefixes_stand(
+                entry.get("progress_sources"), sources, self.config.turn_scan_max_bytes
+            )
+        ):
+            return _EMPTY
+        assessment_at = through or reading.valid_prompt_time(assessment.get("read_at"))
+        if assessment_at and _retained_later_work(retained, row, context, assessment_at):
+            return _EMPTY
         context = copied_corrections.mark(context, [row])
         record = record_pages.read(
             self.config,
@@ -661,15 +827,26 @@ class _Batch:
             "claude",
             row["sid"],
             cursor_key=self.cursor_key,
-            limit=1,
+            limit=record_pages.PAGE_SIZE,
             before=None,
         )
         if record.get("state") != "ok":
             return _EMPTY
-        # The fact builders above already read and marked the native message
-        # record end to end. Hand the page shape that version as its context,
-        # without letting duplicate, unmarked page entries undo those marks.
-        return _verdict(self.application, self.payload, row, entry, context, [])
+        # The newest page can repeat facts marked during the full scan. Its
+        # UI metadata must not remove those source-backed marks.
+        by_id = {fact.get("fact_id"): fact for fact in focused_reading.facts_of(context)}
+        entries = [
+            {
+                **fact,
+                **{
+                    flag: True
+                    for flag in ("copied", "compass_turn")
+                    if by_id.get(fact.get("fact_id"), {}).get(flag) is True
+                },
+            }
+            for fact in record["entries"]
+        ]
+        return _verdict(self.application, self.payload, row, entry, context, entries)
 
     def finish(self, results: dict[_Identity, Verdict]) -> dict[_Identity, Verdict]:
         # Check work before the annotation fence, which is also taken for warm
@@ -685,11 +862,13 @@ class _Batch:
                 or (workspace is not None and not workspace.unchanged())
             ):
                 results.pop(key, None)
+        jobs = reading_jobs.pending_keys(self.config)
         with annotation_store.progress_read(self.config) as held:
             if (
                 held
+                and runtime_io.owner_directory_readable(str(self.config.state_home))
                 and self.stamps == _state_stamps(self.config)
-                and self.jobs == reading.published_jobs(self.config)
+                and self.jobs == jobs
             ):
                 return results
         return {}
@@ -705,11 +884,15 @@ def evaluate(
     if not rows or not application.config.annotations_enabled:
         return {}
     lock = application.state.progress_lock
-    if not lock.acquire(timeout=1.25):
+    if not lock.acquire(timeout=MAX_BATCH_SECONDS + 0.25):
         return {}
     try:
         batch = _Batch(application, payload, cursor_key)
-        if batch.inventory is None or _UNAVAILABLE in batch.stamps:
+        if (
+            batch.inventory is None
+            or _UNAVAILABLE in batch.stamps
+            or not runtime_io.owner_directory_readable(str(application.config.state_home))
+        ):
             return {}
         entries = batch.entries()
         if entries is None:

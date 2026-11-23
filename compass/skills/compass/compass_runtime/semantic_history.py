@@ -93,6 +93,8 @@ def read_only(config: RuntimeConfig) -> tuple[str, dict[str, Any]]:
         return "unavailable", {}
     if not isinstance(value, dict) or not isinstance(value.get("projects"), dict):
         return "unavailable", {}
+    if retained_events(value, set(value["projects"])) is None:
+        return "unavailable", {}
     return "ok", value
 
 
@@ -111,10 +113,36 @@ def retained_events(payload: dict[str, Any], projects: set[str]) -> list[Any] | 
     return result
 
 
+def progress_event_ids(payload: dict[str, Any], sid: str) -> tuple[str, ...] | None:
+    """A durable check witness for retained work the native record may have lost."""
+    wanted = f"claude:{sid}"
+    found: set[str] = set()
+    for bucket in payload.get("projects", {}).values():
+        events = bucket.get("events") if isinstance(bucket, dict) else None
+        if not isinstance(events, list):
+            return None
+        for event in events:
+            if not isinstance(event, dict):
+                return None
+            fact = event.get("fact")
+            if (
+                event.get("source_identity") == wanted
+                and isinstance(fact, dict)
+                and fact.get("type") in {"user_message", "result"}
+            ):
+                event_id = event.get("event_id")
+                if not isinstance(event_id, str) or not 0 < len(event_id) <= 160:
+                    return None
+                found.add(event_id)
+    return tuple(sorted(found)) if len(found) <= MAX_EVENTS_PER_PROJECT else None
+
+
 def _read(config: RuntimeConfig) -> dict[str, Any]:
     status, value = read_only(config)
-    if status != "ok":
-        return {"v": SCHEMA_VERSION, "projects": {}}
+    return _redacted(config, value) if status == "ok" else {"v": SCHEMA_VERSION, "projects": {}}
+
+
+def _redacted(config: RuntimeConfig, value: dict[str, Any]) -> dict[str, Any]:
     redacted = dict(_redact_history(value))
     # A read may be the only event after an upgrade; do not leave recognized
     # credentials at rest until an unrelated history update happens to arrive.
@@ -665,7 +693,7 @@ def _attach_relations(events: list[dict[str, Any]], relations: object) -> list[d
     return events
 
 
-def update(
+def update(  # noqa: PLR0913 - the focused route preserves proof failures
     config: RuntimeConfig,
     state: RuntimeState,
     project: str,
@@ -674,6 +702,7 @@ def update(
     assignments: Iterable[Mapping[str, Any]] = (),
     *,
     now: float | None = None,
+    preserve_unavailable: bool = False,
     source_scans: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Merge current source-backed meaning into the durable bounded history."""
@@ -704,7 +733,17 @@ def update(
     if isinstance(now, (int, float)):
         incoming.extend(_assignment_events(assignments, observed_at=float(now)))
     with state.semantic_history_lock:
-        payload = _read(config)
+        status, current = read_only(config)
+        if preserve_unavailable and status == "unavailable":
+            return {
+                "events": [],
+                "cursors": {},
+                "persisted": False,
+                "window_sec": HISTORY_WINDOW_SEC,
+            }
+        payload: dict[str, Any] = (
+            _redacted(config, current) if status == "ok" else {"v": SCHEMA_VERSION, "projects": {}}
+        )
         projects = payload["projects"]
         prior = projects.get(project)
         existing = prior.get("events", []) if isinstance(prior, dict) else []

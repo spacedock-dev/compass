@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import signal
+import subprocess
 import sys
 import tempfile
 import threading
@@ -101,6 +102,63 @@ class _Application:
         return (0.0, 0), b"{}"
 
 
+@contextlib.contextmanager
+def independent_worker(
+    config: Any, sid: str, assessment: dict[str, Any] | None, *, launch: bool = True
+) -> Iterator[None]:
+    """Admit and run a worker in a separate runtime sharing only the state directory."""
+    code = """
+import json, sys, time
+from pathlib import Path
+from compass.skills.compass.tests.test_reading_jobs import _Application, make_runtime
+from compass_runtime import reading, reading_jobs
+home, directory, sid, saved, launch = sys.argv[1:]
+config, state = make_runtime(state_home=home, state_dir=Path(directory), annotations_enabled=True)
+app = _Application(config, state, [])
+job = reading_jobs.start_job(config, 'claude:' + sid, provider='claude', label='Claude', now=time.time())
+assert job is not None
+if launch == 'False':
+    print('pending', flush=True)
+    input()
+    reading.end_job(config, 'claude:' + sid, expected_job=job)
+    sys.exit()
+def compose(_hooks):
+    print('pending', flush=True)
+    input()
+    return (json.loads(saved), '', True) if saved != 'null' else (None, reading.WITHHELD_CONTEXT_LIMIT, False)
+thread = reading_jobs.launch(app, job, compose)
+thread.join(timeout=10)
+assert not thread.is_alive()
+"""
+    root = Path(__file__).resolve().parents[4]
+    with subprocess.Popen(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            code,
+            str(config.state_home),
+            str(config.state_dir),
+            sid,
+            json.dumps(assessment),
+            str(launch),
+        ],
+        cwd=root,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    ) as process:
+        try:
+            assert process.stdout is not None
+            assert process.stdout.readline().strip() == "pending"
+            yield
+        finally:
+            if process.poll() is None:
+                _, errors = process.communicate(input="finish\n", timeout=15)
+                assert process.returncode == 0, errors
+
+
 class ReadingJobTest(unittest.TestCase):
     def setUp(self) -> None:
         home = tempfile.mkdtemp()
@@ -120,6 +178,29 @@ class ReadingJobTest(unittest.TestCase):
         patcher = mock.patch.object(supervise, "_SHUTDOWN", threading.Event())
         patcher.start()
         self.addCleanup(patcher.stop)
+
+    def test_older_worker_cannot_replace_a_newer_withheld_outcome(self) -> None:
+        assessment = {
+            "revision_read": 1,
+            "revision_read_at": 10.0,
+            "scope": reading.SCOPE_MID_FLIGHT,
+            "read_at": 20.0,
+            "criteria": {
+                "goal": {
+                    "result": reading.RESULT_UNVERIFIABLE,
+                    "cites": [],
+                    "why": reading.WHY_UNCITED,
+                },
+            },
+        }
+        with independent_worker(self.config, "s1", assessment):
+            with independent_worker(self.config, "s1", None):
+                pass
+            entry = annotation_store.find(annotation_store.load(self.config), "claude", "s1")
+            self.assertTrue(entry and entry.get("withheld"))
+        entry = annotation_store.find(annotation_store.load(self.config), "claude", "s1")
+        self.assertTrue(entry and entry.get("withheld"))
+        self.assertNotIn("assessment", entry or {})
 
     def _run(self, compose: Any) -> reading.Job:
         job = reading_jobs.start_job(

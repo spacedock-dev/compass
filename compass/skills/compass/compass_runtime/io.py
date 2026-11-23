@@ -119,6 +119,35 @@ def open_regular(path: str | os.PathLike[str], *, root: str | None = None) -> in
             os.close(parent)
 
 
+def owner_directory_readable(root: str) -> bool:
+    """Check the directory admission used by rooted state reads without opening a leaf."""
+    try:
+        if os.name == "nt":
+            with _windows_directory(root, root=root, create=False):
+                return True
+        os.close(_owner_directory_fd(root, root=root, create=False))
+    except FileNotFoundError:
+        return not os.path.lexists(root)
+    except OSError:
+        return False
+    else:
+        return True
+
+
+def harness_directory_readable(path: str) -> bool:
+    """Check a native reader's directory admission without opening the transcript."""
+    parent = os.path.dirname(path)
+    try:
+        if os.name == "nt":
+            with _windows_directory(parent, root=None, create=False):
+                return True
+        os.close(_directory_fd(parent))
+    except OSError:
+        return False
+    else:
+        return True
+
+
 def open_harness(
     path: str | os.PathLike[str],
     *,

@@ -562,6 +562,14 @@ class PriorDeparture(TypedDict):
 PRIOR_DEPARTURE_KEYS = ("key", "read_at", "revision_read", "criterion")
 
 
+ProgressSource = tuple[int, int, int, int, str]
+
+
+class ProgressEvidence(NamedTuple):
+    sources: list[ProgressSource]
+    history: tuple[str, ...]
+
+
 class Annotation(TypedDict):
     """One session's words, newest revision last.
 
@@ -597,6 +605,8 @@ class Annotation(TypedDict):
     jobs: NotRequired[list[str]]
     settled: NotRequired[Settlement]
     assessment: NotRequired[reading.Assessment]
+    progress_sources: NotRequired[list[ProgressSource] | None]
+    progress_history: NotRequired[tuple[str, ...] | None]
     # Latest kept outcome, which can be a refusal beside an older assessment.
     # Absent/None means no measurement, including readings stored by older builds.
     reading_diagnostic: NotRequired[dict[str, Any] | None]
@@ -618,6 +628,8 @@ class Annotation(TypedDict):
     # `withheld`; an entry written before it existed has none, which
     # publishes as an unknown time rather than a guessed one.
     withheld_at: NotRequired[float]
+    withheld_revision: NotRequired[int]
+    attempt_started: NotRequired[float]
     # The reader's Not accurate mark on the reading above (`mark_not_accurate`):
     # the token and nothing else, so no reason, text or time rides with it. A
     # new reading clears it, because it was about the one it replaces.
@@ -1436,6 +1448,7 @@ def _entry(
     assessment = _assessment(value.get("assessment"), detail_cap, goal_cap, text_cap)
     if assessment is not None:
         entry["assessment"] = assessment
+        _read_progress(entry, value)
     elif value.get("assessment") is not None:
         # A reading was stored and this build refuses it whole, which is right:
         # a half-read reading is worse than none. But `readings` survives just
@@ -1457,6 +1470,42 @@ def _entry(
     if "assessment" in entry or entry.get("refused"):
         _read_priors(entry, value.get("prior_departures"), detail_cap, goal_cap, text_cap)
     return _counters(entry, value)
+
+
+_PROGRESS_FIELDS = frozenset(
+    {"progress_sources", "progress_history", "attempt_started", "withheld_revision"}
+)
+
+
+def intent_log_entry(entry: Annotation) -> Mapping[str, Any]:
+    """Leave read-side proof and attempt ordering out of the intent log's equality token."""
+    if _PROGRESS_FIELDS.isdisjoint(entry):
+        return entry
+    return {key: value for key, value in entry.items() if key not in _PROGRESS_FIELDS}
+
+
+def _read_progress(entry: Annotation, fields: dict[str, Any]) -> None:
+    sources = fields.get("progress_sources")
+    history = fields.get("progress_history")
+    if not isinstance(sources, list) or not 0 < len(sources) <= 128:
+        return
+    if (
+        not isinstance(history, (list, tuple))
+        or len(history) > 512
+        or any(not isinstance(event, str) or not 0 < len(event) <= 160 for event in history)
+    ):
+        return
+    for item in sources:
+        if (
+            not isinstance(item, (list, tuple))
+            or len(item) != 5
+            or any(type(part) is not int or part < 0 for part in item[:4])
+            or not isinstance(item[4], str)
+            or re.fullmatch(r"[a-f0-9]{64}", item[4]) is None
+        ):
+            return
+    entry["progress_sources"] = [tuple(item) for item in sources]
+    entry["progress_history"] = tuple(history)
 
 
 def _read_priors(
@@ -1515,6 +1564,10 @@ def _counters(entry: Annotation, value: dict[str, Any]) -> Annotation:
 
 
 def _read_diagnostics(entry: Annotation, value: dict[str, Any]) -> None:
+    if attempt_started := records.norm_epoch(value.get("attempt_started")):
+        entry["attempt_started"] = attempt_started
+    if type(withheld_revision := value.get("withheld_revision")) is int and withheld_revision > 0:
+        entry["withheld_revision"] = withheld_revision
     diagnostic = analyze_diagnostics.validate(value.get("reading_diagnostic"))
     if diagnostic is not None:
         entry["reading_diagnostic"] = diagnostic
@@ -1799,7 +1852,7 @@ def progress_read(config: RuntimeConfig) -> Iterator[bool]:
 
 
 def progress_entries(config: RuntimeConfig) -> dict[tuple[str, str], Annotation | None] | None:
-    """Called under progress_read. None for a held-raw or ambiguous identity."""
+    """Decode one atomic store generation. None for a held-raw or ambiguous identity."""
     store = _read_store(config, strict=True)
     if not store.trusted:
         return None
@@ -2311,11 +2364,15 @@ def _carried(existing: Annotation, updated: Annotation) -> Annotation:
         "long_receipts",
         "settled",
         "assessment",
+        "progress_sources",
+        "progress_history",
         "reading_diagnostic",
         "long_diagnostic",
         "readings",
         "withheld",
         "withheld_at",
+        "withheld_revision",
+        "attempt_started",
         "jobs",
         "not_accurate",
         "prior_departures",
@@ -2596,12 +2653,16 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
     assessment: reading.Assessment,
     diagnostic_sink: Callable[[str], None] = print,
     job_id: str = "",
+    attempt_started: float = 0.0,
+    attempt_revision: int = 0,
     on_a_check: Collection[str] = frozenset(),
     analyze_diagnostic: dict[str, Any] | None = None,
     long_diagnostic: dict[str, Any] | None = None,
     long_target: Any = _UNGUARDED_LONG_TARGET,
     long_publication: bool = False,
     long_publish_guard: Callable[[Annotation], bool] | None = None,
+    capture_progress: bool = True,
+    progress_evidence: ProgressEvidence | None = None,
 ) -> str:
     """Store one reading beside the words it read. Returns an `OUTCOMES` token.
 
@@ -2626,16 +2687,24 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
     It must be a short read-only check returning exactly True; no nested writers,
     policy writes, source scans or model work. Exceptions refuse the new outcome.
     """
+    from . import session_progress  # noqa: PLC0415 - progress reads annotations
+
+    key = _key(harness, sid)
+    if capture_progress and key[0] == "claude":
+        progress_evidence = session_progress.capture_sources(config, key[1])
     return _record(
         config,
         state,
         harness,
         sid,
         assessment=assessment,
+        progress_evidence=progress_evidence,
         withheld="",
         spent=True,
         diagnostic_sink=diagnostic_sink,
         job_id=job_id,
+        attempt_started=attempt_started,
+        attempt_revision=attempt_revision,
         on_a_check=on_a_check,
         analyze_diagnostic=analyze_diagnostic,
         long_diagnostic=long_diagnostic,
@@ -2655,6 +2724,8 @@ def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared 
     spent: bool,
     diagnostic_sink: Callable[[str], None] = print,
     job_id: str = "",
+    attempt_started: float = 0.0,
+    attempt_revision: int = 0,
     analyze_diagnostic: dict[str, Any] | None = None,
     long_diagnostic: dict[str, Any] | None = None,
     long_target: Any = _UNGUARDED_LONG_TARGET,
@@ -2698,6 +2769,8 @@ def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared 
         spent=spent,
         diagnostic_sink=diagnostic_sink,
         job_id=job_id,
+        attempt_started=attempt_started,
+        attempt_revision=attempt_revision,
         analyze_diagnostic=analyze_diagnostic,
         long_diagnostic=long_diagnostic,
         long_target=long_target,
@@ -2759,6 +2832,36 @@ def _long_publish_allowed(guard: Callable[[Annotation], bool] | None, existing: 
         return False
 
 
+def _update_standing(  # noqa: PLR0913 - atomic outcome fields
+    updated: Annotation,
+    existing: Annotation,
+    assessment: reading.Assessment | None,
+    evidence: ProgressEvidence | None,
+    on_a_check: Collection[str],
+    attempt_started: float,
+    attempt_revision: int,
+    *,
+    withheld: str,
+    written: float,
+) -> bool:
+    if 0 < attempt_started < existing.get("attempt_started", 0.0):
+        return False
+    if assessment is not None:
+        if not _with_reading(updated, existing, assessment, on_a_check):
+            return False
+        updated["progress_sources"] = evidence.sources if evidence else None
+        updated["progress_history"] = evidence.history if evidence else None
+    if attempt_started:
+        updated["attempt_started"] = attempt_started
+    if withheld:
+        updated["withheld"] = withheld
+        updated["withheld_at"] = written
+        updated["withheld_revision"] = attempt_revision or existing["revisions"][-1]["n"]
+    elif "withheld" in existing:
+        updated["withheld"] = ""
+    return True
+
+
 def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
     config: RuntimeConfig,
     state: RuntimeState,
@@ -2767,9 +2870,12 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
     *,
     assessment: reading.Assessment | None,
     withheld: str,
+    progress_evidence: ProgressEvidence | None = None,
     spent: bool,
     diagnostic_sink: Callable[[str], None] = print,
     job_id: str = "",
+    attempt_started: float = 0.0,
+    attempt_revision: int = 0,
     on_a_check: Collection[str] = frozenset(),
     analyze_diagnostic: dict[str, Any] | None = None,
     long_diagnostic: dict[str, Any] | None = None,
@@ -2846,11 +2952,19 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
             "revisions": existing["revisions"],
         }
         _recorded_job(updated, existing, job_id, receipts)
-        stored = True
-        if assessment is not None:
-            stored = _with_reading(updated, existing, assessment, on_a_check)
-        # Explicit None clears a previous attempt's measurement. A late
-        # assessment that was not kept cannot replace its diagnostic either.
+        written = time.time()
+        stored = _update_standing(
+            updated,
+            existing,
+            assessment,
+            progress_evidence,
+            on_a_check,
+            attempt_started,
+            attempt_revision,
+            withheld=withheld,
+            written=written,
+        )
+        # A late result counts its spend without replacing any standing measurement.
         updated["reading_diagnostic"] = (
             checked_diagnostic if stored else existing.get("reading_diagnostic")
         )
@@ -2859,14 +2973,6 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
             if stored
             else reading_long_diagnostics.validate(existing.get("long_diagnostic"))
         )
-        written = time.time()
-        if withheld:
-            updated["withheld"] = withheld
-            updated["withheld_at"] = written
-        elif stored and "withheld" in existing:
-            # Cleared rather than carried: a reading arrived and was kept. A late one that was
-            # not kept leaves the note that the latest press produced none.
-            updated["withheld"] = ""
         if spent:
             updated["readings"] = existing.get("readings", 0) + 1
         updated["written"] = written

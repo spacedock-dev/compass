@@ -19,6 +19,8 @@ import http.client
 import io
 import json
 import os
+import shutil
+import threading
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
@@ -27,11 +29,16 @@ from urllib.parse import urlencode
 from compass_runtime import (
     aggregate,
     ci_read,
+    copied_corrections,
+    drift_view,
+    ends,
     history,
     http_api,
     levels,
+    observation,
     observer,
     project_context,
+    reader_checks,
     record_pages,
     semantic_history,
     session_progress,
@@ -43,9 +50,10 @@ from compass_runtime import reading as runtime_reading
 from compass_runtime.state import build_runtime_state
 
 from .support import make_server, serve_until_closed
-from .test_claude_checks import SHORT, START
-from .test_copied_corrections import _row
+from .test_claude_checks import SHORT, START, Transcript
+from .test_copied_corrections import OWN, _paste, _row
 from .test_live_estimate import GOAL, LINE, _Replay
+from .test_reading_jobs import independent_worker
 from .test_subagent_checks import Subagent
 
 FOCUSED = f"/api/project-context?project=billing&session=claude:{SHORT}"
@@ -560,6 +568,282 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
         path.unlink(missing_ok=True)
         assert_withheld()
 
+    def test_missing_branch_cannot_promote_after_history_is_lost(self) -> None:
+        self.save_goal(lines=())
+        parent = self.session.rows[-1]["uuid"]
+        self.session.prompt("Actually make the unrelated change first.")
+        direction = self.session.rows[-1]
+        self.session._entry("assistant", [], parentUuid=parent)
+        self.record(self.departure())
+        with self.serving(self.fresh_app()) as port:
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+
+        self.session.rows.remove(direction)
+        self.session.save(self.path)
+        path = Path(semantic_history.store_path(self.config))
+        for content in (None, b'{"projects":{}}'):
+            for focus_first in (False, True):
+                with self.subTest(content=content, focus_first=focus_first):
+                    if content is None:
+                        path.unlink(missing_ok=True)
+                    else:
+                        path.write_bytes(content)
+                    with self.serving(self.fresh_app()) as port:
+                        if focus_first:
+                            self.assertIsNone(
+                                self.get(port, FOCUSED)["sources"]["work"]["drift_views"][0]["pill"]
+                            )
+                        self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+                        self.assertIsNone(
+                            self.get(port, FOCUSED)["sources"]["work"]["drift_views"][0]["pill"]
+                        )
+                        self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+
+    def test_focus_preserves_the_unreadable_history_veto(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        path = Path(semantic_history.store_path(self.config))
+        for contents in (
+            b"{",
+            b'{"projects":{"billing":{"events":null}}}',
+            b"x" * (self.config.state_read_cap_bytes + 1),
+        ):
+            with self.subTest(size=len(contents)):
+                path.write_bytes(contents)
+                with self.serving(self.fresh_app()) as port:
+                    self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+                    (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+                    self.assertIsNone(view["pill"])
+                    self.assertEqual(contents, path.read_bytes())
+                    self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+
+    def test_removed_later_work_stays_stale_when_history_remembers_it(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        original = self.path.read_bytes()
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+            self.session.prompt("Actually work on something else now.")
+            self.session.save(self.path)
+            (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+            self.assertEqual("work", view["stale"]["kind"])
+        self.path.write_bytes(original)
+        with self.serving(self.fresh_app()) as port:
+            mark = self.progress(port)["rows"][0]["stored_progress"]
+            self.assertIn(mark, (None, "out-of-date"))
+
+    def test_warm_progress_withholds_when_the_state_home_cannot_be_opened(self) -> None:
+        if os.name == "nt" or os.geteuid() == 0:
+            self.skipTest("requires POSIX directory access checks")
+        self.save_goal(lines=())
+        self.record(self.departure())
+        home = Path(self.config.state_home)
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+            mode = home.stat().st_mode & 0o777
+            home.chmod(0o111)
+            try:
+                self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+                with self.serving(self.fresh_app()) as cold:
+                    self.assertIsNone(self.progress(cold)["rows"][0]["stored_progress"])
+            finally:
+                home.chmod(mode)
+
+    def test_evicted_copy_cannot_authorize_warm_progress(self) -> None:
+        self.save_goal(lines=())
+        self.register(OWN, now=START.timestamp() + self.session.seconds + 1)
+        _paste(self.session, OWN)
+        self.record(self.departure())
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+            Path(copied_corrections.store_path(self.config)).unlink()
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+
+    def test_owned_transcript_and_reader_check_links_preserve_progress(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        target = self.root / "native-source"
+        self.path.rename(target)
+        self.path.symlink_to(target)
+        checks = self.root / "reader-checks"
+        checks.write_text('{"projects": {}}', encoding="utf-8")
+        Path(reader_checks.store_path(self.config)).symlink_to(checks)
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+
+    def test_refused_declaration_does_not_withhold_unrelated_evidence(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        workspace = Path(self.session.cwd)
+        workspace.mkdir(exist_ok=True)
+        (workspace / ".git").mkdir()
+        makefile = workspace / "Makefile"
+        for is_link in (True, False):
+            with self.subTest(is_link=is_link):
+                if is_link:
+                    makefile.symlink_to(self.path)
+                else:
+                    makefile.mkdir()
+                with self.serving(self.fresh_app()) as port:
+                    self.assertEqual(
+                        levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"]
+                    )
+                if is_link:
+                    makefile.unlink()
+                else:
+                    makefile.rmdir()
+
+    def test_no_cwd_does_not_probe_the_server_checkout(self) -> None:
+        self.save_goal(lines=())
+        assessment = self.departure()
+        for record in self.session.rows:
+            record.pop("cwd", None)
+        self.session.save(self.path)
+        self.record(assessment)
+        with (
+            self.serving(self.fresh_app()) as port,
+            patch.object(
+                session_progress, "_git_markers", wraps=session_progress._git_markers
+            ) as markers,
+        ):
+            self.progress(port)
+        markers.assert_not_called()
+
+    def test_peer_worker_withholds_the_old_departure_while_pending_and_after_refusal(self) -> None:
+        self.save_goal(lines=())
+        assessment = self.departure()
+        self.record(assessment)
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+            with independent_worker(self.config, SHORT, None, launch=False):
+                self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+            with independent_worker(self.config, SHORT, assessment):
+                self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+                with independent_worker(self.config, SHORT, None):
+                    pass
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+
+    def test_new_goal_does_not_inherit_an_empty_ledger_attempt(self) -> None:
+        self.save_goal(lines=())
+        annotation_store.record_withheld(
+            self.config,
+            self.state,
+            "claude",
+            SHORT,
+            reason=runtime_reading.WITHHELD_LEDGER_EMPTY,
+            spent=False,
+        )
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual("too-early", self.progress(port)["rows"][0]["stored_progress"])
+            self.session.prompt("Ship a different change.")
+            self.session.save(self.path)
+            self.save_goal(lines=("A new outcome line",))
+            self.assertEqual("unchecked", self.progress(port)["rows"][0]["stored_progress"])
+
+    def test_first_save_and_replacement_use_one_focus_generation(self) -> None:
+        self.save_goal(lines=())
+        assessment = self.departure()
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual("unchecked", self.progress(port)["rows"][0]["stored_progress"])
+            self.record(assessment)
+            for revision in (1, 2):
+                with self.subTest(revision=revision):
+                    mark = self.progress(port)["rows"][0]["stored_progress"]
+                    work = self.get(port, FOCUSED)["sources"]["work"]
+                    (view,) = work["drift_views"]
+                    self.assertEqual(levels.MEDIUM, mark)
+                    self.assertEqual(mark, view["stored_progress"])
+                    self.assertTrue(view["reading"])
+                    self.assertEqual(revision, view["revision"])
+                    self.assertEqual(["goal"], view["departures"])
+                    self.assertEqual(revision, work["analysis_levels"][0]["revision_read"])
+                if revision == 1:
+                    at = START.timestamp() + self.session.seconds + 1
+                    self.assertEqual(
+                        annotation_store.OUTCOME_STORED,
+                        annotation_store.annotate(
+                            self.config,
+                            self.state,
+                            "claude",
+                            SHORT,
+                            goal="Ship the newer parser",
+                            lines=[],
+                            expected_revision=1,
+                            now=at,
+                        ),
+                    )
+                    newer = self.departure()
+                    self.record({**newer, "revision_read": 2, "revision_read_at": at})
+
+    def test_focus_drops_the_overruled_low_analysis_on_a_warm_snapshot(self) -> None:
+        self.save_goal()
+        assessment = self.consistent_reading()
+        self.record(assessment)
+        with self.serving(self.fresh_app()) as port:
+            self.progress(port)
+            work = self.get(port, FOCUSED)["sources"]["work"]
+            self.assertEqual(levels.NONE_OR_LOW, work["analysis_levels"][0]["level"])
+            self.assertEqual(
+                annotation_store.OUTCOME_STORED, self.mark(read_at=assessment["read_at"])
+            )
+            with patch.object(session_progress._Batch, "_derive", autospec=True) as derive:
+                self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+                derive.assert_not_called()
+            work = self.get(port, FOCUSED)["sources"]["work"]
+            (view,) = work["drift_views"]
+            self.assertIsNone(view["stored_progress"])
+            self.assertIsNone(view["analysis"])
+            self.assertEqual([], work["analysis_levels"])
+
+    def test_focus_keeps_the_technical_analysis_of_a_stale_departure(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+            self.session.prompt("Actually work on something else now.")
+            self.session.save(self.path)
+            work = self.get(port, FOCUSED)["sources"]["work"]
+            (view,) = work["drift_views"]
+            self.assertEqual("out-of-date", view["stored_progress"])
+            self.assertEqual("work", view["stale"]["kind"])
+            self.assertEqual(levels.MEDIUM, work["analysis_levels"][0]["level"])
+
+    def test_early_citation_is_available_to_the_focused_page(self) -> None:
+        self.save_goal(lines=())
+        self.session._entry(
+            "assistant", [{"type": "text", "text": "I will change the unrelated module instead."}]
+        )
+        self.session.save(self.path)
+        with self.serving(self.fresh_app()) as port:
+            (citation,) = [
+                fact["fact_id"]
+                for fact in self.get(port, FOCUSED)["semantic"]["facts"]
+                if fact.get("type") == "agent_message"
+            ]
+        assessment = _reading(
+            {"goal": {"result": runtime_reading.RESULT_DEPARTURE, "cites": [citation]}},
+            revision_read_at=START.timestamp(),
+            window_start=START.timestamp(),
+        )
+        Path(semantic_history.store_path(self.config)).unlink(missing_ok=True)
+        for _ in range(141):
+            self.session._entry("assistant", [{"type": "text", "text": "x" * 8192}])
+        self.session.save(self.path)
+        through = START.timestamp() + self.session.seconds
+        self.record({**assessment, "read_at": through + 1, "evidence_through": through})
+        with self.serving(self.fresh_app()) as port:
+            mark = self.progress(port)["rows"][0]["stored_progress"]
+            context = self.get(port, FOCUSED)
+            (view,) = context["sources"]["work"]["drift_views"]
+            self.assertEqual(levels.MEDIUM, mark)
+            self.assertEqual(mark, view["stored_progress"])
+            self.assertEqual(["goal"], view["departures"])
+            self.assertTrue(
+                set(assessment["criteria"]["goal"]["cites"])
+                <= {fact["fact_id"] for fact in context["semantic"]["facts"]}
+            )
+
     def test_progress_and_focus_agree_on_first_and_warm_loads(self) -> None:
         self.save_goal(lines=())
         for _ in range(141):
@@ -703,6 +987,7 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
             self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
             (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
             self.assertEqual(levels.MEDIUM, view["pill"]["level"])
+            self.assertEqual(["goal"], view["departures"])
             terminal = self.get(port, "/api/sessions")
         row = next(row for row in terminal["sessions"] if row["sid"] == SHORT)
         self.assertEqual(levels.MEDIUM, row["stored_progress"])
@@ -798,6 +1083,72 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
             self.assertNotIn(
                 self.progress(port)["rows"][0]["stored_progress"], session_progress.DEPARTURES
             )
+
+    def test_native_gemini_sid_does_not_reject_a_claude_peer(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        os.utime(self.path, (self.now, self.now))
+        gemini = self.root / "gemini"
+        sid = "session-2026-04-01T12:00:00.000Z-abc"
+        transcript = gemini / "billing" / "chats" / f"{sid}.jsonl"
+        transcript.parent.mkdir(parents=True)
+        transcript.write_text('{"type":"user","content":"Shipping review"}\n', encoding="utf-8")
+        os.utime(transcript, (self.now, self.now))
+        self.config = dataclasses.replace(
+            self.config, store_roots={**self.config.store_roots, "gemini.tmp": (str(gemini),)}
+        )
+        app = self.fresh_app()
+        app.harnesses = tuple(
+            spec
+            for spec in aggregate.default_harnesses(usage_fetch_enabled=False)
+            if spec.key in {"claude", "gemini"}
+        )
+        revision, body = app.collect_json(show_all=False)
+        identities = sorted(session_progress.identity(row) for row in json.loads(body)["sessions"])
+        self.assertEqual([("claude", SHORT), ("gemini", sid)], [key[:2] for key in identities])
+        with self.serving(app) as port:
+            result = self.get(port, _progress_path(snapshot.format_revision(revision), *identities))
+        self.assertEqual([levels.MEDIUM, None], [row["stored_progress"] for row in result["rows"]])
+
+    def test_focus_shapes_carry_a_nullable_progress_field(self) -> None:
+        with self.serving(self.fresh_app(harness="codex")) as port:
+            available = self.get(
+                port, f"/api/project-context?project=billing&session=codex:{SHORT}"
+            )["sources"]["work"]["drift_views"][0]
+            unavailable = self.get(port, FOCUSED)["sources"]["work"]["drift_views"][0]
+        self.assertIsNone(available["stored_progress"])
+        self.assertFalse(available["reading"])
+        self.assertEqual(
+            {
+                "harness": "claude",
+                "sid": SHORT,
+                "state": "unavailable",
+                "reason": "identity-not-unique",
+                "stored_progress": None,
+            },
+            unavailable,
+        )
+
+    def test_a_proven_check_and_an_unverifiable_read_have_distinct_wire_tokens(self) -> None:
+        self.save_goal()
+        check = self.passing_check()
+        consistent = {
+            "result": runtime_reading.RESULT_CONSISTENT,
+            "cites": [check],
+            "why": runtime_reading.WHY_STANDS,
+        }
+        self.record(_reading({"goal": consistent, "line_1": consistent}, window_start=None))
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual("checked", self.progress(port)["rows"][0]["stored_progress"])
+        self.save_goal(lines=())
+        assessment, why, spent = self.produce_attempt("consistent")
+        self.assertEqual(("", True), (why, spent))
+        assert assessment is not None
+        self.record(dict(assessment))
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual("cant-tell", self.progress(port)["rows"][0]["stored_progress"])
+            view = self.get(port, FOCUSED)["sources"]["work"]["drift_views"][0]
+            self.assertEqual("cant-tell", view["stored_progress"])
 
     def test_requested_identity_has_to_be_visible_and_use_the_canonical_project(self) -> None:
         self.save_goal(lines=())
@@ -913,44 +1264,453 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
             self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
         self.assertEqual(before, self.path.stat().st_mtime_ns)
 
-    def test_raw_snapshots_never_project_progress_for_a_24_session_board(self) -> None:
-        rows = []
-        for index in range(24):
-            sid = f"{index + 1:08x}"
-            row = _row(sid=sid, session=sid)
-            rows.append(row)
-            if index < 12:
-                annotation_store.annotate(
-                    self.config, self.state, "claude", sid, goal=GOAL, now=self.now
-                )
-                annotation_store.record_reading(
-                    self.config,
-                    self.state,
-                    "claude",
-                    sid,
-                    assessment=cast("Any", _reading({"goal": _unverifiable()})),
-                )
-        app = self.fresh_app()
-        app.harnesses = (
-            dataclasses.replace(app.harnesses[0], collect=lambda *_: [dict(row) for row in rows]),
+    def _peer_with_reading(self, sid: str, *, saved: bool = True) -> None:
+        cwd = Path(self.session.cwd)
+        transcript = Transcript(cwd)
+        transcript.prompt(GOAL)
+        transcript.write(str(cwd / f"unrelated-{sid}.py"))
+        path = self.path.with_name(f"{sid}-full.jsonl")
+        for row in transcript.rows:
+            row["sessionId"] = f"{sid}-full"
+        transcript.save(path)
+        os.utime(path, (self.now, self.now))
+        if not saved:
+            return
+        events, _ = project_context.claude_tool_reports(self.config, str(path), sid)
+        (cite,) = [
+            project_context._semantic_fact_from_event(event, event["kind"], "tool_report", "")[
+                "fact_id"
+            ]
+            for event in events
+            if event.get("subject") == "write"
+        ]
+        through = START.timestamp() + transcript.seconds
+        annotation_store.annotate(
+            self.config, self.state, "claude", sid, goal=GOAL, now=START.timestamp() + 6
         )
+        outcome = annotation_store.record_reading(
+            self.config,
+            self.state,
+            "claude",
+            sid,
+            assessment=cast(
+                "Any",
+                _reading(
+                    {
+                        "goal": {
+                            "result": runtime_reading.RESULT_DEPARTURE,
+                            "cites": [cite],
+                            "why": runtime_reading.WHY_RECORDED_WRITE,
+                        }
+                    },
+                    window_start=START.timestamp(),
+                    revision_read_at=START.timestamp(),
+                    read_at=through + 1,
+                    evidence_through=through,
+                ),
+            ),
+        )
+        self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
+
+    def test_oversized_transcript_cannot_starve_a_healthy_neighbour(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        self._peer_with_reading("abc01234")
+        maximum = self.config.turn_scan_max_bytes
+        with self.path.open("ab") as transcript:
+            transcript.truncate(maximum + 1)
+        os.utime(self.path, (self.now, self.now))
+        app = self.fresh_app()
+        app.harnesses = tuple(
+            spec
+            for spec in aggregate.default_harnesses(usage_fetch_enabled=False)
+            if spec.key == "claude"
+        )
+        rev, body = app.collect_json(show_all=False)
+        found = {row["sid"]: session_progress.identity(row) for row in json.loads(body)["sessions"]}
         with (
-            patch.object(
-                session_progress, "evaluate", side_effect=AssertionError("progress evaluation")
-            ),
-            patch.object(
-                semantic_history, "read_only", side_effect=AssertionError("retained content")
-            ),
-            patch.object(runtime_io, "open_harness", side_effect=AssertionError("native content")),
+            self.serving(app) as port,
+            patch.object(session_progress, "MAX_BATCH_BYTES", maximum + 1024),
         ):
-            for _ in range(2):
-                board = json.loads(app.collect_json(show_all=False)[1])
-                self.assertEqual(24, len(board["sessions"]))
-                self.assertEqual(
-                    12, sum(bool(row["annotation_assessment"]) for row in board["sessions"])
+            answer = self.get(
+                port,
+                _progress_path(
+                    snapshot.format_revision(rev),
+                    found[SHORT],
+                    found["abc01234"],
+                ),
+            )
+        self.assertEqual([None, levels.MEDIUM], [row["stored_progress"] for row in answer["rows"]])
+
+    def test_cold_annotation_decode_does_not_hold_the_board_lock(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.fresh_app()
+        revision, body = app.collect_json(show_all=False)
+        endpoint = _progress_path(
+            snapshot.format_revision(revision),
+            session_progress.identity(json.loads(body)["sessions"][0]),
+        )
+        entered, release = threading.Event(), threading.Event()
+        original = annotation_store.progress_entries
+        answer = []
+
+        def read(config: Any) -> Any:
+            entered.set()
+            if not release.wait(timeout=5):
+                raise AssertionError("annotation decode was not released")
+            return original(config)
+
+        with self.serving(app) as port, patch.object(annotation_store, "progress_entries", read):
+            worker = threading.Thread(target=lambda: answer.append(self.get(port, endpoint)))
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(timeout=3))
+                with annotation_store.progress_read(self.config) as held:
+                    self.assertTrue(held, "progress held the writer lock while decoding")
+            finally:
+                release.set()
+                worker.join(timeout=5)
+        self.assertEqual(levels.MEDIUM, answer[0]["rows"][0]["stored_progress"])
+
+    def test_unchanged_broken_native_evidence_is_reused_on_refresh(self) -> None:
+        self.save_goal(lines=())
+        self.session.prompt("Actually do something else.")
+        direction = self.session.rows[-1]
+        self.record(self.departure())
+        self.session.rows.remove(direction)
+        self.session.save(self.path)
+        with self.serving(self.fresh_app()) as port:
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+            with (
+                patch.object(
+                    project_context, "stored_evidence", wraps=project_context.stored_evidence
+                ) as evidence,
+                patch.object(
+                    semantic_history, "read_only", wraps=semantic_history.read_only
+                ) as retained,
+            ):
+                self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+            evidence.assert_not_called()
+            retained.assert_not_called()
+
+    def test_an_off_board_annotation_edit_does_not_reopen_visible_evidence(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+            annotation_store.annotate(
+                self.config, self.state, "claude", "offboard", goal=GOAL, now=self.now
+            )
+            with patch.object(
+                project_context, "stored_evidence", wraps=project_context.stored_evidence
+            ) as evidence:
+                self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+            evidence.assert_not_called()
+
+    def test_raw_snapshots_never_project_progress_for_a_24_session_board(self) -> None:
+        self.path.unlink()
+        for index in range(24):
+            self._peer_with_reading(f"{index + 1:08x}", saved=index < 12)
+        original = self.config
+        counts = []
+        for annotate in (False, True):
+            self.config = dataclasses.replace(original, annotations_enabled=annotate)
+            app = self.fresh_app()
+            app.harnesses = tuple(
+                spec
+                for spec in aggregate.default_harnesses(usage_fetch_enabled=False)
+                if spec.key == "claude"
+            )
+            with (
+                patch.object(
+                    session_progress, "evaluate", side_effect=AssertionError("progress evaluation")
+                ),
+                patch.object(
+                    semantic_history, "read_only", side_effect=AssertionError("history content")
+                ),
+                patch.object(runtime_io, "open_harness", wraps=runtime_io.open_harness) as opened,
+            ):
+                expected_readings = 12 if annotate else 0
+                opens = []
+                for action in ("cold", "memo", "expired"):
+                    if action == "expired":
+                        self.now += self.config.collect_memo_sec + 1
+                    opened.reset_mock()
+                    board = json.loads(app.collect_json(show_all=False)[1])
+                    self.assertEqual(24, len(board["sessions"]))
+                    self.assertEqual(
+                        expected_readings,
+                        sum(bool(row["annotation_assessment"]) for row in board["sessions"]),
+                    )
+                    self.assertTrue(
+                        all(row["stored_progress"] is None for row in board["sessions"])
+                    )
+                    opens.append(
+                        sum(str(call.args[0]).endswith(".jsonl") for call in opened.call_args_list)
+                    )
+                counts.append(opens)
+        self.assertTrue(all(annotated <= plain for plain, annotated in zip(*counts, strict=True)))
+        cold, memo, expired = counts[1]
+        self.assertGreaterEqual(cold, 24)
+        self.assertEqual(0, memo)
+        self.assertGreaterEqual(expired, 24)
+
+    def test_concurrent_cold_progress_coalesces_and_both_get_the_departure(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.fresh_app()
+        rev, body = app.collect_json(show_all=False)
+        endpoint = _progress_path(
+            snapshot.format_revision(rev),
+            session_progress.identity(json.loads(body)["sessions"][0]),
+        )
+        started, release = threading.Event(), threading.Event()
+        answers = []
+        original = project_context.stored_evidence
+
+        def read(*args: Any, **kwargs: Any) -> Any:
+            started.set()
+            if not release.wait(timeout=5):
+                raise AssertionError("the cold reader was not released")
+            return original(*args, **kwargs)
+
+        with self.serving(app) as port, patch.object(project_context, "stored_evidence", read):
+
+            def get() -> None:
+                answers.append(self.get(port, endpoint)["rows"][0]["stored_progress"])
+
+            first, second = threading.Thread(target=get), threading.Thread(target=get)
+            first.start()
+            try:
+                self.assertTrue(started.wait(timeout=3))
+                second.start()
+                second.join(timeout=1.4)
+                self.assertTrue(second.is_alive(), "an admitted caller lost the in-flight proof")
+            finally:
+                release.set()
+                first.join(timeout=5)
+                second.join(timeout=5)
+        self.assertEqual([levels.MEDIUM, levels.MEDIUM], answers)
+
+    def test_recorded_milestone_replays_on_both_routes_cold_and_warm(self) -> None:
+        root = Path(__file__).resolve().parents[4]
+        sample = root / "sample-session" / "milestone-session.jsonl"
+        fixture = root / "frontend" / "src" / "sample" / "session.fixture.json"
+        (recorded,) = json.loads(fixture.read_bytes())["board"]["sessions"]
+        assessment = recorded["annotation_assessment"]
+        first = json.loads(sample.read_bytes().splitlines()[0])
+        sid = first["sessionId"][:8]
+        source = self.path.with_name(f"{first['sessionId']}.jsonl")
+        self.path.unlink()
+        shutil.copyfile(sample, source)
+        os.utime(source, (assessment["evidence_through"],) * 2)
+        self.now = assessment["read_at"] + 60
+        binding = self.config, self.state, "claude", sid
+        self.assertEqual(
+            annotation_store.OUTCOME_STORED,
+            annotation_store.annotate(
+                *binding,
+                goal=recorded["annotation_goal"],
+                lines=[],
+                now=recorded["annotation_at"],
+                window_start=assessment["window_start"],
+            ),
+        )
+        self.assertEqual(
+            annotation_store.OUTCOME_STORED,
+            annotation_store.record_reading(
+                *binding,
+                assessment=assessment,
+            ),
+        )
+        self.assertEqual(
+            annotation_store.OUTCOME_STORED,
+            annotation_store.settle(
+                *binding,
+                through=recorded["annotation_settled_through"],
+                now=recorded["annotation_settled_at"],
+            ),
+        )
+        self.assertTrue(
+            ends.record(self.config, harness="claude", sid=sid, at=assessment["ended_at_read"])
+        )
+        self.assertEqual(sample.read_bytes(), source.read_bytes())
+        for first_route in ("batch", "focus"):
+            with self.subTest(first_route=first_route):
+                app = self.fresh_app()
+                app.harnesses = tuple(
+                    spec
+                    for spec in aggregate.default_harnesses(usage_fetch_enabled=False)
+                    if spec.key == "claude"
                 )
-                self.assertTrue(all(row["stored_progress"] is None for row in board["sessions"]))
-                self.now += self.config.collect_memo_sec + 1
+                app.overlays = observation.Observation(
+                    app, clock=app.clock, load_parent_claims=False
+                )
+                rev, body = app.collect_json(show_all=False)
+                (row,) = json.loads(body)["sessions"]
+                key = session_progress.identity(row)
+                self.assertEqual(sid, key[1])
+                batch_path = _progress_path(snapshot.format_revision(rev), key)
+                focus_path = "/api/project-context?" + urlencode(
+                    {"project": key[2], "session": f"claude:{sid}"}
+                )
+                checks = {
+                    "batch": (batch_path, ("rows", 0)),
+                    "focus": (focus_path, ("sources", "work", "drift_views", 0)),
+                }
+                other_route = "focus" if first_route == "batch" else "batch"
+                with self.serving(app) as port:
+                    for _ in range(2):
+                        for route in (first_route, other_route):
+                            path, fields = checks[route]
+                            answer: Any = self.get(port, path)
+                            for field in fields:
+                                answer = answer[field]
+                            self.assertEqual(levels.MEDIUM, answer["stored_progress"])
+                            if route == "focus":
+                                self.assertEqual(["goal"], answer["departures"])
+                                self.assertEqual(levels.MEDIUM, answer["pill"]["level"])
+
+    def test_disconnected_native_record_never_covers_a_valid_citation(self) -> None:
+        self.save_goal(lines=())
+        assessment = self.departure()
+        self.session.rows[1]["parentUuid"] = "missing-native-parent"
+        self.session.save(self.path)
+        self.record(assessment)
+        with self.serving(self.fresh_app()) as port:
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+
+    def test_retained_direction_before_the_read_vetoes_an_intact_native_graph(self) -> None:
+        self.save_goal(lines=())
+        parent = self.session.rows[-1]["uuid"]
+        self.session.prompt("Actually make the unrelated change first.")
+        direction = self.session.rows[-1]
+        self.session._entry("assistant", [], parentUuid=parent)
+        assessment = self.departure()
+        app = self.fresh_app()
+        with self.serving(app) as port:
+            self.get(port, FOCUSED)
+        self.assertIn(
+            b"unrelated change first", Path(semantic_history.store_path(self.config)).read_bytes()
+        )
+        self.session.rows.remove(direction)
+        self.session.save(self.path)
+        self.record(assessment)
+        with self.serving(self.fresh_app()) as port:
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+        Path(semantic_history.store_path(self.config)).unlink()
+        with self.serving(self.fresh_app()) as port:
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+
+    def test_native_read_must_cover_the_opening_and_the_evidence_cutoff(self) -> None:
+        self.save_goal(lines=())
+        assessment = self.departure()
+        self.record(assessment)
+        with self.serving(self.fresh_app(first_prompt_at=START.timestamp() - 1)) as port:
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+        self.record({**assessment, "evidence_through": assessment["read_at"] + 10})
+        with self.serving(self.fresh_app()) as port:
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+
+    def test_live_only_and_existing_but_missing_intent_do_not_publish_absence(self) -> None:
+        app = self.fresh_app()
+        with (
+            self.serving(app) as port,
+            patch.object(session_progress._Batch, "_live_only", return_value=True),
+        ):
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+        self.save_goal(lines=())
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual("unchecked", self.progress(port)["rows"][0]["stored_progress"])
+            Path(annotation_store.store_path(self.config)).unlink()
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+
+    def test_duplicate_admission_and_a_second_native_prefix_are_refused(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        row = _row()
+        self.assertEqual(
+            {session_progress.identity(row): row}, session_progress.admitted_rows([row])
+        )
+        self.assertEqual({}, session_progress.admitted_rows([row, {**row, "project": "peer"}]))
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+            shutil.copyfile(self.path, self.path.with_name(f"{SHORT}-shadow.jsonl"))
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+
+    def test_reducer_refusal_reasons_cannot_produce_a_token(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        original = drift_view.derive
+
+        def altered(state: str) -> Any:
+            def derive(*args: Any) -> Any:
+                view = original(*args)
+                self.assertEqual(["goal"], view["departures"])
+                if state == "malformed":
+                    return {**view, "malformed": "invalid"}
+                if state == "withheld":
+                    return {**view, "analysis": {**view["analysis"], "withheld": True}}
+                return {
+                    **view,
+                    "analysis": {
+                        "level": levels.NONE_OR_LOW,
+                        "withheld": False,
+                        "reasons": [levels.REASON_FAILED_CHECK],
+                    },
+                }
+
+            return derive
+
+        for state in ("malformed", "withheld", "failed-check"):
+            with (
+                self.subTest(state=state),
+                self.serving(self.fresh_app()) as port,
+                patch.object(drift_view, "derive", altered(state)),
+            ):
+                self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+
+    def test_snapshot_turnover_during_evaluation_withholds_batch_and_lean(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        for route in ("batch", "lean"):
+            app = self.fresh_app()
+            rev, body = app.collect_json(show_all=False)
+            (row,) = json.loads(body)["sessions"]
+            original = session_progress.evaluate
+
+            def evaluate(
+                *args: Any, source: Any = original, serving: Any = app, **kwargs: Any
+            ) -> Any:
+                answer = source(*args, **kwargs)
+                self.assertEqual(levels.MEDIUM, next(iter(answer.values())).value)
+                serving.snapshot.clear()
+                return answer
+
+            with self.serving(app) as port, patch.object(session_progress, "evaluate", evaluate):
+                if route == "batch":
+                    path = _progress_path(
+                        snapshot.format_revision(rev), session_progress.identity(row)
+                    )
+                    self.assertEqual([], self.get(port, path)["rows"])
+                else:
+                    self.assertIsNone(
+                        self.get(port, "/api/sessions")["sessions"][0]["stored_progress"]
+                    )
+
+    def test_workspace_identity_must_match_the_admitted_native_source(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.fresh_app(
+            project_key="path:contradiction", project_identity_source="working directory path"
+        )
+        rev, body = app.collect_json(show_all=False)
+        (row,) = json.loads(body)["sessions"]
+        self.assertEqual("path:contradiction", row["project_key"])
+        with self.serving(app) as port:
+            path = _progress_path(snapshot.format_revision(rev), session_progress.identity(row))
+            self.assertIsNone(self.get(port, path)["rows"][0]["stored_progress"])
 
     def test_a_reading_where_every_line_cannot_tell_never_reads_none_or_low(self) -> None:
         self.save_goal(lines=(LINE, "The lexer is untouched"))

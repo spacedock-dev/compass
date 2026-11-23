@@ -29,6 +29,7 @@ import json
 import os
 import secrets
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -43,6 +44,7 @@ if TYPE_CHECKING:
     from .state import RuntimeState
 
 MARKER_DIR = "reading-jobs"
+PROGRESS_MARKER_DIR = "reading-progress-jobs"
 THREAD_PREFIX = "compass-reading-"
 # A marker being recovered is renamed to `<id>.json.claim-<pid>-<nonce>` first.
 # The rename is atomic, so of two dashboards recovering one marker exactly one
@@ -147,6 +149,8 @@ class Hooks:
             "sid": self._job.sid,
             "pid": os.getpid(),
             "started_at": self._job.started_at,
+            "attempt_started": self._job.attempt_started,
+            "attempt_revision": self._job.attempt_revision,
             # This build reserves under the job's id, so the ledger can answer
             # for it. A marker without this came from a build whose charge
             # carried no id, and is counted as it always was.
@@ -278,6 +282,100 @@ def start_job(
     return job
 
 
+def _progress_marker(config: RuntimeConfig, job: reading.Job) -> Path:
+    return Path(config.state_dir) / PROGRESS_MARKER_DIR / f"{job.id}.json"
+
+
+def admit_progress(config: RuntimeConfig, job: reading.Job) -> None:
+    """Make ordinary admission visible to another dashboard before reporting the job."""
+    job.attempt_started = time.time()
+    if job.harness == "claude":
+        try:
+            runtime_io.atomic_write_owner_only(
+                str(_progress_marker(config, job)),
+                json.dumps({"sid": job.sid, "pid": os.getpid()}),
+                root=str(config.state_dir),
+            )
+        except OSError:
+            job.progress_marker_failed = True
+
+
+def end_progress(config: RuntimeConfig, job: reading.Job) -> None:
+    if job.harness == "claude":
+        with contextlib.suppress(OSError):
+            _progress_marker(config, job).unlink(missing_ok=True)
+
+
+def _read_marker(config: RuntimeConfig, path: Path) -> dict[str, Any]:
+    with os.fdopen(runtime_io.open_regular(path, root=str(config.state_dir))) as fd:
+        data = json.loads(fd.read(4097))
+    if not isinstance(data, dict):
+        raise TypeError("Invalid reading marker")
+    return data
+
+
+def _active_progress(config: RuntimeConfig) -> set[str]:
+    from . import lifecycle  # noqa: PLC0415 - lifecycle imports worker recovery
+
+    directory = Path(config.state_dir) / PROGRESS_MARKER_DIR
+    entries = runtime_io.directory_entries(str(directory), 128)
+    if entries is None:
+        raise OSError("Reading marker directory unavailable")
+    pending = set()
+    for name, is_dir in entries:
+        if is_dir or not name.endswith(".json"):
+            continue
+        try:
+            marker = _read_marker(config, directory / name)
+        except FileNotFoundError:
+            continue
+        sid, pid = marker["sid"], marker["pid"]
+        if not isinstance(sid, str) or type(pid) is not int or pid <= 0:
+            raise ValueError("Invalid progress marker")
+        if lifecycle.pid_exists(pid):
+            pending.add(f"claude:{sid}")
+    return pending
+
+
+def _recovery_progress(config: RuntimeConfig) -> set[str]:
+    from . import reading_long_markers  # noqa: PLC0415 - long workers share reading
+
+    pending = set()
+    for dirname in (MARKER_DIR, reading_long_markers.MARKER_DIR):
+        directory = Path(config.state_dir) / dirname
+        entries = runtime_io.directory_entries(str(directory), 128)
+        if entries is None:
+            raise OSError("Reading recovery directory unavailable")
+        for name, is_dir in entries:
+            if is_dir or ".json" not in name:
+                continue
+            if dirname == MARKER_DIR:
+                try:
+                    binding = _read_marker(config, directory / name)
+                except FileNotFoundError:
+                    continue
+            else:
+                marker = reading_long_markers.load(config, name.removesuffix(".json"))
+                if marker is None:
+                    raise ValueError("Invalid long reading marker")
+                binding = marker["header"].get("publication")
+            if binding is not None:
+                pending.add(f"{binding['harness']}:{binding['sid']}")
+    return pending
+
+
+def pending_keys(config: RuntimeConfig) -> frozenset[str] | None:
+    """Cross-process checks that can still affect a stored result."""
+    try:
+        return (
+            frozenset(reading.published_jobs(config))
+            | _active_progress(config)
+            | _recovery_progress(config)
+        )
+    except (OSError, ValueError, TypeError, KeyError, RecursionError):
+        return None
+
+
 def launch(
     application: Application, job: reading.Job, compose: Callable[[Hooks], Outcome]
 ) -> threading.Thread:
@@ -287,6 +385,12 @@ def launch(
     error propagates, or every later press would answer `in-flight` until the
     dashboard restarted (review F8).
     """
+    if job.progress_marker_failed:
+
+        def run(_hooks: Hooks) -> Outcome:
+            return None, reading.WITHHELD_JOB_UNRECORDED, False
+
+        compose = run
     thread = threading.Thread(
         target=_run, args=(application, job, compose), name=f"{THREAD_PREFIX}{job.id}", daemon=True
     )
@@ -352,11 +456,23 @@ def pause_all(application: Application, permission: reading_policy.LongPermissio
 
 def _run(application: Application, job: reading.Job, compose: Callable[[Hooks], Outcome]) -> None:
     config = application.config
+    from . import session_progress  # noqa: PLC0415 - progress consumes worker state
+
     hooks = Hooks(application, job)
     durable = True
+    sources = None
     try:
         _publish(application)
+        if job.harness == "claude":
+            sources = session_progress.capture_sources(config, job.sid)
         outcome = _outcome(application, compose, hooks)
+        if (
+            outcome
+            and outcome[0] is not None
+            and sources is not None
+            and not session_progress.capture_is_current(config, job.sid, sources)
+        ):
+            sources = None
         if reading.seal_job(job) and outcome is not None:
             outcome = _cancelled(job, outcome, spent=hooks.spent)
         if outcome is not None:
@@ -366,6 +482,7 @@ def _run(application: Application, job: reading.Job, compose: Callable[[Hooks], 
                 outcome,
                 on_a_check=hooks.on_a_check,
                 analyze_diagnostic=hooks.analyze_diagnostic,
+                progress_evidence=sources,
             )
     finally:
         # A spend the store would not take keeps its marker: it is then the
@@ -454,6 +571,7 @@ def _record(
     *,
     on_a_check: frozenset[str] = frozenset(),
     analyze_diagnostic: dict[str, Any] | None = None,
+    progress_evidence: annotation_store.ProgressEvidence | None = None,
 ) -> bool:
     """Fence assessment publication against a pause accepted after the job's seal."""
     permission = job.permission
@@ -469,7 +587,12 @@ def _record(
         if reason:
             outcome = _cancelled(job, outcome, spent=outcome[2])
         durable = _write_outcome(
-            application, job, outcome, on_a_check=on_a_check, analyze_diagnostic=analyze_diagnostic
+            application,
+            job,
+            outcome,
+            on_a_check=on_a_check,
+            analyze_diagnostic=analyze_diagnostic,
+            progress_evidence=progress_evidence,
         )
     if reason and not durable:
         _mark_unstored(application.config, job.id, outcome[1])
@@ -483,6 +606,7 @@ def _write_outcome(
     *,
     on_a_check: frozenset[str] = frozenset(),
     analyze_diagnostic: dict[str, Any] | None = None,
+    progress_evidence: annotation_store.ProgressEvidence | None = None,
 ) -> bool:
     """Write the outcome under the job's id. True when the store holds it."""
     assessment, why, spent = outcome
@@ -498,6 +622,10 @@ def _write_outcome(
                 assessment=assessment,
                 diagnostic_sink=application.diagnostic_sink,
                 job_id=job.id,
+                attempt_started=job.attempt_started,
+                attempt_revision=job.attempt_revision,
+                capture_progress=False,
+                progress_evidence=progress_evidence,
                 on_a_check=on_a_check,
                 analyze_diagnostic=checked,
             )
@@ -511,6 +639,8 @@ def _write_outcome(
                 spent=spent,
                 diagnostic_sink=application.diagnostic_sink,
                 job_id=job.id,
+                attempt_started=job.attempt_started,
+                attempt_revision=job.attempt_revision,
                 analyze_diagnostic=checked,
             )
     except Exception as exc:  # noqa: BLE001 (the slot is freed whatever the store did)
@@ -520,6 +650,19 @@ def _write_outcome(
         )
         return False
     return answer not in {annotation_store.OUTCOME_UNWRITABLE, annotation_store.OUTCOME_UNTRUSTED}
+
+
+def _retire_dead_admissions(config: RuntimeConfig, alive: Callable[[int], bool]) -> None:
+    directory = Path(config.state_dir) / PROGRESS_MARKER_DIR
+    entries = runtime_io.directory_entries(str(directory), 512)
+    for name, is_dir in entries or ():
+        if is_dir or not name.endswith(".json"):
+            continue
+        path = directory / name
+        with contextlib.suppress(OSError, ValueError, TypeError, KeyError, RecursionError):
+            pid = _read_marker(config, path)["pid"]
+            if type(pid) is int and (pid == os.getpid() or not alive(pid)):
+                path.unlink(missing_ok=True)
 
 
 def recover(application: Application, *, alive: Callable[[int], bool]) -> int:
@@ -537,6 +680,7 @@ def recover(application: Application, *, alive: Callable[[int], bool]) -> int:
     Windows, which is why the lock is there.
     """
     config = application.config
+    _retire_dead_admissions(config, alive)
     if not any((Path(config.state_dir) / MARKER_DIR).glob("*.json*")):
         return 0
     with _recovering(Path(config.state_dir) / RECOVERY_LOCK) as held:
@@ -577,6 +721,8 @@ def _recover(application: Application, alive: Callable[[int], bool]) -> int:
             spent=spent,
             diagnostic_sink=application.diagnostic_sink,
             job_id=job_id,
+            attempt_started=marker.get("attempt_started", 0.0),
+            attempt_revision=marker.get("attempt_revision", 0),
         )
         if answer in {annotation_store.OUTCOME_UNWRITABLE, annotation_store.OUTCOME_UNTRUSTED}:
             continue
