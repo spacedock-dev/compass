@@ -218,6 +218,12 @@ the previous bound. The page allowance rises by 7 KiB to the same baseline plus 
 or 2,354,763 bytes, leaving 4,404 bytes above the measured build. The new build used Node
 26.10.0. The fixture allowance stays at 250,000 bytes.
 
+On 2026-11-23, the shared Switch accessibility and narrow-layout fixes brought the page
+from 2,354,223 bytes at `9303135c` to 2,355,311 bytes with Node 26.10.0. The increase of
+1,088 bytes (0.05%) put the page 548 bytes above the previous bound. The allowance rises
+by 1 KiB to the same baseline plus 460 KiB, or 2,355,787 bytes, with 476 bytes to spare.
+The fixture allowance stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.
@@ -234,7 +240,9 @@ The press layer is `ViewOnly`. It stops a press that would edit, save, allow or 
 a handler, and says in one line why, so a reader sees a sentence and not an error from a request that
 was never going to work. Links, disclosures, the select, the marks, a finding's cited entry numbers and
 Back to the finding, a summary line's cited entries and its links to a departure card, Steer back and
-Copy stay live, because they only read or compose words. Every summary control is held: Summarize,
+Copy stay live, because they only read or compose words. The Live monitor switch shows or hides the
+sample's estimate without taking a lease. The guard allows the hidden checkbox beside that switch
+because Base UI sends activation through it. Every summary control is held: Summarize,
 Update summary, Summarize again, Cancel, Delete summary, Turn off summaries and Turn summaries on, and
 Pause model calls and Resume model calls beside them. The finished sample shows only some of them, so
 its stories draw it in each state that offers the others and press each one. A control inside a

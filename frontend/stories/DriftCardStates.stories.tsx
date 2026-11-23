@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
-import { JOB_TITLE, LIVE_HINT, RESULT_DEPARTS } from '../src/drift/sentences';
+import { JOB_TITLE, LIVE_HINT, LIVE_MONITOR_DETAILS, RESULT_DEPARTS } from '../src/drift/sentences';
 import { neverDone } from './drift.checks';
 import {
   analysisRow,
@@ -93,7 +93,7 @@ export const Empty: Story = {
     // The settings are one press away, in the header.
     await userEvent.click(within(head(card)).getByRole('button', { name: 'Drift settings' }));
     const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
-    await expect(monitor).toHaveAccessibleDescription(LIVE_HINT);
+    await expect(monitor).toHaveAccessibleDescription(`${LIVE_HINT} ${LIVE_MONITOR_DETAILS}`);
     await waitFor(() =>
       expect(
         within(document.body).getByRole('button', { name: 'Pause model calls' }),

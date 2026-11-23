@@ -73,7 +73,8 @@ Each session's page has three cards, one under another:
   Update summary can continue an interrupted message; older summaries made from excerpts offer Summarize again.
 - Drift: the check described above, and what became of anything it raised.
 
-On a Claude Code session, the Drift card also has a Live monitor switch. With it on, Compass asks
+On a Claude Code session, open Drift settings in the Drift card to find the Live monitor switch.
+It says "Checks progress about once a minute while you watch". With it on, Compass asks
 Haiku, through your Claude Code, about once a minute while you view the page where the latest turns
 are heading, and shows the answer labeled Live monitor · Haiku. The monitor's own accuracy check has
 not been run yet. Until an answer arrives, or while the monitor is paused or has reached its limit,

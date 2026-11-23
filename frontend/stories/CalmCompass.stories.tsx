@@ -5,7 +5,8 @@ import { GLOSSARY } from '../src/language/glossary';
 import { Alert } from '../src/ui/alert';
 import { Button } from '../src/ui/button';
 import { Card } from '../src/ui/card';
-import { contrastOf } from './a11y.audit';
+import { Switch } from '../src/ui/switch';
+import { contrastOf, rgbOf } from './a11y.audit';
 
 const palette = [
   ['Ground', '--bg'],
@@ -299,8 +300,16 @@ function ReservedExamples() {
   return (
     <Panel id="calm-reserved" title="Reserved examples">
       <div style={columns}>
+        <section style={row}>
+          <h3 style={subheading}>Switch</h3>
+          <Switch className="w-full justify-between" defaultChecked={false}>
+            Off
+          </Switch>
+          <Switch className="w-full justify-between" defaultChecked>
+            On
+          </Switch>
+        </section>
         {[
-          ['Switch', 'The shared Switch will appear here when it ships.'],
           ['How … works', 'A short explanation opens beside the words it explains.'],
           [GLOSSARY.showTechnicalDetails.plain, 'Activity log, AI use, limits and raw evidence.'],
           ['Stepped slider', 'Choose how much a progress check reads.'],
@@ -517,8 +526,16 @@ export const StyleGuide: Story = {
       'Forget everything',
     ])
       await expect(reserved.getByRole('heading', { name: heading })).toBeVisible();
-    await expect(
-      reserved.getByText('The shared Switch will appear here when it ships.'),
-    ).toBeVisible();
+    for (const [name, checked] of [
+      ['Off', false],
+      ['On', true],
+    ] as const) {
+      const toggle = reserved.getByRole('switch', { name });
+      await expect(toggle).toHaveAttribute('aria-checked', String(checked));
+      const type = getComputedStyle(toggle);
+      await expect(type.fontFamily).toMatch(/^Inter\b/);
+      await expect(type.fontSize).toBe('15px');
+      await expect(rgbOf(type.color)).toEqual(rgbOf(type.getPropertyValue('--ink')));
+    }
   },
 };

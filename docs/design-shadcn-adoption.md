@@ -38,8 +38,8 @@ receipt's byte ceiling is re-based to 2,000,000 bytes, to be raised again if a l
 
 ## End state
 
-Fourteen shadcn components are vendored under `frontend/src/ui/`, using the Base UI flavour and the
-local `cn` merger. The directory also holds Compass's inline disclosure chevron, Phosphor icon
+The shadcn components under `frontend/src/ui/` use the Base UI flavour and the local `cn` merger.
+The directory also holds Compass's inline disclosure chevron, Phosphor icon
 gateway and Button tests.
 The components keep the existing semantic roots, field owners and disclosure store.
 
@@ -59,6 +59,7 @@ The components keep the existing semantic roots, field owners and disclosure sto
 | `separator.tsx` | The decorative notification boundary in session details. | [Sessions](#sessions-layer) |
 | `tooltip.tsx` | Activity marks and the Last turn word, with accessible full words and a text legend. | [Icons and tooltips](#icons-and-tooltips) |
 | `tabs.tsx` | Route-controlled `ProjectTabs` with automatic keyboard activation; only Root, List and Trigger are retained. | [Project](#project-console-timeline-shell-and-terminal-layer) |
+| `switch.tsx` | The Live monitor, Codex unasked-check permission and local Tripwires. | [Switch](#switch-layer) |
 
 Native menus keep their deliberate exemption from Escape dismissal. Select choices use Base UI popup and keyboard handling; uncontrolled
 editor nodes retain native focus, undo, composition and dragged dimensions. Native progress elements
@@ -1178,7 +1179,7 @@ had flipped beside its button, over the search field. `holdPaint` marks the trig
 `data-hold-paint`, which holds the board's background paint while the popover is open, as an open
 Select does ([An open option list](design-reader-state.md#an-open-option-list)).
 
-Not added, with the reasons the Sessions search record gives: Kbd, Input Group, Toggle Group, Switch,
+Not added, with the reasons the Sessions search record gives: Kbd, Input Group, Toggle Group,
 Calendar, Command, Combobox, DropdownMenu, Sheet, Drawer and Empty.
 
 Rule 9 puts a layer that adds a typed-words control under full adversarial review, and the search
@@ -1196,3 +1197,27 @@ The [Settings ruling](design-calm-compass.md#drc-5494-owner-ruling-2026-11-22) g
 setting its owner and lifetime. The Live monitor stays per session. Keep the focus
 and accessibility behavior of each control, and follow the
 [Calm Compass overlay rule](design-calm-compass.md#overlay-rule) for where it appears.
+
+## Switch layer
+
+The [dated reversal](#amended-2026-11-22-owner-switches-for-boolean-settings) and the
+[NUI-19 amendment](design-next-ui.md#amended-2026-11-22-owner-overlay-choices)
+govern this adoption. The Base UI root renders a native button so the existing focus lane
+and keyboard activation carry over. The 52 by 30 px track and 24 px thumb sit inside a
+target of at least 44 by 44 px. The off track uses `--line` around `--sunk` with an
+`--ink2` thumb. The on track uses `--accent-dim` with an `--on-accent` thumb, moved to
+the other end. Forced colors give the thumb a `CanvasText` edge in both positions. The
+track has a solid border when available and a dashed border when disabled. The button
+uses the shared Inter body step and foreground by default, and the target uses the
+same keyboard focus outline as Button.
+
+The Live monitor keeps its session lease and focusable disabled state in Drift settings
+until the Session page's AI use and privacy tab ships (DRC-5522). Its accessible
+description includes the cadence, any disabled reason, and the Haiku and Claude Code
+disclosure. Its target sits clear of the popover's clipping edge. Codex permission keeps
+its server grant and disables the control while a request is pending. The Tripwire switch
+includes the whole labelled row and saves its rule in browser storage. The rule text wraps
+beside a separate, single-line Remove button on narrow screens.
+The three callers replace 1,744 bytes of hand-written CSS. The Switch stories measure
+the rendered controls in both positions and color modes, and the Calm Compass style
+guide shows both positions.

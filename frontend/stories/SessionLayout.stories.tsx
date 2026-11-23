@@ -5,7 +5,7 @@ import { seeInContext } from './citation';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { App } from '../src/App';
-import { LIVE_HINT } from '../src/drift/sentences';
+import { LIVE_HINT, LIVE_MONITOR_DETAILS } from '../src/drift/sentences';
 import { DRIFT_SUBTITLE, INTENT_MEASURED } from '../src/intent/sentences';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
@@ -499,8 +499,7 @@ export const MoreIsRetired: Story = {
     const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
     await waitFor(() => expect(monitor).toBeVisible());
     await expect(within(document.body).getByText(LIVE_HINT)).toBeVisible();
-    // What the monitor does is the switch's own helper text.
-    await expect(monitor).toHaveAccessibleDescription(LIVE_HINT);
+    await expect(monitor).toHaveAccessibleDescription(`${LIVE_HINT} ${LIVE_MONITOR_DETAILS}`);
     await waitFor(() =>
       expect(
         within(document.body).getByRole('button', { name: 'Pause model calls' }),

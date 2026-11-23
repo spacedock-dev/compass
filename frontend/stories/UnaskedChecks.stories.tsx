@@ -5,6 +5,7 @@ import dormantBoard from '../test/fixtures/client-contract/data-unasked-dormant.
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { DriftScenario, readingScenario, routeOf, type Scenario } from './drift.scenario';
+import { expectSwitchPaint } from './switch.audit';
 
 const meta = { title: 'Drift/Unasked check permission', component: DriftScenario } satisfies Meta<
   typeof DriftScenario
@@ -51,10 +52,7 @@ export const WaitingWithToggleOff: Story = {
   args: { scenario: scenario() },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(await canvas.findByRole('switch', { name: off })).toHaveAttribute(
-      'aria-checked',
-      'false',
-    );
+    await expectSwitchPaint(await canvas.findByRole('switch', { name: off }), false);
     await expect(
       canvas.getByText(/Unasked checks of this session are waiting for your permission/),
     ).toBeVisible();
@@ -67,10 +65,7 @@ export const Granting: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole('switch', { name: off }));
-    await expect(await canvas.findByRole('switch', { name: on })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    await waitFor(() => expectSwitchPaint(canvas.getByRole('switch', { name: on }), true));
     await expect(granting.posts).toHaveLength(1);
     await expect(granting.posts[0]).toMatchObject({
       unasked_grant: true,
@@ -100,7 +95,8 @@ export const Revoking: Story = {
     const toggle = await canvas.findByRole('switch', { name: on });
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
     await expect(canvas.getByText(/Turn the switch off to revoke it/)).toBeVisible();
-    await userEvent.click(toggle);
+    toggle.focus();
+    await userEvent.keyboard(' ');
     await expect(await canvas.findByRole('switch', { name: off })).toHaveAttribute(
       'aria-checked',
       'false',
@@ -151,7 +147,11 @@ export const Paused: Story = {
     }),
   },
   play: async ({ canvasElement }) => {
-    await expect(await within(canvasElement).findByRole('switch', { name: off })).toBeDisabled();
+    const toggle = await within(canvasElement).findByRole('switch', { name: off });
+    await expect(toggle).toBeDisabled();
+    const track = toggle.querySelector('[data-slot="switch-track"]');
+    if (!track) throw new Error('Codex permission is missing its track');
+    await expect(getComputedStyle(track).borderTopStyle).toBe('dashed');
     await expect(
       within(canvasElement).getByRole('region', { name: 'Unasked checks' }),
     ).toHaveTextContent(/paused/i);

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
-import { LIVE_HINT } from '../src/drift/sentences';
+import { LIVE_HINT, LIVE_MONITOR_DETAILS } from '../src/drift/sentences';
 import { clock } from '../src/observed';
 import { neverDone } from './drift.checks';
 import {
@@ -108,11 +108,11 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
     await expect(
       drift.querySelector('[data-next-drift-level] .next-session-drift-range'),
     ).toBeNull();
-    // The monitor's description is its switch's helper text, in Drift settings.
+    // The switch announces the cadence and model route in Drift settings.
     await userEvent.click(within(headOf(drift)).getByRole('button', { name: 'Drift settings' }));
     await expect(
       await within(document.body).findByRole('switch', { name: 'Live monitor' }),
-    ).toHaveAccessibleDescription(LIVE_HINT);
+    ).toHaveAccessibleDescription(`${LIVE_HINT} ${LIVE_MONITOR_DETAILS}`);
     // The quote is the agent's, attributed: the result's own words still never say the work was done.
     const outsideWhat = drift.cloneNode(true) as HTMLElement;
     for (const node of outsideWhat.querySelectorAll('[data-next-departure-what], [data-next-read]'))

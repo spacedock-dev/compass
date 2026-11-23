@@ -13,11 +13,12 @@ if (typeof document !== 'undefined') {
         'them with at least two workers, and without --no-file-parallelism.',
     );
   context.compassTestContext = 'claimed';
-  const [{ cleanup }, { toBeInTheDocument, toBeVisible }] = await Promise.all([
-    import('@testing-library/react'),
-    import('@testing-library/jest-dom/matchers'),
-  ]);
-  expect.extend({ toBeInTheDocument, toBeVisible });
+  const [{ cleanup }, { toBeInTheDocument, toBeVisible, toHaveAccessibleDescription }] =
+    await Promise.all([
+      import('@testing-library/react'),
+      import('@testing-library/jest-dom/matchers'),
+    ]);
+  expect.extend({ toBeInTheDocument, toBeVisible, toHaveAccessibleDescription });
   afterEach(cleanup);
 }
 

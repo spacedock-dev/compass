@@ -40,6 +40,7 @@ const config: StorybookConfig = {
           '@base-ui/react/radio-group',
           '@base-ui/react/select',
           '@base-ui/react/separator',
+          '@base-ui/react/switch',
           '@base-ui/react/tabs',
           '@base-ui/react/tooltip',
           'react-icons/pi',

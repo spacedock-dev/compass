@@ -65,6 +65,10 @@ describe('which controls the view-only sample holds', () => {
     ['a text box', '<div><textarea data-target></textarea></div>'],
     ['an input', '<div><input data-target /></div>'],
     [
+      'the hidden checkbox of a held switch',
+      '<div><button data-slot="switch" data-next-cockpit-action="reading-on">Resume model calls</button><input data-target type="checkbox" aria-hidden="true" /></div>',
+    ],
+    [
       'the text inside a held button',
       '<div><button><span data-target>Remove</span></button></div>',
     ],
@@ -75,6 +79,10 @@ describe('which controls the view-only sample holds', () => {
   it.each([
     ['a link', '<div><a href="#n=sessions" data-target>Sessions</a></div>'],
     ['a tour mark', '<div><button data-sample-tour data-target>2</button></div>'],
+    [
+      'the hidden checkbox of the Live monitor switch',
+      '<div><button data-slot="switch" data-next-cockpit-action="live-monitor">Live monitor</button><input data-target type="checkbox" aria-hidden="true" /></div>',
+    ],
     [
       'show cited entries',
       '<div><button data-target data-next-cockpit-action="finding-jump">Show</button></div>',

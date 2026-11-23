@@ -103,8 +103,8 @@ try {
   devBrowser = await chromium.launch({ headless: true });
   const opened = await openDevelopmentStorybookPage(devBrowser, 'http://127.0.0.1:6006');
   try {
-    await opened.page.goto('http://127.0.0.1:6006/?path=/story/ui-button--pending');
-    await opened.page.frameLocator('iframe').getByRole('button', { name: 'Saving…' }).waitFor();
+    await opened.page.goto('http://127.0.0.1:6006/?path=/story/ui-switch--states');
+    await opened.page.frameLocator('iframe').getByRole('switch', { name: 'Off' }).waitFor();
     assert.deepEqual(opened.log.externalRequests, [], 'Development Storybook must stay offline');
     assert.deepEqual(
       opened.log.consoleErrors,
