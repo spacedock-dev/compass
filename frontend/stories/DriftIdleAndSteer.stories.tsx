@@ -306,7 +306,7 @@ export const SteerBackOffForAnEarlierIntent: Story = {
     await expect(retry).toBeVisible();
     await expect(
       await canvas.findByText(
-        `Steer back is off because this progress check read an earlier version of your goal. ${retry.textContent} to steer back from it.`,
+        `Steer back is off because this progress check read an earlier version of your goal. Use ${retry.textContent} to check the current goal.`,
       ),
     ).toBeVisible();
     await expect(canvas.queryByRole('button', { name: 'Steer back' })).toBeNull();

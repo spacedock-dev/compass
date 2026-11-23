@@ -183,17 +183,16 @@ class TheDriftCardControlsTheDocsDescribeAreTheOnesTheCardDrawsTest(unittest.Tes
             with self.subTest(document=name):
                 self.assertNotIn("A claim alone offers Steer back", self._flat(text))
 
-    def test_each_document_names_both_header_controls(self) -> None:
-        sentences = (SRC / "drift/sentences.ts").read_text(encoding="utf-8")
-        self.assertIn("RERUN_STALE = 'Check again'", sentences)
-        # The README's "How it works" section moved to docs/how-it-works.md, which names them now.
+    def test_each_walkthrough_names_the_same_rerun_control(self) -> None:
+        glossary = (ROOT / "docs/design-calm-compass.md").read_text(encoding="utf-8")
+        label = "Check progress again"
+        self.assertIn(f"| {label} | Analyze again, Check again |", glossary)
+        # The README points to the walkthrough for the control.
         for name, text in self.DOCS.items():
             if name == "README.md":
                 continue
-            flat = self._flat(text)
             with self.subTest(document=name):
-                self.assertIn("Check again", flat)
-                self.assertIn("Analyze again", flat)
+                self.assertIn(label, self._flat(text))
 
 
 if __name__ == "__main__":

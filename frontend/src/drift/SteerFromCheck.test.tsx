@@ -89,7 +89,7 @@ describe('Steer back from a check', () => {
     const retry = byAction('reading-ask');
     expect(retry?.textContent).toBe('Check progress again');
     expect(textOf('[data-next-steer-off]')).toBe(
-      `Steer back is off because this progress check read an earlier version of your goal. ${retry?.textContent} to steer back from it.`,
+      `Steer back is off because this progress check read an earlier version of your goal. Use ${retry?.textContent} to check the current goal.`,
     );
   });
 

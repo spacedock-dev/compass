@@ -327,7 +327,7 @@ export function steerWithheld(input: {
   if (offer) return marked ? STEER_LEAVES_MARKED : STEER_LEAVES_OLDER;
   if (marked) return STEER_OFF_MARKED;
   return canRetry
-    ? `${STEER_OFF_OLDER} ${GLOSSARY.checkProgressAgain.shown} to steer back from it.`
+    ? `${STEER_OFF_OLDER} Use ${GLOSSARY.checkProgressAgain.shown} to check the current goal.`
     : STEER_OFF_OLDER;
 }
 
