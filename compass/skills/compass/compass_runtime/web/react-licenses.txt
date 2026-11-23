@@ -372,7 +372,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ========================================================================
 
-react@19.3.0 (MIT)
+react@19.3.1 (MIT)
 
 MIT License
 
@@ -399,7 +399,7 @@ SOFTWARE.
 
 ========================================================================
 
-react-dom@19.3.0 (MIT)
+react-dom@19.3.1 (MIT)
 
 MIT License
 

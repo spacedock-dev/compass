@@ -76,7 +76,7 @@ receive no HTTP request or WebSocket upgrade. The policy and permission belong o
 browser context.
 Stories have a separate
 strict typecheck with dependency declaration checking skipped because Storybook 10.6's declarations
-fail with TypeScript 6 and exact optional properties; the page's declaration checks stay strict.
+fail with TypeScript 7 and exact optional properties; the page's declaration checks stay strict.
 Stories are excluded from page coverage and the CSS budget. They live outside Tailwind's explicit
 source paths. `pnpm build:check` checks the page and its source provenance; dependency edits
 require a refreshed integrity record even when the rendered page bytes stay unchanged.

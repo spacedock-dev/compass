@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { ApiResult, InteractionOrigin, SessionIdentity } from '../api/types';
 import { createFakeClock } from '../transport/testing';
 import { createTerminalOwner, type TerminalOwnerDeps } from './owner';
@@ -35,7 +35,12 @@ function setup(options: { loadFails?: Error } = {}) {
   const loads: { resolve(): void; reject(error: Error): void }[] = [];
   const loadCalls = { count: 0 };
   let shared: Promise<XtermConstructor> | null = null;
-  const doc = document.implementation.createHTMLDocument('terminal');
+  /* A frame's document, not a detached one: since jsdom 31, as the CSSOM spec says, a document with no
+     browsing context computes no style, and the renderer reads its palette from computed properties. */
+  const frame = document.createElement('iframe');
+  document.body.append(frame);
+  onTestFinished(() => frame.remove());
+  const doc = frame.contentDocument as Document;
   const deps: TerminalOwnerDeps = {
     client: {
       getInteractionOrigin: (identity, signal) =>

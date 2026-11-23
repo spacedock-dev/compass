@@ -2,7 +2,7 @@ import { Card as SurfaceCard } from '../ui/card';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../ui/select';
 import { Label } from '../ui/label';
 import { Button } from '../ui/button';
-import { useEffect, useLayoutEffect, useRef, type MouseEvent } from 'react';
+import { useEffect, useLayoutEffect, useState, type MouseEvent } from 'react';
 import { isRecord, type Row } from '../observed';
 import { useControls } from '../controls/kit';
 import { useFocusKey } from '../controls/useFocusKey';
@@ -111,7 +111,7 @@ function Card({
   const held = useSteeringHeld();
   const id = (source ?? (rule as StageRule)).id;
   const pendingKey = `tripwire:${id}`;
-  const owner = useRef(Symbol('stage card')).current;
+  const [owner] = useState(() => Symbol('stage card'));
   useEffect(() => held.stage.cardMounted(owner), [held, owner]);
   const busy = useBoardSelector(runtime.store, (board) => board.pending.includes(pendingKey));
   const model = stageCard({

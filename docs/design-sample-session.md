@@ -210,6 +210,11 @@ DRC-5510 packages the shared AI use pause notice at 2,479,707 bytes on Node 26.1
 and pnpm 12.17.0, 92 bytes below the preceding Needs you build. The page bound follows
 that measurement. The fixture bound stays at 250,000 bytes.
 
+On 2026-11-24, the dependency bump to React 19.3.1, Vite 8.3.7, Tailwind CSS 4.3.5 and
+pnpm 12.19.0 packages the page at 2,478,431 bytes on Node 26.12.1, 1,276 bytes below the
+2,479,707-byte page before it. The page bound follows that measurement. The fixture bound
+stays at 250,000 bytes.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.
