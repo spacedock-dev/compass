@@ -1,121 +1,76 @@
 import type { SettingLimit, SettingsBody } from '../api/types';
 import { capacityPreview } from '../api/promptCapacity';
 
-/* What the Settings screen says about each limit, and the unit a reader types it in. The bounds and
-   defaults are never here: they arrive with every answer, so a server that moves one moves the screen. A
-   key this table does not know still draws, under its own name, so a new limit is never hidden. */
-interface Copy {
-  readonly label: string;
-  readonly help: string;
-  /** How many of the server's units make one of the reader's: the prompt is stored in bytes, typed in KB. */
-  readonly scale: number;
-  readonly unit: string;
-}
-
-const COPY: Readonly<Record<string, Copy>> = {
-  analyze_prompt_bytes: {
-    label: 'Prompt size',
-    help: "The most one Analyze drift prompt may hold, including selected messages and evidence. A larger limit can include more text and take longer. This does not set the session outline's coverage or Summary's source coverage.",
-    scale: 1024,
-    unit: 'KB',
-  },
-  analyze_record_events: {
-    label: 'Messages and checks kept',
-    help: "How many of the session's messages and checks a press keeps after reading back to where your goal's window starts.",
-    scale: 1,
-    unit: 'messages and checks',
-  },
-  analyze_listed_checks: {
-    label: 'Checks and files listed',
-    help: "How many of the session's checks and written files a press lists for the model. The session page itself still lists 12.",
-    scale: 1,
-    unit: 'checks and files',
-  },
-  analyze_scan_megabytes: {
-    label: 'Transcript scanned for checks',
-    help: "How much of the session's transcript, and its subagents' transcripts, a press scans for the checks and files it lists. Subagents are where delegated work runs its tests. More reads more of that work, but takes longer and holds about five times as much in memory while the press runs.",
-    scale: 1,
-    unit: 'MB',
-  },
-};
+/* Bounds and defaults come from the server in its native integer units. Formatting never
+   rounds a stored value into a different stop. */
+const COPY: Readonly<Record<string, { label: string; help: string; scale: number; unit: string }>> =
+  {
+    analyze_prompt_bytes: {
+      label: 'Prompt size',
+      help: 'The most one progress check may send to the AI, including selected messages and evidence. This does not change the session outline or summary.',
+      scale: 1 / 1024,
+      unit: 'KB',
+    },
+    analyze_record_events: {
+      label: 'Messages and checks kept',
+      help: 'How many messages and checks are kept after reading back to where your goal starts.',
+      scale: 1,
+      unit: '',
+    },
+    analyze_listed_checks: {
+      label: 'Checks and files listed',
+      help: 'How many checks and written files are listed for the AI. The session page itself still lists 12.',
+      scale: 1,
+      unit: '',
+    },
+    analyze_scan_megabytes: {
+      label: 'Transcript scanned for checks',
+      help: 'How much of the session and its helpers Compass scans for checks and files. A larger scan takes longer and uses more memory.',
+      scale: 1024,
+      unit: 'KB',
+    },
+  };
 
 export interface Field {
   readonly key: string;
   readonly label: string;
-  readonly help: string | null;
+  readonly help?: string;
   readonly unit: string;
   readonly scale: number;
-  /** The value in force, the default and the inclusive range, all in the reader's unit. */
   readonly value: number;
   readonly fallback: number;
   readonly minimum: number;
   readonly maximum: number;
 }
 
-const COUNT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 });
+const count = new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 });
+export const kilobytes = (bytes: number): string => `${count.format(bytes / 1024)} KB`;
+export function withUnit(field: Field, value: number): string {
+  const formatted = count.format(value * field.scale);
+  return field.unit ? `${formatted} ${field.unit}` : formatted;
+}
 
-export const formatAmount = (value: number): string => COUNT.format(value);
-
-/* The range shown is the range a whole number in the reader's unit can satisfy, so a bound that is not a
-   whole KB rounds inward and nothing typed inside it is refused by the server. */
 export function fieldsOf(body: SettingsBody): readonly Field[] {
-  return body.limits.map((limit) => {
-    const copy = COPY[limit.key];
-    const scale = copy?.scale ?? 1;
-    return {
-      key: limit.key,
-      label: copy?.label ?? limit.key,
-      help: copy?.help ?? null,
-      unit: copy?.unit ?? '',
-      scale,
-      value: (body.values[limit.key] ?? limit.default) / scale,
-      fallback: limit.default / scale,
-      minimum: Math.ceil(limit.minimum / scale),
-      maximum: Math.floor(limit.maximum / scale),
-    };
-  });
+  return body.limits.map(({ key, default: fallback, minimum, maximum }) => ({
+    key,
+    label: COPY[key]?.label ?? key,
+    ...(COPY[key] ? { help: COPY[key].help } : {}),
+    unit: COPY[key]?.unit ?? '',
+    scale: COPY[key]?.scale ?? 1,
+    value: body.values[key] ?? fallback,
+    fallback,
+    minimum,
+    maximum,
+  }));
 }
 
-/** The words an input starts with for a value: plain digits, because a grouped number is not one it parses. */
-export const textOf = (value: number): string => String(value);
-
-export const withUnit = (field: Field, value: number): string =>
-  field.unit ? `${formatAmount(value)} ${field.unit}` : formatAmount(value);
-
-export const rangeText = (field: Field): string =>
-  `Allowed ${formatAmount(field.minimum)} to ${withUnit(field, field.maximum)}.`;
-
-/** The server's value for what the reader typed, or the sentence saying why it is not one. */
-export function parseDraft(
-  field: Field,
-  draft: string,
-): { readonly ok: true; readonly value: number } | { readonly ok: false; readonly error: string } {
-  const text = draft.trim();
-  const number = /^-?\d+$/.test(text) ? Number(text) : Number.NaN;
-  if (!Number.isSafeInteger(number) || number < field.minimum || number > field.maximum)
-    return {
-      ok: false,
-      error: `Enter a whole number from ${formatAmount(field.minimum)} to ${withUnit(field, field.maximum)}.`,
-    };
-  return { ok: true, value: number * field.scale };
-}
-
-/* Only the keys whose words differ from the value in force are sent, so a Save never rewrites a setting
-   the reader did not touch, including one shown in KB that is not a whole number of them. */
-export function changedValues(
-  fields: readonly Field[],
-  drafts: Readonly<Record<string, string>>,
-): { readonly values: Record<string, number>; readonly invalid: readonly string[] } {
-  const values: Record<string, number> = {};
-  const invalid: string[] = [];
-  for (const field of fields) {
-    const draft = drafts[field.key] ?? textOf(field.value);
-    if (draft === textOf(field.value)) continue;
-    const parsed = parseDraft(field, draft);
-    if (parsed.ok) values[field.key] = parsed.value;
-    else invalid.push(field.key);
-  }
-  return { values, invalid };
+/* Doubling and halving around the recommendation gives room to adjust small values on
+   ranges that span orders of magnitude. The exact saved value also gets its own stop. */
+export function stopsFor({ minimum, maximum, fallback, value }: Field): readonly number[] {
+  const stops = new Set([minimum, maximum, fallback, value]);
+  for (let stop = fallback; stop > minimum; stop = Math.floor(stop / 2)) stops.add(stop);
+  for (let stop = Math.max(1, fallback); stop < maximum; stop *= 2) stops.add(stop);
+  return [...stops].sort((left, right) => left - right);
 }
 
 function isLimit(value: unknown): value is SettingLimit {
@@ -123,7 +78,10 @@ function isLimit(value: unknown): value is SettingLimit {
   const limit = value as Record<string, unknown>;
   return (
     typeof limit['key'] === 'string' &&
-    ['default', 'minimum', 'maximum'].every((name) => Number.isSafeInteger(limit[name]))
+    ['default', 'minimum', 'maximum'].every((name) => Number.isSafeInteger(limit[name])) &&
+    Number(limit['minimum']) >= 0 &&
+    Number(limit['minimum']) <= Number(limit['default']) &&
+    Number(limit['default']) <= Number(limit['maximum'])
   );
 }
 
@@ -134,7 +92,18 @@ export function settingsBody(body: unknown): SettingsBody | null {
   if (typeof values !== 'object' || values === null || Array.isArray(values)) return null;
   if (!Array.isArray(limits) || !limits.every(isLimit)) return null;
   const numbers = values as Record<string, unknown>;
-  if (!limits.every((limit) => Number.isSafeInteger(numbers[limit.key]))) return null;
+  if (
+    !limits.every(({ key, minimum, maximum }) => {
+      const value = numbers[key];
+      return (
+        typeof value === 'number' &&
+        Number.isSafeInteger(value) &&
+        value >= minimum &&
+        value <= maximum
+      );
+    })
+  )
+    return null;
   const routes =
     typeof capacities === 'object' && capacities !== null && !Array.isArray(capacities)
       ? (capacities as Record<string, unknown>)

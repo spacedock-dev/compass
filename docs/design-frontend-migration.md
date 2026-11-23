@@ -18,6 +18,11 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 Settings adds an inline Your data explanation. Its Copy button copies the terminal commands for
 the dashboard's listening port. The operation still runs in the terminal.
+Settings reading limits now open inline under Customize. The four numeric fields become stepped
+sliders with a marked recommendation. A release saves that slider, and a refused write restores
+the last confirmed value. Route capacity still describes an estimate independently of the saved
+limit. The Codex warning compares the two.
+
 
 On 2026-11-23 legacy project focus fragments began opening the exact Session page, including
 the older `held-to` alias. A focus with no harness uses the ID-only session form. The return

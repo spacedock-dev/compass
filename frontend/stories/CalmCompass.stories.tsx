@@ -6,6 +6,7 @@ import { ControlsProvider, Disclosure } from '../src/controls';
 import { testControls } from '../src/controls/testControls';
 import { TechnicalDetails } from '../src/controls/TechnicalDetails';
 import { GLOSSARY } from '../src/language/glossary';
+import { LimitSlider } from '../src/settings/SettingsLimitsCard';
 import { YourDataCard } from '../src/settings/YourDataCard';
 import { Alert } from '../src/ui/alert';
 import { Button } from '../src/ui/button';
@@ -354,9 +355,25 @@ function ReservedExamples() {
             />
           </ControlsProvider>
         </section>
-        <section style={row}>
-          <h3 style={subheading}>Stepped slider</h3>
-          <p style={caption}>Choose how much a progress check reads.</p>
+        <section style={row} aria-labelledby="calm-stepped-slider">
+          <h3 id="calm-stepped-slider" style={subheading}>
+            Stepped slider
+          </h3>
+          <LimitSlider
+            field={{
+              key: 'analyze_prompt_bytes',
+              label: 'Prompt size',
+              help: 'The most one progress check may send to the AI.',
+              unit: 'KB',
+              scale: 1 / 1024,
+              value: 1048576,
+              fallback: 524288,
+              minimum: 16384,
+              maximum: 2097152,
+            }}
+            locked={false}
+            onWrite={async () => undefined}
+          />
         </section>
         <section style={row} aria-label="Forget everything example">
           <ControlsProvider controls={kit.controls}>
@@ -467,6 +484,13 @@ export const StyleGuide: Story = {
     await waitFor(() =>
       expect(examples.getByText('Compass uses your saved goal to check progress.')).toBeVisible(),
     );
+    const slider = within(examples.getByRole('region', { name: 'Stepped slider' }));
+    await expect(slider.getByRole('slider', { name: 'Prompt size' })).toHaveAttribute(
+      'aria-valuetext',
+      '1,024 KB',
+    );
+    await expect(slider.getByText('Changed')).toBeVisible();
+    await expect(slider.getByRole('button', { name: 'Reset Prompt size' })).toBeVisible();
     const reset = within(examples.getByRole('region', { name: 'Forget everything example' }));
     await userEvent.click(reset.getByRole('button', { name: 'Forget everything' }));
     await waitFor(() => expect(reset.getByRole('list', { name: 'Deletes' })).toBeVisible());

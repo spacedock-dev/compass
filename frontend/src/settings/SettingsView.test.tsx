@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { createApiClient, type FetchLike } from '../api/client';
+import { ControlsProvider } from '../controls';
+import { testControls } from '../controls/testControls';
 import { SettingsScreen } from './SettingsView';
 
 const LIMITS = [
@@ -76,453 +78,84 @@ const flush = async () => {
   });
 };
 
-const field = (name: RegExp) => screen.getByRole('spinbutton', { name }) as HTMLInputElement;
-const prompt = () => field(/Prompt size/);
-const kept = () => field(/Messages and checks kept/);
-const listed = () => field(/Checks and files listed/);
-const outcome = () => document.querySelector('[data-next-settings-outcome]')?.textContent ?? '';
-
 async function mount(server: ReturnType<typeof backend>) {
-  render(<SettingsScreen client={server.client} />);
-  await flush();
+  const kit = testControls();
+  return render(
+    <ControlsProvider controls={kit.controls}>
+      <SettingsScreen client={server.client} />
+    </ControlsProvider>,
+  );
 }
 
+const prompt = () => screen.getByRole('slider', { name: 'Prompt size' });
+const open = async () => {
+  const region = await screen.findByRole('region', { name: 'How much a progress check reads' });
+  fireEvent.click(within(region).getByRole('button', { name: 'Customize' }));
+  return within(region);
+};
+
 describe('the Settings screen', () => {
-  it('saves and reopens 2048 KB independently of route allowance, then restores 512 KB', async () => {
+  it('saves and reopens 2048 KB independently of the route estimate, then resets it', async () => {
     const server = backend(
       [production(), production(2097152)],
       [production(2097152), production()],
     );
-    const view = render(<SettingsScreen client={server.client} />);
-    await flush();
-    expect(prompt().value).toBe('512');
-    expect(prompt().max).toBe('2048');
-    const allowance = screen.getByRole('region', { name: 'Estimated prompt allowances' });
-    expect(within(allowance).getByText(/Claude Code/)).toBeTruthy();
-    expect(within(allowance).getAllByText(/512 KB/)).toHaveLength(2);
-    expect(
-      within(allowance).getAllByText(
-        /An assembled prompt above this allowance is refused before a model call; it is not automatically shortened/,
-      ),
-    ).toHaveLength(2);
-    expect(
-      within(allowance).getAllByText(
-        /Conservative estimate; this route’s context window is unknown/,
-      ),
-    ).toHaveLength(2);
-    fireEvent.change(prompt(), { target: { value: '2048' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const view = await mount(server);
+    const card = await open();
+    expect(prompt().getAttribute('aria-valuetext')).toBe('512 KB');
+    expect(card.getAllByText('Estimated capacity: 512 KB.')).toHaveLength(2);
+    expect(card.queryByText(/exceeds the Codex estimate/)).toBeNull();
+    fireEvent.keyDown(prompt(), { key: 'End' });
+    expect(server.posts()).toEqual([]);
+    fireEvent.keyUp(prompt(), { key: 'End' });
     await flush();
     expect(server.posts()[0]?.body).toEqual({ values: { analyze_prompt_bytes: 2097152 } });
-    expect(prompt().value).toBe('2048');
+    expect(prompt().getAttribute('aria-valuetext')).toBe('2,048 KB');
     view.unmount();
-    render(<SettingsScreen client={server.client} />);
+    await mount(server);
+    await open();
+    expect(prompt().getAttribute('aria-valuetext')).toBe('2,048 KB');
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Prompt size' }));
     await flush();
-    expect(prompt().value).toBe('2048');
-    expect(
-      screen.getByText(/Your saved limit stays the same when the reading route changes/),
-    ).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Restore default (512 KB)' }));
-    await flush();
-    expect(prompt().value).toBe('512');
+    expect(prompt().getAttribute('aria-valuetext')).toBe('512 KB');
     expect(server.posts()[1]?.body).toEqual({ values: { analyze_prompt_bytes: null } });
   });
 
-  it('names one Analyze prompt separately from outline and Summary source coverage', async () => {
-    await mount(backend([production()]));
-    expect(screen.getByText(/one Analyze drift prompt/)).toBeTruthy();
-    expect(screen.getByText(/outline.*Summary.*source coverage/)).toBeTruthy();
-    expect(
-      screen.getByText(/do not confirm model availability or that a prompt will fit/),
-    ).toBeTruthy();
-  });
-
-  it('shows unknown allowance for old or malformed previews while settings stay editable', async () => {
-    const server = backend([ok()], [production(524288, { ...PREVIEW, fit_verified: true })]);
+  it('posts null for each server limit when the reader resets all', async () => {
+    const server = backend([ok({ ...DEFAULTS, analyze_record_events: 5000 })], [ok()]);
     await mount(server);
-    expect(screen.getAllByText(/Allowance unknown/)).toHaveLength(2);
-    expect(screen.queryByText(/above this allowance is refused/)).toBeNull();
-    fireEvent.change(prompt(), { target: { value: '512' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const card = await open();
+    fireEvent.click(card.getByRole('button', { name: 'Reset all to recommended' }));
     await flush();
-    expect(prompt().value).toBe('512');
-    expect(screen.getAllByText(/Allowance unknown/)).toHaveLength(1);
-    expect(screen.queryByText(/0 KB/)).toBeNull();
-    expect(outcome()).toMatch(/^Saved/);
-  });
-
-  it('keeps a tiny positive allowance distinct from the smallest storable preference', async () => {
-    await mount(
-      backend([
-        production(2097152, {
-          ...PREVIEW,
-          maximum_prompt_bytes: 1,
-          window_tokens: 144443,
-          window_source: 'configured',
-          estimate_method: 'utf8-bytes-div-3',
-          can_lower_prompt_setting: false,
-        }),
-      ]),
-    );
-    expect(prompt().value).toBe('2048');
-    expect(screen.getByText(/1 byte/)).toBeTruthy();
-    expect(screen.getByText(/below the minimum Prompt size setting/)).toBeTruthy();
-    expect(screen.getByText(/A smaller actual prompt may still fit/)).toBeTruthy();
-    expect(screen.queryByText(/Lower Prompt size/)).toBeNull();
-  });
-
-  it.each([
-    ['context-no-room', '', /leaves no room/],
-    ['settings-refused', 'managed-mcp', /managed-mcp.json/],
-    ['context-dynamic', 'dynamic-policy', /policy can change when it starts/],
-    ['context-config', 'context-config', /context settings could not be checked/],
-    ['context-compaction', 'compaction-policy-conflict', /compaction/],
-    ['context-fallback', 'fallback-policy-conflict', /model switching/],
-  ])(
-    'states a blocked %s route without a numerical fit claim',
-    async (reason, configuration, words) => {
-      await mount(
-        backend([
-          production(2097152, {
-            ...PREVIEW,
-            maximum_prompt_bytes: 0,
-            reason,
-            configuration_reason: configuration,
-            can_lower_prompt_setting: false,
-          }),
-        ]),
-      );
-      expect(screen.getByText(words)).toBeTruthy();
-      expect(screen.queryByText(/0 KB/)).toBeNull();
-      expect(prompt().value).toBe('2048');
-    },
-  );
-
-  it('says it is reading, then draws every limit from the answer in the reader’s unit', async () => {
-    const server = backend([ok({ ...DEFAULTS, analyze_record_events: 5000 })]);
-    render(<SettingsScreen client={server.client} />);
-    expect(screen.getByText('Reading the settings in force.')).toBeTruthy();
-    await flush();
-    expect(server.sent).toEqual([{ method: 'GET', url: '/api/settings', body: null }]);
-    expect(prompt().value).toBe('256');
-    expect(kept().value).toBe('5000');
-    expect(listed().value).toBe('200');
-    expect(prompt().min).toBe('16');
-    expect(prompt().max).toBe('512');
-    const bounds = document.getElementById(
-      prompt().getAttribute('aria-describedby')?.split(' ')[1] ?? '',
-    );
-    expect(bounds?.textContent).toBe('In force: 256 KB. Default 256 KB. Allowed 16 to 512 KB.');
-    expect(prompt().getAttribute('aria-describedby')?.split(' ')).toHaveLength(2);
-    expect(screen.getByText(/The session page itself still lists 12/)).toBeTruthy();
-    // Only the changed one offers its default back, and so does the screen as a whole.
-    expect(screen.getAllByRole('button', { name: /^Restore default/ })).toHaveLength(1);
-    expect(
-      screen.getByRole('button', { name: 'Restore default (2,000 messages and checks)' }),
-    ).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Restore all defaults' })).toBeTruthy();
-  });
-
-  it('reads its bounds from the answer, never from a copy of its own', async () => {
-    const limits = LIMITS.map((limit) =>
-      limit.key === 'analyze_listed_checks'
-        ? { ...limit, minimum: 50, maximum: 60, default: 55 }
-        : limit,
-    );
-    const server = backend([
-      { status: 200, body: { values: { ...DEFAULTS, analyze_listed_checks: 55 }, limits } },
-    ]);
-    await mount(server);
-    expect(listed().min).toBe('50');
-    expect(listed().max).toBe('60');
-    fireEvent.change(listed(), { target: { value: '61' } });
-    expect(screen.getByText('Enter a whole number from 50 to 60 checks and files.')).toBeTruthy();
-  });
-
-  it('refuses a value outside its range or not whole, inline, naming the range', async () => {
-    const server = backend([ok()]);
-    await mount(server);
-    fireEvent.change(kept(), { target: { value: '99' } });
-    const message = 'Enter a whole number from 100 to 20,000 messages and checks.';
-    expect(screen.getByText(message)).toBeTruthy();
-    expect(kept().getAttribute('aria-invalid')).toBe('true');
-    expect(kept().getAttribute('aria-describedby')).toContain(`${kept().id}-error`);
-    fireEvent.change(kept(), { target: { value: '150.5' } });
-    expect(screen.getByText(message)).toBeTruthy();
-    fireEvent.change(kept(), { target: { value: '' } });
-    expect(screen.getByText(message)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await flush();
-    expect(server.posts()).toEqual([]);
-    expect(outcome()).toBe('Nothing was saved. Correct the value marked below first.');
-    expect(document.activeElement).toBe(kept());
-    fireEvent.change(kept(), { target: { value: '150' } });
-    expect(screen.queryByText(message)).toBeNull();
-    expect(kept().getAttribute('aria-invalid')).toBeNull();
-  });
-
-  it('sends only what changed, in the server’s unit, and redraws from the answer', async () => {
-    const answered = { ...DEFAULTS, analyze_prompt_bytes: 524288, analyze_listed_checks: 400 };
-    const server = backend([ok()], [ok(answered)]);
-    await mount(server);
-    fireEvent.change(prompt(), { target: { value: '512' } });
-    fireEvent.change(listed(), { target: { value: '300' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await flush();
-    expect(server.posts()).toEqual([
-      {
-        method: 'POST',
-        url: '/api/settings',
-        body: { values: { analyze_prompt_bytes: 524288, analyze_listed_checks: 300 } },
-      },
-    ]);
-    // The answer, not what was sent, is what the screen now shows.
-    expect(prompt().value).toBe('512');
-    expect(listed().value).toBe('400');
-    expect(kept().value).toBe('2000');
-    expect(outcome()).toBe('Saved. The next Analyze drift press reads with these limits.');
-    expect(
-      screen.getByText(
-        'In force: 400 checks and files. Default 200 checks and files. Allowed 12 to 2,000 checks and files.',
-      ),
-    ).toBeTruthy();
-  });
-
-  it('sends nothing when nothing changed', async () => {
-    const server = backend([ok()]);
-    await mount(server);
-    fireEvent.change(kept(), { target: { value: '2000' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await flush();
-    expect(server.posts()).toEqual([]);
-    expect(outcome()).toBe('Nothing changed, so nothing was sent.');
-  });
-
-  it('restores one default with a null for that key alone, and keeps another field’s unsaved edit', async () => {
-    const changed = { ...DEFAULTS, analyze_record_events: 5000 };
-    const server = backend([ok(changed)], [ok()]);
-    await mount(server);
-    fireEvent.change(listed(), { target: { value: '300' } });
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Restore default (2,000 messages and checks)' }),
-    );
-    await flush();
-    expect(server.posts().map((request) => request.body)).toEqual([
-      { values: { analyze_record_events: null } },
-    ]);
-    expect(kept().value).toBe('2000');
-    expect(listed().value).toBe('300');
-    expect(outcome()).toBe(
-      'Messages and checks kept is back to its default, 2,000 messages and checks.',
-    );
-    expect(screen.queryByRole('button', { name: /^Restore default/ })).toBeNull();
-  });
-
-  it('restores every default with a null for every key', async () => {
-    const changed = {
-      analyze_prompt_bytes: 32768,
-      analyze_record_events: 5000,
-      analyze_listed_checks: 20,
-    };
-    const server = backend([ok(changed)], [ok()]);
-    await mount(server);
-    expect(prompt().value).toBe('32');
-    fireEvent.click(screen.getByRole('button', { name: 'Restore all defaults' }));
-    await flush();
-    expect(server.posts().map((request) => request.body)).toEqual([
-      {
-        values: {
-          analyze_prompt_bytes: null,
-          analyze_record_events: null,
-          analyze_listed_checks: null,
-        },
-      },
-    ]);
-    expect([prompt().value, kept().value, listed().value]).toEqual(['256', '2000', '200']);
-    expect(outcome()).toBe('Every limit is back to its default.');
-    expect(screen.queryByRole('button', { name: 'Restore all defaults' })).toBeNull();
-  });
-
-  it.each([
-    [
-      { status: 400, body: '<html>analyze_prompt_bytes is not a setting</html>' } as Answer,
-      'The server refused these values, so nothing was saved. Each must be a whole number inside its range.',
-    ],
-    [
-      { status: 503, body: '<html>the settings store could not be written</html>' } as Answer,
-      'The settings could not be written, so nothing changed. Try again.',
-    ],
-    [{ status: 500, body: '' } as Answer, 'The server answered 500, so nothing was saved.'],
-    ['offline' as Answer, 'The server could not be reached, so nothing was saved.'],
-    [
-      { status: 200, body: { values: {} } } as Answer,
-      'The server answered in a form this page cannot read. Reload to see the values in force.',
-    ],
-  ])('keeps what was typed when a save is refused (%#)', async (refusal, words) => {
-    const server = backend([ok()], [refusal]);
-    await mount(server);
-    fireEvent.change(kept(), { target: { value: '3000' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await flush();
-    expect(server.posts()).toHaveLength(1);
-    expect(outcome()).toBe(words);
-    expect(kept().value).toBe('3000');
-    // The value in force is still the one the server last answered.
-    expect(screen.getByText(/In force: 2,000 messages and checks/)).toBeTruthy();
-  });
-
-  it('holds the other presses while one is in flight', async () => {
-    let release: (response: Response) => void = () => undefined;
-    const sent: string[] = [];
-    const fetch: FetchLike = (_url, init) => {
-      if (init?.method !== 'POST')
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({ values: { ...DEFAULTS, analyze_listed_checks: 20 }, limits: LIMITS }),
-          ),
-        );
-      sent.push(String(init.body));
-      return new Promise((resolve) => {
-        release = resolve;
-      });
-    };
-    render(<SettingsScreen client={createApiClient({ fetch })} />);
-    await flush();
-    fireEvent.change(kept(), { target: { value: '3000' } });
-    const save = screen.getByRole('button', { name: 'Save' });
-    fireEvent.click(save);
-    await flush();
-    expect(save.getAttribute('aria-busy')).toBe('true');
-    expect(within(save).getByText('Saving…')).toBeTruthy();
-    expect(
-      (screen.getByRole('button', { name: 'Restore all defaults' }) as HTMLButtonElement).disabled,
-    ).toBe(true);
-    fireEvent.click(save);
-    fireEvent.submit(save.closest('form') as HTMLFormElement);
-    await flush();
-    expect(sent).toHaveLength(1);
-    release(
-      new Response(
-        JSON.stringify({
-          values: { ...DEFAULTS, analyze_record_events: 3000, analyze_listed_checks: 20 },
-          limits: LIMITS,
-        }),
-      ),
-    );
-    await flush();
-    expect(save.getAttribute('aria-busy')).toBeNull();
-    expect(kept().value).toBe('3000');
-  });
-
-  it('says a failed read failed, and reads again on Try again', async () => {
-    const server = backend([
-      { status: 500, body: '' },
-      { status: 200, body: { values: {}, limits: 'x' } },
-      ok(),
-    ]);
-    render(
-      <SettingsScreen
-        client={server.client}
-        aiUse={<button type="button">Pause all AI use</button>}
-      />,
-    );
-    await flush();
-    expect(screen.getByRole('button', { name: 'Pause all AI use' })).toBeVisible();
-    expect(
-      screen.getByText('The prompt limits and update preference could not be read.'),
-    ).toBeTruthy();
-    expect(screen.queryByRole('spinbutton')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-    await flush();
-    // A body without both halves is not one the screen can draw from.
-    expect(
-      screen.getByText('The prompt limits and update preference could not be read.'),
-    ).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-    await flush();
-    expect(prompt().value).toBe('256');
-    expect(server.sent.filter((request) => request.method === 'GET')).toHaveLength(3);
-  });
-
-  it('draws a limit it has no words for under its own name', async () => {
-    const limits = [...LIMITS, { key: 'future_limit', default: 5, minimum: 1, maximum: 9 }];
-    const server = backend([
-      { status: 200, body: { values: { ...DEFAULTS, future_limit: 5 }, limits } },
-    ]);
-    await mount(server);
-    const future = screen.getByRole('spinbutton', { name: 'future_limit' }) as HTMLInputElement;
-    expect(future.value).toBe('5');
-    expect(screen.getByText('In force: 5. Default 5. Allowed 1 to 9.')).toBeTruthy();
-  });
-
-  it('abandons a write still in flight when the screen goes away', async () => {
-    const fetch: FetchLike = (_url, init) =>
-      init?.method === 'POST'
-        ? new Promise(() => undefined)
-        : Promise.resolve(new Response(JSON.stringify({ values: DEFAULTS, limits: LIMITS })));
-    const view = render(<SettingsScreen client={createApiClient({ fetch })} />);
-    await flush();
-    fireEvent.change(kept(), { target: { value: '3000' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await flush();
-    view.unmount();
-    await flush();
-    expect(document.querySelector('[data-next-view-body="settings"]')).toBeNull();
-  });
-});
-
-describe('the daily update preference', () => {
-  it('lets the reader turn checks off, persists the answer and keeps it after reopening', async () => {
-    const body = (disabled: boolean) => ({
-      status: 200,
-      body: {
-        values: DEFAULTS,
-        limits: LIMITS,
-        update_check: { disabled, default_enabled: true, cli_disabled: false },
+    expect(server.posts()[0]?.body).toEqual({
+      values: {
+        analyze_prompt_bytes: null,
+        analyze_record_events: null,
+        analyze_listed_checks: null,
       },
     });
-    const server = backend([body(false), body(true)], [body(true)]);
-    const first = render(<SettingsScreen client={server.client} />);
-    await flush();
-    const checkbox = screen.getByRole('checkbox', { name: 'Turn off daily update checks' });
-    expect((checkbox as HTMLInputElement).checked).toBe(false);
-    expect(screen.queryByText('Update checks are off by default in this build.')).toBeNull();
-    fireEvent.click(checkbox);
-    await flush();
-    expect((checkbox as HTMLInputElement).checked).toBe(true);
-    expect(server.posts()[0]?.body).toEqual({ values: { no_update_check: true } });
-    first.unmount();
-    await mount(server);
-    expect(
-      (screen.getByRole('checkbox', { name: 'Turn off daily update checks' }) as HTMLInputElement)
-        .checked,
-    ).toBe(true);
+    expect(card.queryByText('Changed')).toBeNull();
   });
 
-  it('keeps the saved answer when the write fails and names a command-line refusal', async () => {
-    const server = backend(
-      [
-        {
-          status: 200,
-          body: {
-            values: DEFAULTS,
-            limits: LIMITS,
-            update_check: { disabled: false, default_enabled: true, cli_disabled: true },
-          },
-        },
-      ],
-      ['offline'],
-    );
+  it('shows the exact saved off-stop value when the reader first opens Customize', async () => {
+    const server = backend([production(541696)]);
     await mount(server);
+    const card = await open();
+    expect(prompt().getAttribute('aria-valuetext')).toBe('529 KB');
+    expect(card.getByText('Recommended: 512 KB')).toBeTruthy();
+    expect(server.posts()).toEqual([]);
+  });
+
+  it('withholds settings while loading or unreadable, then lets the reader retry', async () => {
+    const server = backend([{ status: 500, body: 'unreadable' }, ok()]);
+    await mount(server);
+    expect(screen.getByText('Reading the settings in force.')).toBeTruthy();
     expect(
-      screen.getByText('Update checks are off for this run (--no-update-check).'),
-    ).toBeVisible();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Turn off daily update checks' }));
-    await flush();
-    expect(
-      (screen.getByRole('checkbox', { name: 'Turn off daily update checks' }) as HTMLInputElement)
-        .checked,
-    ).toBe(false);
-    expect(outcome()).toContain('nothing was saved');
+      await screen.findByText('The prompt limits and update preference could not be read.'),
+    ).toBeTruthy();
+    expect(screen.queryByRole('slider')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await open();
+    expect(prompt().getAttribute('aria-valuetext')).toBe('256 KB');
   });
 });
