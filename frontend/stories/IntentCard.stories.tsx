@@ -240,6 +240,19 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** The element's box once it has held the same position for two animation frames. */
+async function settledRect(element: Element): Promise<DOMRect> {
+  const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  let last = element.getBoundingClientRect();
+  for (let steady = 0, tries = 0; steady < 2 && tries < 60; tries += 1) {
+    await frame();
+    const next = element.getBoundingClientRect();
+    steady = next.top === last.top && next.left === last.left ? steady + 1 : 0;
+    last = next;
+  }
+  return last;
+}
+
 export const TypedSourceAndSavedStatus: Story = {
   args: {
     setup: {
@@ -1801,8 +1814,10 @@ export const ArmedDiscardStaysVisibleAndInPlace: Story = {
     await waitFor(() => expect(more).toHaveAttribute('aria-expanded', 'false'));
     await expect(confirm).toBeVisible();
     await expect(warning).toBeVisible();
-    // Where it was, after a board refresh and a quarter of its life.
-    const before = confirm.getBoundingClientRect();
+    // Where it was, after a board refresh and a quarter of its life. Measure only once the closing
+    // panel has stopped moving the card: read at once, the start point drifted 2.5 px in a CI run
+    // (docs/flaky-tests.md).
+    const before = await settledRect(confirm);
     (window as unknown as { __advanceIntentClock: (ms: number) => void }).__advanceIntentClock(
       7_000,
     );
