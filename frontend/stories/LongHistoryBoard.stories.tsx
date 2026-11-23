@@ -124,7 +124,7 @@ export const StoredReadingNamesItsLevel: Story = {
   play: async ({ canvasElement }) => {
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-drift-pill] strong')).toHaveTextContent(
-        'Medium',
+        'Slightly off course',
       ),
     );
     if (!mounted) throw new Error('Board not mounted');
@@ -168,13 +168,15 @@ export const LiveEstimateNamesNoRowLevel: Story = {
     await canvas.findByRole('heading', { name: 'Live estimate without a stored reading' });
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-drift-pill] strong')).toHaveTextContent(
-        'High',
+        'Off course',
       ),
     );
     const live = canvasElement.querySelector('[data-next-drift-level]');
     await expect(live).toBeVisible();
     await expect(live).toHaveTextContent('Live estimate');
-    await expect(live).toHaveTextContent('No model assessment for this intent yet.');
+    await expect(live).toHaveTextContent('reads test and build results and file paths');
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(evidence.getByText('No model assessment for this intent yet.')).toBeVisible();
     if (!mounted) throw new Error('Board not mounted');
     mounted.router.navigate({ view: 'sessions' });
     const row = await waitFor(() => {

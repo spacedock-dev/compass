@@ -9,6 +9,7 @@ import { LONG_DIAGNOSTIC } from '../test/longDiagnostic';
 import { LONG_JOB } from '../test/longProgress';
 import { PARTIAL_READING, PARTIAL_WHY } from '../test/longReading';
 import { DriftScenario, failedCheck, readingScenario } from './drift.scenario';
+import { openSessionTechnicalTab } from './sessionTechnical';
 
 const meta = { title: 'Drift/Long coverage and limits', component: DriftScenario } satisfies Meta<
   typeof DriftScenario
@@ -25,17 +26,20 @@ const session = (diagnostic: unknown) => ({
 export const FailedEvidenceRangesKeepQualifiedFindings: Story = {
   args: { scenario: { session: session(FAILED_EVIDENCE_DIAGNOSTIC), facts, reading } },
   play: async ({ canvasElement }) => {
-    const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
-    await expect(await within(root).findByText('An evidence pass failed.')).toBeVisible();
-    await expect(root).toHaveTextContent(
-      'Evidence ranges: 6 planned; 4 usable; 2 failed; 1 unassigned.',
-    );
-    await expect(await within(root).findByText('The retry check failed.')).toBeVisible();
-    await expect(await within(root).findByText(PARTIAL_WHY)).toBeVisible();
-    await expect(root).toHaveTextContent(
-      'These counts do not establish that all saved work was assessed.',
-    );
-    await expect(root.textContent).not.toMatch(/100%|complete coverage/);
+    const root = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
+    await expect(within(root).queryByText(/Evidence ranges:/)).toBeNull();
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    const panel = within(canvasElement).getByRole('tabpanel', { name: 'Evidence' });
+    await expect(evidence.getByText('An evidence pass failed.')).toBeVisible();
+    await expect(
+      evidence.getByText(/Evidence ranges: 6 planned; 4 usable; 2 failed; 1 unassigned\./),
+    ).toBeVisible();
+    await expect(await evidence.findByText('The retry check failed.')).toBeVisible();
+    await expect(await evidence.findByText(PARTIAL_WHY)).toBeVisible();
+    await expect(
+      evidence.getByText('These counts do not establish that all saved work was assessed.'),
+    ).toBeVisible();
+    await expect(panel.textContent).not.toMatch(/100%|complete coverage/);
     await expect(reading.posts).toHaveLength(0);
   },
 };
@@ -43,15 +47,17 @@ export const FailedEvidenceRangesKeepQualifiedFindings: Story = {
 export const SourceGapAndUnknownExtent: Story = {
   args: { scenario: { session: session(SOURCE_GAP_DIAGNOSTIC), facts, reading } },
   play: async ({ canvasElement }) => {
-    const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
-    await expect(root).toHaveTextContent(
-      'Source gaps prevented the analysis from covering its saved work.',
-    );
-    await expect(root).toHaveTextContent('Source files verified: 1 of 2.');
-    await expect(root).toHaveTextContent('Frozen source extent: 8,192 bytes.');
-    await expect(root).toHaveTextContent('Source gap records: 1; additional records omitted: 0.');
-    await expect(root).toHaveTextContent('Unexpanded source extent is unknown.');
-    await expect(root).toHaveTextContent('Evidence range measurements are unknown.');
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(
+      evidence.getByText('Source gaps prevented the analysis from covering its saved work.'),
+    ).toBeVisible();
+    await expect(evidence.getByText(/Source files verified: 1 of 2\./)).toBeVisible();
+    await expect(evidence.getByText(/Frozen source extent: 8,192 bytes\./)).toBeVisible();
+    await expect(
+      evidence.getByText(/Source gap records: 1; additional records omitted: 0\./),
+    ).toBeVisible();
+    await expect(evidence.getByText(/Unexpanded source extent is unknown\./)).toBeVisible();
+    await expect(evidence.getByText('Evidence range measurements are unknown.')).toBeVisible();
     await expect(reading.posts).toHaveLength(0);
   },
 };
@@ -59,14 +65,15 @@ export const SourceGapAndUnknownExtent: Story = {
 export const RecordedResourceStopAndPlanCeilings: Story = {
   args: { scenario: { session: session(RESOURCE_LIMIT_DIAGNOSTIC), facts, reading } },
   play: async ({ canvasElement }) => {
-    const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(evidence.getByText('A resource limit stopped the analysis.')).toBeVisible();
     await expect(
-      await within(root).findByText('A resource limit stopped the analysis.'),
+      evidence.getByText(/Native source reads: 268,435,456 \/ 268,435,456 bytes/),
     ).toBeVisible();
-    await expect(root).toHaveTextContent('Native source reads: 268,435,456 / 268,435,456 bytes');
-    await expect(root).toHaveTextContent('Preparation measured: 60,000 / 60,000 ms');
-    await expect(root).toHaveTextContent('model waits excluded');
-    await expect(root).toHaveTextContent('not process RSS');
+    await expect(evidence.getByText(/Preparation measured: 60,000 \/ 60,000 ms/)).toHaveTextContent(
+      'model waits excluded',
+    );
+    await expect(evidence.getByText(/not process RSS/)).toBeVisible();
     await expect(reading.posts).toHaveLength(0);
   },
 };
@@ -85,16 +92,18 @@ export const UnknownSavedCoverageWhileNewJobRuns: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const root = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await expect(
       await within(root).findByText(/Compass could not confirm that the analysis process ended/),
     ).toBeVisible();
     await expect(root.textContent).not.toContain('Current long analysis is still running');
-    await expect(root).toHaveTextContent('Last saved long outcome:');
-    await expect(root).toHaveTextContent(
-      'Current long analysis is unfinished; these are saved measurements.',
-    );
-    const saved = root.querySelector('[data-next-long-coverage]');
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(evidence.getByText(/Last saved long outcome:/)).toBeVisible();
+    await expect(
+      evidence.getByText('Current long analysis is unfinished; these are saved measurements.'),
+    ).toBeVisible();
+    const panel = within(canvasElement).getByRole('tabpanel', { name: 'Evidence' });
+    const saved = panel.querySelector('[data-next-long-coverage]');
     await expect(saved).toHaveTextContent('Stop or limit reason: unknown.');
     await expect(saved).toHaveTextContent('Source coverage measurements are unknown.');
     await expect(saved).toHaveTextContent('Evidence range measurements are unknown.');

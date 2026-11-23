@@ -6,7 +6,7 @@ import { ENDED_CAVEAT } from './sentences';
 describe('the ended-session notice', () => {
   it('says what a reader can still do, and what saving now does and does not do', () => {
     expect(ENDED_CAVEAT).toBe(
-      'This session has ended. What you save now is kept, but Analyze will not check the session against it. Analyze still uses the intent you saved before the session ended, or a goal taken from one of your prompts.',
+      'This session has ended. Compass keeps goals you save now for reference. A progress check uses the goal you saved before the session ended or a goal taken from one of your prompts.',
     );
   });
 

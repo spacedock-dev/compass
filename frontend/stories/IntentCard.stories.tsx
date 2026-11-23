@@ -238,6 +238,11 @@ const meta = {
 } satisfies Meta<typeof IntentCardHarness>;
 
 export default meta;
+async function enterGoalEditor(view: ReturnType<typeof within>) {
+  const edit = view.queryByRole('button', { name: 'Edit goal' });
+  if (edit) await userEvent.click(edit);
+}
+
 type Story = StoryObj<typeof meta>;
 
 /** The element's box once it has held the same position for two animation frames. */
@@ -268,9 +273,10 @@ export const TypedSourceAndSavedStatus: Story = {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
+    await enterGoalEditor(view);
     await expect(view.getByText(GOAL_HINT)).toBeVisible();
     await expect(outcomesTrigger(view)).toHaveTextContent(
-      'Expected outcome (optional) · up to 6 lines',
+      'What “done” looks like (optional) · up to 6 lines',
     );
     await expect(outcomesTrigger(view)).toHaveAttribute('aria-expanded', 'false');
     const goal = view.getByRole('textbox', { name: 'Goal' });
@@ -325,6 +331,7 @@ export const AdoptedThenEditedSource: Story = {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
+    await enterGoalEditor(view);
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saved');
     await expect(view.getByText('From your first prompt · saved')).toBeVisible();
     const goal = view.getByRole('textbox', { name: 'Goal' });
@@ -383,6 +390,7 @@ export const AGoalTooVagueWarnsUnderTheGoalField: Story = {
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
+    await enterGoalEditor(view);
     const goal = view.getByRole('textbox', { name: 'Goal' });
     const warning = await waitFor(() => {
       const node = card.querySelector<HTMLElement>('[data-next-goal-unclear]');
@@ -423,6 +431,7 @@ export const AGoalWithAnEndStateIsNotWarned: Story = {
   },
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
+    await enterGoalEditor(within(card));
     await within(card).findByRole('textbox', { name: 'Goal' });
     await expect(card.querySelector('[data-next-goal-unclear]')).toBeNull();
   },
@@ -482,7 +491,8 @@ export const SavingStatus: Story = {
     });
     (window as unknown as { __releaseIntentSave?: () => void }).__releaseIntentSave?.();
     await waitFor(async () => {
-      await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saved');
+      await expect(view.getByText(/From your first prompt · saved/)).toBeVisible();
+      await expect(view.queryByRole('textbox', { name: 'Goal' })).toBeNull();
     });
   },
 };
@@ -504,6 +514,7 @@ export const NotConfirmedStatus: Story = {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
+    await enterGoalEditor(view);
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ' edited');
     await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
@@ -541,6 +552,7 @@ export const RefusedStatus: Story = {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
+    await enterGoalEditor(view);
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ' edited');
     await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
@@ -571,6 +583,7 @@ export const ConcurrentRevisionKeepsUnsavedChanges: Story = {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
+    await enterGoalEditor(view);
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saved');
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ' — local draft');
@@ -611,9 +624,11 @@ export const GoalEditKeepsTheReadingStart: Story = {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
-    await expect(
-      view.getByRole('button', { name: new RegExp(`Saved · reads from ${clock(FIRST_START)}`) }),
-    ).toBeVisible();
+    await userEvent.click(view.getByRole('button', { name: 'How goals work' }));
+    await enterGoalEditor(view);
+    await waitFor(() =>
+      expect(view.getByText(new RegExp(`Reads from .*${clock(FIRST_START)}`))).toBeVisible(),
+    );
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ' and record the ruling');
     await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
@@ -623,9 +638,7 @@ export const GoalEditKeepsTheReadingStart: Story = {
       ).toHaveTextContent('Saved.');
     });
     await waitFor(async () => {
-      await expect(
-        view.getByRole('button', { name: new RegExp(`Saved · reads from ${clock(FIRST_START)}`) }),
-      ).toBeVisible();
+      await expect(view.getByText(new RegExp(`Reads from .*${clock(FIRST_START)}`))).toBeVisible();
     });
     await expect(view.queryByText(new RegExp(clock(LATEST_MESSAGE)))).toBeNull();
   },
@@ -637,6 +650,7 @@ export const UsingAPromptAsTheGoalKeepsTheReadingStart: Story = {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
+    await userEvent.click(view.getByRole('button', { name: 'How goals work' }));
     await userEvent.click(view.getByRole('button', { name: 'Use your prompt' }));
     const doc = within(canvasElement.ownerDocument.body);
     await userEvent.click(
@@ -649,9 +663,9 @@ export const UsingAPromptAsTheGoalKeepsTheReadingStart: Story = {
       );
       await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saved');
     });
-    await expect(
-      view.getByRole('button', { name: new RegExp(`Saved · reads from ${clock(FIRST_START)}`) }),
-    ).toBeVisible();
+    await waitFor(() =>
+      expect(view.getByText(new RegExp(`Reads from .*${clock(FIRST_START)}`))).toBeVisible(),
+    );
   },
 };
 
@@ -661,6 +675,8 @@ export const ReadFromNowMovesTheStartAndSaysSo: Story = {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
+    await userEvent.click(view.getByRole('button', { name: 'How goals work' }));
+    await enterGoalEditor(view);
     const now = view.getByRole('button', { name: 'Read from my latest message' });
     await expect(now).toHaveAttribute('aria-disabled', 'true');
     await userEvent.type(view.getByRole('textbox', { name: 'Goal' }), ' and record the ruling');
@@ -673,9 +689,7 @@ export const ReadFromNowMovesTheStartAndSaysSo: Story = {
         `Saved. Compass now reads from ${clock(LATEST_MESSAGE)}. Work before that is not read.`,
       );
     });
-    await expect(
-      view.getByRole('button', { name: new RegExp(`Saved · reads from ${clock(LATEST_MESSAGE)}`) }),
-    ).toBeVisible();
+    await expect(view.getByText(new RegExp(`Reads from .*${clock(LATEST_MESSAGE)}`))).toBeVisible();
   },
 };
 
@@ -724,7 +738,7 @@ export const PromptMenuPick: Story = {
     );
     await expect(
       view.getByText(
-        'Drafted from the prompt you chose · not saved · Shortened here; Analyze reads the whole prompt',
+        'Drafted from the prompt you chose · not saved · Shown as an excerpt. A progress check can read up to the first 1,000 characters of the original prompt',
       ),
     ).toBeVisible();
   },
@@ -791,56 +805,27 @@ export const MovedControlsInQuietRow: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const page = within(canvasElement);
-    const card = await page.findByRole('region', { name: 'Goal' });
-    const kept = card.querySelector('[data-next-intent-kept]') as HTMLElement;
-    await expect(kept).not.toBeNull();
-    // The row keeps only the reading start and the menu; everything else is one press away.
-    await expect(within(kept).getByRole('button', { name: /^Saved · reads from/ })).toBeVisible();
-    await expect(within(kept).queryByRole('button', { name: 'Clear' })).toBeNull();
-    await userEvent.click(within(kept).getByRole('button', { name: 'More about these words' }));
-    const quiet = within(canvasElement);
-    await waitFor(async () => expect(await quiet.findByText(INTENT_MEASURED)).toBeVisible());
-    await expect(quiet.getAllByRole('button', { name: 'Discard everything' })[0]).toBeVisible();
-    await expect(
-      await quiet.findByRole('button', { name: /^Later directions: settled/ }),
-    ).toBeVisible();
-    // Every count reads "n / cap" against its own box's cap: the goal holds 1,000, an outcome line 800.
-    await expect(within(card).getByText('30 / 1000')).toBeVisible();
-    await expect(within(card).getByText('26 / 800')).toBeVisible();
-    // The stamp opens its definition from the quiet row.
-    await userEvent.click(within(kept).getByRole('button', { name: /^Saved · reads from/ }));
-    await waitFor(() => expect(quiet.getByText('Each save is kept on its own.')).toBeVisible());
-    // Pressing the stamp moves focus out of the menu, which closes it; the menu opens again for the rest.
-    const more = within(kept).getByRole('button', { name: 'More about these words' });
-    if (more.getAttribute('aria-expanded') !== 'true') await userEvent.click(more);
-    // Discard everything arms from the quiet row, and Escape disarms it without a write.
-    await userEvent.click(
-      quiet.getAllByRole('button', { name: 'Discard everything' })[0] as HTMLElement,
-    );
-    await waitFor(() =>
-      expect(quiet.getAllByRole('button', { name: 'Discard everything' })).toHaveLength(2),
-    );
-    await userEvent.click(
-      quiet.getAllByRole('button', { name: 'Discard everything' })[1] as HTMLElement,
-    );
-    const confirm = await quiet.findByRole('button', { name: 'Confirm discard' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
+    const view = within(card);
+    await expect(view.queryByRole('button', { name: 'Clear' })).toBeNull();
+    await userEvent.click(view.getByRole('button', { name: 'How goals work' }));
+    await waitFor(() => expect(view.getByText(INTENT_MEASURED)).toBeVisible());
+    await expect(view.getByText(/^Reads from /)).toBeVisible();
+    await enterGoalEditor(view);
+    await expect(view.getByText('30 / 1000')).toBeVisible();
+    await openOutcomes(view);
+    await waitFor(() => expect(view.getByText('26 / 800')).toBeVisible());
+    await userEvent.click(view.getByRole('button', { name: 'Discard everything' }));
+    const confirm = await view.findByRole('button', { name: 'Confirm discard' });
     await expect(confirm).toBeVisible();
     confirm.focus();
     await userEvent.keyboard('{Escape}');
-    await waitFor(() =>
-      expect(quiet.queryByRole('button', { name: 'Confirm discard' })).toBeNull(),
-    );
-    await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue(
+    await expect(view.queryByRole('button', { name: 'Confirm discard' })).toBeNull();
+    await userEvent.click(view.getByRole('button', { name: 'Clear' }));
+    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue('');
+    await userEvent.click(view.getByRole('button', { name: 'Undo changes' }));
+    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
       'Keep the parser small and pure',
-    );
-    // Escape disarmed the discard and closed the menu with it; Clear is one more open away.
-    const again = within(kept).getByRole('button', { name: 'More about these words' });
-    if (again.getAttribute('aria-expanded') !== 'true') await userEvent.click(again);
-    await userEvent.click(await quiet.findByRole('button', { name: 'Clear' }));
-    await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue('');
-    await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(
-      'Unsaved changes',
     );
   },
 };
@@ -858,6 +843,7 @@ export const EndedSessionCaveatBeforeAndAfterSave: Story = {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
+    await userEvent.click(view.getByRole('button', { name: 'How goals work' }));
     await expect(card.querySelector('[data-next-ended-goal]')).toHaveTextContent(ENDED_CAVEAT);
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ' after end');
@@ -881,10 +867,7 @@ export const TypedWordsStayThroughSlowSave: Story = {
     await userEvent.clear(goal);
     await userEvent.type(goal, 'Keep the parser pure and small');
     await openOutcomes(view);
-    await userEvent.type(
-      view.getByRole('textbox', { name: 'Expected outcome line 1' }),
-      'Tests pass',
-    );
+    await userEvent.type(view.getByRole('textbox', { name: 'Done line 1' }), 'Tests pass');
     let release: () => void = () => undefined;
     (window as unknown as { __holdIntentData?: Promise<void> }).__holdIntentData =
       new Promise<void>((resolve) => {
@@ -901,9 +884,7 @@ export const TypedWordsStayThroughSlowSave: Story = {
       await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
         'Keep the parser pure and small',
       );
-      await expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).toHaveValue(
-        'Tests pass',
-      );
+      await expect(view.getByRole('textbox', { name: 'Done line 1' })).toHaveValue('Tests pass');
     } catch (failure) {
       // A held fetch left pending by a failed assertion would hang the next story on this page.
       release();
@@ -975,7 +956,7 @@ export const AdoptedPromptStaysThroughSlowSave: Story = {
 
 /* The Expected outcome accordion's trigger, by the name a reader hears. */
 const outcomesTrigger = (view: ReturnType<typeof within>) =>
-  view.getByRole('button', { name: /^Expected outcome \(optional\)/ });
+  view.getByRole('button', { name: /^What “done” looks like \(optional\)/ });
 
 /* Opens the accordion the way a reader does, for a story that types a line into it. */
 async function openOutcomes(view: ReturnType<typeof within>) {
@@ -1004,7 +985,7 @@ async function controlsTogether(card: HTMLElement, outcomes: 'open' | 'closed') 
   );
   const trigger = outcomesTrigger(view);
   await expect(trigger).toBeVisible();
-  await expect(trigger).toHaveTextContent('Expected outcome (optional) · up to 6 lines');
+  await expect(trigger).toHaveTextContent('What “done” looks like (optional) · up to 6 lines');
   await expect(trigger).toHaveAttribute('aria-expanded', outcomes === 'open' ? 'true' : 'false');
   const add = card.querySelector('[data-next-cockpit-action="held-line-add"]') as HTMLElement;
   if (outcomes === 'open') {
@@ -1022,7 +1003,6 @@ async function controlsTogether(card: HTMLElement, outcomes: 'open' | 'closed') 
     /how intent/i,
   );
   await expect(view.getByRole('button', { name: 'How goals work' })).toBeVisible();
-  await expect(view.queryByRole('button', { name: 'Clear' })).toBeNull();
   const measured = view.queryByText(INTENT_MEASURED);
   if (measured) await expect(measured).not.toBeVisible();
   return { view, save, undo };
@@ -1059,7 +1039,7 @@ export const StateEmpty: Story = {
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const { save, undo } = await controlsTogether(card, 'closed');
-    await expect(card.querySelector('[data-next-intent-status]')).toBeNull();
+    await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Not saved');
     await expect(inert(save)).toBe(true);
     await expect(inert(undo)).toBe(true);
     // Nothing is saved or typed, so the row draws no menu of its own: a lone "More" had nothing to open on.
@@ -1094,7 +1074,7 @@ export const StateDrafted: Story = {
     const sent = await within(canvasElement).findByRole('button', { name: /^What is sent/ });
     await userEvent.click(sent);
     const limit = await within(canvasElement).findByText(
-      'Analyze reads at most the first 1,000 characters of any prompt.',
+      'A progress check reads at most the first 1,000 characters of any prompt.',
     );
     await waitFor(() => expect(limit).toBeVisible());
   },
@@ -1136,16 +1116,17 @@ export const StateSaved: Story = {
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
-    await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(/^Saved$/);
-    await expect(view.getByRole('button', { name: /^Saved · reads from/ })).toBeVisible();
-    // The row holds the reading start and the menu, nothing else.
-    const kept = card.querySelector('[data-next-intent-kept]') as HTMLElement;
-    await expect(
-      within(kept)
-        .getAllByRole('button')
-        .map((node) => node.textContent),
-    ).toEqual([expect.stringMatching(/^Saved · reads from/), 'More']);
-    await controlsTogether(card, 'open');
+    await expect(view.getByRole('heading', { name: /^Goal$/ })).toHaveStyle({
+      fontSize: '24px',
+    });
+    await expect(view.getByText('Keep the parser small and pure')).toBeVisible();
+    await expect(view.getByText('All parser unit tests pass')).toBeVisible();
+    await expect(view.queryByRole('textbox')).toBeNull();
+    await expect(view.queryByRole('button', { name: 'More about these words' })).toBeNull();
+    await expect(view.getByRole('button', { name: 'How goals work' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
   },
 };
 
@@ -1229,7 +1210,7 @@ export const StateGoalDetectedCut: Story = {
     // The excerpt is what the box holds, and the line says it was cut rather than passing it off as whole.
     await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue(DETECTED_GOAL);
     await expect(goalSource(card)).toMatch(
-      / · Shortened to fit 1,000 characters; Analyze reads this shortened goal$/,
+      / · Shortened to fit 1,000 characters\. A progress check reads this shortened goal$/,
     );
   },
 };
@@ -1260,16 +1241,12 @@ export const StateGoalUpdateOffered: Story = {
     await expect(offer).toHaveTextContent(
       `Your /goal changed at ${clock(1_760_000_600)}: ${LATER_GOAL}`,
     );
-    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
-      'Keep the parser small and pure',
-    );
+    await expect(view.getByText('Keep the parser small and pure')).toBeVisible();
     await expect(card.querySelector('[data-next-goal-detected]')).toBeNull();
     // Keeping the saved goal withdraws the offer and changes nothing.
     await userEvent.click(within(offer).getByRole('button', { name: 'Keep my goal' }));
     await expect(card.querySelector('[data-next-goal-update]')).toBeNull();
-    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
-      'Keep the parser small and pure',
-    );
+    await expect(view.getByText('Keep the parser small and pure')).toBeVisible();
   },
 };
 
@@ -1435,7 +1412,7 @@ export const StateGoalClearedStaysSaidAfterAPromptIsChosen: Story = {
     );
     await waitFor(async () => {
       await expect(goalSource(card)).toBe(
-        'Drafted from the prompt you chose · not saved · Shortened here; Analyze reads the whole prompt',
+        'Drafted from the prompt you chose · not saved · Shown as an excerpt. A progress check can read up to the first 1,000 characters of the original prompt',
       );
     });
     await expect(endedNote(card)).toHaveTextContent(
@@ -1510,12 +1487,9 @@ export const DiscardEverythingSaysWhatGoesAndWhatStays: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Goal' });
-    const kept = card.querySelector('[data-next-intent-kept]') as HTMLElement;
-    await userEvent.click(within(kept).getByRole('button', { name: 'More about these words' }));
+    await enterGoalEditor(within(card));
     const quiet = within(canvasElement);
-    await userEvent.click(
-      (await quiet.findAllByRole('button', { name: 'Discard everything' }))[0] as HTMLElement,
-    );
+    await userEvent.click(await quiet.findByRole('button', { name: 'Discard everything' }));
     // Before the press: what goes, and what stays.
     const why = await quiet.findByText(/^Discarding everything deletes all you asked/);
     for (const named of [
@@ -1527,9 +1501,6 @@ export const DiscardEverythingSaysWhatGoesAndWhatStays: Story = {
     ]) {
       await expect(why).toHaveTextContent(named);
     }
-    await userEvent.click(
-      (await quiet.findAllByRole('button', { name: 'Discard everything' }))[1] as HTMLElement,
-    );
     const confirm = await quiet.findByRole('button', { name: 'Confirm discard' });
     // The confirmation says the same of the summary, including one being written, and says when it lapses.
     const armed = canvasElement.querySelector('#next-cockpit-discard-armed') as HTMLElement;
@@ -1724,7 +1695,7 @@ const refusedDiscard = async () =>
     headers: { 'Content-Type': 'application/json' },
   });
 
-export const AfterARefusedDiscardFocusIsOnMore: Story = {
+export const AfterARefusedDiscardFocusReturnsToTheOffer: Story = {
   args: { setup: { session: ARMED_SESSION, onAnnotate: refusedDiscard } },
   play: async ({ canvasElement }) => {
     const { card, confirm } = await armDiscard(canvasElement);
@@ -1737,8 +1708,8 @@ export const AfterARefusedDiscardFocusIsOnMore: Story = {
         card.querySelector('.next-cockpit-held-discard .next-cockpit-held-cue'),
       ).toHaveTextContent('Could not discard.'),
     );
-    const more = within(card).getByRole('button', { name: 'More about these words' });
-    await waitFor(() => expect(more).toHaveFocus());
+    const offer = within(card).getByRole('button', { name: 'Discard everything' });
+    await waitFor(() => expect(offer).toHaveFocus());
   },
 };
 
@@ -1781,7 +1752,7 @@ export const ARefusalDoesNotTakeFocusFromTheGoalBox: Story = {
     await new Promise((resolve) => setTimeout(resolve, 200));
     await expect(goal).toHaveFocus();
     await expect(
-      within(card).getByRole('button', { name: 'More about these words' }),
+      within(card).getByRole('button', { name: 'Discard everything' }),
     ).not.toHaveFocus();
   },
 };
@@ -1794,31 +1765,22 @@ const ARMED_SETUP: CardSetup = { session: ARMED_SESSION };
 async function armDiscard(canvasElement: HTMLElement) {
   const page = within(canvasElement);
   const card = await page.findByRole('region', { name: 'Goal' });
-  const kept = card.querySelector('[data-next-intent-kept]') as HTMLElement;
-  const more = within(kept).getByRole('button', { name: 'More about these words' });
-  await userEvent.click(more);
+  await enterGoalEditor(within(card));
   const quiet = within(canvasElement);
-  await userEvent.click(
-    (await quiet.findAllByRole('button', { name: 'Discard everything' }))[0] as HTMLElement,
-  );
-  await userEvent.click(
-    (await quiet.findAllByRole('button', { name: 'Discard everything' }))[1] as HTMLElement,
-  );
+  await userEvent.click(quiet.getByRole('button', { name: 'Discard everything' }));
   const confirm = await quiet.findByRole('button', { name: 'Confirm discard' });
-  return { card, kept, more, quiet, confirm };
+  return { card, quiet, confirm };
 }
 
 export const ArmedDiscardStaysVisibleAndInPlace: Story = {
   args: { setup: ARMED_SETUP },
   play: async ({ canvasElement }) => {
-    const { card, more, quiet, confirm } = await armDiscard(canvasElement);
+    const { card, quiet, confirm } = await armDiscard(canvasElement);
     const warning = canvasElement.querySelector('#next-cockpit-discard-armed') as HTMLElement;
     await expect(warning).toHaveTextContent('this offer lapses in 30 seconds');
     // In the card, not in the menu: it needs the menu open for neither its words nor its press.
     await expect(card.contains(confirm)).toBe(true);
     await expect(confirm.closest('[data-slot=popover-content]')).toBeNull();
-    if (more.getAttribute('aria-expanded') === 'true') await userEvent.click(more);
-    await waitFor(() => expect(more).toHaveAttribute('aria-expanded', 'false'));
     await expect(confirm).toBeVisible();
     await expect(warning).toBeVisible();
     // Where it was, after a board refresh and a quarter of its life. Measure only once the closing
@@ -1915,15 +1877,9 @@ export const DiscardEverythingOverNoSummaryClaimsNoSummaryGone: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Goal' });
-    const kept = card.querySelector('[data-next-intent-kept]') as HTMLElement;
-    await userEvent.click(within(kept).getByRole('button', { name: 'More about these words' }));
+    await enterGoalEditor(within(card));
     const quiet = within(canvasElement);
-    await userEvent.click(
-      (await quiet.findAllByRole('button', { name: 'Discard everything' }))[0] as HTMLElement,
-    );
-    await userEvent.click(
-      (await quiet.findAllByRole('button', { name: 'Discard everything' }))[1] as HTMLElement,
-    );
+    await userEvent.click(await quiet.findByRole('button', { name: 'Discard everything' }));
     const confirm = await quiet.findByRole('button', { name: 'Confirm discard' });
     (window as unknown as { __advanceIntentClock: (ms: number) => void }).__advanceIntentClock(
       1_300,
@@ -1974,7 +1930,7 @@ export const OutcomeAccordionClosedWithNoLines: Story = {
     const trigger = outcomesTrigger(view);
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await expect(view.getByRole('textbox', { name: 'Goal' })).toBeVisible();
-    await expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).not.toBeVisible();
+    await expect(view.getByRole('textbox', { name: 'Done line 1' })).not.toBeVisible();
   },
 };
 
@@ -1996,8 +1952,9 @@ export const OutcomeAccordionOpenOverSavedLines: Story = {
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
+    await enterGoalEditor(view);
     await expect(outcomesTrigger(view)).toHaveAttribute('aria-expanded', 'true');
-    await expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).toHaveValue(
+    await expect(view.getByRole('textbox', { name: 'Done line 1' })).toHaveValue(
       'All parser unit tests pass',
     );
     // A reader who closes it keeps it closed over a board refresh.
@@ -2017,13 +1974,10 @@ export const AddingALineInsideTheAccordionSaves: Story = {
     const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     await openOutcomes(view);
-    await userEvent.type(
-      view.getByRole('textbox', { name: 'Expected outcome line 1' }),
-      'Tests pass',
-    );
+    await userEvent.type(view.getByRole('textbox', { name: 'Done line 1' }), 'Tests pass');
     await userEvent.click(view.getByRole('button', { name: '+ Add a line' }));
     await userEvent.type(
-      await view.findByRole('textbox', { name: 'Expected outcome line 2' }),
+      await view.findByRole('textbox', { name: 'Done line 2' }),
       'Benchmarks run',
     );
     await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
@@ -2073,8 +2027,9 @@ export const OverCapLineBlocksSave: Story = {
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
+    await enterGoalEditor(view);
     await openOutcomes(view);
-    const box = view.getByRole('textbox', { name: 'Expected outcome line 1' });
+    const box = view.getByRole('textbox', { name: 'Done line 1' });
     await userEvent.click(box);
     await userEvent.clear(box);
     await userEvent.paste('l'.repeat(900));
@@ -2105,11 +2060,9 @@ export const OverCapLineBlocksSave: Story = {
     box.focus();
     await userEvent.keyboard('{Escape}');
     await waitFor(() =>
-      expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).toHaveValue(
-        'Saved line',
-      ),
+      expect(view.getByRole('textbox', { name: 'Done line 1' })).toHaveValue('Saved line'),
     );
-    await expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).toHaveFocus();
+    await expect(view.getByRole('textbox', { name: 'Done line 1' })).toHaveFocus();
     await expect(view.getByText('10 / 800')).toHaveAttribute('data-over', 'false');
     await expect(view.queryByText(/^Line 1 is /)).toBeNull();
   },
@@ -2139,8 +2092,9 @@ export const RefusedSaveShowsReason: Story = {
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
+    await enterGoalEditor(view);
     await openOutcomes(view);
-    const box = view.getByRole('textbox', { name: 'Expected outcome line 1' });
+    const box = view.getByRole('textbox', { name: 'Done line 1' });
     await userEvent.clear(box);
     await userEvent.type(box, 'Changed line');
     await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
@@ -2173,5 +2127,49 @@ export const OverCapGoalBlocksSave: Story = {
       'aria-disabled',
       'true',
     );
+  },
+};
+
+export const ReadSavedGoalOnEndedSession: Story = {
+  args: {
+    setup: {
+      prompts: [],
+      facts: [],
+      session: {
+        first_prompt: '',
+        first_prompt_at: null,
+        latest_prompt: '',
+        latest_prompt_at: null,
+        state: 'ended',
+        ended_at: 1_760_000_900,
+        annotation_goal: 'Keep the parser small and pure',
+        annotation_line_1: 'All parser unit tests pass',
+        annotation_revision: 1,
+        annotation_revision_count: 1,
+        annotation_at: 1_760_000_500,
+        annotation_goal_saved_at: 1_760_000_500,
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const goal = within(await within(canvasElement).findByRole('region', { name: 'Goal' }));
+    await expect(goal.getByText(/You wrote this · saved at/)).toBeVisible();
+    await expect(goal.getByText('Keep the parser small and pure')).toBeVisible();
+    await expect(goal.getByText('All parser unit tests pass')).toBeVisible();
+    const prompt = goal.getByRole('button', { name: 'Use your prompt' });
+    const edit = goal.getByRole('button', { name: 'Edit goal' });
+    await expect(prompt).toBeVisible();
+    await expect(prompt.closest('header')).toBe(edit.closest('header'));
+    await expect(goal.queryByRole('textbox')).toBeNull();
+    await expect(goal.getByRole('heading', { name: 'What “done” looks like' })).toBeVisible();
+    await userEvent.click(prompt);
+    const dialog = within(canvasElement.ownerDocument.body);
+    await waitFor(() =>
+      expect(dialog.getByRole('option', { name: /^No usable prompts were found/ })).toBeVisible(),
+    );
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(goal.getByRole('button', { name: 'Edit goal' }));
+    await expect(goal.getByRole('textbox', { name: 'Goal' })).toHaveFocus();
+    await expect(goal.getByRole('button', { name: /^What “done” looks like/ })).toBeVisible();
   },
 };

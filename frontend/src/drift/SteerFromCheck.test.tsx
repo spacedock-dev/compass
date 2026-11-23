@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { describe, expect, it } from 'vitest';
 import { datedClock } from '../observed/values';
 import { byAction, check, fact, json, mountDrift, textOf } from './testing';
@@ -68,14 +69,35 @@ describe('Steer back from a check', () => {
     expect(steer?.getAttribute('data-variant')).not.toBe('primary');
     expect(document.querySelector('[data-next-steer-section] h3')?.textContent).toBe('Steer back');
     expect(
-      document.querySelector('[data-next-result-steer] [data-next-cockpit-action="update-intent"]'),
-    ).toBeNull();
+      document.querySelector('[data-next-result-steer] [data-next-cockpit-action="update-intent"]')
+        ?.textContent,
+    ).toBe('Update my goal instead');
+  });
+
+  it('identifies the earlier finding beside secondary steering after new work', async () => {
+    const page = mount({ facts: [...FACTS, check('c2', 1200, 'failed')] });
+    await page.settle();
+    expect(textOf('[data-next-progress-absence]')).toMatch(/^Out of date/);
+    expect(textOf('[data-next-progress-summary]')).toMatch(/^Compass found 1 departure/);
+    expect(textOf('[data-next-progress-finding]')).toContain('What the earlier check found');
+    expect(byAction('steer-back')).not.toBeNull();
+    expect(byAction('steer-back')?.getAttribute('data-variant')).not.toBe('primary');
+  });
+
+  it('withholds steering from an older goal even when a test has failed', async () => {
+    const page = mount({ store: { revision: 4 }, facts: [fact('u1', 200), ...FACTS] });
+    await page.settle();
+    expect(byAction('steer-back')).toBeNull();
+    expect(textOf('[data-next-steer-off]')).toBe(
+      'Steer back is off because this progress check read an earlier version of your goal. Use Check progress again to check the current goal.',
+    );
   });
 
   it('says why beside the departures when the analysis was marked inaccurate', async () => {
     const page = mount({ session: { ...saidSession, annotation_not_accurate: true }, facts: SAID });
     await page.settle();
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     expect(document.querySelector('[data-next-departures]')).not.toBeNull();
     expect(byAction('steer-back')).toBeNull();
     expect(textOf('[data-next-steer-off]')).toBe(STEER_OFF_MARKED);

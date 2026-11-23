@@ -2,10 +2,7 @@
    directions and the live monitor switch) and what the Analyze step builds on. */
 export { IntentLog } from './IntentLog';
 export { IntentPanel, DRIFT_SLOT_PLACEHOLDER, type IntentPanelProps } from './IntentPanel';
-export {
-  DirectionQuestion,
-  type DirectionQuestionProps,
-} from './DirectionQuestion';
+export { DirectionQuestion } from './DirectionQuestion';
 export {} from './directions';
 export { intentForReading, openPendingDirection } from './api';
 export { LiveMonitorSwitch } from './LiveMonitorSwitch';

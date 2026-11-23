@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import published from '../test/fixtures/compass-skill-action.json';
@@ -79,9 +80,8 @@ const scenarioAfter = (facts: readonly unknown[]): Scenario => ({
 });
 
 const driftOf = async (canvasElement: HTMLElement) => {
-  const drift = await within(canvasElement).findByRole('region', { name: 'Drift' });
-  await waitFor(() => expect(drift.querySelector('[data-next-result]')).not.toBeNull());
-  return drift;
+  await openSessionTechnicalTab('Evidence', canvasElement);
+  return canvasElement;
 };
 
 export const ACompassSkillActionAddsNothingToTheGoal: Story = {
@@ -90,7 +90,7 @@ export const ACompassSkillActionAddsNothingToTheGoal: Story = {
     const drift = await driftOf(canvasElement);
     // The server published no message for the command, so nothing asks to add it.
     await expect(published.facts.map((row) => row.summary)).not.toContain(`${COMMAND} sessions`);
-    await expect(drift).not.toHaveTextContent(/message adds:/);
+    await expect(drift).not.toHaveTextContent(/sent this message later/);
     await expect(drift).not.toHaveTextContent(/messages after your goal/);
     await expect(drift.querySelector('[data-next-cockpit-direction-question]')).toBeNull();
     // Activity log still lists what the agent repeated, as the agent's.
@@ -141,7 +141,7 @@ export const FullActivityLabelsTheEntriesAsCompassAnswer: Story = {
   play: async ({ canvasElement }) => {
     await driftOf(canvasElement);
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Show technical details' }));
+    await openSessionTechnicalTab('Activity log', canvasElement);
     const panel = await canvas.findByRole('tabpanel', { name: 'Activity log' });
     const labelled = async (id: string | undefined) => {
       const row = await waitFor(() => {
@@ -183,7 +183,9 @@ export const AMessageTheReaderTypedAfterTheGoalIsStillAskedAbout: Story = {
   },
   play: async ({ canvasElement }) => {
     const drift = await driftOf(canvasElement);
-    await expect(await within(drift).findByText(/message adds:/)).toBeVisible();
+    await expect(
+      await within(drift).findByRole('heading', { name: 'Is this part of your goal?' }),
+    ).toBeVisible();
   },
 };
 

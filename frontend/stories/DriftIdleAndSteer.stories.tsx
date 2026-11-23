@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { clock, datedClock } from '../src/observed/values';
@@ -78,6 +79,7 @@ export const AnIdleReadingSaysHowFarItRead: Story = {
     facts: [SAID],
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const line = await waitFor(() => {
       const node = canvasElement.querySelector('[data-next-reading-idle]');
       if (!node) throw new Error('no idle line');
@@ -149,6 +151,7 @@ export const AStoredCodexLastTurnReadingLabelsTheTurn: Story = {
     facts: [ASKED, TURN_WORK],
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const label = await waitFor(() => {
       const node = canvasElement.querySelector('[aria-label^="from the last turn"]');
       if (!node) throw new Error('no last-turn label');
@@ -239,6 +242,8 @@ export const SteerBackFromAnIdleSession: Story = {
     /* What `correction.compose` answers for the reader's zone: local time, the agent's own words, and no
        Compass entry number (the placeholder is drawn as nothing). */
     correction: {
+      starter:
+        'Back to my goal: Ship the queue. Please address the work that went off course and continue toward that goal.',
       ok: true,
       parts: [
         `Back to my goal: Ship the queue\nThe session departed from my goal at ${LOCAL}`,
@@ -262,10 +267,16 @@ export const SteerBackFromAnIdleSession: Story = {
         `Built from your saved intent and the reading at ${datedClock(1000, 1000)}`,
       ),
     ).toBeVisible();
-    const box = (await canvas.findByLabelText('Correction to paste')) as HTMLTextAreaElement;
-    await expect(box.value).toContain(
-      `The session departed from my goal at ${LOCAL}, where you said`,
+    const box = (await canvas.findByLabelText(
+      'Edit this if you like, then paste it into the session',
+    )) as HTMLTextAreaElement;
+    await expect(box).toHaveValue(
+      'Back to my goal: Ship the queue. Please address the work that went off course and continue toward that goal.',
     );
+    await userEvent.clear(box);
+    await userEvent.type(box, 'Please rerun the queue tests.');
+    await expect(box).toHaveValue('Please rerun the queue tests.');
+    await expect(canvas.getByRole('button', { name: 'Copy message' })).toBeVisible();
     await expect(box.value).not.toContain('activity list');
     await expect(box.value).not.toMatch(/#\d/);
     await expect(correctionPosts.at(-1)).toMatchObject({ utc_offset_minutes: readerUtcOffset() });
@@ -334,5 +345,27 @@ export const AFailedAnalysisNamesItsCause: Story = {
     await expect(canvas.getByRole('button', { name: 'Check progress' })).not.toHaveAttribute(
       'aria-disabled',
     );
+  },
+};
+
+export const AnOutOfDateCheckShowsTheEarlierFindingBesideSteering: Story = {
+  ...scenario({
+    session: { ...IDLE, annotation_assessment: IDLE_READING, annotation_reading_count: 1 },
+    facts: [SAID, fact('m2', 950, { type: 'agent_message', by: 'agent' })],
+  }),
+  play: async ({ canvasElement }) => {
+    const progress = within(
+      await within(canvasElement).findByRole('region', { name: 'Is it on track?' }),
+    );
+    await expect(await progress.findByText('Out of date', { exact: true })).toBeVisible();
+    await expect(
+      progress.getByRole('heading', { name: 'What the earlier check found' }),
+    ).toBeVisible();
+    await expect(progress.getByText(/^So far, Compass found 1 departure/)).toBeVisible();
+    await expect(progress.getByRole('button', { name: 'Steer back' })).toHaveAttribute(
+      'data-variant',
+      'default',
+    );
+    await expect(progress.getByRole('button', { name: 'Check progress again' })).toBeVisible();
   },
 };

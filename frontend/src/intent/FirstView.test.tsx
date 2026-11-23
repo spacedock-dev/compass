@@ -2,7 +2,7 @@ import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { check, mountDrift } from '../drift/testing';
-import { control, goalBox, lineBoxes, mountSession, text, type } from './panel.testing';
+import { control, editGoal, goalBox, lineBoxes, mountSession, text, type } from './panel.testing';
 
 const settle = async (page: { settle: () => Promise<void> }) => {
   await page.settle();
@@ -71,6 +71,7 @@ describe('the first view of a session', () => {
       facts: [check('c1', 500, 'failed', { result_source: 'failed flag', summary: 'pytest -q' })],
     });
     await settle(page);
+    editGoal();
     expect(outcomes()?.getAttribute('aria-expanded')).toBe('true');
   });
 
@@ -90,7 +91,7 @@ describe('the first view of a session', () => {
     await settle(page);
     expect(lineBoxes()).toHaveLength(1);
     expect(text('.next-cockpit-held-lines [data-slot="accordion-trigger"]')).toBe(
-      'Expected outcome (optional) · up to 6 lines',
+      'What “done” looks like (optional) · up to 6 lines',
     );
     // Drawn before the reader types, as the design has them.
     expect(control('held-line-add')).not.toBeNull();
@@ -102,18 +103,13 @@ describe('the first view of a session', () => {
     expect(control('held-undo')?.getAttribute('aria-disabled')).not.toBe('true');
   });
 
-  it('keeps Save visible, Clear in the Goal menu and the monitor in technical details', async () => {
+  it('keeps Save visible, Clear in the editor and the monitor in technical details', async () => {
     const page = mountSession();
     await settle(page);
     expect(control('held-save')).not.toBeNull();
     expect(control('held-undo')?.getAttribute('aria-disabled')).toBe('true');
     expect(document.querySelector('[data-next-session-more]')).toBeNull();
     const intent = document.querySelector('[aria-labelledby="next-session-intent-heading"]');
-    // Clear is in the card's quiet menu, which holds it once the reader opens it.
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'More about these words' }));
-    });
-    await page.settle();
     expect(control('held-clear')).not.toBeNull();
     expect(intent?.querySelector('.next-session-drift-head')).toBeNull();
     expect(control('live-monitor')).toBeNull();
@@ -128,11 +124,27 @@ describe('the first view of a session', () => {
     expect(control('held-undo')?.getAttribute('aria-disabled')).toBe('true');
   });
 
+  it('explains shortened prompt provenance in saved Goal read mode', async () => {
+    const page = mountDrift({
+      store: {
+        goal: 'Ship the queue…',
+        goal_source: 'first-prompt',
+        goal_source_at: 100,
+      },
+    });
+    await settle(page);
+    expect(text('[data-next-cockpit-goal-source]')).toContain(
+      'Shown as an excerpt. A progress check can read up to the first 1,000 characters of the original prompt',
+    );
+    expect(screen.getByRole('button', { name: 'Edit goal' })).toBeVisible();
+  });
+
   it('warns beside the goal before typing on an ended session', async () => {
     const page = mountSession({ session: { ended_at: 999 } });
     await settle(page);
-    expect(text('[data-next-cockpit-held-field="goal"]')).toContain(
-      'This session has ended. What you save now is kept, but Analyze will not check the session against it. Analyze still uses the intent you saved before the session ended, or a goal taken from one of your prompts.',
+    fireEvent.click(screen.getByRole('button', { name: 'How goals work' }));
+    expect(text('[data-next-ended-goal]')).toContain(
+      'This session has ended. Compass keeps goals you save now for reference. A progress check uses the goal you saved before the session ended or a goal taken from one of your prompts.',
     );
     expect(goalBox().value).toBe('Ship the queue worker');
   });
@@ -147,11 +159,12 @@ describe('the first view of a session', () => {
       },
     });
     await settle(page);
-    expect(goalBox().value).toBe('Ship the queue worker');
+    expect(screen.getByText('Ship the queue worker')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'How goals work' }));
     expect(control('reading-ask')).not.toBeNull();
     expect(control('reading-ask')?.getAttribute('aria-disabled')).not.toBe('true');
     expect(text('[data-next-ended-goal]')).toContain(
-      'Analyze still uses the intent you saved before the session ended',
+      'A progress check uses the goal you saved before the session ended',
     );
     expect(text('[data-next-ended-goal]')).not.toContain('can only read');
   });
@@ -165,6 +178,7 @@ describe('the first view of a session', () => {
     await act(async () => {
       fireEvent.click(trigger() as Element);
     });
+    editGoal();
     type(goalBox(), 'Held words');
     type(lineBoxes()[0] as HTMLTextAreaElement, 'Held outcome');
     await page.poll({ ...(page.state.data as object), generated: 1100 });

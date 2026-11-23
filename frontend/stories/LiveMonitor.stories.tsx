@@ -54,7 +54,7 @@ const HAIKU = (level: string) => ({
 });
 
 const drawn = (canvasElement: HTMLElement) =>
-  within(canvasElement).findByRole('region', { name: 'Drift' });
+  within(canvasElement).findByRole('region', { name: 'Is it on track?' });
 
 async function monitorSwitch(): Promise<HTMLElement> {
   await openSessionTechnicalTab('AI use and privacy');
@@ -68,7 +68,7 @@ async function turnOn(): Promise<HTMLElement> {
 }
 const actions = (lease: LeaseScenario) => lease.posts.map((post) => String(post['action']));
 const pill = (card: HTMLElement) =>
-  card.ownerDocument.querySelector('[data-next-drift-pill] strong')?.textContent ?? null;
+  card.querySelector('[data-next-drift-pill]')?.textContent ?? null;
 const note = () => document.querySelector('[data-next-live-note]');
 
 export const Off: Story = {
@@ -114,13 +114,10 @@ export const OnWithTheHaikuLevel: Story = {
     const toggle = await monitorSwitch();
     toggle.focus();
     await userEvent.keyboard(' ');
-    await waitFor(() => expect(pill(card)).toBe('High'));
+    await waitFor(() => expect(pill(card)).toBe('Off course'));
     await expectSwitchPaint(toggle, true);
-    await expect(card.ownerDocument.querySelector('[data-next-drift-pill]')).not.toHaveTextContent(
-      'Live monitor · Haiku',
-    );
-    const level = card.querySelector('[data-next-drift-level]') as HTMLElement;
-    await expect(level).not.toHaveTextContent('Live monitor · Haiku');
+    await expect(card).toHaveTextContent('From the Live monitor’s latest progress check.');
+    await expect(card).not.toHaveTextContent('Live monitor · Haiku');
     await expect(within(document.body).getByText('Live monitor · Haiku')).toBeVisible();
     const sent = document.querySelector('[data-next-live-sent]');
     await expect(sent).toHaveTextContent('api.anthropic.com');
@@ -138,11 +135,11 @@ export const OnWithTheEstimateAsFallback: Story = {
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
     await turnOn();
-    await waitFor(() => expect(pill(card)).toBe('Medium'));
-    const level = card.querySelector('[data-next-drift-level]') as HTMLElement;
-    await expect(level).toHaveTextContent('Live estimate');
-    await expect(level).not.toHaveTextContent('Live monitor · Haiku');
-    await expect(level).toHaveTextContent('No model assessment for this intent yet');
+    await waitFor(() => expect(pill(card)).toBe('Slightly off course'));
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(await evidence.findByText(/^Live estimate · /)).toBeVisible();
+    await expect(evidence.queryByText('Live monitor · Haiku')).toBeNull();
+    await expect(evidence.getByText('No model assessment for this intent yet.')).toBeVisible();
   },
 };
 
@@ -248,7 +245,7 @@ export const TurnedOffBecauseModelCallsWerePaused: Story = {
       'Model calls are paused',
     );
     // Paused is not off for the level: the estimate stays as the fallback.
-    await waitFor(() => expect(pill(card)).toBe('Medium'));
+    await waitFor(() => expect(pill(card)).toBe('Slightly off course'));
   },
 };
 
@@ -267,8 +264,9 @@ export const TurnedOffByItsOwnLimit: Story = {
     await expect(note()).not.toHaveTextContent(/drift analyses/);
     await expect(note()).toHaveTextContent(/not your Analyze budget/);
     // Its limit is spent, so the level is the estimate's, as before the monitor was on.
-    await waitFor(() => expect(pill(card)).toBe('Medium'));
-    await expect(card.querySelector('[data-next-drift-level]')).toHaveTextContent('Live estimate');
+    await waitFor(() => expect(pill(card)).toBe('Slightly off course'));
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(await evidence.findByText(/^Live estimate · /)).toBeVisible();
   },
 };
 
@@ -338,10 +336,9 @@ export const AnalyzeOutranksTheMonitor: Story = {
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
     await turnOn();
-    await waitFor(() => expect(pill(card)).toBe('Medium'));
-    await expect(card.ownerDocument.querySelector('[data-next-drift-pill]')).not.toHaveTextContent(
-      'Live monitor',
-    );
+    await waitFor(() => expect(pill(card)).toBe('Slightly off course'));
+    await expect(card).toHaveTextContent('Checked');
+    await expect(card).not.toHaveTextContent('From the Live monitor’s latest progress check.');
     await expect(card).not.toHaveTextContent('Live monitor · Haiku');
   },
 };

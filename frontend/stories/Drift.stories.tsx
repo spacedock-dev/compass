@@ -61,7 +61,7 @@ const findButton = (root: HTMLElement, name: string | RegExp) =>
   within(root).findByRole('button', { name });
 
 async function drawn(canvasElement: HTMLElement): Promise<HTMLElement> {
-  return within(canvasElement).findByRole('region', { name: 'Drift' });
+  return within(canvasElement).findByRole('region', { name: 'Is it on track?' });
 }
 
 /* The controls load with the facts, after the card itself: a story waits for the one it asserts. */
@@ -69,7 +69,10 @@ const analyzeButton = (card: HTMLElement) => findButton(card, /^Check progress$/
 const steerBack = (card: HTMLElement) => findButton(card, 'Steer back');
 
 export const SentAndSettingsStayInFlow: Story = {
-  ...scenario({ unsaved: true }),
+  ...scenario({
+    unsaved: true,
+    session: { annotation_goal_why: 'No goal typed for this session.' },
+  }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
     const inCard = within(card);
@@ -77,16 +80,16 @@ export const SentAndSettingsStayInFlow: Story = {
       name: 'Show technical details',
     });
     await analyzeButton(card);
-    const title = inCard.getByRole('heading', { name: 'Drift' });
-    const subtitle = card.querySelector('.next-session-drift-sub') as HTMLElement;
-    const subtitleOffset = () =>
-      subtitle.getBoundingClientRect().top - title.getBoundingClientRect().top;
-    const before = subtitleOffset();
+    const title = inCard.getByRole('heading', { name: 'Is it on track?' });
+    const answer = await inCard.findByText('No goal yet');
+    const answerOffset = () =>
+      answer.getBoundingClientRect().top - title.getBoundingClientRect().top;
+    const before = answerOffset();
     await userEvent.click(settings);
     await waitFor(() =>
       expect(within(canvasElement).getByRole('tabpanel', { name: 'Activity log' })).toBeVisible(),
     );
-    await expect(Math.abs(subtitleOffset() - before)).toBeLessThan(2);
+    await expect(Math.abs(answerOffset() - before)).toBeLessThan(2);
     await userEvent.click(settings);
     const sent = await inCard.findByRole('button', { name: /^What is sent/ });
     await openInFlow(sent, settings);
@@ -179,21 +182,27 @@ export const LiveMonitorAtHigh: Story = {
     await expect(monitor).toHaveAttribute('aria-checked', 'false');
     await expect(card.querySelector('[data-next-drift-level]')).toBeNull();
     await userEvent.click(monitor);
-    const level = await waitFor(() => {
+    const progressLevel = await waitFor(() => {
       const node = card.querySelector('[data-next-drift-level]');
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
+    await expect(progressLevel.querySelector('[data-next-drift-pill]')).toHaveTextContent(
+      'Off course',
+    );
+    await expect(within(card).queryByRole('heading', { name: 'Recorded signals' })).toBeNull();
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    const signals = await evidence.findByRole('heading', { name: 'Recorded signals' });
+    const level = signals.closest('[data-next-drift-level]') as HTMLElement;
     await expect(level).toHaveTextContent(
       new RegExp(`^${LIVE_LEVEL_NAMES['high']}Live estimate · \\d\\d:\\d\\d`),
     );
     await expect(level).toHaveTextContent(
       'Live estimate: reads test and build results and file paths, not what your goal says.',
     );
-    await within(level).findByRole('heading', { name: 'Recorded signals' });
     await expect(level).toHaveTextContent(/pytest -q failed .* ago at #\d+/);
     await expect(level).toHaveTextContent('Result time not recorded.');
-    await expect(within(card).getByText(NUDGE)).toBeVisible();
+    await expect(evidence.getByText(NUDGE)).toBeVisible();
     await expect(within(card).queryByText(HARNESS_LIMIT)).toBeNull();
     const analyze = await analyzeButton(card);
     // A failed check with no departure from the intent offers no Steer back.
@@ -247,19 +256,29 @@ export const ResultUnderADeparture: Story = {
   }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
+    await expect(
+      await within(card).findByRole('heading', { name: 'Where it went off course' }),
+    ).toBeVisible();
+    await expect(card.querySelector('[data-next-drift-pill]')).toHaveTextContent('Off course');
+    await expect(
+      within(card).getByRole('button', { name: 'See the quote behind this' }),
+    ).toBeVisible();
+    await expect(within(card).queryByText(DEPARTURE_READING.criteria.goal.detail)).toBeNull();
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    const evidence = canvasElement.querySelector('[data-next-technical-evidence]') as HTMLElement;
     const result = await waitFor(() => {
-      const node = card.querySelector<HTMLElement>('[data-next-result]');
+      const node = evidence.querySelector<HTMLElement>('[data-next-result]');
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
     const level = await waitFor(() => {
-      const node = card.querySelector('[data-next-drift-level]');
+      const node = evidence.querySelector('[data-next-drift-level]');
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
     // The level word is the verdict sentence's, said once; the head keeps the source, and the read time is the
     // card header's.
-    await expect(card.querySelector('[data-next-drift-verdict]')).toHaveTextContent(
+    await expect(result.querySelector('[data-next-drift-verdict]')).toHaveTextContent(
       new RegExp(`^${LIVE_LEVEL_NAMES['high']}: `),
     );
     await expect(level).toHaveTextContent(/^Analysis/);
@@ -267,16 +286,18 @@ export const ResultUnderADeparture: Story = {
       /From the progress check at .* each line of your goal against the tests, builds and messages it cited\./,
     );
     await expect(level).not.toHaveTextContent(/last run/);
-    /* The level's reason is said under What the analysis read, with the rest of what it read, not between
+    /* The level's reason is said under What the check read, with the rest of what it read, not between
        the meter and the answer (usability review, 2026-10-20). */
     await expect(level).not.toHaveTextContent(/pytest -q failed .* at #\d+/);
     await expect(
-      card.querySelector('[data-next-read-section="session"]')?.textContent ?? '',
+      result.querySelector('[data-next-read-section="session"]')?.textContent ?? '',
     ).toMatch(/pytest -q failed .* at #\d+/);
     await expect(level).not.toHaveTextContent('Live estimate');
     // The answer is said once, in the verdict sentence under the heading, and not again as a result heading.
-    await expect(card.querySelector('[data-next-drift-verdict]')).toHaveTextContent(/1 departure/);
-    await expect(card.querySelector('[data-next-result-heading]')).toBeNull();
+    await expect(result.querySelector('[data-next-drift-verdict]')).toHaveTextContent(
+      /1 departure/,
+    );
+    await expect(result.querySelector('[data-next-result-heading]')).toBeNull();
     await expect(within(result).getByText(DEPARTURE_READING.criteria.goal.detail)).toBeVisible();
     const goal = result.querySelector('[data-next-result-goal]') as HTMLElement;
     await expect(goal).toHaveAttribute('data-next-result-state', 'departs');
@@ -286,13 +307,12 @@ export const ResultUnderADeparture: Story = {
     await expect(line).toHaveAttribute('data-next-result-state', 'consistent');
     await expect(line).toHaveTextContent(/Consistent with #\d+/);
     // Where the work went is one of the things the analysis read, under its footer disclosure.
-    await userEvent.click(within(card).getByRole('button', { name: 'What the analysis read' }));
-    await waitFor(() => expect(within(card).getByText('Where the work went')).toBeVisible());
-    await expect(within(card).getByText(/src\/queue/)).toBeVisible();
+    await userEvent.click(within(result).getByRole('button', { name: 'What the check read' }));
+    await waitFor(() => expect(within(result).getByText('Where the work went')).toBeVisible());
+    await expect(within(result).getByText(/src\/queue/)).toBeVisible();
     const steer = await steerBack(card);
-    await expect(button(card, 'Update intent instead')).toBeVisible();
+    await expect(button(card, 'Update my goal instead')).toBeVisible();
     await expect(primaries(canvasElement)).toEqual([steer]);
-    // One run control, in the head, from the first reading on.
     await expect(within(card).getAllByRole('button', { name: /^Check progress/ })).toHaveLength(1);
     await expect(
       button(card.querySelector('header') as HTMLElement, 'Check progress again'),
@@ -302,9 +322,8 @@ export const ResultUnderADeparture: Story = {
   },
 };
 
-/* Stage 5: work that arrived after the reading says so in the card's header, beside the read time, and the
-   one press that reads it again stands there too, with nowhere else on the card to start another. The marker
-   has no role, so it is read by its `data-next-result-stale` hook. */
+/* Stage 5: the card says the check is out of date and offers one control to run it again. Evidence keeps the
+   specific record of what changed. */
 export const StaleResult: Story = {
   ...scenario({
     session: STORED_READING,
@@ -318,24 +337,19 @@ export const StaleResult: Story = {
   }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
-    const stale = await waitFor(() => {
-      const node = card.querySelector<HTMLElement>('[data-next-result-stale="work"]');
-      expect(node).not.toBeNull();
-      return node as HTMLElement;
-    });
-    await expect(stale).toHaveTextContent('New work since this analysis.');
-    await expect(stale).toBeVisible();
-    const head = card.querySelector('header') as HTMLElement;
-    await expect(head.contains(stale)).toBe(true);
-    const again = within(head).getByRole('button', { name: 'Check progress again' });
+    await expect(await within(card).findByText('Out of date')).toBeVisible();
+    await expect(card.querySelector('[data-next-drift-pill]')).toBeNull();
+    const again = await findButton(card, 'Check progress again');
     await expect(within(card).getAllByRole('button', { name: /^Check progress/ })).toEqual([again]);
-    // Said inside the reading's folded account, so it is in the page and not in view.
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(await evidence.findByText('New work since this analysis.')).toBeVisible();
+    await userEvent.click(evidence.getByRole('button', { name: 'What the check read' }));
+    const arrived = await evidence.findByText('1 check, 1 message arrived since this analysis.');
+    await waitFor(() => expect(arrived).toBeVisible());
     await expect(
-      within(card).getByText('1 check, 1 message arrived since this analysis.'),
-    ).toBeInTheDocument();
-    // The departure still stands, so Steer back stays the one primary and Check progress again is the quiet way to
-    // read the new work.
-    await expect(primaries(canvasElement)).toEqual([await steerBack(card)]);
+      within(card).getByRole('heading', { name: 'What the earlier check found' }),
+    ).toBeVisible();
+    await expect(await steerBack(card)).toHaveAttribute('data-variant', 'default');
     await neverDone(card);
     await neverRetired(canvasElement);
   },
@@ -413,18 +427,15 @@ export const PiShowsAnalysisLevelWithNoSwitchAndNoSteerBack: Story = {
   }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
-    const level = await waitFor(() => {
-      const node = card.querySelector('[data-next-drift-level]');
-      expect(node).not.toBeNull();
-      return node as HTMLElement;
-    });
-    await expect(card.querySelector('[data-next-drift-verdict]')).toHaveTextContent(
-      new RegExp(`^${LIVE_LEVEL_NAMES['high']}: `),
+    await waitFor(() =>
+      expect(card.querySelector('[data-next-drift-pill]')).toHaveTextContent('Off course'),
     );
-    await expect(level).toHaveTextContent(/^Analysis/);
-    await expect(within(canvasElement).queryByRole('switch')).toBeNull();
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(await evidence.findByText(/^High: 1 departure/)).toBeVisible();
+    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+    await expect(privacy.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
     await expect(within(card).queryByRole('button', { name: 'Steer back' })).toBeNull();
-    await expect(within(card).queryByText(HARNESS_LIMIT)).toBeNull();
+    await expect(evidence.queryByText(HARNESS_LIMIT)).toBeNull();
     await expect(card).not.toHaveTextContent('Live estimate');
     // A current result draws no run control and Pi has nothing to steer with, so no control is primary.
     await expect(primaries(canvasElement)).toHaveLength(0);
@@ -583,12 +594,15 @@ const limited = (harness: 'antigravity'): Story => ({
   ...scenario({ harness, facts: [personSaid(harness), failedCheck('c1', 500, harness)] }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
-    await expect(await within(card).findByText(HARNESS_LIMIT)).toBeVisible();
+    await expect(await within(card).findByText(UNCHECKED)).toBeVisible();
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(await evidence.findByText(HARNESS_LIMIT)).toBeVisible();
     await expect(card.querySelector('[data-next-drift-level]')).toBeNull();
-    for (const word of [...Object.values(LIVE_LEVEL_NAMES), UNCHECKED]) {
+    for (const word of Object.values(LIVE_LEVEL_NAMES)) {
       await expect(within(card).queryByText(word)).toBeNull();
     }
-    await expect(within(canvasElement).queryByRole('switch')).toBeNull();
+    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+    await expect(privacy.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
     await expect(within(card).queryByRole('button', { name: 'Steer back' })).toBeNull();
     const analyze = await analyzeButton(card);
     await expect(primaries(canvasElement)).toEqual([analyze]);
@@ -696,7 +710,7 @@ export const ReadingsOffWithARunningJobAndAnOpenDirection: Story = {
     const card = await drawn(canvasElement);
     await within(card).findByText(JOB_TITLE);
     await expect(
-      await within(card).findByText(/message adds:|messages after your goal/),
+      await within(card).findByText(/sent this message later|messages after your goal/),
     ).toBeVisible();
     // One box and one Cancel: the off state does not draw a second job box beside the question.
     await expect(within(card).getAllByText(JOB_TITLE)).toHaveLength(1);

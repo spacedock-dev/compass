@@ -2,7 +2,6 @@
  "board": {
   "annotate": true,
   "annotate_cap": 240,
-  "annotate_goal_cap": 1000,
   "annotate_discard": {
    "already": "Already discarded. What you asked of this session was discarded earlier, so this press deleted nothing and the earlier record stands.",
    "armed": "Press it again to discard. Everything you asked of this session will go, along with any reading of it and this session's summary, including one being written, and nothing raised against those words will quote them any more; the record that a check ran stays. Nothing has been deleted yet, and this offer lapses in 30 seconds.",
@@ -29,6 +28,7 @@
    "unwritable": "Not discarded. The store could not be written, so the next collection reads what you asked of this session back and nothing raised against it was withdrawn.",
    "why": "Discarding everything deletes all you asked of this session, any reading of it, and this session's summary, and nothing raised against those words quotes them any more. It keeps the record that a check ran, which bounds how often one may run. Session history, where it is recording, keeps its own fourteen-day copy, and --forget deletes that store. The clear beside the goal is the weaker act: the save after it keeps your earlier saves."
   },
+  "annotate_goal_cap": 1000,
   "annotate_unreadable": "",
   "ask": true,
   "asks": [],
@@ -2296,7 +2296,8 @@
     "entry": "fact:f68e1f8422d88a04"
    },
    ".\n  Why Compass reads this as drift: The agent said the milestone's build work was done and merged, but it later reported a real blocker, the user confirmed DASH-3801 is not done, and PR #9325 was still behind main.\nPlease continue from here."
-  ]
+  ],
+  "starter": "Back to my goal: Every issue in the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone is closed. Please address the work that went off course and continue toward that goal."
  },
  "older": {
   "older-1": {

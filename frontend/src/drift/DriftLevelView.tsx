@@ -2,20 +2,26 @@ import { CitedText } from './CitedText';
 import { Alert } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import { Fragment } from 'react';
+import { GLOSSARY, PROGRESS_LEVEL_WORDS } from '../language/glossary';
+import { formatDurationWords, formatTimestamp } from '../shell/format';
+import { useFocusKey } from '../controls';
+import { annotationLines, storeUnreadable } from '../intent/annotation';
 import { intentUnsaved } from '../intent/derive';
 import { useDrift } from './context';
-import { meterSegments, readingStored, type Signals } from './level';
-import { driftAnswer, verdictNamesLevel, verdictShape } from './result';
+import { analysisRow, meterSegments, readingStored, type Signals } from './level';
+import { driftAnswer, earlyReadingSeconds, verdictNamesLevel, verdictShape } from './result';
 import { routeRefusal } from './route';
 import {
   HARNESS_LIMIT,
   WORK_HARNESSES,
   LEVEL_SCALE,
   LIVE_LEVEL_NAMES,
+  LIVE_SOURCE_LINE,
   LIVE_LINE,
   LIVE_MONITOR_LINE,
   LIVE_SAVE,
   NUDGE,
+  UNKNOWN_KEY,
 } from './sentences';
 import { EvidenceList } from './Evidence';
 import { MarkedNotice } from './MarkedNotice';
@@ -44,12 +50,18 @@ export function Meter({ level, dim = false }: { readonly level: string; readonly
 
 /* The four labels under the meter's segments, the current one marked. Hidden from a screen reader, which has
    the level word already and would otherwise hear all four after it. */
-export function Scale({ level }: { readonly level: string }) {
+export function Scale({
+  level,
+  plain = false,
+}: {
+  readonly level: string;
+  readonly plain?: boolean;
+}) {
   return (
-    <p className="next-session-drift-scale" aria-hidden="true">
+    <p className="next-session-drift-scale wrap-anywhere" aria-hidden="true">
       {LEVEL_SCALE.map((name) => (
         <span key={name} {...(name === level ? { 'data-current': '' } : {})}>
-          {LIVE_LEVEL_NAMES[name]}
+          {plain ? PROGRESS_LEVEL_WORDS.get(name) : LIVE_LEVEL_NAMES[name]}
         </span>
       ))}
     </p>
@@ -68,23 +80,6 @@ export function PillMeter({ level }: { readonly level: string }) {
         />
       ))}
     </span>
-  );
-}
-
-/* The header pill: a level on the scale only, never "Not enough recorded yet", and never on a Sessions row. Not
-   a link: the page routes on its fragment, and the Drift section leads the column at narrow widths. */
-export function DriftPill() {
-  const { model } = useDrift();
-  const level = model.pill;
-  if (!level) return null;
-  return (
-    <Badge variant="drift-pill" className="next-session-drift-pill" data-next-drift-pill>
-      <PillMeter level={level.level} />
-      <span>
-        Drift: <strong>{level.label}</strong>
-        {model.pillSoFar ? ' so far' : ''}
-      </span>
-    </Badge>
   );
 }
 
@@ -137,7 +132,7 @@ export function DriftLevelView() {
   /* A marked analysis contributes no level, and its message carries the Undo, so it comes before every branch
      below: the live estimate, switched on, must not take the slot and leave the mark with no way back. */
   if (!model.drafted && annotation?.['not_accurate'] === true && readingStored(annotation)) {
-    return <MarkedNotice />;
+    return null;
   }
   const save = found && 'save' in found;
   if (livePending && (model.drafted || save)) {
@@ -246,5 +241,163 @@ export function DriftLevelView() {
         </Alert>
       ) : null}
     </>
+  );
+}
+
+function absence(model: ReturnType<typeof useDrift>['model']) {
+  const { annotation, raw, shape, entries, source, analysis, estimate, stale } = model;
+  if (stale) {
+    return [
+      GLOSSARY.outOfDate.plain,
+      stale.kind === 'withdrawn'
+        ? stale.head
+        : 'This check describes earlier work or an earlier goal.',
+    ];
+  }
+  if (model.latestCheckWithheld)
+    return [GLOSSARY.cantTell.plain, 'The latest progress check did not produce a reading.'];
+  if (raw && shape) {
+    if (shape.malformed) return [GLOSSARY.cantTell.plain, UNKNOWN_KEY];
+    const answer = driftAnswer(shape, entries, source.scan);
+    // The cited finding itself is the answer when a supported level is unavailable.
+    if (answer.kind === 'departs') return null;
+    if (answer.kind === 'goal-unclear')
+      return [GLOSSARY.goalTooVague.plain, 'Give the goal a specific outcome Compass can check.'];
+    const early = earlyReadingSeconds(answer, shape, raw, entries);
+    const published = analysisRow(model.input.contexts, model.projectKey, model.session);
+    const shortRecord =
+      shape.scope !== 'final' &&
+      analysis?.level === 'not_enough' &&
+      published?.['level'] === 'not_enough' &&
+      Array.isArray(published['reasons']) &&
+      published['reasons'].includes('outcome-not-reached');
+    if (early !== null || shortRecord)
+      return [
+        GLOSSARY.tooEarlyToTell.plain,
+        early === null
+          ? 'The record has too little work to check progress yet.'
+          : `The check covered only the first ${formatDurationWords(early)} of the session.`,
+      ];
+    return [
+      GLOSSARY.cantTell.plain,
+      'The record did not give Compass enough evidence to place the work on the scale.',
+    ];
+  }
+  if (!annotation)
+    return [
+      GLOSSARY.cantTell.plain,
+      'Compass could not tell whether this session has a saved goal.',
+    ];
+  if (annotation['reading_refused'] === true)
+    return [GLOSSARY.cantTell.plain, 'Compass could not read the saved check.'];
+  if (!String(annotation['goal'] ?? '').trim() && !annotationLines(annotation).length)
+    return [GLOSSARY.noGoalYet.plain, 'Give Compass a goal to check progress against.'];
+  if (estimate && 'level' in estimate && estimate.level === 'not_enough')
+    return [
+      GLOSSARY.tooEarlyToTell.plain,
+      estimate.monitor
+        ? 'The Live monitor had too little recorded work to check progress.'
+        : 'The record has too little work to estimate progress yet.',
+    ];
+  return [
+    GLOSSARY.notCheckedYet.plain,
+    model.liveOn
+      ? 'The Live monitor has not completed a check yet.'
+      : 'Compass has no saved progress check for this goal.',
+  ];
+}
+
+export function SessionProgressLevel() {
+  const { model } = useDrift();
+  const word = PROGRESS_LEVEL_WORDS.get(model.pill?.level ?? '');
+  if (!word) return null;
+  return (
+    <span className="text-label font-semibold" data-next-session-progress>
+      {word}
+      {model.pillSoFar ? ' so far' : ''}
+    </span>
+  );
+}
+
+export function ProgressAnswer({ focus }: { readonly focus: boolean }) {
+  const { ctx, model } = useDrift();
+  const { annotation, raw, stale, pill: level } = model;
+  const ref = useFocusKey<HTMLDivElement>(
+    ctx.shell.controls.focusLane,
+    focus ? `reading:${model.key}` : null,
+  );
+  const marked = annotation?.['not_accurate'] === true && readingStored(annotation);
+  const word = PROGRESS_LEVEL_WORDS.get(level?.level ?? '');
+  const readAt = raw?.['read_at'];
+  const time =
+    readAt === model.generated && model.generated > 0
+      ? 'just now'
+      : formatTimestamp(readAt, model.generated);
+  const unreadable = storeUnreadable(model.payload);
+  if (model.job && !raw && !unreadable) return null;
+  const missing = !level ? absence(model) : null;
+  const detail = level?.analysis
+    ? level.line
+    : level?.monitor
+      ? 'From the Live monitor’s latest progress check.'
+      : LIVE_SOURCE_LINE;
+  return (
+    <div
+      ref={ref}
+      tabIndex={-1}
+      className="grid gap-2 px-4"
+      data-next-progress-answer
+      {...(focus ? { 'data-next-focus': `reading:${model.key}` } : {})}
+    >
+      {unreadable ? (
+        <p className="text-body text-muted-foreground">{unreadable}</p>
+      ) : !model.annotate ? null : marked ? (
+        <MarkedNotice />
+      ) : word && level ? (
+        <div className="grid gap-1" data-next-drift-level>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            {time && level.analysis ? (
+              <p
+                className="m-0 text-label text-muted-foreground"
+                data-next-drift-stamp
+              >{`Checked ${time} against your goal`}</p>
+            ) : null}
+            <Badge
+              variant="drift-pill"
+              className="ms-auto"
+              data-next-drift-pill
+              data-level={level.level}
+              tone={
+                level.level === 'medium' || level.level === 'high' || level.level === 'extreme'
+                  ? level.level
+                  : undefined
+              }
+            >
+              <strong>{word}</strong>
+            </Badge>
+          </div>
+          <Meter level={level.level} />
+          <Scale level={level.level} plain />
+          {level.level === 'none_or_low' ? (
+            <p className="text-body">No departure found in what Compass read</p>
+          ) : null}
+          <p className="m-0 text-label text-muted-foreground" data-next-drift-source>
+            {detail}
+          </p>
+        </div>
+      ) : missing ? (
+        <div className="grid gap-0.5 text-muted-foreground" data-next-progress-absence>
+          <p
+            className="m-0 text-value font-semibold"
+            {...(stale ? { 'data-next-result-stale': stale.kind } : {})}
+          >
+            {missing[0]}
+          </p>
+          <p className="m-0 text-label">
+            <span className="font-semibold">How this works</span> · {missing[1]}
+          </p>
+        </div>
+      ) : null}
+    </div>
   );
 }

@@ -1,3 +1,4 @@
+import { analysisRow, DEPARTURE_READING, DriftScenario, fact } from './drift.scenario';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { useEffect, useState } from 'react';
@@ -128,5 +129,47 @@ export const OpenQuestionSuppressesFinishedMetadata: Story = {
     await expect(activity).toHaveTextContent('Review the run?');
     const metadata = canvasElement.querySelector('.next-session-detail-meta') as HTMLElement;
     await expect(metadata).not.toHaveTextContent(/turn ended|run finished/i);
+  },
+};
+
+export const StoredProgressWithoutALevel: Story = {
+  render: () => (
+    <DriftScenario
+      scenario={{
+        harness: 'codex',
+        session: {
+          turn_end_at: 990,
+          annotation_reading_count: 1,
+          annotation_assessment: {
+            ...DEPARTURE_READING,
+            criteria: {
+              goal: {
+                result: 'departure',
+                cites: ['codex-message'],
+                detail: 'The recorded work departed.',
+                clause: 'Ship the queue',
+              },
+            },
+          },
+        },
+        work: { analysis_levels: [analysisRow('codex', 'medium')] },
+        facts: [fact('codex-message', 500, { type: 'agent_message', by: 'agent' }, 'codex')],
+      }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const progress = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
+    await expect(
+      await within(progress).findByRole('button', { name: 'Check progress again' }),
+    ).toBeVisible();
+    await expect(
+      progress.querySelector(
+        '[data-next-drift-pill], [data-next-drift-level], [data-next-drift-source]',
+      ),
+    ).toBeNull();
+    await expect(within(progress).getByText(/^Compass found 1 departure/)).toBeVisible();
+    await expect(progress.querySelector('[data-next-progress-absence]')).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-session-progress]')).toBeNull();
+    await expect(within(progress).queryByRole('button', { name: 'Steer back' })).toBeNull();
   },
 };

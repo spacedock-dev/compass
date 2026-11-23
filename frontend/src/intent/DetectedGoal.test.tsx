@@ -129,7 +129,7 @@ describe('a /goal over a session with no saved goal', () => {
     await settle(page);
     expect(goalBox().value).toBe(excerpt);
     expect(source()).toMatch(
-      / · Shortened to fit 1,000 characters; Analyze reads this shortened goal$/,
+      / · Shortened to fit 1,000 characters\. A progress check reads this shortened goal$/,
     );
   });
 
@@ -142,7 +142,7 @@ describe('a /goal over a session with no saved goal', () => {
     });
     await settle(page);
     expect(source()).toMatch(
-      / · saved · Shortened to fit 1,000 characters; Analyze reads this shortened goal$/,
+      / · saved(?: at .*?)? · Shortened to fit 1,000 characters\. A progress check reads this shortened goal$/,
     );
   });
 
@@ -152,7 +152,7 @@ describe('a /goal over a session with no saved goal', () => {
       session: { session_goal: DETECTED },
     });
     await settle(page);
-    expect(source()).toMatch(/· saved$/);
+    expect(source()).toMatch(/· saved(?: at .*?)?$/);
   });
 
   it('reads a Codex /goal the same way', async () => {
@@ -190,7 +190,7 @@ describe('a /goal after the reader saved their own', () => {
       session: { ...savedOwn.session, session_goal: { text: LATER, at: 600 } },
     });
     await settle(page);
-    expect(goalBox().value).toBe('My own goal');
+    expect(screen.getByText('My own goal')).toBeVisible();
     expect(mark()).toBeNull();
     expect(offer()?.textContent).toMatch(/^Your \/goal changed at \d\d:\d\d: /);
     expect(offer()?.textContent).toContain(LATER);
@@ -252,7 +252,7 @@ describe('a /goal after the reader saved their own', () => {
     await settle(page);
     await press(control('goal-update-keep'));
     expect(offer()).toBeNull();
-    expect(goalBox().value).toBe('My own goal');
+    expect(screen.getByText('My own goal')).toBeVisible();
     await page.poll(withGoal({ text: LATER, at: 600 }));
     expect(offer()).toBeNull();
     await page.poll(withGoal({ text: 'A third goal', at: 700 }));

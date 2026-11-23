@@ -1010,6 +1010,17 @@
       "disposition": "store-held"
     },
     {
+      "name": "The Goal editor",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/src/intent/IntentEditor.test.tsx",
+        "frontend/stories/IntentCard.stories.tsx",
+        "frontend/stories/SessionLayout.stories.tsx"
+      ],
+      "contract": "Hold explicit edit mode by harness and session for the life of the tab. Preserve the editor and drafts during refresh. Return to read mode when Done editing is pressed with no pending edit or adoption.",
+      "disposition": "store-held"
+    },
+    {
       "name": "An unsaved goal or expected outcome checklist in the session page's drift block",
       "owner": "DRC-4825",
       "oracles": [
@@ -1472,7 +1483,7 @@
         "frontend/src/intent/IntentDiscard.test.tsx",
         "frontend/stories/IntentCard.stories.tsx"
       ],
-      "contract": "Focus moves to the More trigger only while the reader is still on the page body or the vanished Confirm control and the session page is mounted; a reader who moved on keeps focus, and a page that was left is asked for nothing.",
+      "contract": "Return focus to Discard everything when the page is mounted and focus is still on the page body or the Confirm discard control. Keep focus where the reader moved it.",
       "disposition": "store-held"
     },
     {

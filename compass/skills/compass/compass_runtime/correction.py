@@ -724,10 +724,10 @@ def _label(text: str) -> str:
 
 def _body(
     lines: list[tuple[int, str]], rows: _Rows | None, at: Callable[[Mapping[str, Any]], str]
-) -> list[tuple[str, list[Part], str]]:
-    """One bullet per saved line, with its state, the placeholder its time rests on and, for a
-    departure, its stored explanation."""
+) -> tuple[list[tuple[str, list[Part], str]], str | None]:
+    """The structured rows and the first departing saved line for the board starter."""
     body: list[tuple[str, list[Part], str]] = []
+    first_departure = None
     for k, saved in lines:
         text = _label(saved)
         name = reading.outcome_line(k)
@@ -735,6 +735,8 @@ def _body(
             name = reading.CONSTRAINT_OUTPUT
         state, cited = rows.state(name) if rows is not None else (_NOT_SHOWN, None)
         if state == _DEPARTED and cited is not None and rows is not None:
+            if first_departure is None:
+                first_departure = text
             departed: list[Part] = [
                 f"- {text}: departed at {at(cited)}",
                 _placeholder(cited),
@@ -756,7 +758,7 @@ def _body(
             )
         else:
             body.append((_NOT_SHOWN, [f"- {text}: can you show evidence for this?"], ""))
-    return body
+    return body, first_departure
 
 
 def _explained(line: list[Part], why: str, *, explained: bool) -> list[Part]:
@@ -819,6 +821,21 @@ def _tail(
     return tail
 
 
+def _starter(goal_opening: str, first_departure: str | None) -> str:
+    if goal_opening:
+        stop = "" if goal_opening.endswith((".", "!", "?", "…")) else "."
+        return (
+            f"{goal_opening}{stop} "
+            "Please address the work that went off course and continue toward that goal."
+        )
+    if first_departure is not None:
+        return (
+            f'"{first_departure}" is the outcome I asked for. '
+            "Please address what went off course and work toward that outcome."
+        )
+    return ""
+
+
 def compose(
     row: Mapping[str, Any],
     facts: Iterable[Any],
@@ -873,7 +890,7 @@ def compose(
     def at(fact: Mapping[str, Any]) -> str:
         return clock(reading.valid_prompt_time(fact.get("at")) or 0.0)
 
-    body = _body(lines, rows, at)
+    body, first_departure = _body(lines, rows, at)
     claim = rows.claim() if rows is not None else None
     departed = any(state == _DEPARTED for state, _, _ in body) or (
         rows is not None and rows.state(reading.CONSTRAINT_GOAL)[0] == _DEPARTED
@@ -952,4 +969,9 @@ def compose(
         if not consistent:
             return {"ok": False, "reason": REASON_TOO_LONG, "why": TOO_LONG}
         del body[consistent[-1]]
-    return {"ok": True, "parts": assemble(explained=True)}
+    parts = assemble(explained=True)
+    answer: dict[str, Any] = {"ok": True, "parts": parts}
+    starter = _starter(str(head[0][0]) if head else "", first_departure)
+    if starter:
+        answer["starter"] = starter
+    return answer

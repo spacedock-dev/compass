@@ -1,4 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fact, mountDrift, POLICY } from '../drift/testing';
+import { editGoal, goalBox, type } from '../intent/panel.testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   NOTICE,
@@ -30,6 +32,29 @@ const popoverPause = async (): Promise<HTMLElement> =>
     (button) => !button.matches('[data-next-focus^="reading-off-head:"]'),
   ) as HTMLElement;
 
+it('links paused progress and the unsaved direction choice to their own reasons', async () => {
+  const page = mountDrift({
+    facts: [fact('later', 1005)],
+    payload: { reading: { ...POLICY, off: true } },
+  });
+  await page.settle();
+  editGoal();
+  type(goalBox(), 'New unsaved words.');
+  await page.settle();
+
+  const reasonFor = (label: string) => {
+    const control = screen.getByRole('button', { name: label });
+    const id = control.getAttribute('aria-describedby') ?? '';
+    expect(id).not.toBe('');
+    expect(document.querySelectorAll(`[id="${id}"]`)).toHaveLength(1);
+    return document.getElementById(id)?.textContent;
+  };
+  expect(reasonFor('Check progress')).toBe(
+    'Model calls are paused. Nothing is sent until you resume.',
+  );
+  expect(reasonFor('Leave it')).toBe('Save your goal or undo your edit to check progress.');
+});
+
 describe('the summaries switch is nested under Pause model calls', () => {
   it.each([true, false])('keeps the summaries answer %s through pause and resume', async (off) => {
     render(
@@ -38,7 +63,7 @@ describe('the summaries switch is nested under Pause model calls', () => {
         grant={grant({ off, consent: !off, reason: off ? 'summaries-off' : '' })}
       />,
     );
-    const drift = await screen.findByRole('region', { name: 'Drift' });
+    const drift = await screen.findByRole('region', { name: 'Is it on track?' });
     await act(async () => {
       fireEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
     });
@@ -86,7 +111,7 @@ describe('the summaries switch is nested under Pause model calls', () => {
 
   it('disables the summary switch when a running summary stops for the master pause', async () => {
     render(<SummaryPage summary={storedSummary({ job: job({ part: 1 }) })} />);
-    const drift = await screen.findByRole('region', { name: 'Drift' });
+    const drift = await screen.findByRole('region', { name: 'Is it on track?' });
     await act(async () => {
       fireEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
     });
@@ -146,7 +171,7 @@ describe('the summaries switch is nested under Pause model calls', () => {
        region beside the drift card's. */
     expect(region.querySelector('[data-next-summary-notice-folded]')).not.toBeNull();
     expect(within(region).queryByRole('region', { name: /request notice/ })).toBeNull();
-    const drift = await screen.findByRole('region', { name: 'Drift' });
+    const drift = await screen.findByRole('region', { name: 'Is it on track?' });
     await act(async () => {
       fireEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
     });

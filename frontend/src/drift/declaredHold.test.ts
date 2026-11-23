@@ -8,7 +8,7 @@ import {
   nativeData,
   nativeParent,
 } from '../../test/declaredHold';
-import { pageView } from './terminalParity.view.test.helper';
+import { boardProgressFromRecordedView, pageView } from './terminalParity.view.test.helper';
 import { buildRegistry, readSemantic } from '../timeline/semantic';
 import { readHint, observe, observeSession, nativeSession, type Row } from '../observed';
 import { sessionFooter, turnEndedSentence } from '../sessions/detail';
@@ -24,7 +24,7 @@ import { buildProjectModel } from '../project/model';
 import { slotContext } from '../project/slots';
 import type { PayloadData } from '../api/types';
 
-it('a serialized display hold preserves the completed reading and Python pill', () => {
+it('a serialized display hold preserves the terminal reading with the board’s current-level eligibility', () => {
   const view = (session: Record<string, unknown>) =>
     pageView({
       name: 'declared-hold',
@@ -33,7 +33,7 @@ it('a serialized display hold preserves the completed reading and Python pill', 
       payload: heldData,
       context: heldContext,
     });
-  expect(view(nativeParent)).toMatchObject({ pill: { so_far: false } });
+  expect(view(nativeParent)).toMatchObject({ reading: true, stale: { kind: 'work' }, pill: null });
   expect(view(heldParent)).toEqual(view(nativeParent));
   expect(
     pageView({
@@ -48,7 +48,9 @@ it('a serialized display hold preserves the completed reading and Python pill', 
     string,
     unknown
   >;
-  expect(work['drift_views']).toEqual([view(heldParent)]);
+  const [recorded] = work['drift_views'] as unknown[];
+  expect(recorded).toMatchObject({ pill: { so_far: false } });
+  expect(boardProgressFromRecordedView(recorded)).toEqual(view(heldParent));
 });
 
 it('a serialized display hold retains the server context final result', () => {

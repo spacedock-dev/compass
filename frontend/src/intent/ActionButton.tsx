@@ -36,6 +36,7 @@ export interface ActionButtonProps {
   readonly title?: string;
   /** A glyph drawn in place of the label. The label is then the control's accessible name. */
   readonly icon?: IconName;
+  readonly leadingIcon?: IconName;
   readonly ariaPressed?: boolean;
   readonly onPress: (detail: number) => void;
 }
@@ -60,6 +61,7 @@ export function ActionButton({
   ariaLabel,
   title,
   icon,
+  leadingIcon,
   ariaPressed,
   onPress,
 }: ActionButtonProps) {
@@ -103,6 +105,7 @@ export function ActionButton({
         onPress(event.detail);
       }}
     >
+      {leadingIcon ? <Icon name={leadingIcon} /> : null}
       {icon ? <Icon name={icon} /> : label}
     </Button>
   );

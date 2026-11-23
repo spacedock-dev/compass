@@ -282,7 +282,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'The goal itself or proof of completion',
         'Technical fields retain their names',
       ],
-      'Expected outcome (optional)',
+      'What “done” looks like',
     ),
     intent: ruled(
       [
@@ -346,7 +346,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Editing the goal',
         'Undo is still offered',
       ],
-      'Mark as inaccurate',
+      'This reading looks wrong',
     ),
     updateGoalInstead: ruled(
       [
@@ -356,7 +356,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Marking the reading wrong',
         'Opens Goal in edit mode',
       ],
-      'Update intent instead',
+      'Update my goal instead',
     ),
     dismiss: ruled(
       [
@@ -508,7 +508,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         "Proof of completion or Can't tell",
         'Session card and header, with meter and Help explaining it',
       ],
-      'None or low',
+      'On track',
     ),
     slightlyOffCourse: ruled(
       [
@@ -518,7 +518,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Off course or a live estimate on a row',
         'Row pill requires a stored departure',
       ],
-      'Medium',
+      'Slightly off course',
     ),
     offCourse: ruled(
       [
@@ -528,7 +528,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'A generic risk signal',
         'Row pill requires a stored departure',
       ],
-      'High',
+      'Off course',
     ),
     wayOffCourse: ruled(
       [
@@ -538,7 +538,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'A dirty end',
         'Row pill requires a stored departure',
       ],
-      'Extreme',
+      'Way off course',
     ),
     noGoalYet: kept([
       SESSION_ROW_WORDS.noGoalYet,
@@ -778,7 +778,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Whether work is complete',
         'Session progress card',
       ],
-      'Drift',
+      'Is it on track?',
     ),
     rightNow: ruled(
       [
@@ -919,3 +919,10 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       null,
     ),
   }) as const)();
+
+export const PROGRESS_LEVEL_WORDS = new Map([
+  ['none_or_low', GLOSSARY.onTrack.plain],
+  ['medium', GLOSSARY.slightlyOffCourse.plain],
+  ['high', GLOSSARY.offCourse.plain],
+  ['extreme', GLOSSARY.wayOffCourse.plain],
+]);

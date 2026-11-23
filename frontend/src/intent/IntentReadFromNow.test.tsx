@@ -1,7 +1,17 @@
-import { act, fireEvent } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { clock } from '../observed';
-import { board, control, goalBox, inert, mountSession, stored, text, type } from './panel.testing';
+import {
+  editGoal,
+  board,
+  control,
+  goalBox,
+  inert,
+  mountSession,
+  stored,
+  text,
+  type,
+} from './panel.testing';
 
 /* The owner's ruling of 2026-10-21 (docs/design-reading-a-session.md, "Amended 2026-10-21 (owner): editing the
    goal keeps the reading's start"): Save intent keeps the reading's original start, and Read from my latest message is the
@@ -15,6 +25,7 @@ const footerCue = () => text('.next-cockpit-held-footer .next-cockpit-held-cue')
 const settle = async (page: { settle: () => Promise<void> }) => {
   await page.settle();
   await page.settle();
+  editGoal();
 };
 
 function saved(window: number) {
@@ -98,6 +109,7 @@ describe('Read from my latest message', () => {
     expect(footerCue()).toBe(said);
     // And once, in the polite region, after the paint that shows it.
     expect(text('#next-cockpit-cue-status')).toBe(said);
-    expect(text('.next-cockpit-held-stamp')).toContain(`reads from ${clock(MOVED)}`);
+    fireEvent.click(screen.getByRole('button', { name: 'How goals work' }));
+    expect(text('[data-next-goal-reading-start]')).toMatch(/^Reads from /);
   });
 });

@@ -8,6 +8,7 @@ import {
   readingScenario,
   routeOf,
 } from './drift.scenario';
+import { openSessionTechnicalTab } from './sessionTechnical';
 
 /* A later user message waits for an intent decision, so the Drift card draws the direction question in the
    Analyze control's place. The last stored Analyze outcome must stay an ordinary visible paragraph there, as it
@@ -82,14 +83,15 @@ export const AnUnsentRefusalStaysVisibleAndSpendsNothing: Story = {
     },
   },
   play: async ({ canvasElement, args }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await waitFor(() => expect(outcomes(card)).toHaveLength(1));
     await standsOnce(card, REFUSED_UNSENT);
     await expect(args.scenario.session?.['annotation_reading_count']).toBe(0);
     await expect(args.scenario.session?.['annotation_assessment']).toBeUndefined();
     await expect(card.querySelector('[data-next-result]')).toBeNull();
     // A refusal the attempt never spent must not read as a counted check.
-    await expect(card.querySelector('.next-cockpit-reading-count')).toBeNull();
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(evidence.queryByText(/drift checks? requested/)).toBeNull();
 
     if (!unsent.board.refresh) throw new Error('the board refresh seam was not mounted');
     await unsent.board.refresh();
@@ -115,11 +117,12 @@ export const ACancellationBeforeSendStaysVisible: Story = {
     },
   },
   play: async ({ canvasElement, args }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await waitFor(() => expect(outcomes(card)).toHaveLength(1));
     await standsOnce(card, CANCELLED_UNSENT);
     await expect(args.scenario.session?.['annotation_assessment']).toBeUndefined();
-    await expect(card.querySelector('.next-cockpit-reading-count')).toBeNull();
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(evidence.queryByText(/drift checks? requested/)).toBeNull();
     if (!cancelled.board.refresh) throw new Error('the board refresh seam was not mounted');
     await cancelled.board.refresh();
     await waitFor(() => expect(outcomes(card)).toHaveLength(1));
@@ -144,16 +147,16 @@ export const AFailedAnalysisStaysVisibleAndItsAttemptStaysCounted: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await waitFor(() => expect(outcomes(card)).toHaveLength(1));
     await standsOnce(card, FAILED);
-    await expect(card.querySelector('.next-cockpit-reading-count')).toHaveTextContent(
-      '1 drift check requested',
-    );
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(evidence.getByText('1 drift check requested')).toBeVisible();
     if (!failed.board.refresh) throw new Error('the board refresh seam was not mounted');
     await failed.board.refresh();
     await waitFor(() => expect(outcomes(card)).toHaveLength(1));
     await standsOnce(card, FAILED);
+    await expect(evidence.getByText('1 drift check requested')).toBeVisible();
     await expect(failed.reading.posts).toHaveLength(0);
   },
 };
@@ -175,16 +178,18 @@ export const AFailedAttemptKeepsTheEarlierAssessmentReadable: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await waitFor(() => expect(outcomes(card)).toHaveLength(1));
     await standsOnce(card, FAILED_AGAIN, 'Check progress again');
-    await expect(card.querySelector('[data-next-result]')).not.toBeNull();
-    await expect(await within(card).findByText('It stopped running the tests.')).toBeVisible();
+    await expect(within(card).getByText('Out of date')).toBeVisible();
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(await evidence.findByText('It stopped running the tests.')).toBeVisible();
+    await expect(evidence.getByText('2 drift checks requested')).toBeVisible();
     if (!retained.board.refresh) throw new Error('the board refresh seam was not mounted');
     await retained.board.refresh();
     await waitFor(() => expect(outcomes(card)).toHaveLength(1));
     await standsOnce(card, FAILED_AGAIN, 'Check progress again');
-    await expect(await within(card).findByText('It stopped running the tests.')).toBeVisible();
+    await expect(await evidence.findByText('It stopped running the tests.')).toBeVisible();
     await expect(retained.reading.posts).toHaveLength(0);
   },
 };

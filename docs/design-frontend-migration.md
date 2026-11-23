@@ -104,8 +104,7 @@ caveats moved to **How session history works**. The Sessions parity readers proj
 heading and set aside the relocated text. The mounted and story proofs assert the new copies in
 their destinations. How goals work remains in the Goal card when annotations are off, with no
 editor. It describes the first press and distinguishes which harnesses contribute work from which
-sessions show a level. The Goal card's More, Drift settings, and the two What is sent disclosures
-open inline. Closing a disclosure uses its own trigger.
+sessions show a level. The Goal explainer, Drift settings, and the two What is sent disclosures open inline. Closing a disclosure uses its own trigger.
 
 The former quota table is now **Your AI allowance** on Sessions. One selected window supplies the
 percentage and reset sentence. The native bar keeps the elapsed-time tick. **How the AI allowance
@@ -799,6 +798,27 @@ first back for the shape and result differentials, `recordedNumbering` in
 `frontend/src/drift/correction.differential.test.ts` projects the second for the correction text, and
 the drift browser proof restates the second and the third in the recorded steer box and live estimate.
 Every other word, the placeholders dropped and their order stay held to the recording.
+
+2026-11-23, Is it on track? shows one progress answer and a link to the cited entries. The
+full criterion rows, claims, limits, and earlier departures moved to the Evidence tab.
+The route differential projects the wording of progress controls and refusals before
+comparing the recorded answer. The mounted finding tests open Evidence before reading
+the former result rows. Shape and level derivations keep their tokens and recorded
+comparison cases. Terminal wording tests project the board's two new refusal spellings.
+
+2026-11-23, the Goal card opens a saved goal and its done lines for reading. Edit goal opens
+the fields. The provenance line uses the shared timestamp formatter. The Goal card's More
+trigger, separate saved stamp and saved-word disclosure are retired. How goals work holds their
+explanations, and the editor holds Clear and Discard everything. The Intent editor derivation and
+annotation readers still compare the underlying drafts and stored fields. Mounted tests that
+exercise the editor enter it first. Recorded answers are unchanged.
+
+2026-11-23, the progress card and header withhold stale levels and keep any stored assessment
+in charge of the answer. A live estimate cannot fill the slot left by an unlevelled assessment.
+The terminal parity test projects those two board rules onto its recorded views. The terminal
+fixtures and recorded golden answers remain intact. The Goal editor and read view share the
+done-lines label, and the later-direction question reports the date of the message instead of
+interpreting it. The mounted tests and browser stories use the revised wording.
 
 The Intent card's redesign of 2026-10-19 departs from the recorded editor in four places, and nothing is
 re-recorded. The draft marks' dashed "from your prompt" badge and its excerpt cue became one plain source line

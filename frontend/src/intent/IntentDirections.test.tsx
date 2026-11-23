@@ -5,6 +5,7 @@ import { clock } from '../observed';
 import { openPendingDirection } from './api';
 import { json } from './testing';
 import {
+  editGoal,
   board,
   control,
   goalBox,
@@ -62,11 +63,13 @@ describe('the question before the press', () => {
       routes: { '/api/project-context': record(...ONE) },
     });
     await settle(page);
-    expect(text('.next-cockpit-direction-said')).toBe(`Your ${clock(600)} message adds:`);
+    expect(text('.next-cockpit-direction-said')).toBe(
+      `You sent this message later, at ${clock(600)}.`,
+    );
     expect(text('[data-next-cockpit-direction-whole]')).toContain('Do it the careful way');
     expect(
       [...document.querySelectorAll('.next-cockpit-reading-ask button')].map((b) => b.textContent),
-    ).toEqual(['Add as a line', 'Make it the goal', 'Leave it', 'Check progress']);
+    ).toEqual(['Add as a line', 'Make it the goal', 'Leave it']);
     expect(page.posts('/api/annotate')).toBe(0);
   });
 
@@ -304,6 +307,7 @@ describe('Add as a line', () => {
     await settle(page);
     await press(control('direction-add'));
     await settle(page);
+    editGoal();
     type(goalBox(), 'Edited goal');
     // No "save first" refusal beside the line: the one Save intent carries both.
     expect(text('#next-cockpit-direction-why')).toBe('');
@@ -544,11 +548,12 @@ describe('Leave it', () => {
       routes: { '/api/project-context': record(...ONE) },
     });
     await settle(page);
+    editGoal();
     type(goalBox(), 'Edited goal');
     await press(control('direction-keep'));
     expect(presses(page)).toEqual([]);
     expect(text('#next-cockpit-cue-status')).toBe(
-      'Save your intent, or undo your edit, to analyze drift.',
+      'Save your goal or undo your edit to check progress.',
     );
   });
 
@@ -713,6 +718,7 @@ describe('a direction press that cannot finish', () => {
       message?.textContent,
     );
     expect(document.activeElement).toBe(button);
+    editGoal();
     type(goalBox(), 'An edited goal');
     await settle(page);
     expect(button.parentElement?.querySelector('[data-next-action-feedback]')).toBeNull();
@@ -754,6 +760,7 @@ describe('a direction press that cannot finish', () => {
           'polite',
         );
         expect(document.activeElement).toBe(button);
+        editGoal();
         expect(goalBox().value).toBe(SAVED.goal);
         expect(document.querySelector('[data-next-cockpit-direction-key]')).toBeNull();
         await page.poll(board(SAVED_AT, SAVED));

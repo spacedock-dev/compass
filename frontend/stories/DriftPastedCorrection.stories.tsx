@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { clock } from '../src/observed';
@@ -64,8 +65,8 @@ export const AWrappedDirectionIsQuotedWithoutItsWrapper: Story = {
     directionText: WRAPPED,
   }),
   play: async ({ canvasElement }) => {
-    const drift = await within(canvasElement).findByRole('region', { name: 'Drift' });
-    await within(drift).findByText(/^Your \d\d:\d\d message adds:$/);
+    const drift = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
+    await within(drift).findByText(/^You sent this message later, at \d\d:\d\d\.$/);
     await expect(drift.textContent).not.toMatch(WRAPPER);
     const whole = await waitFor(() => {
       const node = drift.querySelector<HTMLElement>('[data-next-cockpit-direction-whole]');
@@ -114,7 +115,8 @@ export const ADepartureTheSteerNamedIsSaidToBeGone: Story = {
     reading: STEERING,
   }),
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await expect(canvasElement.querySelector('[data-next-drift-cleared]')).toBeNull();
     // The pasted correction is Compass's words: no later direction is asked about.
     await expect(canvasElement.querySelector('[data-next-cockpit-direction-question]')).toBeNull();
@@ -158,7 +160,7 @@ export const TheDirectionSelectDrawsNoWrapper: Story = {
     facts: [PERSON, FAILED, PASSED, LEADING, INLINE],
   }),
   play: async ({ canvasElement }) => {
-    const drift = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const drift = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     const trigger = await waitFor(() => {
       const node = drift.querySelector<HTMLElement>('[data-next-direction-select]');
       expect(node).not.toBeNull();
@@ -193,7 +195,8 @@ export const ACitedMessageIsQuotedWithoutItsWrapper: Story = {
     facts: [PERSON, FAILED, PASSED, INLINE],
   }),
   play: async ({ canvasElement }) => {
-    const drift = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    const drift = canvasElement;
     const card = await waitFor(() => {
       const node = drift.querySelector<HTMLElement>('[data-next-departure]');
       expect(node).not.toBeNull();
@@ -281,7 +284,8 @@ export const AReplacedDepartureAfterACorrectionIsNamed: Story = {
     reading: REPLACING,
   }),
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await expect(canvasElement.querySelector('[data-next-drift-cleared]')).toBeNull();
     REPLACED_SESSION['annotation_assessment'] = {
       ...DEPARTURE_READING,
@@ -332,7 +336,8 @@ export const AReplacedDepartureWithNoCorrectionIsNamed: Story = {
     reading: UNCORRECTED,
   }),
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await expect(canvasElement.querySelector('[data-next-drift-cleared]')).toBeNull();
     UNCORRECTED_SESSION['annotation_assessment'] = {
       ...DEPARTURE_READING,
@@ -426,7 +431,8 @@ export const AnEarlierDepartureClearedOnlyByTheAgentStaysListed: Story = {
     reading: LISTING,
   }),
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-departure="line_2"]')).not.toBeNull(),
     );
@@ -478,7 +484,8 @@ export const AnEarlierDepartureTheNextReadingCannotTellAboutStaysListed: Story =
     reading: UNTELLING,
   }),
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-departure="line_2"]')).not.toBeNull(),
     );
@@ -531,7 +538,8 @@ export const AnEarlierDepartureAnsweredByACheckIsNotListed: Story = {
     reading: CHECKING,
   }),
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-departure="line_2"]')).not.toBeNull(),
     );

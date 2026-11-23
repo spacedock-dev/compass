@@ -3,6 +3,7 @@ import { act, fireEvent } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { json } from './testing';
 import {
+  editGoal,
   board,
   control,
   goalBox,
@@ -19,6 +20,7 @@ import { intentCtxFor } from './useIntent';
 const settle = async (page: { settle: () => Promise<void> }) => {
   await page.settle();
   await page.settle();
+  editGoal();
 };
 const press = async (button: Element | null, detail = 1) => {
   await act(async () => {
@@ -155,6 +157,7 @@ describe('a reply that is not the one the page expected', () => {
       });
       page.state.data = { ...(page.state.data as object), annotate_discard: sentences };
       await page.poll(page.state.data);
+      editGoal();
       await press(control('held-discard'));
       await act(async () => {
         page.clock.advance(1_300);

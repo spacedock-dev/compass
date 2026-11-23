@@ -32,11 +32,23 @@ describe('Analyze closing and opening', () => {
     await page.advance(11_000);
     await page.poll(board(QUIET, 1120));
     expect(inert()).toBe(true);
-    expect(change()).toBe('Analyze closed: the session went quiet.');
-    expect(cue()).toBe('Analyze closed: the session went quiet.');
+    expect(change()).toBe('Check progress closed: the session went quiet.');
+    expect(cue()).toBe('Check progress closed: the session went quiet.');
     expect(textOf('#next-cockpit-reading-refused')).toBe(
       'Check progress opens while this session runs.',
     );
+  });
+
+  it('names the goal when progress closes after a late save', async () => {
+    const page = mountDrift();
+    await page.settle();
+    const late = { ok: false, reason: 'revision-after-end', sentence: 'Saved after end.' };
+    await page.poll(board(late, 1100));
+    await page.advance(11_000);
+    await page.poll(board(late, 1120));
+    const expected = 'Check progress closed because the goal was saved after the session ended.';
+    expect(change()).toBe(expected);
+    expect(cue()).toBe(expected);
   });
 
   it('does not close on the clock alone: the hold waits for a second payload as well', async () => {
@@ -64,9 +76,9 @@ describe('Analyze closing and opening', () => {
     // An opening is said to the region and not drawn: the control standing pressable says it in view.
     expect(change()).toBe('');
     // The region already said the close inside the minute, so the open waits for it.
-    expect(cue()).toBe('Analyze closed: the session went quiet.');
+    expect(cue()).toBe('Check progress closed: the session went quiet.');
     await page.advance(61_000);
-    expect(cue()).toBe("Analyze is open: the session's last turn finished.");
+    expect(cue()).toBe("Check progress is open: the session's last turn finished.");
   });
 
   it('says nothing for a change that reverts before it commits', async () => {

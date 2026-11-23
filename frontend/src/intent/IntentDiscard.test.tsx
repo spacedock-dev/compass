@@ -1,7 +1,7 @@
 import { act, fireEvent } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { json } from './testing';
-import { board, control, goalBox, mountSession, text, type } from './panel.testing';
+import { editGoal, board, control, goalBox, mountSession, text, type } from './panel.testing';
 
 /* Discard everything: one act over two stores, armed by the first press and performed by the second, with
    every sentence the server's. A double-click, a held key and a slip are all one press, never two. */
@@ -33,6 +33,7 @@ const withSentences = (data: object) => ({ ...data, annotate_discard: SENTENCES 
 const settle = async (page: { settle: () => Promise<void> }) => {
   await page.settle();
   await page.settle();
+  editGoal();
 };
 const press = async (button: Element | null, detail = 1) => {
   await act(async () => {
@@ -61,16 +62,13 @@ async function armed(page: ReturnType<typeof mount>) {
 }
 
 describe('Discard everything', () => {
-  it('is offered only over words that exist, behind its own summary', async () => {
+  it('is offered only over words that exist, in edit mode', async () => {
     const page = mountSession();
     await settle(page);
     expect(discard()).toBeNull();
     page.unmount();
     const saved = mount();
     await settle(saved);
-    expect(text('.next-cockpit-held-discard-offer [data-slot=accordion-trigger]')).toBe(
-      'Discard everything',
-    );
     expect(discard()?.textContent).toBe('Discard everything');
   });
 
@@ -121,7 +119,7 @@ describe('Discard everything', () => {
     await press(keep ?? null);
     expect(document.querySelector('[data-next-intent-armed-discard]')).toBeNull();
     expect(page.posts()).toBe(0);
-    expect(document.querySelector('.next-cockpit-held-discard-offer')).not.toBeNull();
+    expect(discard()?.textContent).toBe('Discard everything');
     await armed(page);
     fireEvent.keyDown(discard() as Element, { key: 'Escape' });
     await page.settle();
@@ -612,8 +610,7 @@ describe('Discard everything names the words the reader was shown when they arme
    closed, so focus has nowhere to stay. It goes to More, where the words are managed, and only when the
    reader has not already gone somewhere else. */
 describe('after a discard that left the words standing', () => {
-  const more = () =>
-    document.querySelector<HTMLElement>('[aria-label="More about these words"]') as HTMLElement;
+  const offer = () => discard();
   const REFUSED = () => json({ ok: true, outcome: 'refused', persisted: false, withdrew: true });
   const confirmAfterDwell = async (page: ReturnType<typeof mount>) => {
     await settle(page);
@@ -624,16 +621,16 @@ describe('after a discard that left the words standing', () => {
     await press(discard());
   };
 
-  it('puts focus on More when the reader is still where the Confirm control was', async () => {
+  it('puts focus on Discard everything when the reader is still where the Confirm control was', async () => {
     const page = mount({ '/api/annotate': REFUSED });
     await confirmAfterDwell(page);
     await settle(page);
     expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES.refused);
-    expect(more()).not.toBeNull();
-    expect(document.activeElement).toBe(more());
+    expect(offer()).not.toBeNull();
+    expect(document.activeElement).toBe(offer());
   });
 
-  it('puts focus on More when the reader had focused the Confirm control itself', async () => {
+  it('puts focus on Discard everything when the reader had focused the Confirm control itself', async () => {
     const page = mount({ '/api/annotate': REFUSED });
     await settle(page);
     await armed(page);
@@ -643,7 +640,7 @@ describe('after a discard that left the words standing', () => {
     (discard() as HTMLElement).focus();
     await press(discard());
     await settle(page);
-    expect(document.activeElement).toBe(more());
+    expect(document.activeElement).toBe(offer());
   });
 
   it('leaves focus in the goal box when the reader moved there while the store held the request', async () => {
@@ -666,8 +663,8 @@ describe('after a discard that left the words standing', () => {
     // The reader comes back long after, to a card nobody asked to move focus into.
     await page.advance(40_000);
     await page.go('#n=session:alpha%2Fapp:claude:s1');
-    await settle(page);
-    expect(more()).not.toBeNull();
+    await page.settle();
+    expect(offer()).not.toBeNull();
     expect(document.activeElement).toBe(document.body);
   });
 
@@ -681,6 +678,6 @@ describe('after a discard that left the words standing', () => {
     await confirmAfterDwell(page);
     await settle(page);
     expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES.stored);
-    expect(document.activeElement).not.toBe(more());
+    expect(document.activeElement).not.toBe(offer());
   });
 });

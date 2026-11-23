@@ -187,6 +187,12 @@ class TheDriftCardControlsTheDocsDescribeAreTheOnesTheCardDrawsTest(unittest.Tes
         glossary = (ROOT / "docs/design-calm-compass.md").read_text(encoding="utf-8")
         label = "Check progress again"
         self.assertIn(f"| {label} | Analyze again, Check again |", glossary)
+        control = (ROOT / "frontend/src/drift/ReadingControl.tsx").read_text(encoding="utf-8")
+        self.assertIn("label={GLOSSARY.checkProgressAgain.plain}", control)
+        reference = (ROOT / "compass/skills/compass/reference/intent-and-drift.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(label, self._flat(reference))
         # The README points to the walkthrough for the control.
         for name, text in self.DOCS.items():
             if name == "README.md":

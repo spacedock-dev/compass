@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { openPhases, seeInContext } from './citation';
 import { useEffect, useState } from 'react';
@@ -1238,7 +1239,7 @@ export const PauseStopsARunningSummary: Story = {
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     await stateOf(region, 'working');
-    const drift = within(canvasElement).getByRole('region', { name: 'Drift' });
+    const drift = within(canvasElement).getByRole('region', { name: 'Is it on track?' });
     await userEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
     // The copy inside What is sent; the Drift card head holds another.
     await userEvent.click(
@@ -1385,11 +1386,14 @@ export const DepartureMarked: Story = {
     await expect(marked.querySelector('[data-next-summary-holds]')).toHaveTextContent(
       `${SUMMARY_HOLDS}Departure · Goal`,
     );
+    const technical = within(canvasElement).getByRole('button', { name: 'Show technical details' });
+    await expect(technical).toHaveAttribute('aria-expanded', 'false');
     await userEvent.click(
       within(marked).getByRole('button', { name: 'Departure · Goal, go to the card' }),
     );
-    const departure = canvasElement.querySelector<HTMLElement>('[data-next-departure="goal"]');
-    await waitFor(() => expect(departure?.contains(document.activeElement)).toBe(true));
+    const evidence = await within(canvasElement).findByRole('tabpanel', { name: 'Evidence' });
+    const departure = evidence.querySelector<HTMLElement>('[data-next-departure="goal"]');
+    await waitFor(() => expect(departure?.querySelector('h4')).toHaveFocus());
     const back = departure?.querySelector<HTMLElement>('[data-next-departure-summary="phase"]');
     await expect(back).toHaveTextContent(`In What the session has done:${SECOND_PHASE.title}`);
     await userEvent.click(
@@ -1426,6 +1430,7 @@ export const DepartureMarksTwoPhases: Story = {
     />
   ),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
     await waitFor(() =>
@@ -1452,6 +1457,7 @@ function unmatched(
     name,
     render: () => <SummaryPage summary={summary} session={departureReading(['c3'])} />,
     play: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      await openSessionTechnicalTab('Evidence', canvasElement);
       const line = await waitFor(() => {
         const node = canvasElement.querySelector<HTMLElement>('[data-next-departure-summary]');
         if (!node) throw new Error('no summary line on the departure');
@@ -1527,6 +1533,7 @@ export const NewWorkKeepsTheMarks: Story = {
     );
   },
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
     await waitFor(() =>
@@ -1562,6 +1569,7 @@ export const StaleReadingMarksNothing: Story = {
     />
   ),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const region = await card(canvasElement);
     await summaryOf(region);
     await waitFor(() =>
@@ -1579,6 +1587,7 @@ export const InaccurateReadingMarksNothing: Story = {
     />
   ),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const region = await card(canvasElement);
     await summaryOf(region);
     await waitFor(() =>
@@ -1646,6 +1655,7 @@ export const LandsDuringAnEdit: Story = {
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     await stateOf(region, 'none');
+    await userEvent.click(within(canvasElement).getByRole('button', { name: 'Edit goal' }));
     const goal = await waitFor(() => {
       const node = canvasElement.querySelector<HTMLTextAreaElement>('textarea');
       if (!node) throw new Error('no goal box');
@@ -2329,6 +2339,7 @@ export const CheckCitationTheRecordDoesNotCarry: Story = {
     />
   ),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
     const row = await waitFor(() => {

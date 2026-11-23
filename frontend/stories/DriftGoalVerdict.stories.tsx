@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, waitFor, within } from 'storybook/test';
 import {
@@ -47,16 +48,22 @@ const checked = (
   annotation_reading_count: 1,
 });
 
-const note = async (canvasElement: HTMLElement): Promise<HTMLElement> =>
-  waitFor(() => {
-    const node = canvasElement.querySelector<HTMLElement>('[data-next-goal-verdict]');
+const note = async (canvasElement: HTMLElement): Promise<HTMLElement> => {
+  const panel = within(canvasElement).getByRole('tabpanel', { name: 'Evidence' });
+  return waitFor(() => {
+    const node = panel.querySelector<HTMLElement>('[data-next-goal-verdict]');
     if (!node) throw new Error('no verdict note');
     return node;
   });
+};
 
 export const ClaimBeforeAnyAnalysis: Story = {
   ...scenario({ session: claimed }),
   play: async ({ canvasElement }) => {
+    const progress = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
+    await expect(await within(progress).findByText('Not checked yet')).toBeVisible();
+    await expect(progress).not.toHaveTextContent('Claude Code marked this goal met');
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const node = await note(canvasElement);
     await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'claim-only');
     // Labelled as the harness's claim, in the reader's words, and no level is implied.
@@ -77,6 +84,7 @@ export const ClaimBesideAnAgreeingAnalysis: Story = {
     work: HIGH,
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const node = await note(canvasElement);
     await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'agrees');
     await expect(node).toHaveTextContent('The harness’s claim: Claude Code marked this goal met');
@@ -107,6 +115,7 @@ export const ClaimConfirmedByTheCreatedPullRequest: Story = {
     work: HIGH,
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const node = await note(canvasElement);
     await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'agrees');
     // Names the pull request fact it confirmed, in Compass's words, and is still only the harness's claim.
@@ -155,6 +164,7 @@ export const ClaimConfirmedByCiOnAMergeRequestSaysMergeRequest: Story = {
     work: HIGH,
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const node = await note(canvasElement);
     await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'agrees');
     await waitFor(() =>
@@ -183,6 +193,7 @@ export const ClaimNamingAMergeRequestUrlWithNoCiReadSaysMergeRequest: Story = {
     work: HIGH,
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const node = await note(canvasElement);
     await waitFor(() =>
       expect(node).toHaveTextContent(
@@ -206,6 +217,7 @@ export const ClaimNamingAPersonWithNoCiReadSaysPullRequest: Story = {
     work: HIGH,
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const node = await note(canvasElement);
     await waitFor(() =>
       expect(node).toHaveTextContent(
@@ -235,6 +247,7 @@ export const ClaimConfirmedByCiOnASessionThatChangedItsConfiguration: Story = {
     work: HIGH,
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const node = await note(canvasElement);
     await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'agrees');
     await waitFor(() =>
@@ -261,6 +274,7 @@ export const ClaimQuotedTextFoundInACheckOutput: Story = {
     work: HIGH,
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const node = await note(canvasElement);
     await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'unconfirmed');
     await waitFor(() =>
@@ -282,6 +296,7 @@ export const ClaimDisputedWhereTheRecordUndoesIt: Story = {
     work: HIGH,
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const node = await note(canvasElement);
     await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'disputed');
     await expect(node).toHaveTextContent(
@@ -314,6 +329,7 @@ export const ClaimDisputedByAFileTakenAway: Story = {
     work: HIGH,
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const node = await note(canvasElement);
     await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'disputed');
     await expect(node).toHaveTextContent(
@@ -330,6 +346,7 @@ export const ClaimTheRecordCannotConfirm: Story = {
     work: HIGH,
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const node = await note(canvasElement);
     await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'unconfirmed');
     await expect(node).toHaveTextContent(
@@ -346,6 +363,7 @@ export const ClaimNewerThanTheReading: Story = {
     work: HIGH,
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const node = await note(canvasElement);
     await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'unchecked');
     await expect(node).toHaveTextContent('Analyze again to check it');
@@ -356,6 +374,7 @@ export const ClaimNewerThanTheReading: Story = {
 export const NoNoteWithoutAMetVerdict: Story = {
   ...scenario({ session: { session_goal: GOAL } }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     await within(canvasElement).findByRole('button', { name: 'Check progress' });
     await expect(canvasElement.querySelector('[data-next-goal-verdict]')).toBeNull();
   },
@@ -373,6 +392,7 @@ const gaveUp = {
 export const HarnessGaveUpOnTheGoal: Story = {
   ...scenario({ session: gaveUp }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const node = await waitFor(() => {
       const found = canvasElement.querySelector<HTMLElement>('[data-next-goal-gave-up]');
       if (!found) throw new Error('no give-up note');
@@ -398,6 +418,7 @@ export const HarnessGaveUpBesideAnAnalysisChangesNoLevel: Story = {
     work: HIGH,
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const node = await waitFor(() => {
       const found = canvasElement.querySelector<HTMLElement>('[data-next-goal-gave-up]');
       if (!found) throw new Error('no give-up note');

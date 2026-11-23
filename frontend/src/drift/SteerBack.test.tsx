@@ -2,7 +2,7 @@ import { act, fireEvent } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { RecordedRequest } from '../intent/testing';
 import { CORRECTION_CAP } from './sentences';
-import { byAction, check, driftBoard, fact, json, mountDrift, press, textOf } from './testing';
+import { byAction, check, driftBoard, json, mountDrift, press, textOf } from './testing';
 
 const ASSESSMENT = {
   revision_read: 3,
@@ -36,24 +36,63 @@ function mountSteer(extra: Record<string, unknown> = {}) {
 }
 
 describe('Steer back', () => {
-  it('tells a reader beside Update intent when its offered direction cannot be opened', async () => {
+  it('gives the feedback-only controls no dangling accessible names', async () => {
     const page = mountSteer({
-      facts: [...FACTS, fact('d1', 995)],
-      store: { settled_through: 995 },
-      session: { ...session, annotation_settled_at: 1000, annotation_settled_revision: 3 },
-      routes: { '/api/direction': () => json({ ok: false, reason: 'out_of_reach' }) },
+      session: {
+        ...session,
+        annotation_assessment: {
+          ...ASSESSMENT,
+          criteria: {
+            goal: {
+              result: 'not verifiable from available evidence',
+              cites: [],
+              detail: '',
+              clause: 'Ship the queue',
+            },
+          },
+        },
+      },
     });
     await page.settle();
+    expect(byAction('steer-back')).toBeNull();
+    expect(byAction('not-accurate')).not.toBeNull();
+    const progress = document.querySelector('[data-next-drift-body]');
+    for (const node of progress?.querySelectorAll('[aria-labelledby]') ?? []) {
+      for (const id of node.getAttribute('aria-labelledby')?.split(/\s+/) ?? []) {
+        expect(document.getElementById(id)).not.toBeNull();
+      }
+    }
+  });
+
+  it('keeps an open edited correction when the saved goal changes', async () => {
+    const page = mountSteer();
     await page.settle();
-    const button = byAction('update-intent') as HTMLButtonElement;
-    expect(button).not.toBeNull();
-    button.focus();
+    await press(byAction('steer-back'));
+    await page.settle();
+    const field = box();
+    if (!field) throw new Error('No correction editor');
+    await act(async () => {
+      fireEvent.input(field, { target: { value: 'My edited correction.' } });
+      field.blur();
+    });
+    await page.poll({ ...driftBoard({ session, store: { revision: 4 } }), generated: 1300 });
+    await page.settle();
+    expect(byAction('steer-back')).toBeNull();
+    expect(box()).toBe(field);
+    expect(box()?.value).toBe('My edited correction.');
+    expect(textOf('[data-next-correction-older]')).toContain('older');
+    expect(byAction('correction-recompose')).toBeNull();
+  });
+
+  it('opens the goal editor from the progress card without writing', async () => {
+    const page = mountSteer();
+    await page.settle();
+    const button = byAction('update-intent');
+    expect(button?.textContent).toBe('Update my goal instead');
+    expect(document.querySelector('textarea[data-next-cockpit-held-kind="goal"]')).toBeNull();
     await press(button);
-    await page.settle();
-    expect(button.parentElement?.querySelector('[data-next-action-feedback]')?.textContent).toBe(
-      'That direction is beyond the part of the record Compass could search. No outcome line was added.',
-    );
-    expect(document.activeElement).toBe(button);
+    expect(document.activeElement?.getAttribute('data-next-cockpit-held-kind')).toBe('goal');
+    expect(page.posts()).toBe(0);
   });
   it('composes nothing until pressed, then once, and writes nothing into the session', async () => {
     const page = mountSteer({ strict: true });
@@ -75,7 +114,7 @@ describe('Steer back', () => {
     });
     expect(box()?.value).toBe('Your last check failed. Fix it, then say so.');
     expect(byAction('steer-back')?.getAttribute('aria-expanded')).toBe('true');
-    expect(textOf('[data-next-steer-box]')).toContain('Compass never sends this.');
+    expect(textOf('[data-next-steer-box]')).toContain('Compass never sends this for you.');
     // Every request so far was a read or the one composition: nothing reached the session.
     expect(page.state.requests.filter((r) => r.method !== 'GET')).toHaveLength(1);
   });
@@ -143,7 +182,48 @@ describe('Steer back', () => {
     await act(async () => {
       fireEvent.input(field);
     });
-    expect(textOf('[data-next-correction-cue]')).toBe('Copy correction');
+    expect(textOf('[data-next-correction-cue]')).toBe('Copy message');
+  });
+
+  it('opens, edits and copies the starter for a session with only a saved done line', async () => {
+    const starter =
+      '"Tests pass" is the outcome I asked for. Please address what went off course and work toward that outcome.';
+    const page = mountSteer({
+      store: { goal: '', lines: ['Tests pass'] },
+      session: {
+        ...session,
+        first_prompt: '',
+        first_prompt_at: null,
+        annotation_assessment: {
+          ...ASSESSMENT,
+          criteria: {
+            line_1: {
+              result: 'departure',
+              cites: ['c1'],
+              detail: 'It stopped.',
+              clause: 'Tests pass',
+            },
+          },
+        },
+      },
+      routes: {
+        '/api/correction': () => json({ ok: true, starter, parts: PARTS }),
+        '/api/correction/copied': () => json({ ok: true }),
+      },
+    });
+    await page.settle();
+    await press(byAction('steer-back'));
+    await page.settle();
+    const field = box();
+    if (!field) throw new Error('No correction editor');
+    expect(field.value).toBe(starter);
+    const edited = `${starter} Start with the parser tests.`;
+    await act(async () => {
+      fireEvent.input(field, { target: { value: edited } });
+    });
+    await press(byAction('correction-copy'));
+    await page.settle();
+    expect(page.written).toEqual([edited]);
   });
 
   it('writes one copy for one press however it is pressed', async () => {

@@ -18,15 +18,14 @@ import { usePruneAnswerNotes } from './usePruneAnswerNotes';
 import {
   useDrift,
   DriftBody,
-  DriftPill,
   DriftProvider,
   DriftStamp,
   DriftHeadControls,
-  DeparturesSection,
   MonitorQuestion,
   ReadingCapBanner,
   WorkListView,
 } from '../drift';
+import { SessionProgressLevel } from '../drift/DriftLevelView';
 import { DriftSlot } from './DriftSlot';
 import { SessionTechnicalDetails } from './SessionTechnicalDetails';
 import { WhatItDid } from './WhatItDid';
@@ -272,7 +271,7 @@ function Header({
             hasOpenRequest={observed.askKnown}
           />
         ) : null}
-        <DriftPill />
+        <SessionProgressLevel />
         <Controls session={session} observed={observed} route={route} />
       </div>
       {limit && status !== 'Waiting on child' ? (
@@ -377,9 +376,7 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
             stamp={<DriftStamp />}
             actions={<DriftHeadControls />}
             drift={<DriftBody primary={!(observed.isNeeds || observed.askKnown)} />}
-          >
-            <DeparturesSection />
-          </DriftSlot>
+          />
           <SessionTechnicalDetails
             project={route.project}
             session={session}

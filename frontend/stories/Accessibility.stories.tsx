@@ -156,7 +156,7 @@ const PAGES: Record<string, Scenario> = {
 
 /* The page waits for a region that proves it drew its state before a measure is taken. */
 const READY: Record<string, string> = {
-  'Session result': '[data-next-result]',
+  'Session result': '[data-next-progress-finding]',
   Sessions: 'article.next-operation-row, main',
   Attention: 'main',
   Projects: 'main',
@@ -348,7 +348,7 @@ export const EveryControlTakesFocusInReadingOrderWithARing: Story = {
       await expect(width, `${label} target width`).toBeGreaterThanOrEqual(44);
       await expect(height, `${label} target height`).toBeGreaterThanOrEqual(44);
     }
-    await everyControlTakesFocus(canvasElement, '[data-next-result]', async (control) => {
+    await everyControlTakesFocus(canvasElement, '[data-next-progress-finding]', async (control) => {
       if (!control.matches('a[href], button, summary')) return;
       const label = control.getAttribute('aria-label') ?? control.textContent;
       await expect(control, `${label} keyboard focus ring`).toHaveStyle({
@@ -405,7 +405,7 @@ export const FocusInTheSteerBackBox: Story = {
     const driver = await tabber();
     if (!driver) return;
     const session = within(canvasElement);
-    const card = await session.findByRole('region', { name: 'Drift' });
+    const card = await session.findByRole('region', { name: 'Is it on track?' });
     const primaryActions = () =>
       session
         .getAllByRole('button')
@@ -419,7 +419,7 @@ export const FocusInTheSteerBackBox: Story = {
       'primary actions on the Session page',
     ).toBeLessThanOrEqual(1);
     await userEvent.click(await within(card).findByRole('button', { name: 'Steer back' }));
-    const copy = await within(card).findByRole('button', { name: 'Copy correction' });
+    const copy = await within(card).findByRole('button', { name: 'Copy message' });
     await expect(
       primaryActions().length,
       'primary actions with Steer back open',
@@ -433,8 +433,8 @@ export const FocusInTheSteerBackBox: Story = {
       await driver.tab();
       reached = document.activeElement === copy;
     }
-    await expect(reached, 'Tab reaches Copy correction').toBe(true);
-    await expect(hasFocusRing(copy, resting), 'Copy correction shows a ring').toBe(true);
+    await expect(reached, 'Tab reaches Copy message').toBe(true);
+    await expect(hasFocusRing(copy, resting), 'Copy message shows a ring').toBe(true);
   },
 };
 

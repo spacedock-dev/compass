@@ -120,10 +120,10 @@ async function open(options: {
 }
 
 const pill = () => document.querySelector('[data-next-drift-pill] strong')?.textContent ?? null;
-const source = () =>
-  document.querySelector('[data-next-drift-level] .next-session-drift-source')?.textContent ?? '';
+const source = () => document.querySelector('[data-next-drift-source]')?.textContent ?? '';
 const detail = () =>
-  document.querySelector('[data-next-drift-level] .next-session-drift-detail')?.textContent ?? '';
+  document.querySelector('[data-next-technical-evidence] .next-session-drift-detail')
+    ?.textContent ?? '';
 
 const card = () => document.querySelector('[data-next-drift-level]')?.textContent ?? '';
 
@@ -163,8 +163,9 @@ describe('the level the monitor draws', () => {
         live_monitor: monitorLease({ level: MONITOR('high'), now: LATER }),
       },
     });
-    expect(pill()).toBe('High');
-    expect(source()).toBe('');
+    expect(pill()).toBe('Off course');
+    expect(source()).toContain('Live monitor');
+    await openSessionTechnicalTab('Evidence');
     expect(detail()).toMatch(/Haiku check of the latest turns/);
     expect(detail()).not.toMatch(/reads test and build results and file paths/);
     expect(document.querySelector('[data-next-live-reason-line]')?.textContent).toBe(
@@ -189,7 +190,10 @@ describe('the level the monitor draws', () => {
         live_monitor: monitorLease({ level: null, now: LATER }),
       },
     });
-    expect(card()).toMatch(/No model assessment for this intent yet/);
+    await openSessionTechnicalTab('Evidence');
+    expect(textOf('[data-next-technical-evidence]')).toMatch(
+      /No model assessment for this intent yet/,
+    );
   });
 
   it('shows the estimate, labelled as the estimate, while no check has completed', async () => {
@@ -199,9 +203,9 @@ describe('the level the monitor draws', () => {
         live_monitor: monitorLease({ level: null, now: LATER }),
       },
     });
-    expect(pill()).toBe('Medium');
+    expect(pill()).toBe('Slightly off course');
     expect(source()).toMatch(/^Live estimate/);
-    expect(detail()).toMatch(/reads test and build results and file paths/);
+    expect(source()).toMatch(/reads test and build results and file paths/);
     expect(document.querySelector('[data-next-live-reason-line]')).toBeNull();
   });
 
@@ -238,11 +242,11 @@ describe('the level the monitor draws', () => {
         live_monitor: monitorLease({ level: MONITOR('extreme'), now: LATER }),
       },
     });
-    expect(pill()).toBe('Medium');
+    expect(pill()).toBe('Slightly off course');
     expect(source()).not.toMatch(/Live monitor/);
   });
 
-  it('keeps Not enough recorded yet off the pill, as for the estimate', async () => {
+  it('says it is too early when the Live monitor completed a check without enough evidence', async () => {
     await open({
       work: {
         live_levels: [ESTIMATE('none_or_low')],
@@ -250,6 +254,9 @@ describe('the level the monitor draws', () => {
       },
     });
     expect(pill()).toBeNull();
+    const answer = textOf('[data-next-progress-absence]');
+    expect(answer).toMatch(/^Too early to tell/);
+    expect(answer).toContain('The Live monitor had too little recorded work to check progress.');
   });
 });
 
@@ -281,7 +288,7 @@ describe('the estimate after the monitor ends', () => {
       liveMonitorFor(page.shell).update('claude:s1', { wanted: true });
     });
     await page.settle();
-    expect(pill()).toBe('Medium');
+    expect(pill()).toBe('Slightly off course');
     gone = true;
     await page.advance(20_000);
     await openSessionTechnicalTab('AI use and privacy');
@@ -295,7 +302,7 @@ describe('the estimate after the monitor ends', () => {
 
   it.each(['cap', 'paused'])('keeps the estimate after %s', async (reason) => {
     await endedBy(reason);
-    expect(pill()).toBe('Medium');
+    expect(pill()).toBe('Slightly off course');
     expect(source()).toMatch(/^Live estimate/);
   });
 

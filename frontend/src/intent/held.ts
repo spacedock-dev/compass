@@ -130,6 +130,7 @@ export function createHeld(deps: HeldDeps) {
   const { clock, announcer } = deps;
   const refusals = new Map<string, AnnotateReceipt['reason']>();
   const goals = new Map<string, string>();
+  const editingGoals = new Set<string>();
   const cleared = new Set<string>();
   const lines = new Map<string, string[]>();
   /* Which saved line each draft line came from, by position, or null for one added here. Kept beside the
@@ -197,6 +198,7 @@ export function createHeld(deps: HeldDeps) {
     clock,
     announcer,
     goals,
+    editingGoals,
     refusals,
     cleared,
     lines,

@@ -1,7 +1,7 @@
 import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { seeInContext } from './citation';
-import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { expect, spyOn, userEvent, waitFor, within } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { App } from '../src/App';
 import { createRouter } from '../src/router/router';
@@ -159,7 +159,7 @@ const PARTS: Readonly<Record<string, string>> = {
   intent: '[aria-labelledby="next-session-intent-heading"]',
   summary: '[data-next-session-summary]',
   phase: '[data-next-summary-marked]',
-  departure: '[data-next-departure="goal"]',
+  departure: 'div:has(> [data-next-progress-finding])',
   steer: '[data-next-steer-section]',
   sent: '[data-next-session-drift]',
   activity: '[data-next-session-full-activity]',
@@ -198,6 +198,7 @@ export const MarkFullActivity = markExplains('activity');
 export const SummaryHoldsADeparture: Story = {
   render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     await loaded(canvasElement);
     const summary = canvasElement.querySelector('[data-next-summary]') as HTMLElement;
     await expect(
@@ -218,8 +219,21 @@ export const FindingTintsItsEvidence: Story = {
   render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
   play: async ({ canvasElement }) => {
     await loaded(canvasElement);
+    const canvas = within(canvasElement);
     await expect(canvasElement.querySelectorAll('[data-next-cited]')).toHaveLength(0);
-    const jump = canvasElement.querySelector('[data-next-finding="goal"]') as HTMLElement;
+    await userEvent.click(canvas.getByRole('button', { name: /^See the .*quotes? behind this$/ }));
+    const evidence = within(await canvas.findByRole('tabpanel', { name: 'Evidence' }));
+    const quote = await evidence.findByText(
+      /The walk found a real blocker, so the milestone can't close yet/,
+      { selector: '[data-next-cited-entries="goal"] li' },
+    );
+    const blocker = quote.closest('li');
+    if (!blocker) throw new Error('The cited quote needs an evidence entry');
+    await waitFor(() => expect(blocker).toBeVisible());
+    await expect(blocker).toHaveTextContent(/\d\d:\d\d/);
+    const jump = within(blocker).getByRole('link', {
+      name: /^Show #.* in Activity log for Goal/,
+    });
     await seeInContext(jump);
     await waitFor(() =>
       expect(canvasElement.querySelectorAll('[data-next-cited]').length).toBeGreaterThanOrEqual(2),
@@ -236,25 +250,24 @@ export const EditsAreHeldAndSteerBackIsShown: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await loaded(canvasElement);
-    await userEvent.click(
-      [...canvasElement.querySelectorAll('button')].find(
-        (button) => button.getAttribute('aria-label')?.startsWith('Remove') === true,
-      ) as HTMLElement,
-    );
+    await userEvent.click(await canvas.findByRole('button', { name: 'Edit goal' }));
     await expect(canvasElement.querySelector('[data-sample-held]')).toHaveTextContent(HELD);
-    await userEvent.click(
-      canvasElement.querySelector('[data-next-cockpit-action="steer-back"]') as HTMLElement,
-    );
-    await waitFor(() => expect(canvas.getByText(/Back to my goal:/)).toBeVisible());
-    // The stored correction keeps its times as moments; the reader sees them on their own clock, the
-    // clock the departure's cited message is drawn on beside it, with the agent's words quoted.
-    const box = [...canvasElement.querySelectorAll('textarea')].find((area) =>
-      area.value.startsWith('Back to my goal:'),
-    ) as HTMLTextAreaElement;
-    await expect(box.value).not.toContain('{{clock:');
+    await expect(canvas.queryByRole('textbox', { name: 'Goal' })).toBeNull();
+    await userEvent.click(canvas.getByRole('button', { name: 'Steer back' }));
+    const box = (await canvas.findByRole('textbox', {
+      name: 'Edit this if you like, then paste it into the session',
+    })) as HTMLTextAreaElement;
     await expect(box.value).toMatch(
-      /departed from my goal at (\d{4}-\d\d-\d\d )?\d\d:\d\d, where you said "/,
+      /^Back to my goal: Every issue in the ".+" milestone is closed\. Please address the work that went off course and continue toward that goal\.$/,
     );
+    const copy = spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+    try {
+      await userEvent.click(canvas.getByRole('button', { name: 'Copy message' }));
+      await expect(await canvas.findByRole('button', { name: 'Copied' })).toBeVisible();
+      await expect(copy).toHaveBeenCalledWith(box.value);
+    } finally {
+      copy.mockRestore();
+    }
   },
 };
 
@@ -474,6 +487,7 @@ const OLDER_FINDING: SampleFixture = (() => {
 export const FindingCitingTheOlderPageTintsIt: Story = {
   render: () => <WithFixture fixture={OLDER_FINDING} />,
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     await loaded(canvasElement);
     const press = canvasElement.querySelector('[data-next-finding="goal"]') as HTMLElement;
     press.scrollIntoView({ block: 'center', behavior: 'instant' });
@@ -560,9 +574,11 @@ export const BannerSaysHowToReachThePage: Story = {
 export const IntentIsAGoalAloneAndTheDepartureIsFromIt: Story = {
   render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     await loaded(canvasElement);
-    const goal = canvasElement.querySelector('textarea') as HTMLTextAreaElement;
-    await expect(goal.value).toMatch(/^Every issue in the ".+" milestone is closed$/);
+    const goal = within(within(canvasElement).getByRole('region', { name: 'Goal' }));
+    await expect(goal.getByText(/^Every issue in the ".+" milestone is closed$/)).toBeVisible();
+    await expect(goal.queryByRole('heading', { name: 'What “done” looks like' })).toBeNull();
     const departures = [...canvasElement.querySelectorAll('[data-next-finding]')].map((node) =>
       node.getAttribute('data-next-finding'),
     );

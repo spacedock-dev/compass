@@ -23,7 +23,7 @@ const NOTICE =
   'Compass could not read compass-annotations.json, so what you typed against sessions cannot be shown and nothing will be saved over it. Move or repair that file to save again.';
 
 async function pressAnalyze(canvasElement: HTMLElement): Promise<HTMLElement> {
-  const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+  const card = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
   await userEvent.click(await within(card).findByRole('button', { name: 'Check progress' }));
   return card;
 }

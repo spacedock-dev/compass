@@ -2,6 +2,7 @@ import { useContext, useId } from 'react';
 import { Label } from '../ui/label';
 import { Disclosure, disclosureKey } from '../controls';
 import { DriftContext } from '../drift/context';
+import { GLOSSARY } from '../language/glossary';
 import { isOutcomeLine } from '../drift/shape';
 import { compatSessKey } from '../api/identity';
 import { annotationLines, storeUnreadable, OUTCOME_LINES_MAX, characterCount } from './annotation';
@@ -48,6 +49,7 @@ export function DirectionGoalButton({
   const focus = `direction-goal:${key}:${scope}:${factId}`;
   return (
     <DirectionActionButton
+      fit={scope === 'question'}
       feedbackKey={focus}
       weight="secondary"
       label={GOAL_DIRECTION}
@@ -192,7 +194,7 @@ function LineRow({
       <HeldTextarea
         id={id}
         className="col-start-2 col-end-3 max-[760px]:h-[44px]"
-        aria-label={`Expected outcome line ${String(index + 1)}`}
+        aria-label={`Done line ${String(index + 1)}`}
         rows={3}
         aria-invalid={over || undefined}
         aria-describedby={over ? `${id}-over` : undefined}
@@ -237,7 +239,7 @@ function LineRow({
       ) : null}
       <ActionButton
         weight="secondary"
-        className="next-cockpit-held-remove col-start-3 row-start-1 row-span-2 self-start border-[var(--rule)] text-muted-foreground hover:text-foreground hover:border-[var(--line)]"
+        className="next-cockpit-held-remove col-start-3 row-start-1 row-span-2 self-start text-muted-foreground hover:text-foreground"
         icon="remove"
         label="Remove"
         action="held-line-remove"
@@ -298,7 +300,7 @@ export function OutcomeLines() {
         openWhen={holds}
         summary={
           <span className="next-cockpit-held-label" data-next-cockpit-held-label>
-            {'Expected outcome (optional) '}
+            {`${GLOSSARY.doneLooksLike.shown} (optional) `}
             <span className="ms-1 font-normal text-[var(--ink3)]">{`· up to ${String(OUTCOME_LINES_MAX)} lines`}</span>
           </span>
         }

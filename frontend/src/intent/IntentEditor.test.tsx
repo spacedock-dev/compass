@@ -1,9 +1,10 @@
-import { act, fireEvent } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { chooseSelect, openSelect } from '../../test/select';
 import { GOAL_HINT } from './sentences';
 import { json } from './testing';
 import {
+  editGoal,
   board,
   control,
   goalBox,
@@ -23,6 +24,7 @@ const footerCue = () => text('.next-cockpit-held-footer .next-cockpit-held-cue')
 const settle = async (page: { settle: () => Promise<void> }) => {
   await page.settle();
   await page.settle();
+  editGoal();
 };
 
 describe('a goal-less session arrives with its first prompt drafted and nothing sent', () => {
@@ -202,7 +204,7 @@ describe('Save intent', () => {
     await settle(page);
     expect(footerCue()).toBe(
       caveat
-        ? 'Saved. This session has ended. What you save now is kept, but Analyze will not check the session against it. Analyze still uses the intent you saved before the session ended, or a goal taken from one of your prompts.'
+        ? 'Saved. This session has ended. Compass keeps goals you save now for reference. A progress check uses the goal you saved before the session ended or a goal taken from one of your prompts.'
         : 'Saved.',
     );
   });
@@ -393,7 +395,7 @@ describe('header status and goal source line', () => {
     await settle(page);
     expect(text('[data-next-goal-hint]')).toBe(GOAL_HINT);
     expect(text('[data-next-cockpit-held-line-number="0"]')).toBe('1');
-    expect(text('[data-next-intent-status]')).toBe('');
+    expect(text('[data-next-intent-status]')).toBe('Not saved');
     expect(text('[data-next-cockpit-goal-source]')).toBe('');
 
     type(goalBox(), 'Typed goal');
@@ -541,7 +543,7 @@ describe('the header status and source line after a prompt adoption', () => {
     });
     await settle(page);
     expect(text('[data-next-cockpit-goal-source]')).toBe(
-      'From your first prompt · saved · Shortened here; Analyze reads the whole prompt',
+      'From your first prompt · saved · Shown as an excerpt. A progress check can read up to the first 1,000 characters of the original prompt',
     );
   });
 
@@ -563,7 +565,7 @@ describe('the header status over a change Save intent would not write', () => {
     await settle(page);
     type(goalBox(), '');
     expect(inert(control('held-save'))).toBe(true);
-    expect(text('[data-next-intent-status]')).toBe('');
+    expect(text('[data-next-intent-status]')).toBe('Not saved');
   });
 
   it('drops a chosen prompt when the stored goal is typed back over it', async () => {
@@ -585,4 +587,21 @@ describe('the header status over a change Save intent would not write', () => {
     expect(inert(control('held-save'))).toBe(true);
     expect(control('held-undo')?.getAttribute('aria-disabled')).toBe('true');
   });
+});
+
+it('reads a saved goal until asked to edit and keeps the resulting draft after a refresh', async () => {
+  const page = mountSession({
+    store: { goal: 'Saved goal', lines: ['A saved line'], revision: 1 },
+  });
+  await page.settle();
+  expect(screen.queryByRole('textbox', { name: 'Goal' })).toBeNull();
+  expect(screen.getByText('A saved line')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit goal' }));
+  const box = goalBox();
+  type(box, 'A draft I want to keep');
+  await page.poll({ ...(page.state.data as object), generated: 1100 });
+  expect(goalBox()).toBe(box);
+  expect(box.value).toBe('A draft I want to keep');
+  expect(screen.getByText('Unsaved changes')).toBeVisible();
+  expect(page.posts()).toBe(0);
 });

@@ -1,6 +1,7 @@
-import { screen } from '@testing-library/react';
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
+import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { check, driftBoard, fact, json, mountDrift, press, textOf, openActivity } from './testing';
+import { check, driftBoard, fact, json, mountDrift, openActivity, press, textOf } from './testing';
 
 /* A press reads a session's messages back to its window start, which can be further than the board's own
    record reaches. A stored reading the reader merely opens loads no page, so one citing an entry the page
@@ -58,6 +59,33 @@ const recordBody = (extra: Record<string, unknown> = {}) => ({
 const unloaded = () => document.querySelector('[data-next-unloaded]');
 
 describe('a reading that cites an entry the page does not list', () => {
+  it('counts distinct stored citations and focuses an available quote when the first is unloaded', async () => {
+    const reading = {
+      ...ASSESSMENT,
+      criteria: {
+        goal: {
+          ...ASSESSMENT.criteria.goal,
+          result: 'departure',
+          cites: ['early', 'c1', 'c1'],
+        },
+      },
+    };
+    const page = mountDrift({
+      session: { ...session, annotation_assessment: reading },
+      store: { revision: 1, goal: 'Keep the connection working' },
+      facts: [check('c1', 500, 'failed', { result_source: 'failed flag' })],
+      routes: { [path]: () => json(recordBody()) },
+    });
+    await page.settle();
+    const card = within(screen.getByRole('region', { name: 'Is it on track?' }));
+    await press(card.getByRole('button', { name: 'See the 2 quotes behind this' }));
+    const evidence = within(screen.getByRole('tabpanel', { name: 'Evidence' }));
+    const quote = evidence.getByRole('link', { name: /Activity log for Goal/ });
+    await waitFor(() => expect(document.activeElement).toBe(quote));
+    expect(evidence.getByText(/2 entries cited/)).toBeVisible();
+    expect(unloaded()).not.toBeNull();
+  });
+
   it('says so, points at Show more, and stops saying it once the reader loads the entry', async () => {
     const page = mountDrift({
       session,
@@ -76,15 +104,15 @@ describe('a reading that cites an entry the page does not list', () => {
       },
     });
     await page.settle();
-    await openActivity();
-    await page.settle();
-    await openActivity();
+    await openSessionTechnicalTab('Evidence');
     expect(unloaded()?.textContent).toBe(
       'This reading cites an entry that is not listed. Show more, under the list, may load it.',
     );
     // Nothing is loaded for the reader: the sentence leaves only once they ask.
     expect(page.gets(path)).toBe(1);
+    await openSessionTechnicalTab('Activity log');
     await press(screen.getByRole('button', { name: 'Show 50 older entries' }));
+    await openSessionTechnicalTab('Evidence');
     expect(page.gets(path)).toBe(2);
     expect(unloaded()).toBeNull();
     expect(textOf('[data-next-result-goal]')).not.toContain('Nothing resolvable was cited');
@@ -99,9 +127,7 @@ describe('a reading that cites an entry the page does not list', () => {
       },
     });
     await page.settle();
-    await openActivity();
-    await page.settle();
-    await openActivity();
+    await openSessionTechnicalTab('Evidence');
     expect(unloaded()).toBeNull();
     expect(textOf('[data-next-result-goal]')).toContain('Nothing resolvable was cited');
   });
@@ -117,9 +143,7 @@ describe('a reading that cites an entry the page does not list', () => {
       routes: { [path]: () => json(recordBody()) },
     });
     await page.settle();
-    await openActivity();
-    await page.settle();
-    await openActivity();
+    await openSessionTechnicalTab('Evidence');
     expect(unloaded()?.textContent).toBe(
       'This reading cites 2 entries that are not listed. Show more, under the list, may load them.',
     );
@@ -140,9 +164,7 @@ describe('the adopted-source note', () => {
       facts: FACTS,
     });
     await page.settle();
-    await openActivity();
-    await page.settle();
-    await openActivity();
+    await openSessionTechnicalTab('Evidence');
     const text = document.body.textContent ?? '';
     expect(text).toContain(
       'The adopted source was found. Analyze reads at most the first 1,000 characters of any prompt.',
@@ -165,9 +187,7 @@ describe('the adopted-source note over a /goal', () => {
   const noteOf = async (goalSource: string) => {
     const page = mountDrift({ session: stated(goalSource), facts: FACTS });
     await page.settle();
-    await openActivity();
-    await page.settle();
-    await openActivity();
+    await openSessionTechnicalTab('Evidence');
     return document.body.textContent ?? '';
   };
 
@@ -208,9 +228,7 @@ describe('a finished press that cites an entry the page does not list', () => {
       routes: { [path]: older },
     });
     await page.settle();
-    await openActivity();
-    await page.settle();
-    await openActivity();
+    await openSessionTechnicalTab('Evidence');
     expect(page.gets(path)).toBe(1);
     await page.poll({ ...driftBoard({ session: stored }), generated: 1200 });
     await page.settle();
@@ -229,9 +247,7 @@ describe('a finished press that cites an entry the page does not list', () => {
       routes: { [path]: older },
     });
     await page.settle();
-    await openActivity();
-    await page.settle();
-    await openActivity();
+    await openSessionTechnicalTab('Evidence');
     await page.poll({ ...driftBoard({ session: stored }), generated: 1200 });
     await page.settle();
     await openActivity();
@@ -249,9 +265,7 @@ describe('a finished press that cites an entry the page does not list', () => {
       routes: { [path]: older },
     });
     await page.settle();
-    await openActivity();
-    await page.settle();
-    await openActivity();
+    await openSessionTechnicalTab('Evidence');
     await page.poll({
       ...driftBoard({
         session: { ...stored, annotation_reading_withheld: 'The analysis was cancelled.' },

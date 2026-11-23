@@ -35,7 +35,7 @@ export const POLICY = {
   words: { claude: true },
   tool_output: { claude: ['api'] },
   used: 1,
-  limit: 10,
+  limit: 100,
 };
 
 export function driftBoard(

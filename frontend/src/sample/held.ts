@@ -14,7 +14,7 @@ const LIVE_ACTIONS = new Set([
 // Base UI forwards a switch press to its hidden checkbox. Only the Live monitor may toggle in the sample.
 const LIVE_MONITOR_INPUT =
   'button[data-slot="switch"][data-next-cockpit-action="live-monitor"] + input[type="checkbox"][aria-hidden="true"]';
-const LIVE_REGIONS = `[data-sample-tour], [data-next-jump-back], a[href], [data-slot="popover-trigger"], [data-slot="accordion-trigger"], [data-slot="collapsible-trigger"], [role="combobox"], [role="listbox"], [role="option"], ${LIVE_MONITOR_INPUT}`;
+const LIVE_REGIONS = `[data-sample-tour], [data-next-jump-back], a[href], [data-slot="popover-trigger"], [data-slot="accordion-trigger"], [data-slot="collapsible-trigger"], [role="tab"], [role="combobox"], [role="listbox"], [role="option"], ${LIVE_MONITOR_INPUT}`;
 const CONTROL =
   'button, input, textarea, select, [role="button"], [role="switch"], [role="checkbox"]';
 

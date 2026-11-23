@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
-import { CORRECTION_CAP, CORRECTION_WHY_LABEL, STEER_PURPOSE } from '../src/drift/sentences';
+import { CORRECTION_CAP, CORRECTION_HINT, CORRECTION_WHY_LABEL } from '../src/drift/sentences';
 import { clock } from '../src/observed';
 import {
   DEPARTURE_READING,
@@ -11,6 +11,7 @@ import {
   written,
   type Scenario,
 } from './drift.scenario';
+import { openSessionTechnicalTab } from './sessionTechnical';
 
 /* Steer back's correction carries each departure's explanation (owner, 2026-10-20,
    docs/design-reading-a-session.md#amended-2026-10-20-owner-the-correction-carries-the-explanation). The server
@@ -80,7 +81,9 @@ const scenario = (value: Scenario): Pick<Story, 'args'> => ({ args: { scenario: 
 async function openBox(canvasElement: HTMLElement): Promise<HTMLTextAreaElement> {
   const canvas = within(canvasElement);
   await userEvent.click(await canvas.findByRole('button', { name: 'Steer back' }));
-  return (await canvas.findByLabelText('Correction to paste')) as HTMLTextAreaElement;
+  return (await canvas.findByLabelText(
+    'Edit this if you like, then paste it into the session',
+  )) as HTMLTextAreaElement;
 }
 
 /* Owner, 2026-10-20: a placeholder is drawn as nothing; the agent never saw Compass's numbers. */
@@ -96,6 +99,42 @@ async function noOpeningLine(box: HTMLTextAreaElement) {
     await expect(/^[/!#<>`@]/.test(line)).toBe(false);
   }
 }
+
+export const ADepartingDoneLineSuppliesTheStarter: Story = {
+  ...scenario({
+    session: session(
+      { line_1: departs(['c1'], LINE_WHY, 'Tests pass') },
+      {
+        annotation_goal: '',
+        annotation_line_2: '',
+        first_prompt: '',
+        first_prompt_at: null,
+        latest_prompt: '',
+        latest_prompt_at: null,
+      },
+    ),
+    facts: [PERSON, FAILED],
+    clipboard: true,
+    correction: {
+      ok: true,
+      starter:
+        '"Tests pass" is the outcome I asked for. Please address what went off course and work toward that outcome.',
+      parts: ['Where it stands against what I expect:\n- Tests pass: departed at 00:08'],
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const field = await openBox(canvasElement);
+    const starter =
+      '"Tests pass" is the outcome I asked for. Please address what went off course and work toward that outcome.';
+    await expect(field).toHaveValue(starter);
+    await userEvent.type(field, ' Start with the parser tests.');
+    await expect(field).toHaveValue(`${starter} Start with the parser tests.`);
+    await userEvent.click(canvas.getByRole('button', { name: 'Copy message' }));
+    await expect(await canvas.findByRole('button', { name: 'Copied' })).toBeVisible();
+    await expect(canvas.getByText(CORRECTION_HINT)).toBeVisible();
+  },
+};
 
 export const TwoDeparturesEachExplained: Story = {
   ...scenario({
@@ -129,7 +168,8 @@ export const TwoDeparturesEachExplained: Story = {
     // A consistent line explains nothing, and only the two departures carry one.
     await expect(explanations(box)).toHaveLength(2);
     await expect(lines[line + 2]).toMatch(/^- Lint is clean: consistent with 00:10/);
-    // The box says the same why the departure cards above it say, in the same words.
+    // The box and the Evidence cards explain both departures in the same words.
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const whys = [...canvasElement.querySelectorAll<HTMLElement>('[data-next-departure-why]')].map(
       (node) => node.lastElementChild?.textContent ?? '',
     );
@@ -365,9 +405,21 @@ export const ADepartureReadsAsWhatHappened: Story = {
   }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByRole('heading', { name: 'Where it went off course' }),
+    ).toBeVisible();
+    const evidenceButton = canvas.getByRole('button', { name: /^See the .*quotes? behind this$/ });
+    await userEvent.click(evidenceButton);
+    const panel = await canvas.findByRole('tabpanel', { name: 'Evidence' });
+    await waitFor(() => expect(panel).toBeVisible());
+    await waitFor(() =>
+      expect(
+        within(panel).getByRole('link', { name: /^Show #.* in Activity log for Goal/ }),
+      ).toHaveFocus(),
+    );
     const find = (key: string) =>
       waitFor(() => {
-        const node = canvasElement.querySelector<HTMLElement>(`[data-next-departure="${key}"]`);
+        const node = panel.querySelector<HTMLElement>(`[data-next-departure="${key}"]`);
         expect(node).not.toBeNull();
         return node as HTMLElement;
       });
@@ -389,29 +441,32 @@ export const ADepartureReadsAsWhatHappened: Story = {
     await expect(what.querySelectorAll('li')).toHaveLength(1);
     await expect(line.querySelector('[data-next-departure-why]')).toHaveTextContent(LINE_WHY);
     await expect(goal.querySelector('[data-next-departure-why]')).toHaveTextContent(GOAL_WHY);
-    // Steer back is a section of its own after the departures, in the design's words.
+    // Steer back follows the compact departure on the session page.
     const section = canvasElement.querySelector<HTMLElement>('[data-next-steer-section]');
     await expect(section).not.toBeNull();
     await expect(
       canvasElement
-        .querySelector('[data-next-departures]')
+        .querySelector('[data-next-progress-finding]')
         ?.compareDocumentPosition(section as Node),
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     await expect(
       within(section as HTMLElement).getByRole('heading', { name: 'Steer back' }),
     ).toBeVisible();
-    await expect(section).toHaveTextContent(STEER_PURPOSE);
     await userEvent.click(await canvas.findByRole('button', { name: 'Steer back' }));
-    await expect(await canvas.findByLabelText('Correction to paste')).toBeVisible();
+    const box = await canvas.findByLabelText(
+      'Edit this if you like, then paste it into the session',
+    );
+    await expect(box).toBeVisible();
+    await expect(box).toHaveAccessibleDescription(CORRECTION_HINT);
     await expect(section?.querySelector('[data-next-steer-from]')).toHaveTextContent(
       /^Built from your saved intent and the reading at /,
     );
-    // Update intent instead is the quiet secondary, not a dashed twin of the press.
+    // Updating the goal is a bordered secondary action.
     const update = within(section as HTMLElement).getByRole('button', {
-      name: 'Update intent instead',
+      name: 'Update my goal instead',
     });
     await expect(getComputedStyle(update).borderStyle).toBe('solid');
-    await expect(update).toHaveAttribute('data-variant', 'quiet');
+    await expect(update).toHaveAttribute('data-variant', 'default');
   },
 };
 
@@ -431,7 +486,10 @@ export const TheCounterFollowsTheCorrection: Story = {
     const canvas = within(canvasElement);
     const shown = () => canvasElement.querySelector('[data-next-correction-count]');
     const length = (box: HTMLTextAreaElement) => String([...box.value].length);
-    const field = () => canvas.getByLabelText('Correction to paste') as HTMLTextAreaElement;
+    const field = () =>
+      canvas.getByRole('textbox', {
+        name: 'Edit this if you like, then paste it into the session',
+      }) as HTMLTextAreaElement;
     const box = await openBox(canvasElement);
     await expect(shown()).toHaveTextContent(`${length(box)}/${String(CORRECTION_CAP)}`);
     // Left open and untouched: the next board follows the record, and the shorter text is the box's now.

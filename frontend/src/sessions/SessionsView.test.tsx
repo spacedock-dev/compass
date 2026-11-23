@@ -639,7 +639,7 @@ describe('the Sessions first step', () => {
     },
   );
   it.each(['working', 'idle'])(
-    'opens a saved goal in one press and focuses its box for %s',
+    'opens a saved goal in one press and focuses its heading for %s',
     async (state) => {
       const page = await open(
         board(
@@ -659,9 +659,7 @@ describe('the Sessions first step', () => {
       fireEvent.click(screen.getByRole('link', { name: 'Ship the queue' }));
       await page.settle();
       expect(page.router.getRoute()).toMatchObject({ view: 'session', session: 'saved' });
-      expect(document.activeElement?.getAttribute('data-next-focus')).toBe(
-        'held:claude:saved:goal',
-      );
+      expect(document.activeElement?.getAttribute('data-next-focus')).toBe('intent:claude:saved');
     },
   );
 });

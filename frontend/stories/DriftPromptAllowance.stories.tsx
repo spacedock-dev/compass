@@ -58,7 +58,7 @@ export const AnUnsentPromptKeepsItsRefusalAndCountsNoAnalysis: Story = {
     delete SESSION['annotation_reading_withheld_at'];
   },
   play: async ({ canvasElement, args }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     const checks = await openSessionTechnicalTab('Check settings', canvasElement);
     const allowance = checks.getByText('Next Analyze prompt:').parentElement?.parentElement;
     await expect(allowance).toBeVisible();
@@ -105,7 +105,7 @@ export const AnUnsentPromptKeepsItsRefusalAndCountsNoAnalysis: Story = {
 export const AnOlderServerLeavesTheNextAllowanceUnknown: Story = {
   args: { scenario: { route: ROUTE } },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const card = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     const checks = await openSessionTechnicalTab('Check settings', canvasElement);
     const allowance = checks.getByText('Next Analyze prompt:').parentElement?.parentElement;
     await expect(allowance).toBeVisible();
@@ -131,7 +131,7 @@ export const ManagedMcpExplainsWhyTheReadingCannotRun: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     const checks = await openSessionTechnicalTab('Check settings', canvasElement);
     const allowance = checks.getByText('Next Analyze prompt:').parentElement?.parentElement;
     await expect(allowance).toHaveTextContent('managed-mcp.json');

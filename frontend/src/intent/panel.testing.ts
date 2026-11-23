@@ -1,7 +1,7 @@
 /* Fixtures for the Intent panel's tests: a board with one Claude session the reader can annotate, and a
    scripted store behind `/api/annotate` and `/api/direction` that behaves the way the server's does, so a
    test can save words and then read them back from the next board. Not imported by production code. */
-import { fireEvent } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { json, mountIntent, type Handler, type IntentShellOptions } from './testing';
 
 export const SESSION_HASH = '#n=session:alpha%2Fapp:claude:s1';
@@ -89,6 +89,11 @@ export function mountSession(
     data: board(session ?? {}, store ?? {}),
     ...rest,
   });
+}
+
+export function editGoal(): void {
+  const edit = screen.queryByRole('button', { name: 'Edit goal' });
+  if (edit) fireEvent.click(edit);
 }
 
 /* The goal box, the outcome boxes and the footer, as a reader meets them. */

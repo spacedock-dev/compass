@@ -7,7 +7,7 @@ Codex and Gemini CLI) by reading the session records they already write.
 
 To try it, install the plugin (see the [README](../README.md#1-how-to-set-up)), then ask your agent to
 "open compass" or run `/compass:compass`. The dashboard opens at `http://127.0.0.1:4553/`. To see what
-a finished drift check looks like before you run one, open "See a sample session (view only)" above
+a finished progress check looks like before you run one, open "See a sample session (view only)" above
 the Sessions list.
 
 ## Checking a session for drift
@@ -17,15 +17,10 @@ want touched, stops short, or says it finished when its own record shows otherwi
 for drift by comparing your goal with what the session recorded: its messages, the checks and
 commands it ran, and the files it wrote.
 
-![The Drift card on the sample session: a Medium level with one departure from the goal, the agent's
-own messages and the reader's message it rests on, each with a numbered citation, and below it a
-claim the record contradicts.](images/how-it-works-drift-card.png)
-
-The picture above is the Drift card on the sample session. The agent reported the milestone 97.3%
-complete, then said it had found a blocker, and the reader then said a ticket was still open.
-Compass reads that as a departure from the goal "burn down the milestone", at a Medium level, and
-cites the three entries it rests on as `[41]`, `[79]` and `[80]`. Below it, the agent's claim that
-the build work was "done and merged" is shown as contradicted by entry `[80]`.
+In the sample session, the agent reported the milestone 97.3% complete and later found a
+blocker. The reader then said an issue was still open. Is it on track? shows Slightly off
+course. Follow the quotes link to see the entries behind the finding and the record that
+contradicts the agent's claim that the build work was done and merged.
 
 ```mermaid
 flowchart LR
@@ -39,18 +34,24 @@ flowchart LR
 
 A check goes like this:
 
-1. On the session's page, write the goal you are holding the session to in the Goal card. You can
-   add up to six expected outcome lines: what should be true when the work is done.
+1. Open the Goal card to read the saved goal and what done looks like. Press Edit goal to
+   change the words, or Use your prompt to start with a message from the session. The prompt
+   picker says when it finds no usable prompts or cannot read them. You can save up to six
+   lines describing what done looks like.
 2. Press Check progress. This sends the session's content to a model (see
    [what can leave your machine](#what-can-leave-your-machine)).
-3. The Drift card shows a level: None or low, Medium, High or Extreme. When the record cannot support
-   a level, it says Not enough recorded yet. Under the level, each departure and each outcome line
-   says what the record shows, with citations.
-4. For a departure, press Steer back. Compass writes a correction from your own goal and outcome
-   lines. You edit it, copy it and paste it into the session yourself; Compass never types into a
-   session.
-5. Once a reading is saved, the button reads Check progress again. New work or a changed goal
-   can put the reading out of date.
+3. Is it on track? shows On track, Slightly off course, Off course or Way off course when
+   the record supports a level. On track means Compass found no departure in what it read.
+   If Compass found a departure but has no level, the card shows the finding. Codex checks
+   always use that approach for departures. The quotes link counts the entries cited by the
+   finding and opens Evidence, with focus on the first available quote.
+4. When Steer back is available, it opens an editable message based on your goal or a saved
+   line describing what done looks like. Use Copy message and paste it into the session
+   yourself. Compass never sends it for you.
+5. Once a reading is saved, the button reads Check progress again. New work, a changed goal
+   or a withdrawn reading can put the check out of date. If a newer check fails to produce a
+   reading, the card identifies any finding it shows from the earlier check. Uses AI stays
+   beside the check and shows the remaining count when 10 or fewer daily checks are left.
 
 Read a level as an account of the evidence, not a verdict you can rely on: the reader's accuracy
 check has not passed. A citation such as `[41]` lets you see the evidence for yourself. Hover over it
@@ -61,7 +62,7 @@ the session's full activity.
 
 Each session's page has three cards, one under another:
 
-- Intent: your goal and expected outcome lines.
+- Goal shows your saved goal and what done looks like. How goals work explains what Compass reads.
 - What the session has done: Compass's own outline of a Claude Code or Codex session, built without a
   model. It keeps reading on later page updates and says when work remains unread or a limit leaves
   a gap. Check counts may change while earlier checks are reconciled with later recorded work.
@@ -71,10 +72,11 @@ Each session's page has three cards, one under another:
   The card distinguishes source it could not collect from parts it collected but did not summarize.
   A finished outline does not fill gaps in a saved summary or confirm that the summary is current.
   Update summary can continue an interrupted message; older summaries made from excerpts offer Summarize again.
-- Drift: the check described above, and what became of anything it raised.
+- Is it on track? gives the progress answer and its next actions.
 
-At the foot of the page, Show technical details opens the Activity log. A citation opens the
-log and takes you to its entry. The log keeps your filter if it includes the entry and switches
+At the foot of the page, Show technical details opens the Activity log. Evidence holds the
+check's findings, numbered sources, and reading limits. A citation opens Activity log
+and takes you to its entry. The log keeps your filter if it includes the entry and switches
 to All if needed. Choose You, Agent, Commands, Files or Cited to narrow the loaded record.
 Cited includes entries linked from readings and summaries. The log says how many loaded entries
 the filter hides. Entries marked "Before reading window" fall outside the progress check for
@@ -119,7 +121,7 @@ Code session, turning on the Live monitor, or setting an endpoint URL.
 |---|---|---|---|
 | Quota reading | On by default | Your login token to your vendor, so the page can show quota windows. No session content. The Anthropic login covers any harness signed in to the same Claude subscription; Cursor is read on macOS only. | The switch in the page, or `--no-usage` |
 | Model calls | When you press a button that needs one, open a finished Claude Code session, or turn on the Live monitor | Session content, through the Claude Code or Codex CLI already on your machine, signed in as you | Pause all AI use, or `--no-observer-model` |
-| CI checks | When you press Analyze drift on a session tied to a pull request (or a GitLab merge request your goal names by its URL, on a host `glab` already knows), in a session whose folder is known | The repository and the pull request number, or the branch name, through your own `gh` or `glab`. The checks it reads go on to the reading model. Where GitHub names the required checks, only those count. | The switch beside the notice, `--no-ci-read`, or anything that stops model calls |
+| CI checks | When you press Check progress on a session tied to a pull request (or a GitLab merge request your goal names by its URL, on a host `glab` already knows), in a session whose folder is known | The repository and the pull request number, or the branch name, through your own `gh` or `glab`. The checks it reads go on to the reading model. Where GitHub names the required checks, only those count. | The switch beside the notice, `--no-ci-read`, or anything that stops model calls |
 | Release lookup | On by default; after server start and at most once per UTC day per Compass home | Only a `compass/<version> (<os>; <arch>[; ci][; internal])` User-Agent beyond urllib's standard headers to spacedock.md, with no query string. The route counts the lookup itself from its headers. The site counts checks in PostHog without an IP and in Plausible with the caller's IP and user agent; CI-marked checks are not counted. Plausible stores neither and derives approximate location from the address. No identifier or session content. | Turn off daily update checks in Settings, or `--no-update-check` |
 | Reach nudges | Only after you set an endpoint URL | Counts only, such as how many sessions are waiting on you, to the endpoint you set | Leave the URL unset, or `--no-reach` |
 
@@ -130,13 +132,13 @@ how much.
 One more path starts from you and is not traffic Compass sends. When you invoke the `compass` skill
 with `sessions` or `sessions waiting`, the agent runs that read-only operation and the list it prints
 becomes part of that session's context, so it goes to that session's model provider. `drift` and
-`drift again` do the same with that session's own drift reading, and can spend one reading, as
-Analyze drift does; the correction stays out of the session. The list covers
+`drift again` do the same with that session's own progress reading. Like Check progress, they can
+spend one reading. The correction stays out of the session. The list covers
 every session on the board, in any harness or project, and
 [what can reach into a session](../SECURITY.md#what-can-reach-into-a-session) names each field and what
 does and does not stop it. The same command run in a terminal outside the session prints to that
 terminal only. There `--drift` needs `--session claude:SESSION_ID` (or `codex:THREAD_ID`) and refuses without it, and a
-reading it asks for is stored on the session's page as Analyze drift's is.
+reading it asks for is stored on the session's page alongside readings from Check progress.
 
 ### What calls a model
 
@@ -145,7 +147,7 @@ your machine.
 
 | What happens | Which CLI |
 |---|---|
-| You press Analyze drift | Claude Code for a Claude Code session (Codex if `claude` is not installed), Codex for a Codex session, and Codex first for other harnesses |
+| You press Check progress | Claude Code for a Claude Code session (Codex if `claude` is not installed), Codex for a Codex session, and Codex first for other harnesses |
 | You open a finished Claude Code session, press Summarize or Update summary, or request a summary from the terminal | Claude Code, to write the session summary; a stored terminal read spends nothing |
 | You press Find goal | A model reads the prompts you typed to find the session's goal |
 | You press Summarize this session in a project's Console | Codex, to summarize the focused session and up to three active child sessions |

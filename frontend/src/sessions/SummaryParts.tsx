@@ -60,6 +60,7 @@ import {
 } from './summaryActions';
 import { useSummaryMarks, type DepartureMark } from './summaryMarks';
 import type { SummaryState } from './summaryState';
+import { showEvidence } from './fullActivityKey';
 
 /* The summary half of the What the session has done card: its notice, its controls and the summary itself,
    drawn in the regions the card leaves for them. Every string a model wrote is drawn as text. */
@@ -608,6 +609,7 @@ function Mark({
   readonly tour: boolean;
 }) {
   const { model } = useDrift();
+  const controls = useControls();
   if (!marks.length && !failures) return null;
   /* The Drift card says the analysis predates newer work; a pill read on its own says so too. */
   const since = before === null ? '' : `, from the ${clock(before)} analysis, before newer work`;
@@ -628,6 +630,7 @@ function Mark({
               /* WCAG 2.5.3: the accessible name begins with the visible label. */
               name={`Departure · ${mark.name}${since}, go to the card`}
               className={`${PILL} cursor-pointer border-0 bg-[var(--clay)] text-[color:var(--bg)] no-underline hover:brightness-110`}
+              onJump={(focus) => showEvidence(controls, model.project, model.session, focus)}
             />
           ))}
         </span>
@@ -662,9 +665,20 @@ export function JumpButton({
   readonly label: string;
   readonly name: string;
   readonly className?: string;
-  /** Runs before the focus moves, for a target that sits inside a closed disclosure. */
-  readonly onJump?: () => void;
+  /** Move focus after revealing a target inside a closed disclosure. */
+  readonly onJump?: (focus: () => void) => void;
 }) {
+  const focus = () => {
+    const node = document.getElementById(target);
+    if (!node) return;
+    node.focus({ preventScroll: true });
+    node.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'instant'
+        : 'smooth',
+      block: 'center',
+    });
+  };
   return (
     <button
       type="button"
@@ -673,16 +687,8 @@ export function JumpButton({
       data-next-cockpit-action="finding-jump"
       data-next-summary-jump={target}
       onClick={() => {
-        onJump?.();
-        const node = document.getElementById(target);
-        if (!node) return;
-        node.focus({ preventScroll: true });
-        node.scrollIntoView({
-          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
-            ? 'instant'
-            : 'smooth',
-          block: 'center',
-        });
+        if (onJump) onJump(focus);
+        else focus();
       }}
     >
       {label}
@@ -971,8 +977,9 @@ export function DepartureSummaryLine({ row }: { readonly row: string }) {
             target={phaseId(key, place)}
             label={title}
             name={`Go to the summary phase that holds this evidence: ${title}`}
-            onJump={() => {
+            onJump={(focus) => {
               disclosures.set(phaseDisclosureKey(model.project, key, place), true);
+              focus();
             }}
           />
         ))

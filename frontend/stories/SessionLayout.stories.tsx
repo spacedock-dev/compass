@@ -7,7 +7,7 @@ import { auditTechnicalMonospace } from './calm.audit';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { App } from '../src/App';
-import { DRIFT_SUBTITLE, INTENT_MEASURED } from '../src/intent/sentences';
+import { INTENT_MEASURED } from '../src/intent/sentences';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
 import { WHAT_IT_DID_PLACEHOLDER } from '../src/sessions/WhatItDid';
@@ -488,7 +488,13 @@ function PageExample({
   );
 }
 
-const ORDER = ['Asked you', 'Goal', 'What the session has done', 'Drift', 'Show technical details'];
+const ORDER = [
+  'Asked you',
+  'Goal',
+  'What the session has done',
+  'Is it on track?',
+  'Show technical details',
+];
 /* A harness's own gate takes the asked block's place, and never stands beside it. */
 const REGIONS = [...ORDER, 'Waiting on you'];
 
@@ -543,7 +549,12 @@ export const RegionsInOrder: Story = {
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
     const breadcrumb = canvas.getByRole('navigation', { name: 'Breadcrumb' });
     await expect(breadcrumb.querySelector('svg[data-icon="caret-right"]')).toBeVisible();
-    const expected = ['Goal', 'What the session has done', 'Drift', 'Show technical details'];
+    const expected = [
+      'Goal',
+      'What the session has done',
+      'Is it on track?',
+      'Show technical details',
+    ];
     for (const width of [1280, 400]) {
       await atWidth(width, () => inOrderTopToBottom(canvasElement, expected));
     }
@@ -806,7 +817,6 @@ export const ActivityLogFilters: Story = {
 export const OpenTechnicalDetails: Story = {
   render: () => <PageExample technical readingUnavailable />,
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
     const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
     await expect(privacy.getByText('reader.example · Claude Code')).toBeVisible();
     await expect(privacy.getByText('Daily check count unavailable.')).toBeVisible();
@@ -817,12 +827,14 @@ export const OpenTechnicalDetails: Story = {
         privacy.getByText('Estimated prompt ceiling for this route: 524,288 bytes.'),
       ).toBeVisible(),
     );
-    const first = within(canvas.getByRole('region', { name: 'Drift' }));
+    await userEvent.click(privacy.getByRole('button', { name: 'What is sent' }));
+    const first = within(within(canvasElement).getByRole('region', { name: 'Is it on track?' }));
     await userEvent.click(first.getByRole('button', { name: 'What is sent' }));
     await waitFor(() =>
       expect(first.getByText('Estimated prompt ceiling for this route: 512 KB.')).toBeVisible(),
     );
     await expect(first.queryByText(/524,288 bytes/)).toBeNull();
+    await userEvent.click(first.getByRole('button', { name: 'What is sent' }));
     const checks = await openSessionTechnicalTab('Check settings', canvasElement);
     await expect(await checks.findByText('16 KB of 2,048 KB allowed (16,384 bytes)')).toBeVisible();
   },
@@ -832,7 +844,7 @@ export const TechnicalPullRequestReadKeepsFocus: Story = {
   render: () => <PageExample technical />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const first = within(await canvas.findByRole('region', { name: 'Drift' }));
+    const first = within(await canvas.findByRole('region', { name: 'Is it on track?' }));
     await userEvent.click(first.getByRole('button', { name: 'What is sent' }));
     await waitFor(() =>
       expect(first.getByRole('button', { name: 'Turn off the pull request read' })).toBeVisible(),
@@ -939,48 +951,48 @@ export const TechnicalEvidence: Story = {
   render: () => <PageExample technical evidence="model" cites={['e95']} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
-    await openSessionTechnicalTab('Evidence', canvasElement);
-    const evidence = within(await canvas.findByRole('tabpanel', { name: 'Evidence' }));
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
     await expect(
-      await evidence.findByRole('heading', { name: 'Evidence for “Slightly off course”' }),
+      evidence.getByRole('heading', { name: 'Evidence for “Slightly off course”' }),
     ).toBeVisible();
-    await expect(
-      evidence.getByText(/Reading by claude-sonnet-5-5 at \d{2}:\d{2}/),
-    ).toHaveTextContent('2 entries cited');
-    const goal = evidence.getByRole('heading', { name: /^Goal$/ });
-    const outcome = evidence.getByRole('heading', { name: /^Expected outcome$/ });
-    if (!goal.parentElement || !outcome.parentElement) throw new Error('Missing criterion groups');
-    await expect(within(goal.parentElement).getByText(/Synthetic entry 95/)).toBeVisible();
-    await expect(within(outcome.parentElement).getByText(/Synthetic entry 96/)).toBeVisible();
+    await expect(evidence.getByText('2 entries cited')).toBeVisible();
+    await expect(evidence.getByText(/Synthetic entry 95/)).toBeVisible();
+    await expect(evidence.getByText(/Synthetic entry 96/)).toBeVisible();
     await expect(evidence.getByRole('button', { name: 'What the check read' })).toBeVisible();
-    await expect(evidence.getByRole('button', { name: 'This reading looks wrong' })).toBeVisible();
-    await userEvent.click(evidence.getByRole('button', { name: 'This reading looks wrong' }));
-    const undo = await evidence.findByRole('button', { name: 'Undo' });
+
+    const progress = within(canvas.getByRole('region', { name: 'Is it on track?' }));
+    await expect(progress.queryByText(/Synthetic entry 95/)).toBeNull();
+    await userEvent.click(progress.getByRole('button', { name: 'This reading looks wrong' }));
+    const undo = await progress.findByRole('button', { name: 'Undo' });
     await waitFor(() => expect(undo).toHaveFocus());
-    const marked = evidence.getByText(/^Marked inaccurate\./);
-    await expect(marked).toBeVisible();
-    await expect(marked.getBoundingClientRect().height).toBeGreaterThan(1);
+    await expect(evidence.getByText(/^Marked inaccurate\./)).toBeVisible();
     await userEvent.click(undo);
     await waitFor(() =>
-      expect(evidence.getByRole('button', { name: 'This reading looks wrong' })).toHaveFocus(),
+      expect(progress.getByRole('button', { name: 'This reading looks wrong' })).toHaveFocus(),
     );
-    await expect(
-      within(canvas.getByRole('region', { name: 'Drift' })).getByText('Synthetic entry 95', {
-        exact: false,
-      }),
-    ).toBeVisible();
-    const cite = await evidence.findByRole('button', {
-      name: /^Show #.* in Activity log for Goal/,
-    });
-    await userEvent.click(cite);
+    const cite = await evidence.findByRole('link', { name: /^Show #.* in Activity log for Goal/ });
+    await seeInContext(cite);
     const activity = within(await canvas.findByRole('tabpanel', { name: 'Activity log' }));
     await userEvent.click(await activity.findByRole('button', { name: 'Back to the finding' }));
     await waitFor(() =>
       expect(
-        evidence.getByRole('button', { name: /^Show #.* in Activity log for Goal/ }),
+        canvas.getByRole('link', { name: /^Show #.* in Activity log for Goal/ }),
       ).toHaveFocus(),
     );
+  },
+};
+
+export const UpdateMyGoalInsteadOpensTheEditor: Story = {
+  render: () => <PageExample technical evidence="model" cites={['e95']} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const goal = within(await canvas.findByRole('region', { name: 'Goal' }));
+    const progress = within(await canvas.findByRole('region', { name: 'Is it on track?' }));
+    await expect(goal.queryByRole('textbox', { name: 'Goal' })).toBeNull();
+    await userEvent.click(await progress.findByRole('button', { name: 'Update my goal instead' }));
+    const field = goal.getByRole('textbox', { name: 'Goal' });
+    await expect(field).toHaveFocus();
+    await expect(field).toHaveValue('Synthetic goal');
   },
 };
 
@@ -1060,77 +1072,40 @@ export const TechnicalTabInventory: Story = {
   },
 };
 
-/* Every control, sentence and limit the retired More held, in its new home, and More gone. */
+/* Goal and progress explain themselves in place. TechnicalTabInventory covers the controls in the tabs. */
 export const MoreIsRetired: Story = {
-  // Flaky: kept out of the test run until fixed; see docs/flaky-tests.md.
-  tags: ['!test'],
   render: () => <PageExample technical />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
     await expect(canvas.queryByRole('button', { name: 'More' })).toBeNull();
     await expect(canvasElement.querySelector('[data-next-session-more]')).toBeNull();
-    const [intent, drift] = await waitFor(() => {
-      const found = regions(canvasElement);
-      const pick = (name: string) =>
-        found.find((node) => (node.getAttribute('aria-label') ?? labelOf(node)) === name);
-      const both = [pick('Goal'), pick('Drift')];
-      if (!both[0] || !both[1]) throw new Error('cards not drawn yet');
-      return both as [HTMLElement, HTMLElement];
+    const intent = canvas.getByRole('region', { name: 'Goal' });
+    const inIntent = within(intent);
+    await expect(inIntent.queryByRole('button', { name: 'More about these words' })).toBeNull();
+    await expect(inIntent.queryByRole('button', { name: 'Clear' })).toBeNull();
+    const how = inIntent.getByRole('button', { name: 'How goals work' });
+    await expect(inIntent.getByRole('button', { name: 'Edit goal' })).toBeVisible();
+    await expect(inIntent.queryByRole('button', { name: 'Save intent' })).toBeNull();
+    await userEvent.click(how);
+    await waitFor(async () => {
+      await expect(inIntent.getByText(INTENT_MEASURED)).toBeVisible();
+      await expect(inIntent.getByText(/^Reads from /)).toBeVisible();
+      await expect(inIntent.getByText('These words are bound to claude:s1.')).toBeVisible();
+      await expect(inIntent.getByText(/Each save is kept on its own/)).toBeVisible();
     });
-    /* The card's own row keeps the reading start; Clear, the measured sentence, About these saved words,
-       Discard everything and Later directions sit behind one quiet menu, which floats inside the page. */
-    await expect(
-      await within(intent).findByRole('button', { name: /^Saved · reads from/ }),
-    ).toBeVisible();
-    await expect(within(intent).queryByRole('button', { name: 'Clear' })).toBeNull();
-    await userEvent.click(
-      await within(intent).findByRole('button', { name: 'More about these words' }),
-    );
-    const inIntent = within(canvasElement);
-    await waitFor(async () =>
-      expect(await inIntent.findByRole('button', { name: 'Clear' })).toBeVisible(),
-    );
-    await expect(inIntent.getByText(INTENT_MEASURED)).toBeVisible();
-    await expect(
-      await inIntent.findByRole('button', { name: 'About these saved words' }),
-    ).toBeVisible();
-    // The offer's summary; the press it opens is the second control of that name.
-    await waitFor(() =>
-      expect(inIntent.getAllByRole('button', { name: 'Discard everything' })[0]).toHaveAttribute(
-        'aria-expanded',
-        'false',
-      ),
-    );
-    await expect(
-      await inIntent.findByRole('button', { name: /^Later directions: / }),
-    ).toBeVisible();
-    await expect(await inIntent.findByRole('button', { name: 'How goals work' })).toBeVisible();
-    // Behind their summaries: the saved stamp's definition and binding key, the binding sentence, and the
-    // limit under Later directions.
-    await userEvent.click(
-      await within(intent).findByRole('button', { name: /^Saved · reads from/ }),
-    );
-    await waitFor(() => expect(inIntent.getByText('Each save is kept on its own.')).toBeVisible());
-    await expect(intent.querySelector('.next-cockpit-held-bound')).toHaveTextContent(/s1/);
-    // Pressing the stamp moves focus out of the menu, which closes it; the menu opens again for the rest.
-    const more = await within(intent).findByRole('button', { name: 'More about these words' });
-    if (more.getAttribute('aria-expanded') !== 'true') await userEvent.click(more);
-    await userEvent.click(await inIntent.findByRole('button', { name: 'About these saved words' }));
-    await waitFor(() =>
-      expect(inIntent.getByText('These words are bound to claude:s1.')).toBeVisible(),
-    );
-    await userEvent.click(await inIntent.findByRole('button', { name: /^Later directions: / }));
+    await userEvent.click(how);
+    await userEvent.click(inIntent.getByRole('button', { name: 'Edit goal' }));
+    await expect(inIntent.getByRole('button', { name: 'Clear' })).toBeVisible();
+    await expect(inIntent.getByRole('button', { name: 'Discard everything' })).toBeVisible();
+    await userEvent.click(inIntent.getByRole('button', { name: /^Later directions: / }));
     await waitFor(() =>
       expect(inIntent.getByText(/^Nothing here decides whether it changes/)).toBeVisible(),
     );
-    const inDrift = within(drift);
-    const head = drift.querySelector('header') as HTMLElement;
-    await expect(await within(head).findByText(DRIFT_SUBTITLE)).toBeVisible();
-    const details = canvas.getByRole('button', { name: 'Show technical details' });
-    await userEvent.click(details);
-    await activityLogPanel(canvasElement);
-    await userEvent.click(details);
+    await expect(
+      intent.querySelector('[data-slot="popover-content"] [data-slot="popover-content"]'),
+    ).toBeNull();
+    const inDrift = within(canvas.getByRole('region', { name: 'Is it on track?' }));
     await expect(inDrift.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
     await expect(inDrift.queryByRole('button', { name: 'Drift settings' })).toBeNull();
     await expect(inDrift.queryByText(/^Delegated work:/)).toBeNull();
@@ -1140,24 +1115,18 @@ export const MoreIsRetired: Story = {
       expect(inDrift.getByText('Estimated prompt ceiling for this route: 512 KB.')).toBeVisible(),
     );
 
-    await technicalTabInventory(canvasElement);
+    await openSessionTechnicalTab('Activity log', canvasElement);
   },
 };
 
-/* An ended session: the note that nothing is promised to read what is saved sits in About these saved words. */
 export const MoreIsRetiredForAnEndedSession: Story = {
   render: () => <PageExample ended />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
-    await userEvent.click(await canvas.findByRole('button', { name: 'More about these words' }));
-    const about = await canvas.findByRole('button', { name: 'About these saved words' });
-    await userEvent.click(about);
+    await userEvent.click(await canvas.findByRole('button', { name: 'How goals work' }));
     await waitFor(() =>
       expect(
-        canvas.getByText(
-          'This session has ended. Anything you save against it is kept, and nothing is promised to read it.',
-        ),
+        canvas.getByText(/^This session has ended. Compass keeps goals you save now/),
       ).toBeVisible(),
     );
   },
@@ -1194,21 +1163,22 @@ export const CitationLoadsAnOlderEntry: Story = {
         canvas.getByRole('button', {
           name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
         });
-      await waitFor(() => expect(jump()).toBeVisible());
       await waitFor(() =>
         expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(50),
       );
       await expect(canvasElement.querySelector('[data-next-entry-id="e5"]')).toBeNull();
       const trigger = canvas.getByRole('button', { name: /^(Show|Hide) technical details$/ });
       await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-      await userEvent.click(trigger);
+      await openSessionTechnicalTab('Activity log', canvasElement);
       const tab = canvas.getByRole('tab', { name: 'Activity log', selected: true });
       const panel = canvas.getByRole('tabpanel', { name: 'Activity log' });
       await expect(tab).toHaveAttribute('aria-controls', panel.id);
       await userEvent.click(within(panel).getByRole('button', { name: 'Cited' }));
-      await userEvent.click(trigger);
+      await openSessionTechnicalTab('Evidence', canvasElement);
+      await expect(jump()).toBeVisible();
       await userEvent.click(jump());
       await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      await expect(tab).toHaveAttribute('aria-selected', 'true');
       await waitFor(() =>
         expect(within(panel).getByRole('button', { name: 'Cited', pressed: true })).toBeVisible(),
       );
@@ -1234,10 +1204,12 @@ export const CitationLoadsAnOlderEntry: Story = {
           name: /^Show #\d+(\.\d+)? in Activity log for Goal: Synthetic goal$/,
         });
       await userEvent.keyboard('{Escape}');
-      await expect(document.activeElement).toBe(cited());
+      await waitFor(() => expect(cited()).toHaveFocus());
       await expect(scroll.calls.at(-1)).toEqual({ behavior: 'instant', block: 'center' });
       // A citation also lands from a filter that would otherwise hide its entry.
+      await openSessionTechnicalTab('Activity log', canvasElement);
       await userEvent.click(within(panel).getByRole('button', { name: 'You' }));
+      await openSessionTechnicalTab('Evidence', canvasElement);
       await seeInContext(cited());
       const reopened = await waitFor(() => {
         const found = panel.querySelector('[data-next-entry-id="e5"]');
@@ -1248,7 +1220,7 @@ export const CitationLoadsAnOlderEntry: Story = {
       await userEvent.click(
         within(reopened as HTMLElement).getByRole('button', { name: 'Back to the finding' }),
       );
-      await expect(document.activeElement).toBe(cited());
+      await waitFor(() => expect(cited()).toHaveFocus());
     } finally {
       scroll.restore();
     }
@@ -1260,6 +1232,7 @@ export const CitationLoadsAnOlderEntry: Story = {
 export const CitationThatCannotLoadSaysSo: Story = {
   render: () => <PageExample cites={['ghost']} />,
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const canvas = within(canvasElement);
     const jump = () =>
       canvas.getByRole('button', {
@@ -1279,7 +1252,7 @@ export const CitationThatCannotLoadSaysSo: Story = {
     await waitFor(() => expect(document.activeElement).toBe(note));
     await expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(100);
     await userEvent.click(within(note).getByRole('button', { name: 'Back to the finding' }));
-    await expect(document.activeElement).toBe(jump());
+    await waitFor(() => expect(jump()).toHaveFocus());
     // Escape on the way back, too, returns to the finding rather than leaving the session page.
     await userEvent.click(jump());
     // The press takes the old sentence down and draws its own.
@@ -1290,7 +1263,7 @@ export const CitationThatCannotLoadSaysSo: Story = {
     });
     within(again).getByRole('button', { name: 'Back to the finding' }).focus();
     await userEvent.keyboard('{Escape}');
-    await expect(document.activeElement).toBe(jump());
+    await waitFor(() => expect(jump()).toHaveFocus());
     await expect(
       canvas.getByRole('heading', { level: 1, name: 'Synthetic layout session' }),
     ).toBeVisible();
@@ -1303,6 +1276,7 @@ export const CitationThatCannotLoadSaysSo: Story = {
 export const RetainedReadingCitesBeforeTheWindow: Story = {
   render: () => <PageExample cites={['e5']} windowStart={G - 30} revised />,
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const canvas = within(canvasElement);
     await waitFor(() =>
       expect(canvasElement.querySelectorAll('[data-next-entry-id]').length).toBeGreaterThan(0),
@@ -1338,6 +1312,7 @@ export const RetainedReadingCitesBeforeTheWindow: Story = {
 export const CitationSetAsideByTheReadingSaysSo: Story = {
   render: () => <PageExample cites={['e5']} readingWindow={G - 60} />,
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const canvas = within(canvasElement);
     await userEvent.click(
       await canvas.findByRole('button', {
@@ -1370,6 +1345,7 @@ async function pollWithNewReading(canvasElement: HTMLElement) {
 export const SlowReadEndsAfterANewReading: Story = {
   render: () => <PageExample cites={['ghost']} stallOlder />,
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const canvas = within(canvasElement);
     const jump = await canvas.findByRole('button', {
       name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
@@ -1392,6 +1368,7 @@ export const SlowReadEndsAfterANewReading: Story = {
 export const NoteLeavesWithItsReading: Story = {
   render: () => <PageExample cites={['ghost']} />,
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     const canvas = within(canvasElement);
     const name = 'Load the cited entries in Activity log for Goal: Synthetic goal';
     await userEvent.click(await canvas.findByRole('button', { name }));
@@ -1415,7 +1392,7 @@ export const QuestionLeadsAndAnswersOnce: Story = {
       expect(named(canvasElement)).toEqual([
         'Goal',
         'What the session has done',
-        'Drift',
+        'Is it on track?',
         'Show technical details',
       ]),
     );

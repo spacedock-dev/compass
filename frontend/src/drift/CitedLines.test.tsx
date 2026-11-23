@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { describe, expect, it, vi } from 'vitest';
 import { check, fact, jumpTo, mountDrift } from './testing';
 
@@ -64,7 +65,9 @@ const mount = async () => {
     facts: FACTS,
   });
   await page.settle();
+  await openSessionTechnicalTab('Evidence');
   await page.settle();
+  await openSessionTechnicalTab('Evidence');
   return page;
 };
 

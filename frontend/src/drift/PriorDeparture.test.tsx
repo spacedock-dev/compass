@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { describe, expect, it, vi } from 'vitest';
 import { clock } from '../observed';
 import { datedClock } from '../observed/values';
@@ -109,6 +110,7 @@ describe('an earlier departure the agent’s word answered', () => {
   it('stays listed under the later reading, and is never said to no longer hold', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, DEPARTED, 1, 1100));
     await page.settle();
     expect(document.querySelector(PRIOR_GROUP)).toBeNull();
@@ -138,6 +140,7 @@ describe('an earlier departure the agent’s word answered', () => {
   it('is listed from the store on a reading this tab never saw depart', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1200, ON_MESSAGE, 2, 1210, PRIOR));
     await page.settle();
     expect(document.querySelector(PRIOR_GROUP)).not.toBeNull();
@@ -147,6 +150,7 @@ describe('an earlier departure the agent’s word answered', () => {
   it('is not listed where a check answers the line, which keeps saying the departure no longer holds', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, DEPARTED, 1, 1100));
     await page.settle();
     await page.poll(board(1200, ON_CHECK, 2, 1210, PRIOR));
@@ -159,6 +163,7 @@ describe('an earlier departure the agent’s word answered', () => {
   it('is listed where it cites what the agent said, the departure the producer writes on this line', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1200, ON_MESSAGE, 2, 1210, SAID_PRIOR));
     await page.settle();
     const card = document.querySelector<HTMLElement>('[data-next-prior-departure="line_2"]');
@@ -172,6 +177,7 @@ describe('an earlier departure the agent’s word answered', () => {
   it('is named "Earlier departure" to a screen reader as well as on the page', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1200, ON_MESSAGE, 2, 1210, SAID_PRIOR));
     await page.settle();
     const card = document.querySelector<HTMLElement>('[data-next-prior-departure="line_2"]');
@@ -187,6 +193,7 @@ describe('an earlier departure the agent’s word answered', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as never;
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1200, ON_MESSAGE, 2, 1210, SAID_PRIOR));
     await page.settle();
     await jumpTo(document.querySelector('[data-next-prior-departure] [data-next-cite="m0"]'));
@@ -205,6 +212,7 @@ describe('an earlier departure the agent’s word answered', () => {
     const later = 1000 + 2 * 86_400;
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     page.clock.advance(2 * 86_400 * 1000);
     await page.poll(board(later, ON_MESSAGE, 2, later + 10, SAID_PRIOR));
     await page.settle();
@@ -222,6 +230,7 @@ describe('an earlier departure the agent’s word answered', () => {
   it('is told apart from one that no longer holds when the same reading found both', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     const tests = {
       result: 'departure',
       cites: ['m0'],
@@ -246,6 +255,7 @@ describe('an earlier departure the agent’s word answered', () => {
   it('is not set aside when the reader marks the later reading Not accurate', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(
       board(1200, ON_MESSAGE, 2, 1210, SAID_PRIOR, {}, { annotation_not_accurate: true }),
     );
@@ -262,6 +272,7 @@ describe('an earlier departure the agent’s word answered', () => {
   it('says the later reading rests the goal, on the goal’s card', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     const goalDeparted = { ...SAID_DEPARTED, clause: 'Ship the queue' };
     const goalOnMessage = { ...ON_MESSAGE, clause: 'Ship the queue', detail: '' };
     await page.poll(
@@ -291,6 +302,7 @@ describe('an earlier departure the later reading cannot tell about', () => {
   it('stays listed, and is never said to no longer hold', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, DEPARTED, 1, 1100));
     await page.settle();
     await page.poll(board(1200, UNSETTLED, 2, 1210, PRIOR));
@@ -314,6 +326,7 @@ describe('an earlier departure the later reading cannot tell about', () => {
   it('is listed from the store on a reading this tab never saw depart', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1200, UNSETTLED, 2, 1210, PRIOR));
     await page.settle();
     expect(textOf('[data-next-prior-departure-source]')).toBe(SENTENCE(1200));
@@ -323,6 +336,7 @@ describe('an earlier departure the later reading cannot tell about', () => {
   it('says neither ended nor stands for two listed departures when only one sits beside a reader who cannot tell', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     const bothPrior = [
       ...PRIOR,
       {

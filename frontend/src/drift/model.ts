@@ -1,7 +1,7 @@
 import { nextNumber } from '../api/bootstrap';
 import { compatSessKey } from '../api/identity';
 import type { SessionIdentity } from '../api/types';
-import { annotateOn, annotationOf, type Annotation } from '../intent/annotation';
+import { annotateOn, annotationOf, storeUnreadable, type Annotation } from '../intent/annotation';
 import { identityOf } from '../intent/context';
 import {
   intentDraft,
@@ -24,6 +24,7 @@ import type { RecordEntry } from '../store/board';
 import { harnessLabels } from '../sessions/rows';
 import { analysisLevel, liveEstimate, type Contexts, type DriftLevel } from './level';
 import { ciEntries } from './ciRead';
+import { resultStale, type Stale } from './result';
 import { readingJob, readingRoute } from './route';
 import { LEVEL_SCALE } from './sentences';
 import { priorDepartures, type PriorDeparture } from './prior';
@@ -78,6 +79,9 @@ export interface DriftModel {
   readonly analysis: DriftLevel | null;
   /** The level the header pill shows, which never reads "Not enough recorded yet" and never shows over a draft. */
   readonly pill: DriftLevel | null;
+  readonly stale: Stale | null;
+  /** A newer published check attempt left no new reading. */
+  readonly latestCheckWithheld: boolean;
   /** The pill's level is provisional: the session is running, or the reading it shows read a running turn. */
   readonly pillSoFar: boolean;
   /** The header's "N entries": nothing where the record was not read, because 0 would be a default. */
@@ -257,12 +261,26 @@ export function buildModel(input: ModelInput): DriftModel {
     payload,
     generated,
   });
-  /* The analysis level is unaffected by the switch, so its pill shows whichever way the switch is set. A
-     reading that stands owns the slot, with a level or with none: the live estimate reads checks and paths
-     and never what the intent says, so it does not draw Medium beside a reading that found no departure. */
-  const shown: DriftLevel | { readonly save: true } | null = analysis ?? estimate;
+  const stale = raw && shape && annotation ? resultStale(shape, raw, annotation, entries) : null;
+  const withheldAt = nextNumber(annotation?.['reading_withheld_at']);
+  const readAt = nextNumber(raw?.['read_at']);
+  const latestCheckWithheld =
+    Boolean(annotation?.['reading_withheld']) &&
+    (!raw || (withheldAt !== null && readAt !== null && withheldAt > readAt));
+  // A saved reading or a refused lookup owns the slot even when it supplies no level.
+  const shown = raw || annotation?.['reading_refused'] === true ? analysis : estimate;
   const pill =
-    shown && 'level' in shown && !drafted && LEVEL_SCALE.includes(shown.level) ? shown : null;
+    annotate &&
+    annotation &&
+    !storeUnreadable(payload) &&
+    !drafted &&
+    !stale &&
+    !latestCheckWithheld &&
+    shown &&
+    'level' in shown &&
+    LEVEL_SCALE.includes(shown.level)
+      ? shown
+      : null;
   /* "So far" while the turn is open: a running session's level can still move, and a reading made then
      covers only the work up to it, whatever the session has done since. A state the board does not publish
      claims neither. */
@@ -313,6 +331,8 @@ export function buildModel(input: ModelInput): DriftModel {
     estimate,
     analysis,
     pill,
+    stale,
+    latestCheckWithheld,
     pillSoFar,
     entryCount: read ? numbers.size + numbering.earlier.length : null,
     /* From the record alone: whether Show more still helps is a question about the intent window, but the

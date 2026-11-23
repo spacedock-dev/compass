@@ -2,46 +2,39 @@ import { SampleMark } from '../sample/SampleMark';
 import { Card } from '../ui/card';
 import { compatSessKey } from '../api/identity';
 import { nextNumber } from '../api/bootstrap';
-import { Disclosure, disclosureKey, useFocusKey } from '../controls';
-import { clock, endedAt } from '../observed';
-import { GOAL_LABEL } from '../language/glossary';
+import { useFocusKey } from '../controls';
+import { Icon } from '../ui/icons';
+import { formatTimestamp } from '../shell/format';
+import { FindGoalNote } from './FindGoal';
+import { endedAt } from '../observed';
+import { GLOSSARY, GOAL_LABEL } from '../language/glossary';
 import { useDisplayed } from '../shell/context';
 import { ActionButton } from './ActionButton';
-import {
-  annotationDiscarded,
-  discardStamp,
-  heldCap,
-  revisionLine,
-  storeUnreadable,
-} from './annotation';
+import { annotationDiscarded, discardStamp, heldCap, storeUnreadable } from './annotation';
 import { heldSentence } from './cues';
 import {
   directionLinesQuestion,
   directionWhy,
   intentChanges,
   intentOverLimit,
-  linesDraft,
-  linesToSend,
+  goalKey,
+  goalSourceLine,
+  DRAFT_UNSAVED,
+  intentUnsaved,
+  savedLines,
   intentDrafted,
   intentKey,
   intentStatus,
-  DRAFT_UNSAVED,
   noDraftWhy,
 } from './derive';
-import { undoChanges } from './edit';
-import { ArmedDiscard, CaveatNotes, Caveats, LaterDirections } from './Caveats';
-import { ClearGoal, GoalField } from './GoalField';
+import { openGoalEditor, undoChanges } from './edit';
+import { ArmedDiscard, CaveatNotes, DiscardOffer, LaterDirections } from './Caveats';
+import { ClearGoal, GoalField, GoalUpdateOffer } from './GoalField';
 import { OutcomeLines } from './OutcomeLines';
 import { saveIntent } from './save';
 import { saveIntentAndLine } from './directions';
-import {
-  ENDED_CAVEAT,
-  INTENT_EDITED_ADD,
-  INTENT_MEASURED,
-  READ_FROM_NOW_WHY,
-  isReadsFrom,
-} from './sentences';
-import { REVISION_DEFINITION } from '../drift/sentences';
+import { ENDED_CAVEAT, INTENT_EDITED_ADD, READ_FROM_NOW_WHY, isReadsFrom } from './sentences';
+import { PromptSelect } from './PromptSelect';
 import { usePanel } from './useIntent';
 import { GoalExplanation } from './HowTo';
 
@@ -94,6 +87,7 @@ function Footer() {
   return (
     <div className="next-cockpit-held-footer">
       <span className="next-cockpit-held-tools">
+        <ClearGoal />
         <ActionButton
           label="Save intent"
           className={`font-bold px-4 ${saveLive || saving ? 'border-[var(--accent)] text-[color:var(--accent)]' : ''}`}
@@ -133,81 +127,38 @@ function Footer() {
   );
 }
 
-/* "Saved", without a check mark: a check in this panel reads as a verdict, and "Confirmed" would claim what
-   nothing did, since a saved revision is the reader's own words. The store key is in its details because the
-   reader may need whose words these are, and the page's title already names the session. */
-export function SavedStamp() {
-  const { input, session, project } = usePanel();
+function SavedGoal({ goal }: { readonly goal: string }) {
+  const { input, payload } = usePanel();
   const annotation = input.annotation;
-  const generated = nextNumber(input.payload['generated']);
-  const stamp = discardStamp(annotation, generated);
-  const line = stamp ? '' : revisionLine(annotation, generated);
-  if (!line) return null;
-  const start = nextNumber(annotation?.['window_start']);
+  const source = goalSourceLine(input);
+  const written = !source || source.startsWith('You typed this');
+  const savedAt =
+    nextNumber(annotation?.['goal_saved_at']) ??
+    (written || annotation?.['revision'] === 1 ? nextNumber(annotation?.['at']) : null);
+  const provenance = written ? 'You wrote this' : source.replace(/ · saved.*$/, '');
+  const time = formatTimestamp(savedAt, payload['generated'], { style: 'clock' });
+  const when = time ? `saved ${time}` : 'saved';
+  const lines = savedLines(annotation);
   return (
-    <Disclosure
-      disclosureKey={disclosureKey({
-        project,
-        scope: compatSessKey(session),
-        name: 'held-stamp',
-      })}
-      summary={`Saved${start !== null && start > 0 ? ` · reads from ${clock(start)}` : ''}`}
-      className="next-cockpit-held-stamp"
-    >
-      <p>
-        Editing the goal or adding a line keeps this start. Read from my latest message moves it.
+    <div className="grid gap-3">
+      <p className="text-label text-muted-foreground" data-next-cockpit-goal-source>
+        {`${provenance} · ${when}`}
+        {written ? '' : (source.match(/ · saved( · .*)$/)?.[1] ?? '')}
       </p>
-      <span className="next-cockpit-held-revision">{line}</span>
-      <span className="next-cockpit-define">{REVISION_DEFINITION}</span>
-      <span className="next-cockpit-held-bound">{compatSessKey(session)}</span>
-    </Disclosure>
-  );
-}
-
-/* What the retired session More held about the reader's words, reduced to what the design has: the reading's
-   start beside the card, and one disclosure for the rest (the sentence saying drift is measured against these
-   words, Clear, the caveats, Discard everything and the state of later
-   directions). What became of discarded words stays in the card, because it says what became of the reader's
-   words. Each part draws nothing when it has nothing to say.
-   [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */
-function Kept() {
-  const { project, session, input, payload } = usePanel();
-  const menu = disclosureKey({ project, scope: compatSessKey(session), name: 'intent-menu' });
-  /* The menu holds what acts on words that exist: Clear, the caveats, Discard everything, later directions.
-     Under an empty or discarded form it held only the how-to and drew as a lone "More", so it is left out
-     until the box or the store holds words. A discard's own account is drawn by CaveatNotes, not here. */
-  const changes = intentChanges(input);
-  const offered = (nextNumber(input.annotation?.['revision_count']) ?? 0) > 0;
-  const words =
-    offered ||
-    Boolean(changes.typed.trim()) ||
-    linesToSend(linesDraft(input.held, session, input.annotation)).length > 0;
-  const stamped = Boolean(revisionLine(input.annotation, nextNumber(payload['generated'])));
-  return (
-    <div
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label text-muted-foreground [&_.next-session-drift-caveats]:contents [&_.next-cockpit-held-discard]:mt-0 [&_.next-cockpit-held-hint]:flex-initial [&_.next-cockpit-held-hint]:text-label"
-      data-next-intent-kept
-    >
-      <SavedStamp />
-      <CaveatNotes />
-      {words || stamped ? (
-        <Disclosure
-          disclosureKey={menu}
-          summary="More"
-          summaryLabel="More about these words"
-          searchable={false}
-          className="basis-full"
-          focusKey={`intent-menu:${compatSessKey(session)}`}
-        >
-          <p className="next-cockpit-held-hint" data-next-intent-measured>
-            {INTENT_MEASURED}
-          </p>
-          <ClearGoal />
-          <Caveats />
-          <LaterDirections />
-        </Disclosure>
+      <p className="wrap-anywhere text-value font-bold">{goal}</p>
+      {lines.length ? (
+        <div>
+          <h3 className="text-body font-semibold">{GLOSSARY.doneLooksLike.shown}</h3>
+          <ul className="mt-1 grid gap-1">
+            {lines.map((line, index) => (
+              <li key={index} className="flex items-start gap-2 wrap-anywhere">
+                <Icon name="check" className="mt-0.5 shrink-0 text-[var(--accent)]" />
+                <span className="min-w-0">{line}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
-      <ArmedDiscard />
     </div>
   );
 }
@@ -226,6 +177,20 @@ export function IntentSection({ editable }: { readonly editable: boolean }) {
   const drafted = intentDrafted(input);
   const why = drafted ? '' : noDraftWhy(session, annotation, payload);
   const unreadable = storeUnreadable(payload);
+  const key = goalKey(session);
+  const saved =
+    !editable || unreadable || annotationDiscarded(annotation)
+      ? ''
+      : String(annotation?.['goal'] ?? '').trim();
+  const draft = intentChanges(input);
+  const pending =
+    intentUnsaved(input) ||
+    draft.any ||
+    draft.adoptable ||
+    Boolean(ctx.held.directions.get(compatSessKey(session))) ||
+    status === 'Saving…';
+  const explicit = ctx.held.editingGoals.has(key);
+  const showEditor = editable && (!saved || explicit || pending);
   return (
     <Card
       variant="intent-panel"
@@ -238,6 +203,7 @@ export function IntentSection({ editable }: { readonly editable: boolean }) {
         <span className="flex items-baseline">
           <h2
             id="next-session-intent-heading"
+            className="m-0 text-head font-bold"
             ref={heading}
             tabIndex={-1}
             data-next-focus={`intent:${compatSessKey(session)}`}
@@ -247,17 +213,26 @@ export function IntentSection({ editable }: { readonly editable: boolean }) {
           <SampleMark id="intent" />
         </span>
         <span className="ms-auto flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          {editable && status ? (
+          {showEditor ? (
             <span
-              className={`[font-family:var(--mono)] text-label ${status === 'Saved' || status === DRAFT_UNSAVED ? 'text-muted-foreground' : 'text-[var(--amber)]'}`}
+              className={`text-label ${status === 'Saved' || status === DRAFT_UNSAVED ? 'text-muted-foreground' : 'text-[var(--amber)]'}`}
               data-next-intent-status
             >
-              {status}
+              {status || (unreadable ? '' : 'Not saved')}
             </span>
+          ) : editable && saved ? (
+            <>
+              <ActionButton
+                label="Edit goal"
+                focusKey={`${key}:edit`}
+                onPress={() => openGoalEditor(ctx, session)}
+              />
+              <PromptSelect compact offerWithoutCandidates />
+            </>
           ) : null}
         </span>
       </header>
-      {editable ? (
+      {showEditor ? (
         <>
           {why ? (
             <p className="next-cockpit-held-lede" data-next-intent-no-draft>
@@ -275,10 +250,34 @@ export function IntentSection({ editable }: { readonly editable: boolean }) {
             <OutcomeLines />
           </div>
           <Footer />
-          <Kept />
+          <div className="flex flex-wrap items-center gap-2" data-next-intent-kept>
+            <DiscardOffer />
+            {saved && explicit && !pending ? (
+              <ActionButton
+                label="Done editing"
+                onPress={() => {
+                  ctx.held.editingGoals.delete(key);
+                  ctx.held.requestFocus(`${key}:edit`);
+                }}
+              />
+            ) : null}
+          </div>
+          <ArmedDiscard />
+        </>
+      ) : saved ? (
+        <>
+          <SavedGoal goal={saved} />
+          {editable ? (
+            <>
+              <GoalUpdateOffer />
+              <FindGoalNote />
+            </>
+          ) : null}
         </>
       ) : null}
+      <CaveatNotes />
       <GoalExplanation />
+      {editable ? <LaterDirections /> : null}
     </Card>
   );
 }

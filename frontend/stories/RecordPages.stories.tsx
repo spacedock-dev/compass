@@ -10,6 +10,7 @@ import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
+import { openSessionTechnicalTab } from './sessionTechnical';
 
 const meta = {
   title: 'Drift/Record pages',
@@ -18,13 +19,6 @@ const meta = {
 } satisfies Meta<typeof ShowMore>;
 export default meta;
 type Story = StoryObj<typeof meta>;
-/* Activity log starts collapsed; a reader opens it before reading or paging the record. */
-const openActivity = async (element: HTMLElement) => {
-  const trigger = await within(element).findByRole('button', {
-    name: /^(Show|Hide) technical details$/,
-  });
-  if (trigger.getAttribute('aria-expanded') !== 'true') await userEvent.click(trigger);
-};
 const ready = { ...EMPTY_RECORD, status: 'loaded' as const, pages: 1, next: 'older' };
 const pagingButton = async (element: HTMLElement) => {
   const button = within(element).getByRole('button', { name: 'Show 50 older entries' });
@@ -275,7 +269,7 @@ function SessionRecordExample({
 export const ReaderAppendsOlderEntries: Story = {
   render: () => <SessionRecordExample />,
   play: async ({ canvasElement }) => {
-    await openActivity(canvasElement);
+    await openSessionTechnicalTab('Activity log', canvasElement);
     const canvas = within(canvasElement);
     const button = await canvas.findByRole('button', { name: 'Show 50 older entries' });
     await waitFor(() =>
@@ -314,7 +308,7 @@ export const ReaderAppendsOlderEntries: Story = {
 export const NumbersStayWhenOlderEntriesLoad: Story = {
   render: () => <SessionRecordExample intent ordinals />,
   play: async ({ canvasElement }) => {
-    await openActivity(canvasElement);
+    await openSessionTechnicalTab('Activity log', canvasElement);
     const canvas = within(canvasElement);
     const number = (id: string) =>
       canvasElement.querySelector(`[data-next-entry-id="${id}"]`)?.getAttribute('data-next-entry');
@@ -336,12 +330,12 @@ export const NumbersStayWhenOlderEntriesLoad: Story = {
 export const OlderDirectionDraftSurvivesNavigation: Story = {
   render: () => <SessionRecordExample intent />,
   play: async ({ canvasElement }) => {
-    await openActivity(canvasElement);
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Show 50 older entries' }));
-    const log = within(canvas.getByRole('tabpanel', { name: 'Activity log' }));
+    const log = await openSessionTechnicalTab('Activity log', canvasElement);
+    await userEvent.click(await log.findByRole('button', { name: 'Show 50 older entries' }));
     await expect(await log.findByText('Synthetic entry 50')).toBeVisible();
     await expect(log.queryByRole('button', { name: /Add to my (goal|intent)/ })).toBeNull();
+    await userEvent.click(canvas.getByRole('button', { name: 'Edit goal' }));
     await expect(canvas.getByRole('textbox', { name: 'Goal' })).not.toHaveValue(
       'Synthetic older direction',
     );
@@ -351,23 +345,20 @@ export const OlderDirectionDraftSurvivesNavigation: Story = {
 export const ReadingNamesEntriesItHasNotLoaded: Story = {
   render: () => <SessionRecordExample intent reading />,
   play: async ({ canvasElement }) => {
-    await openActivity(canvasElement);
-    const canvas = within(canvasElement);
-    const note = await waitFor(() => {
-      const found = canvasElement.querySelector('[data-next-unloaded]');
-      if (!found) throw new Error('the reading has not said what it is missing yet');
-      return found;
-    });
-    await expect(note).toHaveTextContent(
-      'This reading cites an entry that is not listed. Show more, under the list, may load it.',
-    );
+    const missing =
+      'This reading cites an entry that is not listed. Show more, under the list, may load it.';
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(await evidence.findByText(missing)).toBeVisible();
     // The page loads nothing by itself: the entry arrives only when the reader asks.
     await expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(50);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Show 50 older entries' }));
+    const log = await openSessionTechnicalTab('Activity log', canvasElement);
+    await userEvent.click(await log.findByRole('button', { name: 'Show 50 older entries' }));
     await waitFor(() =>
       expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(100),
     );
-    await waitFor(() => expect(canvasElement.querySelector('[data-next-unloaded]')).toBeNull());
+    const loadedEvidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(loadedEvidence.queryByText(missing)).toBeNull();
+    await expect(await loadedEvidence.findByRole('link', { name: /^Show #\d+/ })).toBeVisible();
   },
 };
 
@@ -376,9 +367,8 @@ export const ReadingNamesEntriesItHasNotLoaded: Story = {
 export const CitedEntriesAreTinted: Story = {
   render: () => <SessionRecordExample intent reading />,
   play: async ({ canvasElement }) => {
-    await openActivity(canvasElement);
-    const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Show 50 older entries' }));
+    const log = await openSessionTechnicalTab('Activity log', canvasElement);
+    await userEvent.click(await log.findByRole('button', { name: 'Show 50 older entries' }));
     await waitFor(() =>
       expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(100),
     );
@@ -386,7 +376,8 @@ export const CitedEntriesAreTinted: Story = {
     const background = (node: HTMLElement) => getComputedStyle(node).backgroundColor;
     await expect(row()).not.toHaveAttribute('data-next-cited');
     const plain = background(row());
-    await seeInContext(await canvas.findByRole('link', { name: /^Show #\d+/ }));
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await seeInContext(await evidence.findByRole('link', { name: /^Show #\d+/ }));
     await waitFor(() => expect(row()).toHaveAttribute('data-next-cited'));
     await expect(background(row())).not.toBe(plain);
     await expect(getComputedStyle(row()).borderLeftWidth).toBe('3px');

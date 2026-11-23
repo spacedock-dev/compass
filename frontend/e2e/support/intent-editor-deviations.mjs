@@ -1,10 +1,10 @@
 /* The draft marks' badge became the goal's source line (docs/design-frontend-migration.md, Held to recorded
    answers, 2026-10-19), and the line's words changed on 2026-10-23: the recorded "from your prompt[ · latest|
    · HH:MM]" now reads "Drafted from your first|latest prompt · not saved" or "Drafted from the prompt you
-   chose · not saved", and the recorded excerpt cue is the suffix " · Shortened here; Analyze reads the whole
-   prompt". The cap sentence is under "What is sent", not on this line. */
+   chose · not saved". The excerpt cue also names how much of the original prompt a check can read. */
 const EXCERPT = 'Excerpt. Analyze looks up the source when pressed.';
-const SHORTENED = ' · Shortened here; Analyze reads the whole prompt';
+const SHORTENED =
+  ' · Shown as an excerpt. A progress check can read up to the first 1,000 characters of the original prompt';
 function sourceLine(marks) {
   const badge = marks.replace(EXCERPT, '').trim();
   const which = badge.match(/^from your prompt · (.+)$/)?.[1] ?? 'first';
@@ -39,7 +39,7 @@ export function intentEditorDeviations(recorded, caps) {
       }
     }
     if (field.kind === 'lines') {
-      field.label = 'Expected outcome · up to 6 lines';
+      field.label = 'What “done” looks like (optional) · up to 6 lines';
       if (field.boxes.length !== 1 || field.boxes[0]) {
         added.push(...field.buttons.filter(([label]) => label === '+ Add a line'));
         field.buttons = field.buttons.filter(([label]) => label !== '+ Add a line');

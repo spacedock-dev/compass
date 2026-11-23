@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, waitFor, within } from 'storybook/test';
 import collected from '../test/fixtures/collected-directions.json';
@@ -80,7 +81,8 @@ const scenario: Scenario = {
 export const TheReadersDirectionsAreNotTheAgentsDrift: Story = {
   args: { scenario },
   play: async ({ canvasElement }) => {
-    const drift = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    const drift = canvasElement;
     const shown = await waitFor(() => {
       const node = drift.querySelector<HTMLElement>('[data-next-result]');
       expect(node).not.toBeNull();
@@ -129,7 +131,8 @@ export const APersonSeesTheDraftDirectionAfterSavingOnlyOutcomes: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const drift = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    const drift = canvasElement;
     await expect(await within(drift).findByText(BASELINE_OPEN)).toBeVisible();
     await expect(drift.querySelector('[data-next-departure="goal"]')).toBeNull();
     await expect(drift.querySelector('[data-next-result-goal]')?.textContent).toContain(

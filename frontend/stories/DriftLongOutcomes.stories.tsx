@@ -7,6 +7,7 @@ import {
   PARTIAL_WHY,
 } from '../test/longReading';
 import { DriftScenario, failedCheck, fact, readingScenario } from './drift.scenario';
+import { openSessionTechnicalTab } from './sessionTechnical';
 
 const meta = {
   title: 'Drift/Long partial and interrupted outcomes',
@@ -21,11 +22,16 @@ const session = { annotation_assessment: PARTIAL_READING, annotation_reading_cou
 export const LocalDepartureWithoutGlobalReassurance: Story = {
   args: { scenario: { session, facts, reading } },
   play: async ({ canvasElement }) => {
-    const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
-    await expect(await within(root).findByText('The retry check failed.')).toBeVisible();
-    await expect(await within(root).findByText(PARTIAL_WHY)).toBeVisible();
-    await expect(root).toHaveTextContent("Can't tell");
-    await expect(root.textContent).not.toMatch(/Nothing departs|On track|All.*consistent/);
+    const root = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
+    const progress = within(root);
+    await expect(await progress.findByText(/Compass found 1 departure/)).toBeVisible();
+    await expect(progress.queryByText("Can't tell", { exact: true })).toBeNull();
+    await expect(progress.queryByText('On track', { exact: true })).toBeNull();
+    await expect(root.textContent).not.toMatch(/Nothing departs|All.*consistent/);
+    await expect(progress.queryByText(PARTIAL_WHY)).toBeNull();
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(await evidence.findByText('The retry check failed.')).toBeVisible();
+    await expect(await evidence.findByText(PARTIAL_WHY)).toBeVisible();
     await expect(reading.posts).toHaveLength(0);
   },
 };
@@ -39,12 +45,13 @@ const interrupted = {
 export const RestartKeepsTheEarlierReadingVisiblyOlder: Story = {
   args: { scenario: { session: interrupted, facts, reading } },
   play: async ({ canvasElement }) => {
-    const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
-    await expect(await within(root).findByText(EARLIER_READING)).toBeVisible();
+    const root = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(await evidence.findByText(EARLIER_READING)).toBeVisible();
     await expect(
       await within(root).findByText(new RegExp('Last analysis.*Compass stopped before')),
     ).toHaveTextContent(LONG_INTERRUPTED_SENTENCE);
-    await expect(await within(root).findByText('The retry check failed.')).toBeVisible();
+    await expect(await evidence.findByText('The retry check failed.')).toBeVisible();
     await expect(root.querySelectorAll('[data-next-long-interrupted]')).toHaveLength(1);
     await expect(reading.posts).toHaveLength(0);
   },
@@ -67,8 +74,9 @@ export const PendingDirectionAndPauseKeepTheRestartOutcome: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
-    await expect(await within(root).findByText(EARLIER_READING)).toBeVisible();
+    const root = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(await evidence.findByText(EARLIER_READING)).toBeVisible();
     await expect(
       await within(root).findByText(new RegExp('Last analysis.*Compass stopped before')),
     ).toHaveTextContent(LONG_INTERRUPTED_SENTENCE);

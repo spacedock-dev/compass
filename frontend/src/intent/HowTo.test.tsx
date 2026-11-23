@@ -90,14 +90,16 @@ describe('the Intent how-to', () => {
       ).toBeNull();
       await openHowTo(page);
       const popup = explanation() as HTMLElement;
-      expect(popup.textContent).toContain('1. Give the goal.');
-      expect(popup.textContent).toContain('Expected outcome is optional.');
+      expect(popup.textContent?.trim().split(/\s+/).length).toBeLessThanOrEqual(150);
+      expect(popup.textContent).toContain(
+        '1. Give the goal and, if useful, describe what done looks like.',
+      );
       expect(popup.textContent).not.toContain('a level needs one');
       // Where a detected goal comes from, and that it stands until the reader edits it.
       expect(popup.textContent).toContain(
-        "A session's /goal is used until you edit it; else Compass drafts from your first prompt.",
+        'Compass uses /goal until edited, or drafts from your first prompt.',
       );
-      expect(popup.textContent).toContain('3. Read where the work left your goal.');
+      expect(popup.textContent).toContain('3. To steer back, copy a correction.');
       expect(popup.textContent).toContain(
         'Compass can read recorded work from Claude Code, Codex and Pi.',
       );
@@ -105,7 +107,7 @@ describe('the Intent how-to', () => {
         'Progress levels appear only for Claude Code and Pi sessions.',
       );
       expect(popup.textContent).toContain(
-        'When a progress check is available, one press starts it. It uses AI and counts against a daily cap.',
+        'A progress check uses AI and counts against a daily cap.',
       );
       expect(popup.textContent).toContain(
         reader
@@ -117,11 +119,11 @@ describe('the Intent how-to', () => {
       );
       expect(popup.textContent).toContain('Compass never writes into sessions.');
       expect(popup.querySelector('[data-next-intent-howto-no-line]')?.textContent).toBe(
-        "With no outcome line, Compass reads your goal's end state; a goal too vague to read is refused.",
+        "With no outcome line, Compass reads your goal's end state. A goal too vague to read is refused.",
       );
       expect(popup.textContent).not.toContain('Not enough recorded yet');
       expect(popup.querySelector('[data-next-intent-howto-settle]')?.textContent).toBe(
-        "Readings settle a command's latest unpiped run, failed or passed with nothing written after it. A recorded write breaking a folder limit also departs.",
+        'The latest unpiped run settles when it fails or passes with no later write. Writes outside folder limits also depart.',
       );
       expect(popup.querySelector('[data-next-intent-howto-accuracy]')?.textContent).toBe(
         "The Claude reader's accuracy check has not passed, and its latest correction is unmeasured, so read a level as an account of the evidence, not a measurement.",

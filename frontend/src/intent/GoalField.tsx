@@ -1,6 +1,6 @@
 import { useId } from 'react';
 import { Label } from '../ui/label';
-import { clock as clockText, endedAt } from '../observed';
+import { clock as clockText } from '../observed';
 import { promptClip } from './derive';
 import { ActionButton } from './ActionButton';
 import { storeUnreadable, characterCount } from './annotation';
@@ -23,7 +23,7 @@ import { answerLines } from './directions';
 import { HeldTextarea } from './HeldTextarea';
 import { FindGoal, FindGoalNote, FoundCites } from './FindGoal';
 import { PromptSelect } from './PromptSelect';
-import { ENDED_CAVEAT, GOAL_HINT, RULE_HINT, goalOverLimit } from './sentences';
+import { GOAL_HINT, RULE_HINT, goalOverLimit } from './sentences';
 import { usePanel } from './useIntent';
 
 /* "Keep your standing outcome lines with this goal?": asked once when a direction became the goal, and Save
@@ -55,7 +55,7 @@ function LinesQuestion() {
 /* A /goal the session set after the reader saved their own goal: offered beside the field, naming the new
    condition and its time. Taking it fills the box as a pending adoption, so the saved words stay what they
    are until Save intent; keeping them declines this /goal and asks again only for a later one. */
-function GoalUpdateOffer() {
+export function GoalUpdateOffer() {
   const { ctx, input } = usePanel();
   const update = goalUpdate(input);
   if (!update) return null;
@@ -134,11 +134,6 @@ export function GoalField() {
       {endedGoal ? (
         <p className="next-cockpit-held-absent" data-next-goal-ended>
           {endedGoal}
-        </p>
-      ) : null}
-      {endedAt(session) !== null ? (
-        <p className="next-cockpit-held-absent" data-next-ended-goal>
-          {ENDED_CAVEAT}
         </p>
       ) : null}
       {sourceLine ? (

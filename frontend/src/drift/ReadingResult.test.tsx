@@ -8,6 +8,7 @@ import {
   check,
   contextRoute,
   fact,
+  driftBoard,
   json,
   jumpTo,
   LEASE_ROUTE,
@@ -68,6 +69,43 @@ async function evidencePanel() {
   return within(screen.getByRole('tabpanel', { name: 'Evidence' }));
 }
 
+describe('the progress answer without a level', () => {
+  it('explains when the session did not publish its saved goal', async () => {
+    const board = driftBoard();
+    const oldRow = Object.fromEntries(
+      Object.entries(board.sessions[0] ?? {}).filter(
+        ([key]) => !key.startsWith('annotation_') && !key.startsWith('first_prompt'),
+      ),
+    );
+    const page = mountDrift({ payload: { sessions: [oldRow] } });
+    await page.settle();
+    expect(textOf('[data-next-progress-absence]')).toMatch(
+      /^Can't tell.*Compass could not tell whether this session has a saved goal/,
+    );
+    expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
+  });
+
+  it('shows no goal yet when the first prompt is still a suggestion', async () => {
+    const page = mountDrift({ store: { goal: '', lines: [], revision: 0 } });
+    await page.settle();
+    expect(screen.getByText(/Drafted from your first prompt · not saved/)).toBeVisible();
+    expect(textOf('[data-next-progress-absence]')).toMatch(/^No goal yet.*Give Compass a goal/);
+    expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
+  });
+
+  it('explains a reading shape this version cannot interpret', async () => {
+    const page = mountDrift({
+      session: stored({ annotation_assessment: { ...ASSESSMENT, future_field: true } }),
+      facts: FACTS,
+    });
+    await page.settle();
+    expect(textOf('[data-next-progress-absence]')).toMatch(
+      /^Can't tell.*This board cannot read the reading it was given/,
+    );
+    expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
+  });
+});
+
 describe('technical Evidence', () => {
   it('shows an empty history after a readable annotation lookup', async () => {
     const page = mountDrift();
@@ -98,7 +136,7 @@ describe('technical Evidence', () => {
     expect(
       evidence.getByText(/^Marked inaccurate\./).classList.contains('next-visually-hidden'),
     ).toBe(false);
-    expect(evidence.getByRole('button', { name: 'Undo' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeVisible();
   });
 
   it('counts both stored citations when only one is loaded', async () => {
@@ -114,7 +152,7 @@ describe('technical Evidence', () => {
     await page.settle();
     const evidence = await evidencePanel();
     expect(evidence.getByText(/2 entries cited/)).toBeVisible();
-    expect(evidence.getAllByRole('button', { name: /^Show #.* in Activity log/ })).toHaveLength(1);
+    expect(evidence.getAllByRole('link', { name: /^Show #.* in Activity log/ })).toHaveLength(1);
   });
 });
 
@@ -139,13 +177,10 @@ describe('a stored reading', () => {
   it("says the answer, then each line by the list's own number, and never a check mark", async () => {
     const page = mountDrift({ session: stored(), facts: FACTS });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const result = document.querySelector('[data-next-result]') as HTMLElement;
     expect(result).not.toBeNull();
-    await openSessionTechnicalTab('Check settings');
-    expect(textOf('[data-next-reading-allowance]')).toContain(
-      'Next Analyze prompt: Allowance unknown.',
-    );
     expect(result.textContent).not.toContain('Next Analyze prompt');
     // The answer is said once, in the verdict sentence under the card's heading.
     expect(textOf('[data-next-drift-verdict]')).toContain('1 departure');
@@ -172,7 +207,7 @@ describe('a stored reading', () => {
     expect(
       document.querySelector('.next-session-drift-head')?.contains(byAction('reading-ask')),
     ).toBe(true);
-    expect(textOf('[data-next-result]')).toContain('1 drift check requested');
+    expect(textOf('[data-next-technical-evidence]')).toContain('1 drift check requested');
     // Under the cap the budget is not mentioned anywhere.
     expect(result.textContent).not.toMatch(/left today/);
     expect(document.querySelector('[data-next-reading-cap]')).toBeNull();
@@ -190,6 +225,7 @@ describe('a stored reading', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(textOf('[data-next-drift-verdict]')).toBe("Can't tell from what was read.");
     expect(document.querySelector('[data-next-result-goal]')?.textContent).toContain(
@@ -220,7 +256,7 @@ describe('a stored reading', () => {
       facts: [...FACTS, check('w1', 550, '', { subject: 'write', summary: 'src/queue.ts' })],
     });
     await page.settle();
-    await page.settle();
+    await openSessionTechnicalTab('Evidence');
     expect(textOf('[data-next-drift-verdict]')).toBe("Can't tell from what was read.");
     const why = document.querySelector('[data-next-result-goal] .next-cockpit-reading-why');
     expect(why?.textContent).toBe(
@@ -235,6 +271,7 @@ describe('a stored reading', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(textOf('.next-cockpit-reading')).toContain('cannot read the reading it was given');
     expect(textOf('.next-cockpit-reading')).toContain('Unrecognised: surprise.');
@@ -251,10 +288,11 @@ describe('a stored reading', () => {
     await page.settle();
     const stale = document.querySelector('[data-next-result-stale]') as HTMLElement;
     expect(stale.getAttribute('data-next-result-stale')).toBe('intent');
-    expect(stale.textContent).toContain('Your intent changed after this analysis.');
-    const status = stale.closest('[data-next-drift-status]') as HTMLElement;
-    expect(status.textContent).toMatch(
-      /This reading was made at .+ against an earlier version of your intent\. You changed it at .+, so it does not describe what you are asking for now\./,
+    expect(stale.textContent).toBe('Out of date');
+    const status = document.querySelector('[data-next-drift-status]') as HTMLElement;
+    await openSessionTechnicalTab('Evidence');
+    expect(textOf('[data-next-evidence-stale]')).toMatch(
+      /This reading was made at .+ against an earlier version of your intent/,
     );
     expect(status.textContent).not.toMatch(/revision \d/i);
     expect(status.querySelector('[data-next-cockpit-action="reading-ask"]')?.textContent).toBe(
@@ -273,8 +311,9 @@ describe('a stored reading', () => {
       ],
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
-    const stale = document.querySelector('[data-next-result-stale="work"]') as HTMLElement;
+    const stale = document.querySelector('[data-next-evidence-stale="work"]') as HTMLElement;
     expect(stale.textContent).toContain('New work since this analysis.');
     expect(document.querySelectorAll('[data-next-cockpit-action="reading-ask"]')).toHaveLength(1);
     expect(textOf('[data-next-result]')).toContain(
@@ -299,9 +338,9 @@ describe('result focus', () => {
       sessions: [{ ...(page.state.data as { sessions: object[] }).sessions[0], ...stored() }],
     });
     await page.settle();
-    const verdict = document.querySelector('[data-next-drift-verdict]');
-    expect(verdict).not.toBeNull();
-    expect(document.activeElement).toBe(verdict);
+    const answer = document.querySelector('[data-next-progress-answer]');
+    expect(answer).not.toBeNull();
+    expect(document.activeElement).toBe(answer);
   });
 });
 
@@ -314,7 +353,7 @@ describe('a current result while model calls are paused', () => {
     });
     await page.settle();
     await page.settle();
-    expect(document.querySelector('[data-next-result]')).not.toBeNull();
+    expect(document.querySelector('[data-next-progress-answer]')).not.toBeNull();
     /* By role, so a hidden popover node cannot stand in for the visible control. */
     const resume = screen.getByRole('button', { name: 'Resume AI use' });
     expect(resume.closest('[hidden]')).toBeNull();
@@ -329,6 +368,7 @@ describe('a finding jump', () => {
   it('names each cited entry by its number, its constraint and the stored clause', async () => {
     const page = mountDrift({ session: stored(), facts: FACTS });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const jumps = [...document.querySelectorAll('[data-next-finding]')];
     expect(
@@ -348,10 +388,11 @@ describe('a finding jump', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true });
     const page = mountDrift({ session: stored(), facts: FACTS });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const rows = () => [...document.querySelectorAll<HTMLElement>('[data-next-entry-id]')];
     expect(rows().some((row) => row.hasAttribute('data-next-cited'))).toBe(false);
-    await jumpTo(byAction('finding-jump'));
+    await jumpTo(document.querySelector('[data-next-technical-evidence] [data-next-finding]'));
     const cited = rows().filter((row) => row.hasAttribute('data-next-cited'));
     expect(cited.length).toBeGreaterThan(0);
     for (const row of cited) {
@@ -368,8 +409,9 @@ describe('a finding jump', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true });
     const page = mountDrift({ session: stored(), facts: FACTS });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
-    await jumpTo(byAction('finding-jump'));
+    await jumpTo(document.querySelector('[data-next-technical-evidence] [data-next-finding]'));
     expect(document.querySelector('[data-next-finding-entry]')).not.toBeNull();
     const original = page.state.data as { sessions: object[] };
     await page.poll({
@@ -397,13 +439,14 @@ describe('a finding jump', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true });
     const page = mountDrift({ session: stored(), facts: FACTS });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const original = page.state.data as { sessions: object[] };
     await page.poll({
       ...original,
       sessions: [original.sessions[0], { ...original.sessions[0], sid: 's2' }],
     });
-    await jumpTo(byAction('finding-jump'));
+    await jumpTo(document.querySelector('[data-next-technical-evidence] [data-next-finding]'));
     expect(document.querySelector('[data-next-finding-entry]')).not.toBeNull();
     await page.go('#n=session:alpha%2Fapp:claude:s2');
     expect(document.querySelector('[data-next-finding-entry]')).toBeNull();
@@ -437,12 +480,13 @@ describe('a finding jump', () => {
       ],
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(document.querySelector('[data-next-entry-id="old"]')).not.toBeNull();
     expect(
       document.querySelector('[data-next-entry-id="old"] [data-next-finding-entry]'),
     ).toBeNull();
-    await jumpTo(byAction('finding-jump'));
+    await jumpTo(document.querySelector('[data-next-technical-evidence] [data-next-finding]'));
     const row = document.querySelector('[data-next-entry-id="old"]');
     expect(row?.textContent).toContain('Cited for “Ship the queue” · #1');
     expect(row?.querySelector('[data-next-entry-flag="cited"]')).toBeNull();
@@ -455,9 +499,10 @@ describe('a finding jump', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true });
     const page = mountDrift({ session: stored(), facts: FACTS });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const requests = [...page.state.requests];
-    await jumpTo(byAction('finding-jump'));
+    await jumpTo(document.querySelector('[data-next-technical-evidence] [data-next-finding]'));
     const entry = document.querySelector('[data-next-entry-id="c1"]');
     expect(entry?.textContent).toContain('Cited for “It stopped running the tests.” · #1');
     expect(document.activeElement).toBe(entry);
@@ -486,6 +531,7 @@ describe('a goal stated with /goal', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const read = textOf('[data-next-read]');
     expect(read).toContain('from /goal');
@@ -509,10 +555,11 @@ describe('a refusal of a goal too vague to analyze', () => {
   it('offers no mark of inaccuracy, because it sets no level and offers no Steer back', async () => {
     const page = mountDrift({ session: stored({ annotation_assessment: refused }), facts: FACTS });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(document.querySelector('[data-next-result]')).not.toBeNull();
     expect(byAction('not-accurate')).toBeFalsy();
-    expect(document.body.textContent).not.toContain('Mark as inaccurate');
+    expect(document.body.textContent).not.toContain('This reading looks wrong');
   });
 });
 
@@ -530,11 +577,11 @@ describe('Not accurate', () => {
     await page.settle();
     await page.settle();
     const mark = byAction('not-accurate') as HTMLElement;
-    expect(mark.textContent).toBe('Mark as inaccurate');
+    expect(mark.textContent).toBe('This reading looks wrong');
     // Before the press, the reader is told what it does.
     expect(foot()?.getAttribute('data-next-result-mark')).toBe('unmarked');
     expect(foot()?.textContent).toContain(
-      'Stops this analysis from setting the drift level or Steer back. Nothing is sent or re-run.',
+      'Sets this check aside and turns off Steer back for it. Nothing is sent or re-run.',
     );
     await press(mark);
     await page.settle();
@@ -563,19 +610,20 @@ describe('Not accurate', () => {
         },
       ],
     });
-    expect(foot()?.getAttribute('data-next-result-mark')).toBe('marked');
+    expect(document.querySelector('[data-next-drift-marked]')).not.toBeNull();
     expect(byAction('not-accurate')?.textContent).toBe('Undo');
     // One message, where the level was, with Undo and Check progress again beside it; the foot says nothing more.
     expect(textOf('[data-next-drift-marked] [role="status"]')).toBe(
-      'Marked inaccurate. This analysis no longer sets the drift level or Steer back, and its verdicts below are set aside.',
+      'Marked inaccurate. This check is set aside and no longer offers Steer back.',
     );
     expect(foot()?.textContent).toBe('');
     expect(
-      document.querySelector('[data-next-drift-marked] [data-next-cockpit-action="reading-ask"]')
+      document.querySelector('[data-next-drift-status] [data-next-cockpit-action="reading-ask"]')
         ?.textContent,
     ).toBe('Check progress again');
-    expect(document.querySelector('[data-next-disowned]')).not.toBeNull();
     expect(document.querySelector('[data-next-drift-level]')).toBeNull();
+    await openSessionTechnicalTab('Evidence');
+    expect(document.querySelector('[data-next-disowned]')).not.toBeNull();
     // Undo posts the mark back off.
     await press(byAction('not-accurate') as HTMLElement);
     await page.settle();
@@ -620,15 +668,16 @@ describe('A marked reading with the Live monitor on', () => {
       expect(document.querySelector('[data-next-drift-marked]')).not.toBeNull();
       expect(byAction('not-accurate')?.textContent).toBe('Undo');
       expect(
-        document.querySelector('[data-next-drift-marked] [data-next-cockpit-action="reading-ask"]')
+        document.querySelector('[data-next-drift-status] [data-next-cockpit-action="reading-ask"]')
           ?.textContent,
       ).toBe('Check progress again');
+      await openSessionTechnicalTab('Evidence');
       expect(document.querySelector('[data-next-disowned]')).not.toBeNull();
     },
   );
 });
 
-describe('What the analysis read', () => {
+describe('What the check read', () => {
   it.each([
     [
       'excerpted messages',
@@ -651,6 +700,7 @@ describe('What the analysis read', () => {
       });
       await page.settle();
       await page.settle();
+      await openSessionTechnicalTab('Evidence');
       const session = textOf('[data-next-read-section="session"]');
       expect(session).toContain(count);
       expect(session).toContain(omission);
@@ -681,6 +731,7 @@ describe('What the analysis read', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const read = document.querySelector('[data-next-read]') as HTMLElement;
     expect(read).not.toBeNull();

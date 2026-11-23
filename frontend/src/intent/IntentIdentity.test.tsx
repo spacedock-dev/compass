@@ -1,7 +1,7 @@
 import { act } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { liveRow } from './context';
-import { board, goalBox, mountSession, type } from './panel.testing';
+import { editGoal, board, goalBox, mountSession, type } from './panel.testing';
 
 /* A reader who moves from one session to another meets the other session's own editors, never the first
    one's words. */
@@ -26,6 +26,7 @@ describe('moving to another session', () => {
       await page.shell.runtime.refresh();
     });
     await page.settle();
+    editGoal();
     const before = goalBox();
     // Type and take it back: the box reads the saved goal again, but its native undo stack now holds the typing.
     type(before, 'Same goalX');
@@ -39,6 +40,7 @@ describe('moving to another session', () => {
       });
     });
     await page.settle();
+    editGoal();
     const after = goalBox();
     expect(after).not.toBe(before);
     expect(after.value).toBe('Same goal');

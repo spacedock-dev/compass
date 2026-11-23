@@ -49,7 +49,7 @@ describe('Analyze starts only on a press', () => {
     expect(ask.getAttribute('aria-disabled')).toBe('true');
     await press(ask);
     expect(readingPosts(page)).toEqual([]);
-    expect(textOf('#next-cockpit-reading-refused')).toContain('not enabled in this build');
+    expect(textOf('#next-cockpit-reading-refused')).toContain('unavailable in this build');
   });
 
   it('sends one request for one press and draws the job from the reply, however it is pressed', async () => {
@@ -173,10 +173,10 @@ describe('a refusal is a state', () => {
     await page.settle();
     await page.settle();
     await press(byAction('reading-ask'));
-    expect(textOf('#next-cockpit-reading-refused')).toContain('not enabled in this build');
+    expect(textOf('#next-cockpit-reading-refused')).toContain('unavailable in this build');
     await page.poll({ ...(page.state.data as object), generated: 1100, reading_check: 'passed' });
     expect(document.querySelector('#next-cockpit-reading-refused')).toBeNull();
-    expect(textOf('.next-session-drift-check')).not.toContain('not enabled in this build');
+    expect(textOf('.next-session-drift-check')).not.toContain('unavailable in this build');
     expect(byAction('reading-ask')?.getAttribute('aria-disabled')).toBeNull();
   });
 });

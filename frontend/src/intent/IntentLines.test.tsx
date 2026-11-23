@@ -2,6 +2,7 @@ import { act, fireEvent } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { json } from './testing';
 import {
+  editGoal,
   board,
   control,
   goalBox,
@@ -19,6 +20,7 @@ import {
 const settle = async (page: { settle: () => Promise<void> }) => {
   await page.settle();
   await page.settle();
+  editGoal();
 };
 const press = async (button: Element | null) => {
   await act(async () => {

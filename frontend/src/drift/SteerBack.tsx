@@ -6,12 +6,13 @@ import { Button } from '../ui/button';
 import { Icon } from '../ui/icons';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useFocusKey } from '../controls';
-import { openPendingDirection } from '../intent/api';
-import { DirectionActionButton } from '../intent/DirectionActionButton';
+import { ActionButton } from '../intent/ActionButton';
+import { openGoalEditor } from '../intent/edit';
+import { GLOSSARY } from '../language/glossary';
 import { useDrift } from './context';
 import { correctionLength, type HeldCorrection } from './correction';
 import { attachEditor } from './editor';
-import { CORRECTION_CAP, CORRECTION_HINT, CORRECTION_OLDER, STEER_PURPOSE } from './sentences';
+import { CORRECTION_CAP, CORRECTION_HINT, CORRECTION_OLDER } from './sentences';
 import {
   copyCorrection,
   correctionDraft,
@@ -33,14 +34,15 @@ export function SteerButton({ primary }: { readonly primary: boolean }) {
     `steer-back:${model.key}`,
   );
   const held = ctx.drift.corrections.get(model.key);
+  const lead = primary && !(held?.open && held.parts);
   const { identity } = model;
   return (
     <>
       <Button
         ref={ref}
         type="button"
-        variant={primary ? 'primary' : 'default'}
-        className={primary ? 'font-bold px-4' : undefined}
+        variant={lead ? 'primary' : 'default'}
+        className={lead ? 'font-bold px-4' : undefined}
         data-next-cockpit-action="steer-back"
         aria-expanded={Boolean(held?.open)}
         data-next-focus={`steer-back:${model.key}`}
@@ -56,26 +58,15 @@ export function SteerButton({ primary }: { readonly primary: boolean }) {
   );
 }
 
-/* "Update intent instead": the offered direction opens as the pending line through Add's own path, so the
-   reader reviews and saves it as one outcome line, and the goal is never touched. */
-export function UpdateIntentButton({ factId }: { readonly factId: string }) {
+export function UpdateGoalButton() {
   const { ctx, model } = useDrift();
-  const { identity } = model;
+  if (!model.annotate) return null;
   return (
-    <DirectionActionButton
-      feedbackKey={`update-intent:${model.key}`}
-      weight="quiet"
-      fit
-      className="text-label px-3"
-      label="Update intent instead"
-      busyLabel="Opening…"
-      pendingKey={`update-intent:${model.key}`}
+    <ActionButton
+      label={GLOSSARY.updateGoalInstead.plain}
       action="update-intent"
-      arg={factId}
       focusKey={`update-intent:${model.key}`}
-      onPress={() => {
-        if (identity) void openPendingDirection(ctx.shell, identity, factId || null);
-      }}
+      onPress={() => openGoalEditor(ctx.intent, model.session)}
     />
   );
 }
@@ -89,7 +80,15 @@ function correctionRows(text: string): number {
   return Math.min(CORRECTION_ROWS_MAX, Math.max(CORRECTION_ROWS_MIN, text.split('\n').length + 1));
 }
 
-function CorrectionBox({ held, from }: { readonly held: HeldCorrection; readonly from: string }) {
+function CorrectionBox({
+  held,
+  from,
+  canRecompose,
+}: {
+  readonly held: HeldCorrection;
+  readonly from: string;
+  readonly canRecompose: boolean;
+}) {
   const { ctx, model } = useDrift();
   const { key, identity } = model;
   const draft = correctionDraft(held);
@@ -144,17 +143,17 @@ function CorrectionBox({ held, from }: { readonly held: HeldCorrection; readonly
     [attach, focusRef],
   );
   const label =
-    held.cue === 'copied'
-      ? 'Copied'
-      : held.cue === 'failed'
-        ? 'Copy unavailable'
-        : 'Copy correction';
-  const stale = Boolean(held.stale);
+    held.cue === 'copied' ? 'Copied' : held.cue === 'failed' ? 'Copy unavailable' : 'Copy message';
+  const stale = Boolean(held.stale) || !canRecompose;
   return (
-    <Card variant="steer-box" className="next-cockpit-steer-box" data-next-steer-box>
+    <Card
+      variant="steer-box"
+      className="next-cockpit-steer-box rounded-card border border-[var(--rule)] bg-[var(--status-ended-bg)] p-4"
+      data-next-steer-box
+    >
       <div className="flex flex-wrap items-baseline gap-x-2">
         <Label className="next-cockpit-held-label" htmlFor="next-cockpit-correction">
-          Correction to paste
+          Edit this if you like, then paste it into the session
         </Label>
         {from ? (
           <span className="next-cockpit-reading-why" data-next-steer-from>
@@ -178,7 +177,8 @@ function CorrectionBox({ held, from }: { readonly held: HeldCorrection; readonly
       <div className="next-cockpit-steer-tools">
         <Button
           type="button"
-          className="gap-2 border-[var(--accent)] font-bold text-[color:var(--accent)] text-label px-3"
+          emphasis="primary"
+          className="gap-2"
           data-next-cockpit-action="correction-copy"
           data-next-copy-correction={key}
           data-next-focus={`correction-copy:${key}`}
@@ -199,17 +199,19 @@ function CorrectionBox({ held, from }: { readonly held: HeldCorrection; readonly
             <p className="next-cockpit-reading-why" data-next-correction-older>
               {CORRECTION_OLDER}
             </p>
-            <Button
-              type="button"
-              data-next-cockpit-action="correction-recompose"
-              data-next-focus={`correction-recompose:${key}`}
-              onClick={(event) => {
-                event.preventDefault();
-                if (identity) void recomposeCorrection(ctx, identity);
-              }}
-            >
-              Recompose
-            </Button>
+            {canRecompose ? (
+              <Button
+                type="button"
+                data-next-cockpit-action="correction-recompose"
+                data-next-focus={`correction-recompose:${key}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  if (identity) void recomposeCorrection(ctx, identity);
+                }}
+              >
+                Recompose
+              </Button>
+            ) : null}
           </>
         ) : null}
         <p
@@ -234,9 +236,15 @@ function CorrectionBox({ held, from }: { readonly held: HeldCorrection; readonly
   );
 }
 
-/* The design's steer box with Copy-only wording: "Correction to paste", beside what it was built from, and the
+/* The design's steer box with Copy-only wording: "Edit this if you like, then paste it into the session", beside what it was built from, and the
    hint the issue gives in place of the Send hint. Copy's label is its cue, the More menu's "Copied" and "Copy unavailable". */
-export function SteerBox({ from = '' }: { readonly from?: string }): ReactNode {
+export function SteerBox({
+  from = '',
+  canRecompose = true,
+}: {
+  readonly from?: string;
+  readonly canRecompose?: boolean;
+}): ReactNode {
   const { ctx, model } = useDrift();
   const held = ctx.drift.corrections.get(model.key);
   if (!held || !held.open || held.pending) return null;
@@ -248,7 +256,7 @@ export function SteerBox({ from = '' }: { readonly from?: string }): ReactNode {
     );
   }
   if (!Array.isArray(held.parts)) return null;
-  return <CorrectionBox held={held} from={from} />;
+  return <CorrectionBox held={held} from={from} canRecompose={canRecompose} />;
 }
 
 /* Steer back as the design draws it, a section of its own after the departures it steers from: a heading, one
@@ -257,24 +265,25 @@ export function SteerBox({ from = '' }: { readonly from?: string }): ReactNode {
 export function SteerSection({
   buttons,
   box,
+  hasCorrection,
 }: {
   readonly buttons: ReactNode;
   readonly box: ReactNode;
+  readonly hasCorrection: boolean;
 }): ReactNode {
   const { model } = useDrift();
   const head = `steer-back-head:${model.key}`;
   return (
     <section
-      className="flex flex-col gap-2.5 border-t border-[var(--rule)] pt-3.5"
-      aria-labelledby={head}
+      className="flex flex-col gap-2.5 px-4"
+      aria-labelledby={hasCorrection ? head : undefined}
       data-next-steer-section
     >
-      <h3 id={head} className="m-0 text-body font-semibold leading-[1.45] text-foreground">
-        Steer back
-      </h3>
-      <p className="m-0 max-w-[var(--measure)] text-body leading-[1.5] text-muted-foreground">
-        {STEER_PURPOSE}
-      </p>
+      {hasCorrection ? (
+        <h3 id={head} className="next-visually-hidden">
+          Steer back
+        </h3>
+      ) : null}
       <div className="next-cockpit-reading-ask" data-next-result-steer>
         {buttons}
       </div>

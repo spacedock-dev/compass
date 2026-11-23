@@ -590,6 +590,10 @@ export interface PromptMenu {
   readonly value: string;
 }
 
+export function supportsPromptChoices(session: Row): boolean {
+  return ['claude', 'codex'].includes(String(session['harness'] || ''));
+}
+
 /* "Use your prompt": a Base UI Select in the goal's label row. Choosing fills the goal as a pending
    adoption. React owns the popup; the display gate holds its anchor during background paints.
    The first entry is the earliest
@@ -605,7 +609,7 @@ export function promptMenu(input: DraftInput): PromptMenu {
     value: '',
   };
   if (!annotateOn(payload) || storeUnreadable(payload)) return hidden;
-  if (!['claude', 'codex'].includes(String(session['harness'] || ''))) return hidden;
+  if (!supportsPromptChoices(session)) return hidden;
   const choices = promptChoices(held, contexts, session);
   const candidate =
     promptCandidate(session, 'first-prompt') || promptCandidate(session, 'latest-prompt');

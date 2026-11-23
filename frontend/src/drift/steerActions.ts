@@ -8,6 +8,7 @@ import { payloadSessions } from '../api/bootstrap';
 import type { Row } from '../observed';
 import {
   correctionParts,
+  correctionLength,
   correctionStale,
   correctionStamp,
   correctionText,
@@ -16,7 +17,12 @@ import {
   type HeldCorrection,
 } from './correction';
 import { requestFocus } from './focus';
-import { CORRECTION_FAILED, CORRECTION_NOTHING, CORRECTION_PAINT_PAUSED } from './sentences';
+import {
+  CORRECTION_CAP,
+  CORRECTION_FAILED,
+  CORRECTION_NOTHING,
+  CORRECTION_PAINT_PAUSED,
+} from './sentences';
 import type { DriftCtx } from './state';
 
 /* Steer back: one request to compose the correction on the press that opens it, and one to record a copy of
@@ -61,7 +67,7 @@ function sourceFor(ctx: DriftCtx, session: Row) {
 export function correctionDraft(held: HeldCorrection): string {
   if (typeof held.text === 'string') return held.text;
   if (held.recomposing && typeof held.recomposeText === 'string') return held.recomposeText;
-  return correctionText(held.parts);
+  return held.starter ?? correctionText(held.parts);
 }
 
 /* One request for the session's correction. `quiet` is the held entry of a recomposition the reader did not
@@ -105,6 +111,13 @@ export async function composeCorrection(
     const parts = reply.ok && body && body['ok'] === true ? correctionParts(body['parts']) : null;
     if (reply.ok && parts) {
       next.parts = parts;
+      const starter = body?.['starter'];
+      if (
+        typeof starter === 'string' &&
+        starter.trim() &&
+        correctionLength(starter) <= CORRECTION_CAP
+      )
+        next.starter = starter;
     } else if (reply.ok && body && body['ok'] === false) {
       next.why =
         body['reason'] === 'too-long' && typeof body['why'] === 'string'

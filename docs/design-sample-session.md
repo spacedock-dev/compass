@@ -23,9 +23,9 @@ says more).
 
 On the page the stored summary has seven phases in two parts, three of them marked as holding the
 evidence for the departure from the goal; the reading finds one departure, on the goal, and one row
-about what the agent claimed, and the drift level reads Medium from the two. Steer back composes a correction that gives each departure's
-time on the reader's clock, quotes the agent's words at that moment and carries the reading's
-explanation, with no entry numbers.
+about what the agent claimed. Is it on track? shows Slightly off course. The quotes link opens
+Evidence with the reading's explanation and the cited entries. Steer back opens an editable
+two-sentence message based on the saved goal.
 
 ### The intent is a goal alone (owner, 2026-10-23)
 
@@ -296,13 +296,11 @@ The fixture bound stays at 250,000 bytes.
 
 Two layers hold it, and either alone is enough.
 
-The server layer is `createSampleFetch`. A read answers from the fixture. Composing a correction
-answers the correction `correction.compose` makes from the fixture's own row and record (the builder
-writes it with `--recompose`, and `test_sample_session_files` fails while the stored one differs, so
-the demo shows each departure's explanation the real composer carries), with each kept moment drawn
-on the reader's clock by `datedClock`, the page's copy of the composer's rule, and recording that it was
-copied is accepted and goes nowhere. Every other write is refused with a 403 and a sentence saying this is a sample, the summary's
-start, cancel and delete included.
+The server layer is `createSampleFetch`. A read answers from the fixture. It uses the same
+`correction.compose` output as a live session. The builder writes it with `--recompose`, and
+`test_sample_session_files` checks that the stored correction agrees with the composer. Copying
+is accepted locally. Other writes return a 403 explaining the sample, including starting,
+canceling and deleting a summary.
 
 The press layer is `ViewOnly`. It stops a press that would edit, save, allow or run, before it reaches
 a handler, and says in one line why, so a reader sees a sentence and not an error from a request that
@@ -330,14 +328,14 @@ Each mark is a numbered (i) beside the part it explains, in the order a reader m
 the one-column page, which puts What the session has done before the Drift card as the design draws it
 (owner, 2026-10-21; it was the other way round from 2026-10-20):
 
-1. **Your intent**, on the Intent card.
+1. **Your goal**, on the Goal card.
 2. **What the session has done**, beside the summary card's heading, outside it, so the card's name
    stays the heading's words.
 3. **A phase that holds a departure**, on the first phase marked as holding one, once.
-4. **A departure, and its evidence**, beside the goal departure's cited entries.
-5. **Steer back**.
-6. **What is sent, and Pause model calls**, beside the drift card's What is sent.
-7. **Full activity**, beside its trigger.
+4. **What is sent, and Pause all AI use**, beside the progress card's disclosure.
+5. **A departure, and its evidence**, beside the compact finding that links to Evidence.
+6. **Steer back**.
+7. **Activity log: everything the session did**, beside the technical details trigger.
 
 The first sample's tour noted the drift level and the analysis headline instead of the summary and
 the phase. Neither is noted now, because the summary is what the redesigned page leads with.

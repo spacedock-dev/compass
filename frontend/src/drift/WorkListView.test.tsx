@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import type { ProjectContext } from '../api/types';
 import { act } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -216,10 +217,11 @@ describe('the session activity list', () => {
         },
       });
       await page.settle();
-      await openActivity();
+      await openSessionTechnicalTab('Evidence');
       expect(
         Boolean(document.querySelector('[data-next-result] [data-next-cite="evidence"]')),
       ).toBe(linked);
+      await openSessionTechnicalTab('Activity log');
       await press(page.getByRole('button', { name: 'Cited' }));
       const row = document.querySelector('[data-next-entry-id="evidence"]');
       expect(Boolean(row)).toBe(linked);
@@ -408,7 +410,8 @@ describe('the session activity list', () => {
     await page.settle();
     await page.settle();
     expect(document.querySelectorAll('[data-check-run]')).toHaveLength(1);
-    await jumpTo(document.querySelector('[data-next-cockpit-action="finding-jump"]'));
+    await openSessionTechnicalTab('Evidence');
+    await jumpTo(document.querySelector('[data-next-technical-evidence] [data-next-finding]'));
     const row = document.querySelector('[data-next-entry-id="c4"]');
     expect(row?.closest('[data-check-run]')).toBeNull();
     expect(document.querySelectorAll('[data-check-run]')).toHaveLength(2);
