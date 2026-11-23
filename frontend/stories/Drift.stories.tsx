@@ -25,6 +25,7 @@ import {
 } from './drift.scenario';
 import { REASON_CASES, routeFor } from './drift.reasons';
 import { neverDone, noCheckMark } from './drift.checks';
+import { openInFlow } from './disclosure.flow';
 
 /* The Intent and drift card, held by stage, by harness and by route. Each story mounts the real page over a
    scripted backend and asserts what a reader sees: the words the card prints and the controls it draws. The
@@ -66,11 +67,31 @@ async function drawn(canvasElement: HTMLElement): Promise<HTMLElement> {
 const analyzeButton = (card: HTMLElement) => findButton(card, /^Analyze drift$/);
 const steerBack = (card: HTMLElement) => findButton(card, 'Steer back');
 
+export const SentAndSettingsStayInFlow: Story = {
+  ...scenario({ unsaved: true }),
+  play: async ({ canvasElement }) => {
+    const card = await drawn(canvasElement);
+    const inCard = within(card);
+    const settings = await inCard.findByRole('button', { name: 'Drift settings' });
+    const analyze = await analyzeButton(card);
+    const title = inCard.getByRole('heading', { name: 'Drift' });
+    const subtitle = card.querySelector('.next-session-drift-sub') as HTMLElement;
+    const subtitleOffset = () =>
+      subtitle.getBoundingClientRect().top - title.getBoundingClientRect().top;
+    const before = subtitleOffset();
+    await openInFlow(settings, analyze);
+    await expect(Math.abs(subtitleOffset() - before)).toBeLessThan(2);
+    await userEvent.click(settings);
+    const sent = await inCard.findByRole('button', { name: /^What is sent/ });
+    const activity = within(canvasElement).getByRole('heading', { name: 'Full activity' });
+    await openInFlow(sent, activity);
+  },
+};
+
 /* The live monitor and Pause model calls sit behind Drift settings in the card's head, one press away. */
-async function openSettings(card: HTMLElement): Promise<HTMLElement> {
+async function openSettings(card: HTMLElement) {
   const head = card.querySelector('header') as HTMLElement;
   await userEvent.click(within(head).getByRole('button', { name: 'Drift settings' }));
-  return within(document.body).findByRole('dialog', { name: 'Drift settings' });
 }
 
 async function neverRetired(root: HTMLElement) {
@@ -345,16 +366,11 @@ function routeStory(reason: string): Story {
         return;
       }
       const analyze = await analyzeButton(card);
-      await expect(within(card).queryByText(found.note)).toBeNull();
-      await userEvent.click(
-        button(card, found.fallback ? `What is sent to ${found.label}` : 'What is sent'),
-      );
-      // The popover is drawn outside the card, in its own dialog.
-      const sentTo = await within(document.body).findByRole('dialog');
-      // The popover fades in, so its words are in the dialog before they are in view.
-      await waitFor(() =>
-        expect(within(sentTo).getByText(found.note, { exact: false })).toBeVisible(),
-      );
+      const note = within(card).getByText(found.note, { exact: false });
+      await expect(note).not.toBeVisible();
+      const sent = button(card, found.fallback ? `What is sent to ${found.label}` : 'What is sent');
+      await userEvent.click(sent);
+      await waitFor(() => expect(note).toBeVisible());
       await expect(primaries(canvasElement)).toEqual([analyze]);
       await neverRetired(canvasElement);
     },

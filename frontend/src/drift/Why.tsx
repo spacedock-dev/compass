@@ -15,14 +15,13 @@ export function Why({
   name,
   summary,
   body,
-  pop = false,
+  searchable,
   children,
 }: {
   readonly name: string;
   readonly summary?: string;
   readonly body?: string;
-  /** A summary that sits in a flex row beside other content opens as a popover, so the row never moves. */
-  readonly pop?: boolean;
+  readonly searchable?: boolean;
   readonly children?: ReactNode;
 }) {
   const { model } = useDrift();
@@ -39,7 +38,7 @@ export function Why({
     <Disclosure
       disclosureKey={disclosureKey({ project: model.project, scope: model.key, name })}
       summary={summary}
-      variant={pop ? 'popover' : 'accordion'}
+      {...(searchable === undefined ? {} : { searchable })}
       className="next-cockpit-why"
     >
       {content}

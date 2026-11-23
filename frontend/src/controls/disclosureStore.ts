@@ -20,23 +20,37 @@ export function createDisclosureStore() {
   const listeners = new Set<() => void>();
   const writes = new Set<(key: string) => void>();
   const versions = new Map<string, number>();
+  const openByGroup = new Map<string, string>();
   let version = 0;
   let size = 0;
   const read = (key: string): DisclosureSnapshot => states.get(key) ?? CLOSED;
+  function write(key: string, open: boolean): boolean {
+    version += 1;
+    versions.set(key, version);
+    if (read(key).open === open) return false;
+    size += open ? 1 : -1;
+    states.set(key, { open, version });
+    return true;
+  }
   return {
     read,
     version: (key: string): number => versions.get(key) ?? 0,
     isOpen: (key: string): boolean => read(key).open,
-    set(key: string, value: boolean): void {
-      const changed = read(key).open !== value;
-      version += 1;
-      versions.set(key, version);
-      if (changed) {
-        size += value ? 1 : -1;
-        states.set(key, { open: value, version });
+    set(key: string, value: boolean, group?: string): void {
+      const previous = group === undefined ? undefined : openByGroup.get(group);
+      const sibling =
+        value && previous !== key && previous !== undefined && read(previous).open
+          ? previous
+          : undefined;
+      if (group !== undefined) {
+        if (value) openByGroup.set(group, key);
+        else if (previous === key) openByGroup.delete(group);
       }
+      if (sibling !== undefined) write(sibling, false);
+      const changed = write(key, value);
+      if (sibling !== undefined) for (const listener of [...writes]) listener(sibling);
       for (const listener of [...writes]) listener(key);
-      if (changed) for (const listener of [...listeners]) listener();
+      if (changed || sibling !== undefined) for (const listener of [...listeners]) listener();
     },
     subscribe(listener: () => void): () => void {
       listeners.add(listener);

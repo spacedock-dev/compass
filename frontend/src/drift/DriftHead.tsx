@@ -23,13 +23,13 @@ export function DriftHeadControls() {
       {off ? <TurnOff head /> : null}
       {monitor || pause ? (
         <Disclosure
-          variant="popover"
           disclosureKey={disclosureKey({
             project: model.project,
             scope: compatSessKey(model.session),
             name: 'drift-settings',
           })}
           summary={SETTINGS}
+          searchable={false}
           focusKey={`drift-settings:${compatSessKey(model.session)}`}
         >
           <div className="flex flex-col gap-3" data-next-drift-settings>

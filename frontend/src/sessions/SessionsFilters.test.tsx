@@ -24,6 +24,19 @@ const rows = () => document.querySelectorAll('article.next-operation-row').lengt
 const field = () => screen.getByRole('searchbox', { name: 'Search sessions' }) as HTMLInputElement;
 const preset = (name: string) => screen.getByRole('button', { name });
 
+it('closes a held sibling when the reader opens a filter choice list', async () => {
+  const page = await open();
+  const store = page.shell.controls.disclosures;
+  for (const name of ['Harness', 'Project']) {
+    // Without a mounted sibling trigger, outside-click dismissal cannot close it.
+    act(() => store.set('held-peer', true, 'sessions-filters'));
+    const trigger = screen.getByRole('button', { name });
+    await press(page, trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(store.isOpen('held-peer')).toBe(false);
+  }
+});
+
 async function press(page: Page, node: Element) {
   fireEvent.click(node);
   await page.settle();

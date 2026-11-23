@@ -24,7 +24,7 @@ Four steps, and only the first two are required.
    harness it finds on the machine regardless of which one launched it. No account, no cloud
    service, no repository token. The server binds IPv4 loopback and nothing else.
 3. Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
-   goal and press `Analyze drift`. The `How Intent and drift works` entry in the Intent card's `More` menu explains the steps, the
+   goal and press `Analyze drift`. The Goal card's `How goals work` disclosure explains the steps, the
    reading's limits and what a goal with no expected outcome line is read against.
 
    Sessions separates active work from recent history and gives each active
@@ -90,7 +90,7 @@ and brings recorded departures forward. The session page tells you once what a r
 where, without steering it for you. Pause model calls stops Analyze drift, goal summaries, session
 summaries and the Live monitor until Resume model calls. Turn off summaries stops session summaries
 only; while paused it stays disabled and keeps its saved answer. Open a session, set a goal and
-press Analyze drift. The How Intent and drift works entry in the Intent card's More menu explains
+press Analyze drift. The Goal card's How goals work disclosure explains
 the steps and the limits; with no outcome line, Compass reads your goal's end state; a goal too
 vague to read is refused under the Goal field, with no level for that run. On Claude Code sessions,
 you can turn on the Live monitor from the page or with `--monitor` in a terminal. It says what it sends and how to stop. With no saved goal or outcome lines, a terminal start saves the page's drafted goal and prints its source and the session page URL; with no draft it says why no check can run. About once a minute while you view the session or a terminal holder keeps it on, a Haiku check
@@ -352,21 +352,17 @@ being open, not about a raise reaching you.
 **We promise:** your quota in one place across vendors, with each window's budget shown against its
 own clock, so you can see whether there is room before you start rather than partway through.
 
-Backed by the capacity strip, which reads five harnesses by three different routes. Claude and
-Cursor are fetched from the vendor with the harness credential once you have answered the
-disclosure, Codex and Copilot are read from files they already write to disk, and Antigravity
-forwards its own figures through a status-line receipt. Each window shows how much of its allowance
-is spent against how much of its time is gone, the pace that comparison implies, when the budget
-runs out at that pace, and when the window resets. Beneath it, what the remaining budget buys in
-minutes at both paces Compass has measured, and how long sessions have actually worked in the
-project that consumed the most measured working time on this machine. On top of that sit
-per-model sub-limits.
+Your AI allowance at the foot of Sessions shows the selected plan window, its reset, and the
+measured percentage used. The bar marks elapsed time when the vendor publishes a clock.
+Choose another window when several are available. How the AI allowance works gives the source,
+window, pace, reset time, and projected budget end. It also shows what the remaining budget
+buys at the measured paces, observed working time for the project with the most measured work,
+and any per-model sub-limits.
 
 Where it stops: what a vendor exposes is what you get. Claude, Codex and Antigravity publish
 five-hour and weekly windows, Cursor publishes its monthly billing cycle, and Copilot contributes
 per-session AI Units with no percentage because its entitlement is not stored locally. Cursor
-fetching is macOS only, and Cursor's cycle has no published start, so its row shows a level and no
-clock. There is no per-session cost figure anywhere on the board, and no ranking of which session is
+fetching is macOS only, and Cursor's cycle has no published start, so its allowance shows a percentage without an elapsed-time tick. There is no per-session cost figure anywhere on the board, and no ranking of which session is
 burning fastest right now: every rate the board publishes is a mean over one ten-minute window, and
 it names that window rather than claiming an immediacy the arithmetic does not have.
 Credential-backed fetching is on until you turn it off in the page, `--no-usage` refuses it for
@@ -413,7 +409,7 @@ an acceptance of each provider's checks enables that control (the captain's of C
 Claude Code). A reading is an account of the evidence, never
 verification that the work was done. The words are kept under a
 session count rather than a date, so an old enough annotation is evicted rather than expired. The
-goal's Clear in the Intent card empties that box; outcome lines have Remove after use. Neither is Discard
+goal's Clear in the Goal card empties that box; outcome lines have Remove after use. Neither is Discard
 everything: the save after a clear or removal keeps every earlier revision, so anything raised
 against those words goes on quoting them. The board says which is which where the two controls
 sit. And both of those

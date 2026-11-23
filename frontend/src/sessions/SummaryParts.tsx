@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import {
   jobActive,
   type Shown,
@@ -90,14 +90,14 @@ function Turn({
   const shell = useShell();
   const control = `summary-grant:${state.key}`;
   const paused = state.grant?.reason === 'model-calls-paused';
-  const reasonId = `summary-paused:${state.key}`;
+  const reasonId = useId();
   return (
     <>
       <ActionButton
         weight={quiet ? 'quiet' : 'secondary'}
         {...(quiet ? { tone: 'muted' as const } : {})}
         inert={paused}
-        describedBy={reasonId}
+        {...(paused ? { describedBy: reasonId } : {})}
         label={on ? 'Turn summaries on' : 'Turn off summaries'}
         busyLabel={on ? 'Turning on…' : 'Turning off…'}
         pendingKey={control}
@@ -156,7 +156,7 @@ function Sent({ state }: { readonly state: SummaryState }) {
   if (!state.grant?.disclosure) return null;
   const receiver = receiverOf(state.grant);
   return (
-    <Why name="summary-sent" pop summary={`What is sent to ${receiver}`}>
+    <Why name="summary-sent" searchable={false} summary={`What is sent to ${receiver}`}>
       <p className="next-cockpit-reading-why">{state.grant.disclosure}</p>
       <Turn state={state} on={summariesOff(state.grant)} />
     </Why>

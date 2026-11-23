@@ -64,7 +64,7 @@ export const UnreadableStoreSaysSoAndPointsAtTheCardNotice: Story = {
     await expect(said).toHaveTextContent(STORE_UNREADABLE_PRESS);
     await expect(card).not.toHaveTextContent('Could not confirm the reading');
     // The notice the sentence points at is drawn on the Intent card, with the repair step.
-    const intent = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const intent = await within(canvasElement).findByRole('region', { name: 'Goal' });
     await waitFor(() =>
       expect(intent).toHaveTextContent('Move or repair that file to save again.'),
     );

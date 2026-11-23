@@ -12,6 +12,7 @@ declare module 'vitest/browser' {
     storyForcedColors(forcedColors: 'active' | 'none' | null): Promise<void>;
     storyGuard(): Promise<string>;
     storyResult(): Promise<string[]>;
+    storyScreenshot(selector: string): Promise<string>;
   }
 }
 beforeEach(async () => {

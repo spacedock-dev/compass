@@ -1,4 +1,4 @@
-import { fireEvent } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { mountPanels } from '../steering/testing';
 import { CapacityStrip } from './CapacityStrip';
@@ -44,6 +44,46 @@ const pressed = (): string[] =>
 const rowOf = (key: string): HTMLElement =>
   document.querySelector(`[data-next-capacity-row="${key}"]`) as HTMLElement;
 
+describe('turning off credential-backed quota reads', () => {
+  const declined = { 'compass.next.usage.consent': 'declined' };
+  const claude = entry('claude', { fiveH: window(90, 9000, 18000) });
+  const codex = (pct: number) => entry('codex', { fiveH: window(pct, 9000, 18000) });
+  const antigravity = entry('antigravity', { fiveH: window(34, 9000, 18000) });
+
+  it.each([
+    ['Codex', codex(71), 71],
+    ['antigravity', antigravity, 34],
+  ] as const)('keeps the fresh %s window on a local-only board', async (label, reading, pct) => {
+    const page = mountPanels(<CapacityStrip />, { data: board([reading]), storage: declined });
+    await page.settle();
+    expect(screen.getByRole('progressbar', { name: new RegExp(label) }).getAttribute('value')).toBe(
+      String(pct),
+    );
+    expect(screen.queryByRole('button', { name: 'Turn on quota reading' })).toBeNull();
+    expect(screen.queryByText(/last cached window/i)).toBeNull();
+  });
+
+  it('keeps fresh disk and receipt windows available on a mixed board after turning off the fetch', async () => {
+    const data = (pct: number) => board([claude, codex(pct), antigravity], { usage_fetch: true });
+    const page = mountPanels(<CapacityStrip />, { data: data(61), strict: false });
+    await page.settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off quota reading' }));
+    await page.poll(data(71));
+    expect(rowKeys().sort()).toEqual(['antigravity:fiveH', 'codex:fiveH']);
+    fireEvent.click(rowOf('codex:fiveH'));
+    expect(screen.getByText('71% used')).toBeVisible();
+    expect(
+      screen.getByText(
+        'Quota reading is off for Claude Code and Cursor. Local readings are still shown.',
+      ),
+    ).toBeVisible();
+    const dataRequests = page.state.requests.filter((request) => request.path === '/api/data');
+    expect(dataRequests[0]?.url).toContain('usage=1');
+    expect(dataRequests.length).toBeGreaterThan(1);
+    expect(dataRequests.slice(1).every(({ url }) => !url.includes('usage=1'))).toBe(true);
+  });
+});
+
 // Six windows, ranked by when each budget ends: the three last are untimed or slow.
 const six = () =>
   board([
@@ -75,9 +115,10 @@ describe('the selected window is the reader’s', () => {
   it('survives a poll that reorders every window', async () => {
     const page = mountPanels(<CapacityStrip />, { data: six(), strict: false });
     await page.settle();
-    fireEvent.click(rowOf(rowKeys()[1] as string).querySelector('button') as HTMLElement);
+    fireEvent.click(rowOf(rowKeys()[1] as string));
     const chosen = pressed()[0];
     expect(chosen).toBeDefined();
+    const name = screen.getByRole('progressbar').getAttribute('aria-label');
     await page.poll(
       board([
         entry('codex', { fiveH: window(95, 1000, 18000), week: window(30, 4 * 86400, 604800) }),
@@ -86,14 +127,16 @@ describe('the selected window is the reader’s', () => {
       ]),
     );
     expect(pressed()).toEqual([chosen]);
+    expect(screen.getByRole('progressbar').getAttribute('aria-label')).toBe(name);
+    expect(heldFor(page.shell.runtime).selection.read()).toBe(chosen);
   });
 
-  it('a click anywhere on the row chooses it, and a press acts on nothing', async () => {
+  it('a window button chooses it without a request', async () => {
     const page = mountPanels(<CapacityStrip />, { data: six(), strict: false });
     await page.settle();
     const before = page.state.requests.length;
     const target = rowKeys()[2] as string;
-    fireEvent.click(rowOf(target).querySelector('.next-capacity-bar') as HTMLElement);
+    fireEvent.click(rowOf(target));
     expect(pressed()).toEqual([target]);
     expect(page.state.requests.length).toBe(before);
     expect(page.allPosts()).toEqual([]);
@@ -133,7 +176,7 @@ describe('the selected window is the reader’s', () => {
     const page = mountPanels(<CapacityStrip />, { data: six() });
     await page.settle();
     const target = rowKeys()[1] as string;
-    fireEvent.click(rowOf(target).querySelector('button') as HTMLElement);
+    fireEvent.click(rowOf(target));
     page.show(<p>Elsewhere</p>);
     await page.settle();
     page.show(<CapacityStrip />);
@@ -145,7 +188,7 @@ describe('the selected window is the reader’s', () => {
     const page = mountPanels(<CapacityStrip />, { data: six(), strict: false });
     await page.settle();
     const target = rowKeys()[0] as string;
-    const button = rowOf(target).querySelector('button') as HTMLElement;
+    const button = rowOf(target);
     button.focus();
     fireEvent.click(button);
     await page.poll(
@@ -157,6 +200,27 @@ describe('the selected window is the reader’s', () => {
     );
     await page.settle();
     expect(document.activeElement?.getAttribute('data-next-capacity-pick')).toBe(target);
+  });
+
+  it('moves focus to the explanation when a refresh removes the focused picker', async () => {
+    const codex = entry('codex', { fiveH: window(30, 9000, 18000) });
+    const claude = entry('claude', { fiveH: window(50, 9000, 18000) });
+    const page = mountPanels(<CapacityStrip />, { data: board([codex, claude]), strict: false });
+    await page.settle();
+    const choice = screen.getByRole('button', { name: 'Read Codex 5-hour window' });
+    choice.focus();
+    fireEvent.click(choice);
+    await page.poll(board([codex]));
+    const explanation = screen.getByRole('button', { name: 'How the AI allowance works' });
+    expect(document.activeElement).toBe(explanation);
+    expect(screen.getByRole('progressbar', { name: /Codex/ })).toBeVisible();
+    expect(screen.queryByRole('group', { name: 'Allowance windows' })).toBeNull();
+
+    await page.poll(board([codex, claude], { usage_fetch: true }));
+    const outsidePicker = screen.getByRole('button', { name: 'Turn off quota reading' });
+    outsidePicker.focus();
+    await page.poll(board([codex], { usage_fetch: true }));
+    expect(document.activeElement).toBe(outsidePicker);
   });
 });
 
@@ -170,17 +234,15 @@ describe('absent, stale, expired and true zero are four different things', () =>
   it('a window with no clock draws no tick, no pace and no projection, and says each is absent', async () => {
     const page = only({ month: window(40, null, null) });
     await page.settle();
-    const row = rowOf('claude:month');
-    expect(row.querySelector('.next-capacity-tick')).toBeNull();
-    expect(row.querySelector('.next-capacity-noclock')?.getAttribute('aria-label')).toBe(
-      '40% of budget used; this window publishes no clock',
+    expect(document.querySelector('.next-capacity-tick')).toBeNull();
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuetext')).toBe(
+      '40% of budget used, this window publishes no clock',
     );
-    expect(row.querySelector('.next-capacity-pace')?.textContent).toContain('Pace not measured');
-    expect(row.querySelector('.next-capacity-ends')?.textContent).toContain('not projected');
-    expect(row.querySelector('.next-capacity-resets')?.textContent).toContain('none published');
-    expect(row.querySelector('.next-capacity-window')?.textContent).toContain(
-      'Window length not published',
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
+    expect(screen.getByText('Pace not measured')).toBeVisible();
+    expect(screen.getByText('Not projected')).toBeVisible();
+    expect(screen.getByText('Not published', { exact: true })).toBeVisible();
+    expect(screen.getByText('billing cycle · length not published')).toBeVisible();
     // With no pace there is no prospect to state.
     expect(document.querySelector('.next-capacity-prospect')).toBeNull();
   });
@@ -188,29 +250,30 @@ describe('absent, stale, expired and true zero are four different things', () =>
   it('a reset already past leaves the window untimed rather than clamping it into a false all-clear', async () => {
     const page = only({ fiveH: window(30, -60, 18000) });
     await page.settle();
-    const row = rowOf('claude:fiveH');
-    expect(row.querySelector('.next-capacity-tick')).toBeNull();
-    expect(row.querySelector('.next-capacity-ends')?.textContent).toContain('not projected');
-    expect(row.querySelector('.next-capacity-resets')?.textContent).toContain('0s');
+    expect(document.querySelector('.next-capacity-tick')).toBeNull();
+    expect(
+      screen.getByText('Claude Code 5-hour plan · the published reset has passed.'),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
+    expect(screen.getByText('Not projected')).toBeVisible();
+    expect(screen.getByText(/\(passed\)/)).toBeVisible();
     expect(document.body.textContent).not.toContain('spare');
   });
 
   it('a spent budget says so and does not print the present minute as a deadline', async () => {
     const page = only({ fiveH: window(100, 9000, 18000) });
     await page.settle();
-    expect(rowOf('claude:fiveH').querySelector('.next-capacity-spent')?.textContent).toBe(
-      'already spent',
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
+    expect(screen.getByText('Already spent')).toBeVisible();
   });
 
   it('a true zero used is a figure, not an absence', async () => {
     const page = only({ fiveH: window(0, 9000, 18000) });
     await page.settle();
-    const row = rowOf('claude:fiveH');
-    expect(row.querySelector('.next-capacity-pct')?.textContent).toBe('USED0%');
-    expect(row.querySelector('.next-capacity-pace')?.textContent).toBe('PACE0.0×');
-    // No spend means no projected end, and that is said as such, not as a clock time.
-    expect(row.querySelector('.next-capacity-ends')?.textContent).toContain('not projected');
+    expect(screen.getByText('0% used')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
+    expect(screen.getByText('0.0×')).toBeVisible();
+    expect(screen.getByText('Not projected')).toBeVisible();
   });
 
   it('a recent pace measured at zero is evidence; an absent one is only absence', async () => {
@@ -243,15 +306,18 @@ describe('absent, stale, expired and true zero are four different things', () =>
     const prospect = document.querySelector('.next-capacity-prospect')?.textContent ?? '';
     expect(prospect).toContain("at this window's average pace, or");
     expect(prospect).toContain('at the recent pace (last 10m)');
-    expect(prospect).toContain('Resets in 2h 30m.');
+    expect(screen.getByText('Claude Code 5-hour plan · resets in 2h 30m.')).toBeVisible();
     expect(document.querySelector('.next-capacity-prospect small')).toBeNull();
   });
 
-  it('a thin basis qualifies the time and the spare together', async () => {
-    const page = only({ fiveH: window(2, 17700, 18000) });
+  it('qualifies the spare at reset before the reader opens the explanation', async () => {
+    const page = only({ fiveH: window(1, 17700, 18000) });
     await page.settle();
-    const ends = rowOf('claude:fiveH').querySelector('.next-capacity-ends')?.textContent ?? '';
-    expect(ends).toContain('based on 5m observed');
+    const trigger = screen.getByRole('button', { name: 'How the AI allowance works' });
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByText('About 40% left at reset · based on 5m observed')).toBeVisible();
+    fireEvent.click(trigger);
+    expect(screen.getByText(/^(?!About).*based on 5m observed/)).toBeVisible();
   });
 
   it('a window whose entry is an error publishes no row at all', async () => {
@@ -261,6 +327,50 @@ describe('absent, stale, expired and true zero are four different things', () =>
     });
     await page.settle();
     expect(document.querySelector('[data-next-capacity]')).toBeNull();
+  });
+});
+
+describe('the card names the published window and reset', () => {
+  it('names a 180-minute Codex window consistently in each place', async () => {
+    const page = mountPanels(<CapacityStrip />, {
+      data: board([
+        entry('codex', { fiveH: window(65, 9000, 10800) }),
+        entry('claude', { fiveH: window(30, 9000, 18000) }),
+      ]),
+    });
+    await page.settle();
+    const choice = screen.getByRole('button', { name: 'Read Codex 3-hour window' });
+    expect(choice.textContent).toBe('Codex · 3-hour');
+    fireEvent.click(choice);
+    expect(screen.getByText('Codex 3-hour plan · resets in 2h 30m.')).toBeVisible();
+    expect(screen.getByRole('progressbar', { name: 'Codex 3-hour allowance used' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
+    expect(screen.getByText('3-hour · 3h 0m')).toBeVisible();
+    expect(heldFor(page.shell.runtime).selection.read()).toBe('codex:fiveH');
+  });
+
+  it('does not name a duration the short-window slot did not publish', async () => {
+    const page = mountPanels(<CapacityStrip />, {
+      data: board([entry('codex', { fiveH: window(65, 9000, null) })]),
+    });
+    await page.settle();
+    expect(screen.getByText('Codex plan window · resets in 2h 30m.')).toBeVisible();
+    expect(
+      screen.getByRole('progressbar', { name: 'Codex plan window allowance used' }),
+    ).toBeVisible();
+  });
+
+  it('names a Cursor billing cycle and gives the local reset date and minute beyond seven days', async () => {
+    const resetAt = new Date(2026, 11, 13, 4, 45).getTime() / 1000;
+    const page = mountPanels(<CapacityStrip />, {
+      data: board([entry('cursor', { month: { pct: 20, resetAt } })], {
+        generated: resetAt - 20 * 86400,
+      }),
+    });
+    await page.settle();
+    expect(screen.getByText('Cursor billing cycle · resets in 20d 0h.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
+    expect(screen.getByText('Dec 13, 2026 at 04:45')).toBeVisible();
   });
 });
 
@@ -285,6 +395,8 @@ describe('model sub-limits', () => {
       strict: false,
     });
     await page.settle();
+    fireEvent.click(rowOf('claude:week'));
+    fireEvent.click(screen.getByRole('button', { name: 'How the AI allowance works' }));
     expect(document.querySelectorAll('[data-next-capacity-models]')).toHaveLength(1);
     const line = document.querySelector('[data-next-capacity-models="claude:week"]') as HTMLElement;
     expect(line.textContent).toContain('Opus 0%');
@@ -296,6 +408,8 @@ describe('model sub-limits', () => {
     expect([...line.querySelectorAll('b')].some((b) => (b.textContent ?? '').length === 40)).toBe(
       true,
     );
-    expect(line.previousElementSibling).toBe(rowOf('claude:week'));
+    expect(screen.getByRole('progressbar').getAttribute('aria-label')).toBe(
+      'Claude Code weekly allowance used',
+    );
   });
 });

@@ -20,7 +20,7 @@ characters. The goal is a three-row box of at most 1,000, so a prompt you choose
 leaves the other alone. Open the session's page: the fields are the first thing in its drift
 block, for a session with or without a project. The how-to beside Intent says what an analysis
 reads and that Compass never writes into the session. Each box shows how many of its characters (1,000 for the goal, 800 for a line)
-you have used as you type, and a hint under the goal box says what to write there. A paste past the limit stays in the box. The counter marks it as over, a sentence names the limit, and Save intent waits until the text fits. The Intent card shows the saved reads-from line beside its status word, and keeps `Clear` and `How Intent and drift works` in its `More` menu.
+you have used as you type, and a hint under the goal box says what to write there. A paste past the limit stays in the box. The counter marks it as over, a sentence names the limit, and Save intent waits until the text fits. The Goal card shows the saved reads-from line beside its status word. Open `More` for `Clear`, or `How goals work` for the explanation in the card.
 The Expected outcome sits in an accordion under the Goal, labelled "Expected outcome (optional) · up to 6 lines" and closed until it has something to show: it opens by itself over saved lines, a line being edited, a pending later direction, or a departure that cites a line, and a close you make holds until one of those arises again. Inside it each outcome line has `Remove`, and `Add a line` sits under the list; Add adds another until there are six, where it stays
 on the page, refuses a seventh and says why (replace or merge a line instead). `Save intent` stays
 visible and saves the drafted goal or your edits. `Undo changes` is drawn beside it, inert until there is a goal edit or prompt
@@ -96,7 +96,7 @@ so rather than leaving you to assume otherwise.
 
 Below the two fields the Drift section holds the run control (or the question about a later
 direction), the reading and the departures on record. Notes about your saved words are in the
-Intent card under the save. The agent's current activity leads Full activity, and the session's entries follow it,
+Goal card under the save. The agent's current activity leads Full activity, and the session's entries follow it,
 numbered. The departures section appears only with `--unasked-readings` on, or once a reading or a
 departure is on record. How it landed follows the session's own facts further down. With saved
 words the list starts at the entry where their evidence window opens; earlier entries are
@@ -157,7 +157,7 @@ press `Analyze drift`, which adopts the draft. `Use your prompt` lists up to fiv
 prompts, and choosing one fills the goal box for you to save. While no goal is saved and no `/goal` was detected, `Find goal` beside it reads the prompts you typed in the session, on your press only, and fills the box when it can quote your own words for a goal: it says "Found in your prompts at" the time and the prompt entries it quotes, each a link to that entry in Full activity, and editing the words replaces it. It sends your prompts to the model Analyze names, counts against the same daily limit, is refused while model calls are paused, and says so beside the button when it finds nothing clear. Analyze drift, Keep and an added line's save are refused
 while the goal box or the outcome lines hold an edit you have not saved, because each would stand
 on words that are not on screen; your edit stays in the box. No drift level or pill is drawn over
-an unsaved draft. Once a goal is saved, "Saved" names the window's opening time and holds when the words were saved. Editing the goal, using a prompt or a later direction as the goal, and adding or editing outcome lines all keep that window, so work already done toward the earlier words stays read. `Read from my latest message`, beside Save intent over saved words, saves and opens a new window at your latest message, and says so with its time. A `/goal` Claude Code gave up on, or the reader cleared, ends that goal: the Drift card says a give-up as the harness's claim with its time, never as met and never as a level or a check, and the Intent card says under the Goal field that an earlier `/goal` was replaced, met, given up or cleared, with the time and never its words.
+an unsaved draft. Once a goal is saved, "Saved" names the window's opening time and holds when the words were saved. Editing the goal, using a prompt or a later direction as the goal, and adding or editing outcome lines all keep that window, so work already done toward the earlier words stays read. `Read from my latest message`, beside Save intent over saved words, saves and opens a new window at your latest message, and says so with its time. A `/goal` Claude Code gave up on, or the reader cleared, ends that goal: the Drift card says a give-up as the harness's claim with its time, never as met and never as a level or a check, and the Goal card says under the Goal field that an earlier `/goal` was replaced, met, given up or cleared, with the time and never its words.
 
 A direction you gave after your intent (after the saved goal's words, or after the drafted prompt)
 is asked about before the press, in the control's place: "Your 11:05 message adds:" quotes the
@@ -202,13 +202,13 @@ figures beneath are one line per collection — the departures the reading raise
 the away checks raised, each counted from the rows shown beside it — then the board's raises,
 attempts and hand-overs, with no arithmetic between any of them. A count identifies a session worth
 reading and settles nothing else, and where the away checks have never read the session the figure
-says it was not measured rather than reading zero. The goal's `Clear` in the Intent card empties that box, and
+says it was not measured rather than reading zero. The goal's `Clear` in the Goal card empties that box, and
 the save after it keeps every earlier revision, so the raises quoting those words stay. Discarding
 the whole annotation withdraws them and deletes the session's summary, stopping one being written
 first: the quotations go from the departure record too, and what
 stays is the fact that a check ran and a record of the discard itself, holding when it happened
 and no text at all. That record is why a discarded session still has a line in the Intent log,
-and why the board never describes it as a session nobody typed against. That act is the `Discard everything` control, in the Intent card, behind the summary of the same name and offered only
+and why the board never describes it as a session nobody typed against. That act is the `Discard everything` control, in the Goal card, behind the summary of the same name and offered only
 where a revision is stored; it takes two presses, and between them the board names what it will
 delete (the revisions, any reading and the summary), what it will withdraw and what it keeps (the
 record that a check ran, and session history, which `--forget` clears), and when the offer lapses. The result names only what happened to the summary: gone, none stored, still stored, or unreadable. Where it is gone or was never there, it says a finished session opened again writes a new one unless summaries are turned off. That sentence is the control's own description, and it is

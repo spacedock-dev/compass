@@ -625,7 +625,7 @@ across tabs and restarts and shown again if the destination or content tier chan
 cannot name the destination (always on Windows and for a Codex base URL), a move between unnamed
 destinations cannot be detected.
 When a session that ran with `/goal` ends on Claude Code's own "goal met" verdict, or a Codex session's agent marks its goal complete, the Drift card says so as the harness's claim, with the time and, for Claude Code, the reason it gave. Once you analyze, Compass checks that claim against the files it wrote and the checks it ran, and says whether the record agrees, disputes it or cannot confirm it. A file the claim names that a later command deleted or moved away is a dispute, and the card names the file and the time. When the reason puts text in quotes that a check Compass recorded printed, the card names that check by its number, and still says it could not confirm the claim: output that holds a phrase is not a pass. Compass looks only at the last lines of a check that ran alone in its call, never at an `echo` or a file you read, and a quoted name of a remote CI job is left to the pull request's own checks. The claim never changes the drift level and never counts as a passing check.
-When Claude Code gives up on a `/goal` it judged unreachable, the goal is over, and the Drift card says so as the harness's claim with the time and the reason it gave. Compass has not checked that claim, and it changes no level. Above the Goal field, the Intent card says what became of an earlier `/goal` (replaced, met or given up, with the time) and, when you cleared it, "Your /goal was cleared" with the time. It never repeats the earlier goal's words, and it stays quiet while Compass is offering your newer `/goal`.
+When Claude Code gives up on a `/goal` it judged unreachable, the goal is over, and the Drift card says so as the harness's claim with the time and the reason it gave. Compass has not checked that claim, and it changes no level. Above the Goal field, the Goal card says what became of an earlier `/goal` (replaced, met or given up, with the time) and, when you cleared it, "Your /goal was cleared" with the time. It never repeats the earlier goal's words, and it stays quiet while Compass is offering your newer `/goal`.
 
 Use **Pause model calls** on a session page, under **Drift settings** at the top of the Drift card (it is also in the **What is sent** popover), to pause every model call. While paused, **Resume model calls** stands beside Drift settings. A Claude Code session is read by Claude
 Code when `claude` is on the dashboard's PATH, and by Codex when it is not; every other session is
@@ -915,8 +915,10 @@ Compass reads the credential that harness already stored and sends it to that ve
 numbers. The request carries the vendor's own token and nothing else, behind a five minute floor, and no
 session content is sent.
 
-Turning it off takes one click: the line under the quota windows on Session operations carries a Turn off
-button, and Turn on brings it back, without a restart. `--no-usage` refuses it for a whole run whatever is stored in the page.
+Choose Turn off quota reading in Your AI allowance at the foot of Sessions to stop
+credential-backed fetches from this browser. Fresh Codex disk readings and Antigravity receipts
+can still appear. Turn on quota reading resumes fetching without a restart.
+`--no-usage` disables credential-backed reads for a whole run.
 [SECURITY.md](SECURITY.md#usage-quota-reads-the-quota-fetcher) owns the contract, including what is
 sent, what comes back, and what is never touched.
 

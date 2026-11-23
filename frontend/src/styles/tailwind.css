@@ -15,7 +15,8 @@
 @source '../ui/**/*.{ts,tsx}';
 @source '../lib/**/*.{ts,tsx}';
 @source '../terminal/TerminalSurface.tsx';
-@source '../intent/{DirectionQuestion,GoalField,IntentPanel,IntentSection,LiveMonitorSwitch,OutcomeLines,DirectionActionButton}.tsx';
+@source '../intent/{DirectionQuestion,GoalField,HowTo,IntentPanel,IntentSection,LiveMonitorSwitch,OutcomeLines,DirectionActionButton}.tsx';
+@source '../capacity/CapacityStrip.tsx';
 @source '../sessions/{SessionDetail,FullActivity,WhatItDid,SummaryParts,DepartureParts,DetailParts,SessionsView,SessionsFilters,WaitingBlock}.tsx';
 @source '../steering/{StageConditions,Tripwires}.tsx';
 @source '../intent/PromptSelect.tsx';

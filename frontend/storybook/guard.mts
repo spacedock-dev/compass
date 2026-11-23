@@ -26,6 +26,10 @@ export const storyGuard = defineBrowserCommand(async ({ page, context }) => {
   return (await readFonts(fileURLToPath(new URL('../../', import.meta.url)))).css;
 });
 export const storyResult = defineBrowserCommand(async ({ page }) => logs.get(page) ?? []);
+export const storyScreenshot = defineBrowserCommand(async ({ iframe }, selector: string) => {
+  const png = await iframe.locator(selector).screenshot({ animations: 'disabled', scale: 'css' });
+  return `data:image/png;base64,${png.toString('base64')}`;
+});
 export const storyForcedColors = defineBrowserCommand(
   async ({ page }, forcedColors: 'active' | 'none' | null) => {
     await page.emulateMedia({ forcedColors });

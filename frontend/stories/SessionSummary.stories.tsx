@@ -492,7 +492,7 @@ export const NoSummary: Story = {
         within(document.body).getByRole('button', { name: 'Turn off summaries' }),
       ).toBeVisible(),
     );
-    await userEvent.keyboard('{Escape}');
+    await userEvent.click(sent);
     await poll();
     await expect(summaryPosts()).toHaveLength(0);
     await userEvent.click(within(none).getByRole('button', { name: 'Summarize' }));
@@ -1215,7 +1215,7 @@ export const PauseStopsARunningSummary: Story = {
       await waitFor(() => {
         const found = within(document.body)
           .getAllByRole('button', { name: 'Pause model calls' })
-          .find((node) => node.closest('[data-slot="popover-content"]'));
+          .find((node) => node.closest('[data-slot="accordion-content"]'));
         expect(found).toBeDefined();
         return found as HTMLElement;
       }),

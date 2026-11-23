@@ -173,6 +173,29 @@ export function duration(seconds: unknown): string {
   return formatDuration(seconds) || 'an unmeasured span';
 }
 
+/* The slot groups and identifies a window. The published length names it. */
+export function windowLabel({ slot, windowSec }: Pick<StripRow, 'slot' | 'windowSec'>): string {
+  if (slot === 'month') return SLOT_LABELS.month;
+  if (windowSec === null || windowSec <= 0) return 'plan window';
+  if (windowSec === 604800) return SLOT_LABELS.week;
+  for (const [seconds, unit] of [
+    [86400, 'day'],
+    [3600, 'hour'],
+    [60, 'minute'],
+  ] as const) {
+    if (windowSec % seconds === 0) return `${windowSec / seconds}-${unit}`;
+  }
+  return `${windowSec}-second`;
+}
+
+export function allowanceSentence(row: StripRow, source: string): string {
+  const label = windowLabel(row);
+  const window = `${source} ${label}${row.slot === 'month' || label === 'plan window' ? '' : ' plan'}`;
+  if (row.remainingSec === null) return `${window} · reset time not published.`;
+  if (row.remainingSec <= 0) return `${window} · the published reset has passed.`;
+  return `${window} · resets in ${duration(row.remainingSec)}.`;
+}
+
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 const MONTHS = [
   'Jan',
@@ -193,15 +216,17 @@ const MONTHS = [
    weekly window's budget can end days out, and an hour-of-day alone names the wrong day. Anchored on the
    payload's `generated` rather than on the browser clock, so this column and the countdown beside it cannot
    disagree by the age of the payload. */
-export function clockWords(stamp: number | null, generated: number | null): string {
+export function clockWords(stamp: number | null, generated: number | null, exact = false): string {
   if (stamp === null || generated === null) return '';
   const at = new Date(stamp * 1000);
   const ref = new Date(generated * 1000);
   const hhmm = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+  const date = `${MONTHS[at.getMonth()] ?? ''} ${String(at.getDate()).padStart(2, '0')}`;
+  if (exact) return `${date}, ${at.getFullYear()} at ${hhmm}`;
   if (at.toDateString() === ref.toDateString()) return hhmm;
   const ahead = stamp - generated;
   if (ahead >= 0 && ahead < 7 * 86400) return `${DAYS[at.getDay()] ?? ''} ${hhmm}`;
-  return `${MONTHS[at.getMonth()] ?? ''} ${String(at.getDate()).padStart(2, '0')}`;
+  return date;
 }
 
 export type FillInk = 'unknown' | 'crit' | 'warn' | 'ok';

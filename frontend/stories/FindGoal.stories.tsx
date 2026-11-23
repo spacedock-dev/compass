@@ -218,7 +218,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const intentCard = (canvas: HTMLElement) => within(canvas).findByRole('region', { name: 'Intent' });
+const intentCard = (canvas: HTMLElement) => within(canvas).findByRole('region', { name: 'Goal' });
 const finds = () =>
   (window.__findRequests ?? []).filter((request) => request.path === '/api/goal/find');
 const note = (card: HTMLElement) =>
