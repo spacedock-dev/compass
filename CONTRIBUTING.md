@@ -44,7 +44,9 @@ python3 -m webbrowser -t http://127.0.0.1:4553/
 ### Component stories
 
 Run `pnpm storybook` to explore components at `http://127.0.0.1:6006/`. Storybook uses the page's
-dark stylesheet and embedded local fonts. It binds loopback only and disables telemetry and update
+light stylesheet and embedded local Inter. The
+[Calm Compass story](frontend/stories/CalmCompass.stories.tsx) is the reference for approved
+pieces. It binds loopback only and disables telemetry and update
 checks. Build its static explorer with `pnpm build:storybook`; the ignored `.storybook-build/`
 directory stays outside the shipped page.
 

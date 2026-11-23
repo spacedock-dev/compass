@@ -206,6 +206,11 @@ assistive technology. A tooltip may echo a name that already appears in a visibl
 Absence words have no icon. [NUI-12](design-next-ui.md#nui-12-motion-means-observed-activity-not-mere-attention)
 still governs motion.
 
+[DRC-5527](design-shadcn-adoption.md#icons-and-tooltips) records the icon names, weight
+and import boundary. The [Calm Compass story](../frontend/stories/CalmCompass.stories.tsx)
+keeps the swatches, contrast figures, type, radii, terminology and available components together.
+Its reserved Switch example will be filled by the shared control.
+
 ## Overlay rule
 
 | Placement | Use |
@@ -253,6 +258,10 @@ scope, using KB for first-layer sizes and exact bytes in technical details and
 [SECURITY.md](../SECURITY.md).
 
 ## Accessibility floor
+
+The [Calm Compass Storybook guide](../frontend/stories/CalmCompass.stories.tsx) uses live
+palette and type tokens and the shared Button and Card. Its labelled sections give the
+remaining examples a place to land as their components ship.
 
 Use the measured text and boundary pairs above. Preserve visible focus, keyboard operation
 and reading order, including at phone widths. Labels, shapes and the visible legend carry

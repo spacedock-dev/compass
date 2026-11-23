@@ -182,16 +182,24 @@ links to it, or to Attention when there are several. Filters reset when you relo
 [The Find sessions design record](design-sessions-search.md) says exactly how they count.
 
 A launcher can [declare a parent and assign a group](../HOW_TO_USE.md#nest-a-launched-run-under-its-coordinator).
-Linked children follow their visible parent on Sessions and name it with a page link. A parent
-held working says "Waiting on child". Its relationship line links to the selected working child
-as `Waiting on child "title"`, even when a filter hides that child. An open question keeps its
-input-wait state on the row and session page.
+Linked children follow their visible parent on Sessions and name it with a page link. A waiting
+parent gets a second line, `Waiting on child "title"`. Sessions and the session page link it to the
+child even when a filter hides the child. An open question takes precedence over the child wait.
+A reported session end takes precedence in the state label. If the board still publishes a
+question for that session, you can answer it on the session page. The Sessions legend marks an
+observed turn stop as Quiet and a reported session end as Ended. If scanning cannot see a turn end,
+the row explains that in words.
 An unmatched declaration says the parent is not on the board and is not linked. Open
 a parent to see its linked children and their states, or a child to open its parent. Group labels
 stay separate from goals; inherited labels say "from parent". Group by group arranges the kept
 rows into label buckets within active work and recent history. Named choices, chips and headings
 quote labels; unquoted "No group" means no label.
 Filters and grouping last across board refreshes and trips into a session; reloading clears them.
+
+The Projects list and each project's summary count Working, Waiting on you, Ended and Quiet from
+the state shown on each member's row. A parent waiting on its child or an idle session without an
+observed turn end contributes to `in no counted state`. Attention also requires an observed turn
+end to count a session as Quiet.
 
 A quiet Codex rollout can still be working while a shell-capable call has no matching output.
 Within an open turn, an unanswered `exec`, `exec_command`, `shell_command` or `write_stdin` reads

@@ -51,10 +51,11 @@ export const Marks: Story = {
       );
     }
     const unknown = canvas.getByLabelText('Ran, result not recorded');
-    await expect(unknown.querySelector('path')).toHaveAttribute(
-      'd',
-      'M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Z',
-    );
+    const outline = unknown.querySelector('path');
+    if (!outline) throw new Error('The unrecorded mark has no outline');
+    const { x, y, width, height } = outline.getBBox();
+    await expect(outline.isPointInFill(new DOMPoint(x + width / 2, y + height / 20))).toBe(true);
+    await expect(outline.isPointInFill(new DOMPoint(x + width / 2, y + height / 2))).toBe(false);
     await expect(unknown.querySelector('polyline')).toBeNull();
     const style = getComputedStyle(unknown);
     // The muted absence ink is shared with the record's captions.

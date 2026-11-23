@@ -46,6 +46,28 @@ interface Summary {
 const norm = (node: Element | null): string =>
   node ? (node.textContent ?? '').replace(/\s+/g, ' ').trim() : '';
 
+const DEVIATIONS = {
+  // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
+  stateLines: (root: ParentNode) => {
+    for (const state of root.querySelectorAll('[data-next-row-state],.next-operation-scan-only')) {
+      state.remove();
+    }
+  },
+  // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
+  liveMarks: (root: DocumentFragment) => {
+    for (const mark of root.querySelectorAll('.next-operation-live-glyph'))
+      if (mark.textContent?.trim() === '●') mark.remove();
+  },
+  // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
+  outcomeMarks: (root: DocumentFragment) => {
+    for (const outcome of root.querySelectorAll('.next-operation-outcome')) {
+      const lead = outcome.firstChild;
+      if (lead?.nodeType === Node.TEXT_NODE)
+        lead.textContent = lead.textContent?.replace(/^\s*[△✓◦]\s*/, '') ?? '';
+    }
+  },
+};
+
 function summarize(source: Element | DocumentFragment): Summary {
   restateRecordedLocationNotes(source);
   const root = normalizeDisclosures(source);
@@ -98,6 +120,9 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
   raw?.(template.innerHTML);
   restateRecordedLocationNotes(template.content);
   retractSessionCopies(template.content);
+  DEVIATIONS.outcomeMarks(template.content);
+  DEVIATIONS.liveMarks(template.content);
+  DEVIATIONS.stateLines(template.content);
   const header = template.content.querySelector('.next-operations-header');
   header?.querySelector(':scope > span')?.remove();
   header?.querySelectorAll('summary').forEach((node) => node.remove());
@@ -161,7 +186,10 @@ async function reactSummary(payload: unknown): Promise<Summary> {
   await page.settle();
   const root = page.container.querySelector('[data-next-view-body="sessions"]');
   if (!root) throw new Error('The Sessions screen did not draw.');
-  const states = [...root.querySelectorAll('[data-next-row-state]')].map(norm);
+  DEVIATIONS.stateLines(root);
+  for (const text of root.querySelectorAll('[data-next-operation-fact="now"] strong')) {
+    if (text.textContent === 'No recent activity') text.textContent = 'quiet';
+  }
   const levels = [...root.querySelectorAll('[data-next-row-drift-level]')].map(norm);
   const drawn = summarize(root);
   page.unmount();
@@ -173,8 +201,6 @@ async function reactSummary(payload: unknown): Promise<Summary> {
       ...group,
       rows: group.rows.map((row) => {
         let text = row.text;
-        const state = states.find((word) => text.startsWith(word));
-        if (state) text = text.slice(state.length).trimStart();
         for (const level of levels) text = text.replace(level, 'Drift');
         return { ...row, text };
       }),
@@ -183,15 +209,20 @@ async function reactSummary(payload: unknown): Promise<Summary> {
   return result;
 }
 
-/* The header explanations now share the how-to and two counters live on Attention.
-   Their words and every row fact still compare; the first-step controls are asserted in SessionsView.test. */
-const DEVIATIONS: readonly {
-  readonly seed: number;
-  readonly path: string;
-  readonly reason: string;
-}[] = [];
-
 describe('the Sessions screen reads as the legacy screen does, over generated payloads', () => {
+  it('renders status and outcome marks as icons over generated sessions', async () => {
+    const payload = genPayload(1, { wellFormed: true });
+    const page = mountShell({ hash: '#n=sessions', data: payload, strict: false });
+    await page.settle();
+    const view = page.container.querySelector('[data-next-view-body="sessions"]');
+    expect(view?.querySelectorAll('[data-next-session]').length).toBeGreaterThan(0);
+    // Session titles are reader data and can contain any character.
+    const rendered = view?.cloneNode(true) as Element;
+    rendered.querySelectorAll('.next-operation-route strong').forEach((title) => title.remove());
+    expect(rendered.textContent).not.toMatch(/[●○△◦◇✓▸▾▴]/);
+    page.unmount();
+  });
+
   const CASES = 60;
   const SEEDS = CASES;
   it(`agrees on ${String(SEEDS)} seeds, group by group and row by row`, async () => {
@@ -209,10 +240,7 @@ describe('the Sessions screen reads as the legacy screen does, over generated pa
           failures.push(`seed ${String(seed)} ${group.kind}: membership or order differs`);
         }
       }
-      if (
-        maskRevisionWords(JSON.stringify(old)) !== maskRevisionWords(JSON.stringify(mine)) &&
-        !DEVIATIONS.some((d) => d.seed === seed)
-      ) {
+      if (maskRevisionWords(JSON.stringify(old)) !== maskRevisionWords(JSON.stringify(mine))) {
         const left = JSON.stringify(old);
         const right = JSON.stringify(mine);
         let at = 0;

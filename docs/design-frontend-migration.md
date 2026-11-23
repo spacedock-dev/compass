@@ -16,6 +16,34 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-22, status, navigation and activity marks use Phosphor Bold SVGs. The Sessions and
+Project comparisons mask the retired text marks at their render sites and compare the surrounding
+words and structure. The observed-model and Project member comparisons project the old outcome
+marks only for reported ends. The presentation proofs compare the new state and limit lines,
+plan status words and helper counts against their own evidence. The recorded-answer comparisons
+omit those fields and keep the surrounding text, order, identities and timing. The terminal
+comparison maps recorded Idle to Quiet for the rows with a turn stop and to State not published for
+the four rows without one. The activity proofs retain the hollow and marked circle distinction.
+The browser title's attention cue keeps its text. The recorded answers stay fixed.
+
+2026-11-23, reported ends take precedence over open questions in the Sessions row and the session
+header. The published question still has its answer controls. The session header's request test
+expects Ended when both are published and sends an answer. `Ended With An Open Question` in
+Storybook shows the Ended label beside the enabled answer controls.
+
+The Projects list and project header tally each member's displayed state. The
+`omitProjectStateSubtotals` comparison keeps the total and the count of reported ends. It
+omits the working, waiting, quiet and unclassified subtotals because declared child waits,
+exact requests and idle rows without turn ends move between those buckets. The terminal-brief
+comparison expects the revised web subtotals for its idle rows, which publish no turn end.
+`Projects Quiet Rollup` and `Project Displayed State Rollup` in Storybook check both web surfaces.
+
+Attention's coverage requires the same state evidence. `omitAttentionQuietSubtotals` masks
+only the quiet and unclassified subtotals in the recorded comparisons. The observed-model
+comparison also omits the board-wide Quiet total. A mounted test and `Attention Quiet Coverage`
+prove the scan-only absence, and the mixed-board model test counts a recorded turn stop as
+Quiet while preserving its Close the loop classification.
+
 Raise now diagnoses a restarted dashboard only from an explicit `stale-capability` refusal.
 Other 403 replies keep the server's refusal sentence, with a generic refusal for older HTML
 replies. The live client-contract fixtures are regenerated with the server; the retired page's

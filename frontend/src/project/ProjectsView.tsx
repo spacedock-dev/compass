@@ -1,3 +1,4 @@
+import { Icon } from '../ui/icons';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import type { ReactNode } from 'react';
@@ -8,7 +9,7 @@ import { useShell } from '../shell/context';
 import { selectObserved } from '../observed/select';
 import { useDisplayed } from '../shell/context';
 import { projectMembers } from './activity';
-import { Dot, Value } from './parts';
+import { ProjectSessionLimit, ProjectSessionStatus, Value } from './parts';
 import { routeToken, useRouteTarget } from './routing';
 import type { ObservedSession } from '../observed';
 import './project.css';
@@ -62,7 +63,9 @@ function MemberLine({
         target.onClick(event);
       }}
     >
-      <Dot session={session} />
+      <span>
+        <ProjectSessionStatus session={session} />
+      </span>
       <span className="next-project-session-harness">{session.harness}</span>
       <Value
         text={session.titleText}
@@ -75,6 +78,7 @@ function MemberLine({
         known={session.nextKnown}
         className="next-project-session-next"
       />
+      <ProjectSessionLimit session={session} />
     </Button>
   );
 }
@@ -145,9 +149,7 @@ function ProjectRow({
           {count}
         </>
       )}
-      <span className="next-project-chevron" aria-hidden="true">
-        ›
-      </span>
+      <Icon name="caret-right" className="next-project-chevron shrink-0" />
     </Card>
   );
 }

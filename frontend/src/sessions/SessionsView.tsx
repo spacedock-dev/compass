@@ -1,3 +1,4 @@
+import { Icon, SESSION_STATE_ICONS } from '../ui/icons';
 import { groupName, groupOf, nestRows } from './declared';
 import { RelationshipLabels } from './DeclaredRelationships';
 import { Card } from '../ui/card';
@@ -14,7 +15,7 @@ import {
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
-import { gapNames, isRecord, isScanOnly, type Row } from '../observed';
+import { gapNames, isRecord, sessionStateLimit, type Row } from '../observed';
 import { nextNumber } from '../api/bootstrap';
 import { contextKey } from '../api/identity';
 import { headerAnalysis } from '../drift/model';
@@ -65,7 +66,6 @@ import {
   GOAL_SOURCES_OFF,
   GOAL_SOURCES_ON,
   RECENT_WHY,
-  SCAN_ONLY_LINE,
   SCAN_ONLY_NOTE,
   UNREAD_SOURCE_NOTE,
 } from './notes';
@@ -76,22 +76,26 @@ import './sessions.css';
    model read from the rows being drawn, so the fleet facts, the groups and the header cannot disagree.
    Nothing here fetches, polls or acts; a row's controls act only when pressed. */
 
-export function StatusDot({
-  label,
-  className,
-  filled = true,
-}: {
-  readonly label: string;
-  readonly className?: string;
-  readonly filled?: boolean;
-}) {
+const SESSION_LEGEND = [
+  ...Object.entries(SESSION_STATE_ICONS),
+  ['Worth a look', 'worth-a-look'],
+] as const;
+
+function StatusLegend() {
   return (
-    <span
-      className={className ? `next-status-dot ${className}` : 'next-status-dot'}
-      aria-label={label}
-    >
-      {filled ? '●' : '○'}
-    </span>
+    <section className="mt-3 text-label text-muted-foreground">
+      <h2 id="sessions-icon-legend" className="font-semibold">
+        What the icons mean
+      </h2>
+      <ul aria-labelledby="sessions-icon-legend" className="flex flex-wrap gap-x-4 gap-y-1">
+        {SESSION_LEGEND.map(([word, icon]) => (
+          <li key={word} className="inline-flex items-center gap-2">
+            <Icon name={icon} />
+            {word}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -148,14 +152,24 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
   const assignment = history ? '' : assignmentOf(source);
   const names = source ? gapNames(source) : [];
   const state = rowState(session);
+  const limit = sessionStateLimit(session, state);
+  const statusIcon =
+    state === 'State not published' || state === 'Waiting on child'
+      ? null
+      : SESSION_STATE_ICONS[state];
   return (
     <span className="next-operation-identity">
-      <span
-        className={`m-0 block text-label font-semibold uppercase tracking-[.07em] [font-family:var(--mono)] ${state === 'Waiting on you' ? 'text-[var(--amber)]' : state === 'Working' ? 'text-foreground' : 'text-[var(--ink-label)]'}`}
-        data-next-row-state={state}
-      >
-        {row.relations.waitingText && state === 'Working' ? 'Waiting on child' : state}
-      </span>
+      {statusIcon ? (
+        <span
+          className={`m-0 flex items-center gap-2 text-label font-semibold ${state === 'Waiting on you' ? 'text-[var(--amber)]' : state === 'Working' ? 'text-foreground' : 'text-[var(--ink-label)]'}`}
+          data-next-row-state={state}
+        >
+          <span className={session.isLive && state === 'Working' ? 'next-live' : undefined}>
+            <Icon name={statusIcon} className="next-status-icon" />
+          </span>
+          {state}
+        </span>
+      ) : null}
       <span className="next-operation-harness">{row.harnessLabel}</span>
       <RouteAnchor
         route={row.route}
@@ -169,9 +183,6 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
             ? {}
             : { className: 'next-operation-title--unknown next-absence' })}
         >
-          {session.isLive ? (
-            <StatusDot label="working" className="next-operation-live-glyph" />
-          ) : null}
           {session.titleText}
         </strong>
       </RouteAnchor>
@@ -181,6 +192,7 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
       <RelationshipLabels
         source={source}
         relations={row.relations}
+        waitingIsState={state === 'Waiting on child'}
         focusScope={`sessions-row:${row.key}`}
         fallback={SEARCH_KEY}
       />
@@ -201,9 +213,13 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
           {session.sharedLabelText}
         </span>
       ) : null}
-      {source && isScanOnly(source) ? (
-        <span className="next-operation-scan-only" title={SCAN_ONLY_NOTE}>
-          {SCAN_ONLY_LINE}
+      {limit && state !== 'Waiting on child' ? (
+        <span
+          className="next-operation-scan-only"
+          title={session.scanOnly ? SCAN_ONLY_NOTE : undefined}
+          data-next-row-state={statusIcon ? undefined : state}
+        >
+          {limit}
         </span>
       ) : null}
       {names.length ? (
@@ -336,7 +352,10 @@ const RowView = memo(function RowView({
   const nowKind = 'NOW';
   const outcome = session.outcomeKnown ? (
     <span className={`next-operation-outcome next-operation-outcome--${session.tone}`}>
-      {`${session.outcomeGlyph} ${session.outcomeText}`}
+      {session.outcomeIcon ? (
+        <Icon name={session.outcomeIcon} className="mr-1 inline-block align-text-bottom" />
+      ) : null}
+      {session.outcomeText}
       <span
         className={
           session.gitKnown
@@ -685,6 +704,7 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
           </p>
         </IntentHowTo>
       </header>
+      <StatusLegend />
       <SourceGaps />
       <section className="next-operations-fleet" aria-label="Fleet facts">
         {screen.counters.slice(0, 2).map((counter, index) => (

@@ -73,7 +73,7 @@ describe('the session activity list', () => {
     }
     const unknown = head.querySelector('[data-icon="unrecorded"]') as SVGElement;
     expect(unknown.querySelector('path')?.getAttribute('d')).toBe(
-      'M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Z',
+      'M128,20A108,108,0,1,0,236,128,108.12,108.12,0,0,0,128,20Zm0,192a84,84,0,1,1,84-84A84.09,84.09,0,0,1,128,212Z',
     );
     expect(unknown.innerHTML).not.toContain('polyline');
     expect(head.querySelector('[data-activity-head-right]')?.className).toContain('ml-auto');

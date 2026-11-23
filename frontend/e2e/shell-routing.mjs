@@ -142,6 +142,10 @@ const DEVIATIONS = [
     field: 'primary',
     reason: 'Sessions precedes Projects under DEC-27; all routes and labels still compare.',
   },
+  {
+    field: 'breadcrumb and header counts',
+    reason: '2026-11-22: Phosphor replaces the breadcrumb separator and running mark.',
+  },
 ];
 
 const browser = await chromium.launch();
@@ -180,7 +184,11 @@ try {
       }
       if (CANONICAL.has(fragment))
         assert.equal(r.hash, CANONICAL.get(fragment), `${name}: canonical fragment`);
-      const [lc, rc] = [recorded.counts, await counts(react.page)];
+      const lc = {
+        ...recorded.counts,
+        running: recorded.counts.running?.replace(/^●\s*/, '') ?? null,
+      };
+      const rc = await counts(react.page);
       if (!fragment.startsWith('#n=project:')) {
         if (JSON.stringify(lc) !== JSON.stringify(rc))
           mismatches.push({ route: name, field: 'header counts', recorded: lc, react: rc });
@@ -926,7 +934,7 @@ try {
           'Waiting for the first board.',
         );
         assert.equal(
-          await o.page.locator('.next-status-dot').count(),
+          await o.page.locator('.next-status-icon').count(),
           0,
           'no live dot over a board nobody has read',
         );
@@ -1373,7 +1381,7 @@ try {
         return await o.page.evaluate(
           () =>
             globalThis.getComputedStyle(
-              globalThis.document.querySelector('.next-live .next-status-dot'),
+              globalThis.document.querySelector('.next-live .next-status-icon'),
             ).animationName,
         );
       } finally {

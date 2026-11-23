@@ -9,11 +9,13 @@ import { SAMPLE_FRAGMENT, SAMPLE_HARNESS, SAMPLE_PROJECT, SAMPLE_SID } from '../
 import { findSession, sessionTitle } from './derive';
 
 const primary = () => within(screen.getByRole('navigation', { name: 'Primary' }));
-const crumb = () =>
-  screen
-    .queryByRole('navigation', { name: 'Breadcrumb' })
-    ?.textContent?.replace(/\s+/g, ' ')
-    .trim() ?? null;
+const crumb = () => {
+  const nav = screen.queryByRole('navigation', { name: 'Breadcrumb' });
+  if (!nav) return null;
+  return [...nav.querySelectorAll('a, [aria-current="page"]')]
+    .map((segment) => segment.textContent?.trim())
+    .join(' › ');
+};
 const current = () =>
   primary()
     .queryAllByRole('link')
@@ -150,6 +152,11 @@ describe('the breadcrumb', () => {
       ['alpha/app', '#n=project:alpha%2Fapp'],
     ]);
     expect(nav.getByText('Alpha shared claude').getAttribute('aria-current')).toBe('page');
+    expect(
+      screen
+        .getByRole('navigation', { name: 'Breadcrumb' })
+        .querySelectorAll('svg[data-icon="caret-right"]'),
+    ).toHaveLength(2);
   });
 
   it('says "Session" for a session it cannot find before the first board, claiming nothing about a board nobody has read', async () => {
@@ -226,7 +233,7 @@ describe('the header counts come from the rows the page was given', () => {
     const page = mountShell({ data: BOARD });
     await page.settle();
     expect(document.querySelector('.next-running')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      '● 2 running · 3 subagents observed',
+      '2 running · 3 subagents observed',
     );
     expect(screen.getByRole('button', { name: '1 reported block' })).toBeInTheDocument();
   });
@@ -281,7 +288,7 @@ describe('the header counts come from the rows the page was given', () => {
     expect(document.querySelector('.next-running')?.textContent).toBe(
       'Waiting for the first board.',
     );
-    expect(document.querySelector('.next-status-dot')).toBeNull();
+    expect(document.querySelector('.next-running svg')).toBeNull();
     expect(document.body.textContent).not.toContain('0 running');
     unread.unmount();
 
@@ -297,7 +304,7 @@ describe('the header counts come from the rows the page was given', () => {
     const page = mountShell({ data: { generated: 1, sessions: [] } });
     await page.settle();
     expect(document.querySelector('.next-running')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      '● 0 running · 0 subagents observed',
+      '0 running · 0 subagents observed',
     );
   });
 
@@ -344,7 +351,7 @@ describe('a failed refresh', () => {
       });
     }
     expect(document.querySelector('.next-running')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      '● 2 running · 3 subagents observed',
+      '2 running · 3 subagents observed',
     );
     expect(screen.getByText('Live refresh failed 3 times in a row.')).toBeInTheDocument();
   });

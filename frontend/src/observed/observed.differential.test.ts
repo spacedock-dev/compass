@@ -1,3 +1,8 @@
+import {
+  omitAttentionQuietSubtotals,
+  omitProjectStateSubtotals,
+  recordedSessionStatus,
+} from '../../test/recordedSessionStatus';
 import { recordedLocationNotes } from '../../test/location_departure';
 import { describe, expect, it } from 'vitest';
 import { instructionSourceDeviation } from '../../test/projectWordDeviation';
@@ -10,7 +15,7 @@ import {
   PROJECT_HISTORY_KEYS,
 } from './legacy.test.helper';
 import { genPayload } from './generate.test.helper';
-import { delegatedWork, observe, readHint, sessionDot, sessionStop } from './index';
+import { delegatedWork, observe, readHint, sessionStop } from './index';
 
 /* The observed model is held to the legacy file that computes it. 600 generated payloads run through the
    real `nextObserved` and through `observe`, and the two answers must agree on every field a reader or a
@@ -26,10 +31,11 @@ const CASES = 80;
 const SEEDS = CASES;
 
 function withoutHistory(input: Record<string, unknown>): Record<string, unknown> {
-  const model = recordedLocationNotes(input);
+  const model = recordedSessionStatus(recordedLocationNotes(input)) as typeof input;
   const projects = (model['projects'] as Record<string, unknown>[]).map((project) => {
+    const countLine = project['countLine'] as string;
     return Object.fromEntries(
-      Object.entries(project).filter(
+      Object.entries({ ...project, countLine: omitProjectStateSubtotals(countLine) }).filter(
         ([key]) => !(PROJECT_HISTORY_KEYS as readonly string[]).includes(key),
       ),
     );
@@ -38,8 +44,12 @@ function withoutHistory(input: Record<string, unknown>): Record<string, unknown>
     (rows as Record<string, unknown>[]).map((project) =>
       projects.find((candidate) => candidate['key'] === project['key']),
     );
+  const { quiet: _quietTotal, ...totals } = model['totals'] as Record<string, number>;
+  const coverage = model['coverage'] as Record<string, unknown>;
   return {
     ...model,
+    totals,
+    coverage: { ...coverage, quiet: omitAttentionQuietSubtotals(coverage['quiet'] as string) },
     // Location cards are proven by their distinct linked members, not the recorded duplicate counts.
     boardRisks: (model['boardRisks'] as Record<string, unknown>[]).filter(
       (risk) => !['collision', 'checkout'].includes(String(risk['kind'])),
@@ -138,24 +148,14 @@ describe('the helpers a view calls agree with their legacy twins', () => {
     }
   });
 
-  it('draws a row dot with the same shape, tone, pulse and name', () => {
+  // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
+  it('retains the observed live evidence behind the recorded row motion', () => {
     for (const payload of [genPayload(3), genPayload(11), genPayload(29)]) {
       const old = legacy.call<Record<string, unknown>>('nextObserved', payload, {});
       const mine = observe(payload);
       (old['sessions'] as Record<string, unknown>[]).forEach((session, index) => {
         const html = legacy.call<string>('nextSessionDot', session);
-        const dot = sessionDot(mine.sessions[index] as never);
-        const match = /class="([^"]*)" role="img" aria-label="([^"]*)"/.exec(html);
-        expect(match, html).not.toBeNull();
-        const decode = (value: string) =>
-          value
-            .replace(/&quot;/g, '"')
-            .replace(/&#39;/g, "'")
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&amp;/g, '&');
-        expect(dot.className).toBe(decode(match?.[1] ?? ''));
-        expect(dot.label).toBe(decode(match?.[2] ?? ''));
+        expect(mine.sessions[index]?.isLive).toBe(html.includes('next-project-dot--working'));
       });
     }
   });

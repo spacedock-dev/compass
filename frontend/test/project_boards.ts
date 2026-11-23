@@ -18,6 +18,22 @@ export interface BaseGenerators {
   readonly pick: <T>(rnd: Rng, items: readonly T[]) => T;
 }
 
+export const projectStatusBoard = {
+  generated: 1000,
+  sessions: [
+    { sid: 'working', title: 'Running checks', state: 'working', active: true },
+    { sid: 'stopped', title: 'Recorded stop', state: 'idle', finished_at: 980 },
+    { sid: 'scan', title: 'Scan-only session', state: 'idle', acquisition: 'scan-only' },
+  ].map((row) => ({ harness: 'claude', project: 'rollup', last_activity: 990, ...row })),
+};
+
+export const projectRequestBoard = {
+  ...projectStatusBoard,
+  sessions: projectStatusBoard.sessions.filter((row) => row.sid !== 'scan'),
+  ask: true,
+  asks: [{ id: 'q', harness: 'claude', session_id: 'stopped', question: 'Review the result?' }],
+};
+
 export function makeBoards({ genPayload, mulberry32, pick }: BaseGenerators) {
   const chance = (rnd: Rng, p: number): boolean => rnd() < p;
   const int = (rnd: Rng, low: number, high: number): number =>

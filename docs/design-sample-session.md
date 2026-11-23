@@ -205,6 +205,12 @@ page allowance is increased by 8 KiB, to the same 1,884,747-byte baseline plus 4
 2,343,499 bytes, leaving 4,408 bytes above the measured build. No timing comparison was run for an
 increase of this size. The fixture allowance remains 250,000 bytes.
 
+On 2026-11-22 the Phosphor Bold glyphs, Sessions legend and evidence-based status rendering
+brought the page from 2,339,139 bytes on the fixed Inter layer to 2,347,559 bytes. That is
+an increase of 8,420 bytes (0.36%) and 4,060 bytes above the old bound. The 4 KiB increase
+sets the allowance at the same baseline plus 452 KiB, or 2,347,595 bytes, with 36
+bytes to spare. The fixture allowance stays at 250,000 bytes. Both builds used Node 26.10.0.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

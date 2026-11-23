@@ -7,9 +7,11 @@ export function RelationshipLabels({
   source,
   relations,
   focusScope,
+  waitingIsState = false,
   fallback = 'session-title',
 }: {
   readonly focusScope: string;
+  readonly waitingIsState?: boolean;
   readonly fallback?: string;
   readonly source: Row | undefined;
   readonly relations: ReturnType<typeof declaredRelations>;
@@ -38,7 +40,10 @@ export function RelationshipLabels({
         </span>
       ) : null}
       {relations.waitingText ? (
-        <span className="mt-1 block text-label text-muted-foreground">
+        <span
+          className="mt-1 block text-label text-muted-foreground"
+          data-next-row-state={waitingIsState ? 'Waiting on child' : undefined}
+        >
           <WaitingChild relations={relations} focusScope={focusScope} fallback={fallback} />
         </span>
       ) : null}

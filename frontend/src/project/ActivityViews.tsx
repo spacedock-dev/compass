@@ -1,3 +1,4 @@
+import { Icon } from '../ui/icons';
 import { Button } from '../ui/button';
 import { Fragment } from 'react';
 import { durationSince, isRecord, promptCopied, sessionKey, type Row } from '../observed/values';
@@ -10,7 +11,7 @@ import {
   projectProgress,
 } from './activity';
 import type { ProjectModel } from './model';
-import { Dot, Value } from './parts';
+import { ProjectSessionLimit, ProjectSessionStatus, Value } from './parts';
 import { routeToken, useRouteTarget } from './routing';
 
 /* What the project's sessions are doing now (GOING ON), how the ones that stopped ended, and the tasks
@@ -109,9 +110,10 @@ function ActivityCard({
       onClick={target.onClick}
     >
       <span className="next-activity-title">
-        <Dot session={session} />
+        <ProjectSessionStatus session={session} />
         <Value text={session.titleText} known={session.titleKnown} />
       </span>
+      <ProjectSessionLimit session={session} />
       <Instruction source={source} title={session.titleText} generated={model.generated} />
       <span className="next-activity-now">
         <span className="next-activity-harness">{`${session.harness} · `}</span>
@@ -193,9 +195,9 @@ function Ending({
       onClick={target.onClick}
     >
       <span className="next-project-ending-title">
-        <span className="next-project-ending-glyph" aria-hidden="true">
-          {session.outcomeGlyph}
-        </span>
+        {session.outcomeIcon ? (
+          <Icon name={session.outcomeIcon} className="next-project-ending-glyph shrink-0" />
+        ) : null}
         <Value text={session.titleText} known={session.titleKnown} />
       </span>
       <Value
@@ -259,9 +261,7 @@ export function CompletedWork({ model }: { readonly model: ProjectModel }) {
         <ul className="next-activity-done">
           {completed.map((task, index) => (
             <li key={index}>
-              <span className="next-activity-done-glyph" aria-label="completed">
-                ✓
-              </span>
+              <Icon name="check" className="next-activity-done-glyph shrink-0" />
               <span>{String(task['subject'] || '')}</span>
             </li>
           ))}

@@ -68,8 +68,9 @@ export const QUERY_LIMIT = 200;
 export const STATE_VALUES = [
   'Waiting on you',
   'Working',
-  'Idle',
+  'Quiet',
   'Ended',
+  'Waiting on child',
   'State not published',
 ] as const;
 export const DRIFT_OPTIONS: readonly { readonly value: DriftValue; readonly label: string }[] = [

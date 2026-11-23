@@ -6,6 +6,7 @@ import {
   ageSeconds,
   endedAt,
   isRecord,
+  isScanOnly,
   pair,
   promptCopied,
   records,
@@ -25,7 +26,9 @@ export type ObservedSession = {
   readonly blockText: string;
   readonly blockKnown: boolean;
   readonly blockNote: string;
-  readonly outcomeGlyph: string;
+  readonly outcomeIcon: 'worth-a-look' | 'ended' | null;
+  readonly childWait: string;
+  readonly scanOnly: boolean;
   readonly waitedText: string;
   readonly waitedKnown: boolean;
   readonly state: string;
@@ -113,6 +116,7 @@ export function observeSession(
   harness: Row | undefined,
   generated: number | null,
   shared: string,
+  childWait = '',
 ): ObservedSession {
   const ended = endedAt(source) !== null;
   const state = source['state'];
@@ -237,7 +241,9 @@ export function observeSession(
             ? quietSeconds
               ? `last active ${quietSeconds} ago`
               : stateDetail
-                ? 'quiet'
+                ? landing.endKind === 'turn-stop'
+                  ? 'quiet'
+                  : 'No recent activity'
                 : ''
             : source['state_detail']
         : '';
@@ -271,13 +277,9 @@ export function observeSession(
     // Stops and ends are published; readership and termination cause are not. Their absence belongs in
     // open and coverage, never in an inferred outcome.
     ...pair('outcome', outcome, 'No stop or end observed'),
-    outcomeGlyph: outcomeKnown
-      ? source['dirty'] === true
-        ? '△'
-        : source['dirty'] === false
-          ? '✓'
-          : '◦'
-      : '',
+    outcomeIcon: ended ? (source['dirty'] === true ? 'worth-a-look' : 'ended') : null,
+    childWait,
+    scanOnly: isScanOnly(source) && !recordedStop,
     ...pair('git', git, 'Git state was not measured'),
     ...pair(
       'rate',
@@ -321,4 +323,25 @@ export function observeSession(
     tasks: Array.isArray(source['tasks']) ? (source['tasks'] as unknown[]) : [],
   };
   return row as ObservedSession;
+}
+
+const SCAN_ONLY_LINE = 'Read by scanning: no turn end can be observed here';
+
+export function sessionState(
+  session: ObservedSession,
+): 'Ended' | 'Waiting on you' | 'Working' | 'Quiet' | 'Waiting on child' | 'State not published' {
+  // A reported end sets the lifecycle label. The request keeps its own answer controls.
+  if (session.isEnded) return 'Ended';
+  if (session.askKnown || session.isNeeds) return 'Waiting on you';
+  if (session.childWait) return 'Waiting on child';
+  if (session.isWorking) return 'Working';
+  return session.isQuiet && session.landing.endKind === 'turn-stop'
+    ? 'Quiet'
+    : 'State not published';
+}
+
+export function sessionStateLimit(session: ObservedSession, state = sessionState(session)): string {
+  if (state === 'Waiting on child') return session.childWait;
+  if (session.scanOnly) return SCAN_ONLY_LINE;
+  return state === 'State not published' ? state : '';
 }

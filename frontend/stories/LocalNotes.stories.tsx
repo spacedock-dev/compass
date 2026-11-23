@@ -230,7 +230,8 @@ function concurrentTripwire(action: 'remove' | 'toggle'): Story {
     args: { kind: 'tripwire', initialRules: ['A', 'B', 'C'] },
     play: async ({ canvasElement }) => {
       const canvas = within(canvasElement);
-      await canvas.findByRole('switch', { name: 'B' });
+      const tripwire = await canvas.findByRole('switch', { name: 'B' });
+      await expect(tripwire.querySelector('svg[data-icon="tripwire"]')).toBeVisible();
       const backend = backendOf(canvasElement);
       const other = createLegacyStorage(() => backend).guardrails;
       const first = other.rules(PROJECT)[0];

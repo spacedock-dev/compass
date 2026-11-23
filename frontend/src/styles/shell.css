@@ -67,11 +67,6 @@ body {
   border: 0;
 }
 
-.next-status-dot {
-  font-family: var(--mono);
-  font-size: var(--fs-label);
-}
-
 @keyframes next-live-pulse {
   0%,
   100% {
@@ -82,13 +77,13 @@ body {
   }
 }
 
-.next-live .next-status-dot {
+.next-live .next-status-icon {
   color: var(--ink);
   animation: next-live-pulse 1.6s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .next-live .next-status-dot {
+  .next-live .next-status-icon {
     animation: none !important;
     transition: none !important;
   }

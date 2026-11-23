@@ -10,8 +10,6 @@ export const UNREAD_SOURCE_NOTE =
 export const SCAN_ONLY_NOTE =
   'Compass reads this session off disk and no event from its harness can reach it, so an idle row here means nothing has changed recently rather than that the turn ended. The rest of the row was read normally.';
 
-export const SCAN_ONLY_LINE = 'Read by scanning: no turn end can be observed here';
-
 export const BOARD_WHY =
   'Blocked sessions lead, followed by recorded departures, then working sessions. The Active now figure counts active evidence only; a recorded departure adds no active session.';
 

@@ -12,6 +12,7 @@ import { genBoard, genContext, parityBoard, scenarios } from './generate.test.he
 import { sessKey, stableKey } from './group';
 import { parseHtml } from './legacy.test.helper';
 import { restateLiveOpener } from '../../test/recordedCommandOpener';
+import { omitProjectStateSubtotals } from '../../test/recordedSessionStatus';
 import { memoKey } from '../storage';
 import { mountProject } from './testing';
 
@@ -49,7 +50,10 @@ interface Summary {
 function summarize(source: Element | DocumentFragment, tab: string): Summary {
   restateRecordedLocationNotes(source);
   const article = normalizeDisclosures(source);
+  maskProjectStatusPresentation(article, source.nodeType === Node.DOCUMENT_FRAGMENT_NODE);
   const header = article.querySelector('.next-project-detail-header');
+  const count = header?.querySelector('.next-project-detail-count');
+  if (count) count.textContent = omitProjectStateSubtotals(norm(count));
   const tree = article.querySelector('nav.next-cockpit-scope-tree');
   const strip = article.querySelector('.next-cockpit-recovery');
   const panel =
@@ -102,8 +106,44 @@ function summarize(source: Element | DocumentFragment, tab: string): Summary {
   };
 }
 
-/* Named differences, each with its reason. */
-const DEVIATIONS: readonly { readonly name: string; readonly reason: string }[] = [];
+/* 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers */
+function maskProjectStatusPresentation(root: ParentNode, recorded: boolean) {
+  for (const node of root.querySelectorAll(
+    '.next-project-session-limit,[data-next-plan-status],[data-next-project-focus-status]',
+  )) {
+    node.remove();
+  }
+  if (recorded) {
+    for (const header of root.querySelectorAll(
+      '.next-cockpit-viewing-session, .next-cockpit-scope-switcher summary > span:first-child',
+    )) {
+      if (header.textContent?.startsWith('Viewing session · '))
+        header.textContent = header.textContent.replace(/ · [^·]+$/, '');
+    }
+  }
+  for (const word of root.querySelectorAll('.next-cockpit-scope-state')) {
+    const previous = word.previousSibling;
+    const following = word.nextSibling;
+    if (previous?.nodeType === Node.TEXT_NODE && /·\s*$/.test(previous.textContent ?? ''))
+      previous.textContent = previous.textContent?.replace(/\s*·\s*$/, '') ?? '';
+    else if (following?.nodeType === Node.TEXT_NODE)
+      following.textContent = following.textContent?.replace(/^\s*·\s*/, '') ?? '';
+    word.remove();
+  }
+  for (const meta of root.querySelectorAll('.next-cockpit-scope-meta'))
+    meta.textContent = norm(meta);
+}
+
+function maskRecordedProjectGlyphs(root: DocumentFragment): DocumentFragment {
+  for (const glyph of root.querySelectorAll(
+    '.next-project-ending-glyph, .next-activity-done-glyph, .next-project-plan-glyph',
+  )) {
+    if (/^[●○△◦✓]$/.test(glyph.textContent?.trim() ?? '')) glyph.remove();
+  }
+  const workstream = root.querySelector('[data-next-workstream-toggle] > span');
+  if (workstream) workstream.textContent = workstream.textContent?.replace(/^[▸▾]\s*/, '') ?? '';
+  return root;
+}
 
 describe('the project page reads as the legacy page does, over generated boards', () => {
   it(`agrees on ${String(SEEDS)} boards: header, scopes, the recovery strip, the tabs, Now and Course`, async () => {
@@ -207,7 +247,7 @@ describe('the project page reads as the legacy page does, over generated boards'
       }
       const html = made.app.call<string>('nextProjectView', label);
       const legacy = projectWordDeviation(
-        summarize(parseHtml(html), tab),
+        summarize(maskRecordedProjectGlyphs(parseHtml(html)), tab),
         projectGlossEnabled(board, label),
         [board, context, notes, focusContext],
         projectInstructionHeading(board, label, focus),
@@ -250,7 +290,6 @@ describe('the project page reads as the legacy page does, over generated boards'
           reach[name] = (reach[name] ?? 0) + 1;
       for (const key of Object.keys(legacy) as (keyof Summary)[]) {
         if (JSON.stringify(legacy[key]) === JSON.stringify(mine[key])) continue;
-        if (DEVIATIONS.some((deviation) => deviation.name === `${String(seed)}:${key}`)) continue;
         const left = JSON.stringify(legacy[key]);
         const right = JSON.stringify(mine[key]);
         let at = 0;
@@ -269,6 +308,26 @@ describe('the project page reads as the legacy page does, over generated boards'
 });
 
 describe('the browser proof’s own board reads the same on both pages', () => {
+  it('renders project activity marks as icons over generated sessions', async () => {
+    const { board, contexts } = parityBoard();
+    const project = labelsOf(board).find((label) => label === 'alpha/app') ?? labelsOf(board)[0];
+    const page = mountProject({
+      hash: `#n=project:${encodeURIComponent(project ?? '')}`,
+      data: board,
+      contexts: Object.fromEntries(
+        Object.entries(contexts).map(([key, value]) => [`${key}\n`, value]),
+      ),
+      strict: false,
+    });
+    await page.settle();
+    const activities = [...page.container.querySelectorAll('[data-next-project-activity]')];
+    expect(activities.length).toBeGreaterThan(0);
+    expect(activities.map((section) => section.textContent).join(' ')).not.toMatch(/[●○△◦◇✓▸▾▴]/);
+    expect(activities[0]?.querySelector('svg[data-icon="waiting"]')).not.toBeNull();
+    expect(activities[1]?.querySelector('svg[data-icon="worth-a-look"]')).not.toBeNull();
+    page.unmount();
+  });
+
   it('agrees on every project and both tabs, with the context each project has', async () => {
     const { board, contexts } = parityBoard();
     const failures: string[] = [];
@@ -287,7 +346,10 @@ describe('the browser proof’s own board reads the same on both pages', () => {
         made.app.setRoute(fragment);
         made.app.observe(board);
         const legacy = projectWordDeviation(
-          summarize(parseHtml(made.app.call<string>('nextProjectView', label)), tab),
+          summarize(
+            maskRecordedProjectGlyphs(parseHtml(made.app.call<string>('nextProjectView', label))),
+            tab,
+          ),
           projectGlossEnabled(board, label),
           [board, context],
           projectInstructionHeading(board, label),

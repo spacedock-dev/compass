@@ -401,13 +401,4 @@ export function buildSessionsScreen(
   };
 }
 
-/* One state word leads each row (usability review, 2026-10-20): the row once said "NOW · IDLE" and "QUIET"
-   under "Active now", three words for one fact that read as a contradiction. Ended outranks the rest because
-   an ended session waits on nobody. */
-export function rowState(session: ObservedSession): string {
-  if (session.isEnded) return 'Ended';
-  if (session.isNeeds || session.askKnown) return 'Waiting on you';
-  if (session.isWorking) return 'Working';
-  // Only a published idle reads Idle: a missing or unknown state is not observed quiet.
-  return session.isQuiet ? 'Idle' : 'State not published';
-}
+export { sessionState as rowState } from '../observed';

@@ -110,6 +110,13 @@ const summarizeList = () => {
         ...group.querySelectorAll('article[data-slot="card"][data-variant="session-row"]'),
       ].map((row) => {
         const route = row.querySelector('a.next-operation-route');
+        const copy = row.cloneNode(true);
+        copy
+          .querySelectorAll('[data-next-row-state],.next-operation-scan-only')
+          .forEach((node) => node.remove());
+        for (const activity of copy.querySelectorAll('[data-next-operation-fact="now"] strong')) {
+          if (activity.textContent === 'No recent activity') activity.textContent = 'quiet';
+        }
         return {
           harness: row.dataset.nextHarness,
           sid: row.dataset.nextSession,
@@ -117,7 +124,7 @@ const summarizeList = () => {
           tone: [...row.classList].find((name) => name.startsWith('next-operation-row--')) || '',
           href: route ? route.getAttribute('href') : null,
           aria: route ? route.getAttribute('aria-label') : null,
-          text: norm(row),
+          text: norm(copy),
           buttons: [...row.querySelectorAll('button')].map((button) =>
             button.getAttribute('aria-label'),
           ),
@@ -158,7 +165,11 @@ const summarizeDetail = () => {
   const clone = article.cloneNode(true);
   // The Intent panel and its pill are the Intent step's, and a stated slot on the React page.
   clone.querySelector('.next-session-panel')?.remove();
-  clone.querySelectorAll('[data-next-drift-pill]').forEach((node) => node.remove());
+  clone
+    .querySelectorAll(
+      '[data-next-drift-pill], [data-next-session-state-limit], .next-session-subagent-state, [data-next-session-subagents] > span',
+    )
+    .forEach((node) => node.remove());
   /* Predates the one-column page (2026-10-19): the two-column next-session-columns and next-session-activity
      layout is gone, so this fails when the proof is run on demand until it is brought forward to Intent,
      What the session has done, Drift and the collapsed Full activity. */
@@ -281,6 +292,11 @@ function firstDifference(left, right, path = '$') {
 
 /* A difference found by the comparison is a failure unless it is named here with its reason. */
 const DEVIATIONS = [
+  {
+    scope: 'session status marks',
+    reason:
+      '2026-11-22: SVG glyphs replace text marks and the Session header uses the four state words.',
+  },
   {
     scope: 'Sessions header',
     reason:
@@ -1109,7 +1125,7 @@ try {
     },
   );
 
-  await step('motion: a running worker’s dot pulses, and stops under reduced motion', async () => {
+  await step('motion: a running worker’s icon pulses, and stops under reduced motion', async () => {
     const animation = async (reducedMotion) => {
       const o = await newPage({ reducedMotion });
       try {
@@ -1119,12 +1135,13 @@ try {
             sessionFragment(real.sessions.find((row) => row.sid === 'live-work')),
         );
         await reactReady(o.page);
+        await o.page.getByRole('button', { name: /^Full activity/ }).click();
         await o.page.waitForSelector('.next-session-subagent.next-live');
         return await o.page.evaluate(
           () =>
             globalThis.globalThis.getComputedStyle(
               globalThis.document.querySelector(
-                '.next-session-subagent.next-live .next-status-dot',
+                '.next-session-subagent.next-live .next-status-icon',
               ),
             ).animationName,
         );

@@ -74,9 +74,9 @@ function RunningCounts({ counts }: { readonly counts: HeaderCounts }) {
     return <span className="next-running">Session data not published.</span>;
   return (
     <span className="next-running next-live">
-      <span className="next-status-dot" aria-label="live">
-        ●
-      </span>
+      {counts.running ? (
+        <Icon name="working" className="next-status-icon inline-block shrink-0" />
+      ) : null}
       {` ${String(counts.running)} running · ${String(counts.subagents)} ${counts.subagents === 1 ? 'subagent' : 'subagents'} observed`}
     </span>
   );

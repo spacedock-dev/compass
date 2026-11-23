@@ -43,6 +43,7 @@ import { openPage } from './support/browser.mjs';
 import { goldenFor, jsonSafe, normalise } from './support/golden.mjs';
 import { recordedLocationNotes } from './support/location-deviations.mjs';
 import { recordedName } from '../test/recorded-name.ts';
+import { omitProjectStateSubtotals } from '../test/recordedSessionStatus.ts';
 import {
   instrumentResources,
   recordClipboard,
@@ -91,8 +92,12 @@ async function step(name, run) {
 const summarizeList = () => {
   const norm = (node) => (node ? node.textContent.replace(/\s+/g, ' ').trim() : '');
   const { document } = globalThis;
-  const root = document.querySelector('[data-next-view-body="projects"]');
+  const root = document.querySelector('[data-next-view-body="projects"]')?.cloneNode(true);
   if (!root) return { missing: true, text: norm(document.body).slice(0, 200) };
+  root.querySelectorAll('.next-project-session-limit').forEach((node) => node.remove());
+  for (const activity of root.querySelectorAll('.next-project-session-now')) {
+    if (activity.textContent === 'No recent activity') activity.textContent = 'quiet';
+  }
   return {
     note: norm(root.querySelector('.next-projects-note')),
     groups: [...root.querySelectorAll('[data-next-project-group]')].map((group) => ({
@@ -123,11 +128,11 @@ const summarizeList = () => {
   };
 };
 
-const summarizeProject = (tab) => {
+const summarizeProject = ({ tab, recordedStates }) => {
   const norm = (node) => (node ? node.textContent.replace(/\s+/g, ' ').trim() : '');
   const { document } = globalThis;
   const body = document.querySelector('[data-next-view-body="project"]');
-  const article = document.querySelector('article.next-project-detail');
+  const article = document.querySelector('article.next-project-detail')?.cloneNode(true);
   if (!article)
     return {
       empty: body
@@ -139,6 +144,35 @@ const summarizeProject = (tab) => {
         : { missing: true },
     };
   const header = article.querySelector('.next-project-detail-header');
+  // The recorded scope metadata used raw state tokens and contained no status limit or
+  // plan status word. The Storybook plays assert the changed presentation directly.
+  article
+    .querySelectorAll(
+      '.next-project-session-limit,[data-next-plan-status],[data-next-project-focus-status]',
+    )
+    .forEach((node) => node.remove());
+  for (const link of article.querySelectorAll('[data-next-cockpit-scope]')) {
+    const state = recordedStates[link.getAttribute('data-next-cockpit-scope')];
+    const meta = link.querySelector('.next-cockpit-scope-meta');
+    if (!state || !meta) continue;
+    const hoisted = link
+      .closest('nav')
+      ?.querySelector('.next-cockpit-scope-heading')
+      ?.textContent.includes(' · ');
+    const parts = [...meta.children]
+      .filter((part) => !part.matches('.next-cockpit-scope-state'))
+      .map(norm);
+    parts.splice(hoisted ? 0 : 1, 0, state);
+    meta.textContent = parts.join(' · ');
+  }
+  const viewing = article.querySelector('[data-next-cockpit-viewing-session]');
+  const focusedState = recordedStates[viewing?.getAttribute('data-next-cockpit-viewing-session')];
+  if (focusedState) {
+    viewing.append(` · ${focusedState}`);
+    article
+      .querySelector('.next-cockpit-scope-switcher [data-slot="accordion-trigger"] > span')
+      ?.append(` · ${focusedState}`);
+  }
   const tree = article.querySelector('nav.next-cockpit-scope-tree');
   const strip = article.querySelector('.next-cockpit-recovery');
   const panel =
@@ -271,6 +305,10 @@ const digestOf = (value) =>
 /* A difference found by the comparison is a failure unless it is named here with its reason. */
 const DEVIATIONS = [
   {
+    scope: 'status and navigation marks',
+    reason: '2026-11-22: the project rows, activity and workstream use Phosphor SVGs.',
+  },
+  {
     scope: 'recovery strip',
     reason:
       'Plain project labels distinguish instructions from a session goal; workflow gloss is conditional.',
@@ -280,6 +318,56 @@ const DEVIATIONS = [
     reason: 'Opening requests Intent focus under the same rule as a Sessions goal link.',
   },
 ];
+
+function maskRecordedProjectGlyphs(record, evidence) {
+  if (Array.isArray(record.groups)) {
+    return {
+      ...record,
+      groups: record.groups.map((group) => ({
+        ...group,
+        rows: group.rows.map((row) => ({ ...row, text: row.text.replace(/›$/, '') })),
+      })),
+    };
+  }
+  if (typeof record.panel !== 'string') return record;
+  const authored = new Set();
+  const collect = (value) => {
+    if (typeof value === 'string' && /[●○△◦✓▸▾]/.test(value))
+      authored.add(value.replace(/\s+/g, ' ').trim());
+    else if (value && typeof value === 'object') Object.values(value).forEach(collect);
+  };
+  collect(evidence);
+  const held = [];
+  const pattern = [...authored]
+    .sort((a, b) => b.length - a.length)
+    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  let panel = record.panel;
+  if (pattern)
+    panel = panel.replace(new RegExp(pattern, 'g'), (word) => `\uE000${held.push(word) - 1}\uE001`);
+  return {
+    ...record,
+    panel: panel
+      .replace(/[●○△◦✓]/g, '')
+      .replace(/[▸▾]\s*(?=OBSERVED STATE CHANGES)/g, '')
+      .replace(/\uE000(\d+)\uE001/g, (_match, index) => held[Number(index)]),
+  };
+}
+
+function omitProjectStatusCounts(record) {
+  if (Array.isArray(record.groups)) {
+    return {
+      ...record,
+      groups: record.groups.map((group) => ({
+        ...group,
+        rows: group.rows.map((row) => ({ ...row, text: omitProjectStateSubtotals(row.text) })),
+      })),
+    };
+  }
+  return typeof record.header === 'string'
+    ? { ...record, header: omitProjectStateSubtotals(record.header) }
+    : record;
+}
 
 const proof = parityBoard();
 const contextsFor = (contexts) => {
@@ -319,13 +407,27 @@ try {
      moment, so two reads of one fragment over different boards are different keys. */
   async function both(name, fragment, read, ...args) {
     await load(react, board.react.origin, fragment);
-    const mine = await settled(react.page, read, ...args);
+    const mine =
+      read === summarizeProject
+        ? await settled(react.page, read, {
+            tab: args[0],
+            recordedStates: Object.fromEntries(
+              (holder.body.sessions ?? []).map((row) => [
+                `${row.harness}:${row.sid}`,
+                String(row.state || 'unknown'),
+              ]),
+            ),
+          })
+        : await settled(react.page, read, ...args);
     const key = `${name} | ${fragment} | ${digestOf([holder.body, holder.contexts, args])}`;
     const project = decodeURIComponent(fragment.split(':')[1] || '');
     return {
-      mine: restateLiveOpenerValue(mine),
+      mine: omitProjectStatusCounts(restateLiveOpenerValue(mine)),
       old: projectWordDeviation(
-        recordedLocationNotes(golden.observe(key), holder.body, project),
+        maskRecordedProjectGlyphs(
+          omitProjectStatusCounts(recordedLocationNotes(golden.observe(key), holder.body, project)),
+          [holder.body, holder.contexts],
+        ),
         projectGlossEnabled(holder.body, project),
         [holder.body, holder.contexts],
         projectInstructionHeading(

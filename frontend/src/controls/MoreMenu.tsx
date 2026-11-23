@@ -68,7 +68,7 @@ export function MoreMenu({
     <Disclosure
       disclosureKey={MORE_KEY}
       variant="menu"
-      summary="···"
+      summary="More"
       summaryLabel="More"
       focusKey="more"
     >

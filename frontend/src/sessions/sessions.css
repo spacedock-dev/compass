@@ -7,19 +7,6 @@
 .next-project-tone--want{--project-tone:var(--amber)}
 .next-project-tone--bad{--project-tone:var(--clay)}
 .next-project-tone--unknown{--project-tone:var(--ink2)}
-.next-project-dot{display:inline-block;flex:none;width:6px;height:6px;border:1px solid var(--project-tone);border-radius:50%;background:var(--project-tone)}
-.next-project-dot.next-project-tone--unknown{background:transparent}
-/* Shape carries the lifecycle so it survives greyscale (DRC-4646): working and
-   blocked are filled whatever the tone, which is why the fill outranks the
-   unknown-tone rule above; quiet is a ring, neutral only where its tone was
-   the working `ok`; ended is square in its own tone. */
-.next-project-dot.next-project-dot--filled{background:var(--project-tone)}
-.next-project-dot.next-project-dot--quiet{background:transparent}
-.next-project-dot--quiet.next-project-tone--ok{border-color:var(--ink2)}
-.next-project-dot--ended{border-radius:1px}
-.next-project-dot--working{animation:next-project-breathe 2.4s ease-in-out infinite}
-@keyframes next-project-breathe{0%,100%{transform:scale(.8)}50%{transform:scale(1.25)}}
-@media(prefers-reduced-motion:reduce){.next-project-dot--working{animation:none}}
 
 /* ===== Session copy controls ===== */
 
@@ -59,7 +46,6 @@
 .next-operation-identity>.next-operation-local-label,.next-operation-fact>small{display:none}
 .next-operation-identity strong,.next-operation-fact strong{margin-top:7px;font-size:var(--fs-body);font-style:normal;font-weight:500;line-height:1.4}
 .next-operation-harness{color:var(--ink2);font-family:var(--mono);font-size:var(--fs-label)}
-.next-operation-live-glyph{display:inline-block;margin-right:7px}
 .next-operation-assignment{margin-top:8px;color:var(--ink2);font-size:var(--fs-body);font-weight:500;line-height:1.55;max-width:var(--measure)}
 .next-operation-collision{margin-top:8px;color:var(--ink);font-size:var(--fs-body);font-weight:500;line-height:1.55;max-width:var(--measure)}
 .next-operation-unread,.next-operation-scan-only{display:block;margin-top:8px;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-body);line-height:1.4}
@@ -190,7 +176,9 @@
 .next-session-task,.next-session-subagent{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:44px;padding:9px 8px;border-top:1px solid var(--rule)}
 .next-session-task--pending{color:var(--ink2)}
 .next-session-task-subject,.next-session-subagent-name{font-size:var(--fs-body);font-weight:500}
-.next-session-subagent-elapsed{color:var(--ink2);font-family:var(--mono);font-size:var(--fs-label)}
+.next-session-subagent-name{grid-column:2}
+.next-session-subagent-state{grid-column:2;color:var(--ink2);font-size:var(--fs-label)}
+.next-session-subagent-elapsed{grid-column:3;color:var(--ink2);font-family:var(--mono);font-size:var(--fs-label)}
 .next-session-subagent-parent{color:var(--ink2);font-weight:400;overflow-wrap:anywhere}
 .next-session-footer{padding:20px 0;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label);text-align:right}
 .next-session-detail-empty{margin-top:34px;padding:24px;border:1px solid var(--rule);color:var(--ink2);font-size:var(--fs-body)}

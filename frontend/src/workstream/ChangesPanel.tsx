@@ -1,3 +1,4 @@
+import { Icon } from '../ui/icons';
 import { Button } from '../ui/button';
 import { useFocusKey } from '../controls/useFocusKey';
 import { fragmentForRoute } from '../router/grammar';
@@ -33,7 +34,10 @@ export function ChangesPanel({ project }: { readonly project: string }) {
           aria-controls="next-project-changes"
           onClick={toggle}
         >
-          <span>{`${collapsed ? '▸' : '▾'} OBSERVED STATE CHANGES`}</span>
+          <span className="inline-flex items-center gap-1">
+            <Icon name={collapsed ? 'caret-right' : 'caret-down'} />
+            OBSERVED STATE CHANGES
+          </span>
           <small>{note}</small>
         </Button>
       </header>

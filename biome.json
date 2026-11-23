@@ -9,6 +9,7 @@
       "frontend/**/*.tsx",
       "frontend/**/*.mts",
       "frontend/**/*.mjs",
+      "frontend/**/*.{js,jsx,cjs,cts}",
       "vitest.config.mts",
       "playwright.config.ts",
       "biome.json",
@@ -118,6 +119,18 @@
       "style": {
         "noCommonJs": "error",
         "noNamespace": "error",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": { "react-icons": "Use Icon from frontend/src/ui/icons.tsx." },
+            "patterns": [
+              {
+                "group": ["react-icons/**"],
+                "message": "Use Icon from frontend/src/ui/icons.tsx."
+              }
+            ]
+          }
+        },
         "noNonNullAssertion": "error",
         "useArrayLiterals": "error",
         "useAsConstAssertion": "error",
@@ -137,6 +150,10 @@
     }
   },
   "overrides": [
+    {
+      "includes": ["frontend/src/ui/icons.tsx", "frontend/stories/drift.checks.tsx"],
+      "linter": { "rules": { "style": { "noRestrictedImports": "off" } } }
+    },
     {
       "includes": ["**/*.test.ts", "**/*.test.tsx"],
       "linter": {

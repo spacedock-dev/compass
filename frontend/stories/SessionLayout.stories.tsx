@@ -1,3 +1,5 @@
+import { SubagentsView } from '../src/sessions/DetailParts';
+import { sessionSubagents } from '../src/sessions/detail';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { seeInContext } from './citation';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
@@ -346,14 +348,16 @@ export const RegionsInOrder: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
+    const breadcrumb = canvas.getByRole('navigation', { name: 'Breadcrumb' });
+    await expect(breadcrumb.querySelector('svg[data-icon="caret-right"]')).toBeVisible();
     const expected = ['Intent', 'What the session has done', 'Drift', 'Full activity'];
     for (const width of [1280, 400]) {
       await atWidth(width, () => inOrderTopToBottom(canvasElement, expected));
     }
-    // The header: the state with its dot, leading the line that says what it is doing.
+    // The state word leads the line that says what it is doing.
     const status = canvasElement.querySelector('[data-next-session-status]') as HTMLElement;
-    await expect(status).toHaveTextContent('State: working');
-    await expect(status.querySelector('[data-next-session-status-dot]')).toBeVisible();
+    await expect(status).toHaveTextContent('State: Working');
+    await expect(status.querySelector('svg')).toBeNull();
     const meta = canvasElement.querySelector('.next-session-detail-meta') as HTMLElement;
     await expect(meta).toHaveTextContent(/running Bash · turn started 3m ago/);
     // One line, as the design draws it: the state, the identity with its rate and the measured words share a row.
@@ -380,7 +384,7 @@ export const IdleShowsNoRate: Story = {
     const canvas = within(canvasElement);
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
     const header = canvasElement.querySelector('.next-session-detail-header') as HTMLElement;
-    await expect(header).toHaveTextContent('State: idle');
+    await expect(header).toHaveTextContent('State: Quiet');
     await expect(header).not.toHaveTextContent('tokens/min');
     await expect(header).toHaveTextContent(/Turn ended \d\d:\d\d · waiting for you/);
     await expect(canvasElement).not.toHaveTextContent('idle · awaiting your message');
@@ -940,5 +944,47 @@ export const IdleQuestionPrecedesTurnEnd: Story = {
     await expect(activity).not.toHaveTextContent('Turn ended');
     const metadata = canvasElement.querySelector('.next-session-detail-meta') as HTMLElement;
     await expect(metadata).not.toHaveTextContent(/Turn ended|Run finished/);
+  },
+};
+
+export const EndedWithAnOpenQuestion: Story = {
+  render: () => <PageExample idle ended asking />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const answer = await canvas.findByRole('button', { name: 'Yes, run it' });
+    const status = canvasElement.querySelector('.next-session-state');
+    await expect(status).toBeVisible();
+    await expect(status).toHaveTextContent('State: Ended');
+    await expect(answer).toBeVisible();
+    await expect(answer).toBeEnabled();
+  },
+};
+
+export const HelperActivity: Story = {
+  render: () => {
+    const helpers = sessionSubagents(
+      [
+        { name: 'Review results', active: true, started_at: G - 60 },
+        { name: 'Read documentation', active: false },
+        { name: 'Check types' },
+      ],
+      0,
+      G,
+    );
+    if (!helpers) throw new Error('Expected the synthetic helpers');
+    return <SubagentsView subagents={helpers} />;
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText('1 RUNNING SUBAGENT')).toBeVisible();
+    await expect(canvas.getByRole('img', { name: 'Working' })).toBeVisible();
+    for (const [name, word] of [
+      ['Read documentation', 'Not running'],
+      ['Check types', 'Activity not published'],
+    ]) {
+      const helper = canvas.getByText(name ?? '').closest('[data-next-session-subagent]');
+      await expect(helper).toHaveTextContent(word ?? '');
+      await expect(helper?.querySelector('svg')).toBeNull();
+    }
   },
 };

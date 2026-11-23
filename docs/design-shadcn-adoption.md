@@ -1062,15 +1062,37 @@ for contributor commands and the current prompt-select fixture boundary.
 
 ## Icons and tooltips
 
-The activity list adopts Phosphor through `react-icons` 5.7.0 (MIT). Only
-`frontend/src/ui/icons.tsx` imports the icon package. One family keeps stroke, corners and optical
+The activity list adopts Phosphor through `react-icons` 5.7.0 (MIT).
+`frontend/src/ui/icons.tsx` is the shipped import boundary. One family keeps stroke, corners and optical
 weight consistent across result marks and run controls. Phosphor's weights keep the hollow versus
 marked circle in one hand, and its status coverage includes the clock-counter-clockwise, warning,
 checks and caret shapes. These distinctions and MIT licensing made it the choice over Lucide,
 shadcn's default, and the other families in React Icons. The package declares `sideEffects: false`;
 the build retains only imported glyphs and their shared runtime. The final measured build delta
-is recorded below, rather than inferred from the package's installed size. The info mark (`PiInfo`)
-joined it on 2026-10-14 for the short line a press leaves under its button.
+is recorded below, rather than inferred from the package's installed size. The info mark joined
+on 2026-10-14 for the short line a press leaves under its button.
+
+The 2026-11-22 redesign uses Phosphor Bold for status, navigation and activity. The activity
+marks keep the hollow `PiCircleBold` and its marked variants `PiCheckCircleBold` and
+`PiXCircleBold`. Glyph SVGs are hidden from assistive technology and sit beside words or
+an accessible name. Sessions gives the five status and warning icons a visible legend.
+Quiet requires an observed turn stop and Ended requires a reported session end. A dirty end
+can show the warning. A turn stop alone shows its outcome and Git facts in words. A child wait,
+the scanning limit and an unpublished state appear on a separate line. Only observed live
+activity animates the Working glyph, and reduced motion stops it. Biome covers TypeScript and
+JavaScript importers, including JSX. The only test import exception is
+`frontend/stories/drift.checks.tsx`, which checks that the result carries no check glyph.
+
+| Icon names | Phosphor Bold sources |
+|---|---|
+| `working`, `waiting`, `quiet`, `ended`, `worth-a-look` | Pulse, Clock, Moon, Check, Warning |
+| `go-to-page`, `show-below`, `filters`, `details`, `help`, `menu` | ArrowRight, ArrowDown, Funnel, ListBullets, Question, List |
+| `forget`, `check-progress`, `reset` | Trash, Compass, ArrowCounterClockwise |
+| `caret-up`, `caret-down`, `caret-left`, `caret-right`, `tripwire` | CaretUp, CaretDown, CaretLeft, CaretRight, Diamond |
+
+The [Icons story](../frontend/stories/icons.stories.tsx) shows every name beside its source
+and checks its geometry against the pinned Phosphor Bold paths.
+The [page allowance record](design-sample-session.md#how-big-it-may-be) holds the measured byte delta.
 
 That line is a Popover, not a Tooltip, even though it reads like one. A tooltip does not open on a
 touch screen, and what it holds is the outcome of a press (what was not settled, and that no analysis

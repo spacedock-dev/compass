@@ -1,3 +1,4 @@
+import { declaredRelations } from './relationships';
 import { nativeSession } from './native';
 import { nextNumber } from '../api/bootstrap';
 import { boardLocationWarnings, rowLocationNote } from './location';
@@ -9,7 +10,7 @@ import {
 } from './capacity';
 import { delegatedWork } from './landing';
 import { observeProject, sessionRisk, type ObservedProject } from './project';
-import { labelOf, observeSession, type ObservedSession } from './session';
+import { labelOf, observeSession, sessionState, type ObservedSession } from './session';
 import {
   asPayload,
   compare,
@@ -159,6 +160,7 @@ export function observe(input: unknown): Observed {
       byHarness.get(identityPart(source['harness'])),
       generated,
       rowLocationNote(groups.get(labelOf(source)) ?? [], source),
+      source['waiting_on_child'] ? declaredRelations(payload, source).waitingText : '',
     ),
   );
   const risks: BoardRisk[] = [];
@@ -256,7 +258,7 @@ export function observe(input: unknown): Observed {
     running: sessions.filter((session) => session.isLive).length,
     needs: sessions.filter((session) => session.isNeeds).length,
     ended: sessions.filter((session) => session.isEnded).length,
-    quiet: sessions.filter((session) => session.isQuiet).length,
+    quiet: sessions.filter((session) => sessionState(session) === 'Quiet').length,
     subagents: sessions.reduce((sum, session) => sum + session.subagents.length, 0),
     reportsBlock: sessions.filter((session) => session.blockKnown).length,
     exactRequests: sessions.filter((session) => session.askKnown).length,
@@ -283,10 +285,11 @@ export function observe(input: unknown): Observed {
     const source = sources[sessions.indexOf(session)] as Row;
     return Array.isArray(source['source_gaps']) && source['source_gaps'].length > 0;
   }).length;
+  const otherStates = other.map(sessionState);
   const otherWords: [string, number][] = [
-    ['moving', other.filter((session) => session.isWorking).length],
-    ['quiet', other.filter((session) => session.isQuiet).length],
-    ['ended', other.filter((session) => session.isEnded).length],
+    ['moving', otherStates.filter((state) => state === 'Working').length],
+    ['quiet', otherStates.filter((state) => state === 'Quiet').length],
+    ['ended', otherStates.filter((state) => state === 'Ended').length],
   ];
   const counted = otherWords.reduce((sum, word) => sum + word[1], 0);
   if (counted < other.length) otherWords.push(['in no counted state', other.length - counted]);

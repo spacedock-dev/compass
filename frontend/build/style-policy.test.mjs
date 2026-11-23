@@ -199,3 +199,30 @@ test('a static template dynamic import reaches its UI module', async () => {
     assert.deepEqual(await unusedUi(copy), ['frontend/src/ui/orphan.tsx']);
   });
 });
+
+test('first-layer icon callers own their Tailwind utility sources', async () => {
+  const entry = await readFile(join(root, 'frontend/src/styles/tailwind.css'), 'utf8');
+  const sources = [...entry.matchAll(/^@source '([^']+)';$/gm)].map((match) => match[1]);
+  const callers = [
+    'drift/EntrySource',
+    'project/ActivityViews',
+    'project/PlanView',
+    'project/ProjectsView',
+    'project/ScopeNav',
+    'project/parts',
+    'sessions/DetailParts',
+    'shell/Breadcrumb',
+    'steering/Tripwires',
+    'workstream/ChangesPanel',
+  ];
+  for (const caller of callers) {
+    const path = `../${caller}.tsx`;
+    const owned = sources.some((source) => {
+      const group = source.match(/^(.*)\{([^}]+)\}(.*)$/);
+      if (!group) return source === path;
+      const [, prefix, alternatives, suffix] = group;
+      return alternatives.split(',').some((part) => `${prefix}${part}${suffix}` === path);
+    });
+    assert.ok(owned, `${caller} has no Tailwind @source`);
+  }
+});

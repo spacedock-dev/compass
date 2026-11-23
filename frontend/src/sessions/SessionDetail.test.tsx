@@ -483,15 +483,29 @@ describe('answering a held request', () => {
     );
     await open(data, { hash: '#n=session:p:claude:one' });
     expect(document.querySelector('[data-next-session-section="ask"]')).toBeNull();
-    expect(document.querySelector('.next-session-state')?.textContent).toBe('State: idle');
+    expect(document.querySelector('.next-session-state')).toBeNull();
+    expect(document.querySelector('[data-next-session-state-limit]')?.textContent).toBe(
+      'State not published',
+    );
   });
 
-  it('says a session holding a request needs input, and one that ended without a request is ended', async () => {
-    await open(board([{ ...ONE, state: 'idle', ended_at: NOW - 30 }], { ask: true, asks: [ASK] }));
-    expect(document.querySelector('.next-session-state')?.textContent).toBe('State: needs input');
-    document.body.innerHTML = '';
+  it('names the reported end and lets the reader answer a question still published for that session', async () => {
+    const page = await open(
+      board([{ ...ONE, state: 'idle', ended_at: NOW - 30 }], { ask: true, asks: [ASK] }),
+    );
+    expect.soft(document.querySelector('.next-session-state')?.textContent).toBe('State: Ended');
+    const question = within(
+      document.querySelector('[data-next-session-section="ask"]') as HTMLElement,
+    );
+    expect(question.getByText(ASK.question)).toBeInTheDocument();
+    fireEvent.click(question.getByRole('button', { name: 'Yes' }));
+    await page.settle();
+    expect(page.posts().map((post) => post.body)).toEqual([{ id: ASK.id, index: 0 }]);
+  });
+
+  it('names the reported end and its age when no question is published', async () => {
     await open(board([{ ...ONE, state: 'working', ended_at: NOW - 30 }]));
-    expect(document.querySelector('.next-session-state')?.textContent).toBe('State: ended');
+    expect(document.querySelector('.next-session-state')?.textContent).toBe('State: Ended');
     expect(document.querySelector('.next-session-detail-meta')?.textContent).toContain(
       'ended 30s ago',
     );
@@ -583,9 +597,9 @@ describe('what the page says about what it could not see', () => {
           ...ONE,
           state: 'working',
           subagents: [
-            { name: 'lead' },
+            { name: 'lead', active: true },
             { name: 'idle one', active: false },
-            { name: 'child', parent: 'lead' },
+            { name: 'child', parent: 'lead', active: true },
           ],
           subagents_omitted: 2,
         },

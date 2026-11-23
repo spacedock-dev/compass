@@ -1,3 +1,4 @@
+import { Icon } from '../ui/icons';
 import { useId } from 'react';
 import { ActivityHead } from './ActivityHead';
 import type { WorkRow } from './workList';
@@ -38,14 +39,15 @@ function EntrySourceToggle({
   return (
     <button
       type="button"
-      className="cursor-pointer border-0 bg-transparent p-0 text-label text-muted-foreground underline-offset-2 hover:underline"
+      className="inline-flex min-h-[44px] min-w-[44px] items-center gap-1 cursor-pointer border-0 bg-transparent p-0 text-label text-muted-foreground underline-offset-2 hover:underline"
       aria-expanded={open}
       aria-controls={panel}
       aria-label={label}
       data-next-entry-source-toggle
       onClick={onToggle}
     >
-      {open ? 'Source ▴' : 'Source ▾'}
+      Source
+      <Icon name={open ? 'caret-up' : 'caret-down'} />
     </button>
   );
 }

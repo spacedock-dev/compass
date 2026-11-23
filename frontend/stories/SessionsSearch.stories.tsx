@@ -38,12 +38,14 @@ const current = (): Rig => {
 function Board({
   annotate = true,
   showAll = false,
+  hash = '#n=sessions',
 }: {
   readonly annotate?: boolean;
   readonly showAll?: boolean;
+  readonly hash?: string;
 }) {
   const [shell] = useState(() => {
-    const history = fakeRouterEnvironment('#n=sessions');
+    const history = fakeRouterEnvironment(hash);
     const clock = createFakeClock();
     const live: Rig['live'] = { generated: GENERATED, annotate, showAll };
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
@@ -79,6 +81,63 @@ const meta = {
 } satisfies Meta<typeof Board>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+export const StatusLegend: Story = {
+  play: async ({ canvasElement }) => {
+    await ready(canvasElement);
+    const legend = within(canvasElement).getByRole('list', { name: 'What the icons mean' });
+    const entries = [
+      ['Working', 'working'],
+      ['Waiting on you', 'waiting'],
+      ['Quiet', 'quiet'],
+      ['Ended', 'ended'],
+      ['Worth a look', 'worth-a-look'],
+    ];
+    await expect(within(legend).getAllByRole('listitem')).toHaveLength(entries.length);
+    for (const [word, icon] of entries) {
+      const label = within(legend).getByText(word ?? '', { exact: true });
+      await expect(label).toBeVisible();
+      await expect(label.closest('li')?.querySelector(`svg[data-icon="${icon}"]`)).toBeVisible();
+    }
+    const quiet = rowOf(canvasElement, 'D')?.querySelector('[data-next-row-state]');
+    const scan = rowOf(canvasElement, 'F')?.querySelector('[data-next-row-state]');
+    await expect(scan).toBeVisible();
+    await expect(scan).toHaveTextContent('Read by scanning: no turn end can be observed here');
+    await expect(scan?.querySelector('svg')).toBeNull();
+    const live = rowOf(canvasElement, 'B')?.querySelector(
+      '[data-next-row-state] [data-icon="working"]',
+    );
+    const lapsed = rowOf(canvasElement, 'C')?.querySelector(
+      '[data-next-row-state] [data-icon="working"]',
+    );
+    if (!live || !lapsed) throw new Error('Expected both Working shapes');
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    await expect(getComputedStyle(live).animationName).toBe(reduced ? 'none' : 'next-live-pulse');
+    await expect(getComputedStyle(lapsed).animationName).toBe('none');
+    await expect(quiet).toBeVisible();
+    await expect(quiet?.querySelector('svg[data-icon="quiet"]')).toBeVisible();
+    const unknown = rowOf(canvasElement, 'J')?.querySelector('[data-next-row-state]');
+    await expect(unknown).toHaveTextContent('State not published');
+    await expect(unknown?.querySelector('svg')).toBeNull();
+    await expect(
+      canvasElement.querySelector('.next-running svg[data-icon="working"]'),
+    ).toBeVisible();
+  },
+};
+
+export const ProjectActivityIcons: Story = {
+  args: { hash: '#n=project:recce%2Fcompass' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const project = await canvas.findByRole('heading', { name: /compass/i, level: 1 });
+    const activity = within(project.closest('article') as HTMLElement);
+    const currentRun = await activity.findByRole('button', { name: /Changelog for 2.4/ });
+    await expect(currentRun.querySelector('svg[data-icon="working"]')).toBeVisible();
+    const ended = await activity.findByRole('button', { name: /Theme tokens/ });
+    await expect(ended.querySelector('svg[data-icon="ended"]')).toBeVisible();
+    await expect(ended).toHaveTextContent('Session ended; git state not measured');
+  },
+};
 
 const letterOf = (sid: string): string =>
   Object.entries(SIDS).find(([, value]) => value === sid)?.[0] ?? sid;
@@ -799,9 +858,10 @@ export const PaintHoldWhileAFilterIsOpen: Story = {
     await expect(before).toEqual([
       'Waiting on you 1',
       'Working 2',
-      'Idle 7',
+      'Quiet 1',
       'Ended 1',
-      'State not published 1',
+      'Waiting on child 0',
+      'State not published 7',
     ]);
     await poll({ bIdle: true });
     await expect(shell.runtime.store.getSnapshot().acceptedCount).toBeGreaterThan(1);
@@ -822,9 +882,10 @@ export const PaintHoldWhileAFilterIsOpen: Story = {
         expect(counts()).toEqual([
           'Waiting on you 1',
           'Working 1',
-          'Idle 8',
+          'Quiet 2',
           'Ended 1',
-          'State not published 1',
+          'Waiting on child 0',
+          'State not published 7',
         ]),
       );
       await expect(painted).toBe(1);
@@ -864,11 +925,11 @@ export const FocusKeepsItsPlace: Story = {
     await expect(titleLink()).not.toBe(before);
     // Each option keeps its place by <facet>:<value>.
     const state = await openFilter(canvasElement, 'state', 'State');
-    await pick(state, 'Idle');
+    await pick(state, 'Quiet');
     await waitFor(() => expect(shownRows(canvasElement)).not.toContain('C'));
     (document.activeElement as HTMLElement | null)?.blur();
-    await expect(shell.controls.focusLane.focus('state:Idle')).toBe(true);
-    await expect(options(state, 'state').find((one) => one.label === 'Idle')?.box).toHaveFocus();
+    await expect(shell.controls.focusLane.focus('state:Quiet')).toBe(true);
+    await expect(options(state, 'state').find((one) => one.label === 'Quiet')?.box).toHaveFocus();
     await closeFilters();
     await waitFor(() => expect(trigger(canvasElement, 'State')).toHaveFocus());
     // A focused row link that leaves the filtered set hands focus to the search field.

@@ -1,3 +1,4 @@
+import { Icon } from '../ui/icons';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { useId, useState, type FormEvent, type KeyboardEvent } from 'react';
@@ -105,9 +106,7 @@ function RuleRow({
           onChange(runtime.storage.guardrails.toggle(project, rule));
         }}
       >
-        <span className="next-guardrail-glyph" aria-hidden="true">
-          ◇
-        </span>
+        <Icon name="tripwire" className="next-guardrail-glyph shrink-0" />
         <span className="next-guardrail-copy">
           <strong>{rule.text}</strong>
           {rule.enabled ? null : <small>Disabled in this browser.</small>}
