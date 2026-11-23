@@ -42,7 +42,7 @@ const annotations = [
   })),
   { harness: 'claude', sid: 'gone', discarded_at: generated - 240 },
 ];
-type Scenario = 'normal' | 'unread' | 'error' | 'off';
+type Scenario = 'normal' | 'unread' | 'error' | 'off' | 'withdrawal' | 'later-error';
 
 function Example({
   scenario = 'normal',
@@ -51,8 +51,9 @@ function Example({
   readonly scenario?: Scenario;
   readonly onConnect?: (refresh: () => Promise<void>, requests: string[]) => void;
 }) {
-  const [{ shell, writes }] = useState(() => {
+  const [{ shell, writes, refresh }] = useState(() => {
     let revision = 0;
+    let refreshed = false;
     const requests: string[] = [];
     const shell = createShell({
       env: createFakeEnvironment(),
@@ -70,7 +71,7 @@ function Example({
               JSON.stringify({
                 generated: generated + revision - 1,
                 annotate: scenario !== 'off',
-                intent_revision: 'r1',
+                intent_revision: refreshed && scenario !== 'normal' ? 'r2' : 'r1',
                 sessions,
               }),
               { headers: { 'X-Compass-Revision': `10.${revision}` } },
@@ -78,22 +79,37 @@ function Example({
           );
         }
         if (url.startsWith('/api/annotations')) {
-          if (scenario === 'error') return Promise.resolve(new Response('{}', { status: 500 }));
+          if (scenario === 'error' || (refreshed && scenario === 'later-error'))
+            return Promise.resolve(new Response('{}', { status: 500 }));
           if (scenario === 'unread') return new Promise<Response>(() => undefined);
+          const withdrawn = refreshed && scenario === 'withdrawal';
+          const kept = withdrawn
+            ? [
+                { harness: 'claude', sid: 'typed', discarded_at: generated - 60 },
+                ...annotations.slice(1),
+              ]
+            : annotations;
           return Promise.resolve(
-            new Response(JSON.stringify({ annotations, intent_revision: 'r1' })),
+            new Response(
+              JSON.stringify({ annotations: kept, intent_revision: withdrawn ? 'r2' : 'r1' }),
+            ),
           );
         }
         return Promise.resolve(new Response('{}'));
       },
     });
-    return { shell, writes: requests };
+    return {
+      shell,
+      writes: requests,
+      refresh: async () => {
+        refreshed = true;
+        await shell.runtime.refresh();
+      },
+    };
   });
   useEffect(() => {
-    onConnect?.(async () => {
-      await shell.runtime.refresh();
-    }, writes);
-  }, [onConnect, shell, writes]);
+    onConnect?.(refresh, writes);
+  }, [onConnect, refresh, writes]);
   useEffect(
     () => () => {
       shell.runtime.dispose();
@@ -125,6 +141,8 @@ export const TypedGoal: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByText('Stabilize deployment');
+    const panel = canvas.getByRole('heading', { name: 'On the board now' }).closest('section');
+    await expect(getComputedStyle(panel as Element).backgroundColor).toBe('rgb(255, 255, 255)');
     const row = goalRow(canvas, 'Repair login');
     await expect(row.getByText(/^You wrote this/)).toBeVisible();
     await expect(row.getByText('Saved 1 minute ago')).toBeVisible();
@@ -237,6 +255,34 @@ export const SavingOff: Story = {
     await expect(canvas.queryByRole('link', { name: 'Add a goal' })).toBeNull();
   },
 };
+
+function replacesAReading(scenario: 'withdrawal' | 'later-error', words: string): Story {
+  return {
+    play: async ({ canvasElement, mount }) => {
+      let refresh: (() => Promise<void>) | undefined;
+      await mount(
+        <Example
+          scenario={scenario}
+          onConnect={(run) => {
+            refresh = run;
+          }}
+        />,
+      );
+      const canvas = within(canvasElement);
+      await canvas.findByText('Stabilize deployment');
+      if (!refresh) throw new Error('Missing refresh function');
+      await refresh();
+      const row = goalRow(canvas, 'Repair login');
+      await expect(await row.findByText(words)).toBeVisible();
+      await expect(row.queryAllByText(otherStates)).toHaveLength(1);
+      await expect(row.queryByText('Stabilize deployment')).toBeNull();
+      await expect(row.queryByRole('link', { name: 'Add a goal' })).toBeNull();
+    },
+  };
+}
+
+export const WithdrawnAfterRefresh = replacesAReading('withdrawal', 'You discarded this goal');
+export const ReadFailsAfterRefresh = replacesAReading('later-error', 'Saved goal unavailable.');
 
 export const ExpansionSurvivesRefresh: Story = {
   play: async ({ canvasElement, mount }) => {

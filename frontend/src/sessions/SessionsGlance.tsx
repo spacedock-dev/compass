@@ -117,7 +117,7 @@ export function SessionsGlance({
         <SummaryRouteCard
           route={NEEDS_YOU}
           cue={SESSION_LIST_WORDS.openInNeedsYou}
-          className={CARD}
+          className={`${CARD} max-[620px]:border-[var(--status-waiting-ink)] max-[620px]:bg-[color-mix(in_srgb,var(--status-waiting-bg)_30%,var(--panel))]`}
         >
           <CardContents
             label={SESSION_ROW_WORDS.waitingOnYou}

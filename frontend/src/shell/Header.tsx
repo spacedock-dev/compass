@@ -139,17 +139,18 @@ export function Header({ route }: { readonly route: Route }) {
   }, [open, router]);
 
   return (
-    <header className="next-board-header -mt-[18px] -mx-[26px] flex min-h-16 flex-wrap items-center gap-y-2 border-b border-[var(--rule)] bg-card py-2 [@media(max-width:760px)]:mx-0">
+    <header className="next-board-header -mt-[18px] -mx-[26px] min-h-16 flex-wrap items-center gap-y-2 border-b border-[var(--rule)] bg-card py-2 [@media(max-width:760px)]:mx-0">
       <a
         data-slot="button-link"
+        aria-label={SHOWN.compass}
         className={cn(
           buttonVariants({ variant: 'native' }),
-          'inline-flex items-center gap-2 rounded-control text-value font-bold text-foreground no-underline',
+          'next-board-brand inline-flex items-center justify-center gap-2 rounded-control text-value font-bold text-foreground no-underline',
         )}
         href="#n=sessions"
       >
         <Icon name="compass" size="1.35em" className="text-primary" />
-        {SHOWN.compass}
+        <span className="next-board-brand-label">{SHOWN.compass}</span>
       </a>
       <div className="next-board-compact">
         <Button
@@ -164,13 +165,13 @@ export function Header({ route }: { readonly route: Route }) {
         <Button
           ref={menu}
           type="button"
+          aria-label="Menu"
           className="gap-1 px-2"
           aria-expanded={open}
           aria-controls={panelId}
           onClick={() => setOpen(!open)}
         >
-          <Icon name="menu" />
-          Menu
+          <Icon name="menu" size={20} />
         </Button>
       </div>
       <PrimaryNavigation

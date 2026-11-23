@@ -89,7 +89,7 @@ function goalRecord(record: Row | undefined, session: Row | null, payload: Row, 
       : undefined;
   for (const [entry, key, source] of [
     [stated, 'text', 'You wrote this with /goal'],
-    [cached, 'goal', 'Taken from session activity'],
+    [cached, 'goal', 'Previously observed in this session'],
     [workflow, 'goal', 'Reported by the workflow'],
   ] as const) {
     if (!isRecord(entry)) continue;

@@ -124,10 +124,10 @@ class TheReaderStateRecordCitesRealOwnersTest(unittest.TestCase):
         self.assertGreater(cited, 150, "the derivation found almost nothing to check")
 
 
-class OnlyTheTerminalScrollsTest(unittest.TestCase):
+class ScrollContainersAreDeliberateTest(unittest.TestCase):
     """A replaced scroll container needs its own restoration lane (`design-reader-state.md`)."""
 
-    def test_overflow_forms_and_the_one_auto_scroller(self) -> None:
+    def test_overflow_forms_and_the_named_scroll_containers(self) -> None:
         forms: set[str] = set()
         scrollers: list[str] = []
         for text in _sources(".css").values():
@@ -145,10 +145,10 @@ class OnlyTheTerminalScrollsTest(unittest.TestCase):
                 )
             ]
         self.assertEqual(
-            ["overflow-wrap:anywhere", "overflow:auto", "overflow:hidden"],
+            ["overflow-wrap:anywhere", "overflow-x:auto", "overflow:auto", "overflow:hidden"],
             sorted(forms),
         )
-        self.assertEqual([".pc-terminal-viewport"], scrollers)
+        self.assertCountEqual([".pc-terminal-viewport", ".next-sessions-status"], scrollers)
         for form in sorted(forms):
             with self.subTest(form=form):
                 self.assertIn(f"`{form}`", STATE_DOC)

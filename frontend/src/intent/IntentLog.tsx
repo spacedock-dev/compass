@@ -36,7 +36,7 @@ function RowView({ row, title }: { readonly row: LogRow; readonly title: string 
           {route ? (
             <RouteAnchor
               route={route}
-              className="inline-flex items-center font-semibold text-foreground"
+              className="inline-flex items-center font-semibold text-primary"
               extra={{ 'data-authored': '', 'data-next-focus': `intent:${row.key}` }}
               focusKey={`intent:${row.key}`}
               fallback={SEARCH_KEY}
@@ -83,7 +83,7 @@ function RowView({ row, title }: { readonly row: LogRow; readonly title: string 
       {row.canAdd && route ? (
         <RouteAnchor
           route={route}
-          className="inline-flex items-center rounded-control border border-[var(--line)] px-3 text-body font-semibold no-underline"
+          className="inline-flex items-center rounded-control border border-[var(--line)] px-3 text-body font-semibold text-foreground no-underline"
         >
           Add a goal
         </RouteAnchor>

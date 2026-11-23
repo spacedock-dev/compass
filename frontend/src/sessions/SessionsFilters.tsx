@@ -774,6 +774,7 @@ export function SessionsFilters({
               key={segment}
               type="button"
               variant="segment"
+              className="max-[620px]:rounded-pill max-[620px]:aria-pressed:bg-foreground max-[620px]:aria-pressed:text-card"
               aria-pressed={filters.segment === segment}
               disabled={
                 segment !== 'all' &&

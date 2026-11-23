@@ -29,6 +29,7 @@ function Example({ onConnect }: { readonly onConnect?: (refresh: () => Promise<v
           }),
         ),
     });
+    shell.runtime.storage.sampleInvite.dismiss();
     return {
       shell,
       refresh: async () => {
@@ -76,7 +77,17 @@ function fit(width: number): Story {
         await canvas.findByRole('searchbox', { name: 'Search sessions' });
         const menu = canvas.getByRole('button', { name: 'Menu' });
         const status = canvas.getByRole('group', { name: 'Session status' });
-        await expect((await settledRect(menu)).height).toBeGreaterThanOrEqual(44);
+        const menuBox = await settledRect(menu);
+        await expect(menuBox.height).toBeGreaterThanOrEqual(44);
+        if (width === 390) {
+          const workingBox = await settledRect(
+            canvas.getByRole('status', { name: 'Working sessions' }),
+          );
+          await expect(workingBox.y + workingBox.height / 2).toBeCloseTo(
+            menuBox.y + menuBox.height / 2,
+            0,
+          );
+        }
         for (const pill of within(status).getAllByRole('button')) {
           await expect((await settledRect(pill)).height).toBeGreaterThanOrEqual(44);
         }

@@ -165,8 +165,12 @@ function Example({
   missingClock = false,
   canDismiss = true,
   onRefresh,
+  waitingForBoard = false,
+  writeFails = false,
 }: {
   readonly missingClock?: boolean;
+  readonly waitingForBoard?: boolean;
+  readonly writeFails?: boolean;
   readonly canDismiss?: boolean;
   readonly onRefresh?: (refresh: () => Promise<void>) => void;
 }) {
@@ -181,14 +185,19 @@ function Example({
       search: '',
       reducedMotion: () => true,
       fetch: (url) =>
-        Promise.resolve(
-          new Response(
-            url.startsWith('/api/data')
-              ? JSON.stringify(missingClock ? withoutClock : { ...board, dismiss: canDismiss })
-              : '{"ok":true,"persisted":true}',
-            { headers: { 'X-Compass-Revision': `9.${++revision}` } },
-          ),
-        ),
+        url.startsWith('/api/data') && waitingForBoard
+          ? new Promise<Response>(() => undefined)
+          : Promise.resolve(
+              new Response(
+                url.startsWith('/api/data')
+                  ? JSON.stringify(missingClock ? withoutClock : { ...board, dismiss: canDismiss })
+                  : '{"ok":true,"persisted":true}',
+                {
+                  status: writeFails && url.startsWith('/api/dismiss') ? 503 : 200,
+                  headers: { 'X-Compass-Revision': `9.${++revision}` },
+                },
+              ),
+            ),
     });
     return shell;
   });
@@ -225,6 +234,18 @@ function lane(canvasElement: HTMLElement, name: string) {
   return within(section);
 }
 
+export const FirstBoardPending: Story = {
+  args: { waitingForBoard: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText('The first payload has not arrived yet.')).toBeVisible();
+    await expect(canvas.getByRole('link', { name: 'Needs you' })).toBeVisible();
+    await expect(
+      canvas.queryByRole('heading', { name: /Waiting on you|Worth a look|Ready to wrap up/ }),
+    ).toBeNull();
+  },
+};
+
 export const QueuesAndBadge: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -235,6 +256,10 @@ export const QueuesAndBadge: Story = {
       'Worth a look (4)',
       'Ready to wrap up (5)',
     ]);
+    const firstSection = headings[0]?.closest('section');
+    await expect(getComputedStyle(firstSection as Element).backgroundColor).toBe(
+      'rgb(255, 255, 255)',
+    );
     const waiting = lane(canvasElement, 'needs');
     const flagged = lane(canvasElement, 'risk');
     const ready = lane(canvasElement, 'close');
@@ -492,6 +517,23 @@ export const DismissAndUndo: Story = {
         node.closest('[data-next-dismiss-receipt]'),
       ),
     ).toBeVisible();
+  },
+};
+
+export const DismissFails: Story = {
+  args: { writeFails: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const title = await canvas.findByRole('heading', { name: 'Review pull request #482' });
+    const row = within(title.closest('article') as HTMLElement);
+    await userEvent.click(row.getByRole('button', { name: 'Dismiss' }));
+    await expect(
+      (await canvas.findAllByText('Compass could not save that change.')).find((node) =>
+        node.closest('[data-next-dismiss-receipt]'),
+      ),
+    ).toBeVisible();
+    await expect(title).toBeVisible();
+    await expect(canvas.queryByRole('button', { name: 'Undo' })).toBeNull();
   },
 };
 

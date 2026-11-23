@@ -71,9 +71,10 @@
 .next-cockpit-reading-why[data-absence="waiting-on-you"]{border-left-color:var(--accent-dim)}
 .next-cockpit-reading-why[data-absence="run-config"]{border-left-style:dotted}
 .next-cockpit-held-bound{color:var(--ink-caption);font-family:var(--mono);font-size:var(--fs-label)}
-.next-intent{display:grid;gap:16px;min-width:0;overflow-wrap:anywhere}
-.next-intent-group{min-width:0;border:1px solid var(--rule);border-radius:var(--r-card);background:var(--card)}
+.next-intent{display:grid;gap:16px;min-width:0;max-width:960px;margin-inline:auto;padding:40px 0 32px;overflow-wrap:anywhere}
+.next-intent-group{min-width:0;border:1px solid var(--rule);border-radius:var(--r-card);background:var(--panel)}
 .next-intent-group[data-next-goal-group="older"]{background:var(--raise)}
+@media(max-width:620px){.next-intent{padding-top:22px}}
 .next-intent-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;padding:10px 16px}
 .next-intent-row+li{border-top:1px solid var(--rule)}
 .next-intent-row>div{flex-basis:15rem}
