@@ -247,4 +247,16 @@ agy plugin validate ./compass
      selectors and piped writes, the waiting-child sentence and the runtime dispatch grammar.
      It also corrected older Codex-only unasked-reader and settings-default claims. -->
 
-<!-- docs-synced-through: f7365090 (2026-11-17) -->
+<!-- Reconciled f7365090..8c478559: the board redesign, with no harness or platform matrix change.
+     A light palette set in Inter; plain first-layer labels from one glossary, with technical
+     details one press away; the session page led by its goal and Is it on track?; Sessions
+     search, status tabs and cards; Needs you, Goal history, Help and Settings pages; settings
+     that save as you change them; the skill, command help and terminal output in the board's
+     words; plus long-reading stop reasons, Storybook shards and test isolation. Each pull request
+     ran its own docs pass. This pass checked the docs each later pull request left untouched
+     against the code it changed, and corrected the sample session's directions and labels, the
+     README's skill row, and CONTRIBUTING's description of the Storybook run. It did not walk the
+     rendered board, and left the on-demand browser proof descriptions, which keep the retired
+     view names their scripts use. -->
+
+<!-- docs-synced-through: 8c478559 (2026-11-24) -->
