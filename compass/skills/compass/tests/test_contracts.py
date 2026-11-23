@@ -1083,6 +1083,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.tripwires",
             "compass_runtime.annotations",
             "compass_runtime.collectors",
+            "compass_runtime.ci_read",
             "compass_runtime.config",
             "compass_runtime.deliveries",
             "compass_runtime.departures",

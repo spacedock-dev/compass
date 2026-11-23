@@ -44,6 +44,7 @@
       "browser_lane": false,
       "browser_lane_at": null,
       "build": "react-6adb47d4e0849ad0",
+      "ci_read": "on",
       "cleared": 0,
       "delivery_counts": {
         "attempted": 0,
@@ -144,7 +145,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "8612",
+      "Content-Length": "8629",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"
