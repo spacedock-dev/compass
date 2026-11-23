@@ -140,7 +140,7 @@ The Claude Code live monitor is off by default. A browser reload leaves its swit
 and a rolling 24-hour limit across the board, apart from Analyze's 100 attempts. An analysis result
 keeps the source beside each outcome line, groups written paths by folder, and states whether your words changed or new work
 arrived after it. Both levels are recomputed from the evidence and are never stored.
-Once a reading exists, the card header offers Check progress again for current and stale
+Once a reading exists, the session header offers Check progress again for current and stale
 readings. The control stays visible where a press is temporarily unavailable. Is it on track?
 gives the answer and links to the quotes behind it. Evidence under Show technical details
 names each goal or outcome line, gives the reason and lists the numbered sources. A cited

@@ -72,5 +72,12 @@ export const UnreadableStoreSaysSoAndPointsAtTheCardNotice: Story = {
     await waitFor(() =>
       expect(intent).toHaveTextContent('Move or repair that file to save again.'),
     );
+    const answer = card.querySelector('[data-next-progress-answer]');
+    await expect(answer).toBeVisible();
+    await expect(answer?.textContent?.trim()).toBe(NOTICE);
+    await expect(
+      card.querySelector('[data-next-drift-pill], .next-session-drift-meter'),
+    ).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-session-progress]')).toBeNull();
   },
 };

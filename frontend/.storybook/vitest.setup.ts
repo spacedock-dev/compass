@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect } from 'vitest';
 import { commands } from 'vitest/browser';
 import budget from '../first-layer-budget.json';
 import { auditCalm } from '../stories/calm.audit';
+import { firstLayerViolations } from '../test/firstLayer';
 import {
   auditContrast,
   formatFailures,
@@ -54,4 +55,23 @@ afterEach(async ({ task }) => {
   await settled();
   const failures = auditCalm(document.body);
   expect(failures, `${id}\n${failures.join('\n')}`).toEqual([]);
+});
+
+afterEach(({ task }) => {
+  const id = 'storyId' in task.meta ? task.meta.storyId : undefined;
+  if (
+    typeof id !== 'string' ||
+    !(
+      id.startsWith('drift-a-level-needs-a-departure--') ||
+      id.startsWith('drift-store-refusal--') ||
+      id === 'sessions-codex-finished-run--stored-progress-without-a-level' ||
+      id ===
+        'drift-idle-analysis-and-steer-back--an-out-of-date-check-shows-the-earlier-finding-beside-steering'
+    )
+  )
+    return;
+  // These Session stories reach progress states that the recorded boards do not exercise.
+  const session = document.querySelector('[data-next-session-detail]');
+  expect(session, id).not.toBeNull();
+  if (session) expect(firstLayerViolations(session), id).toEqual([]);
 });

@@ -4,35 +4,8 @@ import states from '../../test/fixtures/client-contract/data-session-states.json
 import focused from '../../test/fixtures/client-contract/data-focused-drift.json';
 import { fragmentForRoute } from '../router/grammar';
 import { mountShell } from '../shell/testing';
-import { FIRST_LAYER_EXCEPTIONS, FIRST_LAYER_RETIREMENTS } from './glossary';
-
-const OUTSIDE_FIRST_LAYER = '[data-layer="technical"], [data-authored], script, style';
-const ATTRIBUTES = ['aria-label', 'title', 'placeholder'] as const;
-
-function violations(root: Element, retired: readonly RegExp[] = FIRST_LAYER_RETIREMENTS) {
-  const matches: string[] = [];
-  for (const element of [root, ...root.querySelectorAll('*')]) {
-    if (element.closest(OUTSIDE_FIRST_LAYER)) continue;
-    const location = `<${element.localName}${element.id ? ` id="${element.id}"` : ''}>`;
-    const inspect = (text: string, source: string) => {
-      const words = FIRST_LAYER_EXCEPTIONS.reduce(
-        (copy, exception) => copy.replace(exception, ' '),
-        text,
-      ).trim();
-      if (retired.some((pattern) => pattern.test(words)))
-        matches.push(`${location} ${source} ${JSON.stringify(text.trim())}`);
-    };
-    for (const attribute of ATTRIBUTES) {
-      const value = element.getAttribute(attribute);
-      if (value) inspect(value, attribute);
-    }
-    for (const node of element.childNodes) {
-      if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim())
-        inspect(node.textContent, 'text');
-    }
-  }
-  return matches;
-}
+import { firstLayerViolations } from '../../test/firstLayer';
+import { FIRST_LAYER_RETIREMENTS } from './glossary';
 
 // Add later pages here with their recorded client-contract board and a route that reaches the view.
 it.each([states, focused])(
@@ -44,7 +17,7 @@ it.each([states, focused])(
     expect(
       within(page.container).getByRole('link', { name: 'Sessions', current: 'page' }),
     ).toBeVisible();
-    expect(violations(page.container)).toEqual([]);
+    expect(firstLayerViolations(page.container)).toEqual([]);
     for (const row of data.sessions) {
       if (!row.sid || !row.harness) continue;
       await page.go(
@@ -57,7 +30,7 @@ it.each([states, focused])(
       );
       const article = page.container.querySelector('[data-next-session-detail]');
       expect(article, row.sid).not.toBeNull();
-      expect(violations(page.container), row.sid).toEqual([]);
+      expect(firstLayerViolations(page.container), row.sid).toEqual([]);
     }
   },
 );
@@ -73,7 +46,7 @@ it('names the text, attribute and element for planted Compass copy', () => {
       <input placeholder="Mark as inaccurate" />
     </div>,
   );
-  expect(violations(container)).toEqual([
+  expect(firstLayerViolations(container)).toEqual([
     '<h2 id="planted-label"> text "Intent"',
     '<button> aria-label "Analyze drift"',
     '<p> title "Pause model calls"',
@@ -96,7 +69,7 @@ it('allows authored words, technical evidence, product names and pull request nu
       <p title="Claude Code">Review #482 in Claude Code</p>
     </div>,
   );
-  expect(violations(container)).toEqual([]);
+  expect(firstLayerViolations(container)).toEqual([]);
 });
 
 it('allows the same wording in the mounted session title and goal', async () => {
@@ -129,13 +102,13 @@ it('allows the same wording in the mounted session title and goal', async () => 
   const view = within(page.container);
   expect(view.getByRole('heading', { name: title })).toBeVisible();
   expect(view.getByText(goal)).toBeVisible();
-  expect(violations(page.container)).toEqual([]);
+  expect(firstLayerViolations(page.container)).toEqual([]);
 });
 
 it('applies a retirement added to the glossary rules without a change to the walk', () => {
   const { container } = render(<button type="button">Legacy action</button>);
-  expect(violations(container)).toEqual([]);
-  expect(violations(container, [...FIRST_LAYER_RETIREMENTS, /\blegacy action\b/i])).toEqual([
-    '<button> text "Legacy action"',
-  ]);
+  expect(firstLayerViolations(container)).toEqual([]);
+  expect(
+    firstLayerViolations(container, [...FIRST_LAYER_RETIREMENTS, /\blegacy action\b/i]),
+  ).toEqual(['<button> text "Legacy action"']);
 });

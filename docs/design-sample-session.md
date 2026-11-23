@@ -293,9 +293,9 @@ bytes, for a measured page bound of 2,418,919 bytes on Node 26.10.0 and pnpm 12.
 The fixture bound stays at 250,000 bytes.
 
 On 2026-11-23, the Session layout, side cards and story brought the packaged page from
-2,413,527 bytes at `86892305` to 2,416,019 bytes on Node 26.10.0 and pnpm 12.17.0.
-The allowance increases by the measured 2,492 bytes, from 2,418,919 to 2,421,411.
-The fixture allowance stays at 250,000 bytes.
+2,415,259 bytes at `5289924f` to 2,417,811 bytes on Node 26.10.0 and pnpm 12.17.0.
+The allowance increases by the measured 2,552 bytes, from 2,418,919 to 2,421,471,
+leaving 3,660 bytes above the build. The fixture allowance stays at 250,000 bytes.
 
 ## View only
 
