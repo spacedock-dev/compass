@@ -1,4 +1,5 @@
-import { act, fireEvent, waitFor } from '@testing-library/react';
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BOARD, mountShell } from '../shell/testing';
 import { SAMPLE_FRAGMENT } from './ids';
@@ -22,10 +23,29 @@ vi.mock('./sampleFetch', async (original) => {
 });
 
 describe('the sample session and the Live monitor', () => {
+  it('opens Check settings without asking for live settings', async () => {
+    const start = asked.length;
+    const page = mountShell({ hash: SAMPLE_FRAGMENT, data: BOARD });
+    await page.settle();
+    await waitFor(() => expect(document.querySelector('[data-next-entry-id]')).not.toBeNull());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Show technical details' }));
+    });
+    await act(async () => {
+      screen.getByRole('tab', { name: 'Check settings' }).focus();
+    });
+    const panel = within(await screen.findByRole('tabpanel', { name: 'Check settings' }));
+    expect(
+      panel.getByText('Live check settings are unavailable in this view-only sample.'),
+    ).toBeTruthy();
+    expect(asked.slice(start).filter((url) => url.startsWith('/api/settings'))).toEqual([]);
+  });
+
   it('shows the switch on, lets a press show and hide the level, and never calls the lease route', async () => {
     const page = mountShell({ hash: SAMPLE_FRAGMENT, data: BOARD });
     await page.settle();
     await waitFor(() => expect(document.querySelector('[data-next-entry-id]')).not.toBeNull());
+    await openSessionTechnicalTab('AI use and privacy');
     const toggle = document.querySelector(
       '[data-next-cockpit-action="live-monitor"]',
     ) as HTMLButtonElement;

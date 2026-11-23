@@ -110,7 +110,7 @@ export function MonitorQuestion({
     const monitor = `live-monitor:${key}`;
     if (!lane.element(monitor)?.closest('[hidden]')) lane.focus(monitor);
     if (!document.activeElement || document.activeElement === document.body)
-      lane.focus(`drift-settings:${key}`);
+      lane.focus(`full-activity:${key}`);
   }, [shown, shell, session]);
 
   if (left === null || left <= 0) return null;

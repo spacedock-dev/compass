@@ -2,8 +2,10 @@ import { longCleanupUnresolved } from '../api/longProgress';
 import { LongProgress } from './LongProgress';
 import { SampleBeside } from '../sample/SampleMark';
 import { Card } from '../ui/card';
+import { GLOSSARY } from '../language/glossary';
 import { useEffect, type ReactNode } from 'react';
 import { nextNumber } from '../api/bootstrap';
+import { capacityPreview } from '../api/promptCapacity';
 import { disclosureKey, useFocusKey } from '../controls';
 import { ActionButton } from '../intent/ActionButton';
 import { ANALYZE_READS_PROMPT } from '../intent/sentences';
@@ -78,8 +80,7 @@ export function ReadingOutcome({ unless = '' }: { readonly unless?: string }) {
 }
 
 /* Pause model calls, drawn while readings are on. It is one press away in the Drift card's head in every
-   state (Drift settings, `DriftHeadControls`), and in the notice and the "What is sent" popover beside what
-   it stops, so the off switch is never only in a part the page did not draw.
+   paused state and near the notice and disclosure, beside the work it stops.
    [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */
 export function TurnOff({
   closes = '',
@@ -97,7 +98,7 @@ export function TurnOff({
   const button = (
     <ActionButton
       weight="secondary"
-      label={off ? 'Resume model calls' : 'Pause model calls'}
+      label={off ? GLOSSARY.resumeAi.plain : GLOSSARY.pauseAi.plain}
       busyLabel={off ? 'Resuming…' : 'Pausing…'}
       pendingKey={`${action}:${model.key}`}
       action={action}
@@ -487,27 +488,47 @@ export function ReadingNotice() {
   );
 }
 
-/* What is sent, in one place on the card whatever its state: a disclosure that opens in the card with
-   the off switch inside it. The route's words, and the notice the last request recorded where
-   this tab holds one, are the same disclosure. Its summary names the receiver while a press would record a
-   new notice, and always on a fallback route, whose receiver is a second provider. */
-export function WhatIsSent({ about = '' }: { readonly about?: string }) {
+/* Keep producer wording in both copies. On the first layer, format any published byte amounts in KB. */
+function disclosureSize(text: string): string {
+  return text.replace(/\b(\d[\d,]*) bytes?\b/g, (match, count: string) => {
+    const bytes = Number(count.replaceAll(',', ''));
+    if (!Number.isSafeInteger(bytes)) return match;
+    if (bytes > 0 && bytes < 1024) return '<1 KB';
+    return `${(bytes / 1024).toLocaleString('en-US', { maximumFractionDigits: 1 })} KB`;
+  });
+}
+
+export function WhatIsSent({
+  about = '',
+  technical = false,
+}: {
+  readonly about?: string;
+  readonly technical?: boolean;
+}) {
   const { ctx, model } = useDrift();
   const route = model.route;
   const provider = route?.['provider'] ? String(route['provider']) : '';
   const disclosure = provider && route?.['disclosure'] ? String(route['disclosure']) : '';
   const off = readingsOff(model.payload);
-  const notice = off ? null : sessionNotice(ctx.intent.held.requests.get(model.key), model.job);
+  const notice =
+    off && !technical ? null : sessionNotice(ctx.intent.held.requests.get(model.key), model.job);
   const aboutWhy = about ? (
     <Why name="reading-about" summary="What a reading reads" body={about} />
   ) : null;
   if (!disclosure && !notice) return aboutWhy;
   const receiver = provider ? String(route?.['label'] || provider) : '';
-  const parts = disclosureParts(route, provider, disclosure);
+  const sizes = (parts: readonly string[]) => (technical ? parts : parts.map(disclosureSize));
+  const parts = sizes(disclosureParts(route, provider, disclosure));
+  const capacity = capacityPreview(route?.['capacity']);
+  const estimate =
+    capacity?.reason === 'estimated'
+      ? `${capacity.maximum_prompt_bytes.toLocaleString('en-US')} bytes`
+      : '';
+
   return (
-    <SampleBeside id="sent">
+    <SampleBeside id={technical ? '' : 'sent'}>
       <Why
-        name="reading-sent"
+        name={technical ? 'reading-sent-technical' : 'reading-sent'}
         searchable={false}
         summary={
           route?.['fallback'] === true || route?.['notice_due'] === true
@@ -519,17 +540,23 @@ export function WhatIsSent({ about = '' }: { readonly about?: string }) {
           <NoticeBody
             notice={notice}
             provider={noticeLabel(notice)}
-            parts={noticeParts(notice, route)}
+            parts={sizes(noticeParts(notice, route))}
           />
         ) : parts.length ? (
-          <DisclosureParts parts={parts} id={DISCLOSURE_ID} />
+          <DisclosureParts parts={parts} {...(!technical ? { id: DISCLOSURE_ID } : {})} />
         ) : null}
         <p className="next-cockpit-reading-why" data-next-reading-prompt-limit>
           {ANALYZE_READS_PROMPT}
         </p>
+        {estimate ? (
+          <p className="next-cockpit-reading-why">
+            Estimated prompt ceiling for this route:{' '}
+            {technical ? estimate : disclosureSize(estimate)}.
+          </p>
+        ) : null}
         {about ? <p className="next-cockpit-reading-why">{about}</p> : null}
-        {off ? null : <TurnOff closes="reading-sent" />}
-        <CiReadSwitch />
+        {off || technical ? null : <TurnOff closes="reading-sent" />}
+        {technical ? null : <CiReadSwitch />}
       </Why>
     </SampleBeside>
   );

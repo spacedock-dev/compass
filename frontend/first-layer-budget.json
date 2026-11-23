@@ -24,9 +24,7 @@
       "monospace": 2
     },
     "frontend/src/drift/ReadingResult.tsx": {
-      "uppercase": 3,
-      "tracking": 3,
-      "monospace": 4
+      "monospace": 1
     },
     "frontend/src/drift/WorkListView.tsx": {
       "monospace": 1

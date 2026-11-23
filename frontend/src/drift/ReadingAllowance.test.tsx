@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { describe, expect, it } from 'vitest';
 import { mountDrift, ROUTE, textOf } from './testing';
 
@@ -21,11 +22,12 @@ const PREVIEW = {
 const allowance = () => textOf('[data-next-reading-allowance]');
 
 describe('the next Analyze prompt allowance', () => {
-  it('follows the selected route on refresh without fetching Settings', async () => {
+  it('follows the selected route on refresh', async () => {
     const page = mountDrift({
       payload: { reading_routes: { claude: { ...ROUTE, capacity: PREVIEW } } },
     });
     await page.settle();
+    await openSessionTechnicalTab('Check settings');
     await page.settle();
     expect(allowance()).toContain('Next Analyze prompt');
     expect(allowance()).toContain('Estimated allowance: 512 KB.');
@@ -45,7 +47,6 @@ describe('the next Analyze prompt allowance', () => {
     });
     expect(allowance()).toContain('Estimated allowance: 256 KB.');
     expect(allowance()).not.toContain('512 KB');
-    expect(page.state.requests.some((request) => request.path === '/api/settings')).toBe(false);
   });
 
   it.each([
@@ -59,6 +60,7 @@ describe('the next Analyze prompt allowance', () => {
       payload: { reading_routes: { claude: { ...ROUTE, capacity } } },
     });
     await page.settle();
+    await openSessionTechnicalTab('Check settings');
     await page.settle();
     expect(allowance()).toContain('Allowance unknown');
     expect(allowance()).not.toMatch(/0 KB|secret|refused before a model call/);
@@ -83,6 +85,7 @@ describe('the next Analyze prompt allowance', () => {
         },
       });
       await page.settle();
+      await openSessionTechnicalTab('Check settings');
       await page.settle();
       expect(allowance()).toContain(words);
       expect(allowance()).not.toMatch(/0 KB|0 bytes|[Ll]ower|[Rr]educe Prompt/);
@@ -96,6 +99,7 @@ describe('the next Analyze prompt allowance', () => {
       },
     });
     await page.settle();
+    await openSessionTechnicalTab('Check settings');
     await page.settle();
     expect(allowance()).toContain('Estimated allowance: 1 byte.');
     expect(allowance()).not.toMatch(/0 KB|[Ll]ower|[Rr]educe Prompt/);

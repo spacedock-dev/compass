@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { act, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { HISTORY_ITEM, LONG_HISTORY } from '../../test/longHistory';
@@ -10,7 +11,8 @@ const discard = () => screen.getByRole('button', { name: 'Check and discard supe
 async function open(page: ReturnType<typeof mountDrift>) {
   await page.settle();
   expect(page.gets(GET)).toBe(0);
-  await press(screen.getByRole('button', { name: 'Unfinished long analysis records' }));
+  await openSessionTechnicalTab('Check settings');
+  await press(screen.getByRole('button', { name: /^Unfinished long checks/ }));
   await page.settle();
 }
 describe('explicit unfinished history inspector', () => {
@@ -59,7 +61,7 @@ describe('explicit unfinished history inspector', () => {
         store: { goal: '', lines: [] },
       }),
     );
-    expect(screen.getByRole('button', { name: 'Resume model calls' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Resume AI use' })).toBeTruthy();
     await open(page);
     expect(screen.getByText(/Exact recorded accounting: 4 calls/)).toBeTruthy();
     expect(screen.getByText(/does not establish whether a process is alive/)).toBeTruthy();
@@ -178,7 +180,7 @@ describe('explicit unfinished history inspector', () => {
       routes: { '/api/reading': () => json({ ok: true, off: false }) },
     });
     await page.settle();
-    await press(screen.getByRole('button', { name: 'Resume model calls' }));
+    await press(screen.getByRole('button', { name: 'Resume AI use' }));
     await page.settle();
     expect(page.gets(GET)).toBe(0);
     expect(page.posts(POST)).toBe(0);
@@ -214,7 +216,8 @@ describe('explicit unfinished history inspector', () => {
       mode === 'sample' ? { hash: SAMPLE_FRAGMENT } : { payload: { annotate: false } },
     );
     await page.settle();
-    expect(screen.queryByRole('button', { name: 'Unfinished long analysis records' })).toBeNull();
+    await openSessionTechnicalTab('Check settings');
+    expect(screen.queryByRole('button', { name: /^Unfinished long checks/ })).toBeNull();
     expect(page.gets(GET)).toBe(0);
     expect(page.posts(POST)).toBe(0);
   });

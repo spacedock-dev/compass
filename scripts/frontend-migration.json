@@ -775,6 +775,16 @@
       "disposition": "store-held"
     },
     {
+      "name": "Long check options open state",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/stories/SessionLayout.stories.tsx",
+        "frontend/src/drift/LongPlanControl.test.tsx"
+      ],
+      "contract": "The project-scoped session disclosure key long-plan restores expansion across board refreshes and remounts. A reader opens or refreshes the preview explicitly. Restoration makes no preview request.",
+      "disposition": "store-held"
+    },
+    {
       "name": "An open run of checks",
       "owner": "DRC-4825",
       "oracles": [

@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import {
@@ -72,28 +73,29 @@ export const SentAndSettingsStayInFlow: Story = {
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
     const inCard = within(card);
-    const settings = await inCard.findByRole('button', { name: 'Drift settings' });
-    const analyze = await analyzeButton(card);
+    const settings = await within(canvasElement).findByRole('button', {
+      name: 'Show technical details',
+    });
+    await analyzeButton(card);
     const title = inCard.getByRole('heading', { name: 'Drift' });
     const subtitle = card.querySelector('.next-session-drift-sub') as HTMLElement;
     const subtitleOffset = () =>
       subtitle.getBoundingClientRect().top - title.getBoundingClientRect().top;
     const before = subtitleOffset();
-    await openInFlow(settings, analyze);
+    await userEvent.click(settings);
+    await waitFor(() =>
+      expect(within(canvasElement).getByRole('tabpanel', { name: 'Activity log' })).toBeVisible(),
+    );
     await expect(Math.abs(subtitleOffset() - before)).toBeLessThan(2);
     await userEvent.click(settings);
     const sent = await inCard.findByRole('button', { name: /^What is sent/ });
-    const activity = within(canvasElement).getByRole('region', {
-      name: 'Show technical details',
-    });
-    await openInFlow(sent, activity);
+    await openInFlow(sent, settings);
   },
 };
 
 /* The live monitor and Pause model calls sit behind Drift settings in the card's head, one press away. */
-async function openSettings(card: HTMLElement) {
-  const head = card.querySelector('header') as HTMLElement;
-  await userEvent.click(within(head).getByRole('button', { name: 'Drift settings' }));
+async function openSettings() {
+  await openSessionTechnicalTab('AI use and privacy');
 }
 
 async function neverRetired(root: HTMLElement) {
@@ -172,7 +174,7 @@ export const LiveMonitorAtHigh: Story = {
   ...scenario({ facts: [PROMPT, ...FAILED], work: { live_levels: [LIVE_HIGH] } }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
-    await openSettings(card);
+    await openSettings();
     const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
     await expect(monitor).toHaveAttribute('aria-checked', 'false');
     await expect(card.querySelector('[data-next-drift-level]')).toBeNull();
@@ -619,7 +621,7 @@ export const FirstPressRunsAndNoticesRepeatOnlyWhenChanged: Story = {
     await expect(notice).toHaveTextContent('Provider: Claude Code');
     await expect(notice).toHaveTextContent('The agent messages and tool output are included.');
     await expect(notice).toHaveTextContent('Tool output goes to: tools.example');
-    await expect(within(notice).getByRole('button', { name: 'Pause model calls' })).toBeVisible();
+    await expect(within(notice).getByRole('button', { name: 'Pause all AI use' })).toBeVisible();
     await expect(noticeSequence.posts).toHaveLength(1);
     await expect(noticeSequence.posts[0]).not.toHaveProperty('allow');
     await expect(notice.contains(document.activeElement)).toBe(false);
@@ -656,10 +658,8 @@ export const ModelCallsPausedUntilResume: Story = {
       'aria-disabled',
       'true',
     );
-    await expect(within(card).getAllByRole('button', { name: 'Resume model calls' })).toHaveLength(
-      1,
-    );
-    const on = within(card).getByRole('button', { name: 'Resume model calls' });
+    await expect(within(card).getAllByRole('button', { name: 'Resume AI use' })).toHaveLength(1);
+    const on = within(card).getByRole('button', { name: 'Resume AI use' });
     await expect(on).toBeVisible();
     await expect(card.querySelector('header')?.contains(on)).toBe(true);
     await expect(card).toHaveTextContent(
@@ -702,6 +702,6 @@ export const ReadingsOffWithARunningJobAndAnOpenDirection: Story = {
       within(card).getByText('Model calls are paused. Nothing is sent until you resume.'),
     ).toBeVisible();
     // Resume changes permission alone while the earlier analysis unwinds.
-    await expect(within(card).getByRole('button', { name: 'Resume model calls' })).toBeVisible();
+    await expect(within(card).getByRole('button', { name: 'Resume AI use' })).toBeVisible();
   },
 };

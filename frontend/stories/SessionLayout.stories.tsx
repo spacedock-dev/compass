@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import { SubagentsView } from '../src/sessions/DetailParts';
 import { sessionSubagents } from '../src/sessions/detail';
 import type { Meta, StoryObj } from '@storybook/react-vite';
@@ -6,7 +7,6 @@ import { auditTechnicalMonospace } from './calm.audit';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { App } from '../src/App';
-import { LIVE_HINT, LIVE_MONITOR_DETAILS } from '../src/drift/sentences';
 import { DRIFT_SUBTITLE, INTENT_MEASURED } from '../src/intent/sentences';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
@@ -39,7 +39,12 @@ const message = (n: number) => ({
 });
 
 /* A stored reading whose Goal cites what `cites` names: `e5` sits on the older record page, `ghost` on none. */
-const reading = (cites: readonly string[], readAt: number, windowStart: number) => ({
+const reading = (
+  cites: readonly string[],
+  readAt: number,
+  windowStart: number,
+  evidence?: 'model' | 'unasked',
+) => ({
   revision_read: 1,
   revision_read_at: G - 200,
   window_start: windowStart,
@@ -48,7 +53,7 @@ const reading = (cites: readonly string[], readAt: number, windowStart: number) 
   goal_source: 'typed',
   scope: 'last-turn',
   scope_text: 'Read up to its last turn.',
-  stamp: 'model · m',
+  stamp: evidence === 'unasked' ? 'unasked check at 01:46' : 'claude-sonnet-5-5 · read at 01:46',
   cutoff: 'Evidence read to its end.',
   coverage: {
     tail_truncated: false,
@@ -59,11 +64,21 @@ const reading = (cites: readonly string[], readAt: number, windowStart: number) 
   },
   criteria: {
     goal: {
-      result: 'consistent with the evidence read',
+      result: evidence === 'model' ? 'departure' : 'consistent with the evidence read',
       cites,
-      detail: '',
+      detail: evidence ? 'The agent switched to an unrelated task.' : '',
       clause: 'Synthetic goal',
     },
+    ...(evidence === 'model'
+      ? {
+          line_1: {
+            result: 'consistent with the evidence read',
+            cites: ['e96'],
+            detail: '',
+            clause: 'The tests complete',
+          },
+        }
+      : {}),
   },
 });
 
@@ -97,6 +112,8 @@ interface Log {
   release: (() => void) | null;
   readAt: number;
   served: number;
+  previews: number;
+  summaryWrites: number;
   stallOlder: boolean;
   olderAsked: boolean;
   releaseOlder: (() => void) | null;
@@ -110,6 +127,8 @@ const log: Log = {
   release: null,
   readAt: G - 10,
   served: 0,
+  previews: 0,
+  summaryWrites: 0,
   stallOlder: false,
   olderAsked: false,
   releaseOlder: null,
@@ -131,6 +150,12 @@ function PageExample({
   readingWindow = G - 200,
   revised = false,
   entries,
+  technical = false,
+  evidence,
+  readingUnavailable = false,
+  annotations = true,
+  settingsUnavailable = false,
+  summariesUnavailable = false,
 }: {
   readonly asking?: boolean;
   /** The exact request published while `asking`. */
@@ -146,6 +171,12 @@ function PageExample({
   readonly idle?: boolean;
   readonly readingWindow?: number;
   readonly revised?: boolean;
+  readonly technical?: boolean;
+  readonly evidence?: 'model' | 'unasked';
+  readonly readingUnavailable?: boolean;
+  readonly annotations?: boolean;
+  readonly settingsUnavailable?: boolean;
+  readonly summariesUnavailable?: boolean;
   readonly entries?: readonly Record<string, unknown>[];
 }) {
   const [shell] = useState(() => {
@@ -157,11 +188,47 @@ function PageExample({
     log.release = null;
     log.readAt = G - 10;
     log.served = 0;
+    log.previews = 0;
+    log.summaryWrites = 0;
     log.stallOlder = stallOlder;
     log.olderAsked = false;
     log.releaseOlder = null;
     const history = fakeRouterEnvironment('#n=session:demo:claude:s1');
     let generation = G;
+    let paused = false;
+    let summariesOff = false;
+    let ciRead = 'on';
+    let marked = false;
+    const policy = () => ({
+      consent: !paused && !readingUnavailable,
+      off: paused,
+      reason: readingUnavailable ? 'store-unavailable' : paused ? 'model-calls-paused' : '',
+      providers: { claude: true },
+      words: { claude: true },
+      tool_output: { claude: ['api'] },
+      used: readingUnavailable ? 0 : 1,
+      limit: technical ? 100 : 10,
+    });
+    const sent = [
+      'Sent: your goal, a bounded set of entries, and your messages and the agent’s messages.',
+      'The agent’s newest final reply goes whole, up to 16,384 characters.',
+      'Tool output includes a check’s command, result and last 180 characters of output, and paths of files written.',
+      'To: reader.example, with credential shapes redacted, through your Claude Code sign-in.',
+    ];
+    const settings = {
+      values: {
+        analyze_prompt_bytes: 16384,
+        analyze_record_events: 2000,
+        analyze_listed_checks: 1000,
+        analyze_scan_megabytes: 512,
+      },
+      limits: [
+        { key: 'analyze_prompt_bytes', default: 524288, minimum: 16384, maximum: 2097152 },
+        { key: 'analyze_record_events', default: 2000, minimum: 100, maximum: 5000 },
+        { key: 'analyze_listed_checks', default: 1000, minimum: 12, maximum: 5000 },
+        { key: 'analyze_scan_megabytes', default: 512, minimum: 8, maximum: 1024 },
+      ],
+    };
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
     return createShell({
       env: createFakeEnvironment({ clock: createFakeClock() }),
@@ -176,27 +243,62 @@ function PageExample({
           log.served += 1;
           return json({
             generated: generation++,
-            annotate: true,
+            annotate: annotations,
             annotate_cap: 240,
             annotate_goal_cap: 1000,
             reading_check: 'passed',
-            reading: {
-              consent: true,
-              off: false,
-              providers: { claude: true },
-              words: { claude: true },
-              tool_output: { claude: ['api'] },
-              used: 1,
-              limit: 10,
-            },
+            ...(annotations ? { reading: policy() } : {}),
+            ...(technical
+              ? {
+                  summaries: {
+                    consent: !paused && !summariesOff && !summariesUnavailable,
+                    off: summariesOff,
+                    reason: summariesUnavailable
+                      ? 'store-unavailable'
+                      : paused
+                        ? 'model-calls-paused'
+                        : summariesOff
+                          ? 'summaries-off'
+                          : '',
+                  },
+                }
+              : {}),
             reading_routes: {
-              claude: routeOf('claude', {
-                provider: 'claude',
-                label: 'Claude Code',
-                reason: 'own-harness',
-                note: "This session's own harness reads it.",
-                fallback: false,
-              }),
+              claude: {
+                ...routeOf('claude', {
+                  provider: 'claude',
+                  label: 'Claude Code',
+                  reason: 'own-harness',
+                  note: "This session's own harness reads it.",
+                  fallback: false,
+                }),
+                ...(technical
+                  ? {
+                      disclosure: sent.join(' '),
+                      disclosure_parts: sent,
+                      destination: '',
+                      words_destination: 'reader.example',
+                      ci_read: ciRead,
+                      capacity: {
+                        kind: 'capacity-preview',
+                        policy: 'analyze-context-v1',
+                        maximum_prompt_bytes: 524288,
+                        window_tokens: null,
+                        window_source: 'unknown',
+                        generation_reserve_tokens: 128000,
+                        cli_reserve_tokens: 16384,
+                        estimated_system_tokens: 0,
+                        estimate_method: 'legacy-byte-cap',
+                        fit_verified: false,
+                        policy_verified: false,
+                        configuration_reason: '',
+                        reason: 'estimated',
+                        can_lower_prompt_setting: true,
+                      },
+                      model: 'claude-sonnet-5-5',
+                    }
+                  : {}),
+              },
             },
             harnesses: [
               { key: 'claude', label: 'Claude Code', reports_rate: true, discovered: true },
@@ -222,6 +324,7 @@ function PageExample({
                         state_detail: 'running Bash',
                         turn: { elapsed_h: '3m' },
                       }),
+                ...(technical ? { delivery_raises: 1, delivery_why: 'Accepted by macOS.' } : {}),
                 delegated_launches: 2,
                 delegated_unpaired: 1,
                 delegated_visibility: 'full',
@@ -248,12 +351,37 @@ function PageExample({
                 ...(cites
                   ? {
                       annotation_reading_count: 1,
-                      annotation_assessment: reading(cites, log.readAt, readingWindow),
+                      ...(marked ? { annotation_not_accurate: true } : {}),
+                      annotation_assessment: reading(cites, log.readAt, readingWindow, evidence),
                     }
                   : {}),
               },
             ],
           });
+        }
+        if (technical && url === '/api/settings')
+          return settingsUnavailable ? new Response(null, { status: 503 }) : json(settings);
+        if (technical && url === '/api/summary' && init?.method === 'POST') {
+          log.summaryWrites += 1;
+          const { consent } = JSON.parse(String(init.body));
+          if (paused) return new Response(null, { status: 403 });
+          summariesOff = consent === 'off';
+          return json({ ok: true, summaries: { consent: !summariesOff, off: summariesOff } });
+        }
+        if (technical && url.startsWith('/api/reading-long-plan')) log.previews += 1;
+        if (technical && url === '/api/annotate' && init?.method === 'POST') {
+          const press = JSON.parse(String(init?.body));
+          marked = press.not_accurate === true;
+          return json({ outcome: 'stored', persisted: true });
+        }
+        if (technical && url === '/api/reading') {
+          const { consent, ci_read } = JSON.parse(String(init?.body));
+          if (ci_read) {
+            ciRead = ci_read;
+            return json({ ok: true, ci_read: ciRead });
+          }
+          paused = consent === 'off';
+          return json({ ok: true, reading: policy() });
         }
         if (url === '/api/answer') {
           log.answers.push(String(init?.body));
@@ -264,7 +392,30 @@ function PageExample({
           return json({ answered: true });
         }
         if (url.startsWith('/api/project-context'))
-          return json({ semantic: { facts: [] }, sources: { work: { tool_reports: [] } } });
+          return json({
+            semantic: { facts: [] },
+            sources: {
+              work: {
+                tool_reports: [],
+                ...(evidence
+                  ? {
+                      analysis_levels: [
+                        {
+                          harness: 'claude',
+                          sid: 's1',
+                          revision_read: 1,
+                          read_at: log.readAt,
+                          computed_at: log.readAt,
+                          level: 'medium',
+                          reasons: ['departure'],
+                          cites,
+                        },
+                      ],
+                    }
+                  : {}),
+              },
+            },
+          });
         if (url.startsWith('/api/annotations'))
           return json({ annotations: [], intent_revision: 'r1' });
         if (url.startsWith('/api/session-record')) {
@@ -302,6 +453,31 @@ function PageExample({
   return (
     <>
       <App key={mounted} shell={shell} />
+      {technical ? (
+        <>
+          <button
+            type="button"
+            onClick={() =>
+              shell.router.navigate({ view: 'settings', project: null, session: null })
+            }
+          >
+            Open Settings for the story
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              shell.router.navigate({
+                view: 'session',
+                project: 'demo',
+                session: 's1',
+                harness: 'claude',
+              })
+            }
+          >
+            Return to the session
+          </button>
+        </>
+      ) : null}
       <button type="button" onClick={() => remount((previous) => previous + 1)}>
         Remount session
       </button>
@@ -483,6 +659,10 @@ export const TechnicalDetailsContinuity: Story = {
     await expect(getComputedStyle(number).fontFamily).toMatch(/^ui-monospace/);
     activityTab.focus();
     await userEvent.keyboard('{ArrowRight}');
+    const privacyTab = canvas.getByRole('tab', { name: 'AI use and privacy' });
+    await expect(privacyTab).toHaveFocus();
+    await expect(privacyTab).toHaveAttribute('aria-selected', 'true');
+    await userEvent.keyboard('{ArrowLeft}');
     await expect(activityTab).toHaveFocus();
     const previous = log.served;
     (canvas.getByRole('button', { name: 'Simulate board poll' }) as HTMLButtonElement).click();
@@ -623,11 +803,268 @@ export const ActivityLogFilters: Story = {
   },
 };
 
+export const OpenTechnicalDetails: Story = {
+  render: () => <PageExample technical readingUnavailable />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+    await expect(privacy.getByText('reader.example · Claude Code')).toBeVisible();
+    await expect(privacy.getByText('Daily check count unavailable.')).toBeVisible();
+    await expect(privacy.queryByText('100 of 100 daily checks')).toBeNull();
+    await userEvent.click(privacy.getByRole('button', { name: 'What is sent' }));
+    await waitFor(() =>
+      expect(
+        privacy.getByText('Estimated prompt ceiling for this route: 524,288 bytes.'),
+      ).toBeVisible(),
+    );
+    const first = within(canvas.getByRole('region', { name: 'Drift' }));
+    await userEvent.click(first.getByRole('button', { name: 'What is sent' }));
+    await waitFor(() =>
+      expect(first.getByText('Estimated prompt ceiling for this route: 512 KB.')).toBeVisible(),
+    );
+    await expect(first.queryByText(/524,288 bytes/)).toBeNull();
+    const checks = await openSessionTechnicalTab('Check settings', canvasElement);
+    await expect(await checks.findByText('16 KB of 2,048 KB allowed (16,384 bytes)')).toBeVisible();
+  },
+};
+
+export const TechnicalPullRequestReadKeepsFocus: Story = {
+  render: () => <PageExample technical />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const first = within(await canvas.findByRole('region', { name: 'Drift' }));
+    await userEvent.click(first.getByRole('button', { name: 'What is sent' }));
+    await waitFor(() =>
+      expect(first.getByRole('button', { name: 'Turn off the pull request read' })).toBeVisible(),
+    );
+    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+    await userEvent.click(privacy.getByRole('button', { name: 'Stop pull request reads' }));
+    await waitFor(() =>
+      expect(privacy.getByRole('button', { name: 'Allow pull request reads' })).toHaveFocus(),
+    );
+    await expect(
+      first.getByRole('button', { name: 'Turn on the pull request read' }),
+    ).toBeVisible();
+  },
+};
+
+export const SharedAiPause: Story = {
+  render: () => <PageExample technical annotations={false} settingsUnavailable />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const settings = canvas.getByRole('button', { name: 'Open Settings for the story' });
+    const session = canvas.getByRole('button', { name: 'Return to the session' });
+    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
+    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+    const firstPause = await privacy.findByRole('switch', { name: 'Pause all AI use' });
+    await expect(firstPause).not.toBeChecked();
+    await expect(firstPause).toHaveAccessibleDescription('Applies to every session.');
+
+    for (const savedOn of [true, false]) {
+      const pause = await canvas.findByRole('switch', { name: 'Pause all AI use' });
+      await userEvent.click(pause);
+      await expect(await canvas.findByRole('switch', { name: 'Resume AI use' })).toBeChecked();
+      await userEvent.click(settings);
+      await expect(await canvas.findByText(/could not be read/)).toBeVisible();
+      const resume = await canvas.findByRole('switch', { name: 'Resume AI use' });
+      await expect(resume).toBeChecked();
+      const summaries = canvas.getByRole('switch', { name: 'Summaries' });
+      await expect(summaries).not.toBeChecked();
+      await expect(summaries).toHaveAttribute('aria-disabled', 'true');
+      await expect(summaries).toHaveAccessibleDescription(/Paused/i);
+      const writes = log.summaryWrites;
+      await userEvent.click(summaries);
+      await expect(log.summaryWrites).toBe(writes);
+      await userEvent.click(resume);
+      await expect(
+        await canvas.findByRole('switch', { name: 'Pause all AI use' }),
+      ).not.toBeChecked();
+      await waitFor(() => expect(summaries.getAttribute('aria-checked')).toBe(String(savedOn)));
+      if (savedOn) {
+        await userEvent.click(summaries);
+        await waitFor(() => expect(summaries).not.toBeChecked());
+        await expect(log.summaryWrites).toBe(writes + 1);
+      }
+      await userEvent.click(session);
+      await expect(
+        await canvas.findByRole('switch', { name: 'Pause all AI use' }),
+      ).not.toBeChecked();
+    }
+  },
+};
+
+export const UnavailableSummaryGrant: Story = {
+  render: () => <PageExample technical summariesUnavailable />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'Open Settings for the story' }));
+    await expect(await canvas.findByText('The Summaries setting is unavailable.')).toBeVisible();
+    await expect(canvas.queryByRole('switch', { name: 'Summaries' })).toBeNull();
+    await expect(canvas.getByRole('switch', { name: 'Pause all AI use' })).toBeVisible();
+  },
+};
+
+export const TechnicalTabsAtPhoneWidth: Story = {
+  render: () => <PageExample technical />,
+  play: async ({ canvasElement }) => {
+    await atWidth(400, async () => {
+      const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+      const tabs = within(canvasElement).getAllByRole('tab');
+      const labels = tabs.map((tab) => {
+        const range = document.createRange();
+        range.selectNodeContents(tab);
+        return range.getBoundingClientRect();
+      });
+      const sameRow = labels.slice(1).flatMap((box, index) => {
+        const previous = labels[index];
+        return previous && Math.abs(previous.top - box.top) < 1 ? [box.left - previous.right] : [];
+      });
+      await expect(sameRow.length).toBeGreaterThan(0);
+      await expect(Math.min(...sameRow)).toBeGreaterThan(0);
+
+      const pause = privacy.getByText('Applies to every session.');
+      const pullRequests = privacy.getByRole('button', { name: 'Stop pull request reads' });
+      const explanation = privacy.getByText(/pull request checks are read from GitHub or GitLab/i);
+      await expect(
+        pullRequests.getBoundingClientRect().top - pause.getBoundingClientRect().bottom,
+      ).toBeGreaterThan(0);
+      await expect(explanation.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        pullRequests.getBoundingClientRect().bottom,
+      );
+    });
+  },
+};
+
+export const TechnicalEvidence: Story = {
+  render: () => <PageExample technical evidence="model" cites={['e95']} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    const evidence = within(await canvas.findByRole('tabpanel', { name: 'Evidence' }));
+    await expect(
+      await evidence.findByRole('heading', { name: 'Evidence for “Slightly off course”' }),
+    ).toBeVisible();
+    await expect(
+      evidence.getByText(/Reading by claude-sonnet-5-5 at \d{2}:\d{2}/),
+    ).toHaveTextContent('2 entries cited');
+    const goal = evidence.getByRole('heading', { name: /^Goal$/ });
+    const outcome = evidence.getByRole('heading', { name: /^Expected outcome$/ });
+    if (!goal.parentElement || !outcome.parentElement) throw new Error('Missing criterion groups');
+    await expect(within(goal.parentElement).getByText(/Synthetic entry 95/)).toBeVisible();
+    await expect(within(outcome.parentElement).getByText(/Synthetic entry 96/)).toBeVisible();
+    await expect(evidence.getByRole('button', { name: 'What the check read' })).toBeVisible();
+    await expect(evidence.getByRole('button', { name: 'This reading looks wrong' })).toBeVisible();
+    await userEvent.click(evidence.getByRole('button', { name: 'This reading looks wrong' }));
+    const undo = await evidence.findByRole('button', { name: 'Undo' });
+    await waitFor(() => expect(undo).toHaveFocus());
+    const marked = evidence.getByText(/^Marked inaccurate\./);
+    await expect(marked).toBeVisible();
+    await expect(marked.getBoundingClientRect().height).toBeGreaterThan(1);
+    await userEvent.click(undo);
+    await waitFor(() =>
+      expect(evidence.getByRole('button', { name: 'This reading looks wrong' })).toHaveFocus(),
+    );
+    await expect(
+      within(canvas.getByRole('region', { name: 'Drift' })).getByText('Synthetic entry 95', {
+        exact: false,
+      }),
+    ).toBeVisible();
+    const cite = await evidence.findByRole('button', {
+      name: /^Show #.* in Activity log for Goal/,
+    });
+    await userEvent.click(cite);
+    const activity = within(await canvas.findByRole('tabpanel', { name: 'Activity log' }));
+    await userEvent.click(await activity.findByRole('button', { name: 'Back to the finding' }));
+    await waitFor(() =>
+      expect(
+        evidence.getByRole('button', { name: /^Show #.* in Activity log for Goal/ }),
+      ).toHaveFocus(),
+    );
+  },
+};
+
+export const TechnicalEvidenceUnasked: Story = {
+  render: () => <PageExample technical evidence="unasked" cites={['e95']} />,
+  play: async ({ canvasElement }) => {
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(evidence.getByText(/^Unasked check at \d{2}:\d{2}/)).toBeVisible();
+  },
+};
+
+async function technicalTabInventory(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement);
+  const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+  const monitor = privacy.getByRole('switch', { name: 'Live monitor' });
+  await expect(monitor).toBeVisible();
+  await expect(monitor).toHaveAccessibleDescription(
+    /Checks progress about once a minute while you watch/,
+  );
+  await expect(privacy.getByText('Live monitor · Haiku')).toBeVisible();
+  await expect(privacy.getByText(/Applies to every session/)).toBeVisible();
+  await expect(privacy.getByText('99 of 100 daily checks')).toBeVisible();
+  await expect(privacy.getByRole('button', { name: 'Stop pull request reads' })).toBeVisible();
+  await expect(privacy.getByRole('switch', { name: 'Pause all AI use' })).toBeVisible();
+  await userEvent.click(privacy.getByRole('button', { name: 'What is sent' }));
+  await waitFor(() =>
+    expect(
+      privacy.getByText('Estimated prompt ceiling for this route: 524,288 bytes.'),
+    ).toBeVisible(),
+  );
+  await expect(privacy.queryByRole('dialog')).toBeNull();
+  const disclosure = privacy.getByText('Estimated prompt ceiling for this route: 524,288 bytes.');
+  await expect(disclosure.closest('[data-slot="accordion-content"]')).not.toBeNull();
+  await expect(disclosure.closest('[data-slot="popover-content"]')).toBeNull();
+
+  const checks = await openSessionTechnicalTab('Check settings', canvasElement);
+  await expect(await checks.findByText(/16 KB of 2,048 KB/)).toBeVisible();
+  for (const label of [
+    'Prompt size limit',
+    'Messages and checks kept',
+    'Checks and files listed',
+    'Transcript scanned for checks',
+  ]) {
+    await expect(checks.getByText(label)).toBeVisible();
+  }
+  await expect(checks.getByRole('link', { name: 'Settings' })).toHaveAttribute(
+    'href',
+    '#n=settings',
+  );
+  await expect(checks.getByRole('button', { name: 'Unfinished long checks' })).toBeVisible();
+  await userEvent.click(checks.getByRole('button', { name: 'Long check for very long sessions' }));
+  await waitFor(() =>
+    expect(checks.getByRole('button', { name: 'Refresh long preview' })).toBeVisible(),
+  );
+  await userEvent.click(canvas.getByRole('button', { name: 'Remount session' }));
+  const restored = within(await canvas.findByRole('tabpanel', { name: 'Check settings' }));
+  await expect(log.previews).toBe(1);
+  await expect(
+    restored.getByRole('button', { name: 'Long check for very long sessions' }),
+  ).toHaveAttribute('aria-expanded', 'true');
+  await expect(restored.getByRole('button', { name: 'Refresh long preview' })).toBeVisible();
+
+  const reports = await openSessionTechnicalTab('Reports', canvasElement);
+  await expect(reports.getByRole('heading', { name: /How it landed/i })).toBeVisible();
+  await expect(reports.getByRole('button', { name: /^command-shape reports/i })).toBeVisible();
+  await expect(reports.getByText('Accepted by macOS.')).toBeVisible();
+
+  const activity = await openSessionTechnicalTab('Activity log', canvasElement);
+  await expect(activity.queryByText(/Command-shape reports/i)).toBeNull();
+  await expect(activity.queryByText('Accepted by macOS.')).toBeNull();
+}
+
+export const TechnicalTabInventory: Story = {
+  render: () => <PageExample technical />,
+  play: async ({ canvasElement }) => {
+    await technicalTabInventory(canvasElement);
+  },
+};
+
 /* Every control, sentence and limit the retired More held, in its new home, and More gone. */
 export const MoreIsRetired: Story = {
   // Flaky: kept out of the test run until fixed; see docs/flaky-tests.md.
   tags: ['!test'],
-  render: () => <PageExample />,
+  render: () => <PageExample technical />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
@@ -694,33 +1131,16 @@ export const MoreIsRetired: Story = {
     await userEvent.click(details);
     await activityLogPanel(canvasElement);
     await userEvent.click(details);
-    // The live monitor and Pause model calls are behind one Drift settings control in the head, and not in the body.
     await expect(inDrift.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
-    await userEvent.click(await within(head).findByRole('button', { name: 'Drift settings' }));
-    const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
-    await waitFor(() => expect(monitor).toBeVisible());
-    await expect(within(document.body).getByText(LIVE_HINT)).toBeVisible();
-    await expect(monitor).toHaveAccessibleDescription(`${LIVE_HINT} ${LIVE_MONITOR_DETAILS}`);
-    await waitFor(() =>
-      expect(
-        within(document.body).getByRole('button', { name: 'Pause model calls' }),
-      ).toBeVisible(),
-    );
-    await userEvent.click(within(head).getByRole('button', { name: 'Drift settings' }));
-    // The delegated-work limit is not part of an analysis's account of what it read.
+    await expect(inDrift.queryByRole('button', { name: 'Drift settings' })).toBeNull();
     await expect(inDrift.queryByText(/^Delegated work:/)).toBeNull();
-    await expect(await inDrift.findByRole('button', { name: 'Analyze drift' })).toBeVisible();
-    // Beside what it stops, Pause model calls stands in What is sent too.
-    await userEvent.click(await inDrift.findByRole('button', { name: 'What is sent' }));
-    const off = await waitFor(() => {
-      const found = within(document.body)
-        .getAllByRole('button', { name: 'Pause model calls' })
-        .find((node) => node.closest('[data-slot="accordion-content"]'));
-      expect(found).toBeDefined();
-      return found as HTMLElement;
-    });
-    await waitFor(() => expect(off).toBeVisible());
-    await userEvent.keyboard('{Escape}');
+    await expect(inDrift.getByRole('button', { name: 'Analyze drift' })).toBeVisible();
+    await userEvent.click(inDrift.getByRole('button', { name: 'What is sent' }));
+    await waitFor(() =>
+      expect(inDrift.getByText('Estimated prompt ceiling for this route: 512 KB.')).toBeVisible(),
+    );
+
+    await technicalTabInventory(canvasElement);
   },
 };
 

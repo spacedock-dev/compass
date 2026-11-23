@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { AiUseSettings } from './AiUseSettings';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { ApiClient } from '../api/client';
 import type { ApiResult, SettingsBody } from '../api/types';
 import { allowanceText } from '../api/promptCapacity';
@@ -196,7 +197,13 @@ function SettingField({
   );
 }
 
-export function SettingsScreen({ client }: { readonly client: SettingsClient }) {
+export function SettingsScreen({
+  client,
+  aiUse,
+}: {
+  readonly client: SettingsClient;
+  readonly aiUse?: ReactNode;
+}) {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<Pending>(null);
@@ -290,6 +297,7 @@ export function SettingsScreen({ client }: { readonly client: SettingsClient }) 
         data-next-settings-state="loading"
       >
         <h1>Settings</h1>
+        {aiUse}
         <p className="next-absence">Reading the settings in force.</p>
       </section>
     );
@@ -301,7 +309,8 @@ export function SettingsScreen({ client }: { readonly client: SettingsClient }) 
         data-next-settings-state="failed"
       >
         <h1>Settings</h1>
-        <p className="next-absence">The settings could not be read, so none are shown.</p>
+        {aiUse}
+        <p className="next-absence">The prompt limits and update preference could not be read.</p>
         <div className="mt-4">
           <Button
             type="button"
@@ -321,6 +330,7 @@ export function SettingsScreen({ client }: { readonly client: SettingsClient }) 
   return (
     <section className="next-view" data-next-view-body="settings" data-next-settings-state="ready">
       <h1>Settings</h1>
+      {aiUse}
       {load.body.update_check ? (
         <section
           className="mt-4 flex max-w-[var(--measure)] flex-col gap-2"
@@ -430,5 +440,5 @@ export function SettingsScreen({ client }: { readonly client: SettingsClient }) 
 
 export function SettingsView() {
   const { runtime } = useShell();
-  return <SettingsScreen client={runtime.client} />;
+  return <SettingsScreen client={runtime.client} aiUse={<AiUseSettings />} />;
 }

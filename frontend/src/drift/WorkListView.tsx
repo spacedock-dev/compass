@@ -33,7 +33,7 @@ import { activityStamp, entryWindow, personAuthored, recordPastWindow } from '..
 import { useDisplayed, useShell } from '../shell/context';
 import { ShowMore } from './ShowMore';
 import { ACTIVITY_LOG_FILTER_LABELS, GLOSSARY } from '../language/glossary';
-import { fullActivityKey } from '../sessions/fullActivityKey';
+import { fullActivityKey, TECHNICAL_EVIDENCE } from '../sessions/fullActivityKey';
 import { readingCitationIds } from './citations';
 import { summaryCitationIds } from '../sessions/summary';
 import { agentMessage, evidenceAt } from './shape';
@@ -169,15 +169,24 @@ export function WorkListView() {
   const press = jump ?? jumpMissing?.press ?? null;
   const back = () => {
     if (!press) return;
-    const origin = press.origin?.isConnected
-      ? press.origin
-      : (document.querySelector<HTMLElement>(
-          `[data-next-cockpit-action="finding-jump"][data-next-finding="${CSS.escape(press.key)}"][data-next-cite="${CSS.escape(press.entry ?? '')}"]`,
-        ) ??
-        document.querySelector<HTMLElement>(
-          `[data-next-cockpit-action="finding-jump"][data-next-finding="${CSS.escape(press.key)}"]`,
-        ));
-    if (origin) land(origin);
+    const returnToFinding = () => {
+      const root = press.fromTechnicalEvidence
+        ? document.querySelector('[data-next-technical-evidence]')
+        : document.querySelector('[data-next-drift-body]');
+      const finding = `[data-next-cockpit-action="finding-jump"][data-next-finding="${CSS.escape(press.key)}"]`;
+      const origin = press.origin?.isConnected
+        ? press.origin
+        : (root?.querySelector<HTMLElement>(
+            `${finding}[data-next-cite="${CSS.escape(press.entry ?? '')}"]`,
+          ) ?? root?.querySelector<HTMLElement>(finding));
+      if (origin) land(origin);
+    };
+    if (press.fromTechnicalEvidence) {
+      controls.technicalTabs.remember(filterKey, TECHNICAL_EVIDENCE);
+      requestAnimationFrame(() => afterPanelSettles(returnToFinding));
+    } else {
+      returnToFinding();
+    }
   };
   const backOnEscape = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Escape' || event.target !== event.currentTarget) return;

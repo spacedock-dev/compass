@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { DriftScenario, fact, readingScenario, routeOf } from './drift.scenario';
@@ -58,7 +59,8 @@ export const AnUnsentPromptKeepsItsRefusalAndCountsNoAnalysis: Story = {
   },
   play: async ({ canvasElement, args }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
-    const allowance = card.querySelector('[data-next-reading-allowance]');
+    const checks = await openSessionTechnicalTab('Check settings', canvasElement);
+    const allowance = checks.getByText('Next Analyze prompt:').parentElement?.parentElement;
     await expect(allowance).toBeVisible();
     await expect(allowance).toHaveTextContent('Next Analyze prompt: Estimated allowance: 512 KB.');
     await expect(allowance).toHaveTextContent('not automatically shortened');
@@ -95,9 +97,7 @@ export const AnUnsentPromptKeepsItsRefusalAndCountsNoAnalysis: Story = {
     await waitFor(() =>
       expect(card.querySelector('p.next-cockpit-reading-outcome')).toHaveTextContent(REFUSAL),
     );
-    await expect(card.querySelector('[data-next-reading-allowance]')).toHaveTextContent(
-      'Next Analyze prompt: Estimated allowance: 512 KB.',
-    );
+    await expect(allowance).toHaveTextContent('Next Analyze prompt: Estimated allowance: 512 KB.');
     await expect(READING.posts).toHaveLength(1);
   },
 };
@@ -106,7 +106,8 @@ export const AnOlderServerLeavesTheNextAllowanceUnknown: Story = {
   args: { scenario: { route: ROUTE } },
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
-    const allowance = card.querySelector('[data-next-reading-allowance]');
+    const checks = await openSessionTechnicalTab('Check settings', canvasElement);
+    const allowance = checks.getByText('Next Analyze prompt:').parentElement?.parentElement;
     await expect(allowance).toBeVisible();
     await expect(allowance).toHaveTextContent('Next Analyze prompt: Allowance unknown.');
     await expect(allowance).not.toHaveTextContent(/0 KB|refused before a model call/);
@@ -130,8 +131,9 @@ export const ManagedMcpExplainsWhyTheReadingCannotRun: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
-    const allowance = card.querySelector('[data-next-reading-allowance]');
+    await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const checks = await openSessionTechnicalTab('Check settings', canvasElement);
+    const allowance = checks.getByText('Next Analyze prompt:').parentElement?.parentElement;
     await expect(allowance).toHaveTextContent('managed-mcp.json');
     await expect(allowance).toHaveTextContent('cannot run this reading');
     await expect(allowance).not.toHaveTextContent(/Allowance unknown|0 KB|0 bytes/);

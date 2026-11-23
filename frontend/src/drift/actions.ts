@@ -454,11 +454,14 @@ function sayNotice(shell: DriftCtx['shell'], notice: unknown): void {
   shell.announcer.announce(key, sentence);
 }
 
-export async function readingOff(ctx: DriftCtx, identity: SessionIdentity | null): Promise<void> {
+export async function readingOff(
+  ctx: DriftCtx,
+  identity: SessionIdentity | null,
+): Promise<boolean> {
   return setModelPause(ctx, identity, true);
 }
 
-export async function readingOn(ctx: DriftCtx, identity: SessionIdentity | null): Promise<void> {
+export async function readingOn(ctx: DriftCtx, identity: SessionIdentity | null): Promise<boolean> {
   return setModelPause(ctx, identity, false);
 }
 
@@ -468,6 +471,7 @@ export async function ciReadAnswer(
   ctx: DriftCtx,
   identity: SessionIdentity | null,
   on: boolean,
+  focusKey?: string,
 ): Promise<void> {
   const { intent, shell } = ctx;
   const key = identity ? compatSessKey(identity) : '';
@@ -485,7 +489,7 @@ export async function ciReadAnswer(
     if (key) intent.held.requests.set(control, { message: CI_SWITCH_FAILED });
   } finally {
     pendingEnd(intent, control, press);
-    requestFocus(ctx, control);
+    requestFocus(ctx, focusKey ?? control);
   }
 }
 
@@ -493,7 +497,7 @@ async function setModelPause(
   ctx: DriftCtx,
   identity: SessionIdentity | null,
   paused: boolean,
-): Promise<void> {
+): Promise<boolean> {
   const { intent, shell } = ctx;
   const key = identity ? compatSessKey(identity) : '';
   const action = paused ? 'reading-off' : 'reading-on';
@@ -504,7 +508,7 @@ async function setModelPause(
     paused ? 'Pausing…' : 'Resuming…',
     paused ? 'Pausing model calls.' : 'Resuming model calls.',
   );
-  if (!press) return;
+  if (!press) return false;
   intent.held.notify();
   try {
     const reply = answered(
@@ -519,6 +523,7 @@ async function setModelPause(
       if (!note.pending) intent.held.requests.delete(name);
     }
     await refresh(intent);
+    return true;
   } catch {
     if (key) {
       intent.held.requests.set(key, {
@@ -528,6 +533,7 @@ async function setModelPause(
           : 'Could not confirm model calls resumed. Try resuming again.',
       });
     }
+    return false;
   } finally {
     pendingEnd(intent, control, press);
     requestFocus(ctx, control);
@@ -544,6 +550,7 @@ export async function markNotAccurate(
   readAt: number,
   /** Whether the card drew the reading marked: the press toggles what the reader saw. */
   marked: boolean,
+  focusKey?: string,
 ): Promise<void> {
   const { intent, shell, drift } = ctx;
   const session = liveRow(intent, identity);
@@ -578,7 +585,7 @@ export async function markNotAccurate(
   } finally {
     pendingEnd(intent, control, press);
     drift.notify();
-    requestFocus(ctx, control);
+    requestFocus(ctx, focusKey ?? control);
   }
 }
 

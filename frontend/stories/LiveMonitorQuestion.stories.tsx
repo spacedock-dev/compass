@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import {
@@ -39,12 +40,11 @@ const asking = (over: Record<string, unknown> = {}) =>
 
 const drawn = (canvasElement: HTMLElement) =>
   within(canvasElement).findByRole('region', { name: 'Drift' });
-const head = (card: HTMLElement) => card.querySelector('header') as HTMLElement;
 const banner = () => document.querySelector<HTMLElement>('[data-next-live-question]');
 const note = () => document.querySelector('[data-next-live-note]');
 
-async function monitoring(card: HTMLElement): Promise<HTMLElement> {
-  await userEvent.click(within(head(card)).getByRole('button', { name: 'Drift settings' }));
+async function monitoring(): Promise<HTMLElement> {
+  await openSessionTechnicalTab('AI use and privacy');
   const toggle = await within(document.body).findByRole('switch', { name: 'Live monitor' });
   await userEvent.click(toggle);
   await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
@@ -52,11 +52,8 @@ async function monitoring(card: HTMLElement): Promise<HTMLElement> {
 }
 
 /* The question opens on the next beat, as the server then publishes it. */
-async function opens(
-  args: { readonly scenario: Scenario },
-  card: HTMLElement,
-): Promise<HTMLElement> {
-  const toggle = await monitoring(card);
+async function opens(args: { readonly scenario: Scenario }): Promise<HTMLElement> {
+  const toggle = await monitoring();
   (args.scenario.lease as LeaseScenario).state = asking();
   args.scenario.clock?.advance?.(20_000);
   await waitFor(() => expect(banner()).not.toBeNull());
@@ -73,9 +70,9 @@ const readyScenario = (over: Partial<LeaseScenario> = {}): Pick<Story, 'args'> =
 export const OpensAndCountsDownTen: Story = {
   ...readyScenario(),
   play: async ({ canvasElement, args }) => {
-    const card = await drawn(canvasElement);
+    await drawn(canvasElement);
     await expect(banner()).toBeNull();
-    await opens(args, card);
+    await opens(args);
     const question = banner() as HTMLElement;
     await expect(
       within(question).getByText('Do you still want to monitor this session?'),
@@ -96,8 +93,8 @@ export const YesResetsItAndTheNextComesLater: Story = {
       leaseState({ confirm_by: null, banner_due_at: 2330, deadline: 2930, now: 1130 }),
   }),
   play: async ({ canvasElement, args }) => {
-    const card = await drawn(canvasElement);
-    const toggle = await opens(args, card);
+    await drawn(canvasElement);
+    const toggle = await opens(args);
     await userEvent.click(within(banner() as HTMLElement).getByRole('button', { name: 'Yes' }));
     await waitFor(() => expect(banner()).toBeNull());
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
@@ -123,7 +120,7 @@ export const NoTurnsItOff: Story = {
   }),
   play: async ({ canvasElement, args }) => {
     const card = await drawn(canvasElement);
-    const toggle = await opens(args, card);
+    const toggle = await opens(args);
     await userEvent.click(within(banner() as HTMLElement).getByRole('button', { name: 'No' }));
     await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
     await expect(banner()).toBeNull();
@@ -136,8 +133,8 @@ export const NoTurnsItOff: Story = {
 export const NoAnswerTurnsItOffWithANote: Story = {
   ...readyScenario(),
   play: async ({ canvasElement, args }) => {
-    const card = await drawn(canvasElement);
-    const toggle = await opens(args, card);
+    await drawn(canvasElement);
+    const toggle = await opens(args);
     // The question runs down on the page's clock; the server, which holds the deadline, ends the monitor
     // at the same moment, and the page asks it once at that moment and takes its answer.
     args.scenario.clock?.advance?.(560_000);
@@ -160,13 +157,8 @@ export const NoAnswerTurnsItOffWithANote: Story = {
   },
 };
 
-async function clearedBy(
-  reason: string,
-  pattern: RegExp,
-  args: { readonly scenario: Scenario },
-  card: HTMLElement,
-) {
-  const toggle = await opens(args, card);
+async function clearedBy(reason: string, pattern: RegExp, args: { readonly scenario: Scenario }) {
+  const toggle = await opens(args);
   const lease = args.scenario.lease as LeaseScenario;
   lease.state = leaseState({
     on: false,
@@ -185,19 +177,22 @@ async function clearedBy(
 export const ClearedWhenTheReaderLeft: Story = {
   ...readyScenario(),
   play: async ({ canvasElement, args }) => {
-    await clearedBy('left', /stopped checking in/, args, await drawn(canvasElement));
+    await drawn(canvasElement);
+    await clearedBy('left', /stopped checking in/, args);
   },
 };
 export const ClearedWhenTheSessionEnded: Story = {
   ...readyScenario(),
   play: async ({ canvasElement, args }) => {
-    await clearedBy('ended', /session ended/, args, await drawn(canvasElement));
+    await drawn(canvasElement);
+    await clearedBy('ended', /session ended/, args);
   },
 };
 export const ClearedWhenModelCallsWerePaused: Story = {
   ...readyScenario(),
   play: async ({ canvasElement, args }) => {
-    await clearedBy('paused', /model calls are paused/, args, await drawn(canvasElement));
+    await drawn(canvasElement);
+    await clearedBy('paused', /model calls are paused/, args);
   },
 };
 
@@ -207,8 +202,8 @@ export const AnnouncedAndReachableByKeyboard: Story = {
       leaseState({ confirm_by: null, banner_due_at: 2330, deadline: 2930, now: 1130 }),
   }),
   play: async ({ canvasElement, args }) => {
-    const card = await drawn(canvasElement);
-    await opens(args, card);
+    await drawn(canvasElement);
+    await opens(args);
     const cue = document.getElementById('next-cockpit-cue-status') as HTMLElement;
     await waitFor(() =>
       expect(cue).toHaveTextContent(

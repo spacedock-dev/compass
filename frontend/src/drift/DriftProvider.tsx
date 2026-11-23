@@ -172,7 +172,14 @@ export function DriftProvider({
     origin: HTMLElement | null = null,
     entry: string | null = null,
   ) => {
-    const next: Jump = { session: key, readAt, key: findingKey, origin, entry };
+    const next: Jump = {
+      session: key,
+      readAt,
+      key: findingKey,
+      origin,
+      entry,
+      fromTechnicalEvidence: Boolean(origin?.closest('[data-next-technical-evidence]')),
+    };
     latestPress.current = next;
     setEntryJump(null);
     setChosen(next);

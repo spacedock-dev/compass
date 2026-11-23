@@ -105,6 +105,15 @@ and stays paused until you resume."
   An off answer saved by an earlier build remains paused after upgrading. Only the
   internal reason token changes to `model-calls-paused`.
 
+**Amended 2026-11-22.** The board labels the shared switch **Pause all AI use** and
+**Resume AI use**. Settings and the session's **AI use and privacy** tab show the same
+server state. The session tab says it applies to every session. The **Summaries** switch
+stays nested under the pause switch in Settings. During a pause it is unchecked and
+disabled, and resuming restores the saved Summaries preference. The board publishes the
+master pause through the summary grant when annotations are disabled. The two switches
+still read and save independently of the prompt limits. An unreadable summary grant
+leaves the Summaries setting unavailable.
+
 The master pause still posts `{consent: "off", press: true, observer_model: 1}`.
 Resume posts the same guard fields with `consent: "on"`, without a session or provider.
 It clears the stored pause (`reading_policy.resume`) and writes no Allow, so it grants no Codex

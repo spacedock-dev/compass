@@ -173,7 +173,7 @@ describe('the sample session', () => {
   it.each([
     ['Delete summary', 'summary-delete'],
     ['Turn off summaries', 'summary-off'],
-    ['Pause model calls', 'reading-off'],
+    ['Pause all AI use', 'reading-off'],
   ])('holds %s and keeps the summary', async (_name, action) => {
     const page = await mountSample();
     await waitFor(() => expect(document.querySelector('[data-next-summary]')).not.toBeNull());

@@ -580,12 +580,12 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | Vendor quota poll, with the credential read before it | A vendor token out, quota numbers back, no session content. On until the reader turns it off in the page. | `--no-usage` | `test_contracts.ApplicationIsolationTest.test_no_usage_leaves_every_network_row_without_a_provider`; pushed quota: `test_http_api.UsageReceiptOptOutTest.test_pushed_quota_is_discarded_when_usage_is_disabled` |
 | Daily release lookup | Only a descriptive User-Agent to spacedock.md beyond urllib's standard headers; the route counts the lookup itself. On by default. No session content. [Daily update checks](#daily-update-checks) names the fields and onward counting. | `--no-update-check` or Turn off daily update checks in Settings; either stops it | `test_update_check.DailyCheckTest.test_either_off_switch_sends_nothing`, `test_update_check.LocalTransportTest.test_a_redirect_is_never_followed` |
 | Reach nudge | Two counts, to an endpoint you configure. Nothing is sent without one. | `--no-reach` | `test_reach.ReachNudgeTest.test_no_reach_flag_never_attempts_post`, `test_reach.ReachNudgeTest.test_no_reach_switch_disables_url_resolution` |
-| A press for a reading, an unasked check | Session content, through the Claude Code or Codex CLI that Compass starts as a supervised child. With a session summary, one of the two paths that can send what you wrote off the machine. | `--no-observer-model` or its alias `--no-harness-usage`, which overrides `--unasked-readings`, and Pause model calls | `test_launch_and_send_pins.APressUnderTheModelRefusalLaunchesNothingTest` (a press starts no process and opens no connection); `test_http_api.ReadingRouteTest.test_every_closed_gate_refuses_before_the_model_is_reached`; `test_unasked.TheSwitchIsTheWholeGateTest.test_the_off_switch_refuses_the_lane`; every caller goes through the one runner: `test_observer.SupervisedModelCallTest.test_every_model_caller_defaults_to_the_supervised_runner` |
-| A press on Find goal | The prompts you typed in one session, masked and bounded, through the Claude Code or Codex CLI that Compass starts as a supervised child. Nothing from the agent, no tool output and no correction Compass wrote. The answer is stored nowhere. | `--no-observer-model`, the stored pause (Pause model calls) and the rolling cap, all checked before the prompts are read | `test_goal_find.FindGoalRouteTest.test_nothing_runs_without_a_press`, `test_goal_find.FindGoalRouteTest.test_nothing_runs_while_model_calls_are_paused`, `test_goal_find.FindGoalRouteTest.test_a_spent_day_refuses_before_the_model_and_a_press_counts_against_it` |
+| A press for a reading, an unasked check | Session content, through the Claude Code or Codex CLI that Compass starts as a supervised child. With a session summary, one of the two paths that can send what you wrote off the machine. | `--no-observer-model` or its alias `--no-harness-usage`, which overrides `--unasked-readings`, and Pause all AI use | `test_launch_and_send_pins.APressUnderTheModelRefusalLaunchesNothingTest` (a press starts no process and opens no connection); `test_http_api.ReadingRouteTest.test_every_closed_gate_refuses_before_the_model_is_reached`; `test_unasked.TheSwitchIsTheWholeGateTest.test_the_off_switch_refuses_the_lane`; every caller goes through the one runner: `test_observer.SupervisedModelCallTest.test_every_model_caller_defaults_to_the_supervised_runner` |
+| A press on Find goal | The prompts you typed in one session, masked and bounded, through the Claude Code or Codex CLI that Compass starts as a supervised child. Nothing from the agent, no tool output and no correction Compass wrote. The answer is stored nowhere. | `--no-observer-model`, the stored pause (Pause all AI use) and the rolling cap, all checked before the prompts are read | `test_goal_find.FindGoalRouteTest.test_nothing_runs_without_a_press`, `test_goal_find.FindGoalRouteTest.test_nothing_runs_while_model_calls_are_paused`, `test_goal_find.FindGoalRouteTest.test_a_spent_day_refuses_before_the_model_and_a_press_counts_against_it` |
 | An optional goal summary | A Codex goal call, on by default for a focused refresh with a notice. | The same refusal | `test_documentation.LightHarnessUsageContractDocumentationTest.test_the_observer_pathway_defaults_on_and_has_both_rollback_spellings` checks that the switch reaches the configuration. None runs a goal summary with a process patched to raise, so that half rests on the shared runner above. |
-| A session summary, on open of a finished session or on a press | Session content, through the Claude Code CLI that Compass starts as a supervised child, under its own grant and rolling cap. [Session summary calls](#session-summary-calls) owns what it sends. | The same refusal, Pause model calls, and Turn off summaries | `test_summary_jobs.SummaryJobTest.test_summary_off_makes_no_call_until_on_and_no_model_switch_always_refuses`; `test_summary_jobs.SummaryJobTest.test_readings_off_refuses_summary_start_and_stops_a_running_job`; `test_summary_jobs.SummaryGrantTest.test_run_disabled_refuses_summary_charge` |
+| A session summary, on open of a finished session or on a press | Session content, through the Claude Code CLI that Compass starts as a supervised child, under its own grant and rolling cap. [Session summary calls](#session-summary-calls) owns what it sends. | The same refusal, Pause all AI use, and Turn off summaries | `test_summary_jobs.SummaryJobTest.test_summary_off_makes_no_call_until_on_and_no_model_switch_always_refuses`; `test_summary_jobs.SummaryJobTest.test_readings_off_refuses_summary_start_and_stops_a_running_job`; `test_summary_jobs.SummaryGrantTest.test_run_disabled_refuses_summary_charge` |
 | The model-free live estimate, the Live monitor's fallback level | Nothing. It is computed from checks and file paths, with no model, and writes nothing. Its processes are the read-only committed-file `git` read of a project's check scripts and, for a recorded CI poll, the two fixed identity `git` commands (`rev-parse HEAD`, `config --get remote.origin.url`). | `--no-git` stops both reads | `test_live_estimate.TheLiveEstimateTest.test_no_model_is_launched_and_nothing_is_written` patches every model class and connection, and refuses any process but the four committed-file `git` reads (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`); its session holds no CI poll, so it does not reach the identity commands. For a session that holds a poll, `test_command_tiers.ACiPollReadsTheSessionFoldersRepository.test_no_git_launches_nothing_for_a_session_holding_a_poll` pins that `--no-git` starts no process, and `test_command_tiers.ACiPollInRealCheckouts` runs the identity reads against real repositories |
-| A Live monitor check, about once a minute while you view a Claude Code session with the switch on or a terminal holder keeps the lease | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result, every other command as its masked line with its exit status, and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause model calls, the last holder leaving or lapsing, session end and caps; browser holders also stop at their consent deadline or No, and a hidden tab cannot drive checks | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
+| A Live monitor check, about once a minute while you view a Claude Code session with the switch on or a terminal holder keeps the lease | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result, every other command as its masked line with its exit status, and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause all AI use, the last holder leaving or lapsing, session end and caps; browser holders also stop at their consent deadline or No, and a hidden tab cannot drive checks | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
 | The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response forbids framing, objects and base tags; it has no fetch restrictions, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
 | `--footer`, the status line segment | Nothing. It launches no program and opens no socket: it reads the JSON a Claude Code status line passes on standard input and one file the dashboard wrote, and prints one line. [The status line files](#the-status-line-files) owns what that file holds. | Not putting it in a status line | `test_footer.RunFooterTest.test_it_opens_no_socket`, `test_footer.FooterLightPathTest.test_footer_through_server_py_imports_neither_the_cli_nor_an_http_client` |
 | The hook forwarders, the MCP server and the terminal client | Loopback only. The Python forwarders and the MCP server accept only literal IPv4 `127.0.0.1`, ignore proxy settings and refuse redirects. Each HTTP exchange has one monotonic deadline across connect, send, headers and bounded body reads. The terminal client reaches only the literal `127.0.0.1` with an integer port, ignores proxy settings and returns a redirect without following it, and discovers a dashboard from state file names and mtimes without opening a state file. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`; `test_terminal_client.RequestPathTest.test_a_port_that_is_not_a_plain_integer_is_refused_before_connecting`; `test_terminal_client.RequestPathTest.test_a_proxy_in_the_environment_is_never_contacted`; `test_terminal_client.RequestPathTest.test_a_redirect_is_returned_and_never_followed`; `test_terminal_client.DiscoveryTest.test_no_state_file_is_ever_opened`; `test_terminal_sessions.SessionsPrintableTest.test_escape_sequences_and_bidi_controls_are_gone_from_every_printed_value`. None for the two JavaScript adapters. |
@@ -593,7 +593,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | The bounded HTTPS transport | `https_transport` carries the vendor quota poll, the daily release lookup and the Reach nudge. It refuses a URL that is not HTTPS before resolving anything and holds DNS, connect, headers and every body read to one deadline. All three callers open it through `reach`'s opener, which reads no proxy setting from the environment or the system and follows no redirect. The quota poll also refuses any URL but the two endpoints named in [Usage quota reads](#usage-quota-reads-the-quota-fetcher). | `--no-usage` for the vendor quota poll; `--no-update-check` or Turn off daily update checks in Settings for the daily release lookup; `--no-reach` for the Reach nudge | `test_quota.VendorTransportTest.test_a_redirect_is_refused_without_a_second_request`; `test_quota.VendorTransportTest.test_ambient_proxies_are_never_consulted`; `test_quota.VendorTransportTest.test_a_non_https_endpoint_is_refused_before_any_connection`; `test_quota.VendorTransportTest.test_a_dripping_response_ends_at_the_deadline_and_clears_the_inflight_mark`; `test_update_check.ExchangeDeadlineTest.test_continuously_dripping_headers_and_body_cannot_extend_the_exchange`; `test_reach.ReachDeadlineTest.test_a_webhook_dripping_headers_is_abandoned_within_the_exchange_deadline`; `test_reach.ReachHTTPSSettingTest` |
 | The terminal client's dashboard launch | `terminal_client` starts this installation's launcher with `--daemon` and the selected port when an operation that can spend finds no dashboard. A read starts nothing. No switches from an earlier dashboard are carried over. Nothing leaves the machine from the launch itself. | A read-only operation, an existing dashboard, or not invoking the operation | `test_terminal_client.MissingDashboardTest.test_a_read_with_no_dashboard_says_so_once_and_names_the_start_command`; `test_terminal_client.MissingDashboardTest.test_the_start_command_runs_the_launcher_with_daemon_on_the_port`; `test_terminal_client.MissingDashboardTest.test_a_spend_against_another_version_sends_nothing_and_refuses` |
 | The terminal Live monitor holder | `terminal_monitor` starts one detached copy of this installation to hold the session's lease. On POSIX it uses fixed `/bin/ps` queries for the parent id, start time and executable of the session's harness and its ancestors. The holder sends lease requests only to the loopback dashboard; the Live monitor check above owns model traffic. | Not starting `--monitor`, `--monitor --off`, the session's harness exiting, lease end, dashboard restart, or the failure and idle bounds in [the Live monitor](#the-live-monitor) | `test_terminal_monitor.SpawnTest.test_a_person_s_source_and_frozen_holders_detach_without_inherited_pipes`; `test_terminal_monitor.AncestorTest.test_a_person_s_nearest_claude_ancestor_is_bound_to_its_start_time`; `test_terminal_monitor_process.ProcessTest.test_two_people_starting_at_once_share_one_sidecar_and_off_preserves_the_browser`; `test_terminal_monitor_process.ProcessTest.test_a_person_s_hard_killed_harness_leaves_no_detached_holder` |
-| A press for a reading that reads a pull request's CI checks | Your own `gh`, started as a supervised child on a press only, to read one pull request your goal or the session's own records name. GitHub is sent the repository and the pull request number, or, where a pushed branch bound it, the repository and that branch's name, under your own login. For a merge request your goal names by URL, your own `glab` reads it the same way, and the host is sent the project and the merge request number under the login `glab` stored for that host; the checks that come back go to the reading model with the rest of the entries. [Pull request CI reads](#pull-request-ci-reads) owns the bounds. | `--no-ci-read`, the page's switch beside the notice, and the refusals every press meets first (`--no-observer-model`, Pause model calls, the rolling cap) | `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_binding_no_launch`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_flag_no_launch_and_the_page_cannot_lift_it`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_page_setting_off_no_launch` and `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_observer_model_no_launch` patch the process starters to raise, as do `test_ci_read_gitlab.TheLaunchKeepsEverySafeguard.test_a_host_glab_does_not_name_launches_nothing` and `test_ci_read_gitlab.APressOnAnUnconfiguredHostStartsNothing.test_a_goal_url_on_a_host_not_in_glabs_configuration_launches_nothing` for a goal URL on a host glab does not name |
+| A press for a reading that reads a pull request's CI checks | Your own `gh`, started as a supervised child on a press only, to read one pull request your goal or the session's own records name. GitHub is sent the repository and the pull request number, or, where a pushed branch bound it, the repository and that branch's name, under your own login. For a merge request your goal names by URL, your own `glab` reads it the same way, and the host is sent the project and the merge request number under the login `glab` stored for that host; the checks that come back go to the reading model with the rest of the entries. [Pull request CI reads](#pull-request-ci-reads) owns the bounds. | `--no-ci-read`, the page's switch beside the notice, and the refusals every press meets first (`--no-observer-model`, Pause all AI use, the rolling cap) | `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_binding_no_launch`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_flag_no_launch_and_the_page_cannot_lift_it`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_page_setting_off_no_launch` and `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_observer_model_no_launch` patch the process starters to raise, as do `test_ci_read_gitlab.TheLaunchKeepsEverySafeguard.test_a_host_glab_does_not_name_launches_nothing` and `test_ci_read_gitlab.APressOnAnUnconfiguredHostStartsNothing.test_a_goal_url_on_a_host_not_in_glabs_configuration_launches_nothing` for a goal URL on a host glab does not name |
 | The git probe, and the committed-file read of a project's check scripts | One bounded `git` command per session end, and four read-only ones (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`) against the commit a session began on, in a repository you chose; and two more fixed `git` commands (`rev-parse HEAD` and `config --get remote.origin.url`), plus `merge-base --is-ancestor` for a merged pull request, inside an admitted Analyze press that reads a pull request's checks and, at collection and in the Live monitor's estimate, only when a recorded `gh pr checks` or `gh run view --exit-status` poll needs binding, in the session folder and in a directory such a poll ran in. Nothing leaves the machine from any of them, though GitHub is later sent the repository the last one names. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all`; `test_project_script_checks.ADeclaredScriptReadsAsACheck.test_no_git_stops_the_read_so_the_script_is_a_command_again` and `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing` and `test_command_tiers.ACiPollReadsTheSessionFoldersRepository.test_no_git_launches_nothing_for_a_session_holding_a_poll` |
 | The native long-source Git identity probes | `reading_source_collect` supplies the subprocess runner to the existing `ci_read.probe_session` / `git_status.identity` owner: fixed `rev-parse --verify --quiet HEAD` and `config --get remote.origin.url`, with hooks/fsmonitor disabled and optional locks off, in at most four admitted native directories. Each keeps the configured Git timeout (10 seconds by default); the full pair must fit remaining preparation time, with live checkpoints before and after each call. Elapsed work and retained inputs share the source account; Git I/O is not counted as native transcript bytes. Nothing leaves the machine from these probes. | `--no-git`, source cancellation/currentness and preparation/graph limits. Network CI acquisition remains separately governed by `--no-ci-read`. | `test_launch_and_send_pins.TheNativeLongGitIdentityTest.test_native_ci_probe_uses_only_fixed_git_identity_argv`; `test_reading_source_ci.FrozenCiBindingTest.test_current_probe_caps_disabled_missing_identity_and_default_are_explicit`; `test_reading_source_ci.FrozenCiBindingTest.test_current_probe_requires_remaining_timeout_and_checks_cancel_between_git_calls`; `test_reading_source_ci.FrozenCiBindingTest.test_current_input_graph_and_elapsed_probe_work_remain_in_original_allowance` |
 | The Spacedock workflow discovery | `spacedock status --discover`, a fixed read-only command with no shell and a two-second timeout, run in a project root Compass verified. Nothing leaves the machine. [Cockpit dispatch and terminal reads](#cockpit-dispatch-and-terminal-reads) states its bounds. | `--no-spacedock` | `test_launch_and_send_pins.TheSpacedockDiscoveryStartsNothingUnderItsSwitchTest` |
@@ -615,7 +615,7 @@ and [Tool output in a Codex reading](#tool-output-in-a-codex-reading) what a Cod
 `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted and do nothing for one release;
 they will be removed in a later release. They write no grant and need no forwarding on respawn.
 `test_lifecycle.EveryOptOutReachesTheWindowsChildTest.test_compatibility_flags_and_environment_change_nothing`
-binds this compatibility behavior. Pause model calls and `--no-observer-model` stop the calls.
+binds this compatibility behavior. Pause all AI use and `--no-observer-model` stop the calls.
 
 ### What can reach into a session
 
@@ -637,11 +637,11 @@ binds this compatibility behavior. Pause model calls and `--no-observer-model` s
 A stored reading is printed and costs nothing. With none, a first `drift` asks the model for one
 reading, and `drift again` always does: each is one Analyze press through the reading route your
 page would use, charged to the 100-attempt rolling cap, and a second request while a reading of that
-session runs attaches to it and starts none. Pause model calls, and `--no-observer-model` on a
+session runs attaches to it and starts none. Pause all AI use, and `--no-observer-model` on a
 dashboard already running, refuse it as they refuse the page's press, before anything is sent. With
 no dashboard running, the action starts one, and says so, with no launch flags:
 `--no-observer-model`, `--no-ci-read`, `--no-annotations` and any other flag you gave an earlier run
-are not carried over, so only Pause model calls, which is saved, still holds. In Claude Code the
+are not carried over, so only Pause all AI use, which is saved, still holds. In Claude Code the
 skill pre-approves both commands, by the [owner's ruling of
 2026-11-06](docs/design-reading-a-session.md#owner-ruling-2026-11-06-drift-in-the-session-it-reads),
 so no permission prompt asks before a press; a deny rule for either command in your settings stops
@@ -1475,7 +1475,7 @@ persist a session, but it keeps its own local state under `~/.claude`, which Com
 prunes and has not measured. A press passes redacted session text through it once. The Live monitor
 passes the recent window through it about once a minute while a browser or terminal holder drives
 checks, so the same exposure repeats at that cadence. It is accepted rather than solved, because the
-CLI's own storage is outside what Compass controls. Holder heartbeats, Stop, Pause model calls and
+CLI's own storage is outside what Compass controls. Holder heartbeats, Stop, Pause all AI use and
 caps bound the repetition; browser holders also have the 20-minute question and consent deadline. [The Live monitor](#the-live-monitor) owns the rest.
 
 A row's attribution is unverified, as the ask lane's already is. A forged registration cannot make a
@@ -1633,7 +1633,7 @@ invocation carries session-derived text, which is why invariant 1 names it separ
 widening the quota exception to cover it. The consent below is not the quota fetch's: a call a
 reader's action starts runs only on that action, and an unasked check runs only under
 `--unasked-readings` and DEC-18's preconditions. Every kind of call announces itself the first time
-it runs. Pause model calls stops readings, goal summaries and session summaries; Turn off
+it runs. Pause all AI use stops readings, goal summaries and session summaries; Turn off
 summaries stops session summaries alone. `--no-observer-model` refuses all of them for the run, where `--no-usage` is a startup flag
 alone.
 
@@ -1655,8 +1655,8 @@ The bounds, all of which hold together:
     shows the notice again, naming the new destination, rather than a blocking Allow. It is disclosed this way, and
     not left silent like the quota fetch, for a stronger reason: this one spends their capacity
     rather than reading a number.
-  - The master switch. Pause model calls stops Analyze drift, goal summaries and session summaries
-    until Resume model calls. Compass stops sending session text to Claude Code or Codex, so it
+  - The master switch. Pause all AI use stops Analyze drift, goal summaries and session summaries
+    until Resume AI use. Compass stops sending session text to Claude Code or Codex, so it
     uses none of your tokens, and stays paused until you resume. An answer of off already stored
     is kept across upgrades. A running summary stops at its next part and a spawned call is cancelled.
     Turn off summaries affects session summaries alone. While paused, that control stays visible
@@ -1668,7 +1668,7 @@ The bounds, all of which hold together:
   refresh that the reader starts; a document navigation never authorizes a call. Quota consent
   does not authorize sending transcripts. This parameter is not per-user authentication: a local
   process can imitate it. The per-session in-flight gate and prompt and time bounds limit that
-  exposure. Pause model calls stops goal summaries too. No per-run event capability is implemented
+  exposure. Pause all AI use stops goal summaries too. No per-run event capability is implemented
   on this route. Goal calls are not charged to the 100-attempt rolling cap below and have no rolling
   cap of their own: what bounds them is one call in flight per session, the refresh guards, and a
   focused refresh reaching only its session and up to three active child sessions.
@@ -1746,9 +1746,9 @@ narrower press to the same destination does not. Goal summaries use the same
 notice mechanism and are on by default on a focused refresh carrying `observer_model=1`.
 
 The answer and notices live under `COMPASS_HOME` (by default `~/.compass`) in
-`compass-reading-permission.sqlite3`, shared by tabs and respawned daemons. Pause model calls and
+`compass-reading-permission.sqlite3`, shared by tabs and respawned daemons. Pause all AI use and
 `--forget` store an explicit off, block readings, goal summaries and session summaries, and clear their notices, so after
-`--forget` they stay paused until Resume model calls. Resuming shows the notice again on the next call. An off
+`--forget` they stay paused until Resume AI use. Resuming shows the notice again on the next call. An off
 saved by an older build stays off after upgrade; an old Allow reads as on, including an older
 build's Allow given after its own off, which left that off's other rows in place. `--no-observer-model` refuses every model call for the run.
 
@@ -1762,7 +1762,7 @@ Concurrent processes share the transaction bound. A denied or corrupt store fail
 reports the cap, once it is spent, and the earliest time another attempt can be admitted. Turning permission off,
 back on, or forgetting it does not erase unexpired spend timestamps or refill the budget.
 
-SQLite failures while saving Allow or Pause model calls, or admitting an ordinary reading,
+SQLite failures while saving Allow or Pause all AI use, or admitting an ordinary reading,
 log SQLite's error name and numeric code for diagnosis. These warnings contain no exception text,
 database path or reader content; the failed operation still returns `store-unavailable`.
 
@@ -1803,7 +1803,7 @@ An unnamed destination is `""`: two endpoints Compass cannot name are indistingu
 move cannot trigger a new notice. This includes every Windows destination and every Codex base URL
 under `OPENAI_BASE_URL` or `OPENAI_API_BASE`. An unnamed legacy Allow keeps covering every endpoint
 it cannot name, including every destination on Windows. Tool output is not sent where its destination is
-unnamed. Pause model calls and `--forget` revoke all providers; schema triggers also clear notices,
+unnamed. Pause all AI use and `--forget` revoke all providers; schema triggers also clear notices,
 other provider answers and grants when an older build writes its legacy off. The 100-attempt cap
 is shared between providers and reports `daily-cap` when spent.
 
@@ -2133,7 +2133,7 @@ version-3 rows cannot prove which disclosure created them, so the wide consent e
 now 4. Reader-started presses use a renewed notice rather than this legacy Allow bound. This adds
 no transmitted content.
 A verified wider grant survives a narrower Allow only at the same provider and destination;
-Pause model calls still withdraws every tier and tool-output grant without refunding spend. Words-only
+Pause all AI use still withdraws every tier and tool-output grant without refunding spend. Words-only
 consent remains grandfathered under the earlier ruling.
 
 An agent message, cropped or whole, is quoted as one JSON string with the menu heading neutralised, as a check's output
@@ -2192,7 +2192,7 @@ Only loopback peers can authorize a model call, and cross-origin Fetch Metadata 
 The response publishes the disclosure and byte cap. The backend does not treat `usage=1` as
 authorization to send transcript content. Goal summaries honor the notice and durable off switch. Console sends `observer_model=1` on an explicit focused refresh;
 no browser consent card is required. The notice names Codex and its configured destination, and
-Pause model calls or `--no-observer-model` stops the call. Passive refreshes never carry the request.
+Pause all AI use or `--no-observer-model` stops the call. Passive refreshes never carry the request.
 
 Transcript message content is redacted before extraction can clip credential shapes. The complete
 generated prompt, including workflow stage, then goes through `records.redact_secrets` again
@@ -2772,7 +2772,7 @@ passed, ran more than one thing, or whose output is not one failed check's own (
 - The legacy `tool_output_permission` table remains keyed by provider and destination, so an older
   build can still read its explicit grants. Old word-only answers remain distinct from those
   grants. An explicit Allow carrying a stale tool-output destination still answers
-  `409 destination-changed` before writing or spending. Pause model calls and `--forget` clear
+  `409 destination-changed` before writing or spending. Pause all AI use and `--forget` clear
   all grants and notices. A plain reader press needs no grant lookup.
 - `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted no-ops for this release and
   will be removed in a later release. Startup writes no grant, changes no disclosure and prints
@@ -2961,7 +2961,7 @@ intent", settles through `POST /api/annotate` with no `allow` and no `tool_outpu
 "Allow and analyze", with its disclosure, as the press that sends. Superseded by
 [DEC-28](docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts)
 for the consent step and the tool-output allow: the first press runs and shows the notice, and a
-stored off still refuses every press until Resume model calls.
+stored off still refuses every press until Resume AI use.
 
 Keeping your intent and adding a later direction. "Leave it" settles every later direction the
 question quoted, as the `settle_through` field of a `POST /api/annotate` body, which reads nothing
@@ -3305,7 +3305,7 @@ name is repository-controlled text, so a contributor to the pull request chooses
 correction you review and copy, so read it before pasting it into an agent.
 
 The off switches are `--no-ci-read` and a switch on the page, stored as one marker file in
-Compass's state directory. The flag wins over the page. `--no-observer-model`, Pause model calls and
+Compass's state directory. The flag wins over the page. `--no-observer-model`, Pause all AI use and
 the rolling cap refuse the press before anything starts, because the read runs inside the admitted
 job. `--no-git`, a session folder that is not a repository and a missing `git` leave the read without a
 session commit, which could never match the pull request's head, so nothing is launched and the card says
@@ -3378,7 +3378,7 @@ session reads. A terminal cancellation supplies an expected job id; a replacemen
 - Off switch. Turn off summaries, one press from the notice and the card, stops every summary call
   until it is turned back on, and an answer of off already stored survives restart and upgrade.
   It changes neither Analyze's grant nor a goal-summary answer, and it cancels a summary call
-  already running. A stored Pause model calls also refuses every summary call, with the reason
+  already running. A stored Pause all AI use also refuses every summary call, with the reason
   `model-calls-paused`. Its summary switch is disabled while paused and says "Model calls are paused";
   its stored answer is preserved through pause and resume. The first summary shows a
   non-blocking notice naming all the carriers above, Claude Code/Anthropic and the configured
@@ -3419,7 +3419,7 @@ Ruled 2026-10-23 by the owner
 With the switch on and the session on screen, or while a terminal holder keeps the lease, a Haiku
 check of new turns runs about once a minute and produces the live drift level. It is a call the reader starts, under
 [DEC-28](docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts),
-with a `monitor` notice shown before the first charged call. A terminal start checks whether its notice is due without recording it. After admission succeeds and the terminal receipt exists, it records the notice without a model call or charge. A refused start leaves the notice due. If recording fails, the receipt still tells the foreground to print it. The terminal disclosure says checks follow new work, at most about once a minute, and names `spacedock-compass --monitor --off --session claude:ID` from a shell with this session's full id (the published short id when no full id is available), `/compass:compass monitor off` in the session, and Pause model calls. The notice follows the same destination and content-tier rules, including the reset on Pause.
+with a `monitor` notice shown before the first charged call. A terminal start checks whether its notice is due without recording it. After admission succeeds and the terminal receipt exists, it records the notice without a model call or charge. A refused start leaves the notice due. If recording fails, the receipt still tells the foreground to print it. The terminal disclosure says checks follow new work, at most about once a minute, and names `spacedock-compass --monitor --off --session claude:ID` from a shell with this session's full id (the published short id when no full id is available), `/compass:compass monitor off` in the session, and Pause all AI use. The notice follows the same destination and content-tier rules, including the reset on Pause.
 
 - What is sent. The saved goal, and, redacted and clipped first, the person's own messages, the
   agent's replies, the commands of checks with their result, every other command as its masked line
@@ -4648,7 +4648,7 @@ line, its exit status and the last 180 characters of its output, as for a presse
 a run with no result, a CI pass and a command that cannot fail never go, and neither does anything on the Codex
 route, whose stored Allow covers words. The reading's cutoff says only failures were sent. Claude Code runs under
 the owner's 2026-10-02 acceptance and needs no separate grant. Codex sends only with a stored Allow for the
-current destination, checked again at the seam. With no grant, after Pause model calls, under the
+current destination, checked again at the seam. With no grant, after Pause all AI use, under the
 model off switch, or after a destination change, nothing is sent and the skip is logged. The
 session's Drift card shows the grant and a toggle to allow or revoke it, with the words and
 destination disclosed beside it. Attention points to that toggle when a session with a typed goal

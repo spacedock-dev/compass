@@ -1,4 +1,5 @@
-import { act, screen } from '@testing-library/react';
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
+import { act, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { EXCERPTED_DRIFT, PROMPT_LIMITED_DRIFT } from '../../stories/driftCoverage.scenario';
 import { liveMonitorFor } from '../intent/liveMonitor';
@@ -62,6 +63,61 @@ const stored = (extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
+async function evidencePanel() {
+  await openSessionTechnicalTab('Evidence');
+  return within(screen.getByRole('tabpanel', { name: 'Evidence' }));
+}
+
+describe('technical Evidence', () => {
+  it('shows an empty history after a readable annotation lookup', async () => {
+    const page = mountDrift();
+    await page.settle();
+    expect((await evidencePanel()).getByText('No stored check yet.')).toBeVisible();
+  });
+
+  it('shows the annotation store notice when the read was unavailable', async () => {
+    const unreadable = 'Compass could not read compass-annotations.json. Try again later.';
+    const page = mountDrift({ payload: { annotate_unreadable: unreadable } });
+    await page.settle();
+    const evidence = await evidencePanel();
+    expect(evidence.getByText(unreadable)).toBeVisible();
+    expect(evidence.queryByText('No stored check yet.')).toBeNull();
+  });
+
+  it('keeps the caveat when the goal changed after the stored check', async () => {
+    const page = mountDrift({ session: stored(), store: { revision: 4 }, facts: FACTS });
+    await page.settle();
+    const evidence = await evidencePanel();
+    expect(evidence.getByText('Your intent changed after this analysis.')).toBeVisible();
+  });
+
+  it('shows the marked state beside Undo', async () => {
+    const page = mountDrift({ session: stored({ annotation_not_accurate: true }), facts: FACTS });
+    await page.settle();
+    const evidence = await evidencePanel();
+    expect(
+      evidence.getByText(/^Marked inaccurate\./).classList.contains('next-visually-hidden'),
+    ).toBe(false);
+    expect(evidence.getByRole('button', { name: 'Undo' })).toBeVisible();
+  });
+
+  it('counts both stored citations when only one is loaded', async () => {
+    const page = mountDrift({
+      session: stored({
+        annotation_assessment: {
+          ...ASSESSMENT,
+          criteria: { goal: { ...ASSESSMENT.criteria.goal, cites: ['c1', 'older'] } },
+        },
+      }),
+      facts: [FACTS[0]],
+    });
+    await page.settle();
+    const evidence = await evidencePanel();
+    expect(evidence.getByText(/2 entries cited/)).toBeVisible();
+    expect(evidence.getAllByRole('button', { name: /^Show #.* in Activity log/ })).toHaveLength(1);
+  });
+});
+
 describe('a stored reading', () => {
   it("says the answer, then each line by the list's own number, and never a check mark", async () => {
     const page = mountDrift({ session: stored(), facts: FACTS });
@@ -69,6 +125,7 @@ describe('a stored reading', () => {
     await page.settle();
     const result = document.querySelector('[data-next-result]') as HTMLElement;
     expect(result).not.toBeNull();
+    await openSessionTechnicalTab('Check settings');
     expect(textOf('[data-next-reading-allowance]')).toContain(
       'Next Analyze prompt: Allowance unknown.',
     );
@@ -100,7 +157,7 @@ describe('a stored reading', () => {
     ).toBe(true);
     expect(textOf('[data-next-result]')).toContain('1 drift check requested');
     // Under the cap the budget is not mentioned anywhere.
-    expect(document.body.textContent).not.toMatch(/left today/);
+    expect(result.textContent).not.toMatch(/left today/);
     expect(document.querySelector('[data-next-reading-cap]')).toBeNull();
   });
 
@@ -242,10 +299,10 @@ describe('a current result while model calls are paused', () => {
     await page.settle();
     expect(document.querySelector('[data-next-result]')).not.toBeNull();
     /* By role, so a hidden popover node cannot stand in for the visible control. */
-    const resume = screen.getByRole('button', { name: 'Resume model calls' });
+    const resume = screen.getByRole('button', { name: 'Resume AI use' });
     expect(resume.closest('[hidden]')).toBeNull();
     expect(resume.closest('[data-closed]')).toBeNull();
-    expect(screen.queryAllByRole('button', { name: 'Resume model calls' })).toHaveLength(1);
+    expect(screen.queryAllByRole('button', { name: 'Resume AI use' })).toHaveLength(1);
     expect(byAction('reading-ask')?.getAttribute('aria-disabled')).toBe('true');
     expect(document.querySelectorAll('[data-next-cockpit-action="reading-ask"]')).toHaveLength(1);
   });

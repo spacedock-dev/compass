@@ -84,11 +84,6 @@ export function DriftPill() {
         Drift: <strong>{level.label}</strong>
         {model.pillSoFar ? ' so far' : ''}
       </span>
-      {level.monitor ? (
-        <span className="ml-1 text-muted-foreground" data-next-drift-pill-source>
-          Live monitor · Haiku
-        </span>
-      ) : null}
     </Badge>
   );
 }
@@ -191,7 +186,9 @@ export function DriftLevelView() {
       <div className="next-session-drift-live" data-next-drift-level>
         <p className="next-session-drift-live-head">
           {worded ? null : <span className="next-session-drift-level">{level.label}</span>}
-          {level.source ? <span className="next-session-drift-source">{level.source}</span> : null}
+          {level.source && !level.monitor ? (
+            <span className="next-session-drift-source">{level.source}</span>
+          ) : null}
         </p>
         {level.level ? (
           <Fragment>

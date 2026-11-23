@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { act, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { SAMPLE_FRAGMENT } from '../sample/ids';
@@ -16,7 +17,9 @@ async function opened(over: Record<string, unknown> = {}, reply = { ok: true, pr
   });
   await page.settle();
   expect(gets(page)).toHaveLength(0);
-  await press(screen.getByRole('button', { name: 'Long analysis options' }));
+  await openSessionTechnicalTab('Check settings');
+  await press(screen.getByRole('button', { name: 'Long check for very long sessions' }));
+  await page.advance(220);
   await page.settle();
   return page;
 }
@@ -61,7 +64,9 @@ describe('explicit long preview and Start', () => {
       },
     });
     await page.settle();
-    await press(screen.getByRole('button', { name: 'Long analysis options' }));
+    await openSessionTechnicalTab('Check settings');
+    await press(screen.getByRole('button', { name: 'Long check for very long sessions' }));
+    await page.advance(220);
     await page.settle();
     await press(screen.getByRole('button', { name: 'Start long analysis' }));
     await page.settle();
@@ -109,7 +114,9 @@ describe('explicit long preview and Start', () => {
         },
       });
       await page.settle();
-      await press(screen.getByRole('button', { name: 'Long analysis options' }));
+      await openSessionTechnicalTab('Check settings');
+      await press(screen.getByRole('button', { name: 'Long check for very long sessions' }));
+      await page.advance(220);
       await page.settle();
       await press(screen.getByRole('button', { name: 'Start long analysis' }));
       await page.settle();
@@ -195,7 +202,9 @@ describe('explicit long preview and Start', () => {
       },
     });
     await page.settle();
-    await press(screen.getByRole('button', { name: 'Long analysis options' }));
+    await openSessionTechnicalTab('Check settings');
+    await press(screen.getByRole('button', { name: 'Long check for very long sessions' }));
+    await page.advance(220);
     await page.settle();
     await press(screen.getByRole('button', { name: 'Start long analysis' }));
     await page.settle();
@@ -259,7 +268,9 @@ describe('explicit long preview and Start', () => {
   it('ignores a late preview after navigation and never transfers it to the next session', async () => {
     const page = mountDrift({ routes: { '/api/reading-long-plan': () => 'hold' } });
     await page.settle();
-    await press(screen.getByRole('button', { name: 'Long analysis options' }));
+    await openSessionTechnicalTab('Check settings');
+    await press(screen.getByRole('button', { name: 'Long check for very long sessions' }));
+    await page.advance(220);
     await act(async () => {
       page.router.navigate({ view: 'sessions' });
     });
@@ -272,7 +283,8 @@ describe('explicit long preview and Start', () => {
   it('does not offer or fetch long options in view-only mode', async () => {
     const page = mountDrift({ payload: { annotate: false } });
     await page.settle();
-    expect(screen.queryByRole('button', { name: 'Long analysis options' })).toBeNull();
+    await openSessionTechnicalTab('Check settings');
+    expect(screen.queryByRole('button', { name: 'Long check for very long sessions' })).toBeNull();
     expect(gets(page)).toEqual([]);
     expect(readingPosts(page)).toEqual([]);
   });
@@ -286,7 +298,8 @@ describe('explicit long preview and Start', () => {
   it('does not offer or fetch long options in the sample', async () => {
     const page = mountDrift({ hash: SAMPLE_FRAGMENT });
     await page.settle();
-    expect(screen.queryByRole('button', { name: 'Long analysis options' })).toBeNull();
+    await openSessionTechnicalTab('Check settings');
+    expect(screen.queryByRole('button', { name: 'Long check for very long sessions' })).toBeNull();
     expect(gets(page)).toEqual([]);
     expect(readingPosts(page)).toEqual([]);
   });
@@ -321,7 +334,9 @@ describe('explicit long preview and Start', () => {
     await page.settle();
     await press(screen.getByRole('button', { name: 'Find goal' }));
     await page.settle();
-    await press(screen.getByRole('button', { name: 'Long analysis options' }));
+    await openSessionTechnicalTab('Check settings');
+    await press(screen.getByRole('button', { name: 'Long check for very long sessions' }));
+    await page.advance(220);
     await page.settle();
     await press(screen.getByRole('button', { name: 'Start long analysis' }));
     await page.settle();

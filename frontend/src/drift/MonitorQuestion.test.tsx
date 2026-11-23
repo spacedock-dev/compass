@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { json, mountIntent, type RecordedRequest } from '../intent/testing';
@@ -47,6 +48,7 @@ const actions = (server: ReturnType<typeof leaseServer>) =>
 async function monitoring(server = leaseServer()) {
   const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
   await page.settle();
+  await openSessionTechnicalTab('AI use and privacy');
   await act(async () => {
     fireEvent.click(switchButton());
   });
@@ -58,6 +60,7 @@ describe('the question', () => {
     const page = mountSession();
     await page.settle();
     expect(banner()).toBeNull();
+    page.unmount();
     const { page: on } = await monitoring();
     expect(banner()).toBeNull();
     on.unmount();
@@ -239,14 +242,17 @@ describe('the question', () => {
     server.next = () => receipt(true, asking());
     await page.advance(20_000);
     server.next = () => receipt(true, monitorLease({ confirm_by: null, now: 1130 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hide technical details' }));
     button('Yes').focus();
     await act(async () => {
       fireEvent.click(button('Yes'));
     });
     await page.settle();
     expect(banner()).toBeNull();
-    // Its settings are closed here, so the switch cannot take focus: the control that opens them does.
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Drift settings' }));
+    // Technical details are closed, so focus goes to the control that opens them.
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Show technical details' }),
+    );
   });
 
   it('clears and shows the reason’s note, not the unanswered one, when the lease ends another way while it is up', async () => {

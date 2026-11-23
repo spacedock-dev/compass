@@ -181,7 +181,7 @@ export function IntentPanel({
               </div>
               <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
                 <p className="next-session-drift-sub text-body">{DRIFT_SUBTITLE}</p>
-                {/* Drift settings (the live monitor and Pause model calls) and, while calls are paused, Resume:
+                {/* While AI use is paused, Resume AI use:
                     one place in the head of the card they control, never in its body. Placement only: the
                     switch's value and default are unchanged.
                     [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */}

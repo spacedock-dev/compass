@@ -26,7 +26,7 @@ beforeEach(() => {
 /* The copy inside "What is sent", which these tests open: the Drift card head holds another
    (usability review, 2026-10-20). */
 const popoverPause = async (): Promise<HTMLElement> =>
-  (await screen.findAllByRole('button', { name: 'Pause model calls' })).find(
+  (await screen.findAllByRole('button', { name: 'Pause all AI use' })).find(
     (button) => !button.matches('[data-next-focus^="reading-off-head:"]'),
   ) as HTMLElement;
 
@@ -58,7 +58,7 @@ describe('the summaries switch is nested under Pause model calls', () => {
       fireEvent.click(within(region).getByRole('button', { name: label }));
     });
     expect(script.posts).toHaveLength(0);
-    const resume = await screen.findByRole('button', { name: 'Resume model calls' });
+    const resume = await screen.findByRole('button', { name: 'Resume AI use' });
     await act(async () => {
       fireEvent.click(resume);
     });

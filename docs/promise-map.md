@@ -86,16 +86,16 @@ disabled rather than silently missing.
 **We promise:** for each live session, what it is doing now, what it plans next, how far into the
 current turn it is, and an estimate of when that turn ends. It tells you when that changes instead
 of making you poll. The first screen sets your goal or a permitted prompt beside current activity
-and brings recorded departures forward. The session page tells you once what a reading sends and
-where, without steering it for you. Pause model calls stops Analyze drift, goal summaries, session
-summaries and the Live monitor until Resume model calls. Turn off summaries stops session summaries
+and brings recorded departures forward. The session page tells you what a reading sends and where. AI use and privacy in technical
+details keeps the disclosure with exact sizes in bytes. Pause all AI use stops Analyze drift, goal summaries, session
+summaries and the Live monitor until Resume AI use. Turn off summaries stops session summaries
 only; while paused it stays disabled and keeps its saved answer. Open a session, set a goal and
 press Analyze drift. The Goal card's How goals work disclosure explains
 the steps and the limits; with no outcome line, Compass reads your goal's end state; a goal too
 vague to read is refused under the Goal field, with no level for that run. On Claude Code sessions,
 you can turn on the Live monitor from the page or with `--monitor` in a terminal. It says what it sends and how to stop. With no saved goal or outcome lines, a terminal start saves the page's drafted goal and prints its source and the session page URL; with no draft it says why no check can run. About once a minute while you view the session or a terminal holder keeps it on, a Haiku check
-through your own Claude Code gives the level shown in the panel and header, labelled Live monitor ·
-Haiku, and its accuracy check has not been run yet. Until a check returns, or when it is paused,
+through your own Claude Code gives the level shown in the panel and header. AI use and privacy labels its source Live monitor · Haiku,
+and its accuracy check has not been run yet. Until a check returns, or when it is paused,
 capped or fails, the level is the estimate from recorded checks and file paths rather than the
 meaning of your intent. An analysis shows its level, each outcome line against the recorded work and
 what the agent said with its source, where files were written, and why a result is stale. Recorded
@@ -136,7 +136,7 @@ the source disappears. The first qualifying entity trips it once until Rearm; fi
 establish a baseline, skipped stages imply nothing, and notification service acceptance does not
 prove a banner appeared. See [workflow stage conditions](design-tripwires.md).
 
-The Claude Code live monitor is off by default. A browser reload leaves its switch off; a terminal holder runs until stopped or its session or connection ends, without a browser question. `--monitor --off` stops that terminal holder; Pause model calls stops all holders. You can pause from any shell with `--pause-model-calls` or the skill's `pause` action; Resume stays on the board. A browser calls Haiku while you view the session with its tab visible and asks whether you still want it after 20 minutes. Neither raises a notification. A terminal start saves no goal over existing intent or a discard, and makes no check with neither saved intent nor a draft. Saved outcome lines still allow checks. Its checks have limits of their own, 30 per session in a window
+The Claude Code live monitor is off by default. A browser reload leaves its switch off; a terminal holder runs until stopped or its session or connection ends, without a browser question. `--monitor --off` stops that terminal holder; Pause all AI use stops all holders. You can pause from any shell with `--pause-model-calls` or the skill's `pause` action; Resume stays on the board. A browser calls Haiku while you view the session with its tab visible and asks whether you still want it after 20 minutes. Neither raises a notification. A terminal start saves no goal over existing intent or a discard, and makes no check with neither saved intent nor a draft. Saved outcome lines still allow checks. Its checks have limits of their own, 30 per session in a window
 and a rolling 24-hour limit across the board, apart from Analyze's 100 attempts. An analysis result
 keeps the source beside each outcome line, groups written paths by folder, and states whether your words changed or new work
 arrived after it. Both levels are recomputed from the evidence and are never stored.
@@ -212,7 +212,7 @@ estimate reads checks and file paths, not the meaning of your intent; too little
 "Not enough recorded yet"
 ([DEC-26](design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)).
 A reading includes them by default and names them, with their destination, in the notice its
-first press shows; Pause model calls or `--no-observer-model` stops them. Where Compass cannot name
+first press shows; Pause all AI use or `--no-observer-model` stops them. Where Compass cannot name
 that destination it sends none and says so. A recorded pass is what the
 tool reported, never an inspection of the work, and a reading labels it that way; a result the
 record does not carry reads as not recorded rather than as a pass. A command Compass does not
@@ -303,7 +303,7 @@ If a stored Codex grant no longer applies, Attention says "Unasked checks cannot
 why when the server can say, and links the affected sessions without inviting another grant.
 A harness with no session record reader shows why checks cannot run and offers no grant switch
 or Attention permission entry. A stored Codex grant stays revocable there.
-Claude Code needs no separate grant. Revoking Codex permission, Pause model calls and
+Claude Code needs no separate grant. Revoking Codex permission, Pause all AI use and
 `--no-observer-model` stop checks; Analyze and Resume never grant them. On a Claude Code session an unasked
 check also reads the checks and commands that failed, with their output (not a shell call that ran more than one thing: its line and exit status only), so a failing test run against your
 goal can raise a departure while you are away. A check that passed is never sent, because the lane does not

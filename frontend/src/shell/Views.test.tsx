@@ -43,7 +43,9 @@ describe('every top-level view is drawn by its own screen', () => {
     expect(document.querySelector('[data-next-view-body="settings"]')).not.toBeNull();
     expect(page.backend.requests).toContainEqual({ method: 'GET', url: '/api/settings' });
     // With no board this scripted backend answers nothing, so the read fails and says so.
-    expect(screen.getByText('The settings could not be read, so none are shown.')).toBeTruthy();
+    expect(
+      screen.getByText('The prompt limits and update preference could not be read.'),
+    ).toBeTruthy();
   });
 });
 

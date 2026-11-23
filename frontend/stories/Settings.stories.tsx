@@ -215,7 +215,7 @@ export const FailedReadThenTryAgain: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
-      await canvas.findByText('The settings could not be read, so none are shown.'),
+      await canvas.findByText('The prompt limits and update preference could not be read.'),
     ).toBeVisible();
     await expect(canvas.queryByRole('spinbutton')).toBeNull();
     const retry = canvas.getByRole('button', { name: 'Try again' });

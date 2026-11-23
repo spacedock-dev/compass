@@ -1,6 +1,4 @@
-import { LongHistoryControl } from './LongHistoryControl';
 import { LatestLongOutcome } from './LatestLongOutcome';
-import { LongPlanControl } from './LongPlanControl';
 import type { ReactNode } from 'react';
 import { UnaskedPermission } from './UnaskedPermission';
 import { DirectionQuestion } from '../intent/DirectionQuestion';
@@ -52,7 +50,6 @@ import { useFollowCorrection } from './useFollowCorrection';
 import { useRunBoard } from './useRunBoard';
 import { Why } from './Why';
 import { READING_NOT_A_VERIFICATION } from '../intent/logModel';
-import { ReadingAllowance } from './ReadingAllowance';
 
 /* The Drift section's body, in the page's order: the answer in one sentence, the level, the one control (or the question before it, or the
    result that stands in its place), what analysis does, what the session launched, and a reading this build
@@ -191,9 +188,6 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
       <UnaskedPermission key={key} payload={payload} session={session} />
       {readable && job ? null : answer}
       <LatestLongOutcome />
-      <ReadingAllowance route={model.route} />
-      <LongPlanControl key={`long:${model.key}`} board={board} />
-      <LongHistoryControl key={`long-history:${model.key}`} />
       {area}
       <ReadingSection />
     </div>

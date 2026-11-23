@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { clock } from '../src/observed';
@@ -104,11 +105,7 @@ export const CantTellOnEveryLineDrawsNoLevel: Story = {
   }),
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
-    await userEvent.click(
-      await within(drift.querySelector('header') as HTMLElement).findByRole('button', {
-        name: 'Drift settings',
-      }),
-    );
+    await openSessionTechnicalTab('AI use and privacy');
     await userEvent.click(
       await within(document.body).findByRole('switch', { name: 'Live monitor' }),
     );

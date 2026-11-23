@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { check, mountDrift } from '../drift/testing';
@@ -101,7 +102,7 @@ describe('the first view of a session', () => {
     expect(control('held-undo')?.getAttribute('aria-disabled')).not.toBe('true');
   });
 
-  it('keeps Save visible, Clear in the Intent card menu and the monitor behind Drift settings in the Drift card head', async () => {
+  it('keeps Save visible, Clear in the Goal menu and the monitor in technical details', async () => {
     const page = mountSession();
     await settle(page);
     expect(control('held-save')).not.toBeNull();
@@ -115,11 +116,9 @@ describe('the first view of a session', () => {
     await page.settle();
     expect(control('held-clear')).not.toBeNull();
     expect(intent?.querySelector('.next-session-drift-head')).toBeNull();
-    // The switch is inside the settings the head offers, which open over the page, so it is not a node of the head.
-    expect(document.querySelector('.next-session-drift-head')?.textContent).toContain(
-      'Drift settings',
-    );
-    expect(control('live-monitor')).not.toBeNull();
+    expect(control('live-monitor')).toBeNull();
+    await openSessionTechnicalTab('AI use and privacy');
+    expect(control('live-monitor')).toBeVisible();
     expect(text('.next-session-reentry-none')).toBe('');
     type(goalBox(), 'Changed goal');
     expect(control('held-undo')).not.toBeNull();

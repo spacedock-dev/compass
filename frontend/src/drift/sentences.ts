@@ -766,7 +766,6 @@ export const NOTICE_SENT = 'This request sends:';
    new work or a changed intent left behind, Analyze again over a current one. */
 export const RERUN_STALE = 'Check again';
 export const RERUN_CURRENT = 'Analyze again';
-export const SETTINGS = 'Drift settings';
 export const NOTICE_WORDS = "The session's words, without the agent's messages.";
 export const NOTICE_WORDS_AND_MESSAGES = "The session's words and the agent's messages.";
 export const READINGS_OFF_CONSOLE = 'Model calls are paused. Nothing is sent until you resume.';

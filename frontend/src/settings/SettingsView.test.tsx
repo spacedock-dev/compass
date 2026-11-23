@@ -420,13 +420,24 @@ describe('the Settings screen', () => {
       { status: 200, body: { values: {}, limits: 'x' } },
       ok(),
     ]);
-    await mount(server);
-    expect(screen.getByText('The settings could not be read, so none are shown.')).toBeTruthy();
+    render(
+      <SettingsScreen
+        client={server.client}
+        aiUse={<button type="button">Pause all AI use</button>}
+      />,
+    );
+    await flush();
+    expect(screen.getByRole('button', { name: 'Pause all AI use' })).toBeVisible();
+    expect(
+      screen.getByText('The prompt limits and update preference could not be read.'),
+    ).toBeTruthy();
     expect(screen.queryByRole('spinbutton')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await flush();
     // A body without both halves is not one the screen can draw from.
-    expect(screen.getByText('The settings could not be read, so none are shown.')).toBeTruthy();
+    expect(
+      screen.getByText('The prompt limits and update preference could not be read.'),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await flush();
     expect(prompt().value).toBe('256');

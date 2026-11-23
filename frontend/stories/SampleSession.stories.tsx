@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { seeInContext } from './citation';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
@@ -120,7 +121,7 @@ export const LiveMonitorCanToggleInViewOnly: Story = {
   render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
   play: async ({ canvasElement }) => {
     await loaded(canvasElement);
-    await userEvent.click(within(canvasElement).getByRole('button', { name: 'Drift settings' }));
+    await openSessionTechnicalTab('AI use and privacy');
     const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
     await expect(monitor).toHaveAttribute('aria-checked', 'true');
     await userEvent.click(monitor);
@@ -144,6 +145,12 @@ export const MarksFollowThePage: Story = {
     await expect(
       within(canvasElement).getByRole('button', { name: /^(Show|Hide) technical details$/ }),
     ).toHaveAttribute('aria-expanded', 'false');
+    const panel = await openSessionTechnicalTab('Check settings', canvasElement);
+    await expect(
+      panel.getByText('Live check settings are unavailable in this view-only sample.'),
+    ).toBeVisible();
+    await expect(panel.queryByRole('link', { name: 'Settings' })).toBeNull();
+    await expect(panel.queryByText('The check settings could not be read.')).toBeNull();
   },
 };
 
@@ -326,6 +333,11 @@ function pressIsHeld(fixture: keyof typeof VARIANTS, name: RegExp, opener?: stri
         const open = within(canvasElement).getByRole('button', { name: opener });
         open.scrollIntoView({ block: 'center', behavior: 'instant' });
         await userEvent.click(open);
+        await settle();
+        const panel = document.getElementById(open.getAttribute('aria-controls') ?? '');
+        await Promise.allSettled(
+          (panel?.getAnimations() ?? []).map((animation) => animation.finished),
+        );
         await expect(canvasElement.querySelector('[data-sample-held]')?.textContent ?? '').toBe('');
       }
       const press = await waitFor(
@@ -347,6 +359,9 @@ function pressIsHeld(fixture: keyof typeof VARIANTS, name: RegExp, opener?: stri
       await expect(status).toHaveTextContent(HELD);
       // Seen where the press was: the sentence once sat in the banner, thousands of pixels above, and
       // then at the foot of the viewport over the Copy button. It is drawn just under the press now.
+      await waitFor(() =>
+        expect(status.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight),
+      );
       const box = status.getBoundingClientRect();
       const pressed = press.getBoundingClientRect();
       await expect(box.top).toBeGreaterThanOrEqual(0);
@@ -368,12 +383,12 @@ export const TurnOffSummariesIsHeld = pressIsHeld(
   /^Turn off summaries$/,
   'What is sent to Claude Code',
 );
-export const PauseModelCallsIsHeld = pressIsHeld('shipped', /^Pause model calls$/, 'What is sent');
+export const PauseModelCallsIsHeld = pressIsHeld('shipped', /^Pause all AI use$/, 'What is sent');
 export const UpdateSummaryIsHeld = pressIsHeld('appended', /^Update summary$/);
 export const SummarizeAgainIsHeld = pressIsHeld('changed', /^Summarize again$/);
 export const CancelSummaryIsHeld = pressIsHeld('running', /^Cancel$/);
 export const TurnSummariesOnIsHeld = pressIsHeld('summariesOff', /^Turn summaries on$/);
-export const ResumeModelCallsIsHeld = pressIsHeld('paused', /^Resume model calls$/, 'What is sent');
+export const ResumeModelCallsIsHeld = pressIsHeld('paused', /^Resume AI use$/, 'What is sent');
 
 /* A press at the foot of the viewport gets its sentence above it: drawn below, it was off screen and lapsed
    unseen. */

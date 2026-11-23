@@ -298,10 +298,9 @@ describe('notices and the durable off switch', () => {
     });
     const shown = document.querySelector('[data-next-reading-notice]');
     expect(shown).not.toBeNull();
-    /* One beside the notice and the one in Drift settings, which is drawn in every state. */
+    /* The notice keeps its own pause action beside the work it stops. */
     expect(shown?.querySelectorAll('[data-next-cockpit-action="reading-off"]')).toHaveLength(1);
-    expect(document.querySelectorAll('[data-next-cockpit-action="reading-off"]')).toHaveLength(2);
-    expect(document.querySelectorAll('[data-next-focus^="reading-off-head:"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-next-cockpit-action="reading-off"]')).toHaveLength(1);
   });
 
   it('offers one Resume control when the route has no disclosure', async () => {
@@ -445,7 +444,7 @@ describe('notices and the durable off switch', () => {
       'Model calls are paused. Nothing is sent until you resume.',
     );
     expect(readingPosts(page)).toHaveLength(0);
-    expect(byAction('reading-on')?.textContent).toBe('Resume model calls');
+    expect(byAction('reading-on')?.textContent).toBe('Resume AI use');
     await press(byAction('reading-on'));
     await page.settle();
     expect(readingPosts(page)).toHaveLength(1);

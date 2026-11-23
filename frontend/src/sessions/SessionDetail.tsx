@@ -380,7 +380,22 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
           >
             <DeparturesSection />
           </DriftSlot>
-          <SessionTechnicalDetails project={route.project} session={session}>
+          <SessionTechnicalDetails
+            project={route.project}
+            session={session}
+            reports={
+              <div className="flex flex-col gap-3">
+                <h2 className="m-0 text-value font-semibold">
+                  How it ended, reports and notifications
+                </h2>
+                {payload['annotate'] === true ? (
+                  <LandedView landing={observed.landing} disclosureKey={factKey('landed-why')} />
+                ) : null}
+                <CommandReportsView reports={reports} disclosureKey={factKey('command-reports')} />
+                {delivery ? <DeliveryView delivery={delivery} /> : null}
+              </div>
+            }
+          >
             {observed.isNeeds || observed.askKnown ? (
               <SessionMetadata
                 session={session}
@@ -406,15 +421,8 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
             </div>
             {health ? <HealthView health={health} /> : null}
             {tasks ? <TasksView tasks={tasks} /> : null}
-            <CommandReportsView reports={reports} disclosureKey={factKey('command-reports')} />
-            {delivery ? <DeliveryView delivery={delivery} /> : null}
-            {/* The record under Activity log belongs to the annotation store: with it off the page this ports
-              draws neither card nor pointer, and a card claiming an end the store cannot back would be new. */}
             {payload['annotate'] === true ? (
-              <>
-                <LandedView landing={observed.landing} disclosureKey={factKey('landed-why')} />
-                <DeparturesKept disclosureKey={factKey('kept-why')} />
-              </>
+              <DeparturesKept disclosureKey={factKey('kept-why')} />
             ) : null}
           </SessionTechnicalDetails>
         </div>
