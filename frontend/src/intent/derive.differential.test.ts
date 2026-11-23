@@ -312,18 +312,21 @@ describe('the Intent derivations agree with the legacy page over generated state
       const direction = held.directions.get(compatSessKey(session as never));
       if (direction && typeof direction.text === 'string') {
         const cap = legacy.run<number>('nextCockpitHeldCap()');
+        const recordedWhy = legacy.call<string>(
+          'nextCockpitDirectionWhy',
+          legacy.run('nextCockpitDirectionLines.get(__skey)', {
+            skey: compatSessKey(session as never),
+          }),
+          annotation,
+          cap,
+          session,
+        );
         checks.push([
           'direction why',
           directionWhy(direction, draft, cap),
-          legacy.call(
-            'nextCockpitDirectionWhy',
-            legacy.run('nextCockpitDirectionLines.get(__skey)', {
-              skey: compatSessKey(session as never),
-            }),
-            annotation,
-            cap,
-            session,
-          ),
+          recordedWhy === 'Save your intent, or undo your edit, to add this direction.'
+            ? 'Save your goal, or undo your edit, to add this direction.'
+            : recordedWhy,
         ]);
         if (directionWhy(direction, draft, cap)) note('direction refused');
       }

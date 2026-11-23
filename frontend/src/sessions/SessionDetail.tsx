@@ -279,7 +279,10 @@ function Header({
 
 function SessionFigures({ session }: { readonly session: Row }) {
   const { model } = useDrift();
-  return <AtAGlance figures={sessionFigures(session, model.entryCount, model.entriesPartial)} />;
+  const { entryCount, recordComplete } = model;
+  // A complete record can establish zero. Retained entries from a partial read only give a floor.
+  const recorded = recordComplete ? (entryCount ?? 0) : entryCount || null;
+  return <AtAGlance figures={sessionFigures(session, recorded, !recordComplete)} />;
 }
 
 export interface SessionDetailProps {

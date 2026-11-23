@@ -44,7 +44,7 @@ text with a visible legend. At a glance owns token figures and distinguishes a l
 from a complete entry count. The detail comparison omits the old token footer on both sides.
 The Project card shows the sample project name as text. The recorded Needs you comparison
 omits Coming next, which now appears in the session's Right now card. The word comparison
-asks for Goal in the check hint and save feedback, and Agent in the first-layer block report.
+asks for Goal in the check hint, direction feedback and save feedback, and Agent in the first-layer block report.
 The Storybook word audit checks every mounted Sessions and Session view and keeps exact
 test-only allowances for inherited strings. The Sample story marks quoted labels and repo
 paths as authored. The recorded fixtures stay unchanged.

@@ -123,9 +123,7 @@ describe('the revision a press names is the one the card was drawn against', () 
     await press(byAction('reading-ask'));
     await page.settle();
     expect(readingPosts(page)).toEqual([]);
-    expect(textOf('.next-session-drift')).toContain(
-      'your intent changed since this page was drawn',
-    );
+    expect(textOf('.next-session-drift')).toContain('your goal changed since this page was drawn');
   });
 });
 

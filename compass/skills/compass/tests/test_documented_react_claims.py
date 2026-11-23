@@ -70,14 +70,13 @@ class TheAttentionHeadingsTheSkillNamesAreTheOnesTheBoardDrawsTest(unittest.Test
             "the Attention headings moved; the skill body and `AttentionView.tsx` have to move together",
         )
 
-    def test_the_headings_are_the_six_named_in_the_redesign(self) -> None:
+    def test_the_headings_are_the_five_named_in_the_redesign(self) -> None:
         # Pinned by name so an empty derivation on both sides cannot pass the equality above.
         self.assertEqual(
             {
                 "Waiting on you",
                 "Worth a look",
                 "Ready to wrap up",
-                "Coming next",
                 "Also at risk, off the session count",
                 "Not on this board yet",
             },
