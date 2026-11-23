@@ -11,9 +11,9 @@ Run as many coding agents as you like. Compass tells you which ones need you, wh
 and when it is safe to walk away. One local screen, every harness you use, and nothing leaves your
 machine that you cannot switch off.
 
-Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
-goal and press `Analyze drift`. The Goal card's `How goals work` disclosure explains the steps, the reading's limits and what a goal with no expected outcome line is
-read against. The Claude reader's
+Open a session, set a goal and press Check progress (Analyze drift) to compare its recorded work
+with your goal. How goals work on the Goal card explains what the check reads and where it stops,
+including what it can read against when you haven't described what done looks like. The Claude reader's
 accuracy check has not passed, and its latest correction is unmeasured, so read a level as an
 account of the evidence, not a measurement.
 
@@ -38,11 +38,11 @@ This repo contains one plugin, `compass`, the agent cartography dashboard skill.
 
 Before 2.0, `--unasked-readings` checked only Codex sessions, and it waited for a Codex permission first. Since 2.0 it also checks Claude Code sessions, and those checks need no separate permission. If you started Compass with the flag before 2.0, Claude Code sessions are now included.
 
-Each Claude Code check sends the goal you typed, your messages in that session, and any check or command that failed, with its exit status and the end of its output. It does not send the agent's replies or the checks that passed. Compass runs the Claude Code CLI on your machine, so the words reach Anthropic under your own Claude Code sign-in and count against your capacity. [SECURITY.md](SECURITY.md#unasked-readings) states the exact limits, and [MANUAL.md](MANUAL.md#model-use-and-quota) owns the flag.
+Each Claude Code check sends the goal you typed, your messages in that session, and any check or command that failed, with its exit status and the end of its output. It does not send the agent's replies or the checks that passed. Compass runs the Claude Code CLI on your machine, so the words reach Anthropic under your own Claude Code sign-in and count against your AI allowance. [SECURITY.md](SECURITY.md#unasked-readings) states the exact limits, and [MANUAL.md](MANUAL.md#model-use-and-quota) owns the flag.
 
 The flag is still off by default. Pause all AI use in the page, or start Compass with `--no-observer-model`, to stop checks.
 
-Compass also keeps session summaries in `compass-summaries.json`, in its home folder (`COMPASS_HOME`, or `.compass` in your home directory). A file this build cannot read, such as one an unreleased build wrote, reads as unavailable, and saves never overwrite it. To remove it, stop the dashboard and run `--forget`. That also deletes your observation history, recorded session ends and all stored summaries, and it pauses model calls and turns summaries off, so read its row in [MANUAL.md](MANUAL.md#history-and-annotations) first.
+Compass also keeps session summaries in `compass-summaries.json`, in its home folder (`COMPASS_HOME`, or `.compass` in your home directory). A file this build cannot read, such as one an unreleased build wrote, reads as unavailable, and saves never overwrite it. To remove it, stop the dashboard and run `--forget`. That also deletes your observation history, recorded session ends and all stored summaries, and it pauses all AI use and turns summaries off, so read its row in [MANUAL.md](MANUAL.md#history-and-annotations) first.
 
 ---
 
@@ -164,12 +164,12 @@ line. See [HOW_TO_USE.md](HOW_TO_USE.md) for one procedure per task.
 | `compass` | Live agent-cartography dashboard: maps sessions, subagents, task progress, ETAs, and token rate across ten coding-agent harnesses, with input-wait notifications (native on macOS, browser notifications elsewhere), plus terminal reads and model-call controls | `/compass:compass` |
 
 In Codex, invoke it as `$compass`. In any harness you can also just ask: "open compass" or "monitor my agents".
-Add `sessions` or `sessions waiting` (`/compass:compass sessions`, `$compass sessions`) to list your sessions in the session you typed it in, without opening the dashboard (measured on Claude Code; [COMPATIBILITY.md](COMPATIBILITY.md) has the rest). In Claude Code, `/compass:compass project` reads this session's project label, its other sessions and the project brief. `/compass:compass drift` prints that session's drift reading, asking for one when none is stored, and `drift again` asks for a new one; each request counts against the daily reading limit. The answer becomes part of that session's context and goes to its model provider: [what that includes](SECURITY.md#what-can-reach-into-a-session).
+Add `sessions` or `sessions waiting` (`/compass:compass sessions`, `$compass sessions`) to list your sessions in the session you typed it in, without opening the dashboard (measured on Claude Code; [COMPATIBILITY.md](COMPATIBILITY.md) has the rest). In Claude Code, `/compass:compass project` reads this session's project label, its other sessions and the project brief. `/compass:compass drift` prints that session's progress reading, asking for one when none is stored, and `drift again` asks for a new one; each request counts against the daily reading limit. The answer becomes part of that session's context and goes to its model provider: [what that includes](SECURITY.md#what-can-reach-into-a-session).
 
-Claude Code also has `goal` to read your intent, `summary` to read cited phases (starting a summary
+Claude Code also has `goal` to read your goal, `summary` to read cited phases (starting a summary
 only when none is stored), `summary update` and `summary again` to request more, `monitor on` and
-`monitor off` to control a terminal Live monitor, and `pause` and `summaries off` to stop model calls
-or summaries. [Ask Compass from inside a session](HOW_TO_USE.md#ask-compass-from-inside-a-session)
+`monitor off` to control a terminal Live monitor, and `pause` and `summaries off` to pause all AI use
+or turn off session summaries. [Ask Compass from inside a session](HOW_TO_USE.md#ask-compass-from-inside-a-session)
 explains which actions can spend and how they are guarded.
 
 ## 3. How it works
@@ -180,8 +180,8 @@ already write, never changes them, and serves one dashboard at `http://127.0.0.1
 Five kinds of traffic can leave your machine, and you can switch off each one. The quota reading
 is on by default: it sends your login token to your vendor, and no session content. Model calls, CI
 check reads and counts-only reach nudges start from something you do. The daily release lookup
-is also on by default; the **Turn off daily update checks** checkbox in Settings or `--no-update-check`
-turns it off. It requests the plain release URL with no query string and sends only a
+is also on by default; turn off **Look for new versions once a day** in Settings or run with
+`--no-update-check` to stop it. It requests the plain release URL with no query string and sends only a
 `compass/<version> (<os>; <arch>[; ci][; internal])` User-Agent beyond urllib's standard headers,
 with no identifier or session content. The route counts the lookup itself from its headers.
 spacedock.md counts checks in PostHog without an IP and in Plausible
@@ -190,13 +190,13 @@ derives approximate location from the address. See
 [SECURITY.md](SECURITY.md#scope) for all five. The server listens only on `127.0.0.1`. `--host`
 exposes it to your network with no password, so read that section before you use it.
 
-[How Compass works](docs/how-it-works.md) walks through a drift check on the sample session, lists
-what can leave your machine and how to stop it, and explains the dashboard's tabs. To see a finished
-drift check first, open "See an example" above the Sessions list or on Help.
+[How Compass works](docs/how-it-works.md) walks through a progress check in the example, lists
+what can leave your machine and how to stop it, and explains the dashboard's tabs. To see a
+completed check on the board, choose See an example above the Sessions list or in Help.
 
 The [skill body](compass/skills/compass/SKILL.md) holds terminal actions and start, status and stop.
 Its bundled references cover [data sources and session states](compass/skills/compass/reference/dashboard.md),
-[Intent and drift](compass/skills/compass/reference/intent-and-drift.md),
+[Goals and progress checks](compass/skills/compass/reference/intent-and-drift.md),
 [notifications](compass/skills/compass/reference/notifications.md), and
 [options and troubleshooting](compass/skills/compass/reference/options.md).
 

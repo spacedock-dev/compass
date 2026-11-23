@@ -23,15 +23,16 @@ Four steps, and only the first two are required.
 2. Say "open compass". A local dashboard opens at `http://127.0.0.1:4553`, and it maps every
    harness it finds on the machine regardless of which one launched it. No account, no cloud
    service, no repository token. The server binds IPv4 loopback and nothing else.
-3. Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
-   goal and press `Check progress`. The Goal card's `How goals work` disclosure explains the steps, the
-   reading's limits and what a goal with no expected outcome line is read against.
+3. Open a session, set a goal and press Check progress to compare its recorded work with your
+   goal. How goals work on the Goal card explains what the check reads and where it stops,
+   including what it can read against when you haven't described what done looks like.
 
    Sessions separates active work from recent history and gives each active
    session its goal beside what it is doing now, plus where it is, what it does next, and whether
    it is blocked. A recorded departure brings a session forward without counting it as active.
    The orientation and how-to stay visible after a session has been checked. Projects, one click
-   away, groups the sessions by the label their harness publishes, with active projects first.
+   away, groups the sessions by the label their harness publishes and lists the projects under
+   Active today or No recent activity.
 4. Optionally connect two things, both one-time and both documented in
    [HOW_TO_USE.md](../HOW_TO_USE.md): the lifecycle hooks that let a blocked session raise a
    desktop notification, and the status-line hook that gives Antigravity its working state and
@@ -60,7 +61,7 @@ the active-versus-recent split that shipped with the session operations board in
 From any shell, `spacedock-compass --sessions` lists the running sessions, with recent ones under
 their own heading, and `--sessions waiting` lists only what waits on you. It reads the board's own
 snapshot and uses the board's own groups and words, so it says what the board says and no more: no
-drift level on any row, a duration only where the board states one, "Stop observed" and never
+progress level on any row, a duration only where the board states one, "Stop observed" and never
 "unread", and a re-entry command only for Claude Code and Codex sessions that publish an id. It
 needs the dashboard running, and says so and exits non-zero when it is not. It prints nothing the
 board would not. The [manual](../MANUAL.md#starting-and-inspecting-an-instance) has the options.
@@ -127,17 +128,19 @@ paused it is refused without changing the saved answer.
 Backed by the current-turn elapsed and ETA estimate with its progress bar, the warning that fires
 when a request runs or is projected to run past fifteen minutes, a pill per subagent carrying its
 measured elapsed, its own model and its own liveness, with a teammate that has finished or gone
-quiet still listed rather than dropped, session detail that leads with a drift block setting your goal beside the agent's current activity, the recent token output rate, the model each
-session is running on, desktop notifications on a state change, and a goal and an expected outcome checklist
+quiet still listed rather than dropped, the session page's Goal and Is it on track? cards beside
+the agent's current activity, the recent token output rate, the model each session is running on,
+desktop notifications on a state change, and a goal and an expected outcome checklist
 you can type against one session and read back beside the goal its harness published, each on its
-own row with its own source, alongside every observed entry naming that session. Course also saves
-one stage-entry condition per observed Spacedock workflow, with rule management in Projects after
+own row with its own source, alongside every observed entry naming that session. Show technical
+details on the project page also lets you save one stage-entry condition per observed Spacedock
+workflow, with rule management in Projects after
 the source disappears. The first qualifying entity trips it once until Rearm; first sight and gaps
 establish a baseline, skipped stages imply nothing, and notification service acceptance does not
 prove a banner appeared. See [workflow stage conditions](design-tripwires.md).
 
-The Claude Code live monitor is off by default. A browser reload leaves its switch off; a terminal holder runs until stopped or its session or connection ends, without a browser question. `--monitor --off` stops that terminal holder; Pause all AI use stops all holders. You can pause from any shell with `--pause-model-calls` or the skill's `pause` action; Resume stays on the board. A browser calls Haiku while you view the session with its tab visible and asks whether you still want it after 20 minutes. Neither raises a notification. A terminal start saves no goal over existing intent or a discard, and makes no check with neither saved intent nor a draft. Saved outcome lines still allow checks. Its checks have limits of their own, 30 per session in a window
-and a rolling 24-hour limit across the board, apart from Analyze's 100 attempts. An analysis result
+The Claude Code Live monitor is off by default. A browser reload leaves its switch off; a terminal holder runs until stopped or its session or connection ends, without a browser question. `--monitor --off` stops that terminal holder; Pause all AI use stops all holders. You can pause from any shell with `--pause-model-calls` or the skill's `pause` action; Resume AI use stays on the board. A browser calls Haiku while you view the session with its tab visible and asks whether you still want it after 20 minutes. Neither raises a notification. A terminal start saves no goal over existing intent or a discard, and makes no check with neither saved intent nor a draft. Saved outcome lines still allow checks. Its checks have limits of their own, 30 per session in a window
+and a rolling 24-hour limit across the board, apart from the 100 attempts for Check progress. An analysis result
 keeps the source beside each outcome line, groups written paths by folder, and states whether your words changed or new work
 arrived after it. Both levels are recomputed from the evidence and are never stored.
 Once a reading exists, the session header offers Check progress again for current and stale
@@ -152,7 +155,7 @@ level, each outcome line's state and source, each departure with your words, its
 the reason, earlier departures, why it is stale, and, run in your own terminal, the correction to
 copy. Under the [spend rule](../SECURITY.md#drift-commands-and-typed-consent), a stored reading costs
 nothing. With none, or with `--drift again`, it prints the route's allowance, asks for one reading
-as Analyze does and waits for it, and Ctrl+C cancels a reading it started. It settles no later message you sent; it
+as Check progress does and waits for it, and Ctrl+C cancels a reading it started. It settles no later message you sent; it
 says how many it left and that the session page can answer them. `--session codex:SESSION_ID`
 prints a Codex session's reading the same way, with no level and no correction, as its page shows
 none. Another harness gets its session page's address. The [manual](../MANUAL.md#options) has the details. Inside a Claude Code session,
@@ -164,7 +167,7 @@ and where to copy it; a Codex reading has no correction. Each reading goes to th
 session's model provider, as
 [SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) sets out.
 
-The Intent log brings every board session and retained annotation/discard record into one list,
+Goal history brings every board session and retained annotation/discard record into one list,
 with typed goals/output, cached deterministic goals and published workflow titles labeled
 separately. Sessions with no goal or project still appear. An unavailable annotation store does
 not hide the board or its other sources. Saved derivations carry their observation time, or an
@@ -174,7 +177,7 @@ attachment; a missing title or a disabled source supplies no goal. Withdrawal st
 words and readings, while separately labeled independent sources can remain.
 
 Claude Code and Codex after-tool hooks add fixed command-shape reports to session detail and
-Attention. They show what a hook matched while you were away; they do not establish success.
+Needs you. They show what a hook matched while you were away; they do not establish success.
 Reports are incomplete, may repeat, and last only for the current dashboard run. Missing hooks
 and unmatched commands can look the same. The exact forms and limits belong to the security
 section linked below.
@@ -208,7 +211,7 @@ cannot reassure while a subagent's rollout could not be read, and a session reco
 codex-cli says its commands are not read. A pass older than the part of
 the work record read cannot reassure, and incompleteness alone establishes no departure. The live
 estimate reads checks and file paths, not the meaning of your intent; too little evidence reads
-"Not enough recorded yet"
+"Too early to tell"
 ([DEC-26](design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)).
 A reading includes them by default and names them, with their destination, in the notice its
 first press shows; Pause all AI use or `--no-observer-model` stops them. Where Compass cannot name
@@ -231,15 +234,15 @@ has to match its commit
 GitHub is sent the repository and the number, or, where a pushed branch is what bound it, the repository and that branch's name, and nothing else of the session. Checks still running,
 no completed check, a pull request head past the session's commit, and a cancelled check each settle
 nothing, and skipped checks count as neither a pass nor a failure. Where GitHub names required checks, only those
-count, and the card says how many other checks it left out. `--no-ci-read` and the switch beside
-the notice turn the read off, and a missing or signed-out `gh` is said beside the reading. The same
+count, and the card says how many other checks it left out. `--no-ci-read` and Read pull request status in Settings can
+turn the read off, and a missing or signed-out `gh` is said beside the reading. The same
 read works for a GitLab merge request your goal names by its URL, through your own `glab` and only on a
 host `glab`'s own configuration already names; a session record never binds a merge request, because
 what Claude Code writes for one is not measured. Otherwise only `github.com` is read, and the Live
 monitor, the unasked lane and every refresh never read it.
 Session summaries are Claude Code only, and the outline beside them covers Claude Code and Codex.
 A summary has its own cap of 200 model calls in a rolling twenty-four hours, so it never spends
-Analyze's 100, and each one stops at 37 calls, 768 KiB sent and ten minutes.
+the 100 attempts for Check progress, and each one stops at 37 calls, 768 KiB sent and ten minutes.
 
 ### P3. Is anything waiting on me?
 
@@ -277,12 +280,12 @@ for you. The one shape it is allowed is the session asking and Compass
 answering, as the [ask lane design](design-ask-lane.md) describes.
 
 If you already run a Claude Code status line, `spacedock-compass --footer` can add how many other
-sessions are waiting on you. It counts by the same rule as the board's Attention queue and
+sessions are waiting on you. It counts by the same rule as the board's Needs you queue and
 `--sessions waiting`: questions an agent put to you through Compass count, and a waiting session
 the board draws as a risk row does not. The number is left out when nothing could be measured and is
 never shown as zero, and a harness that cannot report a wait is named on the line instead of being
 counted as quiet. It needs the dashboard running and reads a small file the dashboard writes, so it
-can be about a minute behind. It shows the page's drift level while the Live monitor is on for that
+can be about a minute behind. It shows the page's progress level while the Live monitor is on for that
 session, and says when no level is available yet. `spacedock-compass --monitor` turns the monitor on
 for the session you run it in, or the session page does. [How to add it](../HOW_TO_USE.md#show-waiting-sessions-and-quota-in-the-claude-code-status-line)
 to a status line you already have.
@@ -297,13 +300,13 @@ most damaging and it is worth nothing to someone who is not at the desk. It send
 with `--unasked-readings` on. Claude Code checks its own sessions, Codex checks its own, and Pi
 and Antigravity prefer Claude Code, falling back only when the preferred provider is unavailable or
 unqualified. Codex needs permission for the current destination from "Allow Codex to run unasked
-checks" in the session's Is it on track? card; Attention points to it when saved typed goals are waiting.
-If a stored Codex grant no longer applies, Attention says "Unasked checks cannot run", explains
+checks" in the session's Is it on track? card; Needs you points to it when saved typed goals are waiting.
+If a stored Codex grant no longer applies, Needs you says "Unasked checks cannot run", explains
 why when the server can say, and links the affected sessions without inviting another grant.
 A harness with no session record reader shows why checks cannot run and offers no grant switch
-or Attention permission entry. A stored Codex grant stays revocable there.
+or Needs you permission entry. A stored Codex grant stays revocable there.
 Claude Code needs no separate grant. Revoking Codex permission, Pause all AI use and
-`--no-observer-model` stop checks; Analyze and Resume never grant them. On a Claude Code session an unasked
+`--no-observer-model` stop checks; Check progress and Resume AI use never grant them. On a Claude Code session an unasked
 check also reads the checks and commands that failed, with their output (not a shell call that ran more than one thing: its line and exit status only), so a failing test run against your
 goal can raise a departure while you are away. A check that passed is never sent, because the lane does not
 reassure. It stops at a per-session
@@ -312,14 +315,13 @@ checked and a session checked and found clean are the two things you cannot tell
 board. The sentence is about your words rather than about the machine's history, so a check whose
 words you have since taken out of the boxes reads as not checked against what you are asking for
 now. And turning the switch off stops new checks without retracting the old ones: what was already
-raised still shows on the session, in the review and in the Intent log, under a line saying nothing
+raised still shows on the session, in the review and in Goal history, under a line saying nothing
 new is being checked.
 
-What was raised is reviewable rather than only raised. The session page's drift block collects, in
-one place, the departures a reading you asked for produced, the departures the checks run while you
-were away produced, what became of the raise, and the figures, with a tmux raise beside each
-departure where it exists; the Intent log carries a line per session
-saying what was raised against the words on it, and keeps that after the row leaves the board.
+The session page's Is it on track? card and Evidence show the departures from checks you asked
+for and from checks run while you were away. The page shows how each departure was raised and the
+figures behind it, with a tmux raise beside each departure where one exists. Goal history keeps a
+line per session saying what was raised against the words on it, even after the row leaves the board.
 Where it stops is the follow-up. What came after a raise is derived from later checks in the same
 store, so the common answer is that no later check has read the session, and the board says that
 rather than leaving a blank that would read as nothing having gone wrong. Where a later check did
@@ -393,11 +395,11 @@ there, a way to mark a session handled so it leaves the board, and the
 end-of-session git probe that shipped in 0.19. And, since the annotation store landed, by what you
 typed the session should achieve and produce: the words are kept beside the two end axes, so a
 session that ended can be read against what was asked of it rather than only against whether it
-stopped. The Intent log keeps them after the row leaves the board. Taking them back is one act
+stopped. Goal history keeps them after the row leaves the board. Taking them back is one act
 and it is on the board: `discard everything` deletes every revision, deletes any reading of them and the session's summary,
 and withdraws the quotations from anything raised against them. What it leaves is the fact that a
 check ran and a record of the act itself, carrying no text: the moment you discarded, and the last
-revision number that went. That record is why the Intent log still lists the session afterwards,
+revision number that went. That record is why Goal history still lists the session afterwards,
 and why the board can tell a session you discarded from one nobody ever typed against.
 
 Where it stops: nothing reads your words for you at the end. The two axes say what ended and who

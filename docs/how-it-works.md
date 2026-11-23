@@ -7,24 +7,28 @@ Codex and Gemini CLI) by reading the session records they already write.
 
 To try it, install the plugin (see the [README](../README.md#1-how-to-set-up)), then ask your agent to
 "open compass" or run `/compass:compass`. The dashboard opens at `http://127.0.0.1:4553/`. To see what
-a finished progress check looks like before you run one, open "See an example" above
-the Sessions list.
+a completed progress check looks like before you run one, choose See an example above the
+Sessions list or in Help. Not now hides the invitation above the list.
 
-## Checking a session for drift
+## Checking whether a session is on track
 
-Drift is when an agent's work moves away from what you asked for: it changes files you did not
-want touched, stops short, or says it finished when its own record shows otherwise. Compass checks
-for drift by comparing your goal with what the session recorded: its messages, the checks and
-commands it ran, and the files it wrote.
+A session goes off course when an agent's work moves away from what you asked for. It might
+change files you wanted left alone, stop short, or say it finished when its own record shows
+otherwise. Compass calls this drift. Check progress compares your goal with the messages, tests
+and commands the session recorded and the files it wrote.
 
 In the sample session, the agent reported the milestone 97.3% complete and later found a
 blocker. The reader then said an issue was still open. Is it on track? shows Slightly off
 course. Follow the quotes link to see the entries behind the finding and the record that
 contradicts the agent's claim that the build work was done and merged.
 
+![The sample session's Is it on track? card shows Slightly off course, one departure and a link to three quotes.](images/how-it-works-progress-check.png)
+
+In the view-only example, Is it on track? shows the recorded departure. The quotes open Evidence.
+
 ```mermaid
 flowchart LR
-    A["Write a goal<br/>and outcome lines"] --> B["Press<br/>Check progress"]
+    A["Set a goal<br/>and describe what done looks like"] --> B["Press<br/>Check progress"]
     B --> C{"Did the work<br/>depart from the goal?"}
     C -- "yes" --> D["Read each departure<br/>and the entries it cites"]
     D --> E["Steer back: copy the correction<br/>and paste it into the session"]
@@ -41,29 +45,30 @@ A check goes like this:
 2. Press Check progress. This sends the session's content to a model (see
    [what can leave your machine](#what-can-leave-your-machine)).
 3. Is it on track? shows On track, Slightly off course, Off course or Way off course when
-   the record supports a level. On track means Compass found no departure in what it read.
+   the record supports a level. On track means "No departure found in what Compass read".
    If Compass found a departure but has no level, the card shows the finding. Codex checks
    always use that approach for departures. The quotes link counts the entries cited by the
-   finding and opens Evidence, with focus on the first available quote.
+   finding and opens Evidence under Show technical details, with focus on the first available
+   quote.
 4. When Steer back is available, it opens an editable message based on your goal or a saved
    line describing what done looks like. Use Copy message and paste it into the session
    yourself. Compass never sends it for you.
 5. Once a reading is saved, the button reads Check progress again. New work, a changed goal
-   or a withdrawn reading can put the check out of date. If a newer check fails to produce a
+   or a withdrawn reading can make the card show Out of date. If a newer check fails to produce a
    reading, the card identifies any finding it shows from the earlier check. Uses AI stays
-   beside the check and shows the remaining count when 10 or fewer daily checks are left.
+   beside the button. The line "N of 100 daily checks left" appears when 10 or fewer remain.
 
 Read a level as an account of the evidence, not a verdict you can rely on: the reader's accuracy
 check has not passed. A citation such as `[41]` lets you see the evidence for yourself. Hover over it
 or focus it to read that entry's own words, or choose "See in context of the session" to jump to it in
-the session's full activity.
+the session's Activity log.
 
 ## A session's page
 
 The session header shows its name, current state and Check progress. At 1100 px and wider,
-Goal, Is it on track? and What's happened so far are on the left. Right now, At a glance
-and Project are on the right. On narrower windows, Right now follows Is it on track?
-before the summary.
+the header spans both columns. Goal, Is it on track? and What's happened so far are on the left.
+Right now, At a glance and Project are on the right. On narrower windows, the cards run in this
+order: Goal, Is it on track?, Right now, What's happened so far, At a glance and Project.
 
 - Goal shows your saved goal and what done looks like. How goals work explains what Compass reads.
 - Is it on track? shows the progress answer and the actions you can take.
@@ -128,7 +133,7 @@ Code session, turning on the Live monitor, or setting an endpoint URL.
 | Quota reading | On by default | Your login token to your vendor, so the page can show quota windows. No session content. The Anthropic login covers any harness signed in to the same Claude subscription; Cursor is read on macOS only. | The switch in the page, or `--no-usage` |
 | Model calls | When you press a button that needs one, open a finished Claude Code session, or turn on the Live monitor | Session content, through the Claude Code or Codex CLI already on your machine, signed in as you | Pause all AI use, or `--no-observer-model` |
 | CI checks | When you press Check progress on a session tied to a pull request (or a GitLab merge request your goal names by its URL, on a host `glab` already knows), in a session whose folder is known | The repository and the pull request number, or the branch name, through your own `gh` or `glab`. The checks it reads go on to the reading model. Where GitHub names the required checks, only those count. | Read pull request status in Settings, `--no-ci-read`, or anything that stops model calls |
-| Release lookup | On by default; after server start and at most once per UTC day per Compass home | Only a `compass/<version> (<os>; <arch>[; ci][; internal])` User-Agent beyond urllib's standard headers to spacedock.md, with no query string. The route counts the lookup itself from its headers. The site counts checks in PostHog without an IP and in Plausible with the caller's IP and user agent; CI-marked checks are not counted. Plausible stores neither and derives approximate location from the address. No identifier or session content. | Turn off Look for new versions once a day in Settings, or use `--no-update-check` |
+| Release lookup | On by default; after server start and at most once per UTC day per Compass home | Only a `compass/<version> (<os>; <arch>[; ci][; internal])` User-Agent beyond urllib's standard headers to spacedock.md, with no query string. The route counts the lookup itself from its headers. The site counts checks in PostHog without an IP and in Plausible with the caller's IP and user agent; CI-marked checks are not counted. Plausible stores neither and derives approximate location from the address. No identifier or session content. | Switch off Look for new versions once a day in Settings, or run with `--no-update-check` |
 | Reach nudges | Only after you set an endpoint URL | Counts only, such as how many sessions are waiting on you, to the endpoint you set | Leave the URL unset, or `--no-reach` |
 
 [SECURITY.md](../SECURITY.md#scope) is the full account of all five, and its
@@ -156,7 +161,7 @@ your machine.
 | You press Check progress | Claude Code for a Claude Code session (Codex if `claude` is not installed), Codex for a Codex session, and Codex first for other harnesses |
 | You open a finished Claude Code session, press Summarize or Update summary, or request a summary from the terminal | Claude Code, to write the session summary; a stored terminal read spends nothing |
 | You press Find goal | A model reads the prompts you typed to find the session's goal |
-| You press Summarize this session in a project's technical details | Codex, to summarize the focused session and up to three active child sessions |
+| You press Summarize this session under Show technical details on the project page | Codex, to summarize the focused session and up to three active child sessions |
 | You turn on the Live monitor on a Claude Code session | Haiku through your Claude Code, about once a minute while you view it or a terminal holder keeps it on |
 
 Compass shows what each kind of call sends and where the first time it runs, and again if the
@@ -177,23 +182,25 @@ even on a project page.
 | Tab | Key | What it shows |
 |---|---|---|
 | Sessions | `s` | Every session, with active work above recent history. Each active session shows where it is, what it is doing now, what it does next and whether it is blocked. Clicking a goal opens that session at its Goal card. |
-| Projects | `p` | Sessions grouped by project. Each project has its own page with a briefing on where the project stands, and Overview, Timeline, Decisions and Usage and alerts. |
+| Projects | `p` | Sessions grouped by project. Each project has a page with a briefing and the views Overview, Timeline, Decisions and Usage and alerts. |
 | Needs you | `n` | Requests, reported blocks and risks. The badge counts Waiting on you and Worth a look. |
 | Goal history | none | Every session on the board, plus the goals Compass has kept, each labeled with where it came from. |
 | Settings | none | AI use controls, browser notifications, progress check limits, and what Forget everything deletes and keeps. Changes save as you make them. |
-| Help | | The icon legend, progress words, and the view-only example. |
+| Help | none | How Compass works, See an example, the icon legend, progress check terms and common questions. |
 
-`Escape` goes back to where you opened a session from. A session opened from a pasted link goes
-back to Sessions. The current view lives in the URL, so a reload or a pasted link comes back to
+`Escape` goes back to where you opened a session from. The example opened from Help returns to
+Help, and a session opened from a pasted link goes back to Sessions. The current view lives in the URL, so a reload or a pasted link comes back to
 the same place.
 
 At a glance on Sessions shows what is waiting on you, what is working and what is worth a look.
 Waiting on you and Worth a look open Needs you. Working now selects Working and moves focus to
-the list. The status tabs and At a glance count the whole loaded board while you filter it.
+the list. The status tabs are All, Waiting on you, Worth a look, Working, Quiet and Ended. The tabs
+and At a glance count the whole loaded board while you filter it.
 Search reads titles, goals, prompts and project names. Press `/` to jump to the field.
-Open Filters for Project, Agent, Started and Progress check. The level chips are disabled.
-No goal yet finds sessions with a published absence of a saved goal, including drafts you
-haven't saved. Filters explains when some sessions have unpublished goal data.
+Open Filters for Project, Agent, Started and Progress check. The level chips are disabled:
+Slightly off course, Off course and Way off course. No goal yet finds sessions with a published
+absence of a saved goal, including drafts you haven't saved. Filters explains when some sessions
+have unpublished goal data.
 More filters for power users holds the complete list of choices, including
 Last active, Group, Headless and Goal source.
 Headless offers Headless and Interactive or unknown. Claude Code and Codex publish headless status;
@@ -238,7 +245,8 @@ Group by group arranges the rows by label in Right now and the earlier group. Na
 quote labels; unquoted "No group" means no label.
 Filters and grouping last across board refreshes and trips into a session; reloading clears them.
 
-The Projects list and each project's summary count Working, Waiting on you, Ended and Quiet from
+Projects groups its list into Active today and No recent activity. The list and each project's
+summary count Working, Waiting on you, Ended and Quiet from
 the state shown on each member's row. A parent waiting on its child or an idle session without an
 observed turn end contributes to `in no counted state`. Needs you also requires an observed turn
 end to count a session as Quiet. Needs you and Sessions spell out elapsed times from the
@@ -276,9 +284,10 @@ usual 90-second activity window. This is an accepted limit: SIGKILL sent no Sess
 ending did. The [state reference](../compass/skills/compass/reference/dashboard.md#session-states)
 explains the other harnesses.
 
-A project's Usage and alerts view shows usage and alert controls. Show technical details opens the read-only terminal, workflow evidence and steering. It also has an
-early terminal bridge and session history view; the
-[cockpit design contract](design-next-ui.md#cockpit-reconciliation) records their limits.
+A project's Usage and alerts view collects delegated work, requests waiting on you and quota
+windows. Show technical details on the project page opens the steering controls, workflow stage
+conditions, evidence and the read-only terminal. The
+[project page design contract](design-next-ui.md#cockpit-reconciliation) records their limits.
 
 ## Where to go next
 

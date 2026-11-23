@@ -9,8 +9,9 @@ import re
 import shlex
 import tempfile
 import unittest
+from functools import cache
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from compass_runtime import (
     aggregate,
@@ -34,6 +35,10 @@ from .support import (
     SERVER_PATH,
     make_config,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+from .test_first_layer_words import _NON_CONTROL_ROWS, PUBLIC_TRACKER_TOKENS, _glossary_words
 
 
 class CommandManualOptionsTest(unittest.TestCase):
@@ -402,6 +407,181 @@ def handler_methods(source: str) -> dict[str, str]:
             }
     msg = "http_api._RequestHandler is gone; the pins below read its methods"
     raise AssertionError(msg)
+
+
+DOC_VOCABULARY_FILES = (
+    "README.md",
+    "docs/how-it-works.md",
+    "docs/promise-map.md",
+    "COMPATIBILITY.md",
+)
+
+# The Replaces column also records redesign notes. See sync-docs check (f).
+_GLOSSARY_MIGRATION_NOTES = frozenset(
+    """Keeps current label
+Names the pill for assistive technology
+Singular Working count
+Plural Working count
+No standalone attention-row control
+No standalone control
+Direct editing in the goal field
+No dedicated Settings section
+Goal-only reading with no level
+Stale or withdrawn reading
+Cost implied by Analyze
+Budget count
+New destination
+Running count at zero
+Session activity and summary areas
+Session facts spread across the page
+Unfiltered Sessions list
+Separate technical controls
+Keeps the same subject as Show technical details
+Separate model and quota controls
+Separate model controls and disclosures
+Always-visible prompt limits""".splitlines()
+)
+_DOC_HEADING = re.compile(r"^ {0,3}#{1,6}(?:\s|$)")
+_DOC_FENCE = re.compile(r"^\s*(`{3,}|~{3,})\s*(.*)$")
+_DOC_MARKUP = re.compile(r"(`+|\*{1,3}|_{1,3})(?=\S)(.+?)(?<=\S)\1")
+_DOC_COMMAND_PREFIXES = ("-", "$compass", "/compass:compass", "spacedock-compass")
+
+
+def _label_alternatives(labels: set[str]) -> str:
+    return "|".join(
+        re.escape(label).replace(r"\ ", r"\s+")
+        for label in sorted(labels, key=lambda label: (-len(label), label))
+    )
+
+
+@cache
+def _document_labels() -> tuple[re.Pattern[str], re.Pattern[str], dict[str, set[str]]]:
+    rows = _glossary_words()
+    current = {plain for plain, _ in rows}
+    retired: dict[str, set[str]] = {}
+    for plain, former in rows:
+        if plain in _NON_CONTROL_ROWS or former in _GLOSSARY_MIGRATION_NOTES:
+            continue
+        if former == f"{plain} (kept)":
+            continue
+        for name in re.split(r", (?=[A-Z])", former):
+            label = name.removeprefix("Generic ")
+            if label not in current:
+                retired.setdefault(label, set()).add(plain)
+    labels = _label_alternatives(current | retired.keys())
+    old = _label_alternatives(set(retired))
+    return (
+        re.compile(rf"(?<![\w-])(?:{labels})(?![\w-])"),
+        re.compile(rf"""[ \t]+\(\s*(?P<quote>["']?)(?P<old>{old})(?P=quote)\s*\)"""),
+        retired,
+    )
+
+
+def _doc_blocks(lines: list[str]) -> Iterator[tuple[int, str]]:
+    """Keep wrapped prose together while leaving headings and fences as boundaries."""
+    start = 0
+    block: list[str] = []
+    fence = ""
+    verbatim = False
+    for index, line in enumerate([*lines, ""]):
+        marker = _DOC_FENCE.match(line)
+        if marker or not line.strip() or (not fence and _DOC_HEADING.match(line)):
+            if block:
+                yield start, "\n".join(block)
+                block.clear()
+            if marker:
+                opening, info = marker.groups()
+                if not fence:
+                    fence = opening
+                    verbatim = info in {"", "bash", "sh", "text", "json"}
+                elif opening.startswith(fence) and not info:
+                    fence = ""
+                    verbatim = False
+            elif line.strip() and not fence:
+                yield index, line
+        elif not verbatim:
+            if not block:
+                start = index
+            block.append(line)
+
+
+def _doc_text(match: re.Match[str]) -> str:
+    markup, text = match.groups()
+    if markup.startswith("`") and text.startswith(_DOC_COMMAND_PREFIXES):
+        return " " * len(match[0])
+    return text
+
+
+def _document_vocabulary_errors(document: str) -> list[str]:
+    labels, parenthetical, retired = _document_labels()
+    lines = document.splitlines()
+    seen: set[str] = set()
+    violations = []
+    for start, block in _doc_blocks(lines):
+        if _DOC_HEADING.match(block):
+            seen.clear()
+            continue
+        visible = _DOC_MARKUP.sub(_doc_text, block)
+        exempt = None
+        for match in labels.finditer(visible):
+            label = " ".join(match[0].split())
+            if label not in retired:
+                pair = parenthetical.match(visible, match.end())
+                if label not in seen and pair:
+                    old = " ".join(pair["old"].split())
+                    if label in retired[old]:
+                        exempt = pair.span("old")
+                seen.add(label)
+            elif match.span() != exempt:
+                index = start + visible.count("\n", 0, match.start())
+                violations.append(f"{index + 1}:{lines[index]}")
+    return violations
+
+
+class DocumentVocabularyTest(unittest.TestCase):
+    def test_the_vocabulary_guard_keeps_its_initial_documents(self) -> None:
+        self.assertLessEqual(
+            {"README.md", "docs/how-it-works.md", "docs/promise-map.md", "COMPATIBILITY.md"},
+            set(DOC_VOCABULARY_FILES),
+        )
+
+    def test_retired_names_and_their_exceptions(self) -> None:
+        cases: tuple[tuple[str, str, list[int]], ...] = (
+            ("body", "Press Analyze drift.", [1]),
+            ("first mention", "Press Check progress (Analyze drift).", []),
+            (
+                "same section",
+                "Check progress (Analyze drift).\n\nCheck progress (Analyze drift).",
+                [3],
+            ),
+            ("anchored heading", "## Intent log\n\nOpen Intent log.", [3]),
+            ("commands", "Use `--pause-model-calls` or `$compass drift`.", []),
+            ("ordinary words", "This can pause model calls.", []),
+            ("diagram", '```mermaid\nA["Press Analyze drift"]\n```', [2]),
+            ("inline code", "Press `Analyze drift`.", [1]),
+            ("wrapped control", "Press Analyze\ndrift.", [1]),
+            ("wrapped first mention", "Press **Check progress** (Analyze\ndrift).", []),
+            ("wrong label", "Open Goal (Analyze drift).", [1]),
+            (
+                "different sections",
+                "Check progress (Analyze drift).\n\n## Again\n\nCheck progress (Analyze drift).",
+                [],
+            ),
+            ("example", "```bash\nprintf 'Analyze drift'\n```", []),
+        )
+        for reason, document, expected in cases:
+            with self.subTest(reason=reason):
+                actual = _document_vocabulary_errors(document)
+                self.assertEqual(expected, [int(error.split(":", 1)[0]) for error in actual])
+
+    def test_public_documents_use_the_glossary(self) -> None:
+        root = SERVER_PATH.parents[3]
+        for relative in DOC_VOCABULARY_FILES:
+            with self.subTest(file=relative):
+                document = (root / relative).read_text(encoding="utf-8")
+                errors = _document_vocabulary_errors(document)
+                self.assertFalse(errors, "\n".join(f"{relative}:{error}" for error in errors))
+                self.assertNotRegex(document, PUBLIC_TRACKER_TOKENS)
 
 
 class DocumentationMatchesCodeTest(unittest.TestCase):
