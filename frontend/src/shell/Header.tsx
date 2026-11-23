@@ -13,7 +13,7 @@ import { sessionHome, type Route, type TopLevelView } from '../router/grammar';
 import { useDisplayed, useShell } from './context';
 import { useProjectBriefing } from './projectBriefing';
 
-const PRIMARY = ['sessions', 'projects', 'attention', 'intent', 'settings'] as const;
+const PRIMARY = ['sessions', 'projects', 'attention', 'intent', 'settings', 'help'] as const;
 
 /* The view a route sits under: a session sits under the view it was opened from, a project under Projects. */
 function currentView(route: Route): TopLevelView {

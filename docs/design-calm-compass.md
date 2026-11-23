@@ -242,7 +242,7 @@ wording when its redesign ships. Route tokens still belong to the router.
 | How progress checks work | Drift explainer | What the reading can and cannot establish | A verdict or account of completed work | Keep the local explanation next to the reading |
 | How project grouping works | Project grouping explanation | Project evidence and folder identity | Session state or agent type | Explains Unnamed folder |
 | How the AI allowance works | Quota explainer | Provider reading, pace and measurement limits | How much a progress check reads | Help and the plan quota card use the same subject |
-| Help | New destination | Links to the canonical explanations | A second Goal explainer | Help ships in a later slice |
+| Help | New destination | Links to the canonical explanations | A second Goal explainer | Last in the primary navigation |
 | Project | Keeps current label | Project identity | The Projects destination | Project names come from the board |
 | Working now | Active now | Count of sessions in the Working state | Sessions in the Right now group | Uses the same Working count as the header |
 | Nothing working right now | Running count at zero | Measured Working count of zero | No published board | Header only after the board is read |

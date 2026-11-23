@@ -158,6 +158,7 @@ describe('the labels the shell shows today', () => {
       attention: 'Test requests',
       intent: 'Test goal archive',
       settings: 'Test preferences',
+      help: 'Test guide',
       session: 'Test missing session',
       projectTabs: 'Test project views',
       now: 'Test current activity',

@@ -1,0 +1,56 @@
+.next-help {
+  display: grid;
+  gap: var(--sp-5);
+  width: min(100%, 920px);
+  margin: var(--sp-6) auto;
+}
+
+.next-help h1 { margin-block: 0 var(--sp-2); }
+.next-help h2 { margin: 0; font-size: var(--text-value); }
+.next-help p { margin: 0; }
+
+.help-card { overflow: hidden; }
+.help-card > header { padding: var(--sp-5); }
+.help-card p, .help-card dd { color: var(--muted-foreground); }
+.help-card ul, .help-card dl { margin: 0; padding: 0; }
+.help-card ul { list-style: none; }
+
+.help-example {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+  background: var(--status-ended-bg);
+}
+
+.help-example > div { flex: 1 1 380px; }
+
+.help-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--rule);
+}
+
+.help-row dd { margin: 0; }
+.help-row dt { flex: 0 0 190px; font-weight: 600; }
+.help-icon { display: grid; place-items: center; flex: 0 0 36px; height: 36px; border-radius: 8px; }
+.help-icon[data-help-icon="working"] { color: var(--status-working-ink); background: var(--status-working-bg); }
+.help-icon[data-help-icon="waiting"] { color: var(--status-waiting-ink); background: var(--status-waiting-bg); }
+.help-icon[data-help-icon="quiet"] { color: var(--status-quiet-ink); background: var(--status-quiet-bg); }
+.help-icon[data-help-icon="ended"] { color: var(--status-ended-ink); background: var(--status-ended-bg); }
+.help-icon[data-help-icon="worth-a-look"] { color: var(--worth-a-look); }
+.help-level { padding: 2px 8px; border: 1px solid currentColor; border-radius: 99px; color: var(--status-ended-ink); font-size: var(--text-label); }
+.help-level[data-level="1"] { color: var(--progress-slightly-off-course); }
+.help-level[data-level="2"] { color: white; background: var(--worth-a-look); }
+.help-level[data-level="3"] { color: white; background: var(--progress-way-off-course); }
+.help-absence dt { color: var(--muted-foreground); }
+.help-link { margin-inline: var(--sp-5); color: var(--accent); }
+.help-card > [data-next-disclosure] { padding-inline: var(--sp-5); }
+
+@media (max-width: 540px) {
+  .help-row:has(dt) { display: grid; gap: var(--sp-1); }
+}

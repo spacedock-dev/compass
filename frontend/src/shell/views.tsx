@@ -1,3 +1,4 @@
+import { Help } from '../help/Help';
 import { SampleInvite } from '../sample/SampleInvite';
 import { buttonVariants } from '../ui/button';
 import { payloadSessions } from '../api/bootstrap';
@@ -109,6 +110,7 @@ function TopLevelView({ route }: { readonly route: TopLevelRoute }) {
   if (route.view === 'intent') return <IntentLog />;
   /* Settings reads its own route, not the board, so it draws whether or not a payload has arrived. */
   if (route.view === 'settings') return <SettingsView />;
+  if (route.view === 'help') return <Help />;
   /* Attention states its own absences as well: before the first board it names what it waits for, and a
      board that published no session collection says that rather than drawing a queue of zeros. */
   return <AttentionView />;
@@ -242,7 +244,7 @@ export function RoutedView({ route }: { readonly route: Route }) {
     case 'session':
       /* The sample reads its own shell, so it never depends on, or touches, the board this page is polling. */
       return isSampleRoute(route) ? (
-        <SampleSession>
+        <SampleSession key={route.explain} explainGoal={route.explain === 'goal'}>
           <SessionView route={route} />
         </SampleSession>
       ) : (

@@ -1,4 +1,5 @@
-import { Icon, SESSION_STATE_ICONS } from '../ui/icons';
+import { Icon } from '../ui/icons';
+import { StatusLegend } from '../ui/status-legend';
 import { groupName, groupOf, nestRows } from './declared';
 import { RelationshipLabels } from './DeclaredRelationships';
 import { Card } from '../ui/card';
@@ -60,32 +61,6 @@ import './sessions.css';
 /* The Sessions screen: one row per exact session, the blocked and moving ones first, each with the goal
    it was given. Every summary figure comes from the shared selection over the rows being drawn.
    Nothing here fetches, polls or acts; a row's controls act only when pressed. */
-
-const SESSION_LEGEND = [
-  ...Object.entries(SESSION_STATE_ICONS),
-  [SESSION_ROW_WORDS.worthALook, 'worth-a-look'],
-] as const;
-
-function StatusLegend() {
-  return (
-    <section className="mt-3 text-label text-muted-foreground">
-      <h2 id="sessions-icon-legend" className="font-semibold">
-        What the icons mean
-      </h2>
-      <ul aria-labelledby="sessions-icon-legend" className="flex flex-wrap gap-x-4 gap-y-1">
-        {SESSION_LEGEND.map(([word, icon]) => (
-          <li
-            key={word}
-            className={`inline-flex items-center gap-2${icon === 'worth-a-look' ? ' text-[var(--worth-a-look)]' : ''}`}
-          >
-            <Icon name={icon} />
-            {word}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
 
 function Fact({
   kind,

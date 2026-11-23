@@ -58,6 +58,7 @@ export const SHOWN = {
   sessions: 'Sessions',
   projects: 'Projects',
   settings: 'Settings',
+  help: 'Help',
   session: 'Session',
   projectTabs: 'Project cockpit views',
   now: 'Now',
@@ -797,13 +798,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     // Section and disclosure labels.
     help: ruled(
       [
-        'Help',
+        SHOWN.help,
         'New destination',
         'Links to the canonical explanations',
         'A second Goal explainer',
-        'Help ships in a later slice',
+        'Last in the primary navigation',
       ],
-      null,
+      SHOWN.help,
     ),
     project: kept([
       'Project',

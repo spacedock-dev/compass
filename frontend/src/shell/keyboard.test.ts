@@ -132,3 +132,13 @@ describe('a shortcut never fires where the reader is typing or using a modifier'
     expect(shortcutTarget(key('N'), route('#n=sessions'))).toEqual(top('attention'));
   });
 });
+
+it('returns from a Help session to Help, which has no shortcut', () => {
+  const route = { view: 'session', project: 'example', session: 'sample', from: 'help' };
+  expect(shortcutTarget({ key: 'Escape', tagName: 'BODY' }, route)).toEqual({
+    view: 'help',
+    project: null,
+    session: null,
+  });
+  expect(shortcutTarget({ key: 'h', tagName: 'BODY' }, route)).toBeNull();
+});

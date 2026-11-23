@@ -36,6 +36,10 @@ For where these files sit and which way their dependencies run, see
 
 ## The inventory
 
+Help links to the bundled example with a Help origin so the breadcrumb and Escape return to Help
+after a reload. Its How goals work link also asks the example's private disclosure store to open
+the existing Goal explanation. Help keeps no second copy of the explanation.
+
 | Reader state | Across a redraw | Where |
 |---|---|---|
 | An open disclosure | Restored | `frontend/src/controls/Disclosure.tsx`: `Disclosure`, `PopoverDisclosure`; `frontend/src/controls/disclosureStore.ts`: `createDisclosureStore`, `disclosureKey`, `watchWrites`, `version`; `frontend/src/controls/useDisclosureState.ts`: `useControlledDisclosureState`, `useDisclosureState`, `createDisclosureBinding`; `frontend/src/controls/useRevealFragment.ts`: `useRevealFragment`; `frontend/src/ui/accordion.tsx`: `Accordion`, `AccordionTrigger`, `AccordionContent`; `frontend/src/ui/collapsible.tsx`: `Collapsible`, `CollapsibleTrigger`, `CollapsibleContent`; `frontend/src/ui/popover.tsx`: `Popover`, `PopoverTrigger`, `PopoverContent`; `frontend/src/controls/popoverEscape.ts`: `registerPopoverEscape`, `installPopoverEscape`; `frontend/src/controls/kit.ts`: `createControls` (the one store, as `controls.disclosures`). The store is the single writer and React derives Accordion `value` and Collapsible and Popover `open` from its subscribed snapshot. Only menus derive the native `details` open attribute. Identity is project, scope or exact harness:sid, and name, in memory for the life of the tab. A remount arrives already open without replaying motion. Popovers with a shared exclusivity group close their sibling when opened. See [Disclosure write precedence](#disclosure-write-precedence) for component callbacks, native toggles, grouping and dismissal. No capture pass or closed key list remains. |

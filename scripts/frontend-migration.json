@@ -596,6 +596,16 @@
   ],
   "routes": [
     {
+      "name": "top-level-help",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/router/grammar.test.ts",
+        "frontend/src/shell/Page.test.tsx",
+        "frontend/stories/Help.stories.tsx"
+      ],
+      "contract": "#n=help is last in navigation. Both example links carry the Help origin, and the Goal link opens the sample's existing explanation."
+    },
+    {
       "name": "bare-or-invalid-fragment",
       "owner": "DRC-4823",
       "oracles": [
@@ -692,7 +702,7 @@
         "frontend/src/router/router.test.ts",
         "frontend/e2e/shell-routing.mjs"
       ],
-      "contract": "Closed &from=sessions|attention|intent|projects|project controls crumb, active tab and Escape after reload; unknown origins are omitted."
+      "contract": "Closed &from=sessions|attention|intent|projects|project|help controls crumb, active tab and Escape after reload; unknown origins are omitted."
     },
     {
       "name": "retired-held-to-alias",

@@ -2,17 +2,27 @@ import { use, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ControlsProvider } from '../controls/ControlsProvider';
 import { Card } from '../ui/card';
 import { RouteLink } from '../shell/RouteLink';
-import { ShellContext, useShell } from '../shell/context';
+import { ShellContext, useDisplayed, useShell } from '../shell/context';
 import { useBoardRuntime } from '../transport/hooks';
 import { SampleFixtureContext } from './fixture';
 import { TourContext } from './tourContext';
 import { createSampleShell } from './sampleShell';
 import { TOUR } from './tour';
+import { SAMPLE_HARNESS, SAMPLE_SID } from './ids';
 import { ViewOnly } from './ViewOnly';
 import { heldPosition, type HeldAt } from './held';
 
 const HELD_SENTENCE = 'View only: this sample cannot be edited, saved or run.';
 const HELD_MS = 5000;
+
+function FocusGoalExplanation() {
+  const { controls } = useShell();
+  const loaded = useDisplayed((snapshot) => snapshot.data !== null);
+  useEffect(() => {
+    if (loaded) controls.focusLane.focus(`intent-howto:${SAMPLE_HARNESS}:${SAMPLE_SID}`);
+  }, [controls, loaded]);
+  return null;
+}
 
 function Banner() {
   return (
@@ -93,10 +103,16 @@ function Held({ at }: { readonly at: HeldAt | null }) {
 
 /* The sample session, drawn by the page's own Session view over a shell of its own. Its board, its context
    and its record come from the fixture and nothing it does is written anywhere. */
-export function SampleSession({ children }: { readonly children: ReactNode }) {
+export function SampleSession({
+  children,
+  explainGoal = false,
+}: {
+  readonly children: ReactNode;
+  readonly explainGoal?: boolean;
+}) {
   const page = useShell();
   const fixture = use(SampleFixtureContext);
-  const [shell] = useState(() => createSampleShell(page, fixture));
+  const [shell] = useState(() => createSampleShell(page, fixture, explainGoal));
   const [held, setHeld] = useState<HeldAt | null>(null);
   const box = useRef<HTMLElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -125,6 +141,7 @@ export function SampleSession({ children }: { readonly children: ReactNode }) {
           <section ref={box} className="relative" data-sample-session>
             <Banner />
             <ViewOnly onHeld={onHeld}>{children}</ViewOnly>
+            {explainGoal ? <FocusGoalExplanation /> : null}
             <Held at={held} />
           </section>
         </TourContext>
