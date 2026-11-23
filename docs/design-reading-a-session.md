@@ -7421,7 +7421,8 @@ Both variants of the board snapshot publish a null `stored_progress` field. The 
 `GET /api/session-progress` reads a bounded batch against the current default-window snapshot.
 It uses the same current stored verdict as the focused view. The response carries the board
 revision and each requested row's exact harness, session and canonical project identity with a
-closed progress token or null. The browser can discard a response when its board revision moves.
+closed progress token or null. A saved departure becomes publishable for a board revision that
+carries the same reading. The browser can discard a response when its board revision moves.
 
 The verdict needs readable native evidence, including the current child inventory, coverage of
 the direction and evidence windows, and a readable newest record page. A saved Claude check holds

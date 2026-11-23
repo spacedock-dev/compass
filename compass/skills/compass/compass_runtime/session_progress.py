@@ -483,6 +483,17 @@ def _saved_row(row: dict[str, Any], entry: annotation_store.Annotation | None) -
     return release
 
 
+def _reading_generation(row: Mapping[str, Any]) -> tuple[Any, ...]:
+    return tuple(
+        row.get(name)
+        for name in (
+            "annotation_revision",
+            "annotation_at",
+            "annotation_assessment",
+        )
+    )
+
+
 def _row_inputs(row: Mapping[str, Any]) -> tuple[Any, ...]:
     return tuple(
         row.get(name)
@@ -693,6 +704,7 @@ class _Batch:
             entry is None and (row.get("annotation_goal") or row.get("annotation_assessment"))
         ):
             return _EMPTY
+        board_generation = _reading_generation(row)
         row = _saved_row(row, entry)
         if row.get(reading.COPIED_PROMPTS):
             if self.copies is None:
@@ -702,7 +714,14 @@ class _Batch:
             return (
                 _EMPTY if self._live_only(row) else Verdict(_attempt_absence(entry, row), row=row)
             )
-        return self._evaluate_reading(key, row, entry, sources)
+        verdict = self._evaluate_reading(key, row, entry, sources)
+        if verdict.value in DEPARTURES and _reading_generation(row) != board_generation:
+            # The browser can only draw the reading carried by its board
+            # revision. A peer save becomes eligible on a fresh snapshot.
+            return replace(
+                verdict, value=None, work={**(verdict.work or {}), "analysis_levels": []}
+            )
+        return verdict
 
     def _pending(self, key: _Identity) -> bool:
         return self.jobs is None or f"{key[0]}:{key[1]}" in self.jobs

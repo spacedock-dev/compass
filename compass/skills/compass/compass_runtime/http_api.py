@@ -5192,7 +5192,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reading_permission_reply(exc.answer, route=route)
             return
         job.notice = notice
-        job.attempt_revision = entry["revisions"][-1]["n"]
+        revisions = entry["revisions"]
+        job.attempt_revision = revisions[-1]["n"] if revisions else 0
         # Taken before the thread starts, which may finish before this reply.
         started = runtime_reading.published_jobs(config)[key]
         try:

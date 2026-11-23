@@ -741,6 +741,19 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
             self.save_goal(lines=("A new outcome line",))
             self.assertEqual("unchecked", self.progress(port)["rows"][0]["stored_progress"])
 
+    def test_an_older_board_generation_cannot_publish_a_peer_reading(self) -> None:
+        self.save_goal(lines=())
+        assessment = self.departure()
+        app = self.fresh_app()
+        with self.serving(app) as port:
+            self.assertEqual("unchecked", self.progress(port)["rows"][0]["stored_progress"])
+            self.record(assessment)
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+            view = self.get(port, FOCUSED)["sources"]["work"]["drift_views"][0]
+            self.assertIsNone(view["stored_progress"])
+            self.now += self.config.collect_memo_sec + 1
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+
     def test_first_save_and_replacement_use_one_focus_generation(self) -> None:
         self.save_goal(lines=())
         assessment = self.departure()
@@ -749,6 +762,13 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
             self.record(assessment)
             for revision in (1, 2):
                 with self.subTest(revision=revision):
+                    before_poll = self.get(port, FOCUSED)["sources"]["work"]["drift_views"][0]
+                    self.assertIsNone(before_poll["stored_progress"])
+                    self.assertIsNone(before_poll["analysis"])
+                    self.assertTrue(before_poll["reading"])
+                    self.assertEqual(revision, before_poll["revision"])
+                    self.assertEqual(["goal"], before_poll["departures"])
+                    self.now += self.config.collect_memo_sec + 1
                     mark = self.progress(port)["rows"][0]["stored_progress"]
                     work = self.get(port, FOCUSED)["sources"]["work"]
                     (view,) = work["drift_views"]
@@ -1076,6 +1096,8 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
             )
             self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
             self.record({**assessment, "read_at": assessment["read_at"] + 1})
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+            self.now += self.config.collect_memo_sec + 1
             self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
             self.save_goal(lines=("The lexer is untouched",))
             self.assertEqual("out-of-date", self.progress(port)["rows"][0]["stored_progress"])
