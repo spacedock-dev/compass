@@ -1,53 +1,76 @@
+import { fireEvent, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { genLogCase, type LogCase } from './generate.test.helper';
 import { loadLegacyIntent } from './legacy.test.helper';
 import { json, mountIntent } from './testing';
-import { maskRevisionWords } from '../../test/revisionWordDeviation';
 
-/* The Intent log, held to the legacy page by what a reader can read. The legacy `nextIntentView` runs
-   unchanged over a generated board and a generated set of retained rows; this view renders the same two
-   in the real shell; both are reduced to the same shape (the notes in order, each group, each row's
-   cells, its link and its words) and compared. A difference is a bug here unless DEVIATIONS names it. */
-
+/* The 2026-11-23 redesign changes the row layout and storage wording. Compare goal text,
+   exact session links, group membership and load states against the recorded page. */
 const legacy = loadLegacyIntent();
 
 interface RowShape {
-  readonly cells: readonly (readonly [string, string])[];
   readonly href: string | null;
-  readonly linkText: string | null;
-}
-
-interface LogShape {
-  readonly head: string;
-  readonly blocks: readonly (
-    | { readonly kind: 'note'; readonly text: string }
-    | { readonly kind: 'group'; readonly title: string }
-    | ({ readonly kind: 'row' } & RowShape)
-  )[];
+  readonly title: string;
+  readonly goal: string;
+  readonly discarded: boolean;
 }
 
 const norm = (node: Element | null): string =>
-  node ? (node.textContent ?? '').replace(/\s+/g, ' ').trim() : '';
+  (node?.textContent ?? '').replace(/\s+/g, ' ').trim();
 
-function shape(root: Element): LogShape {
-  const blocks: LogShape['blocks'][number][] = [];
-  for (const child of [...root.children]) {
-    if (child.tagName === 'H1') continue;
-    if (child.tagName === 'H2') blocks.push({ kind: 'group', title: norm(child) });
-    else if (child.classList.contains('next-intent-row')) {
-      const link = child.querySelector('a');
-      blocks.push({
-        kind: 'row',
-        cells: [...child.children].map(
-          (cell) => [cell.className, norm(cell)] as readonly [string, string],
-        ),
-        href: link?.getAttribute('href') ?? null,
-        linkText: link ? norm(link) : null,
-      });
-    } else blocks.push({ kind: 'note', text: norm(child) });
-  }
-  return { head: norm(root.querySelector('h1')), blocks };
+const NOTICES = [
+  [/^(?:Annotations are off|Saving goals is off)/, 'off'],
+  [/^(?:The annotation store could not|Compass could not read your saved goals)/, 'error'],
+  [/^(?:Reading the annotation store|Loading saved goals)/, 'loading'],
+] as const;
+
+function shape(root: Element, recorded: boolean) {
+  const rows = [...root.querySelectorAll('.next-intent-row')].map((row): RowShape => {
+    const link = row.querySelector('a');
+    const cells = [...row.querySelectorAll('.next-intent-words')].map(norm);
+    const published = cells.find((line) => /^(?:Typed goal|Goal from .*?):/.test(line));
+    const saved = published?.replace(/^.*?:\s*/, '') ?? '';
+    const validSaved = saved !== 'No goal typed for this session.' ? saved : '';
+    const cached =
+      cells
+        .find((line) => line.startsWith('Cached deterministic goal: '))
+        ?.slice('Cached deterministic goal: '.length) ?? '';
+    const validCached = cached !== 'No cached deterministic goal available.' ? cached : '';
+    const workflow = cells.find(
+      (line) =>
+        /^Workflow .*?:/.test(line) &&
+        !line.endsWith('No workflow goal published.') &&
+        !line.endsWith('Spacedock is off for this run.'),
+    );
+    const discarded = recorded
+      ? cells.some((line) => line.startsWith('Your words:'))
+      : norm(row.querySelector('[data-next-goal-history-source]')).startsWith(
+          'You discarded this goal',
+        );
+    return {
+      href: link?.getAttribute('href') ?? null,
+      title: norm(link),
+      goal: discarded
+        ? ''
+        : recorded
+          ? validSaved || validCached || (workflow?.replace(/^.*?:\s*/, '') ?? '')
+          : norm(row.querySelector('[data-next-goal-history-words]')),
+      discarded,
+    };
+  });
+  const words = [...root.children].map(norm);
+  return {
+    title: norm(root.querySelector('h1')).replace(/^Intent log$/, 'Goal history'),
+    groups: [...root.querySelectorAll('h2')].map((h) =>
+      norm(h)
+        .replace(/^On the board$/, 'On the board now')
+        .replace(/^Retained after leaving the board$/, 'Older sessions'),
+    ),
+    notice: NOTICES.find(([pattern]) => words.some((word) => pattern.test(word)))?.[1] ?? '',
+    rows,
+  };
 }
+type LogShape = ReturnType<typeof shape>;
 
 function legacyShape(input: LogCase): LogShape {
   legacy.setData(input.payload);
@@ -59,7 +82,7 @@ function legacyShape(input: LogCase): LogShape {
   template.innerHTML = legacy.call<string>('nextIntentView');
   const root = template.content.firstElementChild;
   if (!root) throw new Error('The legacy view drew nothing.');
-  return shape(root);
+  return shape(root, true);
 }
 
 async function reactShape(input: LogCase): Promise<LogShape> {
@@ -82,66 +105,33 @@ async function reactShape(input: LogCase): Promise<LogShape> {
   await page.settle();
   const root = page.container.querySelector('[data-next-view-body="intent"]');
   if (!root) throw new Error('The Intent log did not draw.');
-  const result = shape(root);
+  for (const button of within(root as HTMLElement).queryAllByRole('button', {
+    name: /^Show \d+ more$/,
+  }))
+    fireEvent.click(button);
+  const result = shape(root, false);
   page.unmount();
   return result;
 }
 
-const REACHED = {
-  rows: 0,
-  departed: 0,
-  discarded: 0,
-  error: 0,
-  unread: 0,
-  retained: 0,
-  empty: 0,
-  off: 0,
-};
-
-const DEVIATIONS: readonly { readonly seed: number; readonly reason: string }[] = [];
-
-describe('the Intent log reads as the legacy log does, over generated boards', () => {
-  const CASES = 80;
-  const SEEDS = CASES;
-  it(`agrees on ${String(SEEDS)} seeds, note by note and row by row`, async () => {
+describe('Goal history preserves recorded goal words and session identity', () => {
+  it('agrees across 80 seeded boards after masking the redesigned wording', async () => {
+    const reached = new Set<string>();
     const failures: string[] = [];
-    for (let seed = 1; seed <= SEEDS; seed += 1) {
+    for (let seed = 1; seed <= 80; seed += 1) {
       const input = genLogCase(seed);
-      // The legacy page shows "unread" and "loading" the same way (it has no rows), so one request that
-      // never answers stands for both here.
-      const recorded = legacyShape(input);
-      const old = { ...recorded, head: recorded.head.replace(/^Intent log$/, 'Goal history') };
+      const old = legacyShape(input);
       const mine = await reactShape(input);
-      for (const block of old.blocks) {
-        if (block.kind === 'row') {
-          REACHED.rows += 1;
-          if (block.cells.some(([, text]) => text.startsWith('Your words'))) REACHED.discarded += 1;
-          if (block.cells.some(([, text]) => text.startsWith('Typed goal'))) REACHED.retained += 1;
-        } else if (block.kind === 'group' && block.title.startsWith('Retained'))
-          REACHED.departed += 1;
-        else if (block.kind === 'note') {
-          if (block.text.startsWith('The annotation store could not')) REACHED.error += 1;
-          if (block.text === 'Reading the annotation store.') REACHED.unread += 1;
-          if (block.text.startsWith('No goal or expected')) REACHED.empty += 1;
-          if (block.text.startsWith('Annotations are off')) REACHED.off += 1;
-        }
-      }
-      if (
-        maskRevisionWords(JSON.stringify(old)) !== maskRevisionWords(JSON.stringify(mine)) &&
-        !DEVIATIONS.some((d) => d.seed === seed)
-      ) {
-        const left = JSON.stringify(old);
-        const right = JSON.stringify(mine);
-        let at = 0;
-        while (left[at] === right[at]) at += 1;
-        failures.push(
-          `seed ${String(seed)} (${input.state}): near ${JSON.stringify(left.slice(Math.max(0, at - 80), at + 140))} vs ${JSON.stringify(right.slice(Math.max(0, at - 80), at + 140))}`,
-        );
-      }
-      if (failures.length >= 3) break;
+      reached.add(old.notice);
+      if (old.rows.some((row) => row.discarded)) reached.add('discarded');
+      if (old.rows.some((row) => row.goal)) reached.add('goal');
+      if (old.groups.includes('Older sessions')) reached.add('older');
+      if (JSON.stringify(old) !== JSON.stringify(mine))
+        failures.push(`Seed ${seed}: ${JSON.stringify({ old, mine })}`);
     }
-    expect(failures).toEqual([]);
-    // Agreement over a corpus that never reached a state proves nothing about it.
-    for (const [name, count] of Object.entries(REACHED)) expect(count, name).toBeGreaterThan(0);
+    expect(failures.slice(0, 5)).toEqual([]);
+    expect([...reached]).toEqual(
+      expect.arrayContaining(['off', 'error', 'loading', 'discarded', 'goal', 'older']),
+    );
   }, 180_000);
 });

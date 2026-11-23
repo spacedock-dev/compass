@@ -74,8 +74,8 @@ describe('the session-goal source', () => {
         rows: [{ harness: 'claude', sid: 's', at: 10, goal: 'words', goal_source: SESSION_GOAL }],
         load: 'read',
       } as never);
-      expect(JSON.stringify(log)).toContain('Goal from /goal');
-      expect(JSON.stringify(log)).not.toContain('Goal from your prompt');
+      expect(JSON.stringify(log)).toContain('You wrote this with /goal');
+      expect(JSON.stringify(log)).not.toContain('Taken from your first prompt');
       const raw = {
         revision_read: 2,
         scope: 'last-turn',

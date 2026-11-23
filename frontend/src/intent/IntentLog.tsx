@@ -1,73 +1,129 @@
-import { SHOWN } from '../language/glossary';
-import { Alert } from '../ui/alert';
-import { Card } from '../ui/card';
-import './intent.css';
-import { Fragment, useEffect, useMemo } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { payloadSessions } from '../api/bootstrap';
+import { Disclosure, useControls } from '../controls';
+import { DraftInput } from '../controls/DraftField';
+import { useControlledDisclosureState } from '../controls/useDisclosureState';
+import { SHOWN } from '../language/glossary';
 import type { Row } from '../observed';
-import { asPayload, sessionKey } from '../observed/values';
 import { selectObserved } from '../observed/select';
+import { asPayload, sessionKey } from '../observed/values';
 import { RouteAnchor } from '../sessions/RouteAnchor';
 import { useDisplayed, useShell } from '../shell/context';
+import { Button } from '../ui/button';
+import { Icon } from '../ui/icons';
 import { intentLogFor, useIntentLogState } from './logContext';
-import { intentLogView, type LogRow } from './logModel';
+import { GOAL_HISTORY_LIMITS, intentLogView, type Group, type LogRow } from './logModel';
+import './intent.css';
 
-/* The Intent log: every session the board lists, and every retained annotation record, with the words
-   each holds and where they came from. Read-only: nothing here writes, posts or starts a reading. A row
-   links to its session by the exact harness and sid and by the session's own project label, which
-   controls the link only, so a session with no label still has a page and is never filed as departed. */
+const SEARCH_KEY = 'goal-history-search';
+const FIRST_ROWS = 3;
 
-/* The observed row that names a session is the one with its exact pair AND its own project label: two
-   sessions of one sid in two projects are two titles. */
-function titleKey(session: Row): string {
-  return `${sessionKey(session)}|${String(session['project'] == null ? '' : session['project'])}`;
+function RowView({ row, title }: { readonly row: LogRow; readonly title: string }) {
+  const session = row.session;
+  const route = session
+    ? {
+        view: 'session' as const,
+        project: String(session['project'] ?? ''),
+        harness: String(session['harness'] ?? ''),
+        session: String(session['sid'] ?? ''),
+      }
+    : null;
+  const supplemental = row.outcomes.length > 0;
+  return (
+    <li className="next-intent-row">
+      <div className="min-w-0 flex-1">
+        <h3 className="m-0 text-value font-bold">
+          {route ? (
+            <RouteAnchor
+              route={route}
+              className="inline-flex items-center font-semibold text-foreground"
+              extra={{ 'data-authored': '', 'data-next-focus': `intent:${row.key}` }}
+              focusKey={`intent:${row.key}`}
+              fallback={SEARCH_KEY}
+            >
+              {title}
+            </RouteAnchor>
+          ) : title ? (
+            <span data-authored>{title}</span>
+          ) : row.goal ? (
+            <span data-next-goal-history-words data-authored>
+              {row.goal}
+            </span>
+          ) : (
+            'Older session'
+          )}
+        </h3>
+        {row.goal && (route || title) ? (
+          <p className="m-0 text-body" data-next-goal-history-words data-authored>
+            {row.goal}
+          </p>
+        ) : null}
+        {row.absence ? <p className="m-0 text-body text-muted-foreground">{row.absence}</p> : null}
+        {row.source ? (
+          <p className="m-0 text-label text-muted-foreground" data-next-goal-history-source>
+            {row.source}
+            {session?.['project'] ? (
+              <span data-authored>{` · ${String(session['project'])}`}</span>
+            ) : null}
+          </p>
+        ) : null}
+        {supplemental ? (
+          <Disclosure disclosureKey={`goal-history-outcome:${row.key}`} summary="Expected outcome">
+            <ul className="pl-5">
+              {row.outcomes.map(({ k, text }) => (
+                <li key={k} data-authored>
+                  {text}
+                </li>
+              ))}
+            </ul>
+          </Disclosure>
+        ) : null}
+      </div>
+      {row.time ? <span className="text-label text-muted-foreground">{row.time}</span> : null}
+      {row.canAdd && route ? (
+        <RouteAnchor
+          route={route}
+          className="inline-flex items-center rounded-control border border-[var(--line)] px-3 text-body font-semibold no-underline"
+        >
+          Add a goal
+        </RouteAnchor>
+      ) : null}
+    </li>
+  );
 }
 
-function RowView({
-  row,
-  titles,
-}: {
-  readonly row: LogRow;
-  readonly titles: ReadonlyMap<string, string>;
-}) {
-  const { session } = row;
+function namedKey(session: Row): string {
+  return `${sessionKey(session)}|${String(session['project'] ?? '')}`;
+}
+
+function GoalGroup({ group }: { readonly group: Group }) {
+  const { disclosures } = useControls();
+  const key = `goal-history:${group.id}`;
+  const expanded = useControlledDisclosureState(disclosures, key);
+  const listId = useId();
+  const rows = group.rows;
+  const remainder = rows.length - FIRST_ROWS;
+  if (!rows.length) return null;
   return (
-    <Card variant="intent-row" className="next-intent-row">
-      <span className="next-intent-key">
-        {session ? (
-          <RouteAnchor
-            route={{
-              view: 'session',
-              project: String(session['project'] == null ? '' : session['project']),
-              harness: String(session['harness'] || ''),
-              session: String(session['sid'] || ''),
-            }}
-            extra={{ 'data-next-focus': `intent:${row.key}` }}
-          >
-            {titles.get(titleKey(session)) ?? ''}
-          </RouteAnchor>
-        ) : (
-          <span className="next-intent-gone">{row.key}</span>
-        )}
-      </span>
-      {row.cells.map((cell, index) => (
-        <span
-          // The cells are a fixed sequence for one row, so the position is their identity.
-          key={index}
-          className={
-            cell.kind === 'words'
-              ? 'next-intent-words'
-              : cell.kind === 'why'
-                ? 'next-intent-why'
-                : cell.kind === 'gone'
-                  ? 'next-intent-gone'
-                  : 'next-intent-revision'
-          }
+    <section className="next-intent-group" data-next-goal-group={group.id}>
+      <h2 className="m-0 px-4 pt-4 text-value font-bold">{group.title}</h2>
+      <ul id={listId} className="m-0 list-none p-0">
+        {(expanded ? rows : rows.slice(0, FIRST_ROWS)).map((row) => (
+          <RowView key={row.key} row={row} title={row.title} />
+        ))}
+      </ul>
+      {remainder > 0 ? (
+        <Button
+          type="button"
+          className="mx-4 mb-4"
+          aria-expanded={expanded}
+          aria-controls={listId}
+          onClick={() => disclosures.set(key, !expanded)}
         >
-          {cell.text}
-        </span>
-      ))}
-    </Card>
+          {expanded ? 'Show fewer' : `Show ${remainder} more`}
+        </Button>
+      ) : null}
+    </section>
   );
 }
 
@@ -76,61 +132,79 @@ export function IntentLog() {
   const log = intentLogFor(shell);
   const logged = useIntentLogState(log);
   const data = useDisplayed((snapshot) => snapshot.data);
-  const model = useDisplayed(selectObserved);
-  const payload = asPayload(data);
-  const board: readonly Row[] = useMemo(
-    () => (data ? (payloadSessions(data).rows as unknown as Row[]) : []),
-    [data],
-  );
-  /* Only arrival, a changed source, or a failed load due for a retry fetches the words. Unrelated board
-     revisions reuse the current log: this runs when the log's own state or the board changes and asks
-     for nothing unless the log is unread or failed, and `load` refuses until a failed load is due. */
+  const observed = useDisplayed(selectObserved);
+  const [search, setSearch] = useState('');
   const wanted = logged.state === 'unread' || logged.state === 'error';
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the log's own state and the board are the triggers, not values the body reads.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a board redraw is an opportunity for a due retry.
   useEffect(() => {
     if (wanted) log.load();
   }, [log, wanted, logged, data]);
   const view = useMemo(
-    () => intentLogView({ payload, board, rows: logged.rows, load: logged.state }),
-    [payload, board, logged.rows, logged.state],
+    () =>
+      intentLogView({
+        payload: asPayload(data),
+        board: data ? (payloadSessions(data).rows as unknown as Row[]) : [],
+        rows: logged.rows,
+        load: logged.state,
+      }),
+    [data, logged],
   );
   const titles = useMemo(
-    () =>
-      new Map(
-        model.sessions.map((row) => [
-          `${sessionKey({ harness: row.harness, sid: row.sid })}|${row.project}`,
-          row.titleText,
-        ]),
-      ),
-    [model],
+    () => new Map(observed.sessions.map((row) => [namedKey(row), row.titleText])),
+    [observed],
   );
+  const query = search.trim().toLocaleLowerCase();
+  const groups = view.groups.map((group) => ({
+    ...group,
+    rows: group.rows.flatMap((row) => {
+      const title = row.session ? (titles.get(namedKey(row.session)) ?? row.title) : row.title;
+      return [row.goal, row.title, title].some((text) => text.toLocaleLowerCase().includes(query))
+        ? [{ ...row, title }]
+        : [];
+    }),
+  }));
+  const hasMatch = groups.some(({ rows }) => rows.length > 0);
   return (
     <section className="next-intent" data-next-view-body="intent">
-      <h1>{SHOWN.intent}</h1>
-      <Alert as="p" variant="intent-note" announce={false} className="next-intent-note">
-        {view.counts}
-      </Alert>
-      {view.notice ? (
-        <Alert as="p" variant="intent-note" announce={false} className="next-intent-note">
-          {view.notice}
-        </Alert>
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="m-0 text-hero font-bold">{SHOWN.intent}</h1>
+        <div className="relative min-w-0 basis-80">
+          <Icon
+            name="search"
+            className="pointer-events-none absolute start-3 top-4 text-muted-foreground"
+          />
+          <DraftInput
+            type="search"
+            memoryKey={SEARCH_KEY}
+            focusKey={SEARCH_KEY}
+            aria-label="Search goals"
+            placeholder="Search goals"
+            autoComplete="off"
+            onInput={(event) => setSearch(event.currentTarget.value)}
+            className="min-h-[48px] ps-9"
+          />
+        </div>
+      </header>
+      {!data || view.notice ? (
+        <p className="m-0 text-muted-foreground">{data ? view.notice : SHOWN.waitingForBoard}</p>
       ) : null}
-      {view.limits ? (
-        <Alert as="p" variant="intent-note" announce={false} className="next-intent-note">
-          {view.limits}
-        </Alert>
+      {query && !hasMatch && !view.notice ? (
+        <p role="status">No goals or session titles match your search.</p>
       ) : null}
-      {view.groups.map((group) => (
-        <Fragment key={group.title}>
-          <h2>{group.title}</h2>
-          {group.rows.map((row) => (
-            <RowView key={row.key} row={row} titles={titles} />
-          ))}
-        </Fragment>
+      {data && !query && !hasMatch && !view.notice ? <p>No goals or sessions to show.</p> : null}
+      {groups.map((group) => (
+        <GoalGroup key={group.id} group={group} />
       ))}
-      <Alert as="p" variant="intent-note" announce={false} className="next-intent-note">
-        {view.closing}
-      </Alert>
+      <Disclosure
+        disclosureKey="goal-history:retention"
+        summary="How long goals are kept"
+        className="next-intent-group px-4"
+        searchable={false}
+      >
+        {GOAL_HISTORY_LIMITS.map((text) => (
+          <p key={text}>{text}</p>
+        ))}
+      </Disclosure>
     </section>
   );
 }

@@ -16,6 +16,12 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+Departure (2026-11-23): Goal history uses searchable On the board now and Older sessions
+groups. Each row shows the goal's source and saved or discarded time. The view differential
+compares goal text, exact routes, titles, group membership and load states after masking
+the old labels and account of the store. The retention disclosure explains both bounds
+and the distinction between the saved goal store and the session history copy.
+
 Departure (2026-11-23): Needs you starts with Waiting on you, Worth a look and Ready to
 wrap up. The view differential checks their membership against the board selector and
 masks the replaced layouts, headings and action wording. The unchanged coverage, reports

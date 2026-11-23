@@ -22,8 +22,7 @@
       "monospace": 1
     },
     "frontend/src/intent/intent.css": {
-      "monospace": 6,
-      "tracking": 1
+      "monospace": 5
     },
     "frontend/src/intent/OutcomeLines.tsx": {
       "monospace": 1

@@ -15,10 +15,10 @@
 @source '../ui/**/*.{ts,tsx}';
 @source '../lib/**/*.{ts,tsx}';
 @source '../terminal/TerminalSurface.tsx';
-@source '../intent/{DirectionActionButton,DirectionQuestion,GoalField,HowTo,IntentPanel,IntentSection,LiveMonitorSwitch,OutcomeLines,PromptSelect}.tsx';
+@source '../intent/{DirectionActionButton,DirectionQuestion,GoalField,HowTo,IntentLog,IntentPanel,IntentSection,LiveMonitorSwitch,OutcomeLines,PromptSelect}.tsx';
 @source '../capacity/CapacityStrip.tsx';
 @source '../sessions/{SessionDetail,WhatItDid,SummaryParts,DepartureParts,DetailParts,SessionsView,SessionsGlance,SessionsFilters,WaitingBlock,SessionAiPrivacy,SessionCheckSettings}.tsx';
-@source '../attention/AttentionView.tsx';
+@source '../attention/{AttentionView,Items}.tsx';
 @source '../steering/{StageConditions,Tripwires}.tsx';
 @source '../sample/**/*.{ts,tsx}';
 @source '../shell/{Breadcrumb,Header,UpdateNotice}.tsx';

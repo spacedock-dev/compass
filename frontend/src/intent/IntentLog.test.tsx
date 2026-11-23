@@ -48,7 +48,7 @@ describe('the Intent log route', () => {
     await page.settle();
     expect(page.gets('/api/annotations')).toBe(1);
     expect(page.posts()).toBe(0);
-    expect(screen.getByText('Typed goal: Ship the queue')).toBeInTheDocument();
+    expect(screen.getByText('Ship the queue')).toBeInTheDocument();
     // A poll that brings the same token leaves the rows and asks for nothing.
     await page.poll({ ...BOARD, generated: 1100 });
     expect(page.gets('/api/annotations')).toBe(1);
@@ -65,11 +65,9 @@ describe('the Intent log route', () => {
     };
     const page = mountIntent({ data: board, routes: annotations([]) });
     await page.settle();
-    expect(
-      screen.getByText('Goal stated with /goal: The findings file exists'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('The findings file exists')).toBeInTheDocument();
     // The other session states none, so its row still says so.
-    expect(screen.getAllByText('No goal available from these sources.')).toHaveLength(1);
+    expect(screen.getAllByText('No goal yet.')).toHaveLength(1);
   });
 
   it('waits while hidden: a board that arrives on another route fetches no retained words', async () => {
@@ -84,12 +82,12 @@ describe('the Intent log route', () => {
   it('withholds withdrawn words the moment the token moves, and fetches the replacement once', async () => {
     const page = mountIntent({ data: BOARD, routes: annotations() });
     await page.settle();
-    expect(screen.getByText('Typed goal: Ship the queue')).toBeInTheDocument();
+    expect(screen.getByText('Ship the queue')).toBeInTheDocument();
     page.state.routes['/api/annotations'] = () => 'hold';
     await page.poll({ ...BOARD, intent_revision: 'r2' });
     // The words are gone from the page before the replacement arrives, and the page says why.
-    expect(screen.queryByText('Typed goal: Ship the queue')).toBeNull();
-    expect(screen.getByText('Reading the annotation store.')).toBeInTheDocument();
+    expect(screen.queryByText('Ship the queue')).toBeNull();
+    expect(screen.getByText('Loading saved goals.')).toBeInTheDocument();
     expect(page.gets('/api/annotations')).toBe(2);
     await page.release(
       '/api/annotations',
@@ -98,8 +96,8 @@ describe('the Intent log route', () => {
         intent_revision: 'r2',
       }),
     );
-    expect(screen.getByText('Typed goal: New words')).toBeInTheDocument();
-    expect(screen.queryByText('Typed goal: Ship the queue')).toBeNull();
+    expect(screen.getByText('New words')).toBeInTheDocument();
+    expect(screen.queryByText('Ship the queue')).toBeNull();
   });
 
   it('never restores words a stale request carried after the token moved on', async () => {
@@ -113,8 +111,8 @@ describe('the Intent log route', () => {
         intent_revision: 'r1',
       }),
     );
-    expect(screen.queryByText('Typed goal: Withdrawn')).toBeNull();
-    expect(screen.getByText('Reading the annotation store.')).toBeInTheDocument();
+    expect(screen.queryByText('Withdrawn')).toBeNull();
+    expect(screen.getByText('Loading saved goals.')).toBeInTheDocument();
   });
 
   it('says the store could not be read, never an empty log, and retries only after twenty seconds on a redraw', async () => {
@@ -123,12 +121,8 @@ describe('the Intent log route', () => {
       routes: { '/api/annotations': () => json({}, 500) },
     });
     await page.settle();
-    expect(
-      screen.getByText(
-        'The annotation store could not be read, so its evidence is unread rather than empty.',
-      ),
-    ).toBeInTheDocument();
-    expect(screen.queryByText('No goal or expected outcome has been saved yet.')).toBeNull();
+    expect(screen.getByText('Compass could not read your saved goals.')).toBeInTheDocument();
+    expect(screen.queryByText('No goal yet.')).toBeNull();
     await page.poll({ ...BOARD, generated: 1001 });
     expect(page.gets('/api/annotations')).toBe(1);
     await page.advance(20_000);
@@ -140,11 +134,7 @@ describe('the Intent log route', () => {
     const page = mountIntent({ data: { ...BOARD, annotate: false }, routes: annotations() });
     await page.settle();
     expect(page.gets('/api/annotations')).toBe(0);
-    expect(
-      screen.getByText(
-        'Annotations are off for this run. Start without --no-annotations to type a goal and an expected outcome.',
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Saving goals is off for this run.')).toBeInTheDocument();
   });
 
   it('links a session with an empty project label and files it on the board, not as departed', async () => {
@@ -152,14 +142,10 @@ describe('the Intent log route', () => {
     await page.settle();
     const link = screen.getByRole('link', { name: 'Unlabelled' });
     expect(link.getAttribute('href')).toBe('#n=session:' + ':codex:no-label');
-    expect(
-      screen.getByText('3 sessions listed: 2 on the board, 1 retained after leaving the board.'),
-    ).toBeInTheDocument();
-    // The departed one is named, and says there is nowhere to open.
-    expect(screen.getByText('pi:gone-1')).toBeInTheDocument();
-    expect(
-      screen.getByText('Not on the board now, so there is nowhere to open. The words are here.'),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'On the board now' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Older sessions' })).toBeVisible();
+    const old = screen.getByRole('heading', { name: 'Old words' });
+    expect(old.closest('li')?.querySelector('a')).toBeNull();
   });
 
   it('opens the session through the router, which stamps the Intent log as where it came from', async () => {
