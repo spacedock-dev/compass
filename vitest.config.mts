@@ -28,7 +28,7 @@ export default defineConfig({
     /* Measured 2026-11-09: 115 DOM files at WORKERS=2 grew workers from 106/128 to 2122/2531 MiB
        (peaks 2548/2661 MiB). The largest adjacent-file increase was 375 MiB, so recycling after 1 GiB
        leaves room for a file to finish below the hosted macOS worker's roughly 2 GiB old-space ceiling.
-       This is a between-file heap trigger, not a hard cap. Vitest 4.1 reads it from the root config;
+       This is a between-file heap trigger, not a hard cap. Vitest (4.1 and 5.1) reads it from the root config;
        it applies only to VM pools, so only the DOM project recycles and plain-fork logic is unaffected. */
     vmMemoryLimit: '1GiB',
     /* Two projects by file kind. A `.tsx` test renders React and needs jsdom; a `.ts` test is logic, and building

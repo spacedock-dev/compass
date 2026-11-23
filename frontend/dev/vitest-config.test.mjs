@@ -5,7 +5,7 @@ import config from '../../vitest.config.mts';
 test('a contributor can run the DOM suite without retaining a worker up to its heap ceiling', () => {
   const dom = config.test.projects.find((project) => project.test.name === 'dom').test;
   assert.equal(dom.pool, 'vmForks');
-  // Vitest 4.1 reads the VM-only limit from the root when scheduling project files.
+  // Vitest (4.1 and 5.1) reads the VM-only limit from the root when scheduling project files.
   assert.equal(
     config.test.vmMemoryLimit,
     '1GiB',

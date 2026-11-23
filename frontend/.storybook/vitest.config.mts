@@ -26,9 +26,10 @@ export default defineConfig({
           maxWorkers: 1,
           fileParallelism: false,
           setupFiles: [fileURLToPath(new URL('./vitest.setup.ts', import.meta.url))],
+          // Vitest 5 moved the browser server's address from `browser.api` to `api`.
+          api: { host: '127.0.0.1' },
           browser: {
             enabled: true,
-            api: { host: '127.0.0.1' },
             commands: { storyForcedColors, storyGuard, storyResult, storyScreenshot },
             screenshotDirectory: fileURLToPath(
               new URL('../../docs/screenshots/storybook', import.meta.url),

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { FetchLike } from '../api/client';
 import type { PayloadData } from '../api/types';
 import { selectDataStatus, selectSessions } from '../store/selectors';
@@ -742,6 +742,12 @@ describe('a failing subscriber does not corrupt the board', () => {
   it('keeps the accepted body, the other subscribers and the refresh owner intact', async () => {
     const { api, env, runtime } = runtimeFor();
     const reported: unknown[] = [];
+    /* The board hands a throwing subscriber's error to the page's reportError, which jsdom has had since 31
+       and which would otherwise surface here as an uncaught exception. */
+    vi.stubGlobal('reportError', (error: unknown) => reported.push(error));
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
     const seen = { late: 0 };
     runtime.store.subscribe(() => {
       throw new Error('subscriber bug');
@@ -758,7 +764,11 @@ describe('a failing subscriber does not corrupt the board', () => {
     await flush();
     expect(api.gets()).toBe(2);
     expect(runtime.store.getSnapshot().failures).toBe(0);
-    expect(reported).toEqual([]);
+    expect(reported).toHaveLength(2);
+    expect(reported.map((error) => (error as Error).message)).toEqual([
+      'subscriber bug',
+      'subscriber bug',
+    ]);
     runtime.dispose();
   });
 });
