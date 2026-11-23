@@ -7,6 +7,8 @@ import { Button } from '../ui/button';
 import { StatusTile } from '../ui/status-tile';
 import { TooltipProvider } from '../ui/tooltip';
 import { SESSION_ROW_WORDS } from '../language/glossary';
+import { selectAttentionSelection } from '../attention/select';
+import { WorthALookFlag } from '../attention/WorthALookFlag';
 import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 'react';
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
@@ -24,6 +26,7 @@ import {
   announcement,
   applyFilters,
   EMPTY_FILTERS,
+  filtersActive,
   groupEmptyLine,
   harnessMeta,
   indexScreen,
@@ -77,7 +80,10 @@ function StatusLegend() {
       </h2>
       <ul aria-labelledby="sessions-icon-legend" className="flex flex-wrap gap-x-4 gap-y-1">
         {SESSION_LEGEND.map(([word, icon]) => (
-          <li key={word} className="inline-flex items-center gap-2">
+          <li
+            key={word}
+            className={`inline-flex items-center gap-2${icon === 'worth-a-look' ? ' text-[var(--worth-a-look)]' : ''}`}
+          >
             <Icon name={icon} />
             {word}
           </li>
@@ -203,6 +209,7 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
             {`Source not fully read: ${names.join(', ')}`}
           </span>
         ) : null}
+        {row.worthALook ? <WorthALookFlag reason={row.worthALook} /> : null}
       </div>
     </div>
   );
@@ -252,9 +259,11 @@ const RowView = memo(function RowView({
 }) {
   const { session, history } = row;
   const nowKind = 'NOW';
-  const outcome = session.outcomeKnown ? (
-    <span className={`next-operation-outcome next-operation-outcome--${session.tone}`}>
-      {session.outcomeIcon ? (
+  const outcomeTone =
+    session.outcomeIcon === 'worth-a-look' ? '' : ` next-operation-outcome--${session.tone}`;
+  const outcome = row.showOutcome ? (
+    <span className={`next-operation-outcome${outcomeTone}`}>
+      {session.outcomeIcon === 'ended' ? (
         <Icon name={session.outcomeIcon} className="mr-1 inline-block align-text-bottom" />
       ) : null}
       {session.outcomeText}
@@ -548,9 +557,13 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
   const shell = useShell();
   const data = useDisplayed((snapshot) => snapshot.data);
   const model = useDisplayed(selectObserved);
+  const attention = useDisplayed(selectAttentionSelection);
   const screen = useMemo(
-    () => (data ? buildSessionsScreen(data as unknown as Row, model, chosenFor) : null),
-    [data, model, chosenFor],
+    () =>
+      data
+        ? buildSessionsScreen(data as unknown as Row, model, chosenFor, attention?.worthALook)
+        : null,
+    [data, model, chosenFor, attention],
   );
   const [filters, store] = useFilterState(shell.controls);
   /* The rows follow the choices a frame behind under load. The keystroke's own render keeps the deferred
@@ -584,6 +597,11 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
   const groupFilter = useMemo(() => ({ filtered, onClear: actions.clearAll }), [filtered, actions]);
   if (!screen || !board) return null;
   const canAnalyze = analysisAvailable(data as unknown as Row);
+  const worthALookCount = attention?.counts?.worthALook;
+  const otherFilters = filtersActive({
+    ...prepared,
+    filters: { ...prepared.filters, worthALookOnly: false },
+  });
   return (
     <section className="next-operations" data-next-view-body="sessions">
       <header className="next-operations-header">
@@ -613,6 +631,23 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
           </section>
         ))}
       </section>
+      {Array.isArray(data?.sessions) ? (
+        <Button
+          type="button"
+          className="mt-3 gap-1.5 aria-pressed:bg-accent"
+          aria-pressed={filters.worthALookOnly}
+          disabled={(worthALookCount === undefined || !indexed.length) && !filters.worthALookOnly}
+          onClick={() =>
+            actions.change({ ...filters, worthALookOnly: !filters.worthALookOnly }, 'press')
+          }
+        >
+          {filters.worthALookOnly ? <Icon name="check" /> : null}
+          {SESSION_ROW_WORDS.worthALook}{' '}
+          {worthALookCount === undefined
+            ? 'unavailable'
+            : `${String(worthALookCount)}${otherFilters ? ' on this board' : ''}`}
+        </Button>
+      ) : null}
       {/* No toolbar over an empty board: the existing sentences say why there is nothing to find. */}
       {indexed.length ? (
         <SessionsFilters

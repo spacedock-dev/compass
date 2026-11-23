@@ -19,6 +19,7 @@ import { Badge } from '../ui/badge';
 import { Button, buttonVariants } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Icon } from '../ui/icons';
+import { SESSION_ROW_WORDS } from '../language/glossary';
 import { Label } from '../ui/label';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Separator } from '../ui/separator';
@@ -583,6 +584,14 @@ export function SessionsFilters({
       clear: () => set({ [facet]: [] } as Partial<FilterState>),
     });
   }
+  if (filters.worthALookOnly)
+    chips.push({
+      key: 'worth-a-look',
+      short: SESSION_ROW_WORDS.worthALook,
+      full: SESSION_ROW_WORDS.worthALook,
+      inert: '',
+      clear: () => set({ worthALookOnly: false }),
+    });
   const inertNotes = [...new Set(chips.map((chip) => chip.inert).filter(Boolean))].map(
     (sentence) => {
       const names = chips

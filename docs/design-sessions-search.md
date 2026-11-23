@@ -92,6 +92,12 @@ Enter itself reads the words in the field, not the rows still drawn.
 ## How filters combine and count
 
 Values inside one filter are ORed. Filters are ANDed with each other and with the search.
+The Worth a look toggle narrows by the row's evidence flag and combines with the State
+filter. Its number counts flags on the loaded board and says "on this board" when other
+filters are applied. With every discovered source unread and no sessions to show, the
+control reports an unavailable count. A board with zero rows cannot start this filter.
+A check mark shows when the filter is pressed. The reader can remove its chip or use
+Clear all. If the board empties during a refresh, the pressed toggle can still clear it.
 
 Each option's count is faceted: it is the number of rows with that value that every other filter
 keeps. The filter's own choices are left out, so a count does not move when a sibling value is

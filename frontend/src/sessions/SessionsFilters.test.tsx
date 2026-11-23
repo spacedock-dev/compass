@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { GENERATED, SIDS, sessionsSearchPayload } from '../../stories/sessionsSearch.fixture';
+import { worthALookBoard } from '../../test/worthALookBoard';
 import type { Row } from '../observed';
 import { mountSessions } from './testing';
 
@@ -55,6 +56,58 @@ const trigger = (name: string) => screen.getByRole('button', { name: new RegExp(
 const nothing = () => document.querySelector('[data-sessions-nothing]');
 
 describe('the presets and chips', () => {
+  it('provides a removable chip and Clear all for the flag alone across polls', async () => {
+    const data = worthALookBoard();
+    const page = await open(data);
+    await press(page, preset('Worth a look 9'));
+    expect(chips()).toEqual(['Worth a look']);
+    expect(rows()).toBe(9);
+
+    await page.poll({ ...data, generated: data.generated + 1 });
+    expect(preset('Worth a look 9').getAttribute('aria-pressed')).toBe('true');
+    await press(page, preset('Remove Worth a look'));
+    expect(chips()).toEqual([]);
+    expect(rows()).toBe(18);
+    expect(document.activeElement).toBe(field());
+
+    await press(page, preset('Worth a look 9'));
+    await press(page, preset('Clear all'));
+    expect(rows()).toBe(18);
+
+    await press(page, preset('Worth a look 9'));
+    await page.poll({ ...data, generated: data.generated + 2, sessions: [] });
+    expect(preset('Worth a look 0').getAttribute('aria-pressed')).toBe('true');
+    await press(page, preset('Worth a look 0'));
+    expect(preset('Worth a look 0').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('does not arm an empty-board filter or hide rows that arrive on a poll', async () => {
+    const data = worthALookBoard();
+    const page = await open({ ...data, sessions: [] });
+    const empty = preset('Worth a look 0');
+    await press(page, empty);
+    expect(empty.getAttribute('aria-pressed')).toBe('false');
+    expect((empty as HTMLButtonElement).disabled).toBe(true);
+    await page.poll({
+      ...data,
+      generated: data.generated + 1,
+      sessions: data.sessions.filter(({ sid }) => sid === 'clean-end'),
+    });
+    expect(rows()).toBe(1);
+    expect(preset('Worth a look 0').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('identifies the population behind the count when Waiting hides all nine flags', async () => {
+    const page = await open(worthALookBoard());
+    await press(page, preset('Waiting on you'));
+    expect(rows()).toBe(2);
+    const toggle = preset('Worth a look 9 on this board');
+    await press(page, toggle);
+    expect(rows()).toBe(0);
+    expect(toggle.textContent).toBe('Worth a look 9 on this board');
+    expect(chips()).toEqual(['State: Waiting on you', 'Worth a look']);
+  });
+
   it('keeps a reader’s headless choice across a poll and clears it with the other filters', async () => {
     const page = await open();
     const popup = await openFilter(page, 'headless', 'Headless');
