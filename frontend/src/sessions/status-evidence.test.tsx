@@ -121,8 +121,7 @@ it.each([
 
 it.each([
   ['#n=sessions', 'article[data-next-session=parent]'],
-  ['#n=project:demo', '[data-next-going-on=parent]'],
-  ['#n=projects', 'button[data-next-session=parent]'],
+  ['#n=project:demo', 'a.project-overview-row[href^="#n=session:demo:claude:parent"]'],
 ])('keeps the declared child wait as text on %s', async (hash, selector) => {
   const page = mountSessions({ hash, data: declared.payload });
   await page.settle();
@@ -132,13 +131,15 @@ it.each([
   expect.soft(within(parent).queryByRole('img', { name: 'Working' })).toBeNull();
 });
 
-it('uses the same child wait when a project is scoped to that parent', async () => {
+it('keeps the same child wait when a retired project focus opens the parent session', async () => {
   const page = mountSessions({
     hash: '#n=project:demo:claude%3Aparent',
     data: declared.payload,
   });
   await page.settle();
-  const viewing = node('[data-next-cockpit-viewing-session]');
-  expect.soft(viewing).not.toHaveTextContent(/working/i);
-  expect.soft(viewing).toHaveTextContent('Waiting on child "Check build"');
+  const header = node('.next-session-detail-header');
+  expect(within(header).queryByText('Working', { exact: true })).toBeNull();
+  expect(
+    within(page.container).getByRole('link', { name: 'Waiting on child "Check build"' }),
+  ).toBeInTheDocument();
 });

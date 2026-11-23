@@ -78,9 +78,8 @@ describe('the Console is operations first', () => {
     expect(
       screen.getByText(/Select one exact session to open its read-only console\./),
     ).toBeInTheDocument();
-    const link = screen.getByText('Open this session’s console') as HTMLAnchorElement;
-    expect(link.getAttribute('href')).toContain('claude');
-    expect(link.getAttribute('href')).toContain('console');
+    const link = screen.getByRole('link', { name: 'Open this session' }) as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('#n=session:alpha:claude:s1&from=project');
     expect(summary()).toContain('terminal bridge per-session');
   });
 

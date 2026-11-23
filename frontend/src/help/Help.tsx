@@ -81,7 +81,7 @@ export function Help() {
   return (
     <div className="mx-auto my-8 grid w-full max-w-[920px] gap-6" data-next-view-body="help">
       <header>
-        <h1 className="mt-0 mb-2">How Compass works</h1>
+        <h1 className="mt-0 mb-2 text-hero font-extrabold">How Compass works</h1>
         <p className="m-0 text-value text-muted-foreground">
           Compass shows which coding agents on this computer are working, which need you, and how
           their work lines up with the goals you set.
@@ -193,18 +193,8 @@ export function Help() {
         >
           <p>
             Compass reads your plan’s usage through the sign-ins on this computer. Usage requests
-            carry no session text. You can control them in{' '}
-            <RouteLink route={{ view: 'settings' }}>Settings</RouteLink>.
-          </p>
-        </Disclosure>
-        <Disclosure
-          className="px-6"
-          disclosureKey="help:data"
-          summary="Where can I forget everything?"
-        >
-          <p>
-            Open Your data in <RouteLink route={{ view: 'settings' }}>Settings</RouteLink> to see
-            the commands and what they remove.
+            carry no session text. See the available readings and controls under Usage and alerts on
+            a <RouteLink route={{ view: 'projects' }}>project page</RouteLink>.
           </p>
         </Disclosure>
       </HelpCard>

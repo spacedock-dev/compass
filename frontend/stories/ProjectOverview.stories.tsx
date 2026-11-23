@@ -205,9 +205,7 @@ function stateStory(row: ReturnType<typeof session>, state: string): Story {
       const sessions = within(await canvas.findByRole('region', { name: 'Sessions' }));
       const link = within(sessions.getByRole('link', { name: new RegExp(row.title) }));
       for (const word of ['Waiting on you', 'Working', 'Ended', 'Quiet']) {
-        await expect(Boolean(link.queryByRole('img', { name: word, exact: true }))).toBe(
-          word === state,
-        );
+        await expect(Boolean(link.queryByRole('img', { name: word }))).toBe(word === state);
       }
       if (state === 'State not published')
         await expect(link.getByText(state, { exact: true })).toBeVisible();

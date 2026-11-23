@@ -178,7 +178,9 @@ export function ProjectDetail({
       >
         <header className="project-detail-title">
           <div>
-            <h1 data-authored>{model.group.label}</h1>
+            <h1 className="text-hero font-extrabold" data-authored>
+              {model.group.label}
+            </h1>
             <p className="next-project-detail-count">{model.group.observed.countLine}</p>
             {model.group.observed.sharedLabelKnown ? (
               <p>{model.group.observed.sharedLabelText}</p>

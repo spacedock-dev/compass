@@ -167,6 +167,10 @@ sample was captured:
   sample's 75,130 bytes to the bound is at most about 233 KB of page, which leaves the rest of the
   400 KiB to the code that ships beside it.
 
+The Help and Projects layer measured 2,423,571 bytes for the packaged page on 2026-11-23,
+up 8,312 bytes from its starting page of 2,415,259 bytes. The page bound rises once from
+2,418,919 to the measured 2,423,571 bytes. The fixture bound stays at 250,000 bytes.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.

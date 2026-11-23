@@ -177,11 +177,11 @@ even on a project page.
 | Tab | Key | What it shows |
 |---|---|---|
 | Sessions | `s` | Every session, with active work above recent history. Each active session shows where it is, what it is doing now, what it does next and whether it is blocked. Clicking a goal opens that session at its Goal card. |
-| Help | | The icon legend, progress words, and the view-only example. |
 | Projects | `p` | Sessions grouped by project. Each project has its own page with a briefing on where the project stands, and Overview, Timeline, Decisions and Usage and alerts. |
 | Needs you | `n` | Requests, reported blocks and risks. The badge counts Waiting on you and Worth a look. |
 | Goal history | none | Every session on the board, plus the goals Compass has kept, each labeled with where it came from. |
 | Settings | none | Dashboard preferences and AI use controls. |
+| Help | | The icon legend, progress words, and the view-only example. |
 
 `Escape` goes back to where you opened a session from. A session opened from a pasted link goes
 back to Sessions. The current view lives in the URL, so a reload or a pasted link comes back to

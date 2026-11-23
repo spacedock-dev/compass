@@ -160,7 +160,7 @@ function stateStory(row: ReturnType<typeof session>, state: string): Story {
       const link = await canvas.findByRole('link', { name: new RegExp(row.project) });
       const tile = within(link);
       for (const word of ['Waiting on you', 'Working', 'Ended', 'Quiet']) {
-        const icon = tile.queryByRole('img', { name: word, exact: true });
+        const icon = tile.queryByRole('img', { name: word });
         await expect(Boolean(icon)).toBe(word === state);
       }
       if (state === 'State not published')

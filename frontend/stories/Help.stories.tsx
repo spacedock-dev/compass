@@ -65,7 +65,6 @@ export const Guide: Story = {
       'Which agents can Compass see?',
       'Why are some sessions in an Unnamed folder?',
       EXPLANATIONS.aiAllowance,
-      'Where can I forget everything?',
     ])
       await userEvent.click(canvas.getByRole('button', { name: question }));
     for (const link of canvas.getAllByRole('link'))
@@ -101,3 +100,13 @@ function fit(width: number): Story {
 export const Fits390 = fit(390);
 export const Fits375 = fit(375);
 export const Fits320 = fit(320);
+
+export const ReadingWidth: Story = {
+  play: async ({ canvasElement }) => {
+    await atPageWidth(1280, async () => {
+      const heading = within(canvasElement).getByRole('heading', { name: 'How Compass works' });
+      const page = heading.closest('[data-next-view-body="help"]');
+      await expect(page?.getBoundingClientRect().width).toBe(920);
+    });
+  },
+};

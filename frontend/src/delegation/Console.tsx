@@ -102,7 +102,7 @@ export function ProjectConsole({
   const members = payloadSessions(snapshot.data).rows.filter(
     (row) => String(row.project ?? '') === project,
   ) as unknown as readonly Row[];
-  const only = members.length === 1 ? members[0] : undefined;
+  const only = members.length === 1 ? exactIdentity(members[0]) : null;
   const surface = identity ? <TerminalSurface project={project} identity={identity} /> : null;
   const scopeKey = focus ? compatSessKey(focus) : null;
 
@@ -140,13 +140,14 @@ export function ProjectConsole({
               {' '}
               <RouteLink
                 route={{
-                  view: 'project',
+                  view: 'session',
                   project,
-                  focus: compatSessKey(only),
-                  tab: 'console',
+                  harness: only.harness,
+                  session: only.sid,
+                  from: 'project',
                 }}
               >
-                Open this session’s console
+                Open this session
               </RouteLink>
             </>
           ) : null}

@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { blockedBackend } from '../../test/storage_backends';
+import { blockedBackend, fakeBackend } from '../../test/storage_backends';
 import { memoKey, STORAGE_KEYS } from '../storage';
 import { scenarios } from './generate.test.helper';
 import { mountProject } from './testing';
@@ -168,7 +168,7 @@ describe('the human context notes', () => {
     const page = mountProject({
       hash: '#n=project:calm%2Fapp',
       data: CALM?.board,
-      storageBackend: blockedBackend(),
+      storageBackend: { ...fakeBackend(), ...blockedBackend() },
     });
     await page.settle();
     const box = screen.getByRole('textbox', { name: 'Your notes' }) as HTMLTextAreaElement;

@@ -3,6 +3,7 @@ import { asPayload } from '../observed/values';
 import { Disclosure } from '../controls';
 import { TechnicalDetails } from '../controls/TechnicalDetails';
 import { RouteLink } from '../shell/RouteLink';
+import { stageData } from '../steering/stage';
 import { useDisplayed } from '../shell/context';
 import { Button } from '../ui/button';
 import { Icon, SESSION_STATE_ICONS } from '../ui/icons';
@@ -83,7 +84,7 @@ export function ProjectsView({ conditions = null }: ProjectsViewProps) {
   return (
     <section className="next-projects projects-list" data-next-view-body="projects">
       <header>
-        <h1>{SHOWN.projects}</h1>
+        <h1 className="text-hero font-extrabold">{SHOWN.projects}</h1>
         <p>Sessions grouped by the folders their agents report.</p>
       </header>
       {rows.length === 1 ? (
@@ -149,7 +150,7 @@ export function ProjectsView({ conditions = null }: ProjectsViewProps) {
           together under Unnamed folder.
         </p>
       </Disclosure>
-      {conditions ? (
+      {conditions && stageData(data).enabled ? (
         <TechnicalDetails disclosureKey="projects:conditions" caption="Stage conditions">
           {conditions}
         </TechnicalDetails>
