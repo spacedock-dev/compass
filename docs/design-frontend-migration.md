@@ -16,6 +16,33 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-23, Needs you writes out waiting, end, stop and turn ages using the displayed payload's
+clock. Older observations use the reader's clock or a short date. Absolute starts and scheduled
+resets include the date and year when the payload has no usable clock. Impossible ages are
+omitted while the reported wait or end remains visible. An unowned question shows its
+independently published wait.
+
+The comparison in
+[`attention/model.differential.test.ts`](../frontend/src/attention/model.differential.test.ts)
+projects waiting, end and turn ages, the `5m` wait caution, the numeric `stop observed:` stamp,
+delegated-work clock values, and the time in the quota reset row. It compares the reset row
+itself. [`attention/view.differential.test.tsx`](../frontend/src/attention/view.differential.test.tsx)
+also projects the added wait suffix on unowned questions, the command report stamp, the quota
+countdown and the `24h` empty-board spelling. The mounted tests check exact reset, countdown,
+delegated-launch and distinct location-member times. The command report inherits Inter.
+
+Sessions writes out the run, quiet, end and departure ages. Its
+[`sessions.differential.test.tsx`](../frontend/src/sessions/sessions.differential.test.tsx)
+projects the Now duration and the wait caution. It also removes only recorded zero ages
+from future ends and quiet observations. The observed model comparison projects the new request
+age and delegated-launch source fields that Needs you uses. The board's
+[`terminalParity.test.ts`](../frontend/src/sessions/terminalParity.test.ts) and the terminal's
+[`test_terminal_sessions.py`](../compass/skills/compass/tests/test_terminal_sessions.py) read
+the same hand-updated parity fixtures, including the unowned question age and unusable
+observations. The [`recordedSessionStatus`](../frontend/test/recordedSessionStatus.ts) projection
+sets aside the Sessions-only Now field and compares the wait caution in its written-out
+spelling. The recorded answers remain unchanged.
+
 2026-11-23, the Sessions filter and history explanations open below their triggers and keep
 their open state across a refresh. The earlier sessions heading names the published window on a
 bounded board. An all-history board uses Session history.

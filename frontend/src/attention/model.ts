@@ -13,6 +13,7 @@ import {
   type Row,
 } from '../observed';
 import { asPayload } from '../observed/values';
+import { observationAge } from '../shell/format';
 
 /* What the board asks of the reader, as subjects in four queues: a question or a reported block (NEEDS
    YOU), a risk, a session that ended or stopped and wants closing, and a published task coming next. The
@@ -246,10 +247,8 @@ export function subjectAge(subject: Subject, generated: number | null): number |
     const ages = subject.asks.map(askAge).filter((age): age is number => age !== null);
     return ages.length ? Math.max(...ages) : null;
   }
-  if (subject.primaryKind === 'input') return ageAt(generated, subject.session?.['blocked_since']);
-  if (subject.section === 'close') {
-    return ageAt(generated, subject.signals[0]?.detail.finishedAt);
-  }
+  if (subject.primaryKind === 'input')
+    return observationAge(generated, subject.session?.['blocked_since']);
   return null;
 }
 
@@ -690,7 +689,7 @@ export function attentionModel(input: unknown): AttentionModel {
     if (delegated.risky) {
       addSessionRisk(
         session,
-        { kind: 'quiet-launch', section: 'risk', sourceIndex, detail: { text: delegated.text } },
+        { kind: 'quiet-launch', section: 'risk', sourceIndex, detail: { session } },
         sourceIndex,
       );
     }

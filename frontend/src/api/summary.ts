@@ -200,6 +200,7 @@ export interface SummaryPlan {
   readonly windows: number;
   readonly calls: number;
   readonly minutes: number;
+  readonly windowBytes: number | null;
 }
 
 function parsePlan(value: unknown): SummaryPlan | null {
@@ -214,6 +215,7 @@ function parsePlan(value: unknown): SummaryPlan | null {
     windows: count(raw['windows']),
     calls: count(raw['calls']),
     minutes: count(raw['minutes']),
+    windowBytes: parseLargestRead(raw['largest_read'])?.windowBytes || null,
   };
 }
 

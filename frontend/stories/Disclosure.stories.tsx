@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Disclosure } from '../src/controls/Disclosure';
 import { ControlsProvider } from '../src/controls/ControlsProvider';
 import { testControls } from '../src/controls/testControls';
+import { ABSENT, SummaryPage, grant } from './summary.scenario';
 import { Button } from '../src/ui/button';
 const meta = { title: 'Controls/Disclosure', component: Example } satisfies Meta<typeof Example>;
 export default meta;
@@ -55,5 +56,36 @@ export const Popover: Story = {
     await userEvent.keyboard(' ');
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await expect(trigger).toHaveFocus();
+  },
+};
+
+export const WhatIsSentSize: Story = {
+  render: () => (
+    <SummaryPage
+      ended={false}
+      grant={grant({ disclosure: 'Sends redacted session text through Claude Code to Anthropic.' })}
+      summary={{
+        ...ABSENT,
+        plan: {
+          complete: true,
+          parts: 4,
+          windows: 3,
+          calls: 8,
+          minutes: 10,
+          largest_read: { windows: 32, window_bytes: 16384, calls: 37, seconds: 600 },
+        },
+      }}
+    />
+  ),
+  args: { variant: 'accordion' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByRole('button', { name: 'What is sent to Claude Code' }),
+    );
+    await waitFor(() => expect(canvas.getByText('Up to 16 KB per part.')).toBeVisible());
+    await expect(canvas.queryByText('16,384 bytes per part.')).not.toBeVisible();
+    await userEvent.click(canvas.getByText('Show technical details', { exact: true }));
+    await waitFor(() => expect(canvas.getByText('16,384 bytes per part.')).toBeVisible());
   },
 };

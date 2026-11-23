@@ -12,9 +12,11 @@ import { useDrift } from '../drift/context';
 import { ModelNotice, NoticeBody } from '../drift/ModelNotice';
 import { Why } from '../drift/Why';
 import { ActionButton } from '../intent/ActionButton';
+import { SHOWN } from '../language/glossary';
 import { SampleMark } from '../sample/SampleMark';
 import { clock } from '../observed';
 import { useShell } from '../shell/context';
+import { formatSize } from '../shell/format';
 import {
   FRESHNESS_UNKNOWN,
   LEDE_LAST,
@@ -153,11 +155,30 @@ const receiverOf = (grant: SummaryGrant): string =>
   grant.provider === 'claude' ? 'Claude Code' : grant.provider;
 
 function Sent({ state }: { readonly state: SummaryState }) {
+  const { model } = useDrift();
   if (!state.grant?.disclosure) return null;
   const receiver = receiverOf(state.grant);
+  const bytes = state.plan?.windowBytes ?? state.reasons.largest?.windowBytes ?? 0;
+  const size = bytes > 0 ? formatSize(bytes) : null;
   return (
     <Why name="summary-sent" searchable={false} summary={`What is sent to ${receiver}`}>
       <p className="next-cockpit-reading-why">{state.grant.disclosure}</p>
+      {size ? (
+        <>
+          <Line>{`Up to ${size} per part.`}</Line>
+          <Disclosure
+            variant="menu"
+            disclosureKey={disclosureKey({
+              project: model.project,
+              scope: model.key,
+              name: 'summary-sent-limit',
+            })}
+            summary={SHOWN.showTechnicalDetails}
+          >
+            <Line>{`${bytes.toLocaleString()} bytes per part.`}</Line>
+          </Disclosure>
+        </>
+      ) : null}
       <Turn state={state} on={summariesOff(state.grant)} />
     </Why>
   );

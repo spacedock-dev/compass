@@ -85,8 +85,8 @@ Active now
 Idle  Claude  gamma
   Tidy the release notes
   Goal · from your prompt: Rewrite the release notes for the next version
-  Now: last active 1h 6m ago
-  Drift · 10m ago
+  Now: last active 1 hour 6 minutes ago
+  Drift · 10 minutes ago
   Resume: claude --resume f6a7b8c9-2d4e-4a1b-9c3f-7e5d1a2b8c40
 
 Working  Claude  alpha-app
@@ -99,7 +99,7 @@ Recent history
 Idle  Codex  beta-api
   Paginate the list endpoint
   Goal · your first prompt: Add pagination to the list endpoint
-  Now: last active 8m ago
+  Now: last active 8 minutes ago
   Stop observed with uncommitted work · 3 changed entries
   Resume: codex resume 019c4e2a-7b31-7d40-9a62-3f1e8c5b0d27
 ```
@@ -110,7 +110,7 @@ Idle  Codex  beta-api
   under `Recent history`.
 - A `Goal ·` label that starts with `from` or reads `your words` is a saved goal. Any other label is
   Compass's draft, which the first reading saves.
-- `Drift · 10m ago` means a stored drift reading found the work departing from your goal. Run
+- `Drift · 10 minutes ago` means a stored drift reading found the work departing from your goal. Run
   [`--drift`](#check-a-session-for-drift) for the detail.
 - `Resume:` is the command to reopen a stopped session, and it holds the session's id. For a session
   that is still running, go to the terminal it runs in.
@@ -130,13 +130,13 @@ Waiting on you
 Claude  alpha-app  Choose the retry plan
   Approve the retry plan?
   2 published options
-  Waiting 4m
+  Waiting 4 minutes
   Answer on the board: http://127.0.0.1:4553/#n=session:alpha-app:claude:3f2a9c1e&from=attention
   Resume: claude --resume 3f2a9c1e-7b44-4d0a-9e61-2c8f5b7d9a10
 
 Codex  epsilon  Document the endpoint
   Needs-input state reported
-  Waiting 2m
+  Waiting 2 minutes
   Resume: codex resume 019c0000-1111-7222-8333-444455556666
 
 12 of 13 sessions report block state · 1 unknown · ends observed on 4 sessions
@@ -147,7 +147,9 @@ Droid: Harness does not report blocks
 ```
 
 When you run this yourself, ignore the first two lines. They are for an agent. Questions a session
-asked come first, then other waits, oldest first.
+asked come first, then other waits, oldest first. A question can show its published wait even
+when Compass cannot identify its session. If an observation has no usable age, the listing
+still shows the reported wait or end.
 
 - Answer a question through its `Answer on the board:` link. A question nobody answers within five
   minutes expires, and the session decides for itself.

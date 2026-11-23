@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { attentionModel } from '../attention/model';
+import { riskSourceText, subjectSource } from '../attention/text';
 import { riskSubject } from '../attention/subjects';
 import { resumeCommand } from '../controls/resumeCommand';
 import { observe, sessionKey, type Row } from '../observed';
@@ -105,7 +106,48 @@ describe('the board against the terminal listing', () => {
 
   it.each(finishedRuns)('holds the terminal Now reading: $name', ({ payload, now }) => {
     const screen = buildSessionsScreen(payload, observe(payload));
-    expect([...screen.active, ...screen.history].map((row) => row.session.nowText)).toEqual([now]);
+    expect([...screen.active, ...screen.history].map((row) => row.session.nowWords)).toEqual([now]);
+  });
+
+  it('keeps the published wait of an unowned request on the board card', () => {
+    const questions = observe(payload).boardRisks.filter((risk) => risk.kind === 'ask');
+    expect(
+      questions.map((risk) => [risk.identity, riskSourceText(risk).split(' · waiting ')[1]]),
+    ).toEqual(expected['unownedWaits']);
+  });
+
+  it('keeps the end and waiting states while withholding ages for unusable observations', () => {
+    const stamps = [
+      [0, 100000],
+      [100000, 1e100],
+      [100000, 100001],
+    ];
+    const results = stamps.map(([generated, stamp]) => {
+      const data = {
+        generated,
+        sessions: [
+          { harness: 'claude', sid: 'end', project: 'p', ended_at: stamp },
+          {
+            harness: 'claude',
+            sid: 'wait',
+            project: 'p',
+            state: 'needs_input',
+            blocked_since: stamp,
+          },
+        ],
+      };
+      const board = buildSessionsScreen(data, observe(data));
+      const attention = attentionModel(data);
+      return {
+        generated,
+        stamp,
+        ended: board.history.map((row) => [row.session.nowWords, row.endedSince]),
+        waiting: attention.needs.map(
+          (subject) => subjectSource(subject, attention).split(' · waiting ')[1] ?? null,
+        ),
+      };
+    });
+    expect(results).toEqual(expected['unusableAges']);
   });
 
   it('keys every row by the identity the file names', () => {

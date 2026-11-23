@@ -47,7 +47,7 @@
         "git": null,
         "command": "claude --resume f6a7b8c9-11111111-2222-4333-8444-555500000006",
         "ended": "",
-        "drift": "10m ago"
+        "drift": "10 minutes ago"
       },
       {
         "key": [
@@ -72,7 +72,7 @@
         "outcome": "Session ended with uncommitted work",
         "git": "2 changed entries",
         "command": "claude --resume b8c9d0e1-11111111-2222-4333-8444-555500000008",
-        "ended": "ended 1h 8m ago",
+        "ended": "ended 1 hour 8 minutes ago",
         "drift": null
       },
       {
@@ -84,7 +84,7 @@
         "outcome": "Session ended; git state clean",
         "git": "Git state reported clean",
         "command": "claude --resume a7b8c9d0-11111111-2222-4333-8444-555500000007",
-        "ended": "ended 1h 6m ago",
+        "ended": "ended 1 hour 6 minutes ago",
         "drift": null
       },
       {
@@ -96,7 +96,7 @@
         "outcome": "Session ended; git state clean",
         "git": "Git state reported clean",
         "command": "claude --resume e5f6a7b8-11111111-2222-4333-8444-555500000005",
-        "ended": "ended 30m ago",
+        "ended": "ended 30 minutes ago",
         "drift": null
       },
       {
@@ -186,5 +186,28 @@
     "unreported": [
       "Gemini CLI: Harness does not report blocks"
     ]
-  }
+  },
+  "unownedWaits": [
+    ["ask-fixture-2", "4 minutes"]
+  ],
+  "unusableAges": [
+    {
+      "generated": 0,
+      "stamp": 100000,
+      "ended": [["Session reported its own end", ""]],
+      "waiting": [null]
+    },
+    {
+      "generated": 100000,
+      "stamp": 1e+100,
+      "ended": [["Session reported its own end", ""]],
+      "waiting": [null]
+    },
+    {
+      "generated": 100000,
+      "stamp": 100001,
+      "ended": [["Session reported its own end", ""]],
+      "waiting": [null]
+    }
+  ]
 }
