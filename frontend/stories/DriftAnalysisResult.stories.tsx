@@ -228,7 +228,8 @@ export const MarkAsInaccurateSaysWhatItDoes: Story = {
     await within(drift).findByRole('button', { name: 'Steer back' });
     await expect(drift.querySelector('[data-next-disowned]')).toBeNull();
     const mark = within(row).getByRole('button', { name: RESULT_NOT_ACCURATE });
-    mark.scrollIntoView({ block: 'center' });
+    await document.fonts.ready;
+    mark.scrollIntoView({ behavior: 'instant', block: 'center' });
     const before = row.getBoundingClientRect().top;
     await userEvent.click(mark);
     // After: one message, at the top where the level was, with Undo and Check progress again beside it.
@@ -246,7 +247,7 @@ export const MarkAsInaccurateSaysWhatItDoes: Story = {
     const undo = within(notice).getByRole('button', { name: RESULT_UNMARK });
     await expect(within(drift).getByRole('button', { name: 'Check progress again' })).toBeVisible();
     // The level and Steer back left the column above; the foot stayed where the press was.
-    await expect(Math.abs(row.getBoundingClientRect().top - before)).toBeLessThan(4);
+    await waitFor(() => expect(Math.abs(row.getBoundingClientRect().top - before)).toBeLessThan(4));
     await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
     await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
     await userEvent.click(undo);
