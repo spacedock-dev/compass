@@ -269,7 +269,7 @@ a.project-list-row {
   gap: var(--sp-3);
   width: 100%;
   min-width: 0;
-  min-height: max(76px, calc(var(--project-row-lines) * 22px + 16px));
+  min-height: max(76px, calc(var(--project-row-lines, 1) * 22px + 16px));
   padding: var(--sp-2) var(--sp-4);
   border-radius: 0;
   text-align: start;
@@ -310,7 +310,7 @@ a.project-list-row {
     grid-template-columns: 44px minmax(0, 1fr) 16px;
     grid-template-rows: 1fr auto auto;
     gap: 1px var(--sp-2);
-    min-height: max(112px, calc(var(--project-row-lines) * 22px + 68px));
+    min-height: max(112px, calc(var(--project-row-lines, 1) * 22px + 68px));
   }
   .project-list-row > :first-child, .project-list-chevron { grid-row: 1 / 4; }
   .project-list-chevron { grid-column: 3; }
