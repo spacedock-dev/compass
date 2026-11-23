@@ -18,7 +18,7 @@ const FIELDS = ['input', 'select', 'textarea'];
 export const SKIP_ROLES = ['combobox', 'listbox', 'option', 'checkbox', 'radio'] as const;
 export const SKIP_ROLE_SELECTOR = SKIP_ROLES.map((role) => `[role="${role}"]`).join(', ');
 const SHORTCUTS: Readonly<Record<string, RouteInput>> = {
-  a: { view: 'attention', project: null, session: null },
+  n: { view: 'attention', project: null, session: null },
   p: { view: 'projects', project: null, session: null },
   s: { view: 'sessions', project: null, session: null },
 };

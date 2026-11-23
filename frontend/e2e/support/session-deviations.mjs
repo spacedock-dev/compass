@@ -57,6 +57,13 @@ export function normaliseSessionRecord(record, evidence = {}) {
       const driftCard = key === 'text' && path.length === 1 && Array.isArray(record?.resultStates);
       const sessionRow = key === 'text' && path.includes('rows');
       if (!sessionHeader && !driftCard && !sessionRow && !path.includes('parts')) return value;
+      if (
+        path.includes('.next-cockpit-departures-kept') &&
+        value ===
+          'Intent logWhat it keepsThe Intent log keeps what you saved and what was raised against it after the session leaves the board.'
+      ) {
+        return 'Goal historyWhat it keepsGoal history keeps what you saved and what was raised against it after the session leaves the board.';
+      }
       return preserve(value, (value) => {
         // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
         if (sessionRow) value = maskRecordedSessionRowMarks(value);

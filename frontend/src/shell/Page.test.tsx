@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { REGION_IDS } from './announcer';
+import { headerBoard } from '../../test/headerBoard';
 import { BOARD, mountShell } from './testing';
 import { SAMPLE_FIXTURE } from '../sample/fixture';
 import { SAMPLE_FRAGMENT, SAMPLE_HARNESS, SAMPLE_PROJECT, SAMPLE_SID } from '../sample/ids';
@@ -16,23 +17,14 @@ const crumb = () => {
     .map((segment) => segment.textContent?.trim())
     .join(' › ');
 };
-const current = () =>
-  primary()
-    .queryAllByRole('link')
-    .find((link) => link.getAttribute('aria-current') === 'page')?.textContent ?? null;
+const current = () => primary().getByRole('link', { current: 'page' });
+const working = () => screen.getByRole('status', { name: 'Working sessions' });
 
 describe('the primary navigation', () => {
-  it('lists the five views in the released order with the released labels, each a real link', async () => {
-    const page = mountShell({ data: BOARD });
+  it('lists the five views in order with their plain labels, each a real link', async () => {
+    const page = mountShell({ data: headerBoard() });
     await page.settle();
     const links = primary().getAllByRole('link');
-    expect(links.map((link) => link.textContent)).toEqual([
-      'Sessions',
-      'Projects',
-      'Attention',
-      'Intent log',
-      'Settings',
-    ]);
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
       '#n=sessions',
       '#n=projects',
@@ -40,27 +32,35 @@ describe('the primary navigation', () => {
       '#n=intent',
       '#n=settings',
     ]);
+    expect(primary().getByRole('link', { name: 'Needs you 3' })).toBe(links[2]);
+    expect(primary().getByRole('link', { name: 'Goal history' })).toBe(links[3]);
+    expect(screen.getByRole('link', { name: 'Compass' }).getAttribute('href')).toBe('#n=sessions');
     for (const link of links) expect(link.getAttribute('tabindex')).not.toBe('-1');
   });
 
   it.each([
     ['#n=sessions', 'Sessions'],
-    ['#n=attention', 'Attention'],
+    ['#n=attention', 'Needs you'],
     ['#n=projects', 'Projects'],
-    ['#n=intent', 'Intent log'],
+    ['#n=intent', 'Goal history'],
     ['#n=settings', 'Settings'],
     ['#n=project:alpha%2Fapp', 'Projects'],
     ['#n=project:alpha%2Fapp:course', 'Projects'],
     ['#n=session:alpha%2Fapp:claude:shared-sid', 'Sessions'],
-    ['#n=session:alpha%2Fapp:claude:shared-sid&from=attention', 'Attention'],
-    ['#n=session:alpha%2Fapp:claude:shared-sid&from=intent', 'Intent log'],
+    ['#n=session:alpha%2Fapp:claude:shared-sid&from=attention', 'Needs you'],
+    ['#n=session:alpha%2Fapp:claude:shared-sid&from=intent', 'Goal history'],
     ['#n=session:alpha%2Fapp:claude:shared-sid&from=projects', 'Projects'],
     ['#n=session:alpha%2Fapp:claude:shared-sid&from=project', 'Projects'],
     ['#n=bogus', 'Sessions'],
   ])('marks the current location for %s as %s', async (hash, label) => {
     const page = mountShell({ hash, data: BOARD });
     await page.settle();
-    expect(current()).toBe(label);
+    expect(
+      primary().getByRole('link', {
+        name: label === 'Needs you' ? 'Needs you 1' : label,
+        current: 'page',
+      }),
+    ).toBe(current());
     expect(
       primary()
         .getAllByRole('link')
@@ -72,11 +72,11 @@ describe('the primary navigation', () => {
     const page = mountShell({ data: BOARD });
     await page.settle();
     await page.go('#n=attention');
-    expect(current()).toBe('Attention');
+    expect(primary().getByRole('link', { name: 'Needs you 1', current: 'page' })).toBe(current());
     await page.go('#n=projects');
-    expect(current()).toBe('Projects');
+    expect(primary().getByRole('link', { name: 'Projects', current: 'page' })).toBe(current());
     await page.back();
-    expect(current()).toBe('Attention');
+    expect(primary().getByRole('link', { name: 'Needs you 1', current: 'page' })).toBe(current());
   });
 });
 
@@ -110,12 +110,12 @@ describe('the breadcrumb', () => {
     [
       'a session opened from Attention',
       '#n=session:alpha%2Fapp:claude:shared-sid&from=attention',
-      'Attention › Alpha shared claude',
+      'Needs you › Alpha shared claude',
     ],
     [
-      'a session opened from the Intent log',
+      'a session opened from the Goal history',
       '#n=session:alpha%2Fapp:claude:shared-sid&from=intent',
-      'Intent log › Alpha shared claude',
+      'Goal history › Alpha shared claude',
     ],
     [
       'a session opened from a project',
@@ -185,9 +185,9 @@ describe('the breadcrumb', () => {
 describe('the document title is one per view and does not move while the board refreshes', () => {
   it.each([
     ['#n=sessions', 'Compass — Sessions'],
-    ['#n=attention', 'Compass — Attention'],
+    ['#n=attention', 'Compass — Needs you'],
     ['#n=projects', 'Compass — Projects'],
-    ['#n=intent', 'Compass — Intent log'],
+    ['#n=intent', 'Compass — Goal history'],
     ['#n=settings', 'Compass — Settings'],
     ['#n=project:alpha%2Fapp', 'alpha/app — Compass'],
     ['#n=session:alpha%2Fapp:claude:shared-sid', 'Alpha shared claude — alpha/app — Compass'],
@@ -224,95 +224,95 @@ describe('the document title is one per view and does not move while the board r
     }
     expect([...seen]).toEqual(['Compass — Sessions']);
     await page.go('#n=attention');
-    expect(document.title).toBe('Compass — Attention');
+    expect(document.title).toBe('Compass — Needs you');
   });
 });
 
-describe('the header counts come from the rows the page was given', () => {
-  it('reads running and subagents with the legacy sentence, and a reported-block button when a session is blocked', async () => {
-    const page = mountShell({ data: BOARD });
+describe('the header counts come from the displayed board', () => {
+  it('shows the same all-board Working count through every view, even without event liveness', async () => {
+    const page = mountShell({ data: headerBoard() });
     await page.settle();
-    expect(document.querySelector('.next-running')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      '2 running · 3 subagents observed',
+    for (const fragment of [
+      '#n=sessions',
+      '#n=projects',
+      '#n=attention',
+      '#n=intent',
+      '#n=settings',
+      '#n=project:acme%2Fdashboard',
+      '#n=session:acme%2Fdashboard:claude:active',
+    ]) {
+      await page.go(fragment);
+      expect(working().textContent, fragment).toBe('2 sessions working');
+    }
+  });
+
+  it('uses the singular when exactly one session displays Working', async () => {
+    const data = headerBoard();
+    const page = mountShell({ data: { ...data, sessions: data.sessions.slice(0, 1) } });
+    await page.settle();
+    expect(working().textContent).toBe('1 session working');
+    expect(working().querySelector('[aria-hidden="true"]')).toBeVisible();
+  });
+
+  it('counts the native wait with an exact request once and includes Worth a look but not a clean end', async () => {
+    const page = mountShell({ data: headerBoard() });
+    await page.settle();
+    expect(primary().getByRole('link', { name: 'Needs you 3' }).getAttribute('href')).toBe(
+      '#n=attention',
     );
-    expect(screen.getByRole('button', { name: '1 reported block' })).toBeInTheDocument();
-  });
+    expect(screen.queryByRole('button', { name: /reported blocks?/ })).toBeNull();
+    await page.go('#n=attention');
+    expect(primary().getByRole('link', { name: 'Needs you 3', current: 'page' })).toBe(current());
+    expect(screen.getByRole('heading', { level: 1, name: 'Needs you' })).toBeVisible();
+    const waiting = screen.getByRole('heading', { name: 'Needs you now (2)' }).closest('section');
+    if (!waiting) throw new Error('The waiting section is missing');
+    const gateLinks = within(waiting)
+      .getAllByRole('link')
+      .filter((link) => link.getAttribute('href')?.includes(':claude:gate'));
+    expect(gateLinks).toHaveLength(1);
+    const gate = gateLinks[0];
+    const row = gate?.closest('li');
+    if (!gate || !row) throw new Error('The waiting session has no row');
+    expect(within(row).getByText('Approve the command?')).toBeVisible();
+    expect(within(row).getByText(/Waiting for command approval/)).toBeVisible();
 
-  it('uses the singular for one subagent and one block, and the plural for any other count', async () => {
-    const one = {
-      generated: 1,
-      sessions: [
-        { harness: 'claude', sid: 'a', project: 'p', state: 'needs_input', subagents: [{}] },
-      ],
-    };
-    const page = mountShell({ data: one });
+    fireEvent.click(gate);
     await page.settle();
-    expect(document.querySelector('.next-running')?.textContent).toContain('1 subagent observed');
-    expect(screen.getByRole('button', { name: '1 reported block' })).toBeInTheDocument();
-    page.unmount();
-    const two = {
-      generated: 1,
-      sessions: [1, 2].map((n) => ({
-        harness: 'claude',
-        sid: `s${String(n)}`,
-        project: 'p',
-        state: 'needs_input',
-      })),
-    };
-    const again = mountShell({ data: two });
-    await again.settle();
-    expect(screen.getByRole('button', { name: '2 reported blocks' })).toBeInTheDocument();
+    const asked = screen.getByRole('region', { name: 'Asked you' });
+    expect(within(asked).getByText('Approve the command?')).toBeVisible();
+    expect(within(asked).getByText(/Waiting for command approval/)).toBeVisible();
+    expect(primary().getByRole('link', { name: 'Needs you 3', current: 'page' })).toBe(current());
   });
 
-  it('draws no block button when nothing reports a block, and the button leads to Attention', async () => {
-    const calm = mountShell({
-      data: {
-        generated: 1,
-        sessions: [{ harness: 'claude', sid: 'a', project: 'p', state: 'idle' }],
-      },
-    });
-    await calm.settle();
-    expect(screen.queryByRole('button', { name: /reported block/ })).toBeNull();
-    calm.unmount();
-
-    const page = mountShell({ data: BOARD });
-    await page.settle();
-    fireEvent.click(screen.getByRole('button', { name: '1 reported block' }));
-    expect(page.router.getRoute().view).toBe('attention');
-    expect(page.history.entries().at(-1)).toBe('#n=attention');
-  });
-
-  it('claims no liveness before a board has arrived or when the board carries no session collection', async () => {
+  it('claims no Working count or badge before a board, or without a published collection', async () => {
     const unread = mountShell({});
     await unread.settle();
-    expect(document.querySelector('.next-running')?.textContent).toBe(
-      'Waiting for the first board.',
-    );
-    expect(document.querySelector('.next-running svg')).toBeNull();
-    expect(document.body.textContent).not.toContain('0 running');
+    expect(working().textContent).toBe('Waiting for the first board.');
+    expect(working().querySelector('[aria-hidden="true"]')).toBeNull();
+    expect(primary().getByRole('link', { name: 'Needs you' })).toBeVisible();
     unread.unmount();
 
     const absent = mountShell({ data: { generated: 1 } });
     await absent.settle();
-    expect(document.querySelector('.next-running')?.textContent).toBe(
-      'Session data not published.',
-    );
-    expect(document.body.textContent).not.toContain('0 running');
+    expect(working().textContent).toBe('Session data not published.');
+    expect(working().querySelector('[aria-hidden="true"]')).toBeNull();
+    expect(primary().getByRole('link', { name: 'Needs you' })).toBeVisible();
   });
 
-  it('reads an empty collection as measured zeros, which is a different fact from an absent one', async () => {
+  it('reports a measured zero on an empty board', async () => {
     const page = mountShell({ data: { generated: 1, sessions: [] } });
     await page.settle();
-    expect(document.querySelector('.next-running')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      '0 running · 0 subagents observed',
-    );
+    expect(working().textContent).toBe('Nothing working right now');
+    expect(working().querySelector('[aria-hidden="true"]')).toBeNull();
+    expect(primary().getByRole('link', { name: 'Needs you' })).toBeVisible();
   });
 
-  it('keeps the counts out of a project page, which has its own More menu with the all-project status', async () => {
+  it('keeps project More actions available without a duplicate fleet count', async () => {
     const page = mountShell({ hash: '#n=project:alpha%2Fapp', data: BOARD });
     await page.settle();
-    expect(document.querySelector('.next-running')).toBeNull();
-    expect(screen.getByText('All projects · 2 running · 3 subagents observed')).toBeInTheDocument();
+    expect(working().textContent).toBe('2 sessions working');
+    expect(screen.getByText('More', { selector: 'summary' })).toBeVisible();
+    expect(screen.queryByText(/subagents? observed/)).toBeNull();
   });
 });
 
@@ -350,9 +350,7 @@ describe('a failed refresh', () => {
         await page.shell.runtime.refresh();
       });
     }
-    expect(document.querySelector('.next-running')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      '2 running · 3 subagents observed',
-    );
+    expect(working().textContent).toBe('2 sessions working');
     expect(screen.getByText('Live refresh failed 3 times in a row.')).toBeInTheDocument();
   });
 
@@ -416,10 +414,12 @@ describe('the keyboard', () => {
     return view;
   }
 
-  it('opens Attention, Projects and Sessions with a, p and s, and ignores the retired dashboard key', async () => {
-    expect(await pressed('a', '#n=intent')).toBe('attention');
+  it('opens Needs you, Projects and Sessions with n, p and s and leaves retired keys alone', async () => {
+    expect(await pressed('n', '#n=intent')).toBe('attention');
     expect(await pressed('p', '#n=intent')).toBe('projects');
     expect(await pressed('s', '#n=intent')).toBe('sessions');
+    expect(await pressed('a', '#n=intent')).toBe('intent');
+    expect(await pressed('h', '#n=intent')).toBe('intent');
     expect(await pressed('d', '#n=intent')).toBe('intent');
   });
 
@@ -435,8 +435,8 @@ describe('the keyboard', () => {
     await page.settle();
     const field = document.createElement('input');
     document.body.append(field);
-    fireEvent.keyDown(field, { key: 'a' });
-    fireEvent.keyDown(document.body, { key: 'a', ctrlKey: true });
+    fireEvent.keyDown(field, { key: 'n' });
+    fireEvent.keyDown(document.body, { key: 'n', ctrlKey: true });
     expect(page.router.getRoute().view).toBe('intent');
     field.remove();
   });

@@ -175,6 +175,28 @@ async function open(
 }
 
 const failure = () => document.querySelector('.next-session-answer-failure');
+
+it('names and opens Needs you from the native wait', async () => {
+  const page = await open(board([{ ...ONE, state_detail: 'Permission prompt', resume_id: 'one' }]));
+  const block = screen.getByRole('region', { name: 'Waiting on you' });
+  const link = within(block).getByRole('link', { name: 'Needs you' });
+  expect(link.getAttribute('href')).toBe('#n=attention');
+  fireEvent.click(link);
+  await page.settle();
+  expect(screen.getByRole('heading', { level: 1, name: 'Needs you' })).toBeVisible();
+});
+
+it('names and opens Goal history from Full activity', async () => {
+  const page = await open(board([ONE], { annotate: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Full activity' }));
+  const history = screen.getByText('What it keeps').closest('.next-cockpit-departures-kept');
+  if (!history) throw new Error('The history disclosure is missing');
+  const link = within(history as HTMLElement).getByRole('link', { name: 'Goal history' });
+  expect(link.getAttribute('href')).toBe('#n=intent');
+  fireEvent.click(link);
+  await page.settle();
+  expect(screen.getByRole('heading', { level: 1, name: 'Goal history' })).toBeVisible();
+});
 const expectPoliteFailure = (notice: Element | null) => {
   expect(notice).not.toBeNull();
   expect(notice?.getAttribute('role')).toBe('status');

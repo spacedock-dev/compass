@@ -78,6 +78,8 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
   /* A harness's own gate draws a Waiting-on-you block the retired page never had (owner, 2026-10-29;
      docs/design-frontend-migration.md#held-to-recorded-answers). The rest of the page is held unchanged. */
   copy.querySelector('[data-next-session-section="waiting"]')?.remove();
+  // The recording shows the question but lacks the native wait fact on the same card.
+  copy.querySelector('[data-next-session-section="ask"] [data-next-session-wait-note]')?.remove();
   const meta = copy.querySelector('.next-session-detail-meta');
   // Compare retained counts in the recorded header order; the viewport proof owns their new placement.
   if (meta && header && !header.contains(meta)) {
@@ -270,6 +272,12 @@ function legacySummary(
   );
   projectRecordedTurnEnd(template.content, payload as Record<string, unknown>, route);
   projectRecordedCommandOpener(template.content, payload as Record<string, unknown>, route);
+  const history = template.content.querySelector('.next-cockpit-departures-kept');
+  const historyLink = history?.querySelector('a[href="#n=intent"]');
+  if (historyLink?.textContent === 'Intent log') historyLink.textContent = 'Goal history';
+  const keeps = history?.querySelector('details > p');
+  if (keeps?.textContent)
+    keeps.textContent = norm(keeps).replace(/^The Intent log keeps /, 'Goal history keeps ');
   // Current activity now gives the exact owned question priority; its record is not rewritten.
   const data = payload as Row;
   const question =

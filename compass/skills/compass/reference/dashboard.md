@@ -13,7 +13,7 @@ New to it? `See a sample session (view only)`, above the Sessions list, opens an
 that drifted, with a stored summary of what it did, its stored reading, the correction Compass
 composed and numbered (i) marks that explain each part. It is static page data: nothing in it is saved, sent or run.
 
-Compass is an agnostic agent cartography and visualization tool: a local web dashboard mapping live coding-agent activity across **ten harnesses** on this machine — Claude Code, Codex, Pi, Gemini CLI, Antigravity CLI, GitHub Copilot CLI, OpenCode, Cursor CLI, Goose, Factory Droid — each row badged with its harness. A "Discovered harnesses" strip at the top shows all supported harnesses; ones with local session data are green/enabled, others gray/disabled. A harness's sessions only appear if its data is discovered. Transcript-backed sessions appear even if they never called TaskCreate; Claude task files may also surface a task-only session when its transcript is unavailable. Per session: observed state, what it's doing right now, running subagents (named pills), a current-turn elapsed/ETA estimate with progress bar, a ⚠️ warning (with tooltip) when a request runs or is estimated ≥15 min, one row per tracked task, and the recent token output rate. Fires desktop notifications when a session is blocked waiting on the human — Claude, Codex, Copilot, Cursor, OpenCode and Pi can report waits, within their stated coverage — and when any session registers a question through the ask lane. Sessions, Projects and Attention render the same data three ways — see Dashboard views below.
+Compass is an agnostic agent cartography and visualization tool: a local web dashboard mapping live coding-agent activity across **ten harnesses** on this machine — Claude Code, Codex, Pi, Gemini CLI, Antigravity CLI, GitHub Copilot CLI, OpenCode, Cursor CLI, Goose, Factory Droid — each row badged with its harness. A "Discovered harnesses" strip at the top shows all supported harnesses; ones with local session data are green/enabled, others gray/disabled. A harness's sessions only appear if its data is discovered. Transcript-backed sessions appear even if they never called TaskCreate; Claude task files may also surface a task-only session when its transcript is unavailable. Per session: observed state, what it's doing right now, running subagents (named pills), a current-turn elapsed/ETA estimate with progress bar, a ⚠️ warning (with tooltip) when a request runs or is estimated ≥15 min, one row per tracked task, and the recent token output rate. Fires desktop notifications when a session is blocked waiting on the human — Claude, Codex, Copilot, Cursor, OpenCode and Pi can report waits, within their stated coverage — and when any session registers a question through the ask lane. Sessions, Projects and Needs you render the same data three ways — see Dashboard views below.
 
 Store locations are resolved per platform, and the documented relocation variables are honored: `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME` (the CLI creates `.gemini` inside it; relocates the Antigravity store with it), `COPILOT_HOME`, `PI_CODING_AGENT_DIR`, and `PI_CODING_AGENT_SESSION_DIR`. When one is set it is authoritative — no fallback to the default location. Run `--diagnose` to see every path searched.
 
@@ -47,7 +47,7 @@ unpublished state or a scan without a turn stop is explained in a secondary text
 
 | State | Meaning | Derived from |
 |---|---|---|
-| **Waiting on you** | An agent is blocked on the human | Best effort, never guaranteed, and six harnesses can report it at all. **Claude** has four sources that cover different things rather than ranking cleanly: the bundled `PermissionRequest` hook is the main one for tool gates, seen directly for `ExitPlanMode` and in the wild for `AskUserQuestion`; an actionable Notification-hook POST is the *only* source for an MCP elicitation or a worker's permission or network request; and a pending input tool seen in the transcript is an opportunistic extra, because Claude Code flushes that record on its own schedule and sometimes not until the gate has been answered; the fourth is about a subagent rather than the session, and is a member on the teams roster that was dispatched and never wrote a transcript, described on the teams-registry bullet above. **Codex** has one, its own bundled `PermissionRequest` hook, measured firing interactively with the prompt still on screen. A Codex row says a gate is open and cannot say which, because the event envelope drops the tool name at the hook; it raises a popup on the same terms a Claude one does. **Copilot** has one too, and it is the only one that needs nothing installed: the CLI writes `permission.requested` to its own `events.jsonl` when the dialog opens and `permission.completed` only once the human answers, so the collector reads a request with no answer behind it as a standing gate. A Copilot row says whether a command or a URL is being asked about, and never which command or which URL. **Cursor** takes the same route on a different store: a standing tool-call gate leaves `pendingToolExecutionContracts` non-empty on the newest blob of the chat's SQLite store, and answering it — either way — appends a blob with the map emptied. Its store closes nothing on its own, so the wait is published only while the row is fresh enough to be trusted; the reason is on the Cursor store bullet above. A Cursor row says a permission request is open and how long it has stood, and nothing about what was asked. **OpenCode** reports parent permission waits through its per-project passive plugin. **Pi** reports extension UI prompts in persisted sessions through its adapter on 0.85.1; startup trust is excluded. Both require events enabled and lose standing observations on restart. The other four harnesses have no gate detection; Attention reports that coverage gap so a quiet row cannot be read as an all-clear |
+| **Waiting on you** | An agent is blocked on the human | Best effort, never guaranteed, and six harnesses can report it at all. **Claude** has four sources that cover different things rather than ranking cleanly: the bundled `PermissionRequest` hook is the main one for tool gates, seen directly for `ExitPlanMode` and in the wild for `AskUserQuestion`; an actionable Notification-hook POST is the *only* source for an MCP elicitation or a worker's permission or network request; and a pending input tool seen in the transcript is an opportunistic extra, because Claude Code flushes that record on its own schedule and sometimes not until the gate has been answered; the fourth is about a subagent rather than the session, and is a member on the teams roster that was dispatched and never wrote a transcript, described on the teams-registry bullet above. **Codex** has one, its own bundled `PermissionRequest` hook, measured firing interactively with the prompt still on screen. A Codex row says a gate is open and cannot say which, because the event envelope drops the tool name at the hook; it raises a popup on the same terms a Claude one does. **Copilot** has one too, and it is the only one that needs nothing installed: the CLI writes `permission.requested` to its own `events.jsonl` when the dialog opens and `permission.completed` only once the human answers, so the collector reads a request with no answer behind it as a standing gate. A Copilot row says whether a command or a URL is being asked about, and never which command or which URL. **Cursor** takes the same route on a different store: a standing tool-call gate leaves `pendingToolExecutionContracts` non-empty on the newest blob of the chat's SQLite store, and answering it — either way — appends a blob with the map emptied. Its store closes nothing on its own, so the wait is published only while the row is fresh enough to be trusted; the reason is on the Cursor store bullet above. A Cursor row says a permission request is open and how long it has stood, and nothing about what was asked. **OpenCode** reports parent permission waits through its per-project passive plugin. **Pi** reports extension UI prompts in persisted sessions through its adapter on 0.85.1; startup trust is excluded. Both require events enabled and lose standing observations on restart. The other four harnesses have no gate detection; Needs you reports that coverage gap so a quiet row cannot be read as an all-clear |
 | **Working** | Actively generating | transcript/subagent/DB activity within the last 90s; detail = in-progress task's activeForm, else running subagents, else `thinking` where the harness can see the model holding the turn with no tool call open, else last tool, else `generating…`. Claude also keeps an unanswered non-input call in the current step Working as `running <tool>` for at most 900 seconds from that call. A foreground builder still running after 15 minutes falls back to the usual activity window. Only the newest assistant message id qualifies; parallel calls sharing it may remain pending independently. A later assistant message, a human prompt, compaction, a validated Stop or an interruption ends this foreground wait. Injected task notifications, system reminders and hook feedback do not end it. Codex also keeps a shell-capable call (`exec`, `exec_command`, `shell_command` or `write_stdin`) Working as `running <tool>` for up to 900 seconds from the call while its turn is open. The bounded rollout tail must contain the call and no matching output; parallel calls retire independently. The tool name is shown without inferring shell commands from JavaScript. Once its output arrives or the call expires, Codex uses the plan step, running subagents or `generating…` instead of the last tool name. A killed process with no recorded end can read Working until the cap; a still-running process past the cap falls back to the usual activity rules. A new turn, a genuine user message, a recorded finish or an interruption clears pending calls. Injected context and subagent notifications preserve them. Custom `exec` needs nonblank JavaScript input; direct function calls need JSON-object arguments with a nonblank `cmd` or `command`, or an integer `session_id` for `write_stdin`. An observed session end or a remembered Stop that still stands makes the row idle and inactive, even with a pending call. In headless sessions only, outstanding background Agent/Task subagents and explicit Bash calls with `run_in_background: true` acknowledged by a parent-owned tool result in the current turn read `waiting on 1 background task` or `waiting on N background tasks`, for at most 900 seconds from the newest qualifying outstanding launch. These background tasks can make the parent's Stop yield; a later interruption or new user prompt retires their wait. A recorded task completion ends its wait. Ordinary shell `&` jobs and calls automatically moved to the background do not qualify. Interactive sessions and sessions whose entrypoint is unknown keep the usual background activity and Stop rules. Each cap is independent, an input request still wins, and an observed session end ends both waits. A session killed mid-tool without an observed end (SIGKILL) can read Working until the 900-second cap instead of the usual 90-second activity window; this is an accepted limit. Every other measured ending sent SessionEnd. Pi also has exceptions to recency in both directions; see its store bullet above |
 | **Quiet** | An observed turn stop | An idle session with a turn stop published by the harness can show Quiet. Without a stop, the board shows State not published. A scan-only row without turn-end evidence says `Read by scanning: no turn end can be observed here`. |
 | **Ended** | A reported session end | The session published an end timestamp. A turn stop can leave a resumable session open. |
@@ -92,7 +92,7 @@ or model input. Goals and drift readings remain each session's own.
 
 The light dashboard opens on **Sessions**, which keeps active work first and recent history
 below it. Its two counters show active now and working; exact requests and reported blocks are
-counted in Attention. A Find sessions bar under the counters narrows both lists: a search over
+counted in Needs you. A Find sessions bar under the counters narrows both lists: a search over
 titles, goals and prompts (`/` jumps to it, and a pasted session id finds its session), eight filters
 (Date, by when a session started or was last active; Project; Group; Harness; Headless; State; Drift; Goal) with a
 count beside each choice, and three presets: Waiting on you, Started today and Drift recorded. A
@@ -106,12 +106,12 @@ withdraws that reading; it does not declare a session end. Neither
 option is selected by default, so all sessions show. The counters keep counting the whole board.
 When the filters hide a
 session that is waiting on you, a warning under the bar says so and offers to open it (or, for several,
-to see them on Attention) or to clear the filters. Filters last for the tab, across refreshes and trips into a session and back; a reload
+to see them on Needs you) or to clear the filters. Filters last for the tab, across refreshes and trips into a session and back; a reload
 clears them, and they are never saved or put in the URL. One paragraph and the `How Intent and drift works` entry in the Intent card's `More` menu stay visible
 after a session has been checked. The paragraph explains how to open a session. Where annotations
 are on, the store is readable and a reading route names a provider, it explains how to set a goal and
 analyze drift, adding that no session has been checked while that is true. **Projects**, one
-click away, groups sessions by the label their harness publishes. **Intent log** lists every
+click away, groups sessions by the label their harness publishes. **Goal history** lists every
 current board session and retained annotation/discard record once, including sessions without a
 project or a goal. It labels the typed goal and each expected outcome line, cached deterministic goal, and each
 published workflow goal separately. A missing workflow title supplies no goal. Saved deterministic
@@ -177,7 +177,7 @@ a separate prototype store; `--forget` does not delete it. The terminal is also 
 requires both interaction flags and registration from inside the selected session's tmux pane,
 and accepts no input. Its xterm assets are vendored and served from loopback.
 
-Exact session detail is reachable from Sessions, cockpit session links and the Intent log. The
+Exact session detail is reachable from Sessions, cockpit session links and Goal history. The
 page is one column at every width. It opens with the session's name (a Claude Code session holding a `/goal` is named by that goal, so a replaced or cleared `/goal` never names it; a generated title still wins; a Codex session started with `/goal` and not prompted since is named by its goal), the state word
 and what it is doing, then the question first when the session is waiting on you. A wait on the harness's
 own prompt, whose question Compass cannot answer, is said instead under "Waiting on you", with how long it
@@ -208,16 +208,18 @@ while its question is open.
 With no outcome line, Compass reads your goal's end state; a goal too vague to read is refused. The refusal reads "This goal is too vague to analyze against. Rewrite it with what should be true when the work is done, then try again." under the Goal field, shows no level, departures or Steer back for that run, clears when you edit the goal, and counts against the daily cap like any press. A link to a session
 the board no longer holds names that session and says it is not in the current payload.
 
-The route lives in the URL fragment: `#n=sessions`, `#n=projects`, `#n=attention`, `#n=intent`,
+The route lives in the URL fragment: `#n=sessions`, `#n=projects`, `#n=attention` (Needs you),
+`#n=intent` (Goal history), `#n=settings`,
 `#n=project:<encoded-project>` with the selected session and then the open tab appended when either
 is set, or the full project, harness, and session identity for session
 detail, where the project part is empty for a session that published no project label. A project link that ends in the retired `held-to` tab opens that session's page. Reload, pasted links, and browser back therefore preserve the selected view. Old fragments
 that belonged to the retired dashboard normalize to Sessions, as the bare URL does. Open the dashboard at its bare URL;
 the retired `next` query is no longer a dashboard route.
 
-The header reports event-backed running sessions and all observed subagents. When work needs intervention, a button counting
-the reported blocks opens **Attention**. Keyboard shortcuts `a`, `p`, and `s` open Attention,
-Projects, and Sessions unless focus is in a form control or Meta, Control, or Alt is held.
+The header shows how many sessions are Working across the board, including on project pages.
+The **Needs you** badge counts sessions that are Waiting on you or Worth a look. A reported block
+and an exact request for the same session count once. Keyboard shortcuts `n`, `p`, and `s` open
+Needs you, Projects, and Sessions unless focus is in a form control or Meta, Control, or Alt is held.
 A session opens under the tab it was opened from (Sessions for a pasted link), and its breadcrumb
 starts there. `Escape` returns from a session to that breadcrumb's last link and otherwise to
 Sessions, under the same focus and modifier rules. Inside a tripwire draft it cancels the draft.
@@ -245,9 +247,9 @@ Group choices and grouping survive polls and navigation for the life of the tab;
 The terminal session and project lists use the same group, parent and waiting words.
 
 
-## Attention
+## Needs you
 
-Attention is a triage view. **At risk** names session evidence alongside **Needs you now**,
+Needs you is a triage view. **At risk** names session evidence alongside **Needs you now**,
 **Close the loop**, and **Coming next**. The opening brief counts the sessions these categories
 claim and describes the remainder as moving, quiet, ended, or without a counted state.
 **Also at risk, off the session count** holds quota pressure, measured location warnings, concurrent
@@ -256,6 +258,8 @@ checkout warnings and requests whose session ownership is not established. Those
 missing observations instead of treating an unmeasured harness as an all-clear.
 
 **Needs you now** combines native harness gates with questions registered through `ask_operator`.
+When one session has both, its row and session page show the question and the reported reason
+for the native wait. The session counts once.
 Native permission prompts, plan approvals, and harness questions must still be answered in that
 session's terminal; Compass does not mark them answered on the session's behalf. A Claude Code or
 Codex row therefore carries a control that copies the command that harness's own CLI takes to
@@ -269,7 +273,7 @@ details say how far the feature reached rather than repeating the absence on eve
 changes what that terminal displays; it does not bring the window in front of other applications,
 and nothing is ever typed into the session. The item leaves when the harness publishes evidence that the wait ended. A
 question registered through `ask_operator` is different: its offered options are buttons in
-Attention and in the exact session detail, and choosing one returns that option to the waiting
+Needs you and in the exact session detail, and choosing one returns that option to the waiting
 agent. Free-form replies are not
 accepted, unanswered questions expire, and `--no-ask` disables this lane.
 
@@ -309,7 +313,7 @@ seen to close.
 Compass never states which of the two times arrives first: the budget's end and the window's reset
 sit side by side and the comparison is yours.
 
-Quota evidence also appears in Attention, raised either by a level at or above 70 percent or by a
+Quota evidence also appears in Needs you, raised either by a level at or above 70 percent or by a
 pace whose projected end falls before the reset. Codex reads rate-limit snapshots from its own
 session files. Claude and Cursor use the harness credential to poll their vendor endpoint at most once
 per five minutes while a page is open, and never refresh, write, log, or serve the token. This is on

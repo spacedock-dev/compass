@@ -1,3 +1,4 @@
+import { SHOWN } from '../language/glossary';
 import { Alert } from '../ui/alert';
 import { Card } from '../ui/card';
 import './intent.css';
@@ -105,7 +106,7 @@ export function IntentLog() {
   );
   return (
     <section className="next-intent" data-next-view-body="intent">
-      <h1>Intent log</h1>
+      <h1>{SHOWN.intent}</h1>
       <Alert as="p" variant="intent-note" announce={false} className="next-intent-note">
         {view.counts}
       </Alert>

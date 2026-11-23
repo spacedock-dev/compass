@@ -132,7 +132,7 @@ function PageExample({
   readonly asking?: boolean;
   /** The exact request published while `asking`. */
   readonly ask?: Record<string, unknown>;
-  /** A harness's own gate: the session waits on you with no exact request Compass can show. */
+  /** A harness's own gate, which can coexist with an exact request. */
   readonly gate?: boolean;
   /** Whether the session publishes a token its harness's CLI takes back in. */
   readonly resumable?: boolean;
@@ -204,7 +204,7 @@ function PageExample({
                 project: 'demo',
                 project_key: '/demo',
                 title: 'Synthetic layout session',
-                state: idle ? 'idle' : log.asking || log.gate ? 'needs_input' : 'working',
+                state: idle ? 'idle' : log.gate ? 'needs_input' : 'working',
                 ...(log.resumable ? { resume_id: 's1' } : {}),
                 started_at: G - 3600,
                 rate_per_min: 1450,
@@ -883,7 +883,9 @@ export const HarnessGateSaysWhereToAnswer: Story = {
     await expect(block).toHaveTextContent('WAITING ON YOU · 15m');
     await expect(block).toHaveTextContent('Permission prompt: Bash');
     await expect(block).toHaveTextContent(WAITING_ANSWER_WHERE);
-    await expect(within(block).getByRole('link', { name: 'Attention' })).toBeVisible();
+    const link = within(block).getByRole('link', { name: 'Needs you' });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('href', '#n=attention');
     await expect(within(block).queryByRole('button', { name: /Copy/ })).toBeNull();
     await expect(regions(canvasElement)[0]).toBe(block);
     // It stands apart from the header above it and the card below it, as the cards stand apart from each other.
@@ -906,8 +908,27 @@ export const HarnessGateWithNoWayBackNamesNoCommand: Story = {
   play: async ({ canvasElement }) => {
     const block = await within(canvasElement).findByRole('region', { name: 'Waiting on you' });
     await expect(block).toHaveTextContent(WAITING_ANSWER_WHERE);
-    await expect(within(block).queryByRole('link', { name: 'Attention' })).toBeNull();
+    await expect(within(block).queryByRole('link', { name: 'Needs you' })).toBeNull();
     await expect(block).not.toHaveTextContent('The command back into it');
+  },
+};
+
+export const FullActivityLinksToGoalHistory: Story = {
+  render: () => <PageExample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: 'Full activity' }));
+    const summary = await canvas.findByText('What it keeps');
+    const history = summary.closest<HTMLElement>('.next-cockpit-departures-kept');
+    if (!history) throw new Error('The history disclosure is missing');
+    const link = within(history).getByRole('link', { name: 'Goal history' });
+    await waitFor(() => expect(link).toBeVisible());
+    await expect(link).toHaveAttribute('href', '#n=intent');
+    await userEvent.click(summary);
+    const description = within(history).getByText(
+      'Goal history keeps what you saved and what was raised against it after the session leaves the board.',
+    );
+    await waitFor(() => expect(description).toBeVisible());
   },
 };
 
@@ -916,9 +937,21 @@ export const ExactRequestKeepsItsOwnBlock: Story = {
   render: () => <PageExample asking />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByRole('region', { name: 'Asked you' });
+    const asked = await canvas.findByRole('region', { name: 'Asked you' });
+    await expect(asked.querySelector('[data-next-session-wait-note]')).toBeNull();
     await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
     await waitFor(() => expect(document.title).toMatch(/^● Needs you · /));
+  },
+};
+
+export const HarnessGateWithExactRequest: Story = {
+  render: () => <PageExample asking gate />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const asked = within(await canvas.findByRole('region', { name: 'Asked you' }));
+    await expect(asked.getByText(String(ASK.question))).toBeVisible();
+    await expect(asked.getByText('Permission prompt: Bash', { exact: false })).toBeVisible();
+    await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
   },
 };
 

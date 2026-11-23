@@ -71,13 +71,22 @@ async function load(opened, origin, fragment = '') {
   await opened.page.waitForTimeout(patience(150));
 }
 
-const counts = (page) =>
-  page.evaluate(() => {
-    const running = globalThis.document.querySelector('.next-running');
-    const gate = globalThis.document.querySelector('.next-gate');
-    const norm = (node) => (node ? node.textContent.replace(/\s+/g, ' ').trim() : null);
-    return { running: norm(running), gate: norm(gate) };
-  });
+const workingPill = (page) => page.getByRole('status', { name: 'Working sessions' });
+
+const navName = (label) =>
+  label === 'Attention' ? 'Needs you 1' : label === 'Intent log' ? 'Goal history' : label;
+const crumbWords = (crumb) =>
+  crumb?.replace(/^Attention(?= ›)/, 'Needs you').replace(/^Intent log(?= ›)/, 'Goal history') ??
+  null;
+const titleWords = (title) =>
+  title
+    // This fixture's untitled session publishes a wait, which adds the current tab-title cue.
+    .replace(
+      /^Title not published — beta\/api — Compass$/,
+      '● Needs you · Title not published — beta/api — Compass',
+    )
+    .replace(/^Compass — Attention$/, 'Compass — Needs you')
+    .replace(/^Compass — Intent log$/, 'Compass — Goal history');
 
 /* ---- the route contracts: every row of `routes` in the ownership map, as fragments ---- */
 const A = E('alpha/app');
@@ -140,11 +149,13 @@ const CANONICAL = new Map([
 const DEVIATIONS = [
   {
     field: 'primary',
-    reason: 'Sessions precedes Projects under DEC-27; all routes and labels still compare.',
+    reason:
+      'Sessions precedes Projects. Needs you has a badge, Goal history names saved goals, and Settings has its own link.',
   },
   {
     field: 'breadcrumb and header counts',
-    reason: '2026-11-22: Phosphor replaces the breadcrumb separator and running mark.',
+    reason:
+      'The Working pill replaces running and subagent counts, appears on Projects, and shares the header with the Needs you badge.',
   },
 ];
 
@@ -167,8 +178,12 @@ try {
       await load(react, board.react.origin, fragment);
       const l = {
         ...recorded.shell,
-        primary: ['Sessions', 'Projects', ...recorded.shell.primary.slice(2)],
+        title: titleWords(recorded.shell.title),
+        current: navName(recorded.shell.current),
+        breadcrumb: crumbWords(recorded.shell.breadcrumb),
+        primary: ['Sessions', 'Projects', ...recorded.shell.primary.slice(2).map(navName)],
       };
+      if (!l.primary.includes('Settings')) l.primary.push('Settings');
       const r = await observeShell(react.page);
       for (const field of [
         'hash',
@@ -184,15 +199,9 @@ try {
       }
       if (CANONICAL.has(fragment))
         assert.equal(r.hash, CANONICAL.get(fragment), `${name}: canonical fragment`);
-      const lc = {
-        ...recorded.counts,
-        running: recorded.counts.running?.replace(/^●\s*/, '') ?? null,
-      };
-      const rc = await counts(react.page);
-      if (!fragment.startsWith('#n=project:')) {
-        if (JSON.stringify(lc) !== JSON.stringify(rc))
-          mismatches.push({ route: name, field: 'header counts', recorded: lc, react: rc });
-      }
+      assert.equal(recorded.counts.gate, '1 reported block');
+      assert.equal(await workingPill(react.page).innerText(), '2 sessions working', name);
+      assert.equal(await react.page.getByRole('button', { name: /reported blocks?/ }).count(), 0);
     }
     assert.deepEqual(
       mismatches,
@@ -224,7 +233,12 @@ try {
       };
       for (const [name, fragment] of ROUTES.filter(([, f]) => f.includes('session:'))) {
         const after = {};
-        after.recorded = golden.observe(`reload and Escape: ${name}`);
+        const { before, reloaded, escaped } = golden.observe(`reload and Escape: ${name}`);
+        after.recorded = {
+          before: [before[0], navName(before[1]), crumbWords(before[2])],
+          reloaded: [reloaded[0], navName(reloaded[1]), crumbWords(reloaded[2])],
+          escaped: [escaped[0], navName(escaped[1])],
+        };
         after.react = await trace(react, board.react.origin, fragment);
         if (JSON.stringify(after.recorded) !== JSON.stringify(after.react))
           mismatches.push({ route: name, ...after });
@@ -252,8 +266,8 @@ try {
           const o = await observeShell(opened.page);
           seen.push([label, o.hash, o.current, o.historyLength]);
         };
-        await opened.page.getByRole('link', { name: 'Attention', exact: true }).first().click();
-        await note('Attention');
+        await opened.page.getByRole('link', { name: 'Needs you 1', exact: true }).click();
+        await note('Needs you');
         await opened.page.getByRole('link', { name: 'Projects', exact: true }).first().click();
         await note('Projects');
         await opened.page.goBack();
@@ -265,7 +279,14 @@ try {
         return seen;
       };
       const trace = {
-        recorded: golden.observe('back and forward'),
+        recorded: golden
+          .observe('back and forward')
+          .map(([action, hash, current, depth]) => [
+            action === 'Attention' ? 'Needs you' : action,
+            hash,
+            navName(current),
+            depth,
+          ]),
         react: await walk(react, board.react.origin),
       };
       assert.deepEqual(trace.react, trace.recorded);
@@ -358,7 +379,7 @@ try {
       const before = async (origin) => {
         const o = await faulted(origin, { boot: 'fail' });
         try {
-          return (await counts(o.page)).running;
+          return (await workingPill(o.page).innerText()).trim();
         } finally {
           await o.close();
         }
@@ -495,6 +516,8 @@ try {
         `#n=session:${A}:claude:shared-sid&from=attention`,
       );
       await react.page.keyboard.press('KeyA');
+      assert.match(react.page.url(), /#n=session:/);
+      await react.page.keyboard.press('KeyN');
       await react.page.waitForTimeout(patience(60));
       assert.equal((await observeShell(react.page)).hash, '#n=attention');
       await react.page.keyboard.press('KeyP');
@@ -617,7 +640,7 @@ try {
           }, fragment);
           await o.page.waitForTimeout(patience(40));
         }
-        for (const key of ['KeyA', 'KeyP', 'KeyS', 'Escape', 'KeyD'])
+        for (const key of ['KeyN', 'KeyP', 'KeyS', 'Escape', 'KeyD'])
           await o.page.keyboard.press(key);
         await o.page.waitForTimeout(patience(300));
         // Twelve interactions that each caused a read would show twelve. One read can still be the stream's first
@@ -764,7 +787,7 @@ try {
   );
 
   await step(
-    'keyboard: Tab reaches the four views in order and then the block button, and project tabs roam by tabindex',
+    'keyboard: Tab reaches Compass and the five view links in order, and project tabs roam by tabindex',
     async () => {
       const o = await openPage(browser, reactOrigins);
       try {
@@ -772,16 +795,17 @@ try {
         await reactReady(o.page);
         await o.page.evaluate(() => globalThis.document.body.focus());
         const seen = [];
-        for (let press = 0; press < 5; press += 1) {
+        for (let press = 0; press < 6; press += 1) {
           await o.page.keyboard.press('Tab');
           seen.push(await o.page.evaluate(() => globalThis.document.activeElement.textContent));
         }
         assert.deepEqual(seen, [
+          'Compass',
           'Sessions',
           'Projects',
-          'Attention',
-          'Intent log',
-          '1 reported block',
+          'Needs you 1',
+          'Goal history',
+          'Settings',
         ]);
         assert.equal(await o.page.getByRole('navigation', { name: 'Primary' }).count(), 1);
         await o.page.goto('about:blank');
@@ -930,11 +954,11 @@ try {
         await o.page.locator('nav[aria-label="Primary"]').waitFor();
         await o.page.waitForTimeout(patience(300));
         assert.equal(
-          (await o.page.locator('.next-running').innerText()).trim(),
+          (await workingPill(o.page).innerText()).trim(),
           'Waiting for the first board.',
         );
         assert.equal(
-          await o.page.locator('.next-status-icon').count(),
+          await workingPill(o.page).locator('[aria-hidden=true]').count(),
           0,
           'no live dot over a board nobody has read',
         );
@@ -948,7 +972,7 @@ try {
         );
         assert.match(text, /No data has been received in this tab\./);
         assert.doesNotMatch(text, /stale|Last updated/);
-        assert.doesNotMatch(await o.page.locator('body').innerText(), /0 running|0 subagents/);
+        assert.equal(await o.page.getByRole('link', { name: 'Needs you', exact: true }).count(), 1);
         assert.ok(
           await o.page.getByText('No data has been received in this tab.').first().isVisible(),
           'the view says the board is absent',
@@ -1006,8 +1030,8 @@ try {
         assert.match(text, /Displayed data may be stale\./);
         assert.match(text, /Retrying automatically every 20s\./);
         assert.match(
-          await o.page.locator('.next-running').innerText(),
-          /2 running/,
+          await workingPill(o.page).innerText(),
+          /2 sessions working/,
           'the rows stay on screen and are not zeroed',
         );
         // The keyboard path: Retry now, then the removal of the notice must not drop focus on the page, and a
@@ -1092,9 +1116,9 @@ try {
       try {
         await o.page.addStyleTag({ content: '#app{min-height:3000px}' });
         await o.page.evaluate(() => {
-          const link = [
-            ...globalThis.document.querySelectorAll('nav[aria-label="Primary"] a'),
-          ].find((a) => a.textContent === 'Attention');
+          const link = globalThis.document.querySelector(
+            'nav[aria-label="Primary"] a[href="#n=attention"]',
+          );
           link.focus();
           globalThis.__focused = link;
           globalThis.scrollTo(0, 900);
@@ -1163,23 +1187,21 @@ try {
         const select = o.page.locator('[data-next-cockpit-prompt-select]');
         await select.click();
         await o.page.getByRole('listbox').waitFor();
-        assert.match(await o.page.locator('.next-running').innerText(), /2 running/);
+        assert.match(await workingPill(o.page).innerText(), /2 sessions working/);
         o.state.mutate = (body) => ({
           ...source(body),
           sessions: source(body).sessions.map((row) => ({ ...row, state: 'idle', active: false })),
         });
         await o.poll();
         assert.match(
-          await o.page.locator('.next-running').innerText(),
-          /2 running/,
+          await workingPill(o.page).innerText(),
+          /2 sessions working/,
           'the held board did not repaint under an open list',
         );
         assert.equal(await select.getAttribute('aria-expanded'), 'true');
         await o.page.keyboard.press('Escape');
         assert.match(o.page.url(), /#n=session:/);
-        await o.page.waitForFunction(() =>
-          /0 running/.test(globalThis.document.querySelector('.next-running').textContent),
-        );
+        await workingPill(o.page).getByText('Nothing working right now').waitFor();
       } finally {
         await o.close();
       }
@@ -1203,17 +1225,16 @@ try {
           });
         });
         assert.equal(
-          await o.page.locator('.next-running').count(),
-          0,
-          'a project page keeps the counts in its More menu',
+          await workingPill(o.page).innerText(),
+          '2 sessions working',
+          'a project page keeps the Working pill in the header',
         );
         await o.page.locator('summary[aria-label="More"]').click();
-        const status = o.page.getByText('All projects · 2 running · 3 subagents observed');
-        // The menu fades open over 160 ms, and its content is not visible until the fade has begun.
-        await status.waitFor({ state: 'visible' });
+        const copy = o.page.getByRole('button', { name: 'Copy briefing' });
+        await copy.waitFor({ state: 'visible' });
         o.state.mutate = (body) => ({ ...body, generated: body.generated + 1 });
         await o.poll();
-        assert.ok(await status.isVisible(), 'the menu stayed open across a poll');
+        assert.ok(await copy.isVisible(), 'the menu stayed open across a poll');
         assert.deepEqual(
           await o.page.evaluate(() => globalThis.__clipboardWrites),
           [],
@@ -1372,23 +1393,20 @@ try {
     },
   );
 
-  await step('motion: the live dot pulses, and stops under reduced motion', async () => {
+  await step('motion: the Working pill stays static with either motion preference', async () => {
     const animation = async (reducedMotion) => {
       const o = await openPage(browser, reactOrigins, { reducedMotion });
       try {
         await o.page.goto(board.react.origin + '/#n=sessions');
         await reactReady(o.page);
-        return await o.page.evaluate(
-          () =>
-            globalThis.getComputedStyle(
-              globalThis.document.querySelector('.next-live .next-status-icon'),
-            ).animationName,
-        );
+        return await workingPill(o.page)
+          .locator('[aria-hidden=true]')
+          .evaluate((dot) => globalThis.getComputedStyle(dot).animationName);
       } finally {
         await o.close();
       }
     };
-    assert.equal(await animation('no-preference'), 'next-live-pulse');
+    assert.equal(await animation('no-preference'), 'none');
     assert.equal(await animation('reduce'), 'none');
   });
 

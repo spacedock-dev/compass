@@ -352,7 +352,6 @@ const INVENTORY = {
     'article.next-project-detail > header.next-project-detail-header > span.next-project-value',
     'div > dd > span.next-session-fact-note',
     'div.next-capacity-row > div.next-capacity-ends > span.next-capacity-slack',
-    'header.next-header > div.next-header-right > span.next-running.next-live',
     'header.next-session-detail-header > div.next-session-detail-bar > p.next-session-detail-meta',
     'main > article.next-session-detail > footer.next-session-footer',
     'main > nav.next-breadcrumb > span',

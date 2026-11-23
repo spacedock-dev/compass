@@ -101,15 +101,6 @@
   inline-size: 100%;
   text-align: start;
 }
-.ctl-menu-status {
-  display: block;
-  padding: 8px;
-  border-block-end: 1px solid var(--rule);
-  color: var(--ink2);
-  font-size: 0.8125rem;
-  overflow-wrap: anywhere;
-}
-
 /* ===== Human context ===== */
 .ctl-memo {
   display: grid;

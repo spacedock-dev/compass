@@ -53,13 +53,12 @@ export const SHOWN = {
   waitingTitle: '● Needs you ·',
   titleNotPublished: 'Title not published',
   commandOnlyTitle: 'No name: the session opened with a command',
-  runningCount: '{count} running',
-  subagentCountOne: '{count} subagent observed',
-  subagentCountMany: '{count} subagents observed',
-  reportedBlockCountOne: '{count} reported block',
-  reportedBlockCountMany: '{count} reported blocks',
-  attention: 'Attention',
-  intent: 'Intent log',
+  workingSessions: 'Working sessions',
+  workingCountOne: '{count} session working',
+  workingCountMany: '{count} sessions working',
+  nothingWorking: 'Nothing working right now',
+  attention: 'Needs you',
+  intent: 'Goal history',
 } as const;
 
 export const SESSION_ROW_WORDS = {
@@ -201,40 +200,26 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'A missing published title',
       'Session heading, breadcrumb and browser tab title',
     ]),
-    runningCount: kept([
-      SHOWN.runningCount,
-      'Keeps current label',
-      'Observed running session count',
-      'Observed subagents or an unread board',
-      'Released header wording',
+    workingSessions: kept([
+      SHOWN.workingSessions,
+      'Names the pill for assistive technology',
+      'Displayed Working state',
+      'The event-backed running count',
+      'Header status',
     ]),
-    subagentCountOne: kept([
-      SHOWN.subagentCountOne,
-      'Keeps current label',
-      'One observed subagent',
-      'Declared child sessions',
-      'Released header wording',
+    workingCountOne: kept([
+      SHOWN.workingCountOne,
+      'Singular Working count',
+      'One session displays Working',
+      'Observed subagents',
+      'Header pill',
     ]),
-    subagentCountMany: kept([
-      SHOWN.subagentCountMany,
-      'Keeps current label',
-      'Observed subagent count',
-      'Declared child sessions',
-      'Released header wording for zero or more than one',
-    ]),
-    reportedBlockCountOne: kept([
-      SHOWN.reportedBlockCountOne,
-      'Keeps current label',
-      'One session with a reported block or request',
-      'Total running sessions',
-      'Released header button',
-    ]),
-    reportedBlockCountMany: kept([
-      SHOWN.reportedBlockCountMany,
-      'Keeps current label',
-      'Sessions with reported blocks or requests',
-      'Total running sessions',
-      'Released header button for more than one',
+    workingCountMany: kept([
+      SHOWN.workingCountMany,
+      'Plural Working count',
+      'More than one session displays Working',
+      'Observed subagents',
+      'Header pill',
     ]),
 
     // Recorded language decisions.
@@ -260,7 +245,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ),
     intent: ruled(
       [
-        'Goal history',
+        SHOWN.intent,
         'Intent log',
         'Saved goal revisions and source',
         "A session's current progress",
@@ -404,7 +389,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ),
     attention: ruled(
       [
-        'Needs you',
+        SHOWN.attention,
         'Attention',
         'Published request, gate and evidence',
         'Waiting on you, the state and section',
@@ -692,13 +677,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ),
     nothingWorking: ruled(
       [
-        'Nothing working right now',
+        SHOWN.nothingWorking,
         'Running count at zero',
         'Measured Working count of zero',
         'No published board',
         'Header only after the board is read',
       ],
-      null,
+      SHOWN.nothingWorking,
     ),
     whatCompassCantSee: ruled(
       [

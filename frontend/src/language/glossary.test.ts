@@ -105,7 +105,9 @@ describe('the labels the shell shows today', () => {
       const label = GLOSSARY[view].shown;
       await page.go('#n=' + view);
       expect(
-        navigation.getByRole('link', { name: label, current: 'page' }).getAttribute('href'),
+        navigation
+          .getByRole('link', { name: view === 'attention' ? label + ' 1' : label, current: 'page' })
+          .getAttribute('href'),
       ).toBe('#n=' + view);
       expect(document.title).toBe([GLOSSARY.compass.shown, label].join(' — '));
 
@@ -172,7 +174,12 @@ describe('the labels the shell shows today', () => {
     const navigation = within(screen.getByRole('navigation', { name: labels.primary }));
     for (const view of TOP_LEVEL_VIEWS) {
       await page.go('#n=' + view);
-      expect(navigation.getByRole('link', { name: labels[view], current: 'page' })).toBeVisible();
+      expect(
+        navigation.getByRole('link', {
+          name: view === 'attention' ? labels.attention + ' 1' : labels[view],
+          current: 'page',
+        }),
+      ).toBeVisible();
       expect(document.title).toBe(`${labels.compass} — ${labels[view]}`);
     }
 
@@ -235,32 +242,18 @@ describe('the labels the shell shows today', () => {
   );
 
   it.each([
-    [1, '1 in motion · 1 assistant seen', '1 request noted'],
-    [2, '2 in motion · 3 assistants seen', '2 requests noted'],
-  ])(
-    'uses glossary wording with measured header counts for %i reported blocks',
-    async (blocks, counts, gates) => {
-      Object.assign(SHOWN, {
-        runningCount: '{count} in motion',
-        subagentCountOne: '{count} assistant seen',
-        subagentCountMany: '{count} assistants seen',
-        reportedBlockCountOne: '{count} request noted',
-        reportedBlockCountMany: '{count} requests noted',
-      });
-      const sessions =
-        blocks === 1
-          ? BOARD.sessions.filter((row) => row.sid === 'colon:sid' || row.sid === 'beta-working')
-          : [
-              ...BOARD.sessions,
-              { harness: 'claude', sid: 'second-block', project: 'beta/api', state: 'needs_input' },
-            ];
-      await mountShell({ data: { ...BOARD, sessions } }).settle();
-      const navigation = screen.getByRole('navigation', { name: GLOSSARY.primary.shown });
-      const element = navigation.closest('header');
-      if (!element) throw new Error('Primary navigation must be in the header.');
-      const header = within(element);
-      expect.soft(header.queryByText(counts)).toBeVisible();
-      expect(header.getByRole('button', { name: gates })).toBeVisible();
-    },
-  );
+    [0, 'Test nothing in motion'],
+    [1, '1 session in motion'],
+    [2, '2 sessions in motion'],
+  ])('uses glossary wording with a measured Working count of %i', async (count, label) => {
+    Object.assign(SHOWN, {
+      workingSessions: 'Test current work',
+      workingCountOne: '{count} session in motion',
+      workingCountMany: '{count} sessions in motion',
+      nothingWorking: 'Test nothing in motion',
+    });
+    const sessions = BOARD.sessions.filter(({ state }) => state === 'working').slice(0, count);
+    await mountShell({ data: { ...BOARD, sessions } }).settle();
+    expect(screen.getByRole('status', { name: 'Test current work' }).textContent).toBe(label);
+  });
 });

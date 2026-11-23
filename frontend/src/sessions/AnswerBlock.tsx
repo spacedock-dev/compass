@@ -3,7 +3,8 @@ import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { useFocusKey } from '../controls';
 import { useDisplayed, useShell } from '../shell/context';
-import type { ObservedSession, Row } from '../observed';
+import { trimmed, type ObservedSession, type Row } from '../observed';
+import { UNCONFIRMED_WAIT_NOTE } from '../observed/session';
 import { ANSWER_FAILURE } from './detail';
 import { answerNotesFor, useStore } from './heldState';
 import { askResponsibility } from './rows';
@@ -104,11 +105,13 @@ function AnswerButton({
 
 export function AnswerBlock({
   payload,
+  session,
   asks,
   observed,
   title,
 }: {
   readonly payload: Row;
+  readonly session: Row;
   readonly observed: ObservedSession;
   readonly asks: readonly Row[];
   readonly title: string;
@@ -116,6 +119,8 @@ export function AnswerBlock({
   const { runtime } = useShell();
   const notes = answerNotesFor(runtime);
   const held = useStore(notes);
+  const reason = observed.isNeeds ? trimmed(session['state_detail']) : '';
+  const unconfirmed = observed.isNeeds && Boolean(session['wait_unconfirmed']);
   return (
     <Card
       as="section"
@@ -181,6 +186,12 @@ export function AnswerBlock({
       ) : (
         <p className="next-session-ask-question">{observed.askText}</p>
       )}
+      {reason || unconfirmed ? (
+        <p className="mt-2.5 mb-0 text-body text-muted-foreground" data-next-session-wait-note>
+          {reason ? <span>Harness reports: {reason}</span> : null}
+          {unconfirmed ? <span className="block">{UNCONFIRMED_WAIT_NOTE}</span> : null}
+        </p>
+      ) : null}
     </Card>
   );
 }

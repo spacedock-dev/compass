@@ -2,6 +2,7 @@ import { Alert } from '../ui/alert';
 import { Card } from '../ui/card';
 import { Separator } from '../ui/separator';
 import { Disclosure } from '../controls';
+import { SHOWN } from '../language/glossary';
 import type { Landing } from '../observed';
 import { RouteAnchor } from './RouteAnchor';
 import { durationSince, isRecord, promptCopied, type Row } from '../observed';
@@ -319,10 +320,12 @@ export function LandedView({
 export function DeparturesKept({ disclosureKey }: { readonly disclosureKey: string }) {
   return (
     <div className="next-cockpit-departures-kept">
-      <RouteAnchor route={{ view: 'intent', project: null, session: null }}>Intent log</RouteAnchor>
+      <RouteAnchor route={{ view: 'intent', project: null, session: null }}>
+        {SHOWN.intent}
+      </RouteAnchor>
       <Disclosure disclosureKey={disclosureKey} summary="What it keeps">
         <p className="next-why-body">
-          The Intent log keeps what you saved and what was raised against it after the session
+          {SHOWN.intent} keeps what you saved and what was raised against it after the session
           leaves the board.
         </p>
       </Disclosure>

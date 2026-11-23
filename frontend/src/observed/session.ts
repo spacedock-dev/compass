@@ -17,6 +17,9 @@ import {
   type Row,
 } from './values';
 
+export const UNCONFIRMED_WAIT_NOTE =
+  'Unconfirmed: no positive observation in 5m; prompt may still be standing';
+
 export type ObservedSession = {
   readonly sid: string;
   readonly harness: string;
@@ -271,7 +274,7 @@ export function observeSession(
       question ||
       (needs
         ? source['wait_unconfirmed']
-          ? 'Unconfirmed: no positive observation in 5m; prompt may still be standing'
+          ? UNCONFIRMED_WAIT_NOTE
           : trimmed(source['state_detail']) || 'Block reported'
         : ''),
     // Stops and ends are published; readership and termination cause are not. Their absence belongs in
