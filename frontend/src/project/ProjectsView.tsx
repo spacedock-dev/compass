@@ -1,4 +1,5 @@
 import { type ReactNode, useMemo, useState } from 'react';
+import { asPayload } from '../observed/values';
 import { Disclosure } from '../controls';
 import { TechnicalDetails } from '../controls/TechnicalDetails';
 import { RouteLink } from '../shell/RouteLink';
@@ -10,7 +11,8 @@ import { StatusLegend } from '../ui/status-legend';
 import { StatusTile } from '../ui/status-tile';
 import { GLOSSARY, SESSION_ROW_WORDS, SHOWN } from '../language/glossary';
 import { PROJECT_GROUPS, projectList, type ProjectListRow } from './projectList';
-import './projects-list.css';
+
+import './project.css';
 
 const INITIAL_RECENT = 3;
 type State = keyof typeof SESSION_STATE_ICONS;
@@ -70,7 +72,7 @@ export interface ProjectsViewProps {
 
 export function ProjectsView({ conditions = null }: ProjectsViewProps) {
   const data = useDisplayed((snapshot) => snapshot.data);
-  const rows = useMemo(() => projectList(data ?? {}), [data]);
+  const rows = useMemo(() => projectList(asPayload(data)), [data]);
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(false);
   const needle = rows.length > 6 ? query.trim().toLowerCase() : '';

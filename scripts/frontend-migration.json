@@ -407,14 +407,10 @@
       "contract": "Assignment, execution, command, latest exact direction/result and absence/authority sources stay front and center."
     },
     {
-      "name": "project-more-utility-menu",
+      "name": "project-status-update",
       "owner": "DRC-4823",
-      "oracles": [
-        "frontend/src/controls/MoreMenu.test.tsx",
-        "frontend/e2e/controls-continuity.mjs",
-        "frontend/e2e/shell-routing.mjs"
-      ],
-      "contract": "Project-only More menu exposes Copy briefing and conditionally Add human context, while retaining all-project status."
+      "oracles": ["frontend/stories/ProjectOverview.stories.tsx", "frontend/src/project/ProjectDetail.test.tsx"],
+      "contract": "Copy a status update is visible on the project and copies the existing briefing only when pressed."
     },
     {
       "name": "human-context-memo",
@@ -1329,23 +1325,17 @@
       "disposition": "stable-identity"
     },
     {
-      "name": "The More menu",
+      "name": "The project status update copy result",
       "owner": "DRC-4823",
-      "oracles": [
-        "frontend/src/controls/MoreMenu.test.tsx",
-        "frontend/e2e/shell-routing.mjs"
-      ],
-      "contract": "More summary/open state survives unrelated updates and remains keyboard reachable.",
-      "disposition": "stable-identity"
+      "oracles": ["frontend/stories/ProjectOverview.stories.tsx"],
+      "contract": "Keep the clipboard result for the same project and session scope.",
+      "disposition": "store-held"
     },
     {
-      "name": "The More menu's copy-briefing result",
+      "name": "Your notes on a project",
       "owner": "DRC-4823",
-      "oracles": [
-        "frontend/src/controls/MoreMenu.test.tsx",
-        "frontend/e2e/controls-continuity.mjs"
-      ],
-      "contract": "Copy-briefing outcome has no TTL and is shown only for matching project/session context key; preserve exact clipboard result.",
+      "oracles": ["frontend/stories/ProjectOverview.stories.tsx", "frontend/src/project/ProjectDetail.test.tsx"],
+      "contract": "Save on input using the released memo key. Restore persisted notes on reload.",
       "disposition": "store-held"
     },
     {

@@ -17,7 +17,7 @@ Compass is an agnostic agent cartography and visualization tool: a local web das
 
 Store locations are resolved per platform, and the documented relocation variables are honored: `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME` (the CLI creates `.gemini` inside it; relocates the Antigravity store with it), `COPILOT_HOME`, `PI_CODING_AGENT_DIR`, and `PI_CODING_AGENT_SESSION_DIR`. When one is set it is authoritative — no fallback to the default location. Run `--diagnose` to see every path searched.
 
-Data sources (read-only; a reader-started model call can send session content through an installed Claude Code or Codex CLI. Analyze drift runs on your press, Codex goal summaries on `Summarize this session` in Console, and a Claude Code session summary when you open a finished session, press `Summarize` or `Update summary`, or invoke a spending `summary` action; each tells you once what is sent and where, again if the destination or content tier changes. Pause all AI use or `--no-observer-model` stops them, and `Turn off summaries` stops session summaries alone. The Live monitor, with its switch on, adds a Claude Code call to Haiku about once a minute while you view a session or a terminal holder keeps it on, tells you once what it sends, and stops under the same two. Unasked drift checks remain a separate opt-in. All parsing is defensive — a broken harness store is skipped, never fatal):
+Data sources (read-only; a reader-started model call can send session content through an installed Claude Code or Codex CLI. Analyze drift runs on your press, Codex goal summaries on `Summarize this session` in project technical details, and a Claude Code session summary when you open a finished session, press `Summarize` or `Update summary`, or invoke a spending `summary` action; each tells you once what is sent and where, again if the destination or content tier changes. Pause all AI use or `--no-observer-model` stops them, and `Turn off summaries` stops session summaries alone. The Live monitor, with its switch on, adds a Claude Code call to Haiku about once a minute while you view a session or a terminal holder keeps it on, tells you once what it sends, and stops under the same two. Unasked drift checks remain a separate opt-in. All parsing is defensive — a broken harness store is skipped, never fatal):
 - `~/.claude/projects/*/<session>.jsonl` — Claude transcript tails: session discovery (a file holding only generated-title, agent-name or PR-link records is not a session), titles, token usage, pending AskUserQuestion detection and the text of the question it is asking
 - Claude subagents, two generations: modern harnesses write each subagent as a top-level `~/.claude/projects/*/<uuid>.jsonl` whose records carry `agentName` + `teamName: "session-<parent prefix>"` — these fold into the parent session (named pill, its own start and elapsed, freshness, output rate) and never appear as standalone sessions. A teammate dispatched into its own pane stays on that row once it goes quiet, marked as no longer running rather than dropped, and its own subagents are walked and listed beside it, each attributed to the teammate that spawned it; legacy `<session-uuid>/subagents/agent-*.jsonl` + `.meta.json` files are still recognized (fresh mtime = running, and one the lead ran itself stays listed as no longer running once quiet, on the same display window as a teammate), including the `subagents/workflows/<run-id>/` directory a workflow fan-out nests its agents in. A bare `agentName` from a top-level `--agent` launch has no parent relation and remains a standalone session; `agentSetting`, not `agentName`, supplies any Spacedock role. Agent writes count as parent activity in their own right, so a session parked on a long background workflow reads Working
 - Spacedock workflows: a Claude session launched by Spacedock carries an `agentSetting` of `spacedock:first-officer` or `spacedock:ensign` in its first transcript records, which is how its role badge appears. Pi and Codex write no such setting, so a supported boot result earns a first-officer badge instead, and never an ensign one. Codex also accepts the captured fulfilled-result wrapper only when its integer exit code is zero and its output is one complete boot JSON object. A first officer also records its `spacedock status --boot` output — counted only when it arrives as command output, never as ordinary conversation text — which names each workflow directory and each entity-state directory absolutely. The ordered stage list comes from the workflow `README.md` frontmatter, and each entity's current stage from the `status` in its own state-file frontmatter; boot's `dispatchable` list is only a snapshot of what was ready to move at boot, so it fills in behind the state directory rather than standing in for it. Those two kinds of frontmatter are the only project files the stage-strip reader reads; the cockpit's separate project-context prototype also reads bounded dispatch and workflow evidence — see the repository's SECURITY.md for the contract, and `--no-spacedock` to disable it
@@ -139,30 +139,17 @@ reason when no instruction is available. Without instruction times, the card say
 **Published instruction**. **Your saved words** labels saved words and expected outcome rows. Needs you keeps a project session
 waiting on you visible above the tabs, with raise and copy-resume controls where supported.
 
-**Now** pairs current activity with observed session endings, their outcome glyphs and git readings,
-plus workflow evidence. **Course** holds observed state changes, semantic history, and completed
-tasks. **Decisions** shows recorded decisions and their application state; it does not approve
-them. **Console** leads with the operations rail, Delegation, Waiting on you, Capacity and
-Tripwires, and keeps how the server was started in one disclosure beneath it, holding the selected
-session's optional read-only terminal, the observer-model controls and the status line. The summary
-names the state of both capabilities. A capability that is on renders expanded and outside the
-disclosure, so nothing you can act on is behind a click. What you typed for a session, and
-everything read against it, lives on that session's own page (below), not on a tab here.
-The **Your note (this tab only)** box, browser-local human context and old
-tripwire notes do not instruct an agent and remain inert. The first-officer gloss appears with a
-first-officer session or enabled stage source; stage alerts require an enabled stage source.
+**Overview** shows what the project is working on, what is running, and whether anything needs
+you. The session list opens each session's own page. Ended sessions with uncommitted work appear
+under **Worth a look**, and clean ends appear under **Ready to wrap up**. **Timeline** shows
+observed changes and completed tasks. **Decisions** shows recorded decisions. **Usage and alerts**
+shows project usage and alerts. **Show technical details** holds the workflow evidence, steering,
+stage alerts and read-only terminal. **Copy a status update** copies the existing briefing.
+**Your notes** saves as you type in this browser and never writes to a session.
 
-Each tab names its own panel in a line beneath the strip, because two of the four open onto a
-heading that does not repeat the label. Course and Decisions also carry a cue on the tab
-itself: the number of observed state changes or decisions. A cue reads `…` while
-the record is still loading and `·` where nothing published the figure, and those two are never the
-same claim as a zero. Every cue is spelled out for a screen reader beside its mark.
-
-The composer for a note to yourself sits in the project header, above the tabs, rather than inside
-Tripwires. It is the same control wherever you reach it, and it still writes nothing into a session.
-
-Stage alerts are separate typed controls in Course and Projects. Save one declared
-stage per exact workflow; the first current entity observed entering it trips the condition once.
+Stage alerts are available through **Show technical details** on a project or on Projects. Save
+one declared stage per exact workflow. The first observed entry to that stage trips the
+condition once.
 First sight, restart and evidence gaps establish a baseline rather than an entry. The card reports
 the current coverage and unavailable sources. Rearm permits another alert; saving the unchanged
 stage preserves its latch. Projects retains Remove when no source session remains. Up to 64 rules

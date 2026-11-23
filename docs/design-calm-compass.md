@@ -180,11 +180,11 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Projects | Keeps current label | Projects list and grouping evidence | A single Project page | The projects slug stays |
 | Settings | Keeps current label | Saved choices and their owners | A session's own controls | The settings slug stays |
 | Session | Keeps current label | Session identity | A reported session title | Crumb when the session cannot be found. The document title may use its ID |
-| Project cockpit views | Keeps current label | Accessible group name for the project tab strip | Primary navigation | Accessible tab list label |
-| Now | Keeps current label | The project's current evidence | Session activity on the board | Default project tab |
-| Course | Keeps current label | Observed direction changes | A progress level | The course tab slug stays |
+| Project views | Project cockpit views | Accessible group name for the project tab strip | Primary navigation | Accessible tab list label |
+| Overview | Now | The project's current evidence | Session activity on the board | Default project tab |
+| Timeline | Course | Observed direction changes | A progress level | The course tab slug stays |
 | Decisions | Keeps current label | Recorded project decisions | Current state | The decisions tab slug stays |
-| Console | Keeps current label | Read-only terminal | A place to send a command | The console tab slug stays. The terminal moves to technical details |
+| Usage and alerts | Console | Project capacity and alerts | Read-only terminal | The console tab slug stays. The terminal moves to technical details |
 | Session data not published. | Keeps current label | The session collection is missing | A measured zero | Used after a board arrives without session data |
 | Waiting for the first board. | Keeps current label | Initial board read | A measured zero | Used before the first board arrives |
 | ● Needs you · | Keeps current label | Published request or block on the open session | The Needs you navigation destination | Browser tab title prefix |

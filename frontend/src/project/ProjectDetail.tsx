@@ -1,4 +1,13 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { compatSessKey } from '../api/identity';
+import { CopyStatusUpdate } from '../controls/CopyStatusUpdate';
+import { TechnicalDetails } from '../controls/TechnicalDetails';
+import { disclosureKey } from '../controls/disclosureStore';
+import { useControlledDisclosureState } from '../controls/useDisclosureState';
+import { SHOWN } from '../language/glossary';
+import { useProjectBriefing } from '../shell/projectBriefing';
+import { fieldBase } from '../ui/input';
+import { ProjectOverview, ProjectSummary } from './ProjectOverview';
 import { nextFiniteNumber } from '../api/bootstrap';
 import type { ProjectRoute, ProjectTab } from '../router/grammar';
 import { ProjectTabs } from '../shell/ProjectTabs';
@@ -7,14 +16,11 @@ import { useProjectChanges } from '../workstream';
 import { GoingOn, HowEnded } from './ActivityViews';
 import { CourseTab } from './CoursePanel';
 import { useProjectModel, type ProjectModel } from './model';
-import { Value } from './parts';
 import { PlanDisclosure, PlanStatus } from './PlanView';
 import { RecoveryStrip } from './RecoveryStrip';
-import { ScopeSwitcher, ScopeTree } from './ScopeNav';
 import { DefaultConsole, DefaultDecisions } from './SlotPlaceholders';
 import { PROJECT_SLOTS, slotContext, type ProjectSlots } from './slots';
 import { cueGloss, cueMark, tabCue, tabLede, type TabCue as Cue } from './tabs';
-import { viewingSession } from './scope';
 // The scope cue's markers are the timeline's: one drawing of "project" and "session", wherever it appears.
 import '../timeline/timeline.css';
 import './project.css';
@@ -70,17 +76,65 @@ function Panel({
   );
 }
 
-function Header({ model }: { readonly model: ProjectModel }) {
-  const { observed } = model.group;
+function ProjectTechnical({
+  model,
+  slots,
+}: {
+  readonly model: ProjectModel;
+  readonly slots: ProjectSlots;
+}) {
+  const { controls } = useShell();
+  const key = disclosureKey({ project: model.group.label, scope: null, name: 'project-technical' });
+  const open = useControlledDisclosureState(controls.disclosures, key);
+  const context = slotContext(model);
+  const [picked, setPicked] = useState('');
+  const choices = [
+    ...new Map(
+      model.group.observed.sessions
+        .filter((row) => row.harness && row.sid)
+        .map((row) => [compatSessKey(row), row]),
+    ).values(),
+  ];
+  const automatic = model.focusIdentity
+    ? compatSessKey(model.focusIdentity)
+    : choices.length === 1
+      ? compatSessKey(choices[0])
+      : '';
+  const selection = picked || automatic;
+  const row = choices.find((candidate) => compatSessKey(candidate) === selection);
+  const focus = row ? { harness: row.harness, sid: row.sid, state: row.state } : null;
   return (
-    <header className="next-project-detail-header">
-      <h1 className="next-project-detail-name">{observed.key}</h1>
-      <Value text={observed.scopeText} known={observed.scopeKnown} className="next-project-scope" />
-      <p className="next-project-detail-count">{observed.countLine}</p>
-      {observed.sharedLabelKnown ? (
-        <p className="next-project-detail-collision">{observed.sharedLabelText}</p>
+    <TechnicalDetails disclosureKey={key} caption="Workflow, evidence and read-only terminal">
+      <RecoveryStrip model={model} />
+      {slots.steering?.(context)}
+      {slots.courseConditions?.(context)}
+      <PlanStatus model={model} />
+      <PlanDisclosure model={model} />
+      <GoingOn model={model} />
+      <HowEnded model={model} />
+      {open ? (
+        <>
+          {choices.length > 1 ? (
+            <label className="project-terminal-picker">
+              Session for the read-only terminal
+              <select
+                className={fieldBase}
+                value={row ? selection : ''}
+                onChange={(event) => setPicked(event.target.value)}
+              >
+                <option value="">Choose a session</option>
+                {choices.map((choice) => (
+                  <option key={compatSessKey(choice)} value={compatSessKey(choice)}>
+                    {choice.titleText} · {model.harnesses.get(choice.harness) ?? choice.harness}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {slots.console?.({ ...context, focus }, 'technical') ?? <DefaultConsole model={model} />}
+        </>
       ) : null}
-    </header>
+    </TechnicalDetails>
   );
 }
 
@@ -93,6 +147,7 @@ export function ProjectDetail({
 }) {
   const { runtime } = useShell();
   const model = useProjectModel(route);
+  const briefing = useProjectBriefing(route);
   const changes = useProjectChanges(route.project);
   const revision = nextFiniteNumber(model?.generated);
   const projectKey = model?.projectKey ?? '';
@@ -114,83 +169,47 @@ export function ProjectDetail({
 
   if (!model) return null;
   const context = slotContext(model);
-  const multiSession = model.group.sessions.length > 1;
   const focused = model.focus !== null;
-  const conditions = slots.courseConditions?.(context) ?? null;
-  const viewing = model.focus ? viewingSession(model.focus, model.group, model.harnesses) : null;
   return (
     <section data-next-view-body="project">
-      <article className="next-project-detail" data-next-project-detail={model.group.label}>
-        <Header model={model} />
-        <div className={`next-cockpit-shell${multiSession ? '' : ' next-cockpit-shell--single'}`}>
-          {multiSession ? (
-            <>
-              <ScopeTree model={model} />
-              <ScopeSwitcher model={model} />
-            </>
-          ) : null}
-          <div className="next-cockpit-content">
-            {viewing && model.focus ? (
-              <div
-                className="next-cockpit-viewing-session"
-                data-next-cockpit-viewing-session={String(
-                  model.focus['sid']
-                    ? `${String(model.focus['harness'] || '')}:${String(model.focus['sid'])}`
-                    : '',
-                )}
-              >
-                {viewing.label}
-                {viewing.state ? (
-                  <span data-next-project-focus-status>{` · ${viewing.state}`}</span>
-                ) : null}
-                {viewing.limit ? (
-                  <div className="next-project-session-limit">{viewing.limit}</div>
-                ) : null}
-              </div>
+      <article
+        className="next-project-detail project-detail"
+        data-next-project-detail={model.group.label}
+      >
+        <header className="project-detail-title">
+          <div>
+            <h1 data-authored>{model.group.label}</h1>
+            <p className="next-project-detail-count">{model.group.observed.countLine}</p>
+            {model.group.observed.sharedLabelKnown ? (
+              <p>{model.group.observed.sharedLabelText}</p>
             ) : null}
-            <RecoveryStrip model={model} />
-            {slots.steering?.(context) ?? null}
-            <ProjectTabs
-              route={route}
-              cue={(name) => {
-                const cue = tabCue(name, {
-                  changes: changes.changes.length,
-                  read: model.scopeRead,
-                });
-                return cue ? <CueMark tab={name} cue={cue} /> : null;
-              }}
-            >
-              {(current) => {
-                if (current === 'now')
-                  return (
-                    <Panel tab="now" focused={focused} label="Now">
-                      <GoingOn model={model} />
-                      <HowEnded model={model} />
-                      <PlanStatus model={model} />
-                      <PlanDisclosure model={model} />
-                    </Panel>
-                  );
-                if (current === 'course')
-                  return (
-                    <Panel tab="course" focused={focused} label="Course">
-                      <CourseTab model={model} conditions={conditions} />
-                    </Panel>
-                  );
-                if (current === 'decisions')
-                  return (
-                    <Panel tab="decisions" focused={focused} label="Decisions">
-                      {slots.decisions?.(context) ?? <DefaultDecisions />}
-                    </Panel>
-                  );
-                return (
-                  <Panel tab="console" focused={focused} label="Console">
-                    {slots.console?.(context) ?? <DefaultConsole model={model} />}
-                  </Panel>
-                );
-              }}
-            </ProjectTabs>
           </div>
-        </div>
+          <CopyStatusUpdate
+            projectKey={model.projectKey}
+            focus={model.focusIdentity}
+            briefingText={briefing}
+          />
+        </header>
+        <ProjectSummary model={model} />
+        <ProjectTabs
+          route={route}
+          cue={(name) => {
+            const cue = tabCue(name, { changes: changes.changes.length, read: model.scopeRead });
+            return cue ? <CueMark tab={name} cue={cue} /> : null;
+          }}
+        >
+          {(current) => (
+            <Panel tab={current} focused={focused} label={SHOWN[current]}>
+              {current === 'now' ? <ProjectOverview model={model} /> : null}
+              {current === 'course' ? <CourseTab model={model} conditions={null} /> : null}
+              {current === 'decisions'
+                ? (slots.decisions?.(context) ?? <DefaultDecisions />)
+                : null}
+              {current === 'console' ? slots.console?.(context, 'usage') : null}
+            </Panel>
+          )}
+        </ProjectTabs>
+        <ProjectTechnical key={model.group.label} model={model} slots={slots} />
       </article>
     </section>
   );

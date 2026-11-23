@@ -134,6 +134,26 @@ function maskProjectStatusPresentation(root: ParentNode, recorded: boolean) {
     meta.textContent = norm(meta);
 }
 
+// The rail, overview and tab captions changed. Compare the retained recovery evidence and
+// Timeline facts through their original rendered regions.
+function comparableProject(summary: Summary, tab: string) {
+  return {
+    strip: summary.strip,
+    stripLinks: summary.stripLinks,
+    stripAttrs: summary.stripAttrs,
+    ...(tab === 'course'
+      ? {
+          panel: summary.panel.replace(
+            /^(?:Course: direction changes Compass observed in the session record\.|Direction changes Compass observed in the session record\.)\s*/,
+            '',
+          ),
+          panelLinks: summary.panelLinks,
+          panelKinds: summary.panelKinds,
+        }
+      : {}),
+  };
+}
+
 function maskRecordedProjectGlyphs(root: DocumentFragment): DocumentFragment {
   for (const glyph of root.querySelectorAll(
     '.next-project-ending-glyph, .next-activity-done-glyph, .next-project-plan-glyph',
@@ -146,7 +166,7 @@ function maskRecordedProjectGlyphs(root: DocumentFragment): DocumentFragment {
 }
 
 describe('the project page reads as the legacy page does, over generated boards', () => {
-  it(`agrees on ${String(SEEDS)} boards: header, scopes, the recovery strip, the tabs, Now and Course`, async () => {
+  it(`agrees on ${String(SEEDS)} boards: the retained recovery and Timeline evidence`, async () => {
     const failures: string[] = [];
     let compared = 0;
     const reach: Record<string, number> = {};
@@ -288,10 +308,12 @@ describe('the project page reads as the legacy page does, over generated boards'
       for (const [name, pattern] of REACH)
         if (pattern.test(`${legacy.strip} ${legacy.panel} ${legacy.scopeTree}`))
           reach[name] = (reach[name] ?? 0) + 1;
-      for (const key of Object.keys(legacy) as (keyof Summary)[]) {
-        if (JSON.stringify(legacy[key]) === JSON.stringify(mine[key])) continue;
-        const left = JSON.stringify(legacy[key]);
-        const right = JSON.stringify(mine[key]);
+      const expected = comparableProject(legacy, tab);
+      const actual = comparableProject(mine, tab);
+      for (const key of Object.keys(expected) as (keyof typeof expected)[]) {
+        if (JSON.stringify(expected[key]) === JSON.stringify(actual[key])) continue;
+        const left = JSON.stringify(expected[key]);
+        const right = JSON.stringify(actual[key]);
         let at = 0;
         while (left[at] === right[at]) at += 1;
         failures.push(
@@ -367,10 +389,12 @@ describe('the browser proof’s own board reads the same on both pages', () => {
         const mine = article ? summarize(article, tab) : null;
         page.unmount();
         compared += 1;
-        for (const key of Object.keys(legacy) as (keyof Summary)[])
-          if (!mine || JSON.stringify(legacy[key]) !== JSON.stringify(mine[key]))
+        const expected = comparableProject(legacy, tab);
+        const actual = mine && comparableProject(mine, tab);
+        for (const key of Object.keys(expected) as (keyof typeof expected)[])
+          if (!actual || JSON.stringify(expected[key]) !== JSON.stringify(actual[key]))
             failures.push(
-              `${label} ${tab} ${key}: ${JSON.stringify(legacy[key])?.slice(0, 160)} vs ${JSON.stringify(mine?.[key])?.slice(0, 160)}`,
+              `${label} ${tab} ${key}: ${JSON.stringify(expected[key])?.slice(0, 160)} vs ${JSON.stringify(actual?.[key])?.slice(0, 160)}`,
             );
       }
     }

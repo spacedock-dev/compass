@@ -156,7 +156,7 @@ your machine.
 | You press Check progress | Claude Code for a Claude Code session (Codex if `claude` is not installed), Codex for a Codex session, and Codex first for other harnesses |
 | You open a finished Claude Code session, press Summarize or Update summary, or request a summary from the terminal | Claude Code, to write the session summary; a stored terminal read spends nothing |
 | You press Find goal | A model reads the prompts you typed to find the session's goal |
-| You press Summarize this session in a project's Console | Codex, to summarize the focused session and up to three active child sessions |
+| You press Summarize this session in a project's technical details | Codex, to summarize the focused session and up to three active child sessions |
 | You turn on the Live monitor on a Claude Code session | Haiku through your Claude Code, about once a minute while you view it or a terminal holder keeps it on |
 
 Compass shows what each kind of call sends and where the first time it runs, and again if the
@@ -177,7 +177,8 @@ even on a project page.
 | Tab | Key | What it shows |
 |---|---|---|
 | Sessions | `s` | Every session, with active work above recent history. Each active session shows where it is, what it is doing now, what it does next and whether it is blocked. Clicking a goal opens that session at its Goal card. |
-| Projects | `p` | Sessions grouped by project. Each project has its own page with a briefing on where the project stands, and Now, Course, Decisions and Console views. |
+| Help | | The icon legend, progress words, and the view-only example. |
+| Projects | `p` | Sessions grouped by project. Each project has its own page with a briefing on where the project stands, and Overview, Timeline, Decisions and Usage and alerts. |
 | Needs you | `n` | Requests, reported blocks and risks. The badge counts Waiting on you and Worth a look. |
 | Goal history | none | Every session on the board, plus the goals Compass has kept, each labeled with where it came from. |
 | Settings | none | Dashboard preferences and AI use controls. |
@@ -275,7 +276,7 @@ usual 90-second activity window. This is an accepted limit: SIGKILL sent no Sess
 ending did. The [state reference](../compass/skills/compass/reference/dashboard.md#session-states)
 explains the other harnesses.
 
-A project's Console view collects delegated work, requests waiting on you and capacity. It also has an
+A project's Usage and alerts view shows usage and alert controls. Show technical details opens the read-only terminal, workflow evidence and steering. It also has an
 early terminal bridge and session history view; the
 [cockpit design contract](design-next-ui.md#cockpit-reconciliation) records their limits.
 

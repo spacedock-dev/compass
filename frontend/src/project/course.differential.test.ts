@@ -212,7 +212,24 @@ describe('the Course tab reads as the legacy tab does', () => {
             });
             check(
               `lede ${tab}`,
-              legacyLede.replace(/<[^>]+>/g, ''),
+              legacyLede
+                .replace(/<[^>]+>/g, '')
+                .replace(
+                  'Now: what is running in this project this minute, and how sessions here have ended.',
+                  'Sessions and recent results for this project.',
+                )
+                .replace(
+                  'Course: direction changes Compass observed in the session record.',
+                  'Direction changes Compass observed in the session record.',
+                )
+                .replace(
+                  'Decisions: rulings found in the record, and what each one has been spent on.',
+                  'Decisions Compass found in the session record.',
+                )
+                .replace(
+                  'Console: the read-only terminal of one selected session, and the controls for it.',
+                  'Usage and alerts for this project.',
+                ),
               tabLede(tab, Boolean(focusRow)).replace(/&/g, '&amp;'),
             );
           }

@@ -7,7 +7,7 @@ import { titleLink } from '../ui/link';
 import { Button } from '../ui/button';
 import { StatusTile } from '../ui/status-tile';
 import { TooltipProvider } from '../ui/tooltip';
-import { EXPLANATIONS, SESSION_LIST_WORDS, SESSION_ROW_WORDS } from '../language/glossary';
+import { EXPLANATIONS, SESSION_LIST_WORDS } from '../language/glossary';
 import { selectAttentionSelection } from '../attention/select';
 import { WorthALookFlag } from '../attention/WorthALookFlag';
 import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 'react';

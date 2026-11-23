@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
-import { expect, userEvent, within } from 'storybook/test';
+import { expect, within } from 'storybook/test';
 import { App } from '../src/App';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
@@ -72,7 +72,7 @@ export const Project: Story = {
   args: { fragment: '#n=project:acme%2Fdashboard' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByText('2 sessions working');
+    await canvas.findByRole('button', { name: 'Copy a status update' });
     await expect(canvas.getByRole('status', { name: 'Working sessions' })).toHaveTextContent(
       '2 sessions working',
     );
@@ -80,9 +80,7 @@ export const Project: Story = {
     await expect(nav.getByRole('link', { name: 'Projects', current: 'page' })).toHaveStyle({
       backgroundColor: 'rgb(230, 242, 236)',
     });
-    await userEvent.click(canvas.getByText('More', { selector: 'summary' }));
-    await expect(canvas.getByRole('button', { name: 'Copy briefing' })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: 'Copy a status update' })).toBeVisible();
     await expect(canvas.queryByText(/All projects.*subagents observed/)).toBeNull();
-    await userEvent.click(canvas.getByText('More', { selector: 'summary' }));
   },
 };

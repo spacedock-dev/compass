@@ -310,12 +310,12 @@ describe('the header counts come from the displayed board', () => {
     expect(primary().getByRole('link', { name: 'Needs you' })).toBeVisible();
   });
 
-  it('keeps project More actions available without a duplicate fleet count', async () => {
-    const page = mountShell({ hash: '#n=project:alpha%2Fapp', data: BOARD });
+  it('shows a copy action on the project without a duplicate fleet count or More menu', async () => {
+    const page = mountShell({ hash: '#n=project:acme%2Fdashboard', data: headerBoard() });
     await page.settle();
-    expect(working().textContent).toBe('2 sessions working');
-    expect(screen.getByText('More', { selector: 'summary' })).toBeVisible();
-    expect(screen.queryByText(/subagents? observed/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Copy a status update' })).toBeVisible();
+    expect(screen.queryByLabelText('More')).toBeNull();
+    expect(screen.getAllByRole('status', { name: 'Working sessions' })).toHaveLength(1);
   });
 });
 

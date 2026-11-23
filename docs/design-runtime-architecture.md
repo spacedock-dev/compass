@@ -246,7 +246,7 @@ a workflow with no title. See [Intent log freshness](design-reader-state.md#inte
 The prototype also gives `observer.CodexGoalModel` an optional goal-summary path through the
 installed Codex CLI. It is on by default for an explicit focused project-context refresh, records
 a one-time goal notice, and is stopped by Pause model calls or `--no-observer-model`.
-`frontend/src/capacity/ObserverControls.tsx` owns the Console disclosure, its browser consent state
+`frontend/src/capacity/ObserverControls.tsx` owns the project technical disclosure, its browser consent state
 (still present until the page's notice replaces it) and explicit summary request; passive reads do
 not request the model. The
 redaction, prompt byte cap, executable resolution and concurrency limits are owned by
@@ -266,7 +266,7 @@ retired interface's preview period to avoid a mass rename; they do not indicate 
 | `frontend/src/{api,store,transport,storage}` | The typed client, the one external immutable store, the runtime owner of requests, timers, the event stream and leader election, and the one browser-storage layer. Components never fetch, poll or touch `localStorage` themselves. |
 | `frontend/src/{router,shell,controls,styles}` | The fragment grammar, the shell (primary navigation, header counts, notices, live regions), the shared controls and the reader-state lanes behind them (focus, field memory, disclosures, the display gate), and the page's CSS tokens. |
 | `frontend/src/{observed,workstream,delegation,attention,notify,capacity}` | The observed model and its Attention, notification, quota and delegation readings. Pure functions over one accepted payload, plus the views that draw them. |
-| `frontend/src/{sessions,project,timeline,terminal,steering}` | The Sessions screen and session page, the Projects list and project page with its Now, Course, Decisions and Console tabs, the timeline and its filter, the output-only terminal, and the project's steering controls. |
+| `frontend/src/{sessions,project,timeline,terminal,steering}` | The Sessions screen and session page, the Projects list and project page with its Overview, Timeline, Decisions and Usage and alerts tabs, the timeline and its filter, the output-only terminal, and the project's steering controls. |
 | `frontend/src/{intent,drift}` | The Intent log and panel, and the Drift section with Analyze, its consent, the result, Steer back and the departures. |
 
 The HTTP server serves the verified page bytes at `/`, including the supported `all=1` view.

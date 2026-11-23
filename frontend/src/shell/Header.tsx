@@ -2,16 +2,12 @@ import { buttonVariants } from '../ui/button';
 import { Icon } from '../ui/icons';
 import { AttentionAnnouncer } from '../attention';
 import { selectAttentionSelection } from '../attention/select';
-import { MoreMenu } from '../controls/MoreMenu';
 import { NotificationControl } from '../notify';
 import { useFocusKey } from '../controls/useFocusKey';
-import { splitSessKey, stableProjectKey } from '../api/identity';
-import { payloadSessions } from '../api/bootstrap';
 import { cn } from '../lib/utils';
 import { SHOWN } from '../language/glossary';
 import { sessionHome, type Route, type TopLevelView } from '../router/grammar';
 import { useDisplayed, useShell } from './context';
-import { useProjectBriefing } from './projectBriefing';
 
 const PRIMARY = ['sessions', 'projects', 'attention', 'intent', 'settings', 'help'] as const;
 
@@ -100,23 +96,6 @@ function WorkingPill({
   );
 }
 
-function ProjectMore({ route }: { readonly route: Extract<Route, { view: 'project' }> }) {
-  const data = useDisplayed((snapshot) => snapshot.data);
-  const briefing = useProjectBriefing(route);
-  const rows = payloadSessions(data).rows.filter(
-    (row) => String(row.project ?? '') === route.project,
-  );
-  const projectKey = stableProjectKey({ label: route.project, sessions: rows });
-  return (
-    <MoreMenu
-      projectKey={projectKey}
-      focus={route.focus ? splitSessKey(route.focus) : null}
-      briefingText={briefing.briefingText}
-      {...(briefing.addHumanContext ? { addHumanContext: briefing.addHumanContext } : {})}
-    />
-  );
-}
-
 export function Header({ route }: { readonly route: Route }) {
   const selection = useDisplayed(selectAttentionSelection);
   const counts = selection?.counts;
@@ -139,7 +118,6 @@ export function Header({ route }: { readonly route: Route }) {
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <NotificationControl />
-        {route.view === 'project' && selection ? <ProjectMore route={route} /> : null}
         <WorkingPill count={counts?.working} unread={unread} />
       </div>
       <AttentionAnnouncer />

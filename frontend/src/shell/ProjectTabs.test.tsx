@@ -4,7 +4,7 @@ import { ShellContext } from './context';
 import { ProjectTabs } from './ProjectTabs';
 import { BOARD, mountShell } from './testing';
 
-/* A tab's accessible name carries its cue ("Course 0 No observed state changes observed"), so a tab is found by its label. */
+/* A tab's accessible name carries its cue ("Timeline 0 No observed state changes observed"), so a tab is found by its label. */
 const tab = (name: string) => screen.getByRole('tab', { name: new RegExp(`^${name}`) });
 const hash = (page: ReturnType<typeof mountShell>) => page.history.entries().at(-1);
 
@@ -15,7 +15,7 @@ async function open(fragment: string) {
 }
 
 describe('the project tab strip', () => {
-  it('draws four tabs with Now selected by default and only the selected one in the tab order', async () => {
+  it('draws four tabs with Overview selected by default and only the selected one in the tab order', async () => {
     await open('#n=project:alpha%2Fapp');
     expect(
       screen
@@ -26,32 +26,32 @@ describe('the project tab strip', () => {
           node.getAttribute('tabindex'),
         ]),
     ).toEqual([
-      ['Now', 'true', '0'],
-      ['Course', 'false', '-1'],
+      ['Overview', 'true', '0'],
+      ['Timeline', 'false', '-1'],
       ['Decisions', 'false', '-1'],
-      ['Console', 'false', '-1'],
+      ['Usage and alerts', 'false', '-1'],
     ]);
     expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
-    expect(screen.getByRole('tablist').getAttribute('aria-label')).toBe('Project cockpit views');
+    expect(screen.getByRole('tablist').getAttribute('aria-label')).toBe('Project views');
   });
 
   it('selects the tab the route names, and keeps a focused session across tab changes', async () => {
     const page = await open('#n=project:alpha%2Fapp:claude%3Ashared-sid:console');
-    expect(tab('Console').getAttribute('aria-selected')).toBe('true');
-    fireEvent.click(tab('Course'));
+    expect(tab('Usage and alerts').getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(tab('Timeline'));
     expect(hash(page)).toBe('#n=project:alpha%2Fapp:claude%3Ashared-sid:course');
   });
 
   it('wraps over the strip with the arrow keys and puts focus on the tab it selects', async () => {
     const page = await open('#n=project:alpha%2Fapp');
-    act(() => tab('Now').focus());
-    await act(async () => fireEvent.keyDown(tab('Now'), { key: 'ArrowLeft' }));
+    act(() => tab('Overview').focus());
+    await act(async () => fireEvent.keyDown(tab('Overview'), { key: 'ArrowLeft' }));
     expect(hash(page)).toBe('#n=project:alpha%2Fapp:console');
-    expect(document.activeElement).toBe(tab('Console'));
-    await act(async () => fireEvent.keyDown(tab('Console'), { key: 'ArrowRight' }));
+    expect(document.activeElement).toBe(tab('Usage and alerts'));
+    await act(async () => fireEvent.keyDown(tab('Usage and alerts'), { key: 'ArrowRight' }));
     expect(hash(page)).toBe('#n=project:alpha%2Fapp');
-    expect(document.activeElement).toBe(tab('Now'));
-    await act(async () => fireEvent.keyDown(tab('Now'), { key: 'ArrowRight' }));
+    expect(document.activeElement).toBe(tab('Overview'));
+    await act(async () => fireEvent.keyDown(tab('Overview'), { key: 'ArrowRight' }));
     expect(hash(page)).toBe('#n=project:alpha%2Fapp:course');
   });
 
@@ -59,15 +59,27 @@ describe('the project tab strip', () => {
     const page = await open('#n=project:alpha%2Fapp:decisions');
     await act(async () => fireEvent.keyDown(tab('Decisions'), { key: 'End' }));
     expect(hash(page)).toBe('#n=project:alpha%2Fapp:console');
-    await act(async () => fireEvent.keyDown(tab('Console'), { key: 'Home' }));
+    await act(async () => fireEvent.keyDown(tab('Usage and alerts'), { key: 'Home' }));
     expect(hash(page)).toBe('#n=project:alpha%2Fapp');
   });
 
   it.each([
-    { key: 'End', start: '', focused: 'Console', target: 'Console', suffix: ':console' },
-    { key: 'Home', start: ':console', focused: 'Now', target: 'Now', suffix: '' },
-    { key: 'ArrowRight', start: '', focused: 'Console', target: 'Now', suffix: '' },
-    { key: 'ArrowLeft', start: ':console', focused: 'Now', target: 'Console', suffix: ':console' },
+    {
+      key: 'End',
+      start: '',
+      focused: 'Usage and alerts',
+      target: 'Usage and alerts',
+      suffix: ':console',
+    },
+    { key: 'Home', start: ':console', focused: 'Overview', target: 'Overview', suffix: '' },
+    { key: 'ArrowRight', start: '', focused: 'Usage and alerts', target: 'Overview', suffix: '' },
+    {
+      key: 'ArrowLeft',
+      start: ':console',
+      focused: 'Overview',
+      target: 'Usage and alerts',
+      suffix: ':console',
+    },
   ])(
     'activates $key after Back leaves focus on $focused',
     async ({ key, start, focused, target, suffix }) => {
@@ -96,7 +108,7 @@ describe('the project tab strip', () => {
     const before = page.history.entries().length;
     for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End']) {
       for (const modifier of [{ altKey: true }, { metaKey: true }, { ctrlKey: true }]) {
-        const notCancelled = fireEvent.keyDown(tab('Now'), { key, ...modifier });
+        const notCancelled = fireEvent.keyDown(tab('Overview'), { key, ...modifier });
         expect(notCancelled, `${key} ${Object.keys(modifier)[0]} must not be cancelled`).toBe(true);
       }
     }
@@ -107,17 +119,17 @@ describe('the project tab strip', () => {
   it('leaves every other key to the browser', async () => {
     const page = await open('#n=project:alpha%2Fapp');
     const before = page.history.entries().length;
-    for (const key of ['Enter', 'ArrowUp', 'z', 'Tab']) fireEvent.keyDown(tab('Now'), { key });
+    for (const key of ['Enter', 'ArrowUp', 'z', 'Tab']) fireEvent.keyDown(tab('Overview'), { key });
     expect(page.history.entries().length).toBe(before);
   });
 
   it('names the panel for the tab that is current, and draws what the tab holds inside it', async () => {
     await open('#n=project:alpha%2Fapp:course');
     const panel = screen.getByRole('tabpanel');
-    const tabId = tab('Course').getAttribute('id');
+    const tabId = tab('Timeline').getAttribute('id');
     expect(panel.getAttribute('id')).toMatch(/^next-cockpit-\d+-panel-course$/);
     expect(panel.getAttribute('aria-labelledby')).toBe(tabId);
-    expect(tab('Course').getAttribute('aria-controls')).toBe(panel.getAttribute('id'));
+    expect(tab('Timeline').getAttribute('aria-controls')).toBe(panel.getAttribute('id'));
     expect(panel.querySelector('[data-next-cockpit-panel="course"]')).not.toBeNull();
     expect(panel.textContent).not.toMatch(/DRC-/);
   });
@@ -178,14 +190,23 @@ describe('the project tab strip', () => {
     if (!firstList || !secondList) throw new Error('two tab strips must be mounted');
     // Home on the first strip focuses its own first tab. With one shared key, the second strip's
     // registration would have taken the entry and focus would land on the second strip's Now tab.
-    const firstCourse = within(firstList).getByRole('tab', { name: /^Course/ });
+    const firstCourse = within(firstList).getByRole('tab', { name: /^Timeline/ });
     fireEvent.keyDown(firstCourse, { key: 'Home' });
-    expect(document.activeElement).toBe(within(firstList).getByRole('tab', { name: /^Now/ }));
-    expect(document.activeElement).not.toBe(within(secondList).getByRole('tab', { name: /^Now/ }));
+    expect(document.activeElement).toBe(within(firstList).getByRole('tab', { name: /^Overview/ }));
+    expect(document.activeElement).not.toBe(
+      within(secondList).getByRole('tab', { name: /^Overview/ }),
+    );
     // And End on the second strip stays on the second strip.
     const secondDecisions = within(secondList).getByRole('tab', { name: /^Decisions/ });
     fireEvent.keyDown(secondDecisions, { key: 'End' });
-    expect(document.activeElement).toBe(within(secondList).getByRole('tab', { name: /^Console/ }));
+    expect(document.activeElement).toBe(
+      within(secondList).getByRole('tab', { name: /^Usage and alerts/ }),
+    );
     second.unmount();
   });
+});
+
+it('keeps the released course fragment as the Timeline tab', async () => {
+  await open('#n=project:alpha%2Fapp:course');
+  expect(tab('Timeline').getAttribute('aria-selected')).toBe('true');
 });

@@ -1,35 +1,29 @@
 import { Button } from '../ui/button';
 import { contextKey } from '../api/identity';
 import type { SessionIdentity } from '../api/types';
-import { Disclosure } from './Disclosure';
-import { disclosureKey } from './disclosureStore';
 import { useControls, useKeyedValue } from './kit';
 import { BriefingUnavailable } from './briefingUnavailable';
 
-export interface MoreMenuProps {
+export interface CopyStatusUpdateProps {
   /** The stable project key, never a label assumed unique. */
   readonly projectKey: string;
   /** The exact focused session, or null at project scope. */
   readonly focus: SessionIdentity | null;
   /** Read only inside the press that copies it: the briefing is never built, let alone sent, on a render. */
   readonly briefingText: () => string;
-  /** Present only while the note is empty and the briefing complete, so the utility is offered where it adds something. */
-  readonly addHumanContext?: { readonly memoKey: string };
 }
 
-const MORE_KEY = disclosureKey({ project: null, scope: null, name: 'more' });
-
-/* Copy briefing's result is held with no expiry and keyed by the project and
+/* Copy a status update's result is held with no expiry and keyed by the project and
    session context, so the control keeps reading Copied or Copy unavailable until
    the scope changes. Unlike the two confirmation cues, nothing deletes it: the
    briefing is a snapshot the reader chose to take, and an expired "Copied" would
    invite a second press to learn what the first did. */
-export function MoreMenu({ projectKey, focus, briefingText, addHumanContext }: MoreMenuProps) {
+export function CopyStatusUpdate({ projectKey, focus, briefingText }: CopyStatusUpdateProps) {
   const controls = useControls();
   const key = contextKey(projectKey, focus);
   const state = useKeyedValue(controls.briefing, key);
   const label =
-    state === 'copied' ? 'Copied' : state === 'error' ? 'Copy unavailable' : 'Copy briefing';
+    state === 'copied' ? 'Copied' : state === 'error' ? 'Copy unavailable' : 'Copy a status update';
 
   const copy = async () => {
     const press = controls.press();
@@ -52,27 +46,8 @@ export function MoreMenu({ projectKey, focus, briefingText, addHumanContext }: M
   };
 
   return (
-    <Disclosure
-      disclosureKey={MORE_KEY}
-      variant="menu"
-      summary="More"
-      summaryLabel="More"
-      focusKey="more"
-    >
-      <div className="ctl-menu-items">
-        <Button variant="menu" type="button" onClick={() => void copy()}>
-          {label}
-        </Button>
-        {addHumanContext ? (
-          <Button
-            variant="menu"
-            type="button"
-            onClick={() => controls.startMemoEdit(addHumanContext.memoKey)}
-          >
-            Add human context
-          </Button>
-        ) : null}
-      </div>
-    </Disclosure>
+    <Button variant="default" type="button" onClick={() => void copy()}>
+      {label}
+    </Button>
   );
 }

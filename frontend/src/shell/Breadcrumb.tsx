@@ -37,7 +37,9 @@ export function Breadcrumb({ route }: { readonly route: Route }) {
       <>
         {projects}
         {separator}
-        <span aria-current="page">{route.project}</span>
+        <span aria-current="page" data-authored>
+          {route.project}
+        </span>
       </>
     );
   } else {

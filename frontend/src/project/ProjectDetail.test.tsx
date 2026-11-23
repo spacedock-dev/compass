@@ -30,7 +30,7 @@ describe('a project page asks for nothing it was not pressed for', () => {
   it('sends no POST and writes no clipboard on mount, under StrictMode, on a poll or on a tab change', async () => {
     const page = open(WAITING as never);
     await page.settle();
-    fireEvent.click(screen.getByRole('tab', { name: /Course/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Timeline/ }));
     await page.settle();
     fireEvent.click(screen.getByRole('tab', { name: /Decisions/ }));
     await page.poll(WAITING?.board);
@@ -154,9 +154,8 @@ describe('the Copy briefing control', () => {
     const page = open(WAITING as never);
     await page.settle();
     expect(page.written).toEqual([]);
-    fireEvent.click(screen.getByLabelText('More'));
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Copy briefing' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Copy a status update' }));
       await page.settle();
     });
     expect(page.written).toHaveLength(1);
@@ -169,9 +168,8 @@ describe('the Copy briefing control', () => {
     const key = memoKey('wait/app', null, 'outcome');
     const page = open(WAITING as never, '', { storage: { [key]: 'Land the queue' } });
     await page.settle();
-    fireEvent.click(screen.getByLabelText('More'));
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Copy briefing' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Copy a status update' }));
       await page.settle();
     });
     expect(page.written[0]).toContain('Outcome (browser-local): Land the queue');
@@ -180,128 +178,45 @@ describe('the Copy briefing control', () => {
 });
 
 describe('the human context notes', () => {
-  /* A project whose context read failed: no task is known and the attention scan is unavailable, so the
-     briefing is incomplete and the strip itself carries the offer. */
-  async function opened(options: Parameters<typeof mountProject>[0] = {}) {
+  it('saves as you type and restores the notes when the page loads again', async () => {
+    const page = open(CALM as never);
+    await page.settle();
+    const box = screen.getByRole('textbox', { name: 'Your notes' }) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: 'Land the queue' } });
+    expect(box.value).toBe('Land the queue');
+    expect(screen.queryByRole('button', { name: /Save note/ })).toBeNull();
+    const storageBackend = page.backend;
+    page.unmount();
+    const next = mountProject({ hash: '#n=project:calm%2Fapp', data: CALM?.board, storageBackend });
+    await next.settle();
+    expect((screen.getByRole('textbox', { name: 'Your notes' }) as HTMLTextAreaElement).value).toBe(
+      'Land the queue',
+    );
+  });
+
+  it('reports a failed write and keeps the note while browser storage is blocked', async () => {
     const page = mountProject({
-      hash: hash('calm/app'),
+      hash: '#n=project:calm%2Fapp',
       data: CALM?.board,
-      contexts: {},
-      ...options,
+      storageBackend: blockedBackend(),
     });
     await page.settle();
-    return page;
-  }
-
-  it('offers the notes in the strip where the briefing is incomplete, and in the menu where it is complete', async () => {
-    const page = await opened();
-    expect(screen.getByText('+ Add human context · this browser')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('More'));
-    expect(screen.queryByRole('button', { name: 'Add human context' })).toBeNull();
-    page.unmount();
-    // A known task and a finished scan: the strip is quiet and the menu carries the offer instead.
-    const complete = open(WAITING as never);
-    await complete.settle();
-    expect(screen.queryByText('+ Add human context · this browser')).toBeNull();
-    fireEvent.click(screen.getByLabelText('More'));
-    expect(screen.getByRole('button', { name: 'Add human context' })).toBeTruthy();
-  });
-
-  it('saves on every input to the released key, shows both notes, and reads them back after a reload', async () => {
-    const page = await opened();
-    fireEvent.click(screen.getByText('+ Add human context · this browser'));
-    await page.settle();
-    const box = screen.getByPlaceholderText(
-      'What result should this scope achieve?',
-    ) as HTMLTextAreaElement;
-    expect(document.activeElement).toBe(box);
-    fireEvent.input(box, { target: { value: 'Land the queue' } });
-    const key = memoKey('calm/app', null, 'outcome');
-    expect(page.backend.data.get(key)).toBe('Land the queue');
-    expect(screen.getByText('Saved in this browser')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
-    await page.settle();
-    expect(screen.getByText('OPTIONAL HUMAN NOTE · THIS BROWSER')).toBeTruthy();
-    expect(screen.getByText('Land the queue')).toBeTruthy();
-    expect(screen.getAllByText('Not set')).toHaveLength(1);
-    page.unmount();
-    // A reload: a new document over the same storage.
-    const again = await opened({ storageBackend: page.backend });
-    expect(screen.getByText('Land the queue')).toBeTruthy();
-    void again;
-  });
-
-  it('keeps the words in the tab and says storage is unavailable when the browser refuses it', async () => {
-    const page = await opened({ storageBackend: blockedBackend() as never });
-    fireEvent.click(screen.getByText('+ Add human context · this browser'));
-    await page.settle();
-    const box = screen.getByPlaceholderText(
-      'What result should this scope achieve?',
-    ) as HTMLTextAreaElement;
-    fireEvent.input(box, { target: { value: 'kept anyway' } });
-    expect(screen.getByText('Browser storage unavailable')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
-    await page.settle();
-    expect(screen.getByText('kept anyway')).toBeTruthy();
-  });
-
-  it('keeps a long memo and refuses an over-limit paste without replacing its saved words', async () => {
-    const page = await opened();
-    fireEvent.click(screen.getByText('+ Add human context · this browser'));
-    await page.settle();
-    const box = screen.getByPlaceholderText(
-      'What result should this scope achieve?',
-    ) as HTMLTextAreaElement;
-    fireEvent.input(box, { target: { value: 'x'.repeat(700) } });
-    expect(box.value).toHaveLength(700);
-    expect(page.backend.data.get(memoKey('calm/app', null, 'outcome'))).toHaveLength(700);
-    fireEvent.input(box, { target: { value: 'x'.repeat(2100) } });
-    expect(box.value).toHaveLength(2100);
-    expect(page.backend.data.get(memoKey('calm/app', null, 'outcome'))).toHaveLength(700);
-    expect(screen.getByText('2100 characters; the limit is 2000.')).toBeVisible();
-    expect((screen.getByRole('button', { name: 'Done' }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it('is not offered at a focused session, where the strip draws no note', async () => {
-    const page = mountProject({
-      hash: hash('wait/app', ':claude%3Aa'),
-      data: WAITING?.board,
-      contexts: { 'wait/app\n': WAITING?.context },
-    });
-    await page.settle();
-    expect(screen.queryByText('+ Add human context · this browser')).toBeNull();
-    expect(screen.queryByText('OPTIONAL HUMAN NOTE · THIS BROWSER')).toBeNull();
+    const box = screen.getByRole('textbox', { name: 'Your notes' }) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: 'kept anyway' } });
+    expect(box.value).toBe('kept anyway');
+    expect(
+      screen.getByText('Browser storage is unavailable. These notes are held in this tab.'),
+    ).toBeVisible();
   });
 });
 
-describe('the scopes', () => {
-  it('draws the project root and each exact session as different scopes, and keeps the tab on a change', async () => {
-    const page = open(WAITING as never, ':course');
+describe('the terminal session picker', () => {
+  it('opens technical details in place and keeps the project route', async () => {
+    const page = open(CALM as never);
     await page.settle();
-    const tree = screen.getByRole('navigation', { name: 'Project scope' });
-    const links = within(tree).getAllByRole('link');
-    expect(links.map((link) => link.getAttribute('data-scope-kind'))).toEqual([
-      'project',
-      'session',
-      'session',
-    ]);
-    expect(links[0]?.getAttribute('aria-current')).toBe('page');
-    expect(links[1]?.getAttribute('href')).toBe('#n=project:wait%2Fapp:claude%3Aa:course');
-    fireEvent.click(links[1] as HTMLElement);
-    await page.settle();
-    expect(page.router.getRoute()).toMatchObject({
-      view: 'project',
-      focus: 'claude:a',
-      tab: 'course',
-    });
-    const focused = within(screen.getByRole('navigation', { name: 'Project scope' })).getAllByRole(
-      'link',
-    );
-    expect(focused[1]?.getAttribute('aria-current')).toBe('page');
-    expect(focused[0]?.hasAttribute('aria-current')).toBe(false);
-    expect(document.querySelector('[data-next-cockpit-viewing-session]')?.textContent).toBe(
-      'Viewing session · Claude Code · Waiting on you',
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Show technical details' }));
+    expect(screen.getByText('Read-only terminal', { exact: true })).toBeVisible();
+    expect(page.router.getRoute().view).toBe('project');
   });
 });
 
@@ -471,9 +386,9 @@ describe('disclosures keep their state by project and scope', () => {
     await page.settle();
     const summary = screen.getByText('Show project plan');
     fireEvent.click(summary);
-    fireEvent.click(screen.getByRole('tab', { name: /Course/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Timeline/ }));
     await page.settle();
-    fireEvent.click(screen.getByRole('tab', { name: /Now/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Overview/ }));
     await page.settle();
     expect(
       (
@@ -519,8 +434,10 @@ describe('plain project words', () => {
     expect(within(strip).getByText('Needs you')).toBeInTheDocument();
     expect(within(strip).getByText('Latest result')).toBeInTheDocument();
     expect(within(strip).getByText('Published instruction')).toBeInTheDocument();
-    const waiting = strip.querySelector('[data-next-cockpit-waiting]');
-    expect(waiting?.textContent).toContain('Approve the plan?');
+    expect(strip.querySelector('[data-next-cockpit-waiting]')?.textContent).toContain(
+      'Approve the plan?',
+    );
+    const waiting = screen.getByRole('region', { name: 'Needs you' });
     expect(
       (waiting?.compareDocumentPosition(screen.getByRole('tablist')) ?? 0) &
         Node.DOCUMENT_POSITION_FOLLOWING,
@@ -535,7 +452,7 @@ describe('plain project words', () => {
       },
     });
     await page.settle();
-    fireEvent.click(screen.getByRole('link', { name: /^Working p/ }));
+    fireEvent.click(screen.getByText('p', { selector: 'strong' }));
     await page.settle();
     expect(page.router.getRoute()).toMatchObject({ view: 'project', project: 'p' });
   });

@@ -16,6 +16,13 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+On 2026-11-23 the project page moved the recovery strip and its workflow evidence, stage
+conditions, steering and the terminal into Show technical details. The differential still
+compares the recovery evidence and the Timeline facts and links. The project scope rail, Overview
+layout and the labels Overview, Timeline, Decisions and Usage and alerts are checked in their new
+surfaces. Copy a status update uses the existing briefing. Your notes writes to the project's
+browser memo. The terminal brief, Timeline model and recordings keep their contracts.
+
 On 2026-11-23 Projects adopted uniform links, measured state chips and a shared legend. Its
 differential keeps the recorded named projects and destinations across both groups. The new
 grouping, order, expansion, headings and row copy are asserted in the Projects stories and

@@ -34,9 +34,9 @@
       "monospace": 1
     },
     "frontend/src/project/project.css": {
-      "monospace": 17,
+      "monospace": 14,
       "uppercase": 1,
-      "tracking": 15
+      "tracking": 13
     },
     "frontend/src/sessions/sessions.css": {
       "monospace": 16,

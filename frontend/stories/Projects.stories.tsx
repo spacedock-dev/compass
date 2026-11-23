@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
-import { expect, userEvent, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { App } from '../src/App';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
@@ -90,9 +90,11 @@ export const ManyProjects: Story = {
     const legend = within(canvas.getByRole('list', { name: 'What the icons mean' }));
     await expect(legend.getAllByRole('listitem')).toHaveLength(5);
     await expect(legend.getByText('Worth a look')).toBeVisible();
-    await expect(canvas.queryByRole('heading', { name: 'Stage alerts' })).toBeNull();
+    await expect(canvas.getByText('Stage alerts', { exact: true })).not.toBeVisible();
     await userEvent.click(canvas.getByRole('button', { name: 'Show technical details' }));
-    await expect(await canvas.findByRole('heading', { name: 'Stage alerts' })).toBeVisible();
+    await waitFor(() =>
+      expect(canvas.getByRole('heading', { name: 'Stage alerts' })).toBeVisible(),
+    );
     await userEvent.click(canvas.getByRole('button', { name: 'Hide technical details' }));
   },
 };

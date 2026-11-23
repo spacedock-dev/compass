@@ -7,7 +7,6 @@ import { Card } from '../ui/card';
 import { Icon } from '../ui/icons';
 import { STATUS_LEGEND } from '../ui/statusLegendEntries';
 import { SUPPORTED_AGENTS } from './agents';
-import './help.css';
 
 const HELP_EXAMPLE = {
   view: 'session',
@@ -62,9 +61,15 @@ function HelpCard({
 }) {
   const heading = useId();
   return (
-    <Card as="section" className="help-card" aria-labelledby={heading}>
-      <header>
-        <h2 id={heading}>{title}</h2>
+    <Card
+      as="section"
+      className="overflow-hidden [&_p]:m-0 [&_p]:text-muted-foreground"
+      aria-labelledby={heading}
+    >
+      <header className="p-6">
+        <h2 id={heading} className="m-0 text-value font-bold">
+          {title}
+        </h2>
         {intro ? <p>{intro}</p> : null}
       </header>
       {children}
@@ -74,18 +79,21 @@ function HelpCard({
 
 export function Help() {
   return (
-    <div className="next-help" data-next-view-body="help">
+    <div className="mx-auto my-8 grid w-full max-w-[920px] gap-6" data-next-view-body="help">
       <header>
-        <h1>How Compass works</h1>
-        <p className="text-value text-muted-foreground">
+        <h1 className="mt-0 mb-2">How Compass works</h1>
+        <p className="m-0 text-value text-muted-foreground">
           Compass shows which coding agents on this computer are working, which need you, and how
           their work lines up with the goals you set.
         </p>
       </header>
-      <Card as="section" className="help-example">
-        <div>
-          <h2>See it on a real example</h2>
-          <p>
+      <Card
+        as="section"
+        className="flex flex-wrap items-center justify-between gap-4 bg-[var(--status-ended-bg)] p-6"
+      >
+        <div className="grow basis-[380px]">
+          <h2 className="m-0 text-value font-bold">See it on a real example</h2>
+          <p className="m-0">
             Open an ended session to see goals, progress checks and Steer back. The example stays on
             this page and saves no changes.
           </p>
@@ -98,10 +106,13 @@ export function Help() {
         title="What the icons mean"
         intro="The same icons appear on Sessions, Projects and Needs you."
       >
-        <ul aria-label="Session icons">
+        <ul aria-label="Session icons" className="m-0 list-none p-0">
           {STATUS_LEGEND.map(([word, icon]) => (
             <li className="help-row" key={word}>
-              <span className="help-icon" data-help-icon={icon}>
+              <span
+                className="help-icon grid h-9 basis-9 shrink-0 place-items-center rounded-card"
+                data-help-icon={icon}
+              >
                 <Icon name={icon} size={20} />
               </span>
               <div>
@@ -116,11 +127,14 @@ export function Help() {
         title="Goals and progress checks"
         intro="Give a session a goal that says what should be true when the work is done. A progress check compares its record with that goal."
       >
-        <dl>
+        <dl className="m-0 p-0">
           {LEVELS.map(([word, meaning], index) => (
             <div className="help-row" key={word}>
               <dt>
-                <span className="help-level" data-level={index}>
+                <span
+                  className="help-level rounded-pill border border-current px-2 py-0.5 text-label"
+                  data-level={index}
+                >
                   {word}
                 </span>
               </dt>
@@ -134,12 +148,16 @@ export function Help() {
             </div>
           ))}
         </dl>
-        <RouteLink route={{ ...HELP_EXAMPLE, explain: 'goal' }} className="help-link">
+        <RouteLink route={{ ...HELP_EXAMPLE, explain: 'goal' }} className="mx-6 text-primary">
           {EXPLANATIONS.goals}
         </RouteLink>
       </HelpCard>
       <HelpCard title="Common questions">
-        <Disclosure disclosureKey="help:ai" summary="What gets sent to an AI, and where?">
+        <Disclosure
+          className="px-6"
+          disclosureKey="help:ai"
+          summary="What gets sent to an AI, and where?"
+        >
           <p>
             Summaries and progress checks can send selected session text and your goal to the
             provider named on the session page. Open What is sent there to see the destination and
@@ -147,7 +165,11 @@ export function Help() {
             <RouteLink route={{ view: 'settings' }}>Settings</RouteLink>.
           </p>
         </Disclosure>
-        <Disclosure disclosureKey="help:agents" summary="Which agents can Compass see?">
+        <Disclosure
+          className="px-6"
+          disclosureKey="help:agents"
+          summary="Which agents can Compass see?"
+        >
           <p>{Object.values(SUPPORTED_AGENTS).join(', ')}.</p>
           <p>
             Some agents publish fewer signals. See What Compass can't see in{' '}
@@ -155,6 +177,7 @@ export function Help() {
           </p>
         </Disclosure>
         <Disclosure
+          className="px-6"
           disclosureKey="help:projects"
           summary="Why are some sessions in an Unnamed folder?"
         >
@@ -163,14 +186,22 @@ export function Help() {
             folder label appear under Unnamed folder.
           </p>
         </Disclosure>
-        <Disclosure disclosureKey="help:allowance" summary={EXPLANATIONS.aiAllowance}>
+        <Disclosure
+          className="px-6"
+          disclosureKey="help:allowance"
+          summary={EXPLANATIONS.aiAllowance}
+        >
           <p>
             Compass reads your plan’s usage through the sign-ins on this computer. Usage requests
             carry no session text. You can control them in{' '}
             <RouteLink route={{ view: 'settings' }}>Settings</RouteLink>.
           </p>
         </Disclosure>
-        <Disclosure disclosureKey="help:data" summary="Where can I forget everything?">
+        <Disclosure
+          className="px-6"
+          disclosureKey="help:data"
+          summary="Where can I forget everything?"
+        >
           <p>
             Open Your data in <RouteLink route={{ view: 'settings' }}>Settings</RouteLink> to see
             the commands and what they remove.
