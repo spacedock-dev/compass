@@ -708,13 +708,17 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
             self.assertEqual("no-goal", self.progress(port)["rows"][0]["stored_progress"])
             self.save_goal(lines=())
             self.assertEqual("unchecked", self.progress(port)["rows"][0]["stored_progress"])
+            reading, why, spent = self.produce_attempt(None)
+            self.assertIsNone(reading)
+            self.assertEqual(runtime_reading.WITHHELD_LEDGER_EMPTY, why)
+            self.assertFalse(spent)
             annotation_store.record_withheld(
                 self.config,
                 self.state,
                 "claude",
                 SHORT,
-                reason=runtime_reading.WITHHELD_LEDGER_EMPTY,
-                spent=False,
+                reason=why,
+                spent=spent,
             )
             self.assertEqual("too-early", self.progress(port)["rows"][0]["stored_progress"])
 
@@ -822,18 +826,88 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
 
     def test_explicit_goal_unclear_is_published_on_both_surfaces(self) -> None:
         self.save_goal(lines=())
-        self.record(
-            _reading(
-                {
-                    "goal": {"result": runtime_reading.RESULT_GOAL_UNCLEAR, "cites": []},
-                }
-            )
+        assessment, why, spent = self.produce_attempt("goal_unclear")
+        self.assertEqual(("", True), (why, spent))
+        assert assessment is not None
+        self.assertEqual(
+            runtime_reading.RESULT_GOAL_UNCLEAR, assessment["criteria"]["goal"]["result"]
         )
+        self.record(dict(assessment))
         with self.serving(self.fresh_app()) as port:
             self.assertEqual("goal-unclear", self.progress(port)["rows"][0]["stored_progress"])
             (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
             self.assertEqual("goal-unclear", view["stored_progress"])
             self.assertIsNone(view["pill"])
+
+    def test_a_produced_unfinished_outcome_is_too_early_on_both_surfaces(self) -> None:
+        self.save_goal(lines=())
+        assessment, why, spent = self.produce_attempt("not_reached")
+        self.assertEqual(("", True), (why, spent))
+        assert assessment is not None
+        self.assertEqual(
+            runtime_reading.RESULT_NOT_REACHED, assessment["criteria"]["goal"]["result"]
+        )
+        self.record(dict(assessment))
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual("too-early", self.progress(port)["rows"][0]["stored_progress"])
+            (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+            self.assertEqual("too-early", view["stored_progress"])
+            self.assertIsNone(view["pill"])
+
+    def produce_attempt(
+        self, result: str | None
+    ) -> tuple[runtime_reading.Assessment | None, str, bool]:
+        if result is not None:
+            self.session._entry(
+                "assistant", [{"type": "text", "text": "I am still wiring the parser."}]
+            )
+            self.session.save(self.path)
+        app = self.app()
+        (row,) = app.collect(show_all=False)["sessions"]
+        facts = (
+            http_api._facts_of(http_api._session_context(app, row)) if result is not None else []
+        )
+
+        def model(_prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+            self.assertIsNotNone(result, "an empty ledger must stop before the model")
+            self.assertGreater(output_cap_bytes, 0)
+            return json.dumps(
+                {
+                    "goal": {"result": result, "cites": [1], "detail": "Still working."},
+                }
+            ), "ok"
+
+        return runtime_reading.produce(
+            self.config,
+            row,
+            self.entry()["revisions"],
+            facts,
+            now=self.now,
+            stamp_text="offline fixture",
+            model=model,
+            read_agent_words=True,
+        )
+
+    def test_a_child_appearing_after_derivation_invalidates_publication(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        child = Subagent(self.session, "a1b2c3d4")
+        path = self.path.with_suffix("") / "subagents" / f"agent-{child.agent_id}.jsonl"
+        before = self.path.stat().st_mtime_ns
+        finish = session_progress._Batch.finish
+
+        def before_reply(batch: Any, results: Any) -> Any:
+            self.assertEqual(levels.MEDIUM, next(iter(results.values())).value)
+            child.bash("pytest", "1 failed", is_error=True)
+            child.save(path)
+            return finish(batch, results)
+
+        with (
+            self.serving(self.fresh_app()) as port,
+            patch.object(session_progress._Batch, "finish", before_reply),
+        ):
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+        self.assertEqual(before, self.path.stat().st_mtime_ns)
 
     def test_raw_snapshots_never_project_progress_for_a_24_session_board(self) -> None:
         rows = []
