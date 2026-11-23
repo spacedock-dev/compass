@@ -93,23 +93,25 @@ or model input. Goals and drift readings remain each session's own.
 The light dashboard opens on **Sessions** with a greeting and a summary of the board. The
 **At a glance** cards count Waiting on you, Working now and Worth a look. Waiting on you and
 Worth a look open **Needs you**. Working now selects Working and takes you to the list.
-Press it again to clear that selection. The summary says when the figures cover only the
-sources Compass could read. Below the cards, active work comes before recent history. A Find sessions bar narrows both groups with a search over
-titles, goals and prompts (`/` jumps to it, and a pasted session id finds its session), eight filters
-(Date, by when a session started or was last active; Project; Group; Harness; Headless; State; Drift; Goal) with a
-count beside each choice, and three presets: Waiting on you, Started today and Drift recorded. A
-session that publishes no start time, project or state gets a choice of its own instead of being
-counted as zero or older, and Drift never offers a "no drift" choice, because an unchecked session
-looks the same as a clean one. Headless offers Headless and Interactive or unknown. The latter includes
+Press it again to clear that selection. The summary says when it covers only sources Compass
+could read. Below the cards, Right now comes before the earlier group. The six status tabs count the whole loaded board.
+Search reads titles, goals and prompts. Press `/` to jump to it or paste a session id to find it.
+Filters opens a panel for Project, Agent, Started and Progress check. The level chips are disabled.
+No goal yet uses published goal evidence across agents and includes unsaved prompt drafts.
+Filters explains when some sessions have unpublished goal data. More filters for power users holds
+the full project list, date ranges,
+Group, Headless, State, Progress records and Goal source.
+Headless offers Headless and Interactive or unknown. The latter includes
 interactive Claude Code and Codex runs, unknown entrypoints and other harnesses. Codex classifies
 only rollout source `exec` as headless and `cli` as interactive. A quiet headless Codex row with a
 standing recorded turn stop says "run finished" with its age on the list and session page. New work
 withdraws that reading; it does not declare a session end. Neither
 option is selected by default, so all sessions show. At a glance keeps counting the whole board.
-When the filters hide a
-session that is waiting on you, a warning under the bar says so and offers to open it (or, for several,
-to see them on Needs you) or to clear the filters. Filters last for the tab, across refreshes and trips into a session and back; a reload
-clears them, and they are never saved or put in the URL. The history and filter count explanations open in place. **Projects**, one
+When the filters hide a waiting session, the list can link to it or to Needs you.
+Show everything resets a search with no matches. If every discovered source fails, search results
+and session counts are unavailable. Show older sessions widens the collection with
+a reload, which clears the filters. Choices and the open panel last across refreshes and trips
+into a session and back for the life of the tab. **Projects**, one
 click away, groups sessions by the label their harness publishes. **Goal history** lists every
 current board session and retained annotation/discard record once, including sessions without a
 project or a goal. It labels the typed goal and each expected outcome line, cached deterministic goal, and each
@@ -237,8 +239,8 @@ An open question keeps its input-wait state on both row and session page. Open a
 parent's page to see its linked children and states; open a child to see its parent. An ended child
 remains listed while it stays on the board, but no longer holds its parent working.
 
-Group labels appear as text, with "(from parent)" when inherited. The Group filter narrows by label;
-Group by group makes label buckets within active work and recent history, with "No group" for
+Group labels appear as text, with "(from parent)" when inherited. In More filters for power users,
+Group narrows by label and Group by group arranges rows in label buckets. "No group" marks
 unlabeled rows. Named choices, selected chips and bucket headings quote the label, so a label
 called `No group` reads `"No group"` and remains distinct from absence. Nesting never unhides a
 filtered headless child or changes the board's counts.

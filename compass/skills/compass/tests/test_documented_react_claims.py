@@ -89,6 +89,20 @@ class TheAttentionHeadingsTheSkillNamesAreTheOnesTheBoardDrawsTest(unittest.Test
             self.assertNotIn(dead, SKILL, f"{dead} is not a heading the board renders")
 
 
+class TheSessionsProgressFiltersTest(unittest.TestCase):
+    def test_reader_docs_say_the_level_chips_are_disabled(self) -> None:
+        for filename in (
+            "docs/design-frontend-migration.md",
+            "docs/how-it-works.md",
+            "compass/skills/compass/reference/dashboard.md",
+        ):
+            with self.subTest(file=filename):
+                text = " ".join((ROOT / filename).read_text(encoding="utf-8").split())
+                self.assertIn("level chips are disabled", text)
+                self.assertNotIn("Stored readings can narrow the list", text)
+                self.assertNotIn("Progress levels appear on each session's page", text)
+
+
 class TheReaderStateRecordCitesRealOwnersTest(unittest.TestCase):
     CITATION = re.compile(r"`(frontend/src/[\w/.\-]+)`: ((?:`[^`]+`(?:, )?)+)")
 

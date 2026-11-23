@@ -173,20 +173,24 @@ the same place.
 
 At a glance on Sessions shows what is waiting on you, what is working and what is worth a look.
 Waiting on you and Worth a look open Needs you. Working now selects Working and moves focus to
-the list. The Find sessions bar searches titles, goals and prompts. Press `/` to jump to it.
-Filters narrow the list by when a session started or was last active, and by project, group, harness,
-headless status, state, drift and goal, and presets cover Waiting on you, Started today and Drift recorded.
+the list. The status tabs and At a glance count the whole loaded board while you filter it.
+Search reads titles, goals, prompts and project names. Press `/` to jump to the field.
+Open Filters for Project, Agent, Started and Progress check. The level chips are disabled.
+No goal yet finds sessions with a published absence of a saved goal, including drafts you
+haven't saved. Filters explains when some sessions have unpublished goal data.
+More filters for power users holds the complete list of choices, including
+Last active, Group, Headless and Goal source.
 Headless offers Headless and Interactive or unknown. Claude Code and Codex publish headless status;
 Codex uses the rollout entrypoint, with `exec` headless and `cli` interactive. Unknown entrypoints and
 other harnesses stay under Interactive or unknown. Both options start unselected, so
 every session is shown by default. A quiet headless Codex run with a recorded turn stop says
 "run finished" and its age on the list and session page. This is a reversible reading of that turn,
-not a claim that its resumable session ended; later work withdraws it. The counts
-at the top always cover the whole board. If a filter hides a session that is waiting on you, a warning
-links to it, or to Needs you when there are several. Filters reset when you reload the tab.
-Open How filter counts work under the filters for the counting rules. The earlier group names the
-published window on a bounded board and reads Session history when you open all history.
-How session history works explains what those rows can tell you.
+and later work withdraws it. When filters hide a waiting session, the result can link to it or
+to Needs you. With no search matches, Show everything clears the choices. Show older sessions
+reloads without filters and reads the wider collection. How filter counts work sits inside
+More filters for power users. The earlier group names the published window, and How session
+history works explains what those rows can tell you. If every discovered source fails, search
+results and session counts are unavailable.
 The [Find sessions design record](design-sessions-search.md) owns the counting rules.
 
 At the foot of Sessions, Your AI allowance shows the selected quota window, its published reset
@@ -208,17 +212,13 @@ cannot see a turn end, the row explains that in words. The progress slot on the 
 blank. Open the session page to see the progress reading and any live estimate the session
 supports.
 
-A Worth a look flag explains a reported risk or an end with uncommitted work. Use the
-counted Worth a look button to show those rows. The count covers flagged sessions across
-the loaded board, including rows hidden by other filters. If every discovered session
-source fails to load and there are no rows to count, the count reads "unavailable".
-Remove the Worth a look chip or use Clear all to reset the filter. A progress reading
-by itself leaves the count unchanged.
+A Worth a look flag explains a reported risk or an end with uncommitted work. Use the Worth
+a look tab to find those rows. Its count includes only sessions with the flag.
 
 An unmatched declaration says the parent is not on the board and is not linked. Open
 a parent to see its linked children and their states, or a child to open its parent. Group labels
-stay separate from goals; inherited labels say "from parent". Group by group arranges the kept
-rows into label buckets within active work and recent history. Named choices, chips and headings
+stay separate from goals. Inherited labels say "from parent". Inside More filters for power users,
+Group by group arranges the rows by label in Right now and the earlier group. Named choices, chips and headings
 quote labels; unquoted "No group" means no label.
 Filters and grouping last across board refreshes and trips into a session; reloading clears them.
 

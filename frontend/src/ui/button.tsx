@@ -53,6 +53,16 @@ const buttonVariants = cva(
           'block justify-normal items-normal border-0 border-none border-current bg-transparent text-muted-foreground',
         ),
         native: '',
+        segment: cn(
+          action,
+          refused,
+          'px-3 py-1 hover:not-disabled:bg-accent aria-pressed:bg-card aria-pressed:font-semibold',
+        ),
+        'filter-option': cn(
+          action,
+          refused,
+          'rounded-pill gap-2 px-3 py-1 bg-card hover:bg-accent aria-pressed:border-[var(--accent)] aria-pressed:bg-accent aria-pressed:font-semibold',
+        ),
         /* A removable filter: one press removes it, so the remove glyph sits inside the button's name. */
         'filter-chip': cn(
           action,

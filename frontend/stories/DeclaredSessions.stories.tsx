@@ -148,8 +148,9 @@ export const LinkedChildrenAndWait: Story = {
       }),
     ).toBeVisible();
     await expect(row(canvasElement, 'child')).toHaveTextContent(fixture.expected.child[0] ?? '');
-    await userEvent.click(canvas.getByRole('button', { name: 'Headless' }));
-    const popup = document.querySelector('[data-filter-popover="headless"]') as HTMLElement;
+    await userEvent.click(canvas.getByRole('button', { name: 'Filters' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'More filters for power users' }));
+    const popup = document.querySelector('[data-filter-facet="headless"]') as HTMLElement;
     await userEvent.click(within(popup).getByRole('checkbox', { name: /Interactive or unknown/ }));
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(row(canvasElement, 'child')).toBeNull());
@@ -178,6 +179,8 @@ export const GroupFilterAndGrouping: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByText('Independent check');
+    await userEvent.click(canvas.getByRole('button', { name: 'Filters' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'More filters for power users' }));
     await userEvent.click(canvas.getByRole('button', { name: 'Group by group' }));
     await expect(canvas.getByRole('heading', { name: 'No group' })).toBeVisible();
     await expect(
@@ -185,8 +188,8 @@ export const GroupFilterAndGrouping: Story = {
         name: JSON.stringify(fixture.payload.sessions[0]?.group ?? ''),
       }),
     ).toHaveLength(2);
-    await userEvent.click(canvas.getByRole('button', { name: 'Group' }));
-    const popup = document.querySelector('[data-filter-popover="group"]') as HTMLElement;
+
+    const popup = document.querySelector('[data-filter-facet="group"]') as HTMLElement;
     await userEvent.click(within(popup).getByRole('checkbox', { name: /release/ }));
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(row(canvasElement, 'unlinked')).toBeNull());
@@ -319,11 +322,13 @@ export const LiteralNoGroupIsDistinct: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByText('Named label');
+    await userEvent.click(canvas.getByRole('button', { name: 'Filters' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'More filters for power users' }));
     await userEvent.click(canvas.getByRole('button', { name: 'Group by group' }));
     await expect(canvas.getByRole('heading', { name: '"No group"' })).toBeVisible();
     await expect(canvas.getByRole('heading', { name: 'No group' })).toBeVisible();
-    await userEvent.click(canvas.getByRole('button', { name: 'Group' }));
-    const popup = document.querySelector('[data-filter-popover="group"]') as HTMLElement;
+
+    const popup = document.querySelector('[data-filter-facet="group"]') as HTMLElement;
     await userEvent.click(within(popup).getByRole('checkbox', { name: /^"No group"\s*1$/ }));
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(row(canvasElement, 'bare')).toBeNull());
@@ -335,7 +340,9 @@ export const LiteralNoGroupIsDistinct: Story = {
 export const GroupingRemainsVisiblyPressed: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const toggle = await canvas.findByRole('button', { name: 'Group by group' });
+    await userEvent.click(await canvas.findByRole('button', { name: 'Filters' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'More filters for power users' }));
+    const toggle = canvas.getByRole('button', { name: 'Group by group' });
     const driver =
       '__vitest_browser_runner__' in window ? (await import('vitest/browser')).page : null;
     const leave = async () => {

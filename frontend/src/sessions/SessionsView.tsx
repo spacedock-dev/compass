@@ -13,19 +13,17 @@ import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 're
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
 import { gapNames, sessionStateLimit, type Row } from '../observed';
-import { nextNumber } from '../api/bootstrap';
 import { selectObserved } from '../observed/select';
 import { selectHarnessSources } from '../store/selectors';
 import { useDisplayed, useShell } from '../shell/context';
 import { windowHours } from '../shell/derive';
-import { datedClock } from '../observed/values';
+import { formatTimestamp } from '../shell/format';
 import type { TimerHandle } from '../transport/ports';
 import { RouteAnchor } from './RouteAnchor';
 import {
   announcement,
   applyFilters,
   EMPTY_FILTERS,
-  filtersActive,
   groupEmptyLine,
   harnessMeta,
   indexScreen,
@@ -37,6 +35,7 @@ import { useFilterState } from './filterStore';
 import {
   SEARCH_KEY,
   SessionsFilters,
+  SessionsWindowLink,
   type FilterActions,
   type FilterBoard,
 } from './SessionsFilters';
@@ -334,9 +333,9 @@ const RowView = memo(function RowView({
 const Group = memo(function Group({
   kind,
   title,
-  label,
   rows,
   empty,
+  countsAvailable,
   caveat,
   filter,
   byGroup = false,
@@ -344,9 +343,9 @@ const Group = memo(function Group({
   readonly byGroup?: boolean;
   readonly kind: 'active' | 'history';
   readonly title: string;
-  readonly label: string;
   readonly rows: readonly SessionRow[];
   readonly empty: string;
+  readonly countsAvailable: boolean;
   readonly caveat?: readonly string[];
   /** Set while the reader's filters are on: what they keep of this group, and how to take them off. */
   readonly filter?: {
@@ -357,6 +356,7 @@ const Group = memo(function Group({
   const kept = filter?.filtered.active
     ? rows.filter((row) => filter.filtered.keys.has(row.key))
     : rows;
+  const noMatches = countsAvailable && filter?.filtered.active && filter.filtered.shown === 0;
   const buckets = byGroup
     ? [...new Set(kept.map((row) => groupOf(row.source)))]
         .sort((a, b) => (a ? (b ? a.localeCompare(b, 'en') : -1) : 1))
@@ -367,11 +367,28 @@ const Group = memo(function Group({
       className={`next-operation-group next-operation-group--${kind}`}
       data-next-operation-group={kind}
     >
-      <header>
+      <header className="flex flex-wrap items-center justify-between gap-x-2">
         <h2>{title}</h2>
-        {label ? <p>{label}</p> : null}
+        {countsAvailable ? (
+          <span className="text-label text-muted-foreground" data-sessions-group-count>
+            {kept.length} {kept.length === 1 ? 'session' : 'sessions'}
+          </span>
+        ) : null}
       </header>
-      {caveat ? (
+      {noMatches && kind === 'active' ? (
+        <div className="flex flex-wrap items-center gap-x-2" data-sessions-nothing>
+          <p className="m-0 text-body text-muted-foreground">{SESSION_LIST_WORDS.nothingMatches}</p>
+          <Button
+            type="button"
+            variant="native"
+            className="inline-flex cursor-pointer items-center border-0 bg-transparent px-1 text-body text-primary underline [font-family:var(--sans)]"
+            onClick={filter?.onClear}
+          >
+            {SESSION_LIST_WORDS.showEverything}
+          </Button>
+        </div>
+      ) : null}
+      {countsAvailable && caveat && !noMatches ? (
         <Disclosure
           disclosureKey={disclosureKey({
             project: null,
@@ -389,7 +406,7 @@ const Group = memo(function Group({
         </Disclosure>
       ) : null}
       {/* A sibling after the header, never inside it, so a filtered header reads exactly as an unfiltered one. */}
-      {filter?.filtered.active && rows.length ? (
+      {filter?.filtered.active && !noMatches && rows.length ? (
         <p
           className="m-0 flex flex-wrap items-center gap-x-2 text-body text-muted-foreground"
           data-next-sessions-shown={kind}
@@ -403,18 +420,20 @@ const Group = memo(function Group({
           </Button>
         </p>
       ) : null}
-      <div className="next-operations-columns" aria-hidden="true">
-        <span>SESSION</span>
-        <span>PROJECT</span>
-        <span>GOAL</span>
-        <span>NOW</span>
-        {kind === 'history' ? null : (
-          <>
-            <span>NEXT</span>
-            <span>BLOCKED</span>
-          </>
-        )}
-      </div>
+      {!countsAvailable || noMatches ? null : (
+        <div className="next-operations-columns" aria-hidden="true">
+          <span>SESSION</span>
+          <span>PROJECT</span>
+          <span>GOAL</span>
+          <span>NOW</span>
+          {kind === 'history' ? null : (
+            <>
+              <span>NEXT</span>
+              <span>BLOCKED</span>
+            </>
+          )}
+        </div>
+      )}
       <TooltipProvider>
         <div className="next-operation-rows">
           {kept.length ? (
@@ -435,7 +454,7 @@ const Group = memo(function Group({
                 ))}
               </Fragment>
             ))
-          ) : rows.length ? (
+          ) : !countsAvailable || noMatches ? null : rows.length ? (
             <p data-next-sessions-filtered-empty className="next-absence">
               {groupEmptyLine(rows.length, title)}
             </p>
@@ -454,7 +473,7 @@ const RECENT_CAVEATS = [
 ] as const;
 
 function historyHeading({ hours, showAll }: FilterBoard) {
-  if (showAll) return 'Session history';
+  if (showAll) return SESSION_LIST_WORDS.earlierSessions;
   if (hours === null || hours <= 0) return 'Recently active';
   return `Earlier in the last ${String(hours)} ${hours === 1 ? 'hour' : 'hours'}`;
 }
@@ -496,12 +515,14 @@ function useFilterActions(
   indexed: ReturnType<typeof indexScreen>,
   generated: number | null,
   annotated: boolean,
+  progressAvailable: boolean,
+  countsAvailable: boolean,
 ): FilterActions {
   const shell = useShell();
-  const latest = useRef({ indexed, generated, annotated });
+  const latest = useRef({ indexed, generated, annotated, progressAvailable, countsAvailable });
   const timer = useRef<TimerHandle | null>(null);
   useEffect(() => {
-    latest.current = { indexed, generated, annotated };
+    latest.current = { indexed, generated, annotated, progressAvailable, countsAvailable };
   });
   useEffect(
     () => () => {
@@ -517,12 +538,17 @@ function useFilterActions(
       const now = latest.current;
       const before = since.current ?? next;
       since.current = null;
-      const result = applyFilters(now.indexed, prepare(next, now.generated, now.annotated), (at) =>
-        datedClock(at, now.generated ?? at),
+      const result = applyFilters(
+        now.indexed,
+        prepare(next, now.generated, now.annotated, now.progressAvailable),
+        () => null,
       );
       // Forgotten first, so the same sentence after a second press is spoken again.
       shell.announcer.forget(ANNOUNCE_KEY);
-      shell.announcer.announce(ANNOUNCE_KEY, announcement(result, next, before));
+      shell.announcer.announce(
+        ANNOUNCE_KEY,
+        announcement(result, next, before, now.countsAvailable),
+      );
     };
     const cancel = () => {
       if (timer.current === null) return;
@@ -576,15 +602,30 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
   const indexed = useMemo(() => (screen ? indexScreen(screen) : []), [screen]);
   const generated = screen ? screen.context.generated : null;
   const annotated = screen ? screen.context.annotate && !screen.context.unreadable : false;
+  const progressAvailable = useMemo(
+    () => indexed.some(({ progress }) => progress !== null),
+    [indexed],
+  );
   const prepared = useMemo(
-    () => prepare(deferred, generated, annotated),
-    [deferred, generated, annotated],
+    () => prepare(deferred, generated, annotated, progressAvailable),
+    [deferred, generated, annotated, progressAvailable],
   );
   const filtered = useMemo(
-    () => applyFilters(indexed, prepared, (at) => datedClock(at, generated ?? at)),
+    () =>
+      applyFilters(indexed, prepared, (at) =>
+        formatTimestamp(at, generated, { style: 'same-day-relative' }),
+      ),
     [indexed, prepared, generated],
   );
-  const actions = useFilterActions(store, indexed, generated, annotated);
+  const countsAvailable = Boolean(attention?.counts);
+  const actions = useFilterActions(
+    store,
+    indexed,
+    generated,
+    annotated,
+    progressAvailable,
+    countsAvailable,
+  );
   const board = useMemo((): FilterBoard | null => {
     if (!data || !screen) return null;
     const payload = data as unknown as Row;
@@ -592,19 +633,14 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
       generated,
       hours: windowHours(data),
       showAll: shell.runtime.bootstrap.showAll || payload['show_all'] === true,
-      cleared: nextNumber(payload['cleared']) ?? 0,
       harnesses: harnessMeta(payload),
       annotate: screen.context.annotate,
       unreadable: screen.context.unreadable,
+      countsAvailable,
     };
-  }, [data, screen, generated, shell]);
+  }, [data, screen, generated, shell, countsAvailable]);
   const groupFilter = useMemo(() => ({ filtered, onClear: actions.clearAll }), [filtered, actions]);
   if (!screen || !board) return null;
-  const worthALookCount = attention?.counts?.worthALook;
-  const otherFilters = filtersActive({
-    ...prepared,
-    filters: { ...prepared.filters, worthALookOnly: false },
-  });
   return (
     <section className="next-operations" data-next-view-body="sessions">
       {attention ? (
@@ -625,36 +661,15 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
           }}
         />
       ) : null}
-      <StatusLegend />
       <SourceGaps failed={failedSources} />
-      {Array.isArray(data?.sessions) ? (
-        <Button
-          type="button"
-          className="mt-3 gap-1.5 aria-pressed:bg-accent"
-          aria-pressed={filters.worthALookOnly}
-          disabled={(worthALookCount === undefined || !indexed.length) && !filters.worthALookOnly}
-          onClick={() =>
-            actions.change({ ...filters, worthALookOnly: !filters.worthALookOnly }, 'press')
-          }
-        >
-          {filters.worthALookOnly ? <Icon name="check" /> : null}
-          {SESSION_ROW_WORDS.worthALook}{' '}
-          {worthALookCount === undefined
-            ? 'unavailable'
-            : `${String(worthALookCount)}${otherFilters ? ' on this board' : ''}`}
-        </Button>
-      ) : null}
-      {/* No toolbar over an empty board: the existing sentences say why there is nothing to find. */}
-      {indexed.length ? (
-        <SessionsFilters
-          indexed={indexed}
-          filters={filters}
-          prepared={prepared}
-          filtered={filtered}
-          board={board}
-          actions={actions}
-        />
-      ) : null}
+      <SessionsFilters
+        indexed={indexed}
+        filters={filters}
+        prepared={prepared}
+        filtered={filtered}
+        board={board}
+        actions={actions}
+      />
       <section
         ref={list}
         id={SESSIONS_LIST_ID}
@@ -664,9 +679,9 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
       >
         <Group
           kind="active"
-          title="Active now"
-          label="working, waiting on you, an exact request, or recorded drift"
+          title={SESSION_LIST_WORDS.rightNow}
           rows={screen.active}
+          countsAvailable={countsAvailable}
           empty="No exact session has active evidence right now."
           filter={groupFilter}
           byGroup={filters.byGroup}
@@ -674,14 +689,16 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
         <Group
           kind="history"
           title={historyHeading(board)}
-          label=""
           rows={screen.history}
+          countsAvailable={countsAvailable}
           empty="No recent-history rows in this payload."
           caveat={RECENT_CAVEATS[screen.context.annotate ? 1 : 0]}
           filter={groupFilter}
           byGroup={filters.byGroup}
         />
       </section>
+      <SessionsWindowLink board={board} />
+      <StatusLegend />
       <CapacityStrip />
     </section>
   );

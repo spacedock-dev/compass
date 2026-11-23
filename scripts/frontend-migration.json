@@ -282,10 +282,7 @@
         "frontend/e2e/sessions-parity.mjs",
         "frontend/stories/SessionsSearch.stories.tsx"
       ],
-      "contract": "Active, blocked, ended and source-gap rows expose exact goals and drift with one-step access to a session. Search and filters are the reader's own and may hide any row, including one waiting on the reader; a guard counts every hidden waiting session and offers to open it when one is hidden, or to see them on Attention when several are, and to clear the filters, and ACTIVE NOW, WORKING and the reported blocks stay board-wide."
-    },
-    {
-      "name": "session-detail-and-absence",
+      "contract": "Sessions rows link to their goals and use status tiles where evidence permits. Tab and At a glance counts use the full loaded board. Filters and search narrow the displayed rows. The hidden-waiting guard links to the session or Needs you. A search with no matches offers Show everything, and Show older sessions widens the collection on reload.",
       "owner": "DRC-4824",
       "oracles": [
         "frontend/src/sessions/SessionDetail.test.tsx",
@@ -817,7 +814,7 @@
       "disposition": "store-held"
     },
     {
-      "name": "The Sessions search, filters and grouping",
+      "name": "The Sessions tabs, search, Filters panel and grouping",
       "owner": "DRC-4824",
       "oracles": [
         "frontend/src/sessions/filterStore.test.ts",
@@ -826,7 +823,7 @@
         "frontend/src/controls/fieldMemory.test.tsx",
         "frontend/stories/SessionsSearch.stories.tsx"
       ],
-      "contract": "The words, the Date mode and choice, the no-stamp checkbox, the Project, Harness, State, Drift, Goal and Group choices, the session-list segment, the Worth a look filter and the group-by toggle are one snapshot held per controls instance for the life of the tab, across polls, view changes and session round trips, and never written to browser storage or the fragment. The uncontrolled search field takes back its words from the store and its caret through field memory under sessions-search; Clear all empties the live node and the store. Row, trigger and option focus keys are re-emitted, and a focused row that leaves the filtered set falls back to the search field.",
+      "contract": "Status tab, search, facets and grouping live in filterStore per shell. Filters and its More filters for power users disclosure use the keyed disclosure store. Polls and session round trips retain both. A reload starts with nothing filtered and a closed panel. The uncontrolled search field uses field memory for its caret and filters for its words. A row link that leaves the filtered list falls back to search.",
       "disposition": "store-held"
     },
     {
@@ -918,7 +915,7 @@
       "disposition": "store-held"
     },
     {
-      "name": "An open Select popup, the open list of prompts, or an open Sessions filter",
+      "name": "An open Select popup, the open list of prompts, or the open Sessions Filters panel",
       "owner": "DRC-4823",
       "oracles": [
         "frontend/src/controls/choiceProbe.test.tsx",
@@ -929,7 +926,7 @@
         "frontend/e2e/css-contract.mjs",
         "frontend/stories/SessionsSearch.stories.tsx"
       ],
-      "contract": "React retains the controlled value and open Select popup, the open list of prompts and an open Sessions filter popover, each a popover under a button that holds no value and is held open by its aria-expanded=true trigger; a popover trigger holds only when it carries data-hold-paint, as the six filter buttons do. Defer background board paints while actually open for at most 12 consecutive holds; popup closure or removal of the open trigger catches up once. Manual and cap paints retain popup identity.",
+      "contract": "The in-flow Filters panel opts in through its data-hold-paint trigger and publishes aria-expanded. Open choices hold at most 12 consecutive background paints. Close or removal of the trigger releases the newest deferred board once. Manual and capped paints keep the choice open.",
       "disposition": "retained-deferral"
     },
     {

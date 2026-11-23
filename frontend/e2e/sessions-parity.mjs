@@ -55,8 +55,42 @@ const receipts = {};
 const failures = [];
 const only = process.env.COMPASS_E2E_STEPS ? new RegExp(process.env.COMPASS_E2E_STEPS) : null;
 
-// The opening has its own assertions below. Compare the recorded list from its first group onward.
-const recordedList = ({ header: _header, fleet: _fleet, ...list }) => list;
+// The opening and group counts have their own assertions. Keep the recorded history window and rows.
+const recordedList = ({ header: _header, fleet: _fleet, groups, ...list }) => ({
+  ...list,
+  groups: groups.map((group) => ({
+    ...group,
+    header:
+      group.kind === 'active'
+        ? 'Right now'
+        : group.header === 'Session history'
+          ? 'Earlier sessions'
+          : group.header,
+  })),
+});
+
+async function observeList(page, payload) {
+  const list = await page.evaluate(summarizeList);
+  assert.deepEqual(
+    list.groups?.map(({ kind }) => kind),
+    ['active', 'history'],
+  );
+  const hours = payload.window_hours;
+  const history =
+    payload.show_all === true
+      ? 'Earlier sessions'
+      : Number.isFinite(hours) && hours > 0
+        ? `Earlier in the last ${hours} ${hours === 1 ? 'hour' : 'hours'}`
+        : 'Recently active';
+  assert.equal(list.groups[0].header, 'Right now');
+  assert.equal(list.groups[1].header, history);
+  for (const { kind, rows } of list.groups) {
+    const group = page.locator(`[data-next-operation-group="${kind}"]`);
+    const count = await group.locator('[data-sessions-group-count]').textContent();
+    assert.equal(count, `${rows.length} ${rows.length === 1 ? 'session' : 'sessions'}`, kind);
+  }
+  return recordedList(list);
+}
 
 async function assertSessionsOpening(page) {
   const header = page.locator('.next-operations-header');
@@ -110,7 +144,7 @@ const summarizeList = () => {
   return {
     groups: [...root.querySelectorAll('[data-next-operation-group]')].map((group) => ({
       kind: group.dataset.nextOperationGroup,
-      header: norm(group.querySelector(':scope > header')),
+      header: norm(group.querySelector(':scope > header h2')),
       empty: group.querySelector('.next-sessions-empty')
         ? norm(group.querySelector('.next-sessions-empty'))
         : null,
@@ -315,6 +349,11 @@ const DEVIATIONS = [
       'The greeting, summary and three cards replace the retired heading, orientation and fleet facts. The opening has its own assertions.',
   },
   {
+    scope: 'Sessions group headings',
+    reason:
+      'Right now and the group counts have direct assertions. The published history window and the recorded rows still compare.',
+  },
+  {
     scope: 'assignment',
     reason: 'Current task names the instruction without borrowing the session goal label.',
   },
@@ -468,7 +507,7 @@ try {
     async () => {
       const old = recordedList(golden.observe('real board: list'));
       await load(react, board.react.origin, '#n=sessions');
-      const mine = await react.page.evaluate(summarizeList);
+      const mine = await observeList(react.page, holder.body);
       assert.ok(
         old.groups?.length === 2 && mine.groups?.length === 2,
         'the page and the recording draw both groups',
@@ -538,7 +577,7 @@ try {
         const input = digest(holder.body);
         const old = recordedList(golden.observe(`generated seed ${seed} ${input}: list`));
         await load(react, board.react.origin, '#n=sessions');
-        const mine = await react.page.evaluate(summarizeList);
+        const mine = await observeList(react.page, holder.body);
         const found = firstDifference(old, mine);
         if (found && !DEVIATIONS.some((d) => d.seed === seed && d.scope === 'list'))
           assert.fail(`seed ${seed} list: ${found}`);
@@ -591,7 +630,7 @@ try {
       holder.body = body;
       const old = recordedList(golden.observe('hostile text: list'));
       await load(react, board.react.origin, '#n=sessions');
-      const mine = await react.page.evaluate(summarizeList);
+      const mine = await observeList(react.page, holder.body);
       assert.equal(firstDifference(old, mine), null);
       assert.equal(await react.page.evaluate(() => globalThis.__hit), undefined, 'no handler ran');
       assert.equal(

@@ -47,7 +47,12 @@ const run = (change: Partial<FilterState>, options: Parameters<typeof board>[0] 
   const { indexed, payload, screen } = board(options);
   const generated = (payload['generated'] as number | undefined) ?? null;
   const annotated = screen.context.annotate && !screen.context.unreadable;
-  const prepared = prepare({ ...EMPTY_FILTERS, ...change }, generated, annotated);
+  const prepared = prepare(
+    { ...EMPTY_FILTERS, ...change },
+    generated,
+    annotated,
+    indexed.some(({ progress }) => progress !== null),
+  );
   const filtered = applyFilters(indexed, prepared, (at) => datedClock(at, generated ?? at));
   const sids = indexed
     .filter((one) => filtered.keys.has(one.row.key))
@@ -63,7 +68,7 @@ it('filters for the flag independently from a row’s State', () => {
   const indexed = indexScreen(
     buildSessionsScreen(payload, observedFor(payload), undefined, selection),
   );
-  const flagged = prepare({ ...EMPTY_FILTERS, worthALookOnly: true }, GENERATED, false);
+  const flagged = prepare({ ...EMPTY_FILTERS, segment: 'worth' }, GENERATED, false);
   const result = applyFilters(indexed, flagged, () => '');
   expect(result.shown).toBe(selection?.counts?.worthALook);
   expect(result.active).toBe(true);
@@ -79,6 +84,13 @@ it('filters for the flag independently from a row’s State', () => {
       .map(({ row }) => row.session.sid)
       .sort(),
   ).toEqual(['dirty-end', 'dirty-one-entry', 'dirty-unknown-count']);
+});
+
+it.each(['medium', 'high', 'extreme'])('keeps search matches with inert level %s', (level) => {
+  const matches = run({ query: 'combat' }).filtered;
+  expect(matches.shown).toBeGreaterThan(0);
+  expect(run({ progress: [level] }).filtered.active).toBe(false);
+  expect(run({ query: 'combat', progress: [level] }).filtered.keys).toEqual(matches.keys);
 });
 
 describe('the words', () => {
@@ -358,16 +370,66 @@ describe('the facets', () => {
     expect(options[0]?.count).toBe(5);
   });
 
-  it('partition state, drift and goal so each sums to the board', () => {
+  it('partitions state and goals and offers progress records without counts', () => {
     const { indexed, prepared } = run({});
     const counts = (facet: 'state' | 'drift' | 'goal') =>
       fixedOptions(indexed, prepared, facet).map((one) => one.count);
     expect(counts('state')).toEqual([1, 2, 1, 1, 0, 7]);
-    expect(counts('drift')).toEqual([1, 1, 10]);
-    expect(counts('goal')).toEqual([2, 0, 10]);
+    expect(counts('drift')).toEqual([null, null, null]);
+    expect(counts('goal')).toEqual([2, 0, 0]);
     expect(run({ drift: ['recorded'] }).letters).toBe('D');
     expect(run({ drift: ['checked'] }).letters).toBe('K');
     expect(run({ goal: ['saved'] }).letters).toBe('BK');
+  });
+
+  it('No goal yet distinguishes never typed, unsaved draft, saved, discarded and unpublished across harnesses', () => {
+    const absent = { annotation_goal: '', annotation_goal_why: 'No goal typed for this session.' };
+    const payload = {
+      annotate: true,
+      generated: GENERATED,
+      sessions: [
+        { harness: 'gemini', sid: 'never', ...absent },
+        {
+          harness: 'claude',
+          sid: 'draft',
+          ...absent,
+          first_prompt: 'Write a summary',
+          first_prompt_at: GENERATED - 60,
+        },
+        {
+          harness: 'copilot',
+          sid: 'saved',
+          annotation_goal: 'Ship it',
+        },
+        {
+          harness: 'codex',
+          sid: 'adopted',
+          annotation_goal: 'Write docs',
+          annotation_goal_source: 'first-prompt',
+        },
+        {
+          harness: 'pi',
+          sid: 'discarded',
+          annotation_goal: '',
+          annotation_discarded_at: GENERATED - 60,
+        },
+        { harness: 'droid', sid: 'unpublished' },
+        { harness: 'cursor', sid: 'default', annotation_goal: '', annotation_goal_why: '' },
+      ],
+    };
+    const indexed = indexScreen(buildSessionsScreen(payload, observe(payload)));
+    const kept = (change: Partial<FilterState>) => {
+      const prepared = prepare({ ...EMPTY_FILTERS, ...change }, GENERATED, true, true);
+      const { keys } = applyFilters(indexed, prepared, () => '');
+      return indexed
+        .filter(({ row }) => keys.has(row.key))
+        .map(({ row }) => row.session.sid)
+        .sort();
+    };
+    expect(kept({ progress: ['no-goal'] })).toEqual(['discarded', 'draft', 'never']);
+    expect(kept({ goal: ['none'] })).toEqual(['discarded', 'never']);
+    expect(kept({ goal: ['saved'] })).toEqual(['adopted', 'saved']);
+    expect(kept({ goal: ['drafted'] })).toEqual(['draft']);
   });
 
   it('filter nothing on drift or goal while annotations are off', () => {
@@ -376,7 +438,11 @@ describe('the facets', () => {
     expect(run({ drift: ['recorded'], goal: ['saved'] }, { annotate: false }).letters).toHaveLength(
       12,
     );
-    expect(fixedOptions(indexed, prepared, 'drift').map((one) => one.count)).toEqual([0, 0, 0]);
+    expect(fixedOptions(indexed, prepared, 'drift').map((one) => one.count)).toEqual([
+      null,
+      null,
+      null,
+    ]);
     // The chip stays for the reader to clear, but it is not a filter, so the result line claims none.
     expect(run({ drift: ['recorded'] }, { annotate: false }).filtered.active).toBe(false);
     expect(run({ drift: ['recorded'] }).filtered.active).toBe(true);
@@ -493,7 +559,7 @@ describe('the guards and sentences', () => {
     const words = { ...EMPTY_FILTERS, query: 'release' };
     expect(announcement(some, words, EMPTY_FILTERS)).toBe('Showing 2 of 12 sessions.');
     expect(announcement(run({ query: 'zzzz' }).filtered, words, EMPTY_FILTERS)).toBe(
-      'No session matches these filters.',
+      'Nothing here matches.',
     );
     expect(announcement(all, EMPTY_FILTERS, words)).toBe(
       'Filters cleared. Showing all 12 sessions.',

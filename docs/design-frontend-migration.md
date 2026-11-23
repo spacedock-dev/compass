@@ -16,6 +16,13 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-23, Sessions uses status tabs, search and an inline Filters panel. The Sessions
+differential masks the active group heading and group counts while keeping the window-derived
+history heading, row order and links in the comparison. The Sessions Search and filters stories
+check the two headings and their counts directly. The progress slot stays empty on Sessions
+rows in this slice. The count-free level chips are disabled. No goal yet filters by published
+goal evidence. The recorded answers stay fixed.
+
 2026-11-23, Sessions replaces its operations heading, drift orientation and two fleet counters with
 a greeting, one state summary and the At a glance cards. The Sessions differential masks the old
 heading and fleet block and still compares the groups, rows and links. The observed-model

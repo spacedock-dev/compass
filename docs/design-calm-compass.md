@@ -199,6 +199,8 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Check progress | Analyze drift | Drift, read scope and result | Live monitor, tests and builds | Existing CLI flags and skill actions |
 | Check progress again | Analyze again, Check again | Prior reading and its recency | The first check or an Out of date state | Same label for a current or stale prior reading |
 | Progress check | Drift check | The reading and evidence | Tests and builds run by the agent | Terminal flag `--drift` |
+| Progress records | Drift filter | Recorded checks and departures | Progress levels | Sessions filters |
+| Departure recorded | Drift recorded | A recorded departure from the goal | A progress level or a generic risk | The saved filter value remains `recorded` |
 | This reading looks wrong | Mark as inaccurate | The marked reading and what the mark changed | Editing the goal | Undo is still offered |
 | Update my goal instead | Update intent instead | The goal revision | Marking the reading wrong | Opens Goal in edit mode |
 | Dismiss | No standalone attention-row control | Server dismissal record | Mark as read | Survives Forget |

@@ -41,14 +41,16 @@ it('explains the filter counts and published history window in place', async () 
     }),
   );
   expect(screen.getByRole('heading', { name: 'Earlier in the last 24 hours' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+  fireEvent.click(screen.getByRole('button', { name: 'More filters for power users' }));
   for (const [name, sentences] of [
     [
       GLOSSARY.howFilterCountsWork.plain,
       [
         'Each number beside an option is how many sessions with that value your other filters keep.',
         'Choices inside one filter widen the list; separate filters and the search narrow it.',
-        'A session that does not publish a value is counted under its own option, never as zero and never as older.',
-        'At a glance counts the whole board.',
+        'An unpublished value has its own option where the board can identify it.',
+        'Tab and At a glance counts cover the whole board.',
       ],
     ],
     [
@@ -79,7 +81,7 @@ it('shows a three-day-old row in all history without a 24-hour heading', async (
     sessions: [{ harness: 'codex', sid: 'old', project: 'p', state: 'ended', ended_at: 3600 }],
   });
   expect(rows('history')).toEqual(['codex/old']);
-  expect(screen.getByRole('heading', { name: 'Session history' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Earlier sessions' })).toBeVisible();
   expect(screen.queryByRole('heading', { name: 'Earlier in the last 24 hours' })).toBeNull();
 });
 
@@ -111,6 +113,51 @@ describe('what the screen says when it has nothing to draw', () => {
     expect(
       screen.getByText('You have 0 waiting on you, 0 working, 0 quiet and 0 ended on this board.'),
     ).toBeVisible();
+  });
+
+  it('failed collection and readable empty collection give different counts and search results', async () => {
+    const page = await open(
+      board([], {
+        harnesses: [{ key: 'claude', label: 'Claude Code', discovered: true, error: 'Denied' }],
+      }),
+    );
+    const groupCounts = () =>
+      [...document.querySelectorAll('[data-sessions-group-count]')].map((node) => node.textContent);
+    const stateCount = () =>
+      document.querySelector('[data-filter-option="state:Working"] [data-filter-count]');
+    const search = async () => {
+      fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'quarterly invoices' } });
+      await page.settle();
+      act(() => page.clock.advance(600));
+      await page.settle();
+    };
+
+    expect(groupCounts()).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More filters for power users' }));
+    expect(screen.getByText('Working', { selector: '[data-filter-label]' })).toBeVisible();
+    expect(stateCount()).toBeNull();
+    expect(document.querySelector('[data-filter-option^="when:"] [data-filter-count]')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    await search();
+    const unavailable = 'Search results are unavailable because the sources could not be read.';
+    expect(document.querySelector('[data-sessions-result]')?.textContent).toBe(unavailable);
+    expect(document.querySelector('#next-cockpit-cue-status')?.textContent).toBe(unavailable);
+    expect(screen.queryByText('Nothing here matches.')).toBeNull();
+    expect(screen.queryByText('No recent-history rows in this payload.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+
+    await page.poll(board([]));
+    expect(groupCounts()).toEqual(['0 sessions', '0 sessions']);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(stateCount()?.textContent).toBe('0');
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    await search();
+    const empty = document.querySelector('[data-sessions-nothing]') as HTMLElement;
+    expect(within(empty).getByText('Nothing here matches.')).toBeVisible();
+    expect(document.querySelector('#next-cockpit-cue-status')?.textContent).toBe(
+      'Nothing here matches.',
+    );
   });
 
   it('names a harness whose store could not be read, so its absence is not read as no sessions', async () => {
@@ -284,33 +331,18 @@ describe('the groups', () => {
     annotation_assessment: reading,
   };
 
-  it.each([
-    ['medium', 'Slightly off course'],
-    ['high', 'Off course'],
-  ])(
-    'shows no progress copy for a stored %s departure on the first visit',
-    async (level, label) => {
-      const page = await open(
-        board([
-          {
-            harness: 'claude',
-            sid: 'read',
-            state: 'working',
-            ...assessed,
-            stored_progress: level,
-          },
-        ]),
-      );
-      const row = document.querySelector<HTMLElement>('article[data-next-session="read"]');
-      if (!row) throw new Error('Missing row');
-      expect(within(row).queryByText(label)).not.toBeInTheDocument();
-      expect(row.querySelector('[data-slot="badge"]')).toBeNull();
-      expect(row.querySelector('.next-operation-progress')).toBeNull();
-      expect(
-        page.state.requests.some((request) => request.url.startsWith('/api/project-context')),
-      ).toBe(false);
-    },
-  );
+  it('leaves the published departure details on the session page', async () => {
+    const page = await open(
+      board([{ harness: 'claude', sid: 'read', state: 'working', ...assessed }]),
+    );
+    const row = document.querySelector<HTMLElement>('article[data-next-session="read"]');
+    if (!row) throw new Error('Missing row');
+    expect(row.textContent).not.toMatch(/Slightly off course|Off course|Way off course/);
+    expect(row.querySelector('[data-slot="badge"], .next-operation-progress')).toBeNull();
+    expect(
+      page.state.requests.some((request) => request.url.startsWith('/api/project-context')),
+    ).toBe(false);
+  });
 
   it.each([
     ['a row with no goal', {}],
@@ -691,4 +723,33 @@ it('keeps each card preview title and reason together when a title is missing', 
   expect(deploy.parentElement?.textContent).not.toContain('Edit handbook');
   expect(handbook.parentElement?.textContent).toContain('Edit handbook');
   expect(handbook.parentElement?.textContent).not.toContain('Approve production?');
+});
+
+it.each([24, 48])(
+  'labels and counts the two groups using the published %i-hour window',
+  async (hours) => {
+    await open(
+      board(
+        [
+          { harness: 'claude', sid: 'one', project: 'p', state: 'working', active: true },
+          { harness: 'claude', sid: 'two', project: 'p' },
+        ],
+        { window_hours: hours },
+      ),
+    );
+    for (const title of ['Right now', `Earlier in the last ${String(hours)} hours`]) {
+      const heading = screen.getByRole('heading', { name: title });
+      expect(heading.parentElement?.textContent).toContain('1 session');
+    }
+  },
+);
+
+it('labels the wider collection without claiming every earlier row falls inside the recent window', async () => {
+  await open(
+    board([{ harness: 'claude', sid: 'one', project: 'p', last_activity: 1 }], {
+      window_hours: 24,
+      show_all: true,
+    }),
+  );
+  expect(screen.getByRole('heading', { name: 'Earlier sessions' })).toBeVisible();
 });

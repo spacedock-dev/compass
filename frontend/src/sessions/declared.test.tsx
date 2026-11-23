@@ -106,8 +106,9 @@ describe('declared process children', () => {
   });
   it('a reader can filter and group by labels and keep both choices across a poll', async () => {
     const page = await open();
-    fireEvent.click(screen.getByRole('button', { name: 'Group' }));
-    const popup = document.querySelector('[data-filter-popover="group"]') as HTMLElement;
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More filters for power users' }));
+    const popup = document.querySelector('[data-filter-facet="group"]') as HTMLElement;
     fireEvent.click(within(popup).getByRole('checkbox', { name: /release/ }));
     await page.settle();
     expect(row('unlinked')).toBeNull();
@@ -211,11 +212,12 @@ it('a reader distinguishes a literal No group label in headings, choices and sel
     },
   });
   await page.settle();
+  fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+  fireEvent.click(screen.getByRole('button', { name: 'More filters for power users' }));
   fireEvent.click(screen.getByRole('button', { name: 'Group by group' }));
   expect(screen.getByRole('heading', { name: '"No group"' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'No group' })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Group' }));
-  const popup = document.querySelector('[data-filter-popover="group"]') as HTMLElement;
+  const popup = document.querySelector('[data-filter-facet="group"]') as HTMLElement;
   fireEvent.click(within(popup).getByRole('checkbox', { name: /^"No group"\s*1$/ }));
   await page.settle();
   expect(row('literal')).not.toBeNull();
