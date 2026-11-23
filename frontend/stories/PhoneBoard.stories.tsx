@@ -105,6 +105,25 @@ export const SessionsAt390 = fit(390);
 export const SessionsAt375 = fit(375);
 export const SessionsAt320 = fit(320);
 
+export const MenuAt1099: Story = {
+  play: ({ canvasElement }) =>
+    atPageWidth(1099, async () => {
+      const canvas = within(canvasElement);
+      const search = await canvas.findByRole('searchbox', { name: 'Search sessions' });
+      const menu = canvas.getByRole('button', { name: 'Menu' });
+      const before = await settledRect(search);
+      await expect((await settledRect(menu)).height).toBeGreaterThanOrEqual(44);
+      await userEvent.click(menu);
+      await expect(menu).toHaveAttribute('aria-expanded', 'true');
+      await expect(canvas.getByRole('navigation', { name: 'Primary' })).toBeVisible();
+      await expect((await settledRect(search)).top).toBeGreaterThan(before.top);
+      await userEvent.tab();
+      await userEvent.keyboard('{Escape}');
+      await expect(menu).toHaveAttribute('aria-expanded', 'false');
+      await expect(menu).toHaveFocus();
+    }),
+};
+
 export const MenuFiltersAndAnnouncements: Story = {
   play: async ({ canvasElement, mount }) => {
     let refresh: (() => Promise<void>) | undefined;
