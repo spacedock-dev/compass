@@ -217,6 +217,8 @@ export function createApiClient(deps: {
     getAnnotations: (options: { readonly signal?: AbortSignal }) =>
       get<AnnotationsBody>('/api/annotations', options.signal),
 
+    getHealth: (signal?: AbortSignal) => get<{ readonly port?: unknown }>('/api/health', signal),
+
     /* The Settings screen's reading limits. A write is all or nothing and answers with what is now in force,
        so the screen redraws from that, not from what it sent. */
     getSettings: (options: { readonly signal?: AbortSignal } = {}) =>

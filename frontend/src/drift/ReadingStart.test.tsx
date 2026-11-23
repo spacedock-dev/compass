@@ -1,4 +1,4 @@
-import { act, fireEvent } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import {
   ROUTE,
@@ -313,6 +313,22 @@ describe('notices and the durable off switch', () => {
     await page.settle();
     await page.settle();
     expect(document.querySelectorAll('[data-next-cockpit-action="reading-on"]')).toHaveLength(1);
+  });
+
+  it('withholds both ways to resume when Compass cannot refresh the pause setting', async () => {
+    const page = mountDrift({
+      payload: { reading: { consent: false, off: true, reason: 'model-calls-paused' } },
+    });
+    await page.settle();
+    await page.settle();
+    await press(screen.getByRole('button', { name: 'Show technical details' }));
+    await press(screen.getByRole('tab', { name: 'AI use and privacy' }));
+    expect(screen.getByRole('switch', { name: 'Resume AI use' })).toBeTruthy();
+    expect(byAction('reading-on')).toBeTruthy();
+    await page.poll(null);
+    expect(screen.getByText('Compass could not refresh the AI pause setting.')).toBeTruthy();
+    expect(screen.queryByRole('switch', { name: 'Resume AI use' })).toBeNull();
+    expect(byAction('reading-on')).toBeNull();
   });
 
   it('keeps the paused reason and Resume control even when the analysis cap is spent', async () => {

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 from . import annotations as annotation_store
 from . import (
     board_explanations,
+    ci_read,
     copied_corrections,
     declared_sessions,
     deliveries,
@@ -1045,6 +1046,7 @@ class Application:
             "tripwires": stage_conditions,
             "generated": now,
             "update_check": update_check.published(config),
+            "ci_read": ci_read.setting(config),
             "window_hours": window_hours,
             # The trailing window every `rate_per_min` below is averaged over.
             # Published so a consumer can name the window it is ranking on

@@ -989,6 +989,26 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       ],
       null,
     ),
+    pullRequestRead: ruled(
+      [
+        'Read pull request status',
+        'Turn off the pull request read',
+        'Account-wide GitHub and GitLab check reads',
+        'An individual recorded pull request read',
+        'The flag and route stay',
+      ],
+      null,
+    ),
+    settingsUsageConsent: ruled(
+      [
+        'Show my AI allowance',
+        'No dedicated Settings section',
+        'Browser-stored usage consent',
+        'An account setting',
+        'Labelled as kept in this browser',
+      ],
+      null,
+    ),
     customize: ruled(
       [
         'Customize',

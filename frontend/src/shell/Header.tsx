@@ -2,7 +2,6 @@ import { buttonVariants } from '../ui/button';
 import { Icon } from '../ui/icons';
 import { AttentionAnnouncer } from '../attention';
 import { selectAttentionSelection } from '../attention/select';
-import { NotificationControl } from '../notify';
 import { useFocusKey } from '../controls/useFocusKey';
 import { cn } from '../lib/utils';
 import { SHOWN } from '../language/glossary';
@@ -114,7 +113,6 @@ export function Header({ route }: { readonly route: Route }) {
         <PrimaryNavigation route={route} needsCount={counts?.badge ?? 0} />
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <NotificationControl />
         <WorkingPill count={counts?.working} unread={unread} />
       </div>
       <AttentionAnnouncer />

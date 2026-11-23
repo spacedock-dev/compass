@@ -262,6 +262,8 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Activity log | Full activity | Session record | Session summary | Names the technical tab and citation destination |
 | AI use | Separate model and quota controls | Model and quota settings | The AI allowance | Names the Settings section |
 | AI use and privacy | Separate model controls and disclosures | Model settings and what is sent | The AI allowance | Names the Session technical tab |
+| Read pull request status | Turn off the pull request read | Account-wide GitHub and GitLab check reads | An individual recorded pull request read | The flag and route stay |
+| Show my AI allowance | No dedicated Settings section | Browser-stored usage consent | An account setting | Labelled as kept in this browser |
 | Customize | Always-visible prompt limits | Prompt size controls | Your AI allowance | Opens How much a progress check reads |
 
 Check means a Compass progress check on the first layer. Use "tests and builds" for the

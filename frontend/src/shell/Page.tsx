@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { installChoiceRelease } from '../controls/displayGate';
+import { startNotifications } from '../notify';
 import { SHOWN } from '../language/glossary';
 import { useBoardRuntime } from '../transport/hooks';
 import { FALLBACK_POLL_MS, UNCOORDINATED_POLL_MS } from '../transport/live';
@@ -50,6 +51,9 @@ export function Page() {
   const { runtime, display, clock, host, controls } = useShell();
   useBoardRuntime(runtime);
   useShellKeyboard();
+  useEffect(() => {
+    startNotifications(runtime);
+  }, [runtime]);
   /* A Select popup closing is the reader's own moment: the newest deferred poll shows once. */
   useEffect(() => installChoiceRelease(document, display), [display]);
 

@@ -71,6 +71,8 @@ export interface PayloadData {
   readonly dismiss?: boolean;
   readonly annotate?: boolean;
   readonly usage_fetch?: boolean;
+  readonly native_notify?: string;
+  readonly ci_read?: 'on' | 'off' | 'flag-off';
   readonly reading?: {
     readonly consent?: boolean;
     readonly off?: boolean;
@@ -399,6 +401,7 @@ export interface PromptCapacityPreview {
 
 /** `GET /api/settings`, and the answer to every accepted `POST`: the values in force and their limits. */
 export interface SettingsBody {
+  readonly store_readable?: boolean;
   readonly update_check?: {
     readonly disabled: boolean;
     readonly default_enabled: boolean;

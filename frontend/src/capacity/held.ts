@@ -97,6 +97,18 @@ export function useConsent(kind: 'usage' | 'observer'): Consent {
   return useSyncExternalStore(lane.subscribe, lane.read);
 }
 
+/* Records the answer the reader pressed, then asks for the board again so the answer is visibly acted on:
+   without this refresh the change would wait out the ordinary poll and the reader would think the press did
+   nothing. The refresh is a manual one, so the header says it is reading. */
+export function useUsageAnswer() {
+  const { runtime } = useShell();
+  return (value: ConsentAnswer) => {
+    const stored = heldFor(runtime).usage.answer(value);
+    void runtime.refresh({ manual: true });
+    return stored;
+  };
+}
+
 export function useSelectedWindow(): string {
   const lane = heldFor(useShell().runtime).selection;
   return useSyncExternalStore(lane.subscribe, lane.read);

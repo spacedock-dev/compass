@@ -51,56 +51,65 @@ async function revise(page: Awaited<ReturnType<typeof open>>, data: unknown) {
   await page.settle();
 }
 
-describe('the header control', () => {
-  it('offers to enable while the reader can still be asked, and asks nothing by itself', async () => {
+describe('the desktop notifications row in Settings', () => {
+  it('offers Allow in Settings, and asks nothing by itself as the reader navigates', async () => {
     const api = script('default');
     const page = await open(attentionBoard({ asking: [] }));
-    expect(screen.getByRole('button', { name: 'Enable notifications' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enable notifications' })).toBeNull();
+    await page.go('#n=settings');
+    expect(screen.getByRole('button', { name: 'Allow' })).toBeInTheDocument();
     await revise(page, attentionBoard({ generated: 1_000_025, asking: [] }));
     await page.go('#n=sessions');
-    await page.go('#n=attention');
     expect(api.asked.count).toBe(0);
     expect(api.made).toEqual([]);
     expect(lanePosts(page)).toEqual([]);
   });
 
-  it('opens the browser prompt once, on the press, then reports the lane once and hands focus back to the page', async () => {
+  it('opens the browser prompt once, then reports the lane and keeps focus in its row', async () => {
     const api = script('default');
-    const page = await open(attentionBoard({ asking: [] }));
-    const button = screen.getByRole('button', { name: 'Enable notifications' });
+    const page = await open(attentionBoard({ asking: [] }), { hash: '#n=settings' });
+    const button = screen.getByRole('button', { name: 'Allow' });
     button.focus();
     fireEvent.click(button);
     await page.settle();
     expect(api.asked.count).toBe(1);
-    expect(screen.queryByRole('button', { name: 'Enable notifications' })).toBeNull();
-    const posts = lanePosts(page);
-    expect(posts).toHaveLength(1);
-    // The lane report is two scalars about this tab and names no session.
-    expect(document.activeElement).toBe(
-      document.querySelector('nav[aria-label="Primary"] [aria-current="page"]'),
-    );
+    const allowed = screen.getByText('Allowed in this browser.');
+    expect(allowed).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Allow' })).toBeNull();
+    expect(lanePosts(page)).toHaveLength(1);
+    expect(document.activeElement).toBe(allowed);
     expect(api.made).toEqual([]);
   });
 
-  it('says notifications are blocked once the reader has refused, and offers nothing to press', async () => {
+  it('says notifications are blocked once the reader has refused', async () => {
     script('denied');
-    await open(attentionBoard({ asking: [] }));
-    expect(screen.getByText('notifications blocked')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Enable notifications' })).toBeNull();
+    await open(attentionBoard({ asking: [] }), { hash: '#n=settings' });
+    expect(
+      screen.getByText(
+        'Blocked in this browser. To allow notifications, change this site’s permissions in your browser.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Allow' })).toBeNull();
   });
 
-  it('draws nothing where the browser has no Notification API, and the page still works', async () => {
-    const page = await open(attentionBoard());
-    expect(screen.queryByRole('button', { name: 'Enable notifications' })).toBeNull();
-    expect(screen.queryByText('notifications blocked')).toBeNull();
-    expect(page.container.querySelector('[data-next-view-body="attention"]')).not.toBeNull();
+  it('says the browser has no notification support and still draws the page', async () => {
+    const page = await open(attentionBoard(), { hash: '#n=settings' });
+    expect(
+      screen.getByText('This browser does not support desktop notifications.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Allow' })).toBeNull();
     expect(lanePosts(page)).toEqual([]);
   });
 
-  it('draws nothing where the server’s own lane raises the banners, and raises none itself', async () => {
+  it('names the native lane when it owns the banners, and raises none in this browser', async () => {
     const api = script('granted');
-    const page = await open(attentionBoard({ nativeNotify: 'osascript', asking: [] }));
-    expect(screen.queryByRole('button', { name: 'Enable notifications' })).toBeNull();
+    const page = await open(attentionBoard({ nativeNotify: 'osascript', asking: [] }), {
+      hash: '#n=settings',
+    });
+    expect(
+      screen.getByText('Compass sends desktop notifications directly on this computer.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Allow' })).toBeNull();
     await revise(
       page,
       attentionBoard({

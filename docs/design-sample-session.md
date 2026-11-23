@@ -180,6 +180,19 @@ With the session story and first-layer guard underneath, Help and Projects packa
 story's measured page. The bound follows the measured combined page, and the fixture bound
 stays at 250,000 bytes.
 
+On 2026-11-23, the Settings layer packaged at 2,462,879 bytes, up 39,308 bytes (1.62%)
+from the 2,423,571-byte Help and Projects page. The new stepped slider and Settings cards
+ship in the page. The page bound rises once to the measured 2,462,879 bytes. The fixture
+bound stays at 250,000 bytes.
+
+The Settings review fixes packaged at 2,466,095 bytes, up 3,216 bytes. The increase
+covers save confirmation, browser availability and the fallback for unreadable preferences.
+The page bound rises to the measured size. The fixture bound stays at 250,000 bytes.
+
+With the landed Help, Projects and Session changes underneath, Settings packages to
+2,473,199 bytes on Node 26.10.0 and pnpm 12.17.0. The page bound follows the measured build,
+42,532 bytes above the previous page on main. The fixture bound stays at 250,000 bytes.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.

@@ -1565,13 +1565,72 @@
       "disposition": "store-held"
     },
     {
-      "name": "The daily update check off switch",
+      "name": "The daily update check",
       "owner": "DRC-4823",
       "oracles": [
         "frontend/src/settings/SettingsView.test.tsx",
         "frontend/stories/UpdateCheck.stories.tsx"
       ],
-      "contract": "The saved server setting survives restarts and reopening Settings; failed writes keep the previous answer.",
+      "contract": "The saved server setting survives restarts and reopening Settings. A refusal keeps the confirmed preference and a run or build override is visible.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "Customize in Settings",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/stories/SettingsPromptSize.stories.tsx",
+        "frontend/src/settings/SettingsView.test.tsx"
+      ],
+      "contract": "The disclosure store keeps the panel open. A slider holds its draft until release and restores the confirmed value on refusal.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "Forget everything in Your data",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/settings/YourDataCard.test.tsx",
+        "frontend/stories/Settings.stories.tsx"
+      ],
+      "contract": "The disclosure store keeps the explanation open for this tab. Its copy feedback lasts while Settings is mounted.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "The pull request read",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/stories/Settings.stories.tsx",
+        "frontend/stories/SessionLayout.stories.tsx"
+      ],
+      "contract": "The board publishes one server preference even with no sessions or annotations. Settings holds a write receipt until a newer board arrives and shows the run flag without a switch.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "What is sent, and where in Settings",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/stories/Settings.stories.tsx"
+      ],
+      "contract": "The disclosure store keeps it open while the latest Settings and board answers update its size and destination.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "Desktop notification permission",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/notify/NotificationControl.test.tsx",
+        "frontend/stories/Settings.stories.tsx"
+      ],
+      "contract": "The browser owns notification permission. The tab watches every route for notifications and Settings keeps focus on the permission answer.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "Plan usage preference",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/storage/consent.test.ts",
+        "frontend/stories/Settings.stories.tsx"
+      ],
+      "contract": "Browser storage keeps the choice. If a write is refused, the new tab choice governs subsequent usage requests.",
       "disposition": "store-held"
     },
     {

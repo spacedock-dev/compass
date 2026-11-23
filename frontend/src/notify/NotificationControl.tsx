@@ -1,50 +1,63 @@
-import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
-import { useEffect, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import { useFocusKey } from '../controls/useFocusKey';
+import { SettingsRow } from '../settings/SettingsRow';
 import { useDisplayed, useShell } from '../shell/context';
-import { notifyOwnerFor, startNotifications } from './registry';
-import './notify.css';
+import { Button } from '../ui/button';
+import { notifyOwnerFor } from './registry';
 
-const BLOCKED_TITLE =
-  'Re-enable notifications for this site in your browser settings to be alerted when a session needs you.';
+const WORDS: Readonly<Record<string, string>> = {
+  granted: 'Allowed in this browser.',
+  denied:
+    'Blocked in this browser. To allow notifications, change this site’s permissions in your browser.',
+  unsupported: 'This browser does not support desktop notifications.',
+  default: 'No notification permission decision yet.',
+};
 
-/* The header's notification control, and the place the tab's notification owner is started. Starting is
-   all that happens on mount: the owner reads the board, and the browser's prompt opens only when the reader
-   presses Enable. A granted or unsupported tab, and one whose banners the server's own lane raises, draws
-   nothing, so the control never offers what the tab cannot do. */
 export function NotificationControl() {
   const { runtime, controls } = useShell();
   const owner = notifyOwnerFor(runtime);
-  useEffect(() => {
-    startNotifications(runtime);
-  }, [runtime]);
   useSyncExternalStore(owner.subscribe, owner.version);
-  const data = useDisplayed((snapshot) => snapshot.data);
-  /* The control is the focus lane's fallback holder for itself: once the reader answers, it goes, and
-     focus returns to the current primary item rather than to the page. */
+  const board = useDisplayed((snapshot) => snapshot);
+  const native = Boolean(board.data?.['native_notify']);
+  const browserOwns = Boolean(board.data) && !board.failures && !native;
+  const stateRef = useFocusKey<HTMLParagraphElement>(controls.focusLane, 'notify-permission');
   const buttonRef = useFocusKey<HTMLButtonElement>(controls.focusLane, 'notify-enable', {
-    fallback: 'primary-current',
+    fallback: 'notify-permission',
   });
-  const state = owner.control(data);
-  if (state === 'blocked') {
-    return (
-      <Badge variant="notify-blocked" className="next-notify-note" title={BLOCKED_TITLE}>
-        notifications blocked
-      </Badge>
-    );
-  }
-  if (state !== 'enable') return null;
+  const permission = owner.permission();
+  const pending = owner.requesting();
+  const message = board.failures
+    ? 'Compass could not refresh the desktop notification setting.'
+    : !board.data
+      ? 'Reading the desktop notification setting.'
+      : native
+        ? 'Compass sends desktop notifications directly on this computer.'
+        : pending
+          ? 'Waiting for your browser’s permission.'
+          : (WORDS[permission] ?? 'The browser did not report its notification permission.');
   return (
-    <Button
-      ref={buttonRef}
-      type="button"
-      tone="muted"
-      className="next-notify-button"
-      data-next-action="enable-notifications"
-      onClick={() => owner.request()}
+    <SettingsRow
+      title="Desktop notifications"
+      description={
+        <>
+          <p className="m-0">Show a desktop notification when a session is waiting on you.</p>
+          <p ref={stateRef} tabIndex={-1} role="status" className="m-0">
+            {message}
+          </p>
+        </>
+      }
     >
-      Enable notifications
-    </Button>
+      {browserOwns && permission === 'default' ? (
+        <Button
+          ref={buttonRef}
+          type="button"
+          aria-busy={pending || undefined}
+          aria-disabled={pending || undefined}
+          onClick={() => owner.request()}
+        >
+          Allow
+        </Button>
+      ) : null}
+    </SettingsRow>
   );
 }

@@ -15,6 +15,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -22,6 +23,7 @@ from unittest import mock
 
 from compass_runtime import (
     analyze_capacity,
+    ci_read,
     claude_settings,
     cli,
     observer,
@@ -186,6 +188,40 @@ class RoutesTest(unittest.TestCase):
             {key: published[key] for key in ("values", "limits")},
         )
         self.assertEqual({"claude", "codex"}, set(published["capacities"]))
+
+    def test_empty_board_publishes_the_global_pull_request_preference(self) -> None:
+        for annotations_enabled in (True, False):
+            for enabled in (True, False):
+                with self.subTest(annotations=annotations_enabled, enabled=enabled):
+                    config = replace(
+                        self.config,
+                        annotations_enabled=annotations_enabled,
+                        ci_read_enabled=enabled,
+                    )
+                    _, state = make_runtime(state_home=config.state_home)
+                    application = cli.build_application(config, state, clock=lambda: 1_000.0)
+                    board = application.collect(show_all=False, notify=False)
+                    self.assertEqual([], board["sessions"])
+                    self.assertFalse(board.get("reading_routes"))
+                    self.assertEqual("on" if enabled else "flag-off", board["ci_read"])
+        self.assertTrue(ci_read.set_setting(self.config, on=False))
+        self.assertEqual("off", self.application.collect(show_all=False, notify=False)["ci_read"])
+
+    def test_settings_report_an_unreadable_store_and_a_successful_repair(self) -> None:
+        with self.serving() as port:
+            _, missing = self.request(port, "GET")
+            Path(settings.store_path(self.config)).write_text("{", encoding="utf-8")
+            _, damaged = self.request(port, "GET")
+            _, repaired = self.request(port, "POST", {"values": {"analyze_listed_checks": 75}})
+        self.assertTrue(json.loads(missing)["store_readable"])
+        self.assertFalse(json.loads(damaged)["store_readable"])
+        self.assertEqual(
+            settings.DEFAULTS.analyze_listed_checks,
+            json.loads(damaged)["values"]["analyze_listed_checks"],
+        )
+        self.assertTrue(json.loads(damaged)["update_check"]["disabled"])
+        self.assertTrue(json.loads(repaired)["store_readable"])
+        self.assertEqual(75, json.loads(repaired)["values"]["analyze_listed_checks"])
 
     def test_post_saves_and_answers_what_is_now_in_force(self) -> None:
         with self.serving() as port:

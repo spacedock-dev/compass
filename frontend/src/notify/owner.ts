@@ -59,13 +59,17 @@ export function createNotifyHost(): NotifyHost {
     },
     request(done) {
       const notification = api();
-      if (!notification || !notification.requestPermission) return;
+      if (!notification || !notification.requestPermission) {
+        done();
+        return;
+      }
       let result: Promise<unknown> | undefined;
       try {
         result = (
           notification.requestPermission as (callback: () => void) => Promise<unknown> | undefined
         )(done);
       } catch {
+        done();
         return;
       }
       if (result && typeof result.then === 'function') result.then(done, done);
@@ -83,6 +87,7 @@ export function createNotifyOwner(deps: NotifyDeps) {
   const listeners = new Set<() => void>();
   let version = 0;
   let shownPermission = host.permission();
+  let requesting = false;
   let lastPayload: Row | null = null;
 
   let sessionStates = new Map<string, unknown>();
@@ -233,7 +238,7 @@ export function createNotifyOwner(deps: NotifyDeps) {
       }
     },
 
-    /* The header's control: a button while the reader can still be asked, a note once they said no, and
+    /* The legacy control's shape, held to the recorded permission behavior: a button while the reader can still be asked, a note once they said no, and
        nothing where a banner is not this tab's to raise or has already been allowed. */
     control(input: unknown): NotifyControlState {
       const payload = isRecord(input) ? input : null;
@@ -243,9 +248,19 @@ export function createNotifyOwner(deps: NotifyDeps) {
       return permission === 'denied' ? 'blocked' : 'enable';
     },
 
+    permission: () => host.permission(),
+    requesting: () => requesting,
+
     /* The only way the browser's prompt opens. */
     request(): void {
+      if (requesting) return;
+      requesting = true;
+      bump();
+      let finished = false;
       host.request(() => {
+        if (finished) return;
+        finished = true;
+        requesting = false;
         shownPermission = host.permission();
         // A grant is what makes the tab a lane, and it should be reported now rather than at the next poll.
         reportLane(lastPayload);

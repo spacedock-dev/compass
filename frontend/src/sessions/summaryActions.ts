@@ -1,7 +1,10 @@
 import { compatSessKey } from '../api/identity';
-import { parseGrant, parseJob, parseLargestRead } from '../api/summary';
+import { parseGrant, parseJob, parseLargestRead, parseSummaryPreference } from '../api/summary';
 import type { ApiResult, SessionIdentity, SummaryReceipt } from '../api/types';
 import { noticeAnnouncement } from '../drift/notice';
+import { currentPayload } from '../drift/overlay';
+import { readingsOff } from '../drift/route';
+import { driftCtxFor } from '../drift/state';
 import { clock } from '../observed';
 import type { Shell } from '../shell/context';
 import { DISCARD_DWELL_MS } from '../intent/sentences';
@@ -135,7 +138,8 @@ export async function setSummaries(
   identity: SessionIdentity | null,
   on: boolean,
 ): Promise<void> {
-  if (shell.runtime.store.getSnapshot().data?.reading?.off === true) return;
+  const payload = currentPayload(driftCtxFor(shell));
+  if (payload && readingsOff(payload)) return;
   const key = identity ? compatSessKey(identity) : 'settings';
   const held = summaryHeldFor(shell.runtime);
   const control = `summary-grant:${key}`;
@@ -148,7 +152,7 @@ export async function setSummaries(
   held.patch(key, { failed: '', refusal: null });
   try {
     const answer = bodyOf(await shell.runtime.client.postSummary({ consent: on ? 'on' : 'off' }));
-    const grant = parseGrant(answer?.body?.['summaries']);
+    const grant = parseSummaryPreference(answer?.body?.['summaries']);
     if (!answer || answer.body?.['ok'] !== true || !grant) {
       if (grant) held.setGrant(grant, generatedOf(shell));
       held.patch(key, {

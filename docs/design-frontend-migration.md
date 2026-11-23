@@ -16,6 +16,24 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+Settings adds an inline Your data explanation. Its Copy button copies the terminal commands for
+the dashboard's listening port. The operation still runs in the terminal.
+
+Settings reading limits now open inline under Customize. The four numeric fields become stepped
+sliders with a marked recommendation. A release saves that slider, and a refused write restores
+the last confirmed value. Route capacity still describes an estimate independently of the saved
+limit. The Codex warning compares the two.
+
+Settings saves confirmed switch preferences as they change. The global pull request preference
+moved from session disclosures to Connections. Desktop notification permission moved from the
+header to Connections, while the browser still watches the whole board for notifications.
+
+The Settings follow-up names agent tests and builds and describes Live monitor on eligible
+Claude Code sessions. Pending writes are visible beside the affected preference. A write that
+returns a different value or omits a limit keeps the last confirmed controls. A damaged settings
+file shows the recommended limits in use. Pull request read is published even on an empty board,
+including when annotations are off. The browser rows wait for a board before offering a choice.
+
 On 2026-11-23 legacy project focus fragments began opening the exact Session page, including
 the older `held-to` alias. A focus with no harness uses the ID-only session form. The return
 origin is the project. The grammar differential applies this departure to recorded project

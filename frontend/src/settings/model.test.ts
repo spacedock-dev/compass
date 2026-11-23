@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { settingsBody } from './model';
+import { fieldsOf, settingsBody, stopsFor } from './model';
 
 const SETTINGS = {
   values: { analyze_prompt_bytes: 2097152 },
@@ -77,5 +77,27 @@ describe('optional Settings route estimates', () => {
     expect(
       settingsBody({ ...SETTINGS, capacities: { claude: preview } })?.capacities?.claude,
     ).toEqual(preview);
+  });
+});
+
+describe('stepped progress check limits', () => {
+  it('takes its endpoints from each server answer and keeps the exact recommended and saved stops', () => {
+    const saved = 541697;
+    const body = { ...SETTINGS, values: { analyze_prompt_bytes: saved } };
+    const [oldField] = fieldsOf(body);
+    const [newField] = fieldsOf({
+      ...body,
+      limits: [{ key: 'analyze_prompt_bytes', minimum: 16385, default: 524288, maximum: 3145729 }],
+    });
+    if (!oldField || !newField) throw new Error('Missing prompt size');
+    const oldStops = stopsFor(oldField);
+    const newStops = stopsFor(newField);
+    expect(oldStops[0]).toBe(16384);
+    expect(oldStops.at(-1)).toBe(2097152);
+    expect(newStops[0]).toBe(16385);
+    expect(newStops.at(-1)).toBe(3145729);
+    expect(newStops).toContain(524288);
+    expect(newStops).toContain(saved);
+    expect(newStops).toEqual([...new Set(newStops)].sort((a, b) => a - b));
   });
 });

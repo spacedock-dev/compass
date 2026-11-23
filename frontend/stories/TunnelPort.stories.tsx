@@ -76,13 +76,15 @@ export const ARefusedActionExplainsTheMatchingPort: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const sentence = "For an ssh -L tunnel, the local port must match the Compass server's port.";
-    const field = await canvas.findByRole('spinbutton', { name: 'Messages and checks kept' });
+    await userEvent.click(await canvas.findByRole('button', { name: 'Customize' }));
+    const field = await canvas.findByRole('slider', { name: 'Messages, tests and builds kept' });
     await expect(canvas.queryByText(sentence)).toBeNull();
-    await userEvent.clear(field);
-    await userEvent.type(field, '3000');
-    await userEvent.click(canvas.getByRole('button', { name: 'Save' }));
+    await expect(field).toHaveAttribute('aria-valuetext', '2,000');
+    field.focus();
+    await userEvent.keyboard('{End}');
     await expect(await canvas.findByText(sentence)).toBeVisible();
-    await expect(field).toHaveValue(3000);
+    await expect(field).toHaveAttribute('aria-valuetext', '2,000');
+    await expect(canvas.queryByText('Limits saved.')).toBeNull();
     await userEvent.click(canvas.getByRole('heading', { name: 'Settings' }));
     await userEvent.keyboard('s');
     await expect(

@@ -1,4 +1,4 @@
-/* Notifications: when a banner is raised, who raises it, and the header control that asks the reader. The
+/* Notifications: when a banner is raised, who raises it, and the Settings control that asks the reader. The
    owner is one per runtime and sees every accepted payload; the control is a press, never a prompt on
    load. */
 export {

@@ -537,12 +537,14 @@ def _session_context(
 SETTINGS_BODY_CAP_BYTES = 1024
 
 
-def published_settings(config: RuntimeConfig, value: settings.Settings) -> dict[str, Any]:
+def published_settings(config: RuntimeConfig) -> dict[str, Any]:
     """Stored preferences and separate route estimates, identical on GET and POST."""
+    value, updates_off, readable = settings.preferences(config)
     return {
+        "store_readable": readable,
         **settings.published(value),
         "update_check": {
-            "disabled": settings.no_update_check(config),
+            "disabled": updates_off,
             "default_enabled": runtime_config.UPDATE_CHECK_DEFAULT_ENABLED,
             "cli_disabled": config.update_check_disabled,
         },
@@ -2653,7 +2655,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self.send_error(403)
             return
         config = self.server.application.config
-        published = published_settings(config, settings.load(config))
+        published = published_settings(config)
         self._send(json.dumps(published, separators=(",", ":")).encode(), "application/json")
 
     def _annotations(self) -> None:
@@ -2921,7 +2923,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         config = self.server.application.config
         try:
-            saved = settings.save(config, values)
+            settings.save(config, values)
         except settings.InvalidSettingError:
             # The key is not echoed: it is the caller's text, and the reason reaches the status
             # line.
@@ -2931,7 +2933,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reject(503, "the settings store could not be written")
             return
         self._send(
-            json.dumps(published_settings(config, saved), separators=(",", ":")).encode(),
+            json.dumps(published_settings(config), separators=(",", ":")).encode(),
             "application/json",
         )
 

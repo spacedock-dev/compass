@@ -1,6 +1,7 @@
 import { progressBudget } from './route';
 import { longCleanupUnresolved } from '../api/longProgress';
 import { LongProgress } from './LongProgress';
+import { useAiPause } from '../settings/useAiPause';
 import { SampleBeside } from '../sample/SampleMark';
 import { Card } from '../ui/card';
 import { GLOSSARY } from '../language/glossary';
@@ -15,14 +16,7 @@ import { PROMPT_SOURCES } from '../sessions/intent';
 import { askForReading, cancelReading, readingOff, readingOn } from './actions';
 import { useDrift } from './context';
 import type { Board } from './flip';
-import {
-  readingsOn,
-  readingsOff,
-  disclosureParts,
-  readingJob,
-  routeRefusal,
-  withheldAge,
-} from './route';
+import { readingsOff, disclosureParts, readingJob, routeRefusal, withheldAge } from './route';
 import {
   absenceAttr,
   CANCEL_FAILED,
@@ -35,7 +29,7 @@ import {
   WHY_OFF,
 } from './sentences';
 import { Why } from './Why';
-import { CiReadSwitch } from './CiReadNote';
+import { CiReadSettingNote } from './CiReadNote';
 import { ModelNotice, DisclosureParts, NoticeBody } from './ModelNotice';
 import { noticeContentParts, noticeLabel, sessionNotice } from './notice';
 
@@ -90,8 +84,8 @@ export function TurnOff({
   readonly head?: boolean;
 }) {
   const { ctx, model } = useDrift();
-  const off = readingsOff(model.payload);
-  if (!off && !readingsOn(model.payload)) return null;
+  const { paused: off, pending } = useAiPause();
+  if (off === null) return null;
   const action = off ? 'reading-on' : 'reading-off';
   const button = (
     <ActionButton
@@ -99,6 +93,7 @@ export function TurnOff({
       label={off ? GLOSSARY.resumeAi.plain : GLOSSARY.pauseAi.plain}
       busyLabel={off ? 'Resuming…' : 'Pausing…'}
       pendingKey={`${action}:${model.key}`}
+      inert={pending}
       action={action}
       focusKey={head ? `${action}-head:${model.key}` : `${action}:${model.key}`}
       {...(head ? { describes: MODEL_PAUSE_ID } : {})}
@@ -417,7 +412,7 @@ export function ReadingNotice() {
       parts={noticeParts(notice, model.route).map(disclosureSize)}
     >
       <TurnOff />
-      <CiReadSwitch />
+      <CiReadSettingNote />
     </ModelNotice>
   );
 }
@@ -490,7 +485,7 @@ export function WhatIsSent({
         ) : null}
         {about ? <p className="next-cockpit-reading-why">{about}</p> : null}
         {off || technical ? null : <TurnOff closes="reading-sent" />}
-        {technical ? null : <CiReadSwitch />}
+        {technical ? null : <CiReadSettingNote />}
       </Why>
     </SampleBeside>
   );
