@@ -3,14 +3,17 @@ import { CopyControl, RaiseControl, resumeCommand } from '../controls';
 import type { ObservedProject, ObservedSession } from '../observed';
 import { RouteLink } from '../shell/RouteLink';
 import { RailHeader } from '../steering/RailHeader';
+import { SESSION_ROW_WORDS } from '../language/glossary';
 import './delegation.css';
 
 function Waiting({
   project,
   session,
+  exposeCopyValue,
 }: {
   readonly project: string;
   readonly session: ObservedSession;
+  readonly exposeCopyValue: boolean;
 }) {
   const sid = String(session.sid);
   const harness = String(session.harness);
@@ -23,7 +26,7 @@ function Waiting({
           route={{ view: 'session', project, harness, session: sid }}
           className={session.titleKnown ? '' : 'next-rail-reason'}
         >
-          {session.titleText}
+          <span data-authored={session.titleKnown || undefined}>{session.titleText}</span>
         </RouteLink>
         <span className={session.waitedKnown ? 'next-rail-wait-duration' : 'next-rail-reason'}>
           {session.waitedText}
@@ -31,7 +34,9 @@ function Waiting({
       </div>
       {/* Clamped as the Sessions row is: the question can run to 2,000 characters, and the session page has it whole. */}
       {session.askKnown ? (
-        <p className="next-rail-question line-clamp-3">{session.askText}</p>
+        <p className="next-rail-question line-clamp-3" data-authored>
+          {session.askText}
+        </p>
       ) : null}
       <div className="next-rail-wait-controls">
         {/* The raise names the exact pair this card was drawn for. A card whose row published a display id
@@ -42,9 +47,21 @@ function Waiting({
           focusable={session.focusable === true}
         />
         {command ? (
-          <CopyControl kind="command" harness={harness} sid={sid} value={command} />
+          <CopyControl
+            kind="command"
+            harness={harness}
+            sid={sid}
+            value={command}
+            exposeValue={exposeCopyValue}
+          />
         ) : copyId ? (
-          <CopyControl kind="id" harness={harness} sid={copyId} value={copyId} />
+          <CopyControl
+            kind="id"
+            harness={harness}
+            sid={copyId}
+            value={copyId}
+            exposeValue={exposeCopyValue}
+          />
         ) : null}
       </div>
     </Card>
@@ -54,7 +71,13 @@ function Waiting({
 /* The sessions in this project that have asked for the reader, each with the way back into it. Only an exact
    question or a native gate puts a session here, and a session that is not here is not thereby healthy: the
    empty sentence says only what the board holds. */
-export function WaitingPanel({ project }: { readonly project: ObservedProject }) {
+export function WaitingPanel({
+  project,
+  exposeCopyValue = true,
+}: {
+  readonly project: ObservedProject;
+  readonly exposeCopyValue?: boolean;
+}) {
   const note = project.needs.length
     ? `${String(project.needs.length)} of ${String(project.sessions.length)}`
     : 'none';
@@ -65,7 +88,7 @@ export function WaitingPanel({ project }: { readonly project: ObservedProject })
       className="next-rail-panel"
       data-next-rail-panel="waiting"
     >
-      <RailHeader label="WAITING ON YOU" note={note} />
+      <RailHeader label={SESSION_ROW_WORDS.waitingOnYou} note={note} />
       {project.needs.length ? (
         project.needs.map((session, index) => (
           <Waiting
@@ -73,6 +96,7 @@ export function WaitingPanel({ project }: { readonly project: ObservedProject })
             key={`${session.harness}\u0000${session.sid}\u0000${String(index)}`}
             project={project.key}
             session={session}
+            exposeCopyValue={exposeCopyValue}
           />
         ))
       ) : (

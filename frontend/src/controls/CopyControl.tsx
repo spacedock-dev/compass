@@ -12,15 +12,17 @@ export interface CopyControlProps {
   readonly sid: string;
   /** What is copied: the sid, the absolute link, or the validated resume command. */
   readonly value: string;
+  /** Raw values can be read from the tooltip and accessible name in technical views. */
+  readonly exposeValue?: boolean;
 }
 
 const LANE = { id: 'copy', link: 'link', command: 'command' } as const;
 const LABEL = { id: 'Copy ID', link: 'Copy link', command: 'Copy command' } as const;
 const SAID = {
   copied: {
-    id: (sid: string) => `Copied session ID ${sid}`,
+    id: (sid: string) => (sid ? `Copied session ID ${sid}` : 'Copied session ID'),
     link: () => 'Copied a link to this session',
-    command: (value: string) => `Copied ${value}`,
+    command: (value: string) => (value ? `Copied ${value}` : 'Copied re-entry command'),
   },
   failed: {
     id: () => 'Session ID could not be copied',
@@ -29,17 +31,17 @@ const SAID = {
   },
 } as const;
 
-function accessibleName(kind: CopyKind, sid: string, value: string): string {
-  if (kind === 'id') return `Copy session ID ${sid}`;
+function accessibleName(kind: CopyKind, sid: string, value: string, exposeValue: boolean): string {
+  if (kind === 'id') return exposeValue ? `Copy session ID ${sid}` : 'Copy session ID';
   if (kind === 'link') return 'Copy a link to this session';
-  return `Copy re-entry command ${value}`;
+  return exposeValue ? `Copy re-entry command ${value}` : 'Copy re-entry command';
 }
 
 /* Three controls in one lane, each with its own cue: copying the ID is not proof
    the command was copied. The value rides `title` as well as the clipboard, so a
    context with no clipboard still shows the reader what to paste or type.
    Nothing here runs on mount: the clipboard is touched only inside the press. */
-export function CopyControl({ kind, harness, sid, value }: CopyControlProps) {
+export function CopyControl({ kind, harness, sid, value, exposeValue = true }: CopyControlProps) {
   const controls = useControls();
   const key = laneKey(LANE[kind], harness, sid);
   const state = useKeyedValue(controls.cues, key);
@@ -61,11 +63,7 @@ export function CopyControl({ kind, harness, sid, value }: CopyControlProps) {
     controls.cues.remember(key, 'copied');
     controls.announce(
       announceKey,
-      kind === 'id'
-        ? SAID.copied.id(sid)
-        : kind === 'link'
-          ? SAID.copied.link()
-          : SAID.copied.command(value),
+      SAID.copied[kind](exposeValue ? (kind === 'id' ? sid : value) : ''),
     );
   };
 
@@ -76,8 +74,8 @@ export function CopyControl({ kind, harness, sid, value }: CopyControlProps) {
         variant="copy"
         data-copy-kind={kind}
         {...(cue ? { 'data-copy-state': cue, 'aria-describedby': cueId } : {})}
-        aria-label={accessibleName(kind, sid, value)}
-        title={value}
+        aria-label={accessibleName(kind, sid, value, exposeValue)}
+        title={exposeValue ? value : undefined}
         onClick={() => void press()}
       >
         <span aria-hidden="true">{LABEL[kind]}</span>

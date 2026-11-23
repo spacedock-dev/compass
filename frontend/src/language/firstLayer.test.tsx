@@ -35,6 +35,49 @@ it.each([states, focused])(
   },
 );
 
+it.each([
+  { name: 'Help', hash: '#n=help', heading: 'How Compass works' },
+  { name: 'Projects', hash: '#n=projects', heading: 'Projects', link: /alpha-app/ },
+  { name: 'project Overview', hash: '#n=project:alpha-app', heading: 'alpha-app', tab: 'Overview' },
+  {
+    name: 'project Timeline',
+    hash: '#n=project:alpha-app:course',
+    heading: 'alpha-app',
+    tab: 'Timeline',
+  },
+  {
+    name: 'project Decisions',
+    hash: '#n=project:alpha-app:decisions',
+    heading: 'alpha-app',
+    tab: 'Decisions',
+  },
+  {
+    name: 'project Usage and alerts',
+    hash: '#n=project:alpha-app:console',
+    heading: 'alpha-app',
+    tab: 'Usage and alerts',
+  },
+])('keeps Compass copy on $name current', async ({ hash, heading, link, tab }) => {
+  const page = mountShell({ hash, data: states.response.body });
+  await page.settle();
+  const view = within(page.container);
+  expect(view.getByRole('heading', { name: heading, level: 1 })).toBeVisible();
+  if (link) expect(view.getAllByRole('link', { name: link })[0]).toBeVisible();
+  if (tab) expect(view.getByRole('tab', { name: new RegExp(tab), selected: true })).toBeVisible();
+  expect(boardCopyViolations(page.container)).toEqual([]);
+});
+
+it('keeps Compass copy on the example invitation current', async () => {
+  const page = mountShell({ data: states.response.body });
+  await page.settle();
+  const invite = page.container.querySelector('[data-sample-invite]');
+  expect(invite).not.toBeNull();
+  if (!invite) throw new Error('The example invitation did not render');
+  expect(within(invite as HTMLElement).getByRole('link', { name: 'See an example' })).toBeVisible();
+  expect(within(invite as HTMLElement).getByRole('button', { name: 'Not now' })).toBeVisible();
+  expect(boardCopyViolations(invite)).toEqual([]);
+});
+
 it('names the text, attribute and element for planted Compass copy', () => {
   const { container } = render(
     <div>

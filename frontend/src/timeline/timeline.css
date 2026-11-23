@@ -2,7 +2,7 @@
 /* The semantic timeline and its activity filter. Ported from the legacy sheet's SUBSTRATE section so the
    two renderers look alike: a row is a grid of age, rail and body, one rail column for each lane. Tokens are the React page's own (styles/shell.css). */
 .next-cockpit-semantic{border-top:1px solid var(--rule)}
-.next-cockpit-semantic>h2{margin:0;padding:12px 10px;border-bottom:1px solid var(--rule);color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
+.next-cockpit-semantic>h2{margin:0;padding:12px 10px;border-bottom:1px solid var(--rule);color:var(--ink-label);font-family:var(--sans);font-size:var(--fs-label);font-weight:600}
 .next-cockpit-empty{margin:0;padding:12px 10px;color:var(--ink2);font:var(--fs-body)/1.55 var(--sans)}
 .next-cockpit-stale-read{margin:0 0 10px}
 .pc-semantic-timeline{--lane-count:1;min-width:0;position:relative;padding:10px 0 4px;font-family:var(--sans);font-size:var(--fs-body);line-height:1.5}

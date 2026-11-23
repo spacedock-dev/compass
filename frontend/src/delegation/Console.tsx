@@ -111,7 +111,7 @@ export function ProjectConsole({
       {observed ? (
         <aside className="next-project-detail-rail" data-next-project-rail>
           <DelegationPanel figure={figure} />
-          <WaitingPanel project={observed} />
+          <WaitingPanel project={observed} exposeCopyValue={view !== 'usage'} />
           <CapacityPanel
             payload={(snapshot.data ?? {}) as Row}
             model={model}

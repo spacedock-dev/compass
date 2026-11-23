@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { CapacityWindow, Observed, Row } from '../observed';
 import { isRecord } from '../observed';
 import { RailHeader } from '../steering/RailHeader';
+import { ALLOWANCE_LABEL } from '../language/glossary';
 import { SLOT_LABELS, capacityRows, type CapacityRailRow } from './capacityRows';
 import './delegation.css';
 
@@ -96,7 +97,7 @@ export function CapacityPanel({
   usage,
 }: {
   readonly payload: Row;
-  readonly model: Pick<Observed, 'windows' | 'capacityEmptyText' | 'capacityEmptyNoteText'>;
+  readonly model: Pick<Observed, 'windows' | 'capacityEmptyText'>;
   /** The usage disclosure and switch, drawn after the windows. Told whether any window is drawn above it. */
   readonly usage?: (windows: boolean) => ReactNode;
 }) {
@@ -109,7 +110,11 @@ export function CapacityPanel({
       className="next-rail-panel"
       data-next-rail-panel="capacity"
     >
-      <RailHeader label="CAPACITY" note="each window on its own clock" sentence />
+      <RailHeader
+        label={ALLOWANCE_LABEL}
+        note="Each plan window resets on its own schedule"
+        sentence
+      />
       {rows.length ? (
         rows.map((row, index) => (
           <WindowRow
@@ -121,10 +126,7 @@ export function CapacityPanel({
           />
         ))
       ) : (
-        <>
-          <p className="next-rail-reason">{model.capacityEmptyText}</p>
-          <p className="next-rail-reason">{model.capacityEmptyNoteText}</p>
-        </>
+        <p className="next-rail-reason">{model.capacityEmptyText}</p>
       )}
       {usage?.(rows.length > 0)}
     </Card>

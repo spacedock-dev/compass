@@ -27,6 +27,6 @@
    does not: a control's header is the mono label tier (and so carries its letter-spacing to the sentence
    inside it), and an input is at least a touch target tall. The decision summary is a sentence tier. The add
    control keeps the quiet ink against the primitive's. */
-.next-control>header{color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
+.next-control>header{color:var(--ink-label);font-family:var(--sans);font-size:var(--fs-label);font-weight:600}
 .next-cockpit-decision-summary{font:500 var(--fs-body)/1.55 var(--sans);max-width:var(--measure)}
 }

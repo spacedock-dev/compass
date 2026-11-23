@@ -6,7 +6,7 @@
       "tracking": 3
     },
     "frontend/src/delegation/delegation.css": {
-      "tracking": 3
+      "tracking": 2
     },
     "frontend/src/drift/ActivityHead.tsx": {
       "monospace": 1,
@@ -47,8 +47,7 @@
       "monospace": 4
     },
     "frontend/src/steering/steering.css": {
-      "monospace": 1,
-      "tracking": 2
+      "tracking": 1
     },
     "frontend/src/styles/shell.css": {
       "monospace": 2,
@@ -59,8 +58,8 @@
       "tracking": 1
     },
     "frontend/src/timeline/timeline.css": {
-      "monospace": 2,
-      "tracking": 3
+      "monospace": 1,
+      "tracking": 2
     },
     "frontend/src/ui/badge.tsx": {
       "monospace": 2,
@@ -476,6 +475,7 @@
     "intent-wording-at-the-edges-of-a-reading--how-to-says-what-a-reading-can-settle-and-how-far-to-trust-it",
     "intent-wording-at-the-edges-of-a-reading--saving-on-a-live-session-says-only-that-it-saved",
     "intent-wording-at-the-edges-of-a-reading--saving-on-an-ended-session-repeats-the-caveat",
+
     "sample-session-page--banner-says-how-to-reach-the-page",
     "sample-session-page--cancel-summary-is-held",
     "sample-session-page--delete-summary-is-held",
@@ -625,6 +625,7 @@
     "sessions-what-the-session-has-done-summary--working",
     "sessions-what-the-session-has-done-summary--working-over-a-saved-summary",
     "sessions-worktree-rows--header-names-the-worktree",
+
     "steering-local-notes-and-limits--ambiguous-tripwire-refreshes",
     "steering-local-notes-and-limits--note-keeps-over-limit-text",
     "steering-local-notes-and-limits--older-notes-are-not-kept",

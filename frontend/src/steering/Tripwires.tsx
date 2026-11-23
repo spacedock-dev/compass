@@ -39,7 +39,7 @@ export function Tripwires({ project }: { readonly project: string }) {
       data-next-rail-panel="tripwires"
     >
       <RailHeader
-        label="TRIPWIRES"
+        label="Tripwires"
         note="local only · nothing enforces these"
         tone="amber"
         sentence

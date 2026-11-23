@@ -181,11 +181,11 @@ export function Timeline({
     return labels;
   }, [snapshot]);
 
-  const heading = mode === 'decisions' ? 'RECORDED DECISIONS' : 'SEMANTIC TIMELINE';
+  const heading = mode === 'decisions' ? 'Recorded decisions' : 'Activity timeline';
   if (!read.shows || !view) {
     return (
       <section className="next-cockpit-semantic" data-next-cockpit-semantic>
-        <h2>SEMANTIC TIMELINE</h2>
+        <h2>Activity timeline</h2>
         <p className="next-cockpit-empty">
           {read.state === 'unavailable'
             ? 'Semantic context unavailable.'

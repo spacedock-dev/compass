@@ -295,19 +295,19 @@ describe('the activity filter', () => {
     const w = world();
     const decisions = mount(w, { defaultMode: 'decisions' });
     await settle();
-    expect(decisions.getByRole('heading', { name: 'RECORDED DECISIONS' })).toBeInTheDocument();
+    expect(decisions.getByRole('heading', { name: 'Recorded decisions' })).toBeInTheDocument();
     expect(decisions.getByRole('button', { name: 'Decisions' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
-    expect(decisions.getByRole('button', { name: 'Active' }).getAttribute('aria-pressed')).toBe(
-      'false',
-    );
+    expect(
+      decisions.getByRole('button', { name: 'Current work' }).getAttribute('aria-pressed'),
+    ).toBe('false');
     expect(ids(decisions.container)).toEqual(['gate-a']);
     decisions.unmount();
     const active = mount(w);
     await settle();
-    expect(active.getByRole('heading', { name: 'SEMANTIC TIMELINE' })).toBeInTheDocument();
-    expect(active.getByRole('button', { name: 'Active' }).getAttribute('aria-pressed')).toBe(
+    expect(active.getByRole('heading', { name: 'Activity timeline' })).toBeInTheDocument();
+    expect(active.getByRole('button', { name: 'Current work' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
     expect(active.getByRole('group', { name: 'Work activity filter' })).toBeInTheDocument();
@@ -362,16 +362,16 @@ describe('the activity filter', () => {
     // A sibling project, same session identity: untouched.
     const sibling = mount(first, { project: 'beta/api' });
     await settle();
-    expect(sibling.getByRole('button', { name: 'Active' }).getAttribute('aria-pressed')).toBe(
+    expect(sibling.getByRole('button', { name: 'Current work' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
     sibling.unmount();
     // The same project at project scope, with no session focused: its own choice.
     const projectScope = mount(first, { project: 'alpha/app', focus: false });
     await settle();
-    expect(projectScope.getByRole('button', { name: 'Active' }).getAttribute('aria-pressed')).toBe(
-      'true',
-    );
+    expect(
+      projectScope.getByRole('button', { name: 'Current work' }).getAttribute('aria-pressed'),
+    ).toBe('true');
     projectScope.unmount();
     first.release();
     // A reload: a new shell over the same browser storage.

@@ -175,6 +175,11 @@ The same day's review fixes added 2,608 bytes for measured project states and en
 one project notes editor, the shared Timeline evidence control and the narrow Projects layout.
 The new measured page bound is 2,426,179 bytes. The example fixture is unchanged.
 
+With the session story and first-layer guard underneath, Help and Projects package to
+2,430,667 bytes on Node 26.10.0 and pnpm 12.17.0. That is 10,964 bytes above the session
+story's measured page. The bound follows the measured combined page, and the fixture bound
+stays at 250,000 bytes.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.

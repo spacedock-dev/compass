@@ -42,6 +42,13 @@ the project counts, while published clean or dirty end evidence remains in the O
 Projects and Overview use the instruction from working sessions when one was published and
 label earlier instructions when shown. The recordings are unchanged.
 
+On 2026-11-23 the Decisions filter label became Current work. Its stored choice and event
+selection kept their existing contract. Usage and alerts uses sentence-case headings and
+keeps one absence sentence for plan usage. The rail differential compares its recorded
+measurements and actions after applying these wording changes and unwrapping the markup
+that identifies recorded titles and questions. Usage and alerts copies the same command
+or ID, with the raw value omitted from the control's accessible name and tooltip.
+
 2026-11-23. The page offers Check progress and Check progress again with Uses AI at the
 13 px supporting-text size. The route comparison projects those control names and the goal
 wording onto recorded refusals. The browser comparison renames the recorded progress action and

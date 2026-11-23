@@ -75,8 +75,7 @@ export type Observed = {
   readonly sublimits: readonly CapacitySublimit[];
   /** What the board cannot see yet, by name and sentence: [key, title, sentence]. */
   readonly open: readonly (readonly [string, string, string])[];
-} & Pair<'capacityEmpty'> &
-  Pair<'capacityEmptyNote'>;
+} & Pair<'capacityEmpty'>;
 
 /* The order of a project group in the active lane: gates (the server's order), then working sessions
    (a long turn first, then by sid), then idle ones by nearest activity and sid, then anything else. */
@@ -382,8 +381,7 @@ export function observe(input: unknown): Observed {
     ],
     windows: capacity.windows,
     sublimits: capacity.sublimits,
-    ...pair('capacityEmpty', '', 'No quota windows published.'),
-    ...pair('capacityEmptyNote', '', 'No vendor window has been read for this harness.'),
+    ...pair('capacityEmpty', '', 'No plan usage has been reported yet.'),
     open: OPEN,
   };
 }

@@ -228,6 +228,7 @@ const navOrder = [
   'attention',
   'intent',
   'settings',
+  'help',
 ] as const satisfies readonly TopLevelView[];
 const headerRoutes: readonly (readonly [RouteInput, TopLevelView])[] = [
   ...navOrder.map((view) => [{ view }, view] as const),

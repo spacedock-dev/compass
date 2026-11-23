@@ -496,3 +496,39 @@ export const TimelineEvidence: Story = {
     await expect(canvas.getByRole('region', { name: 'Overview' })).toBeVisible();
   },
 };
+
+export const DecisionsFilter: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('tab', { name: /Decisions/ }));
+    const filters = within(canvas.getByRole('group', { name: 'Work activity filter' }));
+    await expect(filters.getByRole('button', { name: 'Current work' })).toBeVisible();
+    await expect(filters.queryByRole('button', { name: 'Active' })).toBeNull();
+    await expect(canvas.getByRole('heading', { name: 'Recorded decisions' })).toBeVisible();
+  },
+};
+
+export const UsageWithoutAReading: Story = {
+  args: {
+    sessions: [
+      session('Request approval', 'needs_input', {
+        blocked_since: STAMP - 60,
+        resume_id: 'b2c3d4e5-1111-4222-8333-555500000002',
+      }),
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('tab', { name: 'Usage and alerts' }));
+    await expect(canvas.getByRole('heading', { name: 'Your AI allowance' })).toBeVisible();
+    await expect(canvas.getByText('No plan usage has been reported yet.')).toBeVisible();
+    await expect(canvas.getByRole('heading', { name: 'Waiting on you' })).toBeVisible();
+    await expect(canvas.queryByRole('heading', { name: 'CAPACITY' })).toBeNull();
+    const copy = canvas.getByRole('button', { name: 'Copy re-entry command' });
+    await expect(copy).not.toHaveAttribute('title');
+    await userEvent.click(copy);
+    await waitFor(() =>
+      expect(clipboard).toContain('claude --resume b2c3d4e5-1111-4222-8333-555500000002'),
+    );
+  },
+};
