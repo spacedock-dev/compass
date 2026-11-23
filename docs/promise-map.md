@@ -235,8 +235,9 @@ has to match its commit
 GitHub is sent the repository and the number, or, where a pushed branch is what bound it, the repository and that branch's name, and nothing else of the session. Checks still running,
 no completed check, a pull request head past the session's commit, and a cancelled check each settle
 nothing, and skipped checks count as neither a pass nor a failure. Where GitHub names required checks, only those
-count, and the card says how many other checks it left out. `--no-ci-read` and Read pull request status in Settings can
-turn the read off, and a missing or signed-out `gh` is said beside the reading. The same
+count, and the card says how many other checks it left out.
+Use `--no-ci-read` or switch off **Read pull request status** in Settings to stop the read.
+The page says beside the reading if `gh` is missing or signed out. The same
 read works for a GitLab merge request your goal names by its URL, through your own `glab` and only on a
 host `glab`'s own configuration already names; a session record never binds a merge request, because
 what Claude Code writes for one is not measured. Otherwise only `github.com` is read, and the Live
