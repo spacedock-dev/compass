@@ -86,8 +86,11 @@ it('draws only the statuses and outcomes that a Sessions row has evidence for', 
   expect.soft(row('ended-with-request').querySelector('[data-icon="waiting"]')).toBeNull();
   expect.soft(row('ended-with-request')).toHaveTextContent('Approve the result?');
   expect
-    .soft(row('dirty-end').querySelector('.next-operation-outcome [data-icon="worth-a-look"]'))
+    .soft(row('dirty-end').querySelector('[data-next-row-worth-a-look] [data-icon="worth-a-look"]'))
     .toBeInTheDocument();
+  expect.soft(row('dirty-end').querySelectorAll('[data-icon="worth-a-look"]')).toHaveLength(1);
+  expect.soft(row('dirty-end').querySelector('.next-operation-outcome')).toBeNull();
+  expect.soft(state('dirty-end')).toHaveAccessibleName('Ended');
   expect.soft(state('waiting')).toHaveAccessibleName('Waiting on you');
   expect.soft(state('waiting')?.querySelector('[data-icon="waiting"]')).toBeInTheDocument();
   for (const id of ['live', 'lapsed']) {

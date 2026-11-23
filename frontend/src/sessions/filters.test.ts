@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { GENERATED, SIDS, sessionsSearchPayload } from '../../stories/sessionsSearch.fixture';
 import { observe, type Row } from '../observed';
+import { observedFor } from '../observed/select';
+import { attentionSelectionFor } from '../attention/select';
+import { worthALookBoard } from '../../test/worthALookBoard';
 import { datedClock } from '../observed/values';
 import {
   announcement,
@@ -53,6 +56,30 @@ const run = (change: Partial<FilterState>, options: Parameters<typeof board>[0] 
     Object.entries(SIDS).find(([, value]) => value === sid)?.[0] ?? sid;
   return { indexed, prepared, filtered, letters: sids.map(letter).sort().join('') };
 };
+
+it('filters for the flag independently from a row’s State', () => {
+  const payload = worthALookBoard();
+  const selection = attentionSelectionFor(payload);
+  const indexed = indexScreen(
+    buildSessionsScreen(payload, observedFor(payload), undefined, selection?.worthALook),
+  );
+  const flagged = prepare({ ...EMPTY_FILTERS, worthALookOnly: true }, GENERATED, false);
+  const result = applyFilters(indexed, flagged, () => '');
+  expect(result.shown).toBe(selection?.counts?.worthALook);
+  expect(result.active).toBe(true);
+  expect(hasChoices(flagged.filters)).toBe(true);
+  expect(fixedOptions(indexed, flagged, 'state').map(({ value }) => value)).not.toContain(
+    'Worth a look',
+  );
+  const ended = prepare({ ...flagged.filters, state: ['Ended'] }, GENERATED, false);
+  const endedResult = applyFilters(indexed, ended, () => '');
+  expect(
+    indexed
+      .filter(({ row }) => endedResult.keys.has(row.key))
+      .map(({ row }) => row.session.sid)
+      .sort(),
+  ).toEqual(['dirty-end', 'dirty-one-entry', 'dirty-unknown-count']);
+});
 
 describe('the words', () => {
   it('lets a reader choose headless sessions or interactive and unknown rows', () => {

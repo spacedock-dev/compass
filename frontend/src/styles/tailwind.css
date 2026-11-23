@@ -21,6 +21,7 @@
 @source '../intent/PromptSelect.tsx';
 @source '../sample/**/*.{ts,tsx}';
 @source '../shell/{Breadcrumb,Header}.tsx';
+@source '../attention/WorthALookFlag.tsx';
 @source '../settings/**/*.{ts,tsx}';
 @source '../controls/Disclosure.tsx';
 @source '../drift/{CitationLink,CitedText,EntrySource,DriftStamp,ReadingResult,WorkListView,ActivityHead,ActivityMarks,CheckRun,ShowMore,SteerBack,DriftBody}.tsx';
@@ -114,7 +115,7 @@
   --progress-slightly-off-course: #c2410c;
   --progress-off-course: #c2410c;
   --progress-way-off-course: #7c2d12;
-  --worth-a-look: #92400e;
+  --worth-a-look: var(--progress-off-course);
   --destructive-solid: #9a3412;
   --color-danger-hover: #883217;
   --color-danger-outline-hover: #f8f1ee;

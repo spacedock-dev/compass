@@ -68,7 +68,7 @@ const PALETTE = {
   'progress-slightly-off-course': '#c2410c',
   'progress-off-course': '#c2410c',
   'progress-way-off-course': '#7c2d12',
-  'worth-a-look': '#92400e',
+  'worth-a-look': 'var(--progress-off-course)',
   'destructive-solid': '#9a3412',
   scrim: 'rgb(31 41 51 / 40%)',
   'e-raise': '0 1px 2px rgb(31 41 51 / 12%)',

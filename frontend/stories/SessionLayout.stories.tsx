@@ -400,8 +400,23 @@ export const HoldsControlUnderPointer: Story = {
     const canvas = within(canvasElement);
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
     const control = await canvas.findByRole('button', { name: 'Full activity' });
-    await userEvent.hover(control);
+    const browser =
+      '__vitest_browser_runner__' in window ? (await import('vitest/browser')).page : null;
+    await document.fonts.ready;
+    // Move away first so Chromium delivers a fresh pointer event even when the prior
+    // story ended at these coordinates. The poll below must leave the pointer in place.
+    if (browser) {
+      await browser.getByRole('button', { name: 'Simulate board poll' }).hover();
+      control.scrollIntoView({ block: 'center', behavior: 'instant' });
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await browser.getByRole('button', { name: 'Full activity' }).hover();
+      await expect(control.matches(':hover')).toBe(true);
+    } else {
+      await userEvent.unhover(control);
+      await userEvent.hover(control);
+    }
     const before = control.getBoundingClientRect().top;
+    const scrollBefore = window.scrollY;
     log.asking = true;
     (canvas.getByRole('button', { name: 'Simulate board poll' }) as HTMLButtonElement).click();
     await waitFor(() =>
@@ -412,7 +427,7 @@ export const HoldsControlUnderPointer: Story = {
     );
     // Content leaving above moves it back the same way, so a press never lands on what slid under it.
     const grown = window.scrollY;
-    await expect(grown).toBeGreaterThan(0);
+    await expect(grown).toBeGreaterThan(scrollBefore);
     log.asking = false;
     (canvas.getByRole('button', { name: 'Simulate board poll' }) as HTMLButtonElement).click();
     await waitFor(() =>
