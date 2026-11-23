@@ -330,22 +330,29 @@ function Goal({ model }: { readonly model: ProjectModel }) {
   );
 }
 
-function Notes({ model, briefing }: { readonly model: ProjectModel; readonly briefing: Briefing }) {
+function FocusNote({
+  model,
+  briefing,
+}: {
+  readonly model: ProjectModel;
+  readonly briefing: Briefing;
+}) {
   const controls = useControls();
   const editing = useValueStore(controls.memoEditing);
   if (model.focus) return null;
-  const outcomeKey = noteKey(model, 'outcome');
   const focusKey = noteKey(model, 'focus');
-  const open = editing !== null && [outcomeKey, focusKey].includes(editing.key);
-  if (briefing.outcome === 'Not set' && briefing.currentFocus === 'Not set' && !open) {
-    // The menu offers the same words where the briefing is complete, so the strip does not say it twice.
+  if (
+    briefing.outcome === 'Not set' &&
+    briefing.currentFocus === 'Not set' &&
+    editing?.key !== focusKey
+  ) {
     if (briefing.task.known && briefing.coverage.state === 'complete') return null;
     return (
       <div className="next-cockpit-recovery-memos" data-next-cockpit-memo-empty="">
         <Button
           variant="context-add"
           type="button"
-          onClick={() => controls.startMemoEdit(outcomeKey)}
+          onClick={() => controls.startMemoEdit(focusKey)}
         >
           + Add human context · this browser
         </Button>
@@ -355,13 +362,6 @@ function Notes({ model, briefing }: { readonly model: ProjectModel; readonly bri
   return (
     <div className="next-cockpit-recovery-memos">
       <span>OPTIONAL HUMAN NOTE · THIS BROWSER</span>
-      <HumanContextField
-        key={outcomeKey}
-        memoKey={outcomeKey}
-        kind="outcome"
-        label="OUTCOME"
-        placeholder="What result should this scope achieve?"
-      />
       <HumanContextField
         key={focusKey}
         memoKey={focusKey}
@@ -514,7 +514,7 @@ export function RecoveryStrip({ model }: { readonly model: ProjectModel }) {
           </p>
         )}
       </div>
-      <Notes model={model} briefing={briefing} />
+      <FocusNote model={model} briefing={briefing} />
     </Card>
   );
 }

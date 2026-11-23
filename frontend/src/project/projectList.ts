@@ -1,16 +1,18 @@
 import { nextNumber } from '../api/bootstrap';
-import { attentionSelectionFor } from '../attention/select';
-import { GLOSSARY, SESSION_ROW_WORDS } from '../language/glossary';
+import { GLOSSARY } from '../language/glossary';
 import { observedFor } from '../observed/select';
-import { endedAt, payloadSessionRows, sessionStateLimit, type Row } from '../observed';
+import { endedAt, sessionStateLimit, type Row } from '../observed';
 import { formatTimestamp, observationAge } from '../shell/format';
-import { goalScope } from './goal';
+import {
+  PROJECT_STATES,
+  projectInstruction,
+  projectSessionGroups,
+  projectStateCounts,
+} from './projectActivity';
 import { compare } from '../observed/values';
 
 export const PROJECT_GROUPS = ['Active today', 'No recent activity'] as const;
 export const UNNAMED_FOLDER = 'Unnamed folder';
-const words = SESSION_ROW_WORDS;
-const STATES = [words.waitingOnYou, words.working, words.ended, words.quiet] as const;
 
 export function endedToday(ended: number | null, generated: number | null): boolean {
   return (
@@ -23,67 +25,41 @@ export function endedToday(ended: number | null, generated: number | null): bool
 
 export function projectList(payload: Row) {
   const { projects } = observedFor(payload);
-  const selection = attentionSelectionFor(payload);
+  const groups = projectSessionGroups(payload);
   const now = nextNumber(payload['generated']);
-  const ends = new Map<string, number>();
-  for (const source of payloadSessionRows(payload)) {
-    const key = String(source['project'] ?? '');
-    const end = endedAt(source);
-    if (end !== null && observationAge(now, end) !== null)
-      ends.set(key, Math.max(end, ends.get(key) ?? 0));
-  }
-  const byState = [
-    selection?.waitingOnYou ?? [],
-    selection?.working ?? [],
-    selection?.ended ?? [],
-    selection?.quiet ?? [],
-    [...(selection?.worthALook.keys() ?? [])],
-  ];
-  const byProject = byState.map((rows) => {
-    const counts = new Map<string, number>();
-    for (const { project } of rows) counts.set(project, (counts.get(project) ?? 0) + 1);
-    return counts;
-  });
   const rows = projects.map((project) => {
-    const counts = [...STATES, words.worthALook].map((word, index) => ({
-      word,
-      count: byProject[index]?.get(project.key) ?? 0,
-    }));
-    const rank = counts.slice(0, STATES.length).findIndex(({ count }) => count > 0);
-    const state = STATES[rank] ?? GLOSSARY.stateNotPublished.plain;
-    const end = ends.get(project.key) ?? null;
-    const wait = project.needs.find((session) => session.askKnown || session.blockKnown);
-    const instruction = goalScope(project, null);
-    const latest = project.sessions.reduce(
-      (at, session) =>
-        observationAge(now, session.lastActivityAt) !== null
-          ? Math.max(at, session.lastActivityAt ?? 0)
-          : at,
-      end ?? 0,
+    const members = groups.get(project.key) ?? [];
+    const counts = projectStateCounts(members);
+    const rank = PROJECT_STATES.findIndex((_, index) => (counts[index]?.count ?? 0) > 0);
+    const state = PROJECT_STATES[rank] ?? GLOSSARY.stateNotPublished.plain;
+    const wait = members.find(({ state }) => state === 'Waiting on you')?.session;
+    const instruction = projectInstruction(members);
+    const dates = members.flatMap(({ session, source }) => [
+      session.lastActivityAt,
+      endedAt(source),
+    ]);
+    const latest = dates.reduce<number>(
+      (at, stamp) => (observationAge(now, stamp) === null ? at : Math.max(at, stamp ?? 0)),
+      0,
     );
     const waitingHint = wait?.askKnown ? wait.askText : wait?.blockKnown ? wait.blockText : '';
-    const headline = wait?.askKnown
-      ? waitingHint
-      : instruction.known
-        ? instruction.text
-        : waitingHint;
-    const limit =
-      rank < 0
-        ? project.sessions.map((session) => sessionStateLimit(session)).find(Boolean) ||
-          'State not published'
-        : '';
+    const headline = wait?.askKnown ? waitingHint : instruction?.text || waitingHint;
+    const limits = [
+      ...new Set(members.map(({ session }) => sessionStateLimit(session)).filter(Boolean)),
+    ];
+    const ended = members.some(({ source }) => endedToday(endedAt(source), now));
     return {
       key: project.key,
       name: project.key || UNNAMED_FOLDER,
       state,
-      rank: rank < 0 ? STATES.length : rank,
+      rank: rank < 0 ? PROJECT_STATES.length : rank,
       headline,
-      limit,
+      headlineIsEarlier: headline === instruction?.text && !instruction.current,
+      limits,
       location: project.sharedLabelKnown ? project.sharedLabelText : '',
-      group:
-        rank === 0 || rank === 1 || endedToday(end, now) ? PROJECT_GROUPS[0] : PROJECT_GROUPS[1],
+      group: rank === 0 || rank === 1 || ended ? PROJECT_GROUPS[0] : PROJECT_GROUPS[1],
       counts: counts.filter(({ count }) => count > 0),
-      sessions: project.sessions.length,
+      sessions: members.length,
       latest,
       time: formatTimestamp(latest, now, { style: 'same-day-relative' }),
     };

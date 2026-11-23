@@ -43,7 +43,7 @@ function Banner() {
         </RouteLink>
       </p>
       <p className="m-0 text-muted-foreground">
-        This Claude Code session ended after about ninety minutes of work. Open its{' '}
+        This example shows about ninety minutes from a longer Claude Code session. Open its{' '}
         {GLOSSARY.goal.plain}, read what the agent did and see where the work went off course.
         Nothing here is saved, sent or run. Open the numbered marks for a short tour.
       </p>

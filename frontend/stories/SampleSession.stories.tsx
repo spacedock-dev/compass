@@ -600,7 +600,13 @@ export const DismissThenOpenFromHelp: Story = {
   render: () => <SampleExample fragment="#n=sessions" />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole('button', { name: 'Not now' }));
+    const dismiss = canvas.getByRole('button', { name: 'Not now' });
+    await expect(dismiss).toHaveStyle({
+      backgroundColor: 'rgba(0, 0, 0, 0)',
+      borderTopColor: 'rgba(0, 0, 0, 0)',
+      color: 'rgb(33, 87, 63)',
+    });
+    await userEvent.click(dismiss);
     await expect(canvas.queryByText('New to Compass?')).toBeNull();
     const primary = within(canvas.getByRole('navigation', { name: 'Primary' }));
     await userEvent.click(primary.getByRole('link', { name: 'Help' }));
@@ -627,6 +633,10 @@ export const PlainTourWords: Story = {
     const canvas = within(canvasElement);
     const banned = /analyze drift|intent and drift|mark as inaccurate|finished|paused|idle/i;
     const banner = canvas.getByRole('region', { name: 'Sample session' });
+    await expect(banner).toHaveTextContent(
+      'This example shows about ninety minutes from a longer Claude Code session.',
+    );
+    await expect(banner).not.toHaveTextContent('ended after about ninety minutes');
     await userEvent.click(within(banner).getByText('Read the tour as text'));
     await expect(banner).not.toHaveTextContent(banned);
     const text = within(banner);

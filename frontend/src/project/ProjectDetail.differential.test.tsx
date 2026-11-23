@@ -1,3 +1,4 @@
+import { fireEvent, within } from '@testing-library/react';
 import { restateRecordedLocationNotes } from '../../test/location_departure';
 import {
   projectWordDeviation,
@@ -38,6 +39,7 @@ interface Summary {
   readonly scopeLinks: readonly (readonly [string | null, string | null, boolean])[];
   readonly switcher: string;
   readonly strip: string;
+  readonly memo: string;
   readonly stripLinks: readonly (string | null)[];
   readonly stripAttrs: readonly string[];
   readonly tabs: readonly string[];
@@ -51,6 +53,12 @@ function summarize(source: Element | DocumentFragment, tab: string): Summary {
   restateRecordedLocationNotes(source);
   const article = normalizeDisclosures(source);
   maskProjectStatusPresentation(article, source.nodeType === Node.DOCUMENT_FRAGMENT_NODE);
+  // The local outcome memo now has one editor on Overview. Timeline evidence uses
+  // the project’s technical control, so only the legacy trigger copy is retired.
+  const memo = [...article.querySelectorAll('.next-cockpit-recovery-memos')].map(norm).join('');
+  for (const field of article.querySelectorAll('.next-cockpit-recovery-memos')) field.remove();
+  for (const trigger of article.querySelectorAll('.next-course-evidence > summary'))
+    trigger.remove();
   const header = article.querySelector('.next-project-detail-header');
   const count = header?.querySelector('.next-project-detail-count');
   if (count) count.textContent = omitProjectStateSubtotals(norm(count));
@@ -74,6 +82,7 @@ function summarize(source: Element | DocumentFragment, tab: string): Summary {
     ),
     switcher: norm(article.querySelector('.next-cockpit-scope-switcher summary')),
     strip: norm(strip),
+    memo,
     stripLinks: [...(strip?.querySelectorAll('a') ?? [])].map((link) => link.getAttribute('href')),
     stripAttrs: [
       ...(strip?.querySelectorAll(
@@ -277,7 +286,7 @@ describe('the project page reads as the legacy page does, over generated boards'
       // and shell proofs. Keep querying the old fixture for coverage and compare the
       // recovery and Timeline only where the URL still names a project page.
       for (const [name, pattern] of REACH)
-        if (pattern.test(`${legacy.strip} ${legacy.panel} ${legacy.scopeTree}`))
+        if (pattern.test(`${legacy.strip} ${legacy.memo} ${legacy.panel} ${legacy.scopeTree}`))
           reach[name] = (reach[name] ?? 0) + 1;
       if (focus) continue;
 
@@ -300,7 +309,7 @@ describe('the project page reads as the legacy page does, over generated boards'
         page.state.held.add(`${stable}\n`);
       if (focus && !focusContext) page.state.held.add(`${stable}\n${compatSessKey(focus)}`);
       await page.settle();
-      const article = page.container.querySelector('article.next-project-detail');
+      const article = page.container.querySelector<HTMLElement>('article.next-project-detail');
       if (!article) {
         failures.push(
           `seed ${String(seed)} ${variant}: the page drew no project article for ${JSON.stringify(label)}`,
@@ -309,6 +318,8 @@ describe('the project page reads as the legacy page does, over generated boards'
         if (failures.length >= 3) break;
         continue;
       }
+      if (tab === 'course')
+        fireEvent.click(within(article).getByRole('button', { name: 'Show technical details' }));
       restateLiveOpener(article);
       const mine = summarize(article, tab);
       page.unmount();
@@ -389,8 +400,14 @@ describe('the browser proof’s own board reads the same on both pages', () => {
         });
         if (!context) page.state.held.add(`${stable}\n`);
         await page.settle();
-        const article = page.container.querySelector('article.next-project-detail');
-        if (article) restateLiveOpener(article);
+        const article = page.container.querySelector<HTMLElement>('article.next-project-detail');
+        if (article) {
+          if (tab === 'course')
+            fireEvent.click(
+              within(article).getByRole('button', { name: 'Show technical details' }),
+            );
+          restateLiveOpener(article);
+        }
         const mine = article ? summarize(article, tab) : null;
         page.unmount();
         compared += 1;

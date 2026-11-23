@@ -171,6 +171,10 @@ The Help and Projects layer measured 2,423,571 bytes for the packaged page on 20
 up 8,312 bytes from its starting page of 2,415,259 bytes. The page bound rises once from
 2,418,919 to the measured 2,423,571 bytes. The fixture bound stays at 250,000 bytes.
 
+The same day's review fixes added 2,604 bytes for measured project states and end outcomes,
+one project notes editor, the shared Timeline evidence control and the narrow Projects layout.
+The new measured page bound is 2,426,175 bytes. The example fixture is unchanged.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.

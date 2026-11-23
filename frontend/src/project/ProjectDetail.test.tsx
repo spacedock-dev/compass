@@ -225,6 +225,23 @@ describe('Course', () => {
     expect(screen.getByText('Other directions (1)')).toBeTruthy();
   });
 
+  it('keeps timeline entries visible and reveals their sources with the project technical control', async () => {
+    const page = open(COURSE as never, ':course');
+    await page.settle();
+    const timeline = within(screen.getByRole('region', { name: 'Timeline' }));
+    expect(timeline.getAllByText('EXACT STATE CHANGE').at(-1)).toBeVisible();
+    expect(
+      timeline.queryAllByRole('button', { name: 'Evidence · source and confidence' }),
+    ).toHaveLength(0);
+    expect(timeline.queryByText('workflow state', { exact: true })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show technical details' }));
+    expect(timeline.getAllByText('EXACT STATE CHANGE').at(-1)).toBeVisible();
+    expect(timeline.getAllByText('workflow state', { exact: true }).at(-1)).toBeVisible();
+    expect(timeline.getByText('s5', { exact: true })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Hide technical details' }));
+    expect(timeline.queryByText('s5', { exact: true })).toBeNull();
+  });
+
   it('says it is loading while the read is in flight and unavailable once it failed, never "no changes"', async () => {
     const held = mountProject({
       hash: hash('course/app', ':course'),

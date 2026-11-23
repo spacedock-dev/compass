@@ -113,7 +113,7 @@ export const OneProject: Story = {
     const canvas = within(canvasElement);
     await expect(
       await canvas.findByText(
-        'All your sessions are in one project. You can see them together on Sessions.',
+        'The board shows one project label. You can see these sessions together on Sessions.',
       ),
     ).toBeVisible();
     await expect(canvas.getByRole('link', { name: 'Projects', current: 'page' })).toBeVisible();
@@ -152,7 +152,12 @@ export const ExpansionSurvivesRefresh: Story = {
     const canvas = within(canvasElement);
     const recent = within(await canvas.findByRole('list', { name: 'No recent activity · 6' }));
     await expect(recent.getAllByRole('link')).toHaveLength(3);
-    await userEvent.click(canvas.getByRole('button', { name: 'Show 3 more' }));
+    const more = canvas.getByRole('button', { name: 'Show 3 more' });
+    await expect(more).toHaveStyle({
+      backgroundColor: 'rgba(0, 0, 0, 0)',
+      borderTopColor: 'rgba(0, 0, 0, 0)',
+    });
+    await userEvent.click(more);
     await expect(recent.getAllByRole('link')).toHaveLength(6);
     await refresh?.();
     await expect(recent.getAllByRole('link')).toHaveLength(6);
@@ -193,6 +198,12 @@ function fit(width: number): Story {
         const heights = rows.map((row) => row.getBoundingClientRect().height);
         await expect(rows.length).toBeGreaterThan(3);
         await expect(new Set(heights).size).toBe(1);
+        for (const row of rows) {
+          await expect(
+            within(row as HTMLElement).getByText('1 session', { exact: true }),
+          ).toBeVisible();
+          await expect(row.querySelector('.project-list-time')).toBeVisible();
+        }
       });
     },
   };
@@ -200,3 +211,69 @@ function fit(width: number): Story {
 export const Fits390 = fit(390);
 export const Fits375 = fit(375);
 export const Fits320 = fit(320);
+
+const shared = [
+  session('acme/shared', 'working', {
+    sid: 'first',
+    project_key: '/work/first',
+    project_identity_source: 'working directory path',
+  }),
+  session('acme/shared', 'idle', {
+    sid: 'second',
+    acquisition: 'scan-only',
+    project_key: '/work/second',
+    project_identity_source: 'working directory path',
+    instruction: { label: 'asked', text: 'Review the release checklist', at: NOW - 360 },
+  }),
+] as const;
+
+export const DenseMixedState: Story = {
+  args: { sessions: shared, stage: false },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const row = await canvas.findByRole('link', { name: /acme\/shared/ });
+    await expect(
+      canvas.getByText(
+        'The board shows one project label. You can see these sessions together on Sessions.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(
+      within(row).getByText('2 sessions share this display label across 2 measured locations', {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      within(row).getByText('Read by scanning: no turn end can be observed here', { exact: true }),
+    ).toBeVisible();
+    await expect(within(row).getByRole('img', { name: '1 working' })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: 'How project grouping works' })).toBeVisible();
+    await atPageWidth(1280, async () => {
+      await expect(row.scrollHeight).toBeLessThanOrEqual(row.clientHeight);
+      const identity = row.querySelector('.project-list-identity')?.getBoundingClientRect();
+      await expect(identity?.bottom ?? Infinity).toBeLessThanOrEqual(
+        row.getBoundingClientRect().bottom,
+      );
+    });
+  },
+};
+
+export const DenseRowFits: Story = {
+  args: {
+    sessions: [
+      session('acme/shared', 'idle', { ...shared[0], acquisition: 'scan-only', state: 'idle' }),
+      shared[1],
+    ],
+    stage: false,
+  },
+  play: async ({ canvasElement }) => {
+    const row = await within(canvasElement).findByRole('link', { name: /acme\/shared/ });
+    await atPageWidth(1280, async () => {
+      await expect(row.scrollHeight).toBeLessThanOrEqual(row.clientHeight);
+      const identity = row.querySelector('.project-list-identity')?.getBoundingClientRect();
+      await expect(identity?.bottom ?? Infinity).toBeLessThanOrEqual(
+        row.getBoundingClientRect().bottom,
+      );
+    });
+  },
+};

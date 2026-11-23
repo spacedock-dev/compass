@@ -439,7 +439,7 @@
         "frontend/src/project/ProjectDetail.test.tsx",
         "frontend/e2e/project-parity.mjs"
       ],
-      "contract": "Course displays changes, exact/derived episodes, stage conditions and completed-work evidence without turning a review into verified success."
+      "contract": "Timeline displays changes, exact and derived episodes and completed work. The shared project technical control reveals raw evidence alongside entries and holds stage conditions."
     },
     {
       "name": "project-decisions-semantic-timeline",
@@ -1335,7 +1335,7 @@
       "name": "Your notes on a project",
       "owner": "DRC-4823",
       "oracles": ["frontend/stories/ProjectOverview.stories.tsx", "frontend/src/project/ProjectDetail.test.tsx"],
-      "contract": "Save on input using the released memo key. Restore persisted notes on reload.",
+      "contract": "Edit the outcome memo on Overview using the released key. Restore it on reload. Technical details edits the separate focus memo.",
       "disposition": "store-held"
     },
     {

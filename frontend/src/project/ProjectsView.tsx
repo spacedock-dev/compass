@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { type CSSProperties, type ReactNode, useMemo, useState } from 'react';
 import { asPayload } from '../observed/values';
 import { Disclosure } from '../controls';
 import { TechnicalDetails } from '../controls/TechnicalDetails';
@@ -18,6 +18,8 @@ import './project.css';
 const INITIAL_RECENT = 3;
 type State = keyof typeof SESSION_STATE_ICONS;
 
+const stateLimitsAuthored = (limit: string) => limit.startsWith('Waiting on child');
+
 function ProjectRow({ row }: { readonly row: ProjectListRow }) {
   const hasState = Object.hasOwn(SESSION_STATE_ICONS, row.state);
   return (
@@ -33,12 +35,17 @@ function ProjectRow({ row }: { readonly row: ProjectListRow }) {
         )}
         <span className="project-list-identity">
           <strong data-authored>{row.name}</strong>
-          {row.headline ? <span data-authored>{row.headline}</span> : null}
-          {row.limit ? (
-            <span data-authored={row.limit !== GLOSSARY.stateNotPublished.plain || undefined}>
-              {row.limit}
+          {row.headline ? (
+            <span>
+              {row.headlineIsEarlier ? 'Earlier instruction: ' : null}
+              <span data-authored>{row.headline}</span>
             </span>
           ) : null}
+          {row.limits.map((limit) => (
+            <span key={limit} data-authored={stateLimitsAuthored(limit) || undefined}>
+              {limit}
+            </span>
+          ))}
           {row.location ? <span>{row.location}</span> : null}
         </span>
         <span className="project-list-chips">
@@ -81,6 +88,14 @@ export function ProjectsView({ conditions = null }: ProjectsViewProps) {
   const matches = rows.filter((row) =>
     `${row.name} ${row.headline}`.toLowerCase().includes(needle),
   );
+  const lines = matches.reduce(
+    (max, row) =>
+      Math.max(
+        max,
+        1 + Number(Boolean(row.headline)) + row.limits.length + Number(Boolean(row.location)),
+      ),
+    1,
+  );
   return (
     <section className="next-projects projects-list" data-next-view-body="projects">
       <header>
@@ -89,7 +104,7 @@ export function ProjectsView({ conditions = null }: ProjectsViewProps) {
       </header>
       {rows.length === 1 ? (
         <div className="project-list-single">
-          <p>All your sessions are in one project. You can see them together on Sessions.</p>
+          <p>The board shows one project label. You can see these sessions together on Sessions.</p>
           <RouteLink route={{ view: 'sessions' }}>Go to Sessions</RouteLink>
         </div>
       ) : null}
@@ -102,7 +117,7 @@ export function ProjectsView({ conditions = null }: ProjectsViewProps) {
           onChange={(event) => setQuery(event.target.value)}
         />
       ) : null}
-      <div className="project-list-board">
+      <div className="project-list-board" style={{ '--project-row-lines': lines } as CSSProperties}>
         <StatusLegend />
         {matches.length ? (
           PROJECT_GROUPS.map((group, index) => {
@@ -122,7 +137,7 @@ export function ProjectsView({ conditions = null }: ProjectsViewProps) {
                 </ul>
                 {hidden ? (
                   <Button
-                    variant="native"
+                    emphasis="quiet"
                     type="button"
                     aria-expanded={expanded}
                     className="project-list-more"
@@ -142,7 +157,7 @@ export function ProjectsView({ conditions = null }: ProjectsViewProps) {
       </div>
       <Disclosure
         disclosureKey="projects:grouping"
-        summary="How sessions are grouped into projects"
+        summary={GLOSSARY.howProjectGroupingWorks.plain}
         explanation
       >
         <p>

@@ -128,9 +128,10 @@ discard records are evicted before retained words, then oldest first. These limi
 to board-only rows. A present session without a project links to its own page, which has no
 project to return to.
 **Overview** shows what the project is working on, what is running, and whether anything needs
-you. The session list opens each session's own page. Ended sessions with uncommitted work appear
-under **Worth a look**, and clean ends appear under **Ready to wrap up**. **Timeline** shows
-observed changes and completed tasks. **Decisions** shows recorded decisions. **Usage and alerts**
+you. Rows with a session link open their own page. The end results show uncommitted work under
+**Worth a look** and clean ends under **Ready to wrap up**, including ends with a pending request.
+**Timeline** shows observed changes and completed tasks. Open **Show technical details** to see
+the source and confidence alongside Timeline entries. **Decisions** shows recorded decisions. **Usage and alerts**
 shows project usage and alerts. **Show technical details** holds the workflow evidence, steering,
 stage alerts and read-only terminal. **Copy a status update** copies the existing briefing.
 **Your notes** saves as you type in this browser and never writes to a session.

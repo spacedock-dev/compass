@@ -24,7 +24,7 @@ import type { Row } from './raw';
 /* The Course tab: what changed in the project's sessions, the direction changes the record shows, and the
    work that was completed. A course change is exact (a recorded decision, a stage change, a completed
    result) or derived (a review that changed the course) and says which; a derived one is never promoted to
-   a verified success. Evidence is behind a disclosure on every episode, and what is missing is said before
+   a verified success. Raw evidence is revealed by the project technical control, and what is missing is said before
    anything is claimed. Ported from `nextCockpitCoursePanel`. */
 
 /* A direction is the reader's words: the harness's paste tags come off, and no entry number is put in front. */
@@ -35,12 +35,12 @@ function Evidence({
   fact,
   contributors,
   occurrence = '',
-  model,
+  showEvidence,
 }: {
   readonly fact: Row;
   readonly contributors: readonly string[];
   readonly occurrence?: string;
-  readonly model: ProjectModel;
+  readonly showEvidence: boolean;
 }) {
   const evidence = courseEvidence(fact, contributors, occurrence);
   return (
@@ -48,17 +48,8 @@ function Evidence({
       {evidence.missing.length ? (
         <p className="next-cockpit-evidence-missing">{evidence.missing.join(' · ')}</p>
       ) : null}
-      {evidence.details ? (
-        <Disclosure
-          disclosureKey={disclosureKey({
-            project: model.route.project,
-            scope: model.route.focus ?? '',
-            name: evidence.details.key,
-          })}
-          className="next-course-evidence"
-          focusKey={`cockpit-disclosure:${evidence.details.key}`}
-          summary="Evidence · source and confidence"
-        >
+      {showEvidence && evidence.details ? (
+        <div className="next-course-evidence" data-layer="technical">
           {evidence.details.source ? (
             <div>
               <b>Source</b>
@@ -86,7 +77,7 @@ function Evidence({
               {` · ${evidence.details.contributors.join(' · ')}`}
             </div>
           ) : null}
-        </Disclosure>
+        </div>
       ) : null}
     </>
   );
@@ -95,8 +86,10 @@ function Evidence({
 function EpisodeRow({
   episode,
   model,
+  showEvidence,
 }: {
   readonly episode: Episode;
+  readonly showEvidence: boolean;
   readonly model: ProjectModel;
 }) {
   const scope = courseScope(episode, model.harnesses);
@@ -128,20 +121,32 @@ function EpisodeRow({
       ) : (
         <p>{episode.summary}</p>
       )}
-      <Evidence fact={episode.fact} contributors={episode.contributors} model={model} />
+      <Evidence
+        fact={episode.fact}
+        contributors={episode.contributors}
+        showEvidence={showEvidence}
+      />
       {episode.directionFact ? (
         <Evidence
           fact={episode.directionFact}
           contributors={[]}
           occurrence={`direction-for:${String(episode.fact['fact_id'] || '')}`}
-          model={model}
+          showEvidence={showEvidence}
         />
       ) : null}
     </Card>
   );
 }
 
-function DirectionRow({ fact, model }: { readonly fact: Row; readonly model: ProjectModel }) {
+function DirectionRow({
+  fact,
+  model,
+  showEvidence,
+}: {
+  readonly fact: Row;
+  readonly model: ProjectModel;
+  readonly showEvidence: boolean;
+}) {
   const scope = factScope(fact, model.harnesses);
   return (
     <Card
@@ -155,12 +160,20 @@ function DirectionRow({ fact, model }: { readonly fact: Row; readonly model: Pro
         <Badge variant="course-tag">EXACT DIRECTION</Badge>
       </header>
       <p>{directionWords(fact['summary'])}</p>
-      <Evidence fact={fact} contributors={[]} model={model} />
+      <Evidence fact={fact} contributors={[]} showEvidence={showEvidence} />
     </Card>
   );
 }
 
-function Course({ model, semantic }: { readonly model: ProjectModel; readonly semantic: Row }) {
+function Course({
+  model,
+  semantic,
+  showEvidence,
+}: {
+  readonly model: ProjectModel;
+  readonly semantic: Row;
+  readonly showEvidence: boolean;
+}) {
   const lanes = projectLanes(model.env, model.focus ? [model.focus] : model.group.sessions);
   const projectSemantic = semanticOf(model.env.entry?.data ?? null);
   const canonical = canonicalSemantic(projectSemantic, semantic);
@@ -187,6 +200,7 @@ function Course({ model, semantic }: { readonly model: ProjectModel; readonly se
               key={`${String(episode.fact['fact_id'] || '')}#${String(index)}`}
               episode={episode}
               model={model}
+              showEvidence={showEvidence}
             />
           ))}
         </Disclosure>
@@ -196,6 +210,7 @@ function Course({ model, semantic }: { readonly model: ProjectModel; readonly se
           key={`${String(episode.fact['fact_id'] || '')}#${String(index)}`}
           episode={episode}
           model={model}
+          showEvidence={showEvidence}
         />
       ))}
       {directions.length ? (
@@ -210,6 +225,7 @@ function Course({ model, semantic }: { readonly model: ProjectModel; readonly se
               key={`${String(fact['fact_id'] || '')}#${String(index)}`}
               fact={fact}
               model={model}
+              showEvidence={showEvidence}
             />
           ))}
         </Disclosure>
@@ -219,12 +235,12 @@ function Course({ model, semantic }: { readonly model: ProjectModel; readonly se
 }
 
 /** The semantic read of this scope, once both it and (at a session) the project's have arrived. */
-export function CoursePanel({
+function CoursePanel({
   model,
-  conditions = null,
+  showEvidence,
 }: {
   readonly model: ProjectModel;
-  readonly conditions?: ReactNode;
+  readonly showEvidence: boolean;
 }) {
   const { scopeRead, projectRead } = model;
   const entry = scopeRead.entry;
@@ -244,27 +260,22 @@ export function CoursePanel({
       raw && typeof raw === 'object' && !Array.isArray(raw)
         ? (raw as Row)
         : { facts: [], work_items: [], projections: {} };
-    body = <Course model={model} semantic={semantic} />;
+    body = <Course model={model} semantic={semantic} showEvidence={showEvidence} />;
   }
-  return (
-    <>
-      {conditions}
-      {body}
-    </>
-  );
+  return body;
 }
 
 export function CourseTab({
   model,
-  conditions,
+  showEvidence,
 }: {
   readonly model: ProjectModel;
-  readonly conditions?: ReactNode;
+  readonly showEvidence: boolean;
 }) {
   return (
     <>
       <ChangesPanel project={model.route.project} />
-      <CoursePanel model={model} conditions={conditions} />
+      <CoursePanel model={model} showEvidence={showEvidence} />
       <CompletedWork model={model} />
     </>
   );

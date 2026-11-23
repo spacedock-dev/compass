@@ -34,7 +34,8 @@ export function SampleInvite() {
         See an example
       </RouteLink>
       <Button
-        variant="native"
+        emphasis="quiet"
+        className="text-[var(--status-ended-ink)]"
         type="button"
         onClick={() => {
           dismissal.dismiss();

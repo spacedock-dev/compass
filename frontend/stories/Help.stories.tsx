@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, userEvent, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { EXPLANATIONS, GLOSSARY, SESSION_ROW_WORDS } from '../src/language/glossary';
 import { HeaderExample } from './Header.stories';
 import { atPageWidth } from './PageFit';
@@ -47,18 +47,21 @@ export const Guide: Story = {
     await expect(
       progress.getByText('No departure found in what Compass read', { exact: true }),
     ).toBeVisible();
-    for (const word of [
-      words.noGoalYet,
-      words.notCheckedYet,
-      words.tooEarlyToTell,
-      words.cantTell,
-      words.goalTooVague,
-      words.outOfDate,
+    for (const [word, explanation] of [
+      [words.noGoalYet, 'Add a goal to give Compass something to read against.'],
+      [words.notCheckedYet, 'Check progress to ask Compass to read the record against the goal.'],
+      [words.tooEarlyToTell, 'The session has recorded too little for a reading.'],
+      [
+        words.cantTell,
+        'What Compass read found no departure and gives too little evidence to say the goal was met.',
+      ],
+      [words.goalTooVague, 'Say what should be true when the work is done.'],
+      [words.outOfDate, 'The earlier reading no longer describes the evidence Compass can use.'],
     ]) {
-      const term = progress.getByText(word, { exact: true });
+      const term = progress.getByText(word ?? '', { exact: true });
       await expect(term).toBeVisible();
       await expect(term.parentElement?.querySelector('svg')).toBeNull();
-      await expect(term.nextElementSibling).toHaveTextContent(/\S/);
+      await expect(term.nextElementSibling?.textContent).toBe(explanation);
     }
     for (const question of [
       'What gets sent to an AI, and where?',
@@ -69,6 +72,26 @@ export const Guide: Story = {
       await userEvent.click(canvas.getByRole('button', { name: question }));
     for (const link of canvas.getAllByRole('link'))
       await expect(link.getAttribute('href')).toMatch(/^#n=/);
+  },
+};
+
+export const SupportedAgents: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'Which agents can Compass see?' }));
+    await waitFor(() =>
+      expect(
+        canvas.getByText(
+          'Antigravity CLI, Claude Code, Codex, GitHub Copilot CLI, Cursor CLI, Factory Droid, Gemini CLI, Goose, OpenCode, Pi.',
+          { exact: true },
+        ),
+      ).toBeVisible(),
+    );
+    await expect(
+      within(canvas.getByRole('region', { name: 'Common questions' })).getByRole('link', {
+        name: /^Needs you$/,
+      }),
+    ).toBeVisible();
   },
 };
 

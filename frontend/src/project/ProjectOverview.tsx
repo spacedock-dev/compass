@@ -1,51 +1,55 @@
 import { useId, useState, type ReactNode } from 'react';
-import { compatSessKey } from '../api/identity';
-import { attentionSelectionFor } from '../attention/select';
+import { dirtyEndReason } from '../attention/select';
 import { delegationFigure, metricOf, useProjectWindow } from '../delegation';
 import { GLOSSARY, SESSION_ROW_WORDS, SHOWN } from '../language/glossary';
-import {
-  endedAt,
-  sessionState,
-  sessionStateLimit,
-  type ObservedSession,
-  type Row,
-} from '../observed';
+import { endedAt, sessionState, sessionStateLimit } from '../observed';
 import { RouteLink } from '../shell/RouteLink';
 import { useShell } from '../shell/context';
-import { formatDurationWords, formatTimestamp } from '../shell/format';
+import { formatDurationWords, formatTimestamp, observationAge } from '../shell/format';
 import { MEMO_LIMIT } from '../storage';
 import { Card } from '../ui/card';
 import { Icon } from '../ui/icons';
+import { StatusLegend } from '../ui/status-legend';
 import { StatusTile } from '../ui/status-tile';
 import { Textarea } from '../ui/textarea';
 import { subagentIsLive } from './activity';
-import { goalScope, instructionHeading } from './goal';
 import { noteKey, type ProjectModel } from './model';
 import { endedToday } from './projectList';
+import { projectInstruction, type ProjectSession } from './projectActivity';
+
+type Labels = ReturnType<typeof import('./projectActivity').projectSessionLabels>;
 
 const words = SESSION_ROW_WORDS;
 
-export function ProjectSummary({ model }: { readonly model: ProjectModel }) {
-  const selection = attentionSelectionFor(model.payload);
-  const project = model.group.label;
-  const working = selection?.working.filter((row) => row.project === project) ?? [];
-  const waiting = selection?.waitingOnYou.filter((row) => row.project === project) ?? [];
-  const flagged = [...(selection?.worthALook ?? [])].filter(([row]) => row.project === project);
+export function ProjectSummary({
+  model,
+  rows,
+}: {
+  readonly model: ProjectModel;
+  readonly rows: readonly ProjectSession[];
+}) {
+  const working = rows.filter(({ state }) => state === 'Working');
+  const waiting = rows.filter(({ state }) => state === 'Waiting on you');
+  const flagged = rows.filter(({ reason }) => reason);
   const helpers = working.reduce(
-    (total, row) => total + row.subagents.filter(subagentIsLive).length,
+    (total, { session }) => total + session.subagents.filter(subagentIsLive).length,
     0,
   );
-  const goal = goalScope(model.group.observed, null);
-  const source = instructionHeading(model.group.observed, null).toLowerCase();
-  const age = formatTimestamp(goal.at, model.generated, { style: 'same-day-relative' });
-  const hasLimits = model.group.observed.sessions.some((session) => sessionStateLimit(session));
+  const goal = projectInstruction(rows);
+  const source = goal?.current
+    ? goal.dated
+      ? 'the latest instruction'
+      : 'a published instruction'
+    : 'an earlier instruction';
+  const age = formatTimestamp(goal?.at, model.generated, { style: 'same-day-relative' });
+  const hasLimits = rows.some(({ session }) => sessionStateLimit(session));
   return (
     <section className="project-summary-cards" aria-label="Where this project stands">
       <ProjectCard title="Working on">
-        <p className="project-answer" data-authored={goal.known || undefined}>
-          {goal.known ? goal.text : 'No instruction published'}
+        <p className="project-answer" data-authored={Boolean(goal) || undefined}>
+          {goal?.text ?? 'No instruction published'}
         </p>
-        {goal.known ? <p>{`From a ${source}${age ? `, ${age}` : ''}.`}</p> : null}
+        {goal ? <p>{`From ${source}${age ? `, ${age}` : ''}.`}</p> : null}
       </ProjectCard>
       <ProjectCard title="Running now">
         <p className="project-answer">
@@ -101,63 +105,81 @@ function ProjectCard({
   );
 }
 
-function exactSessionRoute(project: string, session: ObservedSession) {
-  return {
-    view: 'session',
-    project,
-    session: session.sid,
-    harness: session.harness,
-    from: 'project',
-  } as const;
+function SessionDestination({
+  project,
+  row,
+  className,
+  children,
+}: {
+  readonly project: string;
+  readonly row: ProjectSession;
+  readonly className: string;
+  readonly children: ReactNode;
+}) {
+  return row.identity ? (
+    <RouteLink
+      route={{
+        view: 'session',
+        project,
+        session: row.identity.sid,
+        harness: row.identity.harness,
+        from: 'project',
+      }}
+      className={className}
+    >
+      {children}
+    </RouteLink>
+  ) : (
+    <div className={className}>{children}</div>
+  );
 }
 
 function SessionRow({
   model,
-  session,
-  source,
-  reason,
+  row,
+  label,
 }: {
   readonly model: ProjectModel;
-  readonly session: ObservedSession;
-  readonly source?: Row;
-  readonly reason?: string;
+  readonly row: ProjectSession;
+  readonly label: NonNullable<ReturnType<Labels['get']>>;
 }) {
+  const { session, source, reason } = row;
   const state = sessionState(session);
   const limit = sessionStateLimit(session, state);
   const time = formatTimestamp(endedAt(source) ?? source?.['started_at'], model.generated, {
     style: 'same-day-relative',
   });
-  const harness = model.harnesses.get(session.harness) ?? session.harness;
-  const title = session.titleKnown ? session.titleText : SHOWN.titleNotPublished;
   return (
     <li>
-      <RouteLink
-        route={exactSessionRoute(model.group.label, session)}
-        className="project-overview-row"
-      >
+      <SessionDestination project={model.group.label} row={row} className="project-overview-row">
         {state === 'State not published' || state === 'Waiting on child' ? (
           <span className="project-list-no-icon" />
         ) : (
           <StatusTile state={state} focusable={false} live={session.isLive} />
         )}
         <span className="project-overview-row-title">
-          <strong data-authored={session.titleKnown || undefined}>{title}</strong>
+          <strong data-authored={session.titleKnown || undefined}>{label.title}</strong>
           {limit ? (
             <span data-authored={state === 'Waiting on child' || undefined}>{limit}</span>
           ) : null}
+          {state === 'Ended' && row.state === 'Waiting on you' ? <span>Waiting on you</span> : null}
           {reason ? (
             <span className="project-row-flag">
               <Icon name="worth-a-look" />
               {words.worthALook}: {reason}
             </span>
           ) : null}
+          {row.identity ? null : <span>Session link unavailable</span>}
         </span>
         <span className="project-overview-row-time">
-          <span>{harness}</span>
+          <span>
+            {label.harness}
+            {label.detail ? ` · ${label.detail}` : ''}
+          </span>
           {time ? <span>{`${session.isEnded ? 'Ended' : 'Started'} ${time}`}</span> : null}
         </span>
-        <Icon name="caret-right" className="project-overview-chevron" />
-      </RouteLink>
+        {row.identity ? <Icon name="caret-right" className="project-overview-chevron" /> : null}
+      </SessionDestination>
     </li>
   );
 }
@@ -165,60 +187,69 @@ function SessionRow({
 function EndResults({
   model,
   rows,
-  reasons,
-  clean,
+  labels,
 }: {
   readonly model: ProjectModel;
-  readonly rows: readonly ObservedSession[];
-  readonly reasons: ReadonlyMap<string, string>;
-  readonly clean: ReadonlySet<string>;
+  readonly rows: readonly ProjectSession[];
+  readonly labels: Labels;
 }) {
+  const { generated, payload } = model;
+  const hasClock = generated !== null && observationAge(generated, generated) !== null;
+  const ends = rows.filter(({ source }) => {
+    const at = endedAt(source);
+    return at !== null && (!hasClock || endedToday(at, generated));
+  });
   const groups = [
     {
       label: words.worthALook,
-      keep: (key: string) => reasons.has(key),
-      note: (key: string) => reasons.get(key),
+      rows: ends.filter(({ source }) => source?.['dirty'] === true),
+      note: (source: ProjectSession['source']) => dirtyEndReason(source ?? {}),
     },
     {
       label: GLOSSARY.readyToWrapUp.plain,
-      keep: (key: string) => clean.has(key),
+      rows: ends.filter(({ source }) => source?.['dirty'] === false),
       note: () => 'Ended with a clean working tree',
     },
     {
       label: 'End outcome unavailable',
-      keep: (key: string) => !reasons.has(key) && !clean.has(key),
+      rows: ends.filter(({ source }) => typeof source?.['dirty'] !== 'boolean'),
       note: () => 'No outcome was published',
     },
   ];
+  const unavailable = payload['ends_observable'] === false;
   return (
     <ProjectCard title="How today’s sessions ended">
-      {rows.length ? (
-        groups.map(({ label, keep, note }) => {
-          const selected = rows.filter((row) => keep(compatSessKey(row)));
-          return selected.length ? (
-            <div className="project-end-group" key={label}>
-              <h3>{label}</h3>
-              <ul>
-                {selected.map((row) => {
-                  const key = compatSessKey(row);
-                  return (
-                    <li key={key}>
-                      <RouteLink
-                        route={exactSessionRoute(model.group.label, row)}
-                        className="project-end-link"
-                      >
-                        <strong data-authored={row.titleKnown || undefined}>{row.titleText}</strong>
-                        <span>{note(key)}</span>
-                      </RouteLink>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ) : null;
-        })
-      ) : (
+      {hasClock ? null : <p>The board has no timestamp to determine which sessions ended today.</p>}
+      {unavailable ? <p>Session ends are unobservable on this board.</p> : null}
+      {!ends.length && hasClock && !unavailable ? (
         <p>No session ends were reported today.</p>
+      ) : null}
+      {groups.map(({ label, rows, note }) =>
+        rows.length ? (
+          <div className="project-end-group" key={label}>
+            <h3>{label}</h3>
+            <ul>
+              {rows.map((row) => {
+                const name = labels.get(row.key);
+                return (
+                  <li key={row.key}>
+                    <SessionDestination
+                      project={model.group.label}
+                      row={row}
+                      className="project-end-link"
+                    >
+                      <strong data-authored={row.session.titleKnown || undefined}>
+                        {name?.title}
+                      </strong>
+                      {name?.detail ? <span>{name.detail}</span> : null}
+                      <span>{note(row.source)}</span>
+                    </SessionDestination>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null,
       )}
     </ProjectCard>
   );
@@ -240,9 +271,10 @@ function TimeOnTheirOwn({ project }: { readonly project: string }) {
             min={0}
             max={100}
             value={figure.pct}
-            aria-label="Share of observed time worked independently"
+            aria-label="Share of working or waiting time spent working without an open request"
           />
-          <p>{`Over ${span ?? 'the observed window'}, you stepped in ${String(metric.humanTurns)} ${metric.humanTurns === 1 ? 'time' : 'times'}.`}</p>
+          <p>Share of working or waiting time spent working without an open request.</p>
+          <p>{`${String(metric.humanTurns)} ${metric.humanTurns === 1 ? 'intervention' : 'interventions'} inferred over ${span ?? 'the window'} of observation.`}</p>
         </>
       )}
     </ProjectCard>
@@ -287,57 +319,34 @@ function Notes({ storageKey }: { readonly storageKey: string }) {
   );
 }
 
-export function ProjectOverview({ model }: { readonly model: ProjectModel }) {
-  const { group, payload, generated } = model;
-  const selection = attentionSelectionFor(payload);
-  const sourceByKey = new Map(group.sessions.map((row) => [compatSessKey(row), row]));
-  const rows = [
-    ...new Map(
-      group.observed.sessions.filter(({ sid }) => sid).map((row) => [compatSessKey(row), row]),
-    ).values(),
-  ];
-  const reasons = new Map(
-    [...(selection?.worthALook ?? [])]
-      .filter(([row]) => row.project === group.label)
-      .map(([row, reason]) => [compatSessKey(row), reason]),
-  );
-  const clean = new Set(
-    (selection?.readyToWrapUp ?? [])
-      .filter((row) => row.project === group.label)
-      .map(compatSessKey),
-  );
-  const today = rows.filter((row) =>
-    endedToday(endedAt(sourceByKey.get(compatSessKey(row))), generated),
-  );
+export function ProjectOverview({
+  model,
+  rows,
+  labels,
+}: {
+  readonly model: ProjectModel;
+  readonly rows: readonly ProjectSession[];
+  readonly labels: Labels;
+}) {
   const storageKey = noteKey(model, 'outcome');
   return (
     <div className="project-overview-grid">
       <div>
         <ProjectCard title={SHOWN.sessions}>
+          <StatusLegend />
           <ul className="project-overview-rows">
             {rows.map((row) => {
-              const key = compatSessKey(row);
-              const source = sourceByKey.get(key);
-              const reason = reasons.get(key);
-              return (
-                <SessionRow
-                  key={key}
-                  model={model}
-                  session={row}
-                  {...(source ? { source } : {})}
-                  {...(reason ? { reason } : {})}
-                />
-              );
+              const label = labels.get(row.key);
+              return label ? (
+                <SessionRow key={row.key} model={model} row={row} label={label} />
+              ) : null;
             })}
           </ul>
-          {rows.length < group.observed.sessions.length && !rows.length ? (
-            <p>Session links are unavailable for this project.</p>
-          ) : null}
         </ProjectCard>
-        <EndResults model={model} rows={today} reasons={reasons} clean={clean} />
+        <EndResults model={model} rows={rows} labels={labels} />
       </div>
       <aside>
-        <TimeOnTheirOwn project={group.label} />
+        <TimeOnTheirOwn project={model.group.label} />
         <Notes key={storageKey} storageKey={storageKey} />
       </aside>
     </div>

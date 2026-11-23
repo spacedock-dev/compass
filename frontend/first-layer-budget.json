@@ -73,10 +73,12 @@
       "monospace": 1
     }
   },
+
   "technical": {
     "frontend/src/drift/WorkListView.tsx": "Activity log row text is under the technical details panel.",
     "frontend/src/terminal/terminal.css": "Styles terminal output, identities and attach commands."
   },
+
   "stories": [
     "accessibility--attention-at-1280-zoomed-200",
     "accessibility--attention-at-160",
@@ -513,7 +515,6 @@
     "sessions-declared-children-and-groups--parent-page-keeps-a-childs-exact-question",
     "sessions-declared-children-and-groups--parent-page-names-children-and-their-state",
     "sessions-declared-children-and-groups--parent-question-outranks-child-wait",
-    "sessions-declared-children-and-groups--plan-entity-status",
     "sessions-declared-children-and-groups--prompt-first-title-is-a-child-wait",
     "sessions-declared-children-and-groups--unmatched-child-page",
     "sessions-declared-hold-preserves-reading--completed-reading-and-final-result",
@@ -527,7 +528,7 @@
     "sessions-named-by-its-goal--session-page-names-the-held-goal",
     "sessions-named-by-its-goal--session-without-goal-keeps-its-name",
     "sessions-named-by-its-goal--untitled-waiting-session",
-    "sessions-search-and-filters--project-activity-icons",
+
     "sessions-what-the-session-has-done--a-fixed-red-test-is-not-a-failure",
     "sessions-what-the-session-has-done--an-opening-failure-before-the-gap-is-unknown",
     "sessions-what-the-session-has-done--annotations-off",
@@ -624,7 +625,6 @@
     "sessions-what-the-session-has-done-summary--working",
     "sessions-what-the-session-has-done-summary--working-over-a-saved-summary",
     "sessions-worktree-rows--header-names-the-worktree",
-    "shell-header--project",
     "steering-local-notes-and-limits--ambiguous-tripwire-refreshes",
     "steering-local-notes-and-limits--note-keeps-over-limit-text",
     "steering-local-notes-and-limits--older-notes-are-not-kept",

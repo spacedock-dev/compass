@@ -50,7 +50,7 @@ export interface AttentionSelection {
 
 const selectionByBody = new WeakMap<object, AttentionSelection>();
 
-function dirtyEndReason(source: Row): string {
+export function dirtyEndReason(source: Row): string {
   const changed = source['changed'];
   const reason = 'Ended with uncommitted work';
   if (typeof changed !== 'number' || !Number.isInteger(changed) || changed < 0) return reason;
