@@ -12,14 +12,7 @@ const FOCUS = { harness: 'claude', sid: 's-1' };
 
 function menu(props: Partial<MoreMenuProps> = {}): ReactElement {
   return (
-    <MoreMenu
-      projectKey="alpha/app"
-      focus={null}
-      running={3}
-      subagents={1}
-      briefingText={() => 'BRIEFING TEXT'}
-      {...props}
-    />
+    <MoreMenu projectKey="alpha/app" focus={null} briefingText={() => 'BRIEFING TEXT'} {...props} />
   );
 }
 
@@ -39,19 +32,14 @@ const flush = async () => {
 };
 
 describe('the project More menu', () => {
-  it('names its summary, keeps the all-project status and offers Copy briefing', () => {
+  it('names its summary and offers Copy briefing without a duplicate fleet count', () => {
     const { view } = mount(menu());
     const summary = view.getByText('More').closest('summary');
     expect(summary?.getAttribute('aria-label')).toBe('More');
     expect(summary?.querySelector('svg[data-icon="caret-down"]')).toBeInTheDocument();
-    expect(view.getByText('All projects · 3 running · 1 subagent observed')).toBeInTheDocument();
+    expect(view.queryByText(/All projects.*subagents? observed/)).toBeNull();
     expect(view.getByRole('button', { name: 'Copy briefing' })).toBeInTheDocument();
     expect(view.queryByRole('button', { name: 'Add human context' })).toBeNull();
-  });
-
-  it('pluralises the subagent count the way the legacy header does', () => {
-    const { view } = mount(menu({ subagents: 0 }));
-    expect(view.getByText('All projects · 3 running · 0 subagents observed')).toBeInTheDocument();
   });
 
   it('offers Add human context only when the caller says the note is empty and the briefing complete', () => {
@@ -125,7 +113,7 @@ describe('the project More menu', () => {
           <button type="button" onClick={() => setTick(tick + 1)}>
             tick
           </button>
-          {menu({ running: tick })}
+          {menu({ briefingText: () => String(tick) })}
         </div>
       );
     }

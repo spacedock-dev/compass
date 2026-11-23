@@ -82,6 +82,24 @@ test('session deviations preserve quoted titles and instructions', () => {
   );
 });
 
+test('projects the recorded Goal history link and keeps the same words in the session title', () => {
+  const wording =
+    'Intent logWhat it keepsThe Intent log keeps what you saved and what was raised against it after the session leaves the board.';
+  const record = {
+    title: wording,
+    parts: [['.next-cockpit-departures-kept', wording]],
+  };
+  assert.deepEqual(normaliseSessionRecord(record), {
+    title: wording,
+    parts: [
+      [
+        '.next-cockpit-departures-kept',
+        'Goal historyWhat it keepsGoal history keeps what you saved and what was raised against it after the session leaves the board.',
+      ],
+    ],
+  });
+});
+
 test('a reader sees a published session age in the projected recorded header only', () => {
   const evidence = {
     generated: 1900000000,

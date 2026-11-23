@@ -74,9 +74,13 @@ export function measureAttentionChrome(native = false) {
         el.classList.contains('next-attention-item--legacy') ? 'subject' : '',
         el.closest('.next-project-detail-rail') ? 'rail' : '',
         surface === 'notify-blocked'
-          ? el.parentElement.querySelector('.next-running')
-            ? 'fleet-header'
-            : 'project-header'
+          ? el
+              .closest('header')
+              ?.querySelector(
+                'nav[aria-label="Primary"] [aria-current="page"][href="#n=projects"]',
+              ) && document.querySelector('[data-next-view-body="project"]')
+            ? 'project-header'
+            : 'fleet-header'
           : '',
         surface === 'capacity-band' && el.matches(':hover') ? 'hover' : '',
       ]

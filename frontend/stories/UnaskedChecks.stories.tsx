@@ -409,7 +409,7 @@ function attentionWithGrant(reading: Record<string, unknown>): Story {
     },
     play: async ({ canvasElement }) => {
       const canvas = within(canvasElement);
-      await canvas.findByRole('heading', { name: /^Attention$/ });
+      await canvas.findByRole('heading', { name: /^Needs you$/ });
       await expect(
         canvas.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
       ).toBeNull();
@@ -504,7 +504,7 @@ export const ReaderKeepsNewerGrantWhenAnOldRevokeArrives: Story = {
     await expect(canvas.getByRole('switch', { name: off })).toHaveAttribute('aria-checked', 'true');
     await expect(canvas.queryByText('Codex permission for unasked checks revoked.')).toBeNull();
     lateRevokeScenario.nav?.go?.('#n=attention');
-    await canvas.findByRole('heading', { name: /^Attention$/ });
+    await canvas.findByRole('heading', { name: /^Needs you$/ });
     await expect(
       canvas.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
     ).toBeNull();
@@ -618,7 +618,7 @@ function endedSession(reading: Record<string, unknown>): Story {
     },
     play: async ({ canvasElement }) => {
       const canvas = within(canvasElement);
-      await canvas.findByRole('heading', { name: /^Attention$/ });
+      await canvas.findByRole('heading', { name: /^Needs you$/ });
       await expect(canvas.queryByRole('region', { name: 'Unasked checks cannot run' })).toBeNull();
       await expect(
         canvas.queryByRole('region', { name: 'Unasked checks waiting for permission' }),

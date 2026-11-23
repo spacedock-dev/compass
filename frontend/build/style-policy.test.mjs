@@ -212,6 +212,7 @@ test('first-layer icon callers own their Tailwind utility sources', async () => 
     'project/parts',
     'sessions/DetailParts',
     'shell/Breadcrumb',
+    'shell/UpdateNotice',
     'steering/Tripwires',
     'workstream/ChangesPanel',
   ];

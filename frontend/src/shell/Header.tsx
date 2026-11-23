@@ -1,25 +1,19 @@
 import { buttonVariants } from '../ui/button';
 import { Icon } from '../ui/icons';
-import { Button } from '../ui/button';
 import { AttentionAnnouncer } from '../attention';
+import { selectAttentionSelection } from '../attention/select';
 import { MoreMenu } from '../controls/MoreMenu';
 import { NotificationControl } from '../notify';
 import { useFocusKey } from '../controls/useFocusKey';
 import { splitSessKey, stableProjectKey } from '../api/identity';
 import { payloadSessions } from '../api/bootstrap';
+import { cn } from '../lib/utils';
 import { SHOWN } from '../language/glossary';
 import { sessionHome, type Route, type TopLevelView } from '../router/grammar';
-import { useDisplayed, useNavigate, useShell } from './context';
-import { selectHeaderCounts, type HeaderCounts } from './derive';
+import { useDisplayed, useShell } from './context';
 import { useProjectBriefing } from './projectBriefing';
 
-/* Every member of the top-level set gets an entry, and Attention is not optional: it was once absent
-   here while the router, the title and the `a` shortcut all knew it, which left a whole screen reachable
-   only by typing a fragment. Sessions comes first so the first step is opening a session. */
 const PRIMARY = ['sessions', 'projects', 'attention', 'intent', 'settings'] as const;
-
-const countLabel = (template: string, count: number): string =>
-  template.replace('{count}', String(count));
 
 /* The view a route sits under: a session sits under the view it was opened from, a project under Projects. */
 function currentView(route: Route): TopLevelView {
@@ -27,63 +21,88 @@ function currentView(route: Route): TopLevelView {
   return route.view === 'project' ? 'projects' : route.view;
 }
 
-function PrimaryNavigation({ route }: { readonly route: Route }) {
+function PrimaryNavigation({
+  route,
+  needsCount,
+}: {
+  readonly route: Route;
+  readonly needsCount: number;
+}) {
   const { controls } = useShell();
   const here = currentView(route);
   /* The current item is the focus lane's fallback for a control that stands only while something is
      wrong (Retry now), so removing it hands focus to a place the reader can see. */
   const currentRef = useFocusKey<HTMLAnchorElement>(controls.focusLane, 'primary-current');
   return (
-    <nav aria-label={SHOWN.primary}>
+    <nav aria-label={SHOWN.primary} className="flex flex-wrap items-center gap-x-1">
       {PRIMARY.map((view) => (
         <a
           data-slot="button-link"
-          className={buttonVariants({ variant: 'native' })}
+          className={cn(
+            buttonVariants({ variant: 'native' }),
+            'gap-2 rounded-card px-3 text-body font-medium text-foreground no-underline hover:bg-muted aria-[current=page]:bg-[var(--status-ended-bg)] aria-[current=page]:font-semibold aria-[current=page]:text-[var(--status-ended-ink)] forced-colors:aria-[current=page]:underline',
+          )}
           key={view}
           ref={view === here ? currentRef : undefined}
           href={`#n=${view}`}
           aria-current={view === here ? 'page' : undefined}
         >
           {SHOWN[view]}
+          {view === 'attention' && needsCount > 0 ? (
+            <>
+              {' '}
+              <span className="inline-grid min-w-5 place-items-center rounded-pill bg-[var(--amber)] px-1 text-label leading-5 font-semibold text-primary-foreground">
+                {needsCount}
+              </span>
+            </>
+          ) : null}
         </a>
       ))}
     </nav>
   );
 }
 
-/* Counts are read from the same rows the views render, never authored. Before a board has arrived, and
-   when the board carried no session collection, nothing is known, so nothing is claimed: no zero, and no
-   "live" dot, which would say the board is being watched when there is no board. */
-function RunningCounts({ counts }: { readonly counts: HeaderCounts }) {
-  if (counts.state === 'unread')
-    return <span className="next-running">{SHOWN.waitingForBoard}</span>;
-  if (counts.state === 'absent')
-    return <span className="next-running">{SHOWN.sessionDataNotPublished}</span>;
-  const running = countLabel(SHOWN.runningCount, counts.running);
-  const subagents = countLabel(
-    counts.subagents === 1 ? SHOWN.subagentCountOne : SHOWN.subagentCountMany,
-    counts.subagents,
-  );
+function WorkingPill({
+  count,
+  unread,
+}: {
+  readonly count: number | undefined;
+  readonly unread: boolean;
+}) {
+  const label =
+    count === undefined
+      ? unread
+        ? SHOWN.waitingForBoard
+        : SHOWN.sessionDataNotPublished
+      : count === 0
+        ? SHOWN.nothingWorking
+        : (count === 1 ? SHOWN.workingCountOne : SHOWN.workingCountMany).replace(
+            '{count}',
+            String(count),
+          );
+  const working = (count ?? 0) > 0;
   return (
-    <span className="next-running next-live">
-      {counts.running ? (
-        <Icon name="working" className="next-status-icon inline-block shrink-0" />
+    <span
+      role="status"
+      aria-label={SHOWN.workingSessions}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-pill px-2.5 py-0.5 text-label font-semibold',
+        working
+          ? 'bg-[var(--status-working-bg)] text-[var(--status-working-ink)]'
+          : 'bg-muted text-muted-foreground',
+      )}
+    >
+      {working ? (
+        <span aria-hidden="true" className="size-2 shrink-0 rounded-pill bg-current" />
       ) : null}
-      {` ${running} · ${subagents}`}
+      {label}
     </span>
   );
 }
 
-function ProjectMore({
-  route,
-  counts,
-}: {
-  readonly route: Extract<Route, { view: 'project' }>;
-  readonly counts: HeaderCounts;
-}) {
+function ProjectMore({ route }: { readonly route: Extract<Route, { view: 'project' }> }) {
   const data = useDisplayed((snapshot) => snapshot.data);
   const briefing = useProjectBriefing(route);
-  if (counts.state !== 'measured') return null;
   const rows = payloadSessions(data).rows.filter(
     (row) => String(row.project ?? '') === route.project,
   );
@@ -92,8 +111,6 @@ function ProjectMore({
     <MoreMenu
       projectKey={projectKey}
       focus={route.focus ? splitSessKey(route.focus) : null}
-      running={counts.running}
-      subagents={counts.subagents}
       briefingText={briefing.briefingText}
       {...(briefing.addHumanContext ? { addHumanContext: briefing.addHumanContext } : {})}
     />
@@ -101,38 +118,31 @@ function ProjectMore({
 }
 
 export function Header({ route }: { readonly route: Route }) {
-  const navigate = useNavigate();
-  const counts = useDisplayed(selectHeaderCounts);
-  const detail = route.view === 'project';
+  const selection = useDisplayed(selectAttentionSelection);
+  const counts = selection?.counts;
+  const unread = useDisplayed((snapshot) => snapshot.data === null);
   return (
-    <header className="next-header">
-      <div className="next-header-left flex flex-wrap items-center gap-x-7">
-        <span className="inline-flex items-center gap-2 text-value font-bold text-foreground">
-          <Icon name="compass" size="1.15em" className="text-primary" />
+    <header className="-mt-[18px] -mx-[26px] flex min-h-16 flex-wrap items-center justify-between gap-x-5 gap-y-2 border-b border-[var(--rule)] bg-card px-4 py-2 [@media(max-width:760px)]:mx-0">
+      <div className="flex flex-wrap items-center gap-x-5">
+        <a
+          data-slot="button-link"
+          className={cn(
+            buttonVariants({ variant: 'native' }),
+            'gap-2.5 rounded-control text-value font-bold text-foreground no-underline',
+          )}
+          href="#n=sessions"
+        >
+          <Icon name="compass" size="1.35em" className="text-primary" />
           {SHOWN.compass}
-        </span>
-        <PrimaryNavigation route={route} />
+        </a>
+        <PrimaryNavigation route={route} needsCount={counts?.badge ?? 0} />
       </div>
-      <div className="next-header-right">
-        {detail ? null : <RunningCounts counts={counts} />}
-        {counts.state === 'measured' && counts.gates > 0 ? (
-          <Button
-            variant="native"
-            type="button"
-            className="next-gate"
-            data-next-action="needs-input"
-            onClick={() => navigate({ view: 'attention', project: null, session: null })}
-          >
-            {countLabel(
-              counts.gates === 1 ? SHOWN.reportedBlockCountOne : SHOWN.reportedBlockCountMany,
-              counts.gates,
-            )}
-          </Button>
-        ) : null}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <NotificationControl />
-        {route.view === 'project' ? <ProjectMore route={route} counts={counts} /> : null}
-        <AttentionAnnouncer />
+        {route.view === 'project' && selection ? <ProjectMore route={route} /> : null}
+        <WorkingPill count={counts?.working} unread={unread} />
       </div>
+      <AttentionAnnouncer />
     </header>
   );
 }

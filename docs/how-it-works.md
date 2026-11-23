@@ -156,18 +156,20 @@ unless you start Compass with `--unasked-readings`.
 
 ## Finding your way around
 
-The dashboard has four tabs. Sessions opens first.
+Sessions opens first. The header shows how many sessions are Working across the board,
+even on a project page.
 
 | Tab | Key | What it shows |
 |---|---|---|
 | Sessions | `s` | Every session, with active work above recent history. Each active session shows where it is, what it is doing now, what it does next and whether it is blocked. Clicking a goal opens that session at its Intent card. |
 | Projects | `p` | Sessions grouped by project. Each project has its own page with a briefing on where the project stands, and Now, Course, Decisions and Console views. |
-| Attention | `a` | Everything waiting on a person. |
-| Intent log | none | Every session on the board, plus the goals Compass has kept, each labeled with where it came from. |
+| Needs you | `n` | Requests, reported blocks and risks. The badge counts Waiting on you and Worth a look. |
+| Goal history | none | Every session on the board, plus the goals Compass has kept, each labeled with where it came from. |
+| Settings | none | Dashboard preferences and AI use controls. |
 
-`Escape` goes back to where you opened a session from: Sessions, Attention, or a project's page. A
-session opened from a pasted link goes back to Sessions. The current view lives in the URL, so a
-reload or a pasted link comes back to the same place.
+`Escape` goes back to where you opened a session from. A session opened from a pasted link goes
+back to Sessions. The current view lives in the URL, so a reload or a pasted link comes back to
+the same place.
 
 The Find sessions bar at the top of Sessions searches titles, goals and prompts; press `/` to jump to
 it. Filters narrow the list by when a session started or was last active, and by project, group, harness,
@@ -179,7 +181,7 @@ every session is shown by default. A quiet headless Codex run with a recorded tu
 "run finished" and its age on the list and session page. This is a reversible reading of that turn,
 not a claim that its resumable session ended; later work withdraws it. The counts
 at the top always cover the whole board. If a filter hides a session that is waiting on you, a warning
-links to it, or to Attention when there are several. Filters reset when you reload the tab.
+links to it, or to Needs you when there are several. Filters reset when you reload the tab.
 [The Find sessions design record](design-sessions-search.md) says exactly how they count.
 
 A launcher can [declare a parent and assign a group](../HOW_TO_USE.md#nest-a-launched-run-under-its-coordinator).
@@ -210,7 +212,7 @@ Filters and grouping last across board refreshes and trips into a session; reloa
 
 The Projects list and each project's summary count Working, Waiting on you, Ended and Quiet from
 the state shown on each member's row. A parent waiting on its child or an idle session without an
-observed turn end contributes to `in no counted state`. Attention also requires an observed turn
+observed turn end contributes to `in no counted state`. Needs you also requires an observed turn
 end to count a session as Quiet.
 
 A quiet Codex rollout can still be working while a shell-capable call has no matching output.

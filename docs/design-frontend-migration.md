@@ -16,6 +16,32 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-23, the header names the `attention` and `intent` destinations Needs you and Goal history.
+The active link gets a fill and Compass links to Sessions. The browser proof projects the recorded
+nav, breadcrumb and tab-title words onto these names and still checks every fragment and its
+history. The Needs you and Goal history view comparisons apply the same heading replacements.
+
+One Working pill uses the displayed session state on every route. It replaces the event-backed
+running count, the header's subagent total and the copy of those totals in the project More menu.
+Readers can find observed subagents per session in Full activity. The Needs you badge replaces
+the reported-block button and counts Waiting on you plus Worth a look, with one row per waiting
+session. The keyboard proof uses `n` for Needs you and checks that `a` leaves the route alone.
+The update notice keeps the release link and version-specific dismissal in a light banner.
+The recorded answers stay fixed.
+
+Filter warnings, the native wait's resume link and the Full activity link use Needs you and
+Goal history for their existing destinations. The session comparisons project the new link name
+and description only in the recorded Full activity pointer. The Goal history browser comparison
+projects just the recorded level-one heading. The notification browser proof checks that focus
+returns to the current Needs you link with its badge count after permission is granted.
+
+A session with an exact request retains its native input signal on the same queue row and shows the
+reported reason inside Asked you on entry. The generated attention comparisons set aside that
+signal and its contribution to the additional-signal count. The browser comparison expects both
+on the fixture's five waiting rows. The session comparisons set aside the added note inside
+Asked you and compare the surrounding question and controls. The routed shell test checks both
+facts in view and one link for the waiting session.
+
 2026-11-23, Sessions shows one inline Worth a look flag beside the evidence-based status tile.
 The dirty-end warning and its git evidence move from Now to that line on the copy with the
 measurement. A session that counts as a wait keeps its request and one plain dirty-end fact.

@@ -2,59 +2,11 @@ import { payloadSessions } from '../api/bootstrap';
 import type { PayloadData, PayloadSession } from '../api/types';
 import { SHOWN } from '../language/glossary';
 import { noTitleText, pageTitleOf } from '../observed/session';
-import { observedFor } from '../observed/select';
-import type { BoardSnapshot } from '../store/board';
-
-/* The few figures the page's chrome reads, taken from the observed model of the rows the views render
-   (`observed/`), never counted a second way: the header, the Sessions fleet facts and the session page all
-   stand on one model of one payload, so they cannot disagree about what a running or blocked session is.
-   The header-count tests pin them against the legacy cases. */
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
-}
-
-export type HeaderCounts =
-  /** No board has been accepted yet: nothing is known, and nothing may be claimed. */
-  | { readonly state: 'unread' }
-  /** A board arrived and carried no session collection, which is not the same as an empty one. */
-  | { readonly state: 'absent' }
-  | {
-      readonly state: 'measured';
-      readonly gates: number;
-      readonly running: number;
-      readonly subagents: number;
-    };
-
-const countsByBody = new WeakMap<object, HeaderCounts>();
-/* One object, because a selector over an unread board is called on every render and must return what it
-   returned last time or `useSyncExternalStore` sees a change that never ends. */
-const UNREAD: HeaderCounts = Object.freeze({ state: 'unread' });
-
-export function deriveHeaderCounts(data: PayloadData | null): HeaderCounts {
-  if (!data) return UNREAD;
-  const cached = countsByBody.get(data);
-  if (cached) return cached;
-  let counts: HeaderCounts;
-  if (!payloadSessions(data).present) {
-    counts = { state: 'absent' };
-  } else {
-    const model = observedFor(data);
-    counts = {
-      state: 'measured',
-      gates: model.sessions.filter((session) => session.isNeeds || session.askKnown).length,
-      running: model.totals.running,
-      subagents: model.totals.subagents,
-    };
-  }
-  countsByBody.set(data, counts);
-  return counts;
-}
-
-export function selectHeaderCounts(snapshot: BoardSnapshot): HeaderCounts {
-  return deriveHeaderCounts(snapshot.data);
 }
 
 /* A session as a route names it: project exactly (an empty one included), sid, and the harness

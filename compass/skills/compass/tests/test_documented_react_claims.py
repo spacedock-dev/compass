@@ -34,7 +34,7 @@ def _sources(suffix: str) -> dict[Path, str]:
 
 class TheAttentionHeadingsTheSkillNamesAreTheOnesTheBoardDrawsTest(unittest.TestCase):
     def _skill_headings(self) -> set[str]:
-        section = SKILL.split("\n## Attention\n", 1)[1].split("\n## ", 1)[0]
+        section = SKILL.split("\n## Needs you\n", 1)[1].split("\n## ", 1)[0]
         return set(re.findall(r"\*\*([A-Z][A-Za-z ,]+?)\*\*", section))
 
     def _rendered_headings(self) -> set[str]:

@@ -1,5 +1,6 @@
 import { nextNumber } from '../api/bootstrap';
 import { durationSince, isRecord, promptCopied, type Row } from '../observed';
+import { UNCONFIRMED_WAIT_NOTE } from '../observed/session';
 import type { RouteInput } from '../router/grammar';
 import { formatDuration } from '../shell/format';
 import {
@@ -169,7 +170,7 @@ function signalNow(signal: Signal, subject: Subject, model: AttentionModel): Now
     if (session?.['wait_unconfirmed']) {
       return {
         text: sentence,
-        note: 'Unconfirmed: no positive observation in 5m; prompt may still be standing',
+        note: UNCONFIRMED_WAIT_NOTE,
       };
     }
     return { text: sentence, note: '' };

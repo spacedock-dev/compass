@@ -1,6 +1,7 @@
 import { groupOf, groupName } from './declared';
 import { unmeasuredLocationNote, measuredLocation } from '../observed/location';
 import { nextNumber } from '../api/bootstrap';
+import { SHOWN } from '../language/glossary';
 import { isRecord, promptCopied, trimmed, type Row } from '../observed';
 import { assignmentOf, sessionInstruction } from './intent';
 import {
@@ -726,7 +727,7 @@ export function waitCoverage(
     );
   if (qualified.length)
     lines.push(
-      `${joinNames(qualified)} ${qualified.length === 1 ? 'reports' : 'report'} a wait only in some setups; Attention's coverage says which.`,
+      `${joinNames(qualified)} ${qualified.length === 1 ? 'reports' : 'report'} a wait only in some setups. See coverage on ${SHOWN.attention}.`,
     );
   return lines;
 }

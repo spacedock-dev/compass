@@ -20,7 +20,7 @@
 @source '../steering/{StageConditions,Tripwires}.tsx';
 @source '../intent/PromptSelect.tsx';
 @source '../sample/**/*.{ts,tsx}';
-@source '../shell/{Breadcrumb,Header}.tsx';
+@source '../shell/{Breadcrumb,Header,UpdateNotice}.tsx';
 @source '../attention/WorthALookFlag.tsx';
 @source '../settings/**/*.{ts,tsx}';
 @source '../controls/Disclosure.tsx';

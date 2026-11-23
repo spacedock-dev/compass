@@ -91,8 +91,8 @@ export const ProjectShellLabels: Story = {
     await expect(nav.getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Sessions',
       'Projects',
-      'Attention',
-      'Intent log',
+      'Needs you',
+      'Goal history',
       'Settings',
     ]);
     await expect(nav.getByRole('link', { name: 'Projects', current: 'page' })).toBeVisible();

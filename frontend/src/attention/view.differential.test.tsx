@@ -84,6 +84,25 @@ function summarize(root: ParentNode): Summary {
       const content = article.cloneNode(true) as HTMLElement;
       // Replacement location cards change following indices; the array still checks row order.
       content.querySelector('.next-attention-index')?.remove();
+      // The recording suppressed the native wait on a row with an exact question.
+      if (content.dataset['nextAttentionKind'] === 'ask') {
+        const input = [...content.querySelectorAll('.next-attention-now-value')].find((line) =>
+          / · Input signal observed:/.test(norm(line)),
+        );
+        const label = content.querySelector('.next-attention-why a');
+        if (input && label) {
+          input.remove();
+          label.textContent = norm(label).replace(
+            / · (\d+) additional source signals?$/,
+            (_, count: string) => {
+              const previous = Number(count) - 1;
+              return previous > 0
+                ? ` · ${String(previous)} additional source signal${previous === 1 ? '' : 's'}`
+                : '';
+            },
+          );
+        }
+      }
       return {
         hidden: li.hasAttribute('hidden'),
         subject: article.dataset['nextAttentionSubject'] ?? '',
@@ -227,7 +246,12 @@ describe('the Attention screen reads as the legacy screen does, over generated p
             )
             .filter((key) => !existing.has(key)),
         );
-        const left = JSON.stringify(unchangedView(old, restored));
+        const left = JSON.stringify(
+          unchangedView(
+            { ...old, heading: old.heading.replace(/^Attention/, 'Needs you') },
+            restored,
+          ),
+        );
         const right = JSON.stringify(unchangedView(mine, restored));
         if (left !== right && !DEVIATIONS.some((d) => d.seed === seed)) {
           failures.push(
