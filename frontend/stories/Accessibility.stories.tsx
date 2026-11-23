@@ -202,6 +202,15 @@ function fitsAt(name: string, width: number): Story {
           clippedControls(canvasElement),
           `${name} at ${width}px: clipped controls`,
         ).toEqual([]);
+        if (name === 'Sessions' && (width === 375 || width === 320)) {
+          const glance = within(canvasElement).getByRole('region', { name: 'At a glance' });
+          const cards = [...glance.children].map((card) => card.getBoundingClientRect());
+          await expect(cards).toHaveLength(3);
+          for (const [index, card] of cards.entries()) {
+            await expect(card.width).toBe(cards[0]?.width);
+            if (index > 0) await expect(card.top).toBeGreaterThan(cards[index - 1]?.bottom ?? 0);
+          }
+        }
       } finally {
         await restore();
       }

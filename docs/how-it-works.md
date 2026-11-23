@@ -171,8 +171,10 @@ even on a project page.
 back to Sessions. The current view lives in the URL, so a reload or a pasted link comes back to
 the same place.
 
-The Find sessions bar at the top of Sessions searches titles, goals and prompts; press `/` to jump to
-it. Filters narrow the list by when a session started or was last active, and by project, group, harness,
+At a glance on Sessions shows what is waiting on you, what is working and what is worth a look.
+Waiting on you and Worth a look open Needs you. Working now selects Working and moves focus to
+the list. The Find sessions bar searches titles, goals and prompts. Press `/` to jump to it.
+Filters narrow the list by when a session started or was last active, and by project, group, harness,
 headless status, state, drift and goal, and presets cover Waiting on you, Started today and Drift recorded.
 Headless offers Headless and Interactive or unknown. Claude Code and Codex publish headless status;
 Codex uses the rollout entrypoint, with `exec` headless and `cli` interactive. Unknown entrypoints and

@@ -55,6 +55,29 @@ const receipts = {};
 const failures = [];
 const only = process.env.COMPASS_E2E_STEPS ? new RegExp(process.env.COMPASS_E2E_STEPS) : null;
 
+// The opening has its own assertions below. Compare the recorded list from its first group onward.
+const recordedList = ({ header: _header, fleet: _fleet, ...list }) => list;
+
+async function assertSessionsOpening(page) {
+  const header = page.locator('.next-operations-header');
+  assert.match(await header.locator('h1').textContent(), /^Good (morning|afternoon|evening)$/);
+  assert.equal(await header.locator('p').count(), 1);
+  assert.match(
+    await header.locator('p').textContent(),
+    /^You have \d+ waiting on you, \d+ working, \d+ quiet/,
+  );
+  const cards = page.getByRole('region', { name: 'At a glance' });
+  const controls = cards.locator(':scope > a, :scope > button');
+  assert.equal(await controls.count(), 3);
+  assert.match(await controls.nth(0).textContent(), /^Waiting on you \d+.*Open in Needs you$/s);
+  assert.match(await controls.nth(1).textContent(), /^Working now \d+.*Show in the list below$/s);
+  assert.match(await controls.nth(2).textContent(), /^Worth a look \d+.*Open in Needs you$/s);
+  assert.equal(await controls.nth(0).getAttribute('href'), '#n=attention');
+  assert.equal(await controls.nth(2).getAttribute('href'), '#n=attention');
+  assert.equal(await controls.nth(1).getAttribute('aria-controls'), 'sessions-list');
+  assert.equal(await page.locator('[data-next-fleet-fact]').count(), 0);
+}
+
 async function step(name, run) {
   if (only && !only.test(name)) return;
   try {
@@ -85,11 +108,6 @@ const summarizeList = () => {
   const root = document.querySelector('[data-next-view-body="sessions"]');
   if (!root) return { missing: true, text: norm(document.body).slice(0, 200) };
   return {
-    header: norm(root.querySelector('.next-operations-header')),
-    fleet: [...root.querySelectorAll('[data-next-fleet-fact]')].map((node) => [
-      node.dataset.nextFleetFact,
-      norm(node),
-    ]),
     groups: [...root.querySelectorAll('[data-next-operation-group]')].map((group) => ({
       kind: group.dataset.nextOperationGroup,
       header: norm(group.querySelector(':scope > header')),
@@ -102,7 +120,9 @@ const summarizeList = () => {
         const route = row.querySelector('a.next-operation-route');
         const copy = row.cloneNode(true);
         copy
-          .querySelectorAll('[data-next-row-state],.next-operation-scan-only')
+          .querySelectorAll(
+            '[data-next-row-state],[data-next-row-worth-a-look],.next-operation-scan-only',
+          )
           .forEach((node) => node.remove());
         for (const activity of copy.querySelectorAll('[data-next-operation-fact="now"] strong')) {
           if (activity.textContent === 'No recent activity') activity.textContent = 'quiet';
@@ -292,7 +312,7 @@ const DEVIATIONS = [
   {
     scope: 'Sessions header',
     reason:
-      'DEC-27 moves the two explanations into the shared how-to and request/block counters to Attention; goal links include saved words.',
+      'The greeting, summary and three cards replace the retired heading, orientation and fleet facts. The opening has its own assertions.',
   },
   {
     scope: 'assignment',
@@ -322,7 +342,7 @@ try {
   holder = { body: real };
   await freeze(react, holder);
 
-  await step('orientation: annotations off, unreadable store and providerless board', async () => {
+  await step('opening: annotations off, unreadable store and providerless board', async () => {
     const o = await newPage();
     const states = [
       { annotate: false, reading_routes: { claude: { provider: 'claude' } } },
@@ -339,11 +359,7 @@ try {
       for (const state of states) {
         fixture.body = { ...real, ...state };
         await load(o, board.react.origin, '#n=sessions');
-        assert.equal(
-          await o.page.locator('[data-next-sessions-orientation]').textContent(),
-          'Open a session to see what it is doing and where it stands.',
-        );
-        assert.equal(await o.page.locator('.next-operations-header > p').count(), 1);
+        await assertSessionsOpening(o.page);
         assert.equal(
           await o.page.getByRole('button', { name: 'How session history works' }).count(),
           1,
@@ -404,12 +420,13 @@ try {
           sessions: fixtures.map((item) => ({ ...item, departure_checked: index % 2 === 1 })),
         };
         await load(o, board.react.origin, '#n=sessions');
-        assert.equal(
-          await o.page.locator('[data-next-sessions-orientation]').textContent(),
-          'Open a session, set its goal and press Analyze drift to see how far it moved from it.' +
-            (index % 2 === 0
-              ? ' No session has been checked for drift yet; open one to check it.'
-              : ''),
+        await assertSessionsOpening(o.page);
+        assert.deepEqual(
+          await o.page
+            .getByRole('region', { name: 'At a glance' })
+            .locator('strong')
+            .allTextContents(),
+          ['0', '2', '0'],
         );
         assert.equal(
           await o.page.getByRole('button', { name: 'How session history works' }).count(),
@@ -419,7 +436,6 @@ try {
           await o.page.locator('.next-operations-header [data-slot=accordion-trigger]').count(),
           0,
         );
-        assert.equal(await o.page.locator('[data-next-fleet-fact]').count(), 2);
         await o.page.evaluate(() => {
           globalThis.__goalClicks = 0;
           document.addEventListener('click', (event) => {
@@ -450,7 +466,7 @@ try {
   await step(
     'differential: the real board reads as the recording does, group by group and row by row',
     async () => {
-      const old = golden.observe('real board: list');
+      const old = recordedList(golden.observe('real board: list'));
       await load(react, board.react.origin, '#n=sessions');
       const mine = await react.page.evaluate(summarizeList);
       assert.ok(
@@ -520,7 +536,7 @@ try {
       for (let seed = 1; seed <= SEEDS; seed += 1) {
         holder.body = genPayload(seed, { wellFormed: true });
         const input = digest(holder.body);
-        const old = golden.observe(`generated seed ${seed} ${input}: list`);
+        const old = recordedList(golden.observe(`generated seed ${seed} ${input}: list`));
         await load(react, board.react.origin, '#n=sessions');
         const mine = await react.page.evaluate(summarizeList);
         const found = firstDifference(old, mine);
@@ -573,7 +589,7 @@ try {
         })),
       };
       holder.body = body;
-      const old = golden.observe('hostile text: list');
+      const old = recordedList(golden.observe('hostile text: list'));
       await load(react, board.react.origin, '#n=sessions');
       const mine = await react.page.evaluate(summarizeList);
       assert.equal(firstDifference(old, mine), null);

@@ -83,6 +83,21 @@ const meta = { title: 'Attention/Project locations', component: Board } satisfie
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+async function worthALookRows(canvasElement: HTMLElement, count: number, total: number) {
+  const heading = await within(canvasElement).findByRole('heading', {
+    name: `Worth a look (${String(count)})`,
+  });
+  const section = heading.closest('section');
+  const list = section?.querySelector(':scope > ol');
+  if (!section || !list) throw new Error('Expected the Worth a look list');
+  await expect(
+    within(section).getByText(`${String(count)} of ${String(total)} sessions`),
+  ).toBeVisible();
+  const rows = within(list as HTMLElement);
+  await expect(rows.queryAllByRole('listitem')).toHaveLength(count);
+  return rows;
+}
+
 export const ProjectShellLabels: Story = {
   args: { hash: '#n=project:audits' },
   play: async ({ canvasElement }) => {
@@ -121,7 +136,7 @@ export const ProjectShellLabels: Story = {
 
 export const OneMeasuredLocation: Story = {
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByText(/of 9 sessions carry a subject/);
+    await worthALookRows(canvasElement, 0, 9);
     await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
     await expect(canvasElement.textContent).not.toContain('shared location is not established');
   },
@@ -130,20 +145,18 @@ export const OneMeasuredLocation: Story = {
 export const TwoMeasuredLocations: Story = {
   args: { locations: 2 },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await expect(
-      await canvas.findByRole('link', { name: 'Label shared across locations' }),
-    ).toHaveAttribute('href', '#n=project:audits');
-    const card = canvasElement.querySelector('[data-next-board-risk="collision"]') as HTMLElement;
-    await expect(card).toHaveTextContent('2 measured locations');
-    await expect(card).toHaveTextContent('title, worktree, id and start time');
-    await waitFor(() =>
-      expect(within(card).getAllByRole('link', { name: /Audit \d/ })).toHaveLength(9),
-    );
-    for (let i = 0; i < 9; i++)
-      await expect(
-        within(card).getByRole('link', { name: new RegExp(`Audit ${String(i)} `) }),
-      ).toHaveAttribute('href', `#n=session:audits:claude:audit-${String(i)}`);
+    const rows = await worthALookRows(canvasElement, 9, 9);
+    await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
+    for (let i = 0; i < 9; i++) {
+      const id = String(i);
+      const link = rows.getByRole('link', {
+        name: new RegExp(`^Audit ${id} · No worktree published · claude:audit-${id} · Start time `),
+      });
+      await expect(link).toHaveAttribute('href', `#n=session:audits:claude:audit-${id}`);
+      await expect(link.closest('li')).toHaveTextContent(
+        '9 sessions share this display label across 2 measured locations',
+      );
+    }
   },
 };
 
@@ -164,7 +177,7 @@ export const SharedCheckout: Story = {
 export const SameNameDistinctCheckouts: Story = {
   args: { checkout: 'distinct' },
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByText(/of 2 sessions carry a subject/);
+    await worthALookRows(canvasElement, 0, 2);
     await expect(canvasElement.querySelector('[data-next-board-risk="checkout"]')).toBeNull();
   },
 };
@@ -172,7 +185,7 @@ export const SameNameDistinctCheckouts: Story = {
 export const MissingCheckoutEvidence: Story = {
   args: { checkout: 'missing' },
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByText(/of 2 sessions carry a subject/);
+    await worthALookRows(canvasElement, 0, 2);
     await expect(canvasElement.querySelector('[data-next-board-risk="checkout"]')).toBeNull();
   },
 };
@@ -180,23 +193,25 @@ export const MissingCheckoutEvidence: Story = {
 export const MixedMeasuredAndInferred: Story = {
   args: { locations: 2, unknown: true },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await canvas.findByRole('link', { name: 'Label shared across locations' });
-    const card = canvasElement.querySelector('[data-next-board-risk="collision"]') as HTMLElement;
-    await expect(card.querySelector('.next-attention-risk-observation > p')).toHaveTextContent(
-      '8 sessions share this display label across 2 measured locations. Location not measured for 1 session with this display label',
-    );
-    await expect(within(card).getAllByRole('link', { name: /Audit \d/ })).toHaveLength(9);
+    const rows = await worthALookRows(canvasElement, 8, 9);
+    await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
+    for (const i of [0, 1, 2, 3, 4, 5, 6, 8]) {
+      const link = rows.getByRole('link', { name: new RegExp(`^Audit ${String(i)} ·`) });
+      await expect(link).toHaveAttribute('href', `#n=session:audits:claude:audit-${String(i)}`);
+      await expect(link.closest('li')).toHaveTextContent(
+        '8 sessions share this display label across 2 measured locations. Location not measured for 1 session with this display label',
+      );
+    }
+    await expect(rows.queryByRole('link', { name: /^Audit 7 ·/ })).toBeNull();
   },
 };
 
 export const UnpublishedMemberDetails: Story = {
   args: { locations: 2, fallbacks: true },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await canvas.findByRole('link', { name: 'Label shared across locations' });
+    const rows = await worthALookRows(canvasElement, 9, 9);
     await expect(
-      canvas.getByRole('link', {
+      rows.getByRole('link', {
         name: 'Title not published · No worktree published · claude:audit-8 · Start time not published',
       }),
     ).toHaveAttribute('href', '#n=session:audits:claude:audit-8');
@@ -224,7 +239,7 @@ export const RootAndSubdirectoryShareCheckout: Story = {
 export const RepeatedIdentityHasNoOrphanCard: Story = {
   args: { duplicate: true },
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByText(/of 2 sessions carry a subject/);
+    await worthALookRows(canvasElement, 0, 1);
     await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
     await expect(canvasElement).not.toHaveTextContent('Location not measured for 2 sessions');
   },

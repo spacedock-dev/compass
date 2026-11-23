@@ -262,6 +262,10 @@ On 2026-11-23, spelling out the duration in the unconfirmed wait note brought th
 2,365,691 to 2,365,695 bytes on Node 26.10.0. The allowance rises by those four bytes, to
 2,365,695 bytes. The fixture allowance stays at 250,000 bytes.
 
+On 2026-11-23, the Sessions overview and shared Needs you queues brought the page from
+2,365,695 to 2,372,971 bytes on Node 26.10.0. The allowance rises by 7,276 bytes to
+2,372,971 bytes. The fixture allowance stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

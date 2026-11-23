@@ -1,7 +1,10 @@
-import { within } from '@testing-library/react';
+import { act, fireEvent, within } from '@testing-library/react';
 import { expect, it } from 'vitest';
+import emptyBoard from '../../test/fixtures/client-contract/data-empty.json';
+import unavailableBoard from '../../test/fixtures/client-contract/data-unavailable.json';
 import { worthALookBoard } from '../../test/worthALookBoard';
 import { mountShell } from '../shell/testing';
+import { filterStoreFor } from '../sessions/filterStore';
 import { attentionSelectionFor } from './select';
 
 const { generated } = worthALookBoard();
@@ -36,8 +39,16 @@ it('renders the selector’s exact set of flags and count in the real Sessions s
 it('shows a zero only after an empty session collection arrives', async () => {
   const page = mountShell({ data: { sessions: [] } });
   const canvas = within(page.container);
+  expect(canvas.queryByRole('region', { name: 'At a glance' })).toBeNull();
   expect(canvas.queryByRole('button', { name: /Worth a look/ })).toBeNull();
   await page.settle();
+  const glance = within(canvas.getByRole('region', { name: 'At a glance' }));
+  expect(glance.getByRole('link', { name: /Waiting on you 0/ })).toBeVisible();
+  expect(glance.getByRole('button', { name: /Working now 0/ })).toBeVisible();
+  expect(glance.getByRole('link', { name: /Worth a look 0/ })).toBeVisible();
+  expect(
+    canvas.getByText('You have 0 waiting on you, 0 working, 0 quiet and 0 ended on this board.'),
+  ).toBeVisible();
   expect(canvas.getByRole('button', { name: 'Worth a look 0' })).toBeDefined();
   expect(page.container.querySelector('[data-next-row-worth-a-look]')).toBeNull();
 });
@@ -101,4 +112,151 @@ it('keeps an exact request and one dirty-end fact when the same session counts a
   ).toBeNull();
   expect(within(row).getByText('Session ended with uncommitted work')).toBeVisible();
   expect(within(row).getByText('2 changed entries')).toBeVisible();
+});
+
+it('counts the same rows in the cards, list segments and header', async () => {
+  const board = worthALookBoard();
+  const working = board.sessions.find(({ sid }) => sid === 'loop');
+  const gate = board.sessions.find(({ sid }) => sid === 'gate');
+  if (!working || !gate) throw new Error('Missing session fixtures');
+  const page = mountShell({
+    data: {
+      ...board,
+      sessions: [
+        ...board.sessions,
+        { ...working },
+        { ...gate, sid: 'reported-block', title: 'reported-block' },
+      ],
+    },
+  });
+  await page.settle();
+  const canvas = within(page.container);
+  const glance = within(canvas.getByRole('region', { name: 'At a glance' }));
+  expect(
+    canvas.getByText('You have 3 waiting on you, 2 working, 9 quiet and 5 ended on this board.'),
+  ).toBeVisible();
+  expect(glance.getByRole('link', { name: /Waiting on you 3/ })).toBeVisible();
+  expect(glance.getByRole('button', { name: /Working now 2/ })).toBeVisible();
+  expect(glance.getByRole('link', { name: /Worth a look 9/ })).toBeVisible();
+  expect(canvas.getByRole('link', { name: 'Needs you 12' })).toBeVisible();
+  expect(canvas.getByRole('status', { name: 'Working sessions' }).textContent).toBe(
+    '2 sessions working',
+  );
+
+  const filters = filterStoreFor(page.shell.controls);
+  const visible = () =>
+    [...page.container.querySelectorAll('article[data-next-session]')].map((row) =>
+      row.getAttribute('data-next-session'),
+    );
+  for (const [segment, expected] of [
+    ['waiting', ['gate', 'reported-block', 'request']],
+    ['working', ['long-turn', 'loop']],
+    [
+      'worth',
+      [
+        'dirty-end',
+        'dirty-unknown-count',
+        'dirty-one-entry',
+        'loop',
+        'long-turn',
+        'quiet-launch',
+        'disagreement',
+        'shared-one',
+        'shared-two',
+      ],
+    ],
+    ['ended', ['clean-end', 'dirty-end', 'dirty-one-entry', 'dirty-unknown-count', 'unknown-end']],
+    [
+      'quiet',
+      [
+        'dirty-stop',
+        'quiet-launch',
+        'disagreement',
+        'shared-one',
+        'shared-two',
+        'drift-none',
+        'drift-low',
+        'drift-medium',
+        'drift-high',
+      ],
+    ],
+  ] as const) {
+    await act(() => filters.set({ ...filters.get(), segment }));
+    expect(visible().sort(), segment).toEqual([...expected].sort());
+  }
+  await act(() => filters.set({ ...filters.get(), segment: 'waiting' }));
+  const row = canvas.getByRole('link', { name: 'Open session gate' }).closest('article');
+  if (!row) throw new Error('Missing the native wait row');
+  expect(within(row).getByRole('img', { name: 'Waiting on you' })).toBeVisible();
+});
+
+it('shows an ended session in both matching segments while its request remains answerable', async () => {
+  const board = worthALookBoard();
+  const page = mountShell({
+    data: {
+      ...board,
+      sessions: board.sessions.filter(({ sid }) => sid === 'clean-end'),
+      asks: [{ ...board.asks[0], session_id: 'clean-end', options: ['Yes', 'No'] }],
+    },
+  });
+  await page.settle();
+  const canvas = within(page.container);
+  const glance = within(canvas.getByRole('region', { name: 'At a glance' }));
+  expect(glance.getByRole('link', { name: /Waiting on you 1/ })).toBeVisible();
+  expect(canvas.getByRole('link', { name: 'Needs you 1' })).toBeVisible();
+  const preset = canvas.getByRole('button', { name: 'Waiting on you' });
+  fireEvent.click(preset);
+  expect(canvas.getByRole('link', { name: 'Open session clean-end' })).toBeVisible();
+  fireEvent.click(preset);
+  const filters = filterStoreFor(page.shell.controls);
+  for (const segment of ['waiting', 'ended'] as const) {
+    await act(() => filters.set({ ...filters.get(), segment }));
+    const row = canvas.getByRole('link', { name: 'Open session clean-end' }).closest('article');
+    if (!row) throw new Error('Missing ended session');
+    expect(within(row).getByRole('img', { name: 'Ended' })).toBeVisible();
+  }
+  await act(() => canvas.getByRole('link', { name: 'Open session clean-end' }).click());
+  expect(canvas.getByText('Approve?', { selector: '.next-session-ask-question' })).toBeVisible();
+  expect(canvas.getByRole('button', { name: 'Yes' }).hasAttribute('disabled')).toBe(false);
+  expect(canvas.getByRole('button', { name: 'No' }).hasAttribute('disabled')).toBe(false);
+});
+
+it('distinguishes an empty, a partially unreadable and an unclassified board at the opening', async () => {
+  const empty = mountShell({ data: emptyBoard.response.body });
+  await empty.settle();
+  expect(within(empty.container).getByText(/0 ended on this board/)).toBeVisible();
+  empty.unmount();
+
+  const partial = mountShell({ data: unavailableBoard.response.body });
+  await partial.settle();
+  const partialCanvas = within(partial.container);
+  expect(
+    partialCanvas.getByText(/among the sessions Compass could read, with some sources unavailable/),
+  ).toBeVisible();
+  expect(
+    within(partialCanvas.getByRole('region', { name: 'At a glance' })).getByRole('link', {
+      name: /Waiting on you 0/,
+    }),
+  ).toBeVisible();
+  partial.unmount();
+
+  const unclassified = mountShell({
+    data: {
+      sessions: [
+        { harness: 'claude', sid: 'scan', state: 'idle', acquisition: 'scan-only' },
+        { harness: 'claude', sid: 'unknown' },
+        {
+          harness: 'claude',
+          sid: 'child',
+          state: 'working',
+          waiting_on_child: true,
+          declared_children: [{ harness: 'claude', sid: 'helper' }],
+        },
+      ],
+    },
+  });
+  await unclassified.settle();
+  expect(
+    within(unclassified.container).getByText(/and 3 with limited state evidence on this board/),
+  ).toBeVisible();
 });

@@ -141,8 +141,8 @@ try {
     const probe = await contextFor(ready.port);
     try {
       await probe.page.goto(probe.origin + '/');
-      await probe.page.getByRole('heading', { level: 1, name: 'Session operations' }).waitFor();
-      // Needs you draws its own sections from the board.
+      await probe.page.getByRole('region', { name: 'At a glance' }).waitFor();
+      // Attention is real too: it draws its own sections from the board, and nothing stands in for it.
       await probe.page.goto(probe.origin + '/#n=attention');
       await probe.page.getByRole('heading', { level: 1, name: 'Needs you' }).waitFor();
       await probe.page.getByRole('heading', { name: 'Not on this board yet' }).waitFor();

@@ -445,7 +445,6 @@
     "|.next-attention-open|margin:0;padding:0;list-style:none",
     "|.next-attention-part|display:grid;gap:4px;color:var(--ink2);font-size:var(--fs-body);line-height:1.5",
     "|.next-attention-projects-link|display:inline-flex;align-items:center;justify-self:start;margin-left:120px;color:var(--ink2);font-size:var(--fs-label)",
-    "|.next-attention-quiet|color:var(--ink2)",
     "|.next-attention-risk-detail small|display:block;font-size:inherit",
     "|.next-attention-risk-detail|display:grid;gap:5px;margin-top:5px;color:var(--ink2);font-size:var(--fs-body);font-weight:500;line-height:1.55",
     "|.next-attention-risk-identity a|display:flex;align-items:center;color:var(--ink);text-decoration-color:var(--line);text-underline-offset:4px",

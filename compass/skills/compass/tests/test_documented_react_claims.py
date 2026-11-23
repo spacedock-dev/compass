@@ -39,8 +39,29 @@ class TheAttentionHeadingsTheSkillNamesAreTheOnesTheBoardDrawsTest(unittest.Test
 
     def _rendered_headings(self) -> set[str]:
         view = (SRC / "attention/AttentionView.tsx").read_text(encoding="utf-8")
-        rendered = set(re.findall(r"<Heading section=\"[a-z-]+\">([^<]+)</Heading>", view))
-        return rendered | set(re.findall(r'title="([A-Z][A-Za-z ,]+)"', view))
+        glossary = (SRC / "language/glossary.ts").read_text(encoding="utf-8")
+        row_words = glossary.split("export const SESSION_ROW_WORDS = {", 1)[1].split(
+            "} as const;", 1
+        )[0]
+        labels = {
+            key: label
+            for key, _, label in re.findall(r"^\s*(\w+): (['\"])(.+?)\2,$", row_words, re.MULTILINE)
+        }
+
+        headings = re.findall(r'<Heading section="[a-z-]+">([^<]+)</Heading>', view)
+        headings += re.findall(
+            r'<QueueSection\s+section="[a-z-]+"\s+title=("[^"]+"|\{[^}]+\})', view
+        )
+        rendered: set[str] = set()
+        for heading in headings:
+            # Resolve the row glossary wherever the board uses it as a heading or queue title.
+            reference = re.fullmatch(
+                r"\{SESSION_ROW_WORDS\.(\w+)\}"
+                r"|\{`\$\{SESSION_ROW_WORDS\.(\w+)\} \(\$\{[^{}]+\}\)`\}",
+                heading,
+            )
+            rendered.add(labels[reference[1] or reference[2]] if reference else heading.strip('"'))
+        return rendered
 
     def test_the_two_name_the_same_headings(self) -> None:
         self.assertEqual(
@@ -49,13 +70,13 @@ class TheAttentionHeadingsTheSkillNamesAreTheOnesTheBoardDrawsTest(unittest.Test
             "the Attention headings moved; the skill body and `AttentionView.tsx` have to move together",
         )
 
-    def test_the_headings_are_the_six_the_board_has_always_drawn(self) -> None:
+    def test_the_headings_are_the_six_named_in_the_redesign(self) -> None:
         # Pinned by name so an empty derivation on both sides cannot pass the equality above.
         self.assertEqual(
             {
-                "Needs you now",
-                "At risk",
-                "Close the loop",
+                "Waiting on you",
+                "Worth a look",
+                "Ready to wrap up",
                 "Coming next",
                 "Also at risk, off the session count",
                 "Not on this board yet",

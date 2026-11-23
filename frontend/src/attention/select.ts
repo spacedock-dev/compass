@@ -33,6 +33,10 @@ export interface AttentionSelection {
   readonly worthALookNotices: readonly Subject[];
   readonly readyToWrapUp: readonly ObservedSession[];
   readonly working: readonly ObservedSession[];
+  readonly quiet: readonly ObservedSession[];
+  readonly ended: readonly ObservedSession[];
+  readonly sessionCount: number;
+  readonly limitedStateCount: number;
   readonly offCountRisks: readonly Subject[];
   /** A published collection can have independently measured notices even if every session read fails. */
   readonly counts: {
@@ -127,14 +131,22 @@ function buildSelection(body: object, payload: Row, model: AttentionModel): Atte
   const worthALook = new Map<ObservedSession, string>();
   const readyToWrapUp: ObservedSession[] = [];
   const working: ObservedSession[] = [];
+  const quiet: ObservedSession[] = [];
+  const ended: ObservedSession[] = [];
+  let limitedStateCount = 0;
   for (const copies of byIdentity.values()) {
     const wait = copies.find((row) => row.isNeeds || row.askKnown);
+    const row = wait ?? copies[0];
+    if (!row) continue;
+    const state = sessionState(row);
+    if (state === 'Working') working.push(row);
+    if (state === 'Quiet') quiet.push(row);
+    if (state === 'Ended') ended.push(row);
+    if (state === 'Waiting on child' || state === 'State not published') limitedStateCount += 1;
     if (wait) {
       waitingOnYou.push(wait);
       continue;
     }
-    const workingRow = copies.find((row) => sessionState(row) === 'Working');
-    if (workingRow) working.push(workingRow);
 
     const dirty = copies.find((row) => row.isEnded && sourceByRow.get(row)?.['dirty'] === true);
     const dirtySource = dirty && sourceByRow.get(dirty);
@@ -167,6 +179,10 @@ function buildSelection(body: object, payload: Row, model: AttentionModel): Atte
     worthALookNotices,
     readyToWrapUp,
     working,
+    quiet,
+    ended,
+    sessionCount: byIdentity.size,
+    limitedStateCount,
     offCountRisks,
     counts: unavailable
       ? null

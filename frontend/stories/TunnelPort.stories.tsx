@@ -85,7 +85,9 @@ export const ARefusedActionExplainsTheMatchingPort: Story = {
     await expect(field).toHaveValue(3000);
     await userEvent.click(canvas.getByRole('heading', { name: 'Settings' }));
     await userEvent.keyboard('s');
-    await expect(await canvas.findByText('Synthetic tunnel session')).toBeVisible();
+    await expect(
+      await canvas.findByRole('link', { name: 'Open session Synthetic tunnel session' }),
+    ).toBeVisible();
     await expect(canvas.getByText(sentence)).toBeVisible();
   },
 };

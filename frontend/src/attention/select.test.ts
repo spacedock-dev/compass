@@ -263,3 +263,17 @@ it('flags both measured members of a shared-label collision even if one ended wi
     'Shared project label',
   ]);
 });
+
+it('keeps an ended session with an open request waiting until it is answered', () => {
+  const board = worthALookBoard();
+  const sessions = board.sessions.filter(({ sid }) => sid === 'clean-end');
+  const asks = [{ ...board.asks[0], session_id: 'clean-end' }];
+  const waiting = attentionSelectionFor({ ...board, sessions, asks });
+  expect(waiting?.waitingOnYou.map(({ sid }) => sid)).toEqual(['clean-end']);
+  expect(waiting?.ended.map(({ sid }) => sid)).toEqual(['clean-end']);
+  expect(waiting?.readyToWrapUp).toEqual([]);
+  expect(waiting?.counts?.badge).toBe(1);
+  const answered = attentionSelectionFor({ ...board, sessions, asks: [] });
+  expect(answered?.waitingOnYou).toEqual([]);
+  expect(answered?.readyToWrapUp.map(({ sid }) => sid)).toEqual(['clean-end']);
+});

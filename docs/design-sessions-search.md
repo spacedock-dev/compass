@@ -14,8 +14,8 @@ active/history section; Group by group adds label buckets within those sections.
 
 ## The toolbar
 
-The toolbar sits in normal page flow inside `<search aria-label="Find sessions">`, after the fleet
-facts (ACTIVE NOW and WORKING) and before Active now. It holds:
+The toolbar sits in normal page flow inside `<search aria-label="Find sessions">`, after At a glance
+and before the session list. It holds:
 
 - a search field, an uncontrolled `DraftInput` with a leading search icon, a `/` hint and a Clear
   search button;
@@ -32,22 +32,26 @@ Filtering is one pure function applied after `buildSessionsScreen`. It removes r
 and keeps their rank and lane order before arranging declared families and optional group buckets. A row that moves between
 groups on a poll moves inside the filter. While a filter is on, each group gains a line directly after
 its header, "N of M shown", with its own Clear filters button for a reader who has scrolled away from
-the bar. M is the group's unfiltered size, so the M for Active now always equals the ACTIVE NOW figure;
-both are `groups.active.length`.
+the bar. M is the group's unfiltered size.
 
-ACTIVE NOW and WORKING stay board-wide while filtering, as do the header's Working pill,
-the Needs you badge, the favicon and the document title. The result line reads "Showing 4 of
-12 sessions. ACTIVE NOW and WORKING above count the whole board." The owner chose this on
-2026-10-29. Making the figures follow the filter would change what they have meant since 2026-10-20,
-and the recorded answers they are held to.
+The 2026-10-29 decision keeps the summary and all three At a glance cards board-wide while filtering.
+Working now uses the same Working sessions as the header pill. Waiting on you and Worth a look open
+the corresponding queues on Needs you. A reported gate and an exact question on the same session
+count once. An ended session with an open question appears in both lifecycle and waiting counts, and the
+Waiting on you preset includes it.
+When a source cannot be read, the summary describes the rows Compass could read. Rows without a
+published state or waiting on a child appear in the limited state count.
 
-The toolbar stays out of every region `sessions.differential.test.tsx` compares: the operations
-header, the fleet facts, each group's header, the group's empty sentence and each row with its
-buttons. The shown-line and the filtered-empty sentences render only while a filter is on, each in an
-element of its own, so the default render of every compared region is unchanged and
-[the recorded answers](design-frontend-migration.md#held-to-recorded-answers) need no departure. Row
-hints ("Matched in ...", "Started ...") render inside the identity cell, and only while a search or a
-date filter is on.
+Working now selects Working in the filter store, clears a conflicting state choice and moves focus
+to the list. Search and other filters still apply. Press Working now again to clear the Working
+selection, including when the list is empty.
+The result line reads "Showing 4 of 12 sessions. At a glance counts the whole board."
+
+The toolbar sits outside the group headers, empty sentences and rows compared by
+`sessions.differential.test.tsx`. The conditional shown and filtered-empty sentences have their own
+elements. [The recorded answers](design-frontend-migration.md#held-to-recorded-answers) record the
+retired header and counters. Row hints ("Matched in ...", "Started ...") render inside the identity
+cell while a search or a date filter is on.
 
 Nothing on Sessions is sticky, and the toolbar is not either, because focus restoration and route
 scrolling assume that. Below 620px the field spans the width, the `/` hint is hidden, the buttons

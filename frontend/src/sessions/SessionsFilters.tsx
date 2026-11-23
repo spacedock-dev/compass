@@ -11,7 +11,7 @@ import {
 } from 'react';
 import { Disclosure, disclosureKey, useControls, useFocusKey } from '../controls';
 import { DraftInput } from '../controls/DraftField';
-import { EXPLANATIONS, SHOWN } from '../language/glossary';
+import { EXPLANATIONS, SESSION_LIST_WORDS, SHOWN } from '../language/glossary';
 import { datedClock } from '../observed/values';
 import { useNavigate } from '../shell/context';
 import { keyIsTaken, SKIP_ROLE_SELECTOR } from '../shell/keyboard';
@@ -43,6 +43,7 @@ import {
   QUERY_LIMIT,
   queryTerms,
   resultLine,
+  SEGMENT_LABELS,
   toggled,
   unstampedHidden,
   unstampedLine,
@@ -531,6 +532,16 @@ export function SessionsFilters({
     readonly inert: string;
     readonly clear: () => void;
   }[] = [];
+  if (filters.segment !== 'all') {
+    const segment = SEGMENT_LABELS[filters.segment];
+    chips.push({
+      key: 'segment',
+      full: segment,
+      short: segment,
+      inert: '',
+      clear: () => set({ segment: 'all' }),
+    });
+  }
   const date = dateChip(filters, dates.unstamped);
   if (date)
     chips.push({
@@ -965,7 +976,7 @@ export function SessionsFilters({
         </p>
         <p className="next-why-body">
           A session that does not publish a value is counted under its own option, never as zero and
-          never as older. Active now and Working above always count the whole board.
+          never as older. {SESSION_LIST_WORDS.atAGlance} counts the whole board.
         </p>
       </Disclosure>
       {chips.length ? (

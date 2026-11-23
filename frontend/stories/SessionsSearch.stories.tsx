@@ -9,7 +9,7 @@ import { createShell } from '../src/shell/createShell';
 import type { Shell } from '../src/shell/context';
 import { createFakeClock, createFakeEnvironment, type FakeClock } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
-import { worthALookBoard } from '../test/worthALookBoard';
+import { GENERATED as GLANCE_GENERATED, worthALookBoard } from '../test/worthALookBoard';
 import { openInFlow } from './disclosure.flow';
 import {
   GENERATED,
@@ -39,6 +39,61 @@ const current = (): Rig => {
   return rig;
 };
 
+function glanceBoard(generated: number, links: boolean) {
+  const board = worthALookBoard();
+  const titles: Record<string, string> = {
+    gate: 'Fix the flaky sign-in test',
+    loop: 'Review pull request #482',
+    'dirty-end': 'Nightly dependency check',
+    'clean-end': 'Clean up old branches',
+    'drift-none': 'Update the release checklist',
+  };
+  const sessions = board.sessions
+    .filter(({ sid }) => sid in titles || (links && sid.startsWith('shared-')))
+    .map((row) => ({ ...row, title: titles[row.sid] ?? row.title }));
+  return {
+    ...board,
+    generated,
+    ask: links,
+    asks: links ? board.asks.filter(({ session_id }) => session_id === 'gate') : [],
+    sessions: [
+      ...sessions,
+      {
+        sid: 'onboarding',
+        title:
+          generated === GLANCE_GENERATED
+            ? 'Write the onboarding guide'
+            : 'Update the onboarding guide',
+        project: 'onboarding',
+        harness: 'claude',
+        state: 'working',
+      },
+    ],
+  };
+}
+
+const limitedBoard = {
+  harnesses: [{ key: 'droid', label: 'Droid', discovered: true, error: 'Store unavailable' }],
+  sessions: [
+    {
+      sid: 'deploy',
+      project: 'ops',
+      harness: 'claude',
+      state: 'needs_input',
+      state_detail: 'Approve production?',
+    },
+    {
+      sid: 'docs',
+      project: 'manual',
+      harness: 'claude',
+      state: 'needs_input',
+      title: 'Edit handbook',
+      state_detail: 'Choose chapter?',
+    },
+    { sid: 'scan', project: 'manual', harness: 'gemini', state: 'idle', acquisition: 'scan-only' },
+  ],
+};
+
 function Board({
   annotate = true,
   showAll = false,
@@ -49,13 +104,21 @@ function Board({
   readonly annotate?: boolean;
   readonly showAll?: boolean;
   readonly rowExamples?: boolean;
-  readonly flagBoard?: 'mixed' | 'empty' | 'failed' | 'future-end';
+  readonly flagBoard?: 'mixed' | 'empty' | 'failed' | 'future-end' | 'glance' | 'links' | 'limited';
   readonly hash?: string;
 }) {
   const [shell] = useState(() => {
     const history = fakeRouterEnvironment(hash);
-    const clock = createFakeClock();
-    const live: Rig['live'] = { generated: GENERATED, annotate, showAll, rowExamples };
+    const clock =
+      flagBoard === 'glance' || flagBoard === 'links'
+        ? createFakeClock(new Date(2026, 10, 22, flagBoard === 'links' ? 15 : 11).getTime())
+        : createFakeClock();
+    const live: Rig['live'] = {
+      generated: flagBoard === 'glance' || flagBoard === 'links' ? GLANCE_GENERATED : GENERATED,
+      annotate,
+      showAll,
+      rowExamples,
+    };
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
     const made = createShell({
       env: createFakeEnvironment({ clock }),
@@ -71,45 +134,52 @@ function Board({
             ? json(
                 flagBoard === 'mixed'
                   ? worthALookBoard()
-                  : flagBoard === 'empty'
-                    ? {
-                        sessions: live.flagPoll
-                          ? worthALookBoard().sessions.filter(({ sid }) => sid === 'clean-end')
-                          : [],
-                      }
-                    : flagBoard === 'failed'
+                  : flagBoard === 'limited'
+                    ? limitedBoard
+                    : flagBoard === 'empty'
                       ? {
-                          sessions: [],
-                          harnesses: [
-                            {
-                              key: 'claude',
-                              label: 'Claude Code',
-                              discovered: true,
-                              error: 'Read failed',
-                            },
-                          ],
+                          sessions:
+                            live.flagPoll || live.generated !== GENERATED
+                              ? worthALookBoard().sessions.filter(
+                                  ({ sid }) => sid === (live.flagPoll ? 'clean-end' : 'gate'),
+                                )
+                              : [],
                         }
-                      : flagBoard === 'future-end'
+                      : flagBoard === 'failed'
                         ? {
-                            generated: GENERATED,
-                            sessions: [
+                            sessions: [],
+                            harnesses: [
                               {
-                                harness: 'claude',
-                                sid: 'future',
-                                title: 'Future-dated end',
-                                project: 'p',
-                                ended_at: GENERATED + 60,
-                              },
-                              {
-                                harness: 'claude',
-                                sid: 'recent',
-                                title: 'Recently ended',
-                                project: 'p',
-                                ended_at: GENERATED - 60,
+                                key: 'claude',
+                                label: 'Claude Code',
+                                discovered: true,
+                                error: 'Read failed',
                               },
                             ],
                           }
-                        : sessionsSearchPayload({ ...live }),
+                        : flagBoard === 'future-end'
+                          ? {
+                              generated: GENERATED,
+                              sessions: [
+                                {
+                                  harness: 'claude',
+                                  sid: 'future',
+                                  title: 'Future-dated end',
+                                  project: 'p',
+                                  ended_at: GENERATED + 60,
+                                },
+                                {
+                                  harness: 'claude',
+                                  sid: 'recent',
+                                  title: 'Recently ended',
+                                  project: 'p',
+                                  ended_at: GENERATED - 60,
+                                },
+                              ],
+                            }
+                          : flagBoard === 'glance' || flagBoard === 'links'
+                            ? glanceBoard(live.generated, flagBoard === 'links')
+                            : sessionsSearchPayload({ ...live }),
               )
             : json({}),
         ),
@@ -147,6 +217,208 @@ export const ReportedEndWithoutAge: Story = {
     await expect(row.getByText('Session reported its own end')).toBeVisible();
     await expect(row.queryByText(/ended \d+ .* ago/)).toBeNull();
     await expect(canvas.getByText('ended 1 minute ago')).toBeVisible();
+  },
+};
+
+export const SessionsAtAGlance: Story = {
+  args: { flagBoard: 'glance' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const heading = await canvas.findByRole('heading', { level: 1, name: 'Good morning' });
+    const summary = canvas.getByText(
+      'You have 1 waiting on you, 2 working, 1 quiet and 2 ended on this board.',
+    );
+    await expect(heading.parentElement?.querySelectorAll('p')).toHaveLength(1);
+    await expect(summary).toBeVisible();
+    const region = canvas.getByRole('region', { name: 'At a glance' });
+    const glance = within(region);
+    const waiting = glance.getByRole('link', { name: /^Waiting on you 1 .*Open in Needs you$/ });
+    const working = glance.getByRole('button', {
+      name: /^Working now 2 .*Show in the list below$/,
+    });
+    const worth = glance.getByRole('link', { name: /^Worth a look 2 .*Open in Needs you$/ });
+    await expect([...region.children]).toEqual([waiting, working, worth]);
+    for (const label of [heading, summary, ...region.querySelectorAll('span, strong')]) {
+      const style = getComputedStyle(label);
+      await expect(style.fontFamily).toMatch(/Inter/);
+      await expect(style.fontFamily).not.toMatch(/monospace/i);
+      await expect(style.textTransform).toBe('none');
+    }
+    current().clock.advance(2 * 60 * 60 * 1000);
+    await poll();
+    await expect(
+      await canvas.findByRole('heading', { name: 'Good afternoon', level: 1 }),
+    ).toBeVisible();
+    await expect(glance.getByText('Update the onboarding guide')).toBeVisible();
+  },
+};
+
+export const SessionsReportsLimitedCoverage: Story = {
+  args: { flagBoard: 'limited' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const region = await canvas.findByRole('region', { name: 'At a glance' });
+    const summary =
+      'You have 2 waiting on you, 0 working, 0 quiet, 0 ended and 1 with limited state evidence among the sessions Compass could read, with some sources unavailable.';
+    await expect(canvas.getByText(summary)).toBeVisible();
+    await expect(region).toHaveAccessibleDescription(summary);
+    const card = within(within(region).getByRole('link', { name: /Waiting on you 2/ }));
+    const deploy = card.getByText('Approve production?').parentElement;
+    const handbook = card.getByText('Choose chapter?').parentElement;
+    await expect(deploy).toHaveTextContent('Title not published');
+    await expect(deploy).not.toHaveTextContent('Edit handbook');
+    await expect(handbook).toHaveTextContent('Edit handbook');
+  },
+};
+
+export const AtAGlanceLinksAndWorkingFilter: Story = {
+  args: { flagBoard: 'links' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const cards = () => within(canvas.getByRole('region', { name: 'At a glance' }));
+    await canvas.findByRole('region', { name: 'At a glance' });
+    const waiting = cards().getByRole('link', { name: /Waiting on you 1/ });
+    const working = cards().getByRole('button', { name: /Working now 2/ });
+    const worth = cards().getByRole('link', { name: /Worth a look 4/ });
+    if ('__vitest_browser_runner__' in window) {
+      const { page, userEvent: keyboard } = await import('vitest/browser');
+      const edge = (card: HTMLElement) => {
+        const style = getComputedStyle(card);
+        return [style.borderTopColor, style.boxShadow];
+      };
+      const heading = page.getByRole('heading', { name: 'Good afternoon' });
+      const region = page.getByRole('region', { name: 'At a glance' });
+      await heading.hover();
+      const resting = edge(waiting);
+      await region.getByRole('link', { name: /Waiting on you 1/ }).hover();
+      const hovered = edge(waiting);
+      await expect(hovered[0]).not.toBe(resting[0]);
+      await expect(hovered[1]).not.toBe('none');
+      await region.getByRole('button', { name: /Working now 2/ }).hover();
+      await expect(edge(working)).toEqual(hovered);
+      await region.getByRole('link', { name: /Worth a look 4/ }).hover();
+      await expect(edge(worth)).toEqual(hovered);
+      await heading.hover();
+
+      for (
+        let step = 0;
+        step < 12 && canvasElement.ownerDocument.activeElement !== waiting;
+        step += 1
+      ) {
+        await keyboard.tab();
+      }
+      await expect(waiting).toHaveFocus();
+      const outline = getComputedStyle(waiting).outline;
+      await expect(getComputedStyle(waiting).outlineWidth).not.toBe('0px');
+      for (const card of [working, worth]) {
+        await keyboard.tab();
+        await expect(card).toHaveFocus();
+        await expect(getComputedStyle(card).outline).toBe(outline);
+      }
+    }
+    for (const [label, section, identities] of [
+      [/Waiting on you 1/, 'needs', ['gate']],
+      [/Worth a look 4/, 'risk', ['dirty-end', 'loop', 'shared-one', 'shared-two']],
+    ] as const) {
+      await userEvent.click(cards().getByRole('link', { name: label }));
+      await expect(
+        await canvas.findByRole('heading', { name: 'Needs you', level: 1 }),
+      ).toBeVisible();
+      const queue = canvasElement.querySelector(`[data-next-attention-section="${section}"] > ol`);
+      if (!queue) throw new Error(`Missing ${section} section`);
+      const rows = [...queue.querySelectorAll<HTMLElement>('article[data-next-subject-key]')];
+      await expect(
+        rows
+          .map(
+            (row) => JSON.parse(row.dataset['nextSubjectKey']?.slice('session:'.length) ?? '[]')[1],
+          )
+          .sort(),
+      ).toEqual([...identities]);
+      if (section === 'needs') {
+        await expect(rows[0]).toHaveTextContent('Waiting for you to approve a command');
+        await expect(rows[0]).toHaveTextContent('Approve?');
+        const wrap = canvasElement.querySelector('[data-next-attention-section="close"]');
+        await expect(wrap).toHaveTextContent('Ready to wrap up (1)');
+        await expect(wrap?.querySelector('[data-next-subject-key]')).toHaveAttribute(
+          'data-next-subject-key',
+          'session:["claude","clean-end"]',
+        );
+      } else {
+        await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
+        for (const row of rows.filter((row) =>
+          row.dataset['nextSubjectKey']?.includes('shared-'),
+        )) {
+          await expect(row).toHaveTextContent('Shared project label');
+        }
+        await expect(
+          rows.find((row) => row.dataset['nextSubjectKey']?.includes('dirty-end')),
+        ).toHaveTextContent('uncommitted');
+      }
+      const { history } = current();
+      history.back();
+      history.flush();
+      await canvas.findByRole('region', { name: 'At a glance' });
+    }
+    const button = cards().getByRole('button', { name: /Working now 2/ });
+    const list = canvas.getByRole('region', { name: 'All sessions' });
+    const rows = () => within(list).getAllByRole('link', { name: /^Open session / });
+    await expect(button).toHaveAttribute('aria-controls', list.id);
+    const waitingPreset = canvas.getByRole('button', { name: /^Waiting on you$/ });
+    await userEvent.click(waitingPreset);
+    await expect(waitingPreset).toHaveAttribute('aria-pressed', 'true');
+    const search = canvas.getByRole('searchbox', { name: 'Search sessions' });
+    await userEvent.type(search, 'onboarding');
+    await userEvent.click(button);
+    await expect(search).toHaveValue('onboarding');
+    await expect(waitingPreset).toHaveAttribute('aria-pressed', 'false');
+    await waitFor(async () => {
+      await expect(list).toHaveFocus();
+      await expect(rows()).toHaveLength(1);
+      await expect(rows()[0]).toHaveAccessibleName('Open session Write the onboarding guide');
+    });
+    await expect(list.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
+    await expect(list.getBoundingClientRect().top).toBeLessThan(window.innerHeight);
+    await userEvent.clear(search);
+    await waitFor(async () => await expect(rows()).toHaveLength(2));
+    await poll();
+    await expect(
+      await within(list).findByRole('link', { name: 'Open session Update the onboarding guide' }),
+    ).toBeVisible();
+    await expect(rows()).toHaveLength(2);
+    await userEvent.click(
+      within(list).getByRole('link', { name: 'Open session Review pull request #482' }),
+    );
+    await expect(
+      await canvas.findByRole('heading', { name: 'Review pull request #482', level: 1 }),
+    ).toBeVisible();
+    (document.activeElement as HTMLElement | null)?.blur();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(async () => {
+      await expect(cards().getByRole('button', { name: /Working now 2/ })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      await expect(
+        within(canvas.getByRole('region', { name: 'All sessions' })).getAllByRole('link', {
+          name: /^Open session /,
+        }),
+      ).toHaveLength(2);
+    });
+  },
+};
+
+export const WorkingCanBeClearedOnAnEmptyBoard: Story = {
+  args: { flagBoard: 'empty' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const working = await canvas.findByRole('button', { name: /Working now 0/ });
+    await userEvent.click(working);
+    await expect(working).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(working);
+    await expect(working).toHaveAttribute('aria-pressed', 'false');
+    await poll();
+    const list = within(canvas.getByRole('region', { name: 'All sessions' }));
+    await expect(await list.findByRole('link', { name: 'Open session gate' })).toBeVisible();
   },
 };
 
@@ -338,7 +610,7 @@ export const StatusLegend: Story = {
   },
 };
 
-export const StatusTilesWithBlankProgress: Story = {
+export const StatusTilesWithoutProgress: Story = {
   args: { rowExamples: true },
   play: async ({ canvasElement }) => {
     await ready(canvasElement);
@@ -362,10 +634,14 @@ export const StatusTilesWithBlankProgress: Story = {
         row.querySelector('.next-operation-progress, [data-variant="progress"]'),
       ).toBeNull();
       await expect(row).not.toHaveTextContent(/No goal yet|Not checked yet/);
-      if (window.innerWidth > 1100) {
-        await expect(getComputedStyle(row).gridTemplateColumns).toMatch(/ 176px$/);
-      }
     }
+    await atWidth(1200, async () => {
+      const active = rowOf(canvasElement, 'B');
+      const history = canvasElement.querySelector('[data-next-operation-history]');
+      if (!active || !history) throw new Error('Missing desktop session rows');
+      await expect(getComputedStyle(active).gridTemplateColumns.split(' ')).toHaveLength(6);
+      await expect(getComputedStyle(history).gridTemplateColumns.split(' ')).toHaveLength(4);
+    });
   },
 };
 
@@ -594,9 +870,9 @@ export const DefaultBoard: Story = {
       [...page.fonts].some((face) => face.family === 'Inter' && face.status === 'loaded'),
     ).toBe(true);
     const search = canvas.getByRole('search', { name: 'Find sessions' });
-    const fleet = canvas.getByRole('region', { name: 'Fleet facts' });
+    const glance = canvas.getByRole('region', { name: 'At a glance' });
     const active = canvas.getByRole('heading', { level: 2, name: 'Active now' });
-    await expect(fleet.compareDocumentPosition(search) & FOLLOWS).toBeTruthy();
+    await expect(glance.compareDocumentPosition(search) & FOLLOWS).toBeTruthy();
     await expect(search.compareDocumentPosition(active) & FOLLOWS).toBeTruthy();
     await expect(resultText(canvasElement)).toBe('12 sessions active in the last 24 hours.');
     await expect(chips(canvasElement)).toEqual([]);
@@ -612,9 +888,9 @@ export const DefaultBoard: Story = {
     await expect(headerText(canvasElement, 'active')).toBe(ACTIVE_HEADER);
     await expect(headerText(canvasElement, 'history')).toBe(HISTORY_HEADER);
     await expect(shownLines(canvasElement)).toEqual([]);
-    const facts = canvasElement.querySelector('[data-next-fleet-fact="active"]') as HTMLElement;
-    await expect(facts.querySelector('strong')).toHaveTextContent('4');
-    await expect(facts.querySelector('small')).toHaveTextContent('12 recently observed');
+    const cards = within(glance);
+    await expect(cards.getByRole('link', { name: /Waiting on you 1/ })).toBeVisible();
+    await expect(cards.getByRole('button', { name: /Working now 2/ })).toBeVisible();
   },
 };
 
@@ -663,12 +939,12 @@ export const TitlesOpenSessions: Story = {
 export const SearchByWords: Story = {
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
-    const fleet = canvas.getByRole('region', { name: 'Fleet facts' });
-    const before = fleet.textContent;
+    const glance = canvas.getByRole('region', { name: 'At a glance' });
+    const before = glance.textContent;
     await userEvent.type(canvas.getByRole('searchbox', { name: 'Search sessions' }), 'release');
     await waitFor(() =>
       expect(resultText(canvasElement)).toBe(
-        'Showing 2 of 12 sessions. ACTIVE NOW and WORKING above count the whole board.',
+        'Showing 2 of 12 sessions. At a glance counts the whole board.',
       ),
     );
     await expect(shownRows(canvasElement)).toBe('BK');
@@ -689,7 +965,7 @@ export const SearchByWords: Story = {
     await expect(
       within(guard).getByRole('link', { name: 'Open it: Combat Completion' }),
     ).toBeVisible();
-    await expect(fleet.textContent).toBe(before);
+    await expect(glance.textContent).toBe(before);
   },
 };
 

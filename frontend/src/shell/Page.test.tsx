@@ -264,7 +264,7 @@ describe('the header counts come from the displayed board', () => {
     await page.go('#n=attention');
     expect(primary().getByRole('link', { name: 'Needs you 3', current: 'page' })).toBe(current());
     expect(screen.getByRole('heading', { level: 1, name: 'Needs you' })).toBeVisible();
-    const waiting = screen.getByRole('heading', { name: 'Needs you now (2)' }).closest('section');
+    const waiting = screen.getByRole('heading', { name: 'Waiting on you (2)' }).closest('section');
     if (!waiting) throw new Error('The waiting section is missing');
     const gateLinks = within(waiting)
       .getAllByRole('link')

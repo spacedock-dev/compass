@@ -49,6 +49,10 @@ function withoutHistory(input: Record<string, unknown>): Record<string, unknown>
   return {
     ...model,
     totals,
+    // Sessions at a glance retired these two counters. Keep comparing the technical facts.
+    counters: (model['counters'] as { readonly label: string }[]).filter(
+      ({ label }) => label !== 'ACTIVE NOW' && label !== 'WORKING',
+    ),
     coverage: { ...coverage, quiet: omitAttentionQuietSubtotals(coverage['quiet'] as string) },
     // Location cards are proven by their distinct linked members, not the recorded duplicate counts.
     boardRisks: (model['boardRisks'] as Record<string, unknown>[])

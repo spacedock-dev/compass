@@ -155,6 +155,12 @@ export interface NowRow {
   readonly note: string;
 }
 
+export function inputNow(session: Row | null): NowRow {
+  const text = String(session?.['state_detail'] || '').trim() || 'Needs-input state reported';
+  const note = session?.['wait_unconfirmed'] ? expandDurationUnits(UNCONFIRMED_WAIT_NOTE) : '';
+  return { text, note };
+}
+
 function signalNow(signal: Signal, subject: Subject, model: AttentionModel): NowRow {
   const detail = signal.detail;
   if (signal.kind === 'ask') {
@@ -164,18 +170,7 @@ function signalNow(signal: Signal, subject: Subject, model: AttentionModel): Now
     const options = Array.isArray(choices) ? choices.length : 0;
     return { text: question, note: options ? `${String(options)} published options` : '' };
   }
-  if (signal.kind === 'input') {
-    const session = subject.session;
-    const detailText = text((session && session['state_detail']) || '').trim();
-    const sentence = detailText || 'Needs-input state reported';
-    if (session?.['wait_unconfirmed']) {
-      return {
-        text: sentence,
-        note: expandDurationUnits(UNCONFIRMED_WAIT_NOTE),
-      };
-    }
-    return { text: sentence, note: '' };
-  }
+  if (signal.kind === 'input') return inputNow(subject.session);
   if (signal.kind === 'attribution') {
     return { text: attributionNow(detail, model.generated), note: '' };
   }
