@@ -1045,7 +1045,7 @@ def _with_levels(
     return {**context, "sources": {**sources, "work": work}}
 
 
-def assemble_project_drift(  # noqa: PLR0913 - the focused handler publishes after its other reads
+def assemble_project_drift(
     application: Any,
     collected: dict[str, Any],
     project: str,
@@ -1055,7 +1055,6 @@ def assemble_project_drift(  # noqa: PLR0913 - the focused handler publishes aft
     refresh: bool = False,
     model_consent: bool = False,
     lease: Mapping[str, Any] | None = None,
-    publish_progress: bool = True,
 ) -> dict[str, Any]:
     """The page's context assembly, shared with the footer without collecting the board again.
 
@@ -1090,10 +1089,6 @@ def assemble_project_drift(  # noqa: PLR0913 - the focused handler publishes aft
             else _attach_lease(result, lease)
         )
         result = _with_drift_view(application, result, collected, focus, project, cursor_key)
-        if publish_progress:
-            result = _with_stored_progress(
-                application, result, collected, focus, project, cursor_key
-            )
     return result
 
 
@@ -2225,7 +2220,6 @@ class _RequestHandler(BaseHTTPRequestHandler):
             focus,
             self.server.record_cursor_key,
             refresh=refresh,
-            publish_progress=False,
             model_consent=(
                 refresh
                 and parse_qs(url.query).get("observer_model") == ["1"]

@@ -29,6 +29,7 @@ from compass_runtime import (
     observation,
     project_context,
     reading_policy,
+    session_progress,
     terminal_sessions,
 )
 from compass_runtime import io as runtime_io
@@ -1144,6 +1145,9 @@ class FooterProviderTest(unittest.TestCase):
                 ),
                 mock.patch.object(
                     http_api, "_lease_row", side_effect=AssertionError("recursive row")
+                ),
+                mock.patch.object(
+                    session_progress, "evaluate", side_effect=AssertionError("progress on poll")
                 ),
                 mock.patch.object(
                     project_context, "collect", return_value=case["context"]
