@@ -15,6 +15,7 @@ import {
   type DraftInput,
 } from '../intent/derive';
 import { isRecord, type Row } from '../observed';
+import { GLOSSARY } from '../language/glossary';
 import { formatDuration } from '../shell/format';
 import { openedWithControl, promptCandidate } from '../sessions/intent';
 import {
@@ -91,11 +92,16 @@ export function eligibility(
    runs.") was false of a session that would not run again. */
 export function pressLine(session: Row | null | undefined, held: Row): string {
   const reason = String(held['reason']);
-  if (reason === 'idle-unknown' && session && session['acquisition'] === 'event')
-    return PRESS_EVENTS;
-  return Object.hasOwn(PRESS_LINES, reason)
-    ? (PRESS_LINES[reason] as string)
-    : String(held['sentence'] || '');
+  const template =
+    reason === 'idle-unknown' && session?.['acquisition'] === 'event'
+      ? PRESS_EVENTS
+      : Object.hasOwn(PRESS_LINES, reason)
+        ? PRESS_LINES[reason]
+        : undefined;
+  const control = isRecord(session?.['annotation_assessment'])
+    ? GLOSSARY.checkProgressAgain.shown
+    : GLOSSARY.checkProgress.shown;
+  return template?.replace('{control}', control) ?? String(held['sentence'] || '');
 }
 
 export function pressRefusal(

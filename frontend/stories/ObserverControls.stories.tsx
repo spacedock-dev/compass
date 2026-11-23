@@ -9,7 +9,7 @@ import { fakeBackend } from '../test/storage_backends';
 
 const focus = { harness: 'claude', sid: 's1' };
 const disclosure =
-  'Redacted transcript excerpts and workflow stage go through Codex for a goal summary.';
+  'A focused refresh sends redacted transcript excerpts and workflow stage through Codex to OpenAI for a goal summary. Each prompt is capped at 16 KB, with a 60-second timeout and one call in flight per session. A focused refresh can include up to three active child sessions. Pause all AI use or --no-observer-model stops these calls.';
 const requests: string[] = [];
 function GoalExample({ declined = false }: { readonly declined?: boolean }) {
   const [shell] = useState(() => {
@@ -105,18 +105,23 @@ export const DirectRequestAndOnePressOff: Story = {
     const canvas = within(canvasElement);
     const summarize = await canvas.findByRole('button', { name: 'Summarize this session' });
     await expect(requests).toHaveLength(0);
-    await expect(canvas.getByRole('button', { name: 'Pause model calls' })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: 'Pause all AI use' })).toBeVisible();
     await userEvent.click(summarize);
     await expect(await canvas.findByText('Words go to: goal.example')).toBeVisible();
-    await expect(canvas.getByRole('region', { name: 'Model request notice' })).toBeVisible();
+    const notice = canvas.getByRole('region', { name: 'Model request notice' });
+    await expect(notice).toBeVisible();
+    await expect(notice).toHaveTextContent('Each prompt is capped at 16 KB');
+    await expect(notice).toHaveTextContent(
+      'Pause all AI use or --no-observer-model stops these calls.',
+    );
     await expect(requests).toHaveLength(1);
     // The next revision's passive read carries no notice; the notice and its one off switch stay.
     await userEvent.click(canvas.getByRole('button', { name: 'Simulate board poll' }));
     await new Promise((done) => setTimeout(done, 50));
     await expect(canvas.getByText('Words go to: goal.example')).toBeVisible();
-    await expect(canvas.getAllByRole('button', { name: 'Pause model calls' })).toHaveLength(1);
+    await expect(canvas.getAllByRole('button', { name: 'Pause all AI use' })).toHaveLength(1);
     await expect(requests).toHaveLength(1);
-    await userEvent.click(canvas.getByRole('button', { name: 'Pause model calls' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'Pause all AI use' }));
     await expect(
       await canvas.findByText('Model calls are paused. Nothing is sent until you resume.'),
     ).toBeVisible();

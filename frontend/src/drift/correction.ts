@@ -1,4 +1,5 @@
 import { nextNumber } from '../api/bootstrap';
+import { GLOSSARY } from '../language/glossary';
 import { annotationLines, type Annotation } from '../intent/annotation';
 import { laterDirections, type WorkEntry, type WorkSource } from '../intent/work';
 import type { Row } from '../observed';
@@ -313,8 +314,9 @@ export function steerWithheld(input: {
   readonly annotation: Annotation | null | undefined;
   readonly shape: Shape | null;
   readonly offer: SteerOffer | null;
+  readonly canRetry: boolean;
 }): string {
-  const { session, annotation, shape, offer } = input;
+  const { session, annotation, shape, offer, canRetry } = input;
   if (!STEER_HARNESSES.includes(String(session['harness'] || ''))) return '';
   if (!annotation || !shape || shape.malformed || !shape.departures.length) return '';
   if (offer?.departed) return '';
@@ -323,7 +325,10 @@ export function steerWithheld(input: {
     shape.revisionRead !== null && shape.revisionRead !== nextNumber(annotation['revision']);
   if (!marked && !older) return '';
   if (offer) return marked ? STEER_LEAVES_MARKED : STEER_LEAVES_OLDER;
-  return marked ? STEER_OFF_MARKED : STEER_OFF_OLDER;
+  if (marked) return STEER_OFF_MARKED;
+  return canRetry
+    ? `${STEER_OFF_OLDER} Use ${GLOSSARY.checkProgressAgain.shown} to check the current goal.`
+    : STEER_OFF_OLDER;
 }
 
 /* The direction Update intent instead offers: the later direction a surviving departure cites, else the

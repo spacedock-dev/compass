@@ -119,6 +119,23 @@ describe('technical Evidence', () => {
 });
 
 describe('a stored reading', () => {
+  it('offers the retry named by a failure when the earlier reading has no saved time', async () => {
+    const failure = 'The progress check failed. Nothing was saved. Press Check progress again.';
+    const page = mountDrift({
+      session: stored({
+        annotation_assessment: { ...ASSESSMENT, read_at: null },
+        annotation_reading_withheld: failure,
+      }),
+      facts: FACTS,
+    });
+    await page.settle();
+    expect(screen.getByText(failure, { exact: false })).toBeVisible();
+    const retry = screen.getByRole('button', { name: 'Check progress again' });
+    expect(retry).toBeVisible();
+    expect(retry.nextElementSibling?.textContent).toBe('Uses AI');
+    expect(document.querySelector('[data-next-drift-stamp]')).toBeNull();
+  });
+
   it("says the answer, then each line by the list's own number, and never a check mark", async () => {
     const page = mountDrift({ session: stored(), facts: FACTS });
     await page.settle();
@@ -151,7 +168,7 @@ describe('a stored reading', () => {
       document.querySelector('[data-next-entry="2"] [data-next-entry-flag="cited"]'),
     ).toBeNull();
     // The run control is the header's, from the first reading on.
-    expect(byAction('reading-ask')?.textContent).toBe('Analyze again');
+    expect(byAction('reading-ask')?.textContent).toBe('Check progress again');
     expect(
       document.querySelector('.next-session-drift-head')?.contains(byAction('reading-ask')),
     ).toBe(true);
@@ -224,7 +241,7 @@ describe('a stored reading', () => {
     expect(document.querySelector('[data-next-result]')).toBeNull();
   });
 
-  it('says a reading of earlier words is of earlier words, in the header beside Check again', async () => {
+  it('says a reading of earlier words is of earlier words, in the header beside Check progress again', async () => {
     const page = mountDrift({
       session: stored(),
       store: { revision: 4 },
@@ -241,7 +258,7 @@ describe('a stored reading', () => {
     );
     expect(status.textContent).not.toMatch(/revision \d/i);
     expect(status.querySelector('[data-next-cockpit-action="reading-ask"]')?.textContent).toBe(
-      'Check again',
+      'Check progress again',
     );
     expect(document.querySelectorAll('[data-next-cockpit-action="reading-ask"]')).toHaveLength(1);
   });
@@ -548,7 +565,7 @@ describe('Not accurate', () => {
     });
     expect(foot()?.getAttribute('data-next-result-mark')).toBe('marked');
     expect(byAction('not-accurate')?.textContent).toBe('Undo');
-    // One message, where the level was, with Undo and Analyze again beside it; the foot says nothing more.
+    // One message, where the level was, with Undo and Check progress again beside it; the foot says nothing more.
     expect(textOf('[data-next-drift-marked] [role="status"]')).toBe(
       'Marked inaccurate. This analysis no longer sets the drift level or Steer back, and its verdicts below are set aside.',
     );
@@ -556,7 +573,7 @@ describe('Not accurate', () => {
     expect(
       document.querySelector('[data-next-drift-marked] [data-next-cockpit-action="reading-ask"]')
         ?.textContent,
-    ).toBe('Analyze again');
+    ).toBe('Check progress again');
     expect(document.querySelector('[data-next-disowned]')).not.toBeNull();
     expect(document.querySelector('[data-next-drift-level]')).toBeNull();
     // Undo posts the mark back off.
@@ -583,29 +600,32 @@ describe('A marked reading with the Live monitor on', () => {
   it.each([
     ['a live level row', [LIVE]],
     ['no live level row', []],
-  ])('still says it is marked and keeps Undo and Analyze again with %s', async (_name, rows) => {
-    const page = mountDrift({
-      session: stored({ annotation_not_accurate: true }),
-      facts: FACTS,
-      routes: {
-        '/api/project-context': contextRoute(FACTS, { live_levels: rows }),
-        '/api/live-monitor': LEASE_ROUTE,
-      },
-    });
-    await page.settle();
-    await page.settle();
-    await act(async () => {
-      liveMonitorFor(page.shell).update('claude:s1', { wanted: true });
-    });
-    await page.settle();
-    expect(document.querySelector('[data-next-drift-marked]')).not.toBeNull();
-    expect(byAction('not-accurate')?.textContent).toBe('Undo');
-    expect(
-      document.querySelector('[data-next-drift-marked] [data-next-cockpit-action="reading-ask"]')
-        ?.textContent,
-    ).toBe('Analyze again');
-    expect(document.querySelector('[data-next-disowned]')).not.toBeNull();
-  });
+  ])(
+    'still says it is marked and keeps Undo and Check progress again with %s',
+    async (_name, rows) => {
+      const page = mountDrift({
+        session: stored({ annotation_not_accurate: true }),
+        facts: FACTS,
+        routes: {
+          '/api/project-context': contextRoute(FACTS, { live_levels: rows }),
+          '/api/live-monitor': LEASE_ROUTE,
+        },
+      });
+      await page.settle();
+      await page.settle();
+      await act(async () => {
+        liveMonitorFor(page.shell).update('claude:s1', { wanted: true });
+      });
+      await page.settle();
+      expect(document.querySelector('[data-next-drift-marked]')).not.toBeNull();
+      expect(byAction('not-accurate')?.textContent).toBe('Undo');
+      expect(
+        document.querySelector('[data-next-drift-marked] [data-next-cockpit-action="reading-ask"]')
+          ?.textContent,
+      ).toBe('Check progress again');
+      expect(document.querySelector('[data-next-disowned]')).not.toBeNull();
+    },
+  );
 });
 
 describe('What the analysis read', () => {

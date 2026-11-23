@@ -66,7 +66,7 @@ describe('the question before the press', () => {
     expect(text('[data-next-cockpit-direction-whole]')).toContain('Do it the careful way');
     expect(
       [...document.querySelectorAll('.next-cockpit-reading-ask button')].map((b) => b.textContent),
-    ).toEqual(['Add as a line', 'Make it the goal', 'Leave it', 'Analyze drift']);
+    ).toEqual(['Add as a line', 'Make it the goal', 'Leave it', 'Check progress']);
     expect(page.posts('/api/annotate')).toBe(0);
   });
 

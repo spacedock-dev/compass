@@ -1,9 +1,10 @@
 /* Current backend outcome shapes; no model or source execution in these UI proofs. */
-export const LONG_INTERRUPTED_SENTENCE =
-  'Compass stopped before this analysis outcome was saved. No new result is shown. Any recorded calls remain counted, and a fresh press is the only retry.';
+import { longWithheld } from './fixtures/vocabulary.json';
+
+export const LONG_INTERRUPTED_SENTENCE = longWithheld['long-interrupted'];
 export const PARTIAL_WHY =
   'Some agent messages could not fit the final comparison. This line cannot be judged from that partial comparison.';
-export const EARLIER_READING = 'Earlier reading, saved before the interrupted analysis.';
+export const EARLIER_READING = 'Earlier reading, saved before the interrupted progress check.';
 const unknown = (clause: string) => ({
   result: 'not verifiable from available evidence',
   cites: [],

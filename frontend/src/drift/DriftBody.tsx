@@ -1,5 +1,6 @@
 import { LatestLongOutcome } from './LatestLongOutcome';
 import type { ReactNode } from 'react';
+import { GLOSSARY } from '../language/glossary';
 import { UnaskedPermission } from './UnaskedPermission';
 import { DirectionQuestion } from '../intent/DirectionQuestion';
 import { nextNumber } from '../api/bootstrap';
@@ -32,7 +33,7 @@ import {
   type SteerSlot,
 } from './ReadingControl';
 import { DriftVerdict, ReadingResult } from './ReadingResult';
-import { readingsOff } from './route';
+import { readingsOff, routeRefusal } from './route';
 import {
   absenceAttr,
   READINGS_OFF,
@@ -129,7 +130,13 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
       <ReadingResult
         question={control}
         slotted={slotted}
-        steerOff={steerWithheld({ session, annotation, shape, offer })}
+        steerOff={steerWithheld({
+          session,
+          annotation,
+          shape,
+          offer,
+          canRetry: !routeRefusal(payload, session),
+        })}
         again={(steer) => (
           <ReadingControl board={board} primary={false} again steer={steer} refusalOf={refusal} />
         )}
@@ -242,7 +249,7 @@ function QuestionWithAnalysis({
           <RunPress
             board={board}
             weight="secondary"
-            label="Analyze drift"
+            label={GLOSSARY.checkProgress.shown}
             focusKey={`reading:${model.key}`}
           />
         )

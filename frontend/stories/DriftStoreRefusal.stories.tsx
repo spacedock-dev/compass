@@ -3,7 +3,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { STORE_BUSY_PRESS, STORE_UNREADABLE_PRESS } from '../src/drift/sentences';
 import { DriftScenario, fact, type Scenario } from './drift.scenario';
 
-/* Analyze drift pressed while the store of what the reader typed cannot take the press. The server answers
+/* Check progress pressed while the store of what the reader typed cannot take the press. The server answers
    503 with the cause, nothing has started or been spent, and the card names the cause beside the button
    rather than saying the answer was lost. The sentence is itself the card's polite live region, so what is
    drawn and what a screen reader is told are one node. */
@@ -24,7 +24,7 @@ const NOTICE =
 
 async function pressAnalyze(canvasElement: HTMLElement): Promise<HTMLElement> {
   const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
-  await userEvent.click(await within(card).findByRole('button', { name: 'Analyze drift' }));
+  await userEvent.click(await within(card).findByRole('button', { name: 'Check progress' }));
   return card;
 }
 

@@ -184,8 +184,9 @@ function readingParts(input: ModelInput) {
       )
     : null;
   const generated = nextNumber(payload['generated']) ?? 0;
+  // Codex keeps its saved reading and evidence without a displayed level.
   const analysis =
-    annotate && raw && shape
+    harness !== 'codex' && annotate && raw && shape
       ? analysisLevel({
           contexts,
           projectKey: input.projectKey,

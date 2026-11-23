@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { screen } from '@testing-library/react';
 import { datedClock } from '../observed/values';
 import { byAction, fact, mountDrift, press, textOf } from './testing';
 import { SCOPE_TEXT_IDLE, WHY_OFF } from './sentences';
@@ -55,7 +56,54 @@ describe('an idle session analyzed up to its last recorded entry', () => {
 });
 
 describe('a press on a refused Analyze', () => {
-  it('opens Why Analyze is off with the server’s sentence', async () => {
+  it.each([
+    ['settling', 'Ready in a few seconds.', 'The session ended. {control} opens by itself.'],
+    ['stop-settling', 'Ready in a few seconds.', 'The turn ended. {control} opens by itself.'],
+    [
+      'idle-unknown',
+      '{control} opens while this session runs or once it ends.',
+      '{control} opens while the session works, or once its end is observed.',
+    ],
+    [
+      'unobservable',
+      'This harness sends no events, so {control} opens only while it runs.',
+      'A reading can run only while the session is working.',
+    ],
+    [
+      'turn-stop',
+      '{control} opens while a turn runs or once the session ends.',
+      'Compass reads this harness only while a turn runs or after its session ends.',
+    ],
+  ] as const)(
+    'keeps the first and repeat controls beside the %s explanation',
+    async (reason, short, detail) => {
+      for (const hasReading of [false, true]) {
+        const label = hasReading ? 'Check progress again' : 'Check progress';
+        const sentence = detail.replace('{control}', label);
+        const page = mountDrift({
+          session: {
+            acquisition: 'event',
+            annotation_assessment: hasReading ? IDLE_READING : null,
+            reading_eligibility: { ok: false, reason, until: null, sentence },
+          },
+          facts: SAID,
+        });
+        await page.settle();
+        const control = screen.getByRole('button', { name: label });
+        expect(control).toBeVisible();
+        expect(control.getAttribute('aria-disabled')).toBe('true');
+        expect(textOf('#next-cockpit-reading-refused')).toBe(short.replace('{control}', label));
+        const why = screen.getByRole('button', { name: 'Why the progress check is off' });
+        await press(control);
+        await page.settle();
+        expect(why.getAttribute('aria-expanded')).toBe('true');
+        expect(screen.getByText(sentence)).toBeVisible();
+        page.unmount();
+      }
+    },
+  );
+
+  it('opens Why the progress check is off with the server’s sentence', async () => {
     const sentence =
       'You saved these words after this session ended, so there is no work after them.';
     const page = mountDrift({

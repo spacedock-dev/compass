@@ -29,7 +29,7 @@ export const grant = (over: Record<string, unknown> = {}) => ({
   provider: 'claude',
   destination: 'Anthropic',
   disclosure:
-    "Summaries send redacted session text in windows of at most 16 KiB: your words, the agent's replies, masked check titles and file-write display paths. Sent through your Claude Code to Anthropic.",
+    "Summaries send redacted session text in windows of at most 16 KB: your words, the agent's replies, masked test and build titles and file-write display paths. Sent through your Claude Code to Anthropic.",
   notices: {},
   ...over,
 });

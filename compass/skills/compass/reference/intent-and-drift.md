@@ -242,9 +242,10 @@ pill. It never appears on a Sessions row, raises no notification, and never feed
 Drift marks show departures already on record, from a
 reader-requested reading or the optional unasked lane. With nothing typed the block says there is nothing to read against; with the observer
 model off it gives that reason; otherwise it states what a reading may and may not read and offers
-the ordinary one-call control, `Analyze drift`. When it cannot run it stays on the page, refuses the press, and
-names one next step, and a press on it opens "Why Analyze is off" with the whole reason, except where no reader is available on this machine: then the reason stands
-where the control would be. An acceptance of each provider's checks enables that control (the
+the ordinary one-call control, Check progress. A saved reading offers Check progress again.
+When the session record makes a check unavailable, pressing the control opens "Why the progress
+check is off" with the whole reason. When no reader is available on this machine, the reason
+stands in place of the control. An acceptance of each provider's checks enables that control (the
 captain's of Codex's case review on 2026-09-14; the owner's of Claude Code on 2026-10-02, after its
 scored runs failed): a
 Claude Code session is read by Claude Code when `claude` is on PATH and by Codex otherwise, and the
@@ -344,13 +345,13 @@ correction names no Compass entry number, and a departure cited at one of the ag
 quotes that message's first sentence ("where you said …"). While departures are listed, Steer back
 is its own section after them, headed "Steer back", with the correction under it labelled "Built from your saved intent and the reading at HH:MM", including once the session is idle; where
 a mark or a reading of earlier words withholds it, a line beside the departures says why. "Where the work went" groups the written files by folder, under What the analysis read. The
-card header carries one re-run control once a reading exists: "Check again" when your intent changed
-after it or new work arrived since, "Analyze again" when it is current. It is inert, not gone, where a press cannot run. The request count stays beside it.
+card header offers Check progress again for current and stale readings. The control stays visible
+where a press is temporarily unavailable. The request count stays beside it.
 The shared budget is not shown until it is spent; then a banner holds the top of the session page,
 naming the limit and the time the next analysis can run. "Mark as inaccurate" marks the reading with
 a token that is stored beside it and never sent or counted, and says so beside the control; that
 reading no longer sets the level or Steer back until you press Undo. One message where the level was
-says so, with Undo and Analyze again beside it, and the reading's verdicts stay below it dimmed as disowned. A later
+says so, with Undo and Check progress again beside it, and the reading's verdicts stay below it dimmed as disowned. A later
 direction alone offers no correction. A correction puts departures and failed checks first, dates
 a time from an earlier day, and asks for evidence where an outcome is not shown. Under each
 departure, and a contradicted claim, it carries the analysis's own explanation on an indented

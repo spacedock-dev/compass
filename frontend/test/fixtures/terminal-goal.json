@@ -95,6 +95,7 @@
         "annotation_assessment": null,
         "annotation_reading_count": 0,
         "annotation_reading_withheld": "",
+        "annotation_reading_withheld_reason": "",
         "annotation_reading_withheld_at": null,
         "annotation_reading_refused": false,
         "reading_eligibility": {
@@ -271,6 +272,7 @@
         "annotation_assessment": null,
         "annotation_reading_count": 0,
         "annotation_reading_withheld": "",
+        "annotation_reading_withheld_reason": "",
         "annotation_reading_withheld_at": null,
         "annotation_reading_refused": false,
         "reading_eligibility": {
@@ -450,6 +452,7 @@
         "annotation_assessment": null,
         "annotation_reading_count": 0,
         "annotation_reading_withheld": "",
+        "annotation_reading_withheld_reason": "",
         "annotation_reading_withheld_at": null,
         "annotation_reading_refused": false,
         "reading_eligibility": {
@@ -629,6 +632,7 @@
         "annotation_assessment": null,
         "annotation_reading_count": 0,
         "annotation_reading_withheld": "",
+        "annotation_reading_withheld_reason": "",
         "annotation_reading_withheld_at": null,
         "annotation_reading_refused": false,
         "reading_eligibility": {

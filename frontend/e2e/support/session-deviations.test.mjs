@@ -82,6 +82,33 @@ test('session deviations preserve quoted titles and instructions', () => {
   );
 });
 
+test('projects only the recorded progress control and preserves the same words in a goal', () => {
+  for (const [before, after] of [
+    ['Analyze drift', 'Check progress'],
+    ['Analyze again', 'Check progress again'],
+    ['Check again', 'Check progress again'],
+  ]) {
+    const goal = `Goal: ${before} on Friday. Ask Lee to ${before}.`;
+    const requests = '1 model request1 model request recorded for this session.';
+    const record = {
+      resultStates: ['departs'],
+      goal,
+      text: `${goal}${before}${requests}`,
+      buttons: [[before, 'reading-ask', false, null, false]],
+    };
+    assert.deepEqual(normaliseSessionRecord(record), {
+      ...record,
+      text: `${goal}${after}Uses AI${requests}`,
+      buttons: [[after, 'reading-ask', false, null, false]],
+    });
+    assert.deepEqual(normaliseSessionRecord({ ...record, text: goal, buttons: [] }), {
+      ...record,
+      text: goal,
+      buttons: [],
+    });
+  }
+});
+
 test('projects the recorded Goal history link and keeps the same words in the session title', () => {
   const wording =
     'Intent logWhat it keepsThe Intent log keeps what you saved and what was raised against it after the session leaves the board.';

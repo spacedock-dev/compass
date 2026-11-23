@@ -2,12 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { clock, datedClock } from '../src/observed/values';
 import { readerUtcOffset } from '../src/drift/correction';
-import {
-  SCOPE_TEXT_IDLE,
-  STEER_OFF_MARKED,
-  STEER_OFF_OLDER,
-  WHY_OFF,
-} from '../src/drift/sentences';
+import { SCOPE_TEXT_IDLE, STEER_OFF_MARKED, WHY_OFF } from '../src/drift/sentences';
 import {
   DEPARTURE_READING,
   DriftScenario,
@@ -62,9 +57,11 @@ export const AnalyzeOpensOnAnIdleSessionWithNoRecordedFinish: Story = {
   ...scenario({ session: IDLE }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const analyze = await canvas.findByRole('button', { name: 'Analyze drift' });
+    const analyze = await canvas.findByRole('button', { name: 'Check progress' });
     await expect(analyze).not.toHaveAttribute('aria-disabled');
-    await expect(canvasElement.textContent).not.toContain('Analyze opens while this session runs.');
+    await expect(canvasElement.textContent).not.toContain(
+      'Check progress opens while this session runs.',
+    );
     await expect(canvasElement.textContent).not.toContain(WHY_OFF);
     // Before the press, it says what it will read, as a running session's does.
     await expect(
@@ -120,7 +117,7 @@ export const AnalyzeOpensOnAStoppedCodexSession: Story = {
   ...scenario({ harness: 'codex', session: CODEX_STOPPED }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const analyze = await canvas.findByRole('button', { name: 'Analyze drift' });
+    const analyze = await canvas.findByRole('button', { name: 'Check progress' });
     await expect(analyze).not.toHaveAttribute('aria-disabled');
     await expect(canvasElement.textContent).not.toContain(CODEX_REFUSED);
     await expect(canvasElement.textContent).not.toContain(WHY_OFF);
@@ -134,7 +131,7 @@ export const AnalyzeOpensOnAnIdleCodexSessionWithNoRecordedFinish: Story = {
   ...scenario({ harness: 'codex', session: IDLE }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const analyze = await canvas.findByRole('button', { name: 'Analyze drift' });
+    const analyze = await canvas.findByRole('button', { name: 'Check progress' });
     await expect(analyze).not.toHaveAttribute('aria-disabled');
     await expect(canvasElement.textContent).not.toContain(CODEX_REFUSED);
     await expect(
@@ -162,14 +159,15 @@ export const AStoredCodexLastTurnReadingLabelsTheTurn: Story = {
 };
 
 /* Each refusal the board can still publish says the condition that holds, and a press reveals the server's
-   whole sentence under Why Analyze is off. */
+   whole sentence under Why the progress check is off. */
 function refusal(
   harness: NonNullable<Scenario['harness']>,
   reason: string,
   line: string,
   extra: Record<string, unknown> = {},
+  sentence = `The server's own account of ${reason}.`,
 ): Story {
-  const sentence = `The server's own account of ${reason}.`;
+  const label = extra['annotation_assessment'] ? 'Check progress again' : 'Check progress';
   return {
     ...scenario({
       harness,
@@ -181,7 +179,7 @@ function refusal(
     }),
     play: async ({ canvasElement }) => {
       const canvas = within(canvasElement);
-      const analyze = await canvas.findByRole('button', { name: 'Analyze drift' });
+      const analyze = await canvas.findByRole('button', { name: label });
       await expect(analyze).toHaveAttribute('aria-disabled', 'true');
       await expect(await canvas.findByText(line)).toBeVisible();
       await expect(canvas.getByText(sentence)).not.toBeVisible();
@@ -195,18 +193,39 @@ function refusal(
 export const RefusedTurnStopElsewhere = refusal(
   'antigravity',
   'turn-stop',
-  'Analyze opens while a turn runs or once the session ends.',
+  'Check progress opens while a turn runs or once the session ends.',
 );
 export const RefusedUnobservable = refusal(
   'antigravity',
   'unobservable',
-  'This harness sends no events, so Analyze opens only while it runs.',
+  'This harness sends no events, so Check progress opens only while it runs.',
 );
 export const RefusedIntentAfterEnd = refusal(
   'claude',
   'revision-after-end',
-  'Your intent was saved after this session ended.',
+  'Your goal was saved after this session ended.',
   { ended_at: 950 },
+);
+export const FirstCheckWaitsForSessionEndToSettle = refusal(
+  'claude',
+  'settling',
+  'Ready in a few seconds.',
+  { ended_at: 999, annotation_line_1: '' },
+  'This session ended moments ago and its record is still settling. Check progress opens by itself in a few seconds.',
+);
+export const RepeatCheckWaitsForTheTurnToSettle = refusal(
+  'claude',
+  'stop-settling',
+  'Ready in a few seconds.',
+  { ...STORED_READING, finished_at: 999, annotation_line_1: '' },
+  'This session completed its turn moments ago and its record is still settling. Check progress again opens by itself in a few seconds.',
+);
+export const RepeatCheckWaitsForAnObservedEvent = refusal(
+  'antigravity',
+  'idle-unknown',
+  'Check progress again opens while this session runs or once it ends.',
+  { ...STORED_READING, acquisition: 'event', annotation_line_1: '' },
+  'Events from this session reach this board, but no session end has been observed. Check progress again opens while the session works, or once its end is observed.',
 );
 
 const correctionPosts: Record<string, unknown>[] = [];
@@ -283,7 +302,13 @@ export const SteerBackOffForAnEarlierIntent: Story = {
   }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(await canvas.findByText(STEER_OFF_OLDER)).toBeVisible();
+    const retry = await canvas.findByRole('button', { name: 'Check progress again' });
+    await expect(retry).toBeVisible();
+    await expect(
+      await canvas.findByText(
+        `Steer back is off because this progress check read an earlier version of your goal. Use ${retry.textContent} to check the current goal.`,
+      ),
+    ).toBeVisible();
     await expect(canvas.queryByRole('button', { name: 'Steer back' })).toBeNull();
   },
 };
@@ -291,7 +316,7 @@ export const SteerBackOffForAnEarlierIntent: Story = {
 /* The server's sentence for a Claude Code call that reported it is signed out
    (`reading.WITHHELD_CLAUDE_LOGIN`), stored as the last analysis's outcome. */
 const LOGIN =
-  'Analyze failed: Claude Code said it is not logged in. Nothing was saved. Fix that, then press Analyze drift again.';
+  'The progress check failed: Claude Code said it is not logged in. Nothing was saved. Fix that, then press Check progress.';
 
 export const AFailedAnalysisNamesItsCause: Story = {
   ...scenario({
@@ -306,7 +331,7 @@ export const AFailedAnalysisNamesItsCause: Story = {
     const canvas = within(canvasElement);
     await expect(await canvas.findByText(new RegExp(`^Last analysis.*${LOGIN}$`))).toBeVisible();
     await expect(canvasElement.textContent).not.toContain('a fresh press is the only retry');
-    await expect(canvas.getByRole('button', { name: 'Analyze drift' })).not.toHaveAttribute(
+    await expect(canvas.getByRole('button', { name: 'Check progress' })).not.toHaveAttribute(
       'aria-disabled',
     );
   },

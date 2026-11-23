@@ -2648,6 +2648,9 @@ def vocabulary() -> dict[str, Any]:
         "checkListedByReader": reading.CHECK_LISTED_BY_READER,
         "checkNotRecordedReasons": dict(runtime_project_context.CHECK_NOT_RECORDED_REASONS),
         "results": list(reading.RESULTS),
+        "longWithheld": {
+            reason: reading.WITHHELD[reason] for reason in reading.LONG_WITHHELD_REASONS
+        },
         "promptSources": list(reading.PROMPT_SOURCES),
         "promptChosen": reading.PROMPT_CHOSEN,
         "sessionGoal": reading.SESSION_GOAL,
@@ -2656,6 +2659,10 @@ def vocabulary() -> dict[str, Any]:
         "scopeTextMidFlightIdle": reading.SCOPE_TEXT_MID_FLIGHT_IDLE,
         "correctionCapChars": runtime_copied_corrections.CORRECTION_CAP_CHARS,
         "levelReasons": list(runtime_levels.REASONS),
+        "levelSources": {
+            "live": runtime_levels.LIVE_SOURCE_LINE,
+            "analysis": runtime_levels.ANALYSIS_SOURCE_LINE,
+        },
         "annotationFields": sorted(annotation_store.published(None)),
         "cueWindowSeconds": annotation_store.CUE_WINDOW_SECONDS,
         "unsafeChars": {

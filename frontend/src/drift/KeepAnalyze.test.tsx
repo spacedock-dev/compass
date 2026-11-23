@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { byAction, fact, json, mountDrift, press, readingPosts } from './testing';
 
-/* Analyze drift stays beside a later direction's choices, and settling and analyzing are two presses. */
+/* Check progress stays beside a later direction's choices, and settling and analyzing are two presses. */
 const LATER = fact('d1', 995, { summary: 'Do it the careful way' });
 const routes = {
   '/api/direction': () => json({ ok: true, text: 'Do it the careful way', clipped: false }),
@@ -10,7 +10,7 @@ const routes = {
 };
 const session = { annotation_goal_saved_at: 500, annotation_at: 500 };
 
-describe('Analyze drift beside a later direction', () => {
+describe('Check progress beside a later direction', () => {
   it('is offered with the three choices and starts one reading on its first press, settling nothing', async () => {
     const page = mountDrift({
       facts: [LATER],
@@ -19,7 +19,7 @@ describe('Analyze drift beside a later direction', () => {
     });
     await page.settle();
     await page.settle();
-    expect(byAction('reading-ask')?.textContent).toBe('Analyze drift');
+    expect(byAction('reading-ask')?.textContent).toBe('Check progress');
     expect(byAction('direction-keep')?.textContent).toBe('Leave it');
     await press(byAction('reading-ask'));
     await press(byAction('reading-ask'));

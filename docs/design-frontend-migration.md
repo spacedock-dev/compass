@@ -16,6 +16,17 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-23. The page offers Check progress and Check progress again with Uses AI at the
+13 px supporting-text size. The route comparison projects those control names and the goal
+wording onto recorded refusals. The browser comparison renames the recorded progress action and
+its matching control in the card text, adds the cost note, and preserves reader-authored words.
+The stored-result proof checks the visible repeat control and its adjacent note directly, and
+compares the recorded verdict states and entry identities. The Activity log and session header
+have their own stories. The level comparison keeps the recorded time with the current source
+sentence. A Codex reading keeps its evidence without displaying a level. What is sent uses whole
+KB for the goal and session summary limits. The Live monitor names test and build results in both
+destination cases.
+
 **2026-11-23, session technical tabs.** The retired `sessions__detail` recording puts
 command-shape reports, notifications and How it landed in the activity column. The reader finds
 them under Reports now. The session layout stories assert the tab placement and the existing

@@ -1,7 +1,7 @@
 import { LONG_PLAN } from './longPlan';
+import { longWithheld } from './fixtures/vocabulary.json';
 
-export const LONG_INCOMPLETE_SENTENCE =
-  'Long analysis could not cover the saved work well enough to produce a new result. Any recorded calls remain counted, and a fresh press is the only retry.';
+export const LONG_INCOMPLETE_SENTENCE = longWithheld['long-incomplete'];
 export const LATEST_OLDER = 'Earlier reading, saved before the latest long analysis.';
 export const LONG_DIAGNOSTIC = {
   version: 1,

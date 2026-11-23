@@ -28,6 +28,7 @@ describe('qualified long outcomes', () => {
         session: {
           ...session,
           annotation_reading_withheld: LONG_INTERRUPTED_SENTENCE,
+          annotation_reading_withheld_reason: 'long-interrupted',
           annotation_reading_withheld_at: 1001,
         },
         facts: pending
@@ -49,11 +50,28 @@ describe('qualified long outcomes', () => {
       session: {
         ...session,
         annotation_reading_withheld: LONG_INTERRUPTED_SENTENCE,
+        annotation_reading_withheld_reason: 'long-interrupted',
         annotation_reading_withheld_at: 999,
       },
       facts,
     });
     await page.settle();
     expect(textOf('[data-next-result]')).not.toContain(EARLIER_READING);
+  });
+
+  it('does not use the interruption sentence to decide which outcome occurred', async () => {
+    const page = mountDrift({
+      session: {
+        ...session,
+        annotation_reading_withheld: LONG_INTERRUPTED_SENTENCE,
+        annotation_reading_withheld_reason: 'long-incomplete',
+        annotation_reading_withheld_at: 1001,
+      },
+      facts,
+    });
+    await page.settle();
+    expect(textOf('[data-next-drift-body]')).toContain(LONG_INTERRUPTED_SENTENCE);
+    expect(textOf('[data-next-result]')).not.toContain(EARLIER_READING);
+    expect(document.querySelector('[data-next-long-interrupted]')).toBeNull();
   });
 });

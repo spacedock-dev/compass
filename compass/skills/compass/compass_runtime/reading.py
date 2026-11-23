@@ -755,6 +755,7 @@ WITHHELD_DISCARDED = "discarded"
 WITHHELD_INTERRUPTED = "interrupted"
 WITHHELD_LONG_INTERRUPTED = "long-interrupted"
 WITHHELD_LONG_INCOMPLETE = "long-incomplete"
+LONG_WITHHELD_REASONS = (WITHHELD_LONG_INTERRUPTED, WITHHELD_LONG_INCOMPLETE)
 WITHHELD_LONG_CONTEXT_CHANGED = "long-context-changed"
 WITHHELD_LONG_INTENT_CHANGED = "long-intent-changed"
 WITHHELD_LONG_PERMISSION_CHANGED = "long-permission-changed"
@@ -779,47 +780,48 @@ WITHHELD_CONTEXT_LIMIT = "context-limit"
 WITHHELD_SETTINGS_REFUSED = "settings-refused"
 WITHHELD = {
     WITHHELD_CONTEXT_LIMIT: (
-        "The Claude CLI reported a context limit: the prompt was too long. This Analyze attempt "
-        "was counted, and no new analysis was saved. Reduce Prompt size in Settings if it is "
-        "above 16 KiB, or choose a route with a larger context window, before trying again. "
+        "The Claude CLI reported a context limit: the prompt was too long. This progress check "
+        "was counted, and no new reading was saved. Reduce the Prompt size limit if it is "
+        "above 16 KB, or choose a route with a larger context window, before trying again. "
         "Compass did not retry, shrink the prompt or switch "
         "providers."
     ),
     WITHHELD_CONTEXT_SMALL_WINDOW: (
-        "Nothing was sent to the model, and no Analyze attempt was counted. "
-        "This route's allowance is below the smallest Prompt size "
+        "Nothing was sent to the model, and no progress check was counted. "
+        "This route's available context is below the smallest Prompt size limit "
         "setting. A smaller actual reading may fit; choose a larger context window or change "
         "its context configuration for this reading."
     ),
     WITHHELD_CONTEXT_ADMISSION: (
-        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "Nothing was sent to the model, and no progress check was counted. "
         "The assembled prompt exceeds this route's estimated "
-        "allowance. Lower Prompt size in Settings or choose a route with a larger context window."
+        "context limit. Lower the Prompt size limit or choose a route with a larger context window."
     ),
     WITHHELD_CONTEXT_CONFIG: (
-        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "Nothing was sent to the model, and no progress check was counted. "
         "Compass could not read this route's context controls. "
-        "Check the Claude managed settings and context configuration before trying again."
+        "Review the Claude managed settings and context configuration before trying again."
     ),
     WITHHELD_CONTEXT_NO_ROOM: (
-        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "Nothing was sent to the model, and no progress check was counted. "
         "This route's configured context window leaves no room "
         "after reserved space. Choose a larger window or change its context configuration."
     ),
     WITHHELD_CONTEXT_DYNAMIC: (
-        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "Nothing was sent to the model, and no progress check was counted. "
         "This route uses managed policy that can change at launch. "
         "Use a route whose context and model-switching controls Compass can check locally."
     ),
     WITHHELD_CONTEXT_COMPACTION: (
-        "Nothing was sent to the model, and no Analyze attempt was counted. "
-        "Managed settings conflict with Analyze's compaction "
-        "control. Ask your administrator to allow compaction to remain disabled for Analyze."
+        "Nothing was sent to the model, and no progress check was counted. "
+        "Managed settings conflict with the progress check's compaction "
+        "control. Ask your administrator to allow compaction to remain disabled for a "
+        "progress check."
     ),
     WITHHELD_CONTEXT_FALLBACK: (
-        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "Nothing was sent to the model, and no progress check was counted. "
         "Managed settings permit automatic model fallback. "
-        "Ask your administrator to disable fallback before running Analyze on this route."
+        "Ask your administrator to disable fallback before checking progress on this route."
     ),
     WITHHELD_SETTINGS_REFUSED: (
         "Nothing was sent to the model, and no reading was counted. The CLI's settings could "
@@ -840,7 +842,7 @@ WITHHELD = {
     # turn that had finished where Compass could not see it (owner,
     # 2026-10-02). `withheld_sentence` gives each harness its own at the press.
     WITHHELD_IDLE_UNKNOWN: (
-        "This session is idle, and no finished turn or session end was observed for it, so "
+        "This session is quiet, and no completed turn or session end was observed for it, so "
         "there is no end for a reading to rest on. A reading can run while the session works."
     ),
     WITHHELD_UNOBSERVABLE: (
@@ -911,58 +913,67 @@ WITHHELD = {
     # The job's own failure, with no model answer to name: an exception inside the job. A call
     # that returned an error says whose it was, below.
     WITHHELD_MODEL_FAILED: (
-        "Analyze failed before it returned a result. Nothing was saved; press Analyze drift to "
+        "The progress check failed before it returned a result. Nothing was saved; press "
+        "Check progress to "
         "try again."
     ),
     WITHHELD_CLAUDE_FAILED: (
-        "Analyze failed: Claude Code returned an error. Nothing was saved; press Analyze drift to "
+        "The progress check failed: Claude Code returned an error. Nothing was saved; press "
+        "Check progress to "
         "try again."
     ),
     WITHHELD_CODEX_FAILED: (
-        "Analyze failed: Codex returned an error. Nothing was saved; press Analyze drift to try "
+        "The progress check failed: Codex returned an error. Nothing was saved; press Check "
+        "progress to try "
         "again."
     ),
     WITHHELD_CLAUDE_TIMED_OUT: (
-        "Analyze failed: Claude Code did not answer within "
-        f"{observer.OBSERVER_READING_TIMEOUT_SEC} seconds. Nothing was saved; press Analyze drift "
+        "The progress check failed: Claude Code did not answer within "
+        f"{observer.OBSERVER_READING_TIMEOUT_SEC} seconds. Nothing was saved; press Check progress "
         "to try again."
     ),
     WITHHELD_CLAUDE_LOGIN: (
-        "Analyze failed: Claude Code said it is not logged in. Nothing was saved. Fix that, then "
-        "press Analyze drift again."
+        "The progress check failed: Claude Code said it is not logged in. Nothing was saved. "
+        "Fix that, then "
+        "press Check progress."
     ),
     WITHHELD_CLAUDE_AUTH: (
-        "Analyze failed: Claude Code said its authentication was rejected. Nothing was saved. Fix "
-        "that, then press Analyze drift again."
+        "The progress check failed: Claude Code said its authentication was rejected. "
+        "Nothing was saved. Fix "
+        "that, then press Check progress."
     ),
     WITHHELD_CLAUDE_LIMIT: (
-        "Analyze failed: Claude Code said a usage or rate limit was reached. Nothing was saved. "
-        "Press Analyze drift again once the limit lifts."
+        "The progress check failed: Claude Code said a usage or rate limit was reached. "
+        "Nothing was saved. "
+        "Press Check progress once the limit lifts."
     ),
     WITHHELD_CLAUDE_MODEL: (
-        "Analyze failed: Claude Code said the model Compass asked for is not available. Nothing "
-        "was saved. Fix that, then press Analyze drift again."
+        "The progress check failed: Claude Code said the model Compass asked for is not "
+        "available. Nothing "
+        "was saved. Fix that, then press Check progress."
     ),
     WITHHELD_CLAUDE_NETWORK: (
-        "Analyze failed: Claude Code said it could not reach the network. Nothing was saved. Fix "
-        "that, then press Analyze drift again."
+        "The progress check failed: Claude Code said it could not reach the network. Nothing "
+        "was saved. Fix "
+        "that, then press Check progress."
     ),
     WITHHELD_CLAUDE_OPTION: (
-        "Analyze failed: Claude Code did not accept an option Compass passed it, which usually "
-        "means Claude Code needs updating. Nothing was saved. Fix that, then press Analyze drift "
-        "again."
+        "The progress check failed: Claude Code did not accept an option Compass passed it, "
+        "which usually "
+        "means Claude Code needs updating. Nothing was saved. Fix that, then press Check progress."
     ),
     # Recorded at the next start for a job whose spend was committed when the
     # dashboard stopped (DRC-4686, Q2). The attempt counts because it was
     # charged, and a silent loss would leave the count short of the budget.
     WITHHELD_LONG_INTERRUPTED: (
-        "Compass stopped before this analysis outcome was saved. No new result is shown. "
+        "Compass stopped before this progress check outcome was saved. No new result is shown. "
         "Any recorded calls remain counted, and a fresh press is the only retry."
     ),
     # Spend-neutral on purpose: a pass that never started may follow charged
     # ones, and an uncharged late pass must not describe those as unspent.
     WITHHELD_LONG_CONTEXT_CHANGED: (
-        "Long analysis stopped because the context it started with changed, or could no longer "
+        "The long progress check stopped because the context it started with changed, or "
+        "could no longer "
         "be confirmed, while it ran, so it did not produce a new result. Any recorded calls "
         "remain counted, and a fresh press is the only retry."
     ),
@@ -970,41 +981,45 @@ WITHHELD = {
     # reading names the stop it was given, and its other sentences either say nothing
     # was spent (true only before the first charge) or say nothing about the cause.
     WITHHELD_LONG_INTENT_CHANGED: (
-        "Long analysis stopped because the goal or outcome lines it was reading against were "
+        "The long progress check stopped because the goal or outcome lines it was reading "
+        "against were "
         "edited or cleared, or could no longer be confirmed, while it ran, so it did not "
         "produce a new result. Any recorded calls remain counted, and a fresh press is the "
         "only retry."
     ),
     WITHHELD_LONG_PERMISSION_CHANGED: (
-        "Long analysis stopped because model calls were paused or turned off, or their "
+        "The long progress check stopped because model calls were paused or turned off, or their "
         "permission changed, while it ran, so it did not produce a new result. Any recorded "
         "calls remain counted, and a fresh press is the only retry."
     ),
     # Used only once earlier passes were charged; before that, the sentence that says
     # nothing was sent is the true one (`reading_long_coordinator._transport_reason`).
     WITHHELD_LONG_SETTINGS_REFUSED: (
-        "Long analysis stopped because the model CLI's settings were refused or could not be "
+        "The long progress check stopped because the model CLI's settings were refused or "
+        "could not be "
         "verified before a pass started, so it did not produce a new result. Any recorded "
         "calls remain counted, and a fresh press is the only retry."
     ),
     # An internal fault, not a change the reader made and not a coverage gap.
     WITHHELD_LONG_FAULT: (
-        "Long analysis stopped because Compass could not confirm its own progress while it "
+        "The long progress check stopped because Compass could not confirm its own progress "
+        "while it "
         "ran, so it did not produce a new result. Any recorded calls remain counted, and a "
         "fresh press is the only retry."
     ),
     WITHHELD_LONG_INCOMPLETE: (
-        "Long analysis could not cover the saved work well enough to produce a new result. "
+        "The long progress check could not cover the saved work well enough to produce a new "
+        "result. "
         "Any recorded calls remain counted, and a fresh press is the only retry."
     ),
     WITHHELD_INTERRUPTED: (
-        "The analysis stopped because Compass stopped before it finished. Nothing was "
+        "The progress check stopped because Compass stopped before it finished. Nothing was "
         "produced, the attempt still counts, and a fresh press is the only retry."
     ),
     # Nothing was spent: the job stops before the reservation when it cannot
     # write the marker that keeps a spent attempt counted across a restart.
     WITHHELD_JOB_UNRECORDED: (
-        "The analysis did not start, because Compass could not write the record that keeps "
+        "The progress check did not start, because Compass could not write the record that keeps "
         "a spent attempt counted. Nothing was sent or spent."
     ),
     # The kill that ended the call could not be confirmed within its bound, so
@@ -1015,7 +1030,7 @@ WITHHELD = {
         "only retry."
     ),
     WITHHELD_STOPPING: (
-        "The analysis did not run, because Compass was stopping. Nothing was sent or spent."
+        "The progress check did not run, because Compass was stopping. Nothing was sent or spent."
     ),
     # The CLI wrote past `observer.OUTPUT_FILE_LIMIT_BYTES` and was killed as a
     # Cancel kills it (DRC-4667). The call ran, so the attempt counts.
@@ -1027,7 +1042,7 @@ WITHHELD = {
     # Recorded at the next start for a spent attempt whose outcome the store
     # refused when it ran: the analysis finished, so it is not called a stop.
     WITHHELD_UNSTORED: (
-        "The analysis ran, but Compass could not store its outcome at the time. Nothing is "
+        "The progress check ran, but Compass could not store its outcome at the time. Nothing is "
         "shown from it, the attempt still counts, and a fresh press is the only retry."
     ),
     # A Cancel from the reservation on: the charge was committed before the
@@ -1036,14 +1051,14 @@ WITHHELD = {
     # produced", because a reply may have arrived and been discarded; and no
     # "you cancelled", because a forged local cancel reads the same (SECURITY.md).
     WITHHELD_CANCELLED: (
-        "The analysis was cancelled before it finished. Nothing is shown from it, the "
+        "The progress check was cancelled before it finished. Nothing is shown from it, the "
         "attempt still counts, and a fresh press is the only retry."
     ),
     # A Cancel that landed before anything was reserved: counting it would be a
     # charge the budget never made (owner, 2026-09-24, recorded under
     # "What the Cancel build decided" in docs/design-reading-a-session.md).
     WITHHELD_CANCELLED_UNSENT: (
-        "The analysis was cancelled before anything was sent. Nothing was sent or spent."
+        "The progress check was cancelled before anything was sent. Nothing was sent or spent."
     ),
     WITHHELD_NOTHING_TYPED: (
         "Nothing is typed against this session, so there is nothing to read it against."
@@ -1064,6 +1079,104 @@ WITHHELD = {
 # the current sentence on read rather than kept or dropped: kept, it renders a
 # false claim; dropped, the row reads as a press with nothing to show.
 LEGACY_WITHHELD = {
+    # Reader copy written by earlier builds, before the Check progress control.
+    "The Claude CLI reported a context limit: the prompt was too long. This Analyze attempt "
+    "was counted, and no new analysis was saved. Reduce Prompt size in Settings if it is "
+    "above 16 KiB, or choose a route with a larger context window, before trying again. "
+    "Compass did not retry, shrink the prompt or switch "
+    "providers.": WITHHELD_CONTEXT_LIMIT,
+    "Nothing was sent to the model, and no Analyze attempt was counted. "
+    "This route's allowance is below the smallest Prompt size "
+    "setting. A smaller actual reading may fit; choose a larger context window or change "
+    "its context configuration for this reading.": WITHHELD_CONTEXT_SMALL_WINDOW,
+    "Nothing was sent to the model, and no Analyze attempt was counted. "
+    "The assembled prompt exceeds this route's estimated "
+    "allowance. Lower Prompt size in Settings or choose a "
+    "route with a larger context window.": WITHHELD_CONTEXT_ADMISSION,
+    "Nothing was sent to the model, and no Analyze attempt was counted. "
+    "Compass could not read this route's context controls. "
+    "Check the Claude managed settings and context "
+    "configuration before trying again.": WITHHELD_CONTEXT_CONFIG,
+    "Nothing was sent to the model, and no Analyze attempt was counted. "
+    "This route's configured context window leaves no room "
+    "after reserved space. Choose a larger window or change "
+    "its context configuration.": WITHHELD_CONTEXT_NO_ROOM,
+    "Nothing was sent to the model, and no Analyze attempt was counted. "
+    "This route uses managed policy that can change at launch. "
+    "Use a route whose context and model-switching controls "
+    "Compass can check locally.": WITHHELD_CONTEXT_DYNAMIC,
+    "Nothing was sent to the model, and no Analyze attempt was counted. "
+    "Managed settings conflict with Analyze's compaction "
+    "control. Ask your administrator to allow compaction to "
+    "remain disabled for Analyze.": WITHHELD_CONTEXT_COMPACTION,
+    "Nothing was sent to the model, and no Analyze attempt was counted. "
+    "Managed settings permit automatic model fallback. "
+    "Ask your administrator to disable fallback before "
+    "running Analyze on this route.": WITHHELD_CONTEXT_FALLBACK,
+    "This session is idle, and no finished turn or session end was observed for it, so "
+    "there is no end for a reading to rest on. A reading "
+    "can run while the session works.": WITHHELD_IDLE_UNKNOWN,
+    "Compass reads only this harness's prompts and titles, not the session's work, so "
+    "there is nothing to read your words against. No reading was made and nothing was "
+    "spent.": WITHHELD_NO_RECORD_READER,
+    "Analyze failed before it returned a result. Nothing was saved; press Analyze drift to "
+    "try again.": WITHHELD_MODEL_FAILED,
+    "Analyze failed: Claude Code returned an error. Nothing was saved; press Analyze drift to "
+    "try again.": WITHHELD_CLAUDE_FAILED,
+    "Analyze failed: Codex returned an error. Nothing was saved; press Analyze drift to try "
+    "again.": WITHHELD_CODEX_FAILED,
+    "Analyze failed: Claude Code did not answer within "
+    f"{observer.OBSERVER_READING_TIMEOUT_SEC} seconds. Nothing was saved; press Analyze drift "
+    "to try again.": WITHHELD_CLAUDE_TIMED_OUT,
+    "Analyze failed: Claude Code said it is not logged in. Nothing was saved. Fix that, then "
+    "press Analyze drift again.": WITHHELD_CLAUDE_LOGIN,
+    "Analyze failed: Claude Code said its authentication was rejected. Nothing was saved. Fix "
+    "that, then press Analyze drift again.": WITHHELD_CLAUDE_AUTH,
+    "Analyze failed: Claude Code said a usage or rate limit was reached. Nothing was saved. "
+    "Press Analyze drift again once the limit lifts.": WITHHELD_CLAUDE_LIMIT,
+    "Analyze failed: Claude Code said the model Compass asked for is not available. Nothing "
+    "was saved. Fix that, then press Analyze drift again.": WITHHELD_CLAUDE_MODEL,
+    "Analyze failed: Claude Code said it could not reach the network. Nothing was saved. Fix "
+    "that, then press Analyze drift again.": WITHHELD_CLAUDE_NETWORK,
+    "Analyze failed: Claude Code did not accept an option Compass passed it, which usually "
+    "means Claude Code needs updating. Nothing was saved. Fix that, then press Analyze drift "
+    "again.": WITHHELD_CLAUDE_OPTION,
+    "Compass stopped before this analysis outcome was saved. No new result is shown. "
+    "Any recorded calls remain counted, and a fresh press "
+    "is the only retry.": WITHHELD_LONG_INTERRUPTED,
+    "Long analysis stopped because the context it started with changed, or could no longer "
+    "be confirmed, while it ran, so it did not produce a new result. Any recorded calls "
+    "remain counted, and a fresh press is the only retry.": WITHHELD_LONG_CONTEXT_CHANGED,
+    "Long analysis stopped because the goal or outcome lines it was reading against were "
+    "edited or cleared, or could no longer be confirmed, while it ran, so it did not "
+    "produce a new result. Any recorded calls remain counted, and a fresh press is the "
+    "only retry.": WITHHELD_LONG_INTENT_CHANGED,
+    "Long analysis stopped because model calls were paused or turned off, or their "
+    "permission changed, while it ran, so it did not produce a new result. Any recorded "
+    "calls remain counted, and a fresh press is the only retry.": WITHHELD_LONG_PERMISSION_CHANGED,
+    "Long analysis stopped because the model CLI's settings were refused or could not be "
+    "verified before a pass started, so it did not produce a new result. Any recorded "
+    "calls remain counted, and a fresh press is the only retry.": WITHHELD_LONG_SETTINGS_REFUSED,
+    "Long analysis stopped because Compass could not confirm its own progress while it "
+    "ran, so it did not produce a new result. Any recorded calls remain counted, and a "
+    "fresh press is the only retry.": WITHHELD_LONG_FAULT,
+    "Long analysis could not cover the saved work well enough to produce a new result. "
+    "Any recorded calls remain counted, and a fresh press "
+    "is the only retry.": WITHHELD_LONG_INCOMPLETE,
+    "The analysis stopped because Compass stopped before it finished. Nothing was "
+    "produced, the attempt still counts, and a fresh press "
+    "is the only retry.": WITHHELD_INTERRUPTED,
+    "The analysis did not start, because Compass could not write the record that keeps "
+    "a spent attempt counted. Nothing was sent or spent.": WITHHELD_JOB_UNRECORDED,
+    "The analysis did not run, because Compass was "
+    "stopping. Nothing was sent or spent.": WITHHELD_STOPPING,
+    "The analysis ran, but Compass could not store its outcome at the time. Nothing is "
+    "shown from it, the attempt still counts, and a fresh "
+    "press is the only retry.": WITHHELD_UNSTORED,
+    "The analysis was cancelled before it finished. Nothing is shown from it, the "
+    "attempt still counts, and a fresh press is the only retry.": WITHHELD_CANCELLED,
+    "The analysis was cancelled before anything was sent. "
+    "Nothing was sent or spent.": WITHHELD_CANCELLED_UNSENT,
     (
         "The Codex CLI was not found on this machine, so no reading was made. A reading "
         "is produced by a codex subprocess whatever harness the session runs on."
@@ -2821,7 +2934,7 @@ PRESS_WITHHELD = (
 )
 
 
-# The press-time "Why Analyze is off" sentences that differ from the job-time
+# The press-time explanations that differ from the job-time
 # `WITHHELD` default (owner, 2026-10-02): each says what opens a reading, or
 # what the reader can do, and none promises an end Compass may never see. The
 # page cannot link `HOW_TO_USE.md`, which the installed plugin does not ship,
@@ -2834,7 +2947,7 @@ _IDLE_UNREACHED = (
     f"({_HOW_TO_LIVE})."
 )
 _IDLE_REACHED = (
-    "Events from this session reach this board, but no session end has been observed. Analyze "
+    "Events from this session reach this board, but no session end has been observed. {control} "
     "opens while the session works, or once its end is observed."
 )
 _PRESS_SENTENCES = {
@@ -2847,25 +2960,28 @@ _PRESS_SENTENCES = {
         "can run only while the session is working."
     ),
     WITHHELD_SETTLING: (
-        "This session ended moments ago and its record is still settling. Analyze opens by "
+        "This session ended moments ago and its record is still settling. {control} opens by "
         "itself in a few seconds."
     ),
     WITHHELD_STOP_SETTLING: (
-        "This session finished its turn moments ago and its record is still settling. Analyze "
+        "This session completed its turn moments ago and its record is still settling. {control} "
         "opens by itself in a few seconds."
     ),
 }
 
 
-def withheld_sentence(reason: str, row: Mapping[str, Any]) -> str:
+def withheld_sentence(reason: str, row: Mapping[str, Any], *, has_reading: bool = False) -> str:
     """The sentence a press withheld for `reason` is answered with, for this row's harness.
 
     `WITHHELD[reason]` stays the job-time and stored sentence; this is the
     press-time one the board publishes and the reading route answers with.
     """
     if reason == WITHHELD_IDLE_UNKNOWN and str(row.get("harness") or ""):
-        return _IDLE_REACHED if row.get("acquisition") == "event" else _IDLE_UNREACHED
-    return _PRESS_SENTENCES.get(reason) or WITHHELD[reason]
+        sentence = _IDLE_REACHED if row.get("acquisition") == "event" else _IDLE_UNREACHED
+    else:
+        sentence = _PRESS_SENTENCES.get(reason) or WITHHELD[reason]
+    control = "Check progress again" if has_reading else "Check progress"
+    return sentence.replace("{control}", control)
 
 
 class Eligibility(TypedDict):
@@ -2889,6 +3005,7 @@ def press_eligibility(
     *,
     now: float,
     settle_sec: float,
+    has_reading: bool = False,
 ) -> Eligibility:
     """The press-time half of `_readable`, on the arguments the reading route passes it.
 
@@ -2919,7 +3036,7 @@ def press_eligibility(
         "ok": False,
         "reason": withheld,
         "until": until,
-        "sentence": withheld_sentence(withheld, row),
+        "sentence": withheld_sentence(withheld, row, has_reading=has_reading),
     }
 
 

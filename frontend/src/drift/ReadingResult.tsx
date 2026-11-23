@@ -46,7 +46,6 @@ import { fmtDur } from './route';
 import { clock } from '../observed';
 import {
   ANNOTATIONS_OFF,
-  LONG_INTERRUPTED,
   LONG_INTERRUPTED_OLDER,
   CLAIM_LEAD,
   CLAIMS,
@@ -927,7 +926,7 @@ export function ReadingResult({
   const interruptedAt = nextNumber(annotation['reading_withheld_at']);
   const priorReadAt = nextNumber(raw['read_at']);
   const olderInterrupted =
-    annotation['reading_withheld'] === LONG_INTERRUPTED &&
+    model.session['annotation_reading_withheld_reason'] === 'long-interrupted' &&
     interruptedAt !== null &&
     priorReadAt !== null &&
     interruptedAt > priorReadAt;

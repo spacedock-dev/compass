@@ -1940,6 +1940,73 @@ class AReadingIsKeptBesideTheWordsItReadTest(unittest.TestCase):
             )
         self.assertEqual(500.0, self._published()["reading_withheld_at"])
 
+    def test_a_failed_progress_check_names_the_available_retry(self) -> None:
+        expected = (
+            "The progress check failed: Claude Code said it is not logged in. "
+            "Nothing was saved. Fix that, then press {}."
+        )
+        for button in ("Check progress", "Check progress again"):
+            with self.subTest(button=button):
+                if button.endswith("again"):
+                    annotation_store.record_reading(
+                        self.config, self.state, "claude", "s1", assessment=self._assessment()
+                    )
+                annotation_store.record_withheld(
+                    self.config,
+                    self.state,
+                    "claude",
+                    "s1",
+                    reason=runtime_reading.WITHHELD_CLAUDE_LOGIN,
+                    spent=True,
+                )
+                self.assertEqual(expected.format(button), self._published()["reading_withheld"])
+
+    def test_a_saved_long_outcome_publishes_its_reason_separately_from_the_sentence(self) -> None:
+        for reason in (
+            runtime_reading.WITHHELD_LONG_INTERRUPTED,
+            runtime_reading.WITHHELD_LONG_INCOMPLETE,
+        ):
+            with self.subTest(reason=reason):
+                annotation_store.record_withheld(
+                    self.config, self.state, "claude", "s1", reason=reason, spent=True
+                )
+                self.assertEqual(reason, self._published().get("reading_withheld_reason"))
+                self.assertEqual(
+                    runtime_reading.WITHHELD[reason], self._published()["reading_withheld"]
+                )
+
+        path = Path(annotation_store.store_path(self.config))
+        saved = json.loads(path.read_text())
+        saved["entries"][0]["withheld"] = next(
+            sentence
+            for sentence, reason in runtime_reading.LEGACY_WITHHELD.items()
+            if reason == runtime_reading.WITHHELD_LONG_INTERRUPTED
+        )
+        path.write_text(json.dumps(saved))
+        self.assertEqual(
+            runtime_reading.WITHHELD_LONG_INTERRUPTED,
+            self._published().get("reading_withheld_reason"),
+        )
+        annotation_store.record_reading(
+            self.config, self.state, "claude", "s1", assessment=self._assessment()
+        )
+        self.assertEqual("", self._published().get("reading_withheld_reason"))
+
+    def test_an_old_saved_failure_still_explains_what_to_press(self) -> None:
+        path = Path(annotation_store.store_path(self.config))
+        stored = json.loads(path.read_text())
+        entry = stored["entries"][0]
+        entry["withheld"] = (
+            "Analyze failed: Claude Code said it is not logged in. "
+            "Nothing was saved. Fix that, then press Analyze drift again."
+        )
+        path.write_text(json.dumps(stored))
+        self.assertEqual(
+            "The progress check failed: Claude Code said it is not logged in. "
+            "Nothing was saved. Fix that, then press Check progress.",
+            self._published()["reading_withheld"],
+        )
+
     def test_a_reading_that_arrives_retires_the_withheld_time_with_its_reason(self) -> None:
         annotation_store.record_withheld(
             self.config,

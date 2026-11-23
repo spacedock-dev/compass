@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ASSESSMENT_KEYS, RESULT_SUBJECTS } from '../drift/shape';
 import {
+  analysisSourceLine,
   BLOCKER_LINES,
   CORRECTION_CAP,
   CRITERION_KEYS,
@@ -33,6 +34,8 @@ import {
   GOAL_VERDICT_QUOTED_WHY,
   GOAL_VERDICT_REMOVAL_WHYS,
   GOAL_VERDICT_WHY,
+  LIVE_SOURCE_LINE,
+  LONG_WITHHELD,
   REASON_LINES,
   RESULTS,
   SCOPE_TEXT_IDLE,
@@ -70,6 +73,7 @@ import {
 interface Vocabulary {
   readonly assessmentKeys: string[];
   readonly criterionKeys: string[];
+  readonly longWithheld: Record<string, string>;
   readonly whyTokens: string[];
   readonly goalVerdictKeys: string[];
   readonly goalVerdictChecks: string[];
@@ -109,6 +113,7 @@ interface Vocabulary {
   readonly turnStopHarnesses: string[];
   readonly scopeTextMidFlightIdle: string;
   readonly correctionCapChars: number;
+  readonly levelSources: { readonly live: string; readonly analysis: string };
   readonly levelReasons: string[];
   readonly annotationFields: string[];
   readonly unsafeChars: { readonly codePoints: [number, number][] };
@@ -134,6 +139,10 @@ describe('the cue window', () => {
 });
 
 describe('the reading vocabulary', () => {
+  it('uses the published interruption and incomplete outcome sentences', () => {
+    expect(LONG_WITHHELD).toEqual(vocabulary.longWithheld);
+  });
+
   it('names the same assessment keys as the producer', () => {
     expect(sorted(ASSESSMENT_KEYS)).toEqual(sorted(vocabulary.assessmentKeys));
     expect(sorted(READING_ASSESSMENT_KEYS)).toEqual(sorted(vocabulary.assessmentKeys));
@@ -260,6 +269,13 @@ describe('the words beside a check', () => {
   });
 });
 
+it('explains where each level came from in the producer’s words', () => {
+  expect(LIVE_SOURCE_LINE).toBe(vocabulary.levelSources.live);
+  expect(analysisSourceLine('14:52')).toBe(
+    vocabulary.levelSources.analysis.replace('{time}', '14:52'),
+  );
+});
+
 describe('the goal and the annotation', () => {
   it('spells the prompt sources as the server does', () => {
     expect(sorted(PROMPT_SOURCES)).toEqual(sorted(vocabulary.promptSources));
@@ -270,7 +286,10 @@ describe('the goal and the annotation', () => {
   });
 
   it('reads exactly the fields the store publishes', () => {
-    expect(sorted(ANNOTATION_FIELDS)).toEqual(sorted(vocabulary.annotationFields));
+    // The drift outcome reads the token directly from the session, like its diagnostic metadata.
+    expect(sorted([...ANNOTATION_FIELDS, 'reading_withheld_reason'])).toEqual(
+      sorted(vocabulary.annotationFields),
+    );
   });
 
   it('bounds the outcome lines where the store does, in both places the page spells it', () => {

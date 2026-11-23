@@ -398,12 +398,10 @@ describe('the live estimate and the analysis level read as the legacy page reads
         const found = firstDifference(
           canonical({
             ...analysisA,
-            /* A named departure: the recording says "Analysis at HH:MM · intent against ...", the page
-               leaves the time to the card header and begins at "Intent".
-               docs/design-frontend-migration.md#held-to-recorded-answers */
+            // The source line keeps the recorded time and uses the session page's words.
             line: String(analysisA['line']).replace(
-              /^Analysis at \d\d:\d\d · (.)/,
-              (_all, first: string) => first.toUpperCase(),
+              /^Analysis at (\d\d:\d\d) · intent against cited checks and messages\.$/i,
+              'From the progress check at $1: each line of your goal against the tests, builds and messages it cited.',
             ),
           }),
           canonical({

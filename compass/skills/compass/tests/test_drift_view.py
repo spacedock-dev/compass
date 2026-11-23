@@ -43,6 +43,25 @@ def lines(name: str) -> dict[str, dict[str, Any]]:
 
 
 class NamedCasesTest(unittest.TestCase):
+    def test_a_stored_codex_departure_keeps_its_reading_without_a_level(self) -> None:
+        case = copy.deepcopy(BY_NAME["a-codex-departure-reads-as-a-departure"])
+        session = case["session"]
+        assessment = session["annotation_assessment"]
+        case["context"]["sources"]["work"]["analysis_levels"] = [
+            {
+                "harness": "codex",
+                "sid": session["sid"],
+                "revision_read": assessment["revision_read"],
+                "read_at": assessment["read_at"],
+                "level": "medium",
+                "reasons": ["departure"],
+            }
+        ]
+        answer = view(case)
+        self.assertEqual(["goal"], answer["departures"])
+        self.assertIsNone(answer["analysis"])
+        self.assertIsNone(answer["pill"])
+
     def test_unposed_lines_name_the_prompt_limit(self) -> None:
         case = copy.deepcopy(BY_NAME["a-stored-not-asked-becomes-the-limit"])
         case["session"]["annotation_assessment"]["criteria"]["line_1"]["why"] = "lines-no-room"

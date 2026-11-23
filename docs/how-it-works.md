@@ -29,19 +29,19 @@ the build work was "done and merged" is shown as contradicted by entry `[80]`.
 
 ```mermaid
 flowchart LR
-    A["Write a goal<br/>and outcome lines"] --> B["Press<br/>Analyze drift"]
+    A["Write a goal<br/>and outcome lines"] --> B["Press<br/>Check progress"]
     B --> C{"Did the work<br/>depart from the goal?"}
     C -- "yes" --> D["Read each departure<br/>and the entries it cites"]
     D --> E["Steer back: copy the correction<br/>and paste it into the session"]
     C -- "no, or can't tell" --> F["Read why, and check<br/>again after more work"]
-    E --> G["Check again"]
+    E --> G["Check progress again"]
 ```
 
 A check goes like this:
 
 1. On the session's page, write the goal you are holding the session to in the Goal card. You can
    add up to six expected outcome lines: what should be true when the work is done.
-2. Press Analyze drift. This sends the session's content to a model (see
+2. Press Check progress. This sends the session's content to a model (see
    [what can leave your machine](#what-can-leave-your-machine)).
 3. The Drift card shows a level: None or low, Medium, High or Extreme. When the record cannot support
    a level, it says Not enough recorded yet. Under the level, each departure and each outcome line
@@ -49,8 +49,8 @@ A check goes like this:
 4. For a departure, press Steer back. Compass writes a correction from your own goal and outcome
    lines. You edit it, copy it and paste it into the session yourself; Compass never types into a
    session.
-5. After the agent does more work, the button reads Check again. When the reading is current, it
-   reads Analyze again.
+5. Once a reading is saved, the button reads Check progress again. New work or a changed goal
+   can put the reading out of date.
 
 Read a level as an account of the evidence, not a verdict you can rely on: the reader's accuracy
 check has not passed. A citation such as `[41]` lets you see the evidence for yourself. Hover over it

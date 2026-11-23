@@ -7,6 +7,7 @@ import {
   DEPARTURE_READING,
   DriftScenario,
   fact,
+  failedCheck,
   passedCheck,
   readingScenario,
   type Scenario,
@@ -223,11 +224,33 @@ export const ADepartureKeepsItsLevelAndTheRunningPillSaysSoFar: Story = {
     await expect(verdict).toHaveTextContent(/^Medium: 1 departure/);
     // The level's word is the sentence's alone; the meter's head holds its source.
     await expect(drift.querySelector('[data-next-drift-level]')).toHaveTextContent(/^Analysis/);
+    await expect(drift.querySelector('[data-next-drift-level]')).toHaveTextContent(
+      'From the progress check at',
+    );
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-drift-pill]')).toHaveTextContent(
         'Drift: Medium so far',
       ),
     );
+  },
+};
+
+export const AStoredCodexDepartureKeepsItsReadingWithoutALevel: Story = {
+  ...scenario({
+    harness: 'codex',
+    session: { ...READ({ goal: DEPARTS }), annotation_line_1: '' },
+    facts: [
+      fact('u1', 200, { type: 'user_message', by: 'person:me', summary: 'Ship it' }, 'codex'),
+      failedCheck('c1', 500, 'codex'),
+    ],
+    work: { analysis_levels: [analysisRow('codex', 'medium')] },
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    await expect(within(drift).getByText(DEPARTS.detail)).toBeVisible();
+    await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-drift-pill]')).toBeNull();
+    await expect(drift).not.toHaveTextContent('From the progress check at');
   },
 };
 

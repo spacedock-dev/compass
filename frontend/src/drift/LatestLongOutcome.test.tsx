@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LONG_DIAGNOSTIC, LONG_INCOMPLETE_SENTENCE, LATEST_OLDER } from '../../test/longDiagnostic';
 import { EVIDENCE_PROGRESS, LONG_JOB } from '../../test/longProgress';
-import { PARTIAL_READING, PARTIAL_WHY } from '../../test/longReading';
+import { LONG_INTERRUPTED_SENTENCE, PARTIAL_READING, PARTIAL_WHY } from '../../test/longReading';
 import { REGION_IDS } from '../shell/announcer';
 import { check, fact, driftBoard, mountDrift, POLICY, readingPosts, textOf } from './testing';
 import { LONG_WITHHELD } from './sentences';
@@ -14,6 +14,7 @@ const session = {
   annotation_assessment: PARTIAL_READING,
   annotation_long_diagnostic: LONG_DIAGNOSTIC,
   annotation_reading_withheld: LONG_INCOMPLETE_SENTENCE,
+  annotation_reading_withheld_reason: 'long-incomplete',
   annotation_reading_withheld_at: 1100,
 };
 
@@ -32,9 +33,7 @@ describe('the latest long outcome alongside a standing reading', () => {
     await page.settle();
     expect(textOf('[data-next-long-outcome]')).not.toContain(failure);
     expect(textOf('.next-cockpit-reading-outcome')).toContain(failure);
-    expect(textOf('[data-next-long-outcome]')).toContain(
-      'Compass stopped before this analysis outcome was saved.',
-    );
+    expect(textOf('[data-next-long-outcome]')).toContain(LONG_INTERRUPTED_SENTENCE);
   });
 
   for (const pending of [false, true]) {

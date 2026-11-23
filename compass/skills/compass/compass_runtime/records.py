@@ -2419,6 +2419,13 @@ def alnum(value: Any) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
 
 
+def size_in_kb(byte_count: int) -> str:
+    """Round a byte count to whole KB on the board's 1,024-byte scale."""
+    if 0 < byte_count < 1024:
+        return "<1 KB"
+    return f"{(byte_count + 512) // 1024:,} KB"
+
+
 def record_fingerprint(record: Any) -> bytes:
     raw = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
         "utf-8", "replace"

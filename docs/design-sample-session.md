@@ -287,6 +287,11 @@ bytes with Node 26.12.1 and pnpm 12.17.0. The rebased Activity log page at `6f4b
 measures 2,404,243 bytes. This sets the page bound to the measured 2,418,351 bytes, an
 increase of 1,060 bytes over the previous bound. The fixture bound is 250,000 bytes.
 
+On 2026-11-23, the progress check control labels, Uses AI note, level source lines and sending
+disclosures packaged at 2,418,739 bytes on the corrected technical tabs. The review fixes add 180
+bytes, for a measured page bound of 2,418,919 bytes on Node 26.10.0 and pnpm 12.17.0.
+The fixture bound stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

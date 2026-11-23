@@ -88,7 +88,7 @@ try {
       'How Intent and drift works',
       'Use your prompt',
       'Save intent',
-      'Analyze drift',
+      'Check progress',
       'What is sent',
       'More',
       'w/alpha',

@@ -235,7 +235,7 @@ export const TwentyTwoDirections: Story = {
   },
 };
 
-/* A pending direction is quoted under its time before any press, beside the three choices and Analyze drift,
+/* A pending direction is quoted under its time before any press, beside the three choices and Check progress,
    and each choice acts on its first press. */
 export const QuotedBeforeAnyPress: Story = {
   args: { count: 1 },
@@ -247,7 +247,7 @@ export const QuotedBeforeAnyPress: Story = {
         `Build synthetic outcome 1. ${AFTER}`,
       ),
     );
-    for (const name of ['Add as a line', 'Make it the goal', 'Leave it', 'Analyze drift'])
+    for (const name of ['Add as a line', 'Make it the goal', 'Leave it', 'Check progress'])
       await expect(canvas.getByRole('button', { name })).toBeVisible();
     // One press settles it: no second press to "read it first".
     await userEvent.click(canvas.getByRole('button', { name: 'Leave it' }));
@@ -259,7 +259,7 @@ export const QuotedBeforeAnyPress: Story = {
   },
 };
 
-/* Analyze drift stays offered while a later direction waits, beside the choices and not instead of them. */
+/* Check progress stays offered while a later direction waits, beside the choices and not instead of them. */
 export const AnalyzeStaysAvailable: Story = {
   args: { count: 2 },
   play: async ({ canvasElement }) => {
@@ -267,7 +267,7 @@ export const AnalyzeStaysAvailable: Story = {
     await canvas.findByText(
       'You sent 2 messages after your goal. Choose one to add or make the goal, or leave them all:',
     );
-    await expect(await canvas.findByRole('button', { name: 'Analyze drift' })).toBeVisible();
+    await expect(await canvas.findByRole('button', { name: 'Check progress' })).toBeVisible();
     await expect(canvas.getByRole('button', { name: 'Leave it' })).toBeVisible();
   },
 };

@@ -47,10 +47,10 @@ async function drawn(canvasElement: HTMLElement): Promise<HTMLElement> {
 
 const head = (card: HTMLElement) => card.querySelector('header') as HTMLElement;
 
-/* The re-run controls the card draws, by name: Analyze again over a current reading, Check again over one
+/* The re-run controls the card draws, by name: Check progress again over a current reading, Check progress again over one
    that new work or a changed intent left behind. */
 const rerun = (root: HTMLElement) =>
-  within(root).queryAllByRole('button', { name: /^(Analyze again|Check again)$/ });
+  within(root).queryAllByRole('button', { name: /^(Check progress again)$/ });
 
 async function readingDrawn(card: HTMLElement): Promise<HTMLElement> {
   return waitFor(() => {
@@ -63,13 +63,39 @@ async function readingDrawn(card: HTMLElement): Promise<HTMLElement> {
 const sentButtons = (card: HTMLElement) =>
   within(card).queryAllByRole('button', { name: /^What is sent/ });
 
-/* Empty: a heading, one sentence and Analyze drift. The monitor, the pause and the counter are not in the
+const undatedFailure = 'The progress check failed. Nothing was saved. Press Check progress again.';
+export const UndatedReadingOffersRetryAfterFailure: Story = {
+  ...scenario({
+    session: {
+      ...STORED_READING,
+      annotation_line_1: '',
+      annotation_assessment: {
+        ...DEPARTURE_READING,
+        read_at: null,
+        criteria: { goal: DEPARTURE_READING.criteria.goal },
+      },
+      annotation_reading_withheld: undatedFailure,
+    },
+    facts: READ_FACTS,
+  }),
+  play: async ({ canvasElement }) => {
+    const card = await drawn(canvasElement);
+    await readingDrawn(card);
+    await expect(within(card).getByText(undatedFailure, { exact: false })).toBeVisible();
+    const retry = within(card).getByRole('button', { name: 'Check progress again' });
+    await expect(retry).toBeVisible();
+    await expect(retry.nextElementSibling).toHaveTextContent('Uses AI');
+    await expect(card.querySelector('[data-next-drift-stamp]')).toBeNull();
+  },
+};
+
+/* Empty: a heading, one sentence and Check progress. The monitor, the pause and the counter are not in the
    body, nothing says "Not checked yet" over an empty four-step bar, and Steer back waits for a departure. */
 export const Empty: Story = {
   ...scenario({ facts: [PERSON, failedCheck('c1', 500)] }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
-    const analyze = await within(card).findByRole('button', { name: 'Analyze drift' });
+    const analyze = await within(card).findByRole('button', { name: 'Check progress' });
     await expect(analyze).toBeVisible();
     await expect(within(head(card)).getByRole('heading', { name: 'Drift' })).toBeVisible();
     await expect(
@@ -84,7 +110,7 @@ export const Empty: Story = {
     await expect(within(card).queryByRole('switch', { name: 'Live monitor' })).toBeNull();
     await expect(rerun(card)).toHaveLength(0);
     await expect(sentButtons(card)).toHaveLength(1);
-    // One sentence under Analyze drift, what it will read; "Runs in the background." is not a second.
+    // One sentence under Check progress, what it will read; "Runs in the background." is not a second.
     await expect(card).not.toHaveTextContent('Runs in the background');
     const ask = analyze.closest('.next-cockpit-reading-ask') as HTMLElement;
     const under = ask.nextElementSibling as HTMLElement;
@@ -167,7 +193,7 @@ export const Result: Story = {
     // Present from the first reading, in the header, enabled.
     const again = rerun(head(card));
     await expect(again).toHaveLength(1);
-    await expect(again[0]).toHaveAccessibleName('Analyze again');
+    await expect(again[0]).toHaveAccessibleName('Check progress again');
     await expect(again[0]).not.toHaveAttribute('aria-disabled', 'true');
     await expect(rerun(card)).toHaveLength(1);
     await expect(within(card).getByRole('button', { name: 'Steer back' })).toBeVisible();
@@ -219,7 +245,9 @@ export const EachVerdictAndTheReadTimeAppearOnce: Story = {
     const stamp = card.querySelector('[data-next-drift-stamp]') as HTMLElement;
     await expect(stamp).toHaveTextContent(/^claude-sonnet-5-5 · Analysis last run \d\d:\d\d$/);
     await expect(level).not.toHaveTextContent(/last run|read at/);
-    await expect(level).toHaveTextContent('Intent against cited checks and messages.');
+    await expect(level).toHaveTextContent(
+      'each line of your goal against the tests, builds and messages it cited.',
+    );
     await userEvent.click(within(card).getByRole('button', { name: 'What the analysis read' }));
     const model = card.querySelector('[data-next-read-section="model"]') as HTMLElement;
     await expect(model).toHaveTextContent(/^Modelclaude-sonnet-5-5$/);
@@ -305,7 +333,7 @@ export const APassOfTheSameCommandInAnotherDirectoryFixesNothing: Story = {
   },
 };
 
-/* New work: the marker sits in the header beside the read time, with Check again. It is not a box between
+/* New work: the marker sits in the header beside the read time, with Check progress again. It is not a box between
    the level and the result, and it holds no counter and no What is sent of its own. */
 export const NewWork: Story = {
   ...scenario({
@@ -332,7 +360,7 @@ export const NewWork: Story = {
     );
     const again = rerun(card);
     await expect(again).toHaveLength(1);
-    await expect(again[0]).toHaveAccessibleName('Check again');
+    await expect(again[0]).toHaveAccessibleName('Check progress again');
     await expect(head(card).contains(again[0] ?? null)).toBe(true);
     await expect(stale).not.toHaveTextContent(/drift checks? requested/);
     await expect(sentButtons(card)).toHaveLength(1);
@@ -342,7 +370,7 @@ export const NewWork: Story = {
   },
 };
 
-/* Intent changed: the same header marker, saying the words changed, with Check again. */
+/* Intent changed: the same header marker, saying the words changed, with Check progress again. */
 export const IntentChanged: Story = {
   ...scenario({
     session: { ...STORED_READING, annotation_revision: 4, annotation_revision_count: 2 },
@@ -360,7 +388,7 @@ export const IntentChanged: Story = {
     await expect(stale).toHaveTextContent('Your intent changed after this analysis.');
     const again = rerun(card);
     await expect(again).toHaveLength(1);
-    await expect(again[0]).toHaveAccessibleName('Check again');
+    await expect(again[0]).toHaveAccessibleName('Check progress again');
     await expect(head(card).contains(again[0] ?? null)).toBe(true);
     await expect(sentButtons(card)).toHaveLength(1);
   },

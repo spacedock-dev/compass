@@ -1570,15 +1570,18 @@ class CancelAnAnalysisTest(unittest.TestCase):
     def test_the_cancel_sentences_say_what_the_reader_may_rely_on(self) -> None:
         spent = reading.WITHHELD[reading.WITHHELD_CANCELLED]
         unsent = reading.WITHHELD[reading.WITHHELD_CANCELLED_UNSENT]
-        self.assertEqual(
-            "The analysis was cancelled before it finished. Nothing is shown from it, the "
-            "attempt still counts, and a fresh press is the only retry.",
-            spent,
-        )
-        self.assertEqual(
-            "The analysis was cancelled before anything was sent. Nothing was sent or spent.",
-            unsent,
-        )
+        with self.subTest(outcome="spent"):
+            self.assertEqual(
+                "The progress check was cancelled before it finished. Nothing is shown from it, "
+                "the attempt still counts, and a fresh press is the only retry.",
+                spent,
+            )
+        with self.subTest(outcome="unsent"):
+            self.assertEqual(
+                "The progress check was cancelled before anything was sent. Nothing was sent "
+                "or spent.",
+                unsent,
+            )
         for sentence in (spent, unsent):
             self.assertNotIn("You cancelled", sentence)
 

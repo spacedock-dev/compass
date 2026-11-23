@@ -295,7 +295,7 @@ export const WiderMessageDisclosure: Story = {
       grant={grant({
         notice_due: true,
         disclosure:
-          'Sends your messages and the agent’s replies to Anthropic, at most 16 KiB at a time. Long messages can continue across parts within the job limits. Everything is redacted first.',
+          'Sends your messages and the agent’s replies to Anthropic, at most 16 KB at a time. Long messages can continue across parts within the job limits. Everything is redacted first.',
       })}
     />
   ),
@@ -304,6 +304,7 @@ export const WiderMessageDisclosure: Story = {
     await userEvent.click(
       await within(region).findByRole('button', { name: 'What is sent to Claude Code' }),
     );
+    await expect(document.body).toHaveTextContent('at most 16 KB at a time');
     await expect(document.body).toHaveTextContent(
       'Long messages can continue across parts within the job limits.',
     );

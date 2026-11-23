@@ -2264,6 +2264,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         # Summary jobs run the producer part by part under reading_policy's grant and ledger,
         # reuse the reading lane's process supervision, and write through the summary store.
+        # records formats prompt sizes in the first-layer sending disclosure.
         "compass_runtime.summary_jobs": {
             "compass_runtime.config",
             "compass_runtime.io",
@@ -2271,6 +2272,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading_jobs",
             "compass_runtime.reading_policy",
             "compass_runtime.reading_route",
+            "compass_runtime.records",
             "compass_runtime.rooted_path",
             "compass_runtime.session_source",
             "compass_runtime.session_summary",

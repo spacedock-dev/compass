@@ -109,13 +109,13 @@ describe('an offer nothing has read is not an offer that is off', () => {
 
 describe('reader-started goal summaries', () => {
   it.each([undefined, 'granted'])(
-    'offers a direct request with no stored decline (%s), and Pause model calls beside it',
+    'offers a direct request with no stored decline (%s), and Pause all AI use beside it',
     async (answer) => {
       const page = mount(offer(), answer ? { storage: { [CONSENT]: answer } } : {});
       await page.settle();
       expect(text()).toContain(DISCLOSURE);
       expect(action('request')?.textContent).toBe('Summarize this session');
-      expect(action('off')?.textContent).toBe('Pause model calls');
+      expect(action('off')?.textContent).toBe('Pause all AI use');
       expect(action('allow')).toBeNull();
       expect(action('decline')).toBeNull();
       await page.poll({ ...board, generated: 1002 });
@@ -173,7 +173,7 @@ describe('reader-started goal summaries', () => {
     expect(text()).toContain('goal.example');
     expect(text()).toContain('Provider: Codex');
     const off = document.querySelector<HTMLButtonElement>('[data-next-observer-action="off"]');
-    expect(off?.textContent).toBe('Pause model calls');
+    expect(off?.textContent).toBe('Pause all AI use');
     fireEvent.click(off as HTMLElement);
     await page.settle();
     expect(
@@ -194,10 +194,10 @@ describe('reader-started goal summaries', () => {
       },
     });
     await page.settle();
-    expect(action('off')?.textContent).toBe('Resume model calls');
+    expect(action('off')?.textContent).toBe('Resume AI use');
     press('off');
     await page.settle();
-    expect(action('off')?.textContent).toBe('Pause model calls');
+    expect(action('off')?.textContent).toBe('Pause all AI use');
     expect(action('request')).not.toBeNull();
     expect(modelRequests(page)).toHaveLength(0);
     expect(

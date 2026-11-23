@@ -46,7 +46,7 @@ describe('the sample session', () => {
     for (const way of ['type', 'one of your prompts', 'Find goal', '/goal']) {
       expect(steps[1]).toContain(way);
     }
-    expect(steps[2]).toContain('Analyze drift');
+    expect(steps[2]).toContain('Check progress');
     expect(steps[3]).toContain('Steer back');
   });
 

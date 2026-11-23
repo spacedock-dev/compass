@@ -8,6 +8,7 @@ import type { ContextEntry } from '../store/board';
 import { entryKind, localRecordedTime, recordedTime } from './result';
 import { fmtDur } from './route';
 import {
+  analysisSourceLine,
   BLOCKER_LINES,
   ciEntryKind,
   CLAIMS,
@@ -529,9 +530,7 @@ export function analysisLevel(input: AnalysisInput): DriftLevel | null {
     level,
     label: LIVE_LEVEL_NAMES[level] as string,
     source: 'Analysis',
-    /* The read time is the card header's, once ("Analysis last run HH:MM"); this line says only what the
-       analysis was made against. */
-    line: 'Intent against cited checks and messages.',
+    line: analysisSourceLine(clock(readAt)),
     analysis: true,
     rose: '',
     anchored: false,

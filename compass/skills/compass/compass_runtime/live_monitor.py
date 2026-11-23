@@ -224,12 +224,13 @@ def provenance(config: RuntimeConfig) -> dict[str, Any]:
 def disclosure(destination: str, *, terminal: bool = False, sid: str = "ID") -> str:
     """The "What is sent" words for the `monitor` notice: what leaves, to whom, how to stop."""
     sent = (
-        "your saved goal, and your recent messages, the agent's replies, the commands of checks "
+        "your saved goal, and your recent messages, the agent's replies, the commands of "
+        "tests and builds "
         "with their result, every other command's line with its exit status, and the paths of "
         "files written"
         if destination
-        else "your saved goal, and your recent messages and the agent's replies. Checks and "
-        "file paths are not sent, because Compass cannot name where they would go"
+        else "your saved goal, and your recent messages and the agent's replies. Test and build "
+        "results and file paths are not sent, because Compass cannot name where they would go"
     )
     cadence = (
         f"to Haiku: {sent}. It checks after new work in this session, at most about once a minute. "
@@ -249,7 +250,7 @@ def disclosure(destination: str, *, terminal: bool = False, sid: str = "ID") -> 
         f"{cadence}"
         "Recent turns are sent again in later checks, and again each time "
         "Live monitor is turned off and on. Everything is redacted first. No file or tool "
-        f"output is sent. Pause model calls stops it. {stop}"
+        f"output is sent. Pause all AI use stops it. {stop}"
     )
 
 

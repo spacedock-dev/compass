@@ -140,9 +140,8 @@ The Claude Code live monitor is off by default. A browser reload leaves its swit
 and a rolling 24-hour limit across the board, apart from Analyze's 100 attempts. An analysis result
 keeps the source beside each outcome line, groups written paths by folder, and states whether your words changed or new work
 arrived after it. Both levels are recomputed from the evidence and are never stored.
-Once a reading exists the card header carries a re-run control: `Check again` when new work or
-changed words came after the reading, `Analyze again` when it is current. It is inert, not gone,
-where a press cannot run. Each departure is a card naming the constraint, quoting your words for
+Once a reading exists, the card header offers Check progress again for current and stale
+readings. The control stays visible where a press is temporarily unavailable. Each departure is a card naming the constraint, quoting your words for
 it, listing the cited entries by number, and giving the analysis's reason. A cited entry's number
 opens Full activity at that entry, loading older record pages for one not yet listed, with every
 entry the finding cites marked with the finding's words and their current numbers. Departure
