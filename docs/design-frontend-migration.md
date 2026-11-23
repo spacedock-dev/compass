@@ -27,6 +27,16 @@ sentence. A Codex reading keeps its evidence without displaying a level. What is
 KB for the goal and session summary limits. The Live monitor names test and build results in both
 destination cases.
 
+**2026-11-23, Session page and summary.** The session header holds Check progress. Right now
+lists helpers and the next step. At a glance shows published figures, and Project links to the
+project. The Session Storybook checks the new layout and placement. The `sessions__detail`
+comparison masks the redesigned header chrome, helper wording and side cards while retaining
+the exact request, technical activity and report comparisons. The summary uses one AI provenance
+line, one open phase, plain Source links, and Off course here for evidence. Tool-reported failures
+stay in the expanded story. The separate test-failure badge was removed because the summary
+does not publish a test-specific outcome field. The Goal editor's save button says Save goal.
+The recorded answers remain the baseline for the comparisons that still apply.
+
 **2026-11-23, session technical tabs.** The retired `sessions__detail` recording puts
 command-shape reports, notifications and How it landed in the activity column. The reader finds
 them under Reports now. The session layout stories assert the tab placement and the existing

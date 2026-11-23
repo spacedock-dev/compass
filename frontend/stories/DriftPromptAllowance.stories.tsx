@@ -67,7 +67,9 @@ export const AnUnsentPromptKeepsItsRefusalAndCountsNoAnalysis: Story = {
     await expect(allowance).toHaveTextContent(
       'do not confirm model availability or that a prompt will fit',
     );
-    await userEvent.click(await within(card).findByRole('button', { name: 'Check progress' }));
+    await userEvent.click(
+      await within(canvasElement).findByRole('button', { name: 'Check progress' }),
+    );
     await waitFor(() => expect(card.querySelector('[data-next-analyzing]')).toBeVisible());
     await expect(READING.posts).toHaveLength(1);
     await expect(card.querySelector('p.next-cockpit-reading-outcome')).toBeNull();
@@ -90,7 +92,9 @@ export const AnUnsentPromptKeepsItsRefusalAndCountsNoAnalysis: Story = {
     await expect(args.scenario.session?.['annotation_assessment']).toBeUndefined();
     await expect(card.querySelector('[data-next-result]')).toBeNull();
     await expect(card.querySelector('.next-cockpit-reading-count')).toBeNull();
-    await expect(within(card).getByRole('button', { name: 'Check progress' })).toBeVisible();
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Check progress' }),
+    ).toBeVisible();
 
     if (!BOARD.refresh) throw new Error('the board refresh seam was not mounted');
     await BOARD.refresh();
@@ -105,13 +109,14 @@ export const AnUnsentPromptKeepsItsRefusalAndCountsNoAnalysis: Story = {
 export const AnOlderServerLeavesTheNextAllowanceUnknown: Story = {
   args: { scenario: { route: ROUTE } },
   play: async ({ canvasElement }) => {
-    const card = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     const checks = await openSessionTechnicalTab('Check settings', canvasElement);
     const allowance = checks.getByText('Next Analyze prompt:').parentElement?.parentElement;
     await expect(allowance).toBeVisible();
     await expect(allowance).toHaveTextContent('Next Analyze prompt: Allowance unknown.');
     await expect(allowance).not.toHaveTextContent(/0 KB|refused before a model call/);
-    await expect(await within(card).findByRole('button', { name: 'Check progress' })).toBeVisible();
+    await expect(
+      await within(canvasElement).findByRole('button', { name: 'Check progress' }),
+    ).toBeVisible();
   },
 };
 

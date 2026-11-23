@@ -66,7 +66,7 @@ export function GoalUpdateOffer() {
       aria-label="A newer goal from /goal"
       data-next-goal-update
     >
-      <p title={update.text}>
+      <p title={update.text} data-authored>
         {`Your /goal changed at ${clockText(update.at)}: ${promptClip(update.text, 120)}`}
         {update.cut ? ' (cut to fit the goal limit)' : ''}
       </p>

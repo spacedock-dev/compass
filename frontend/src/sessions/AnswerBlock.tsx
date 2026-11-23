@@ -98,7 +98,7 @@ function AnswerButton({
       {...(busy ? { 'aria-disabled': true, 'aria-busy': true, 'data-next-pending': '' } : {})}
       onClick={() => void press()}
     >
-      {label}
+      <span data-authored>{label}</span>
     </Button>
   );
 }
@@ -131,14 +131,16 @@ export function AnswerBlock({
     >
       <div className="next-session-ask-callout">
         <span>
-          {'ASKED YOU · '}
+          {'Asked you · '}
           <span className="next-session-wait" data-known={String(observed.waitedKnown === true)}>
             {observed.waitedText}
           </span>
         </span>
-        <strong className="next-visually-hidden">{`AGENT IS ASKING · ${title}`}</strong>
+        <strong className="next-visually-hidden">{title}</strong>
         <section data-next-session-command-fact="request">
-          <h2>{askResponsibility(payload, asks[0] ?? {})}</h2>
+          <h2>
+            {askResponsibility(payload, asks[0] ?? {}) === 'CAPTAIN' ? 'Captain' : 'Needs you'}
+          </h2>
         </section>
       </div>
       {asks.length ? (
@@ -152,7 +154,7 @@ export function AnswerBlock({
               className="next-session-ask"
               data-next-session-ask={id}
             >
-              <p className="next-session-ask-question">
+              <p className="next-session-ask-question" data-authored>
                 {asks.length === 1
                   ? observed.askText
                   : String(ask['question'] == null ? '' : ask['question'])}
@@ -184,11 +186,17 @@ export function AnswerBlock({
           );
         })
       ) : (
-        <p className="next-session-ask-question">{observed.askText}</p>
+        <p className="next-session-ask-question" data-authored>
+          {observed.askText}
+        </p>
       )}
       {reason || unconfirmed ? (
         <p className="mt-2.5 mb-0 text-body text-muted-foreground" data-next-session-wait-note>
-          {reason ? <span>Harness reports: {reason}</span> : null}
+          {reason ? (
+            <span>
+              Harness reports: <span data-authored>{reason}</span>
+            </span>
+          ) : null}
           {unconfirmed ? <span className="block">{UNCONFIRMED_WAIT_NOTE}</span> : null}
         </p>
       ) : null}

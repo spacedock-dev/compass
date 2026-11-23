@@ -95,7 +95,7 @@ describe('a found goal as the working goal', () => {
     const page = input();
     expect(intentUnsaved(page)).toBe(false);
     expect(intentChanges(page).undoable).toBe(false);
-    // Save intent still stores it as the reader's typed words.
+    // Save goal still stores it as the reader's typed words.
     expect(intentChanges(page).goal).toBe(true);
   });
 

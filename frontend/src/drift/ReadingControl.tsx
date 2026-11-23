@@ -496,10 +496,8 @@ export function WhatIsSent({
   );
 }
 
-/* The press that starts a reading, in the idle card's body and, once a reading exists, in its header. One
-   rule for both: refused while calls are paused, while another press is in flight, while a refusal stands
-   beside it, and while an analysis runs, so the control stays on the page and says why rather than going
-   away. */
+/* The same rule covers first and later checks: the press is refused while calls are paused, while
+   another press is in flight, while a refusal stands beside it, or while an analysis runs. */
 export function RunPress({
   board,
   label,
@@ -578,7 +576,7 @@ function CheckCost() {
   );
 }
 
-/* The re-run control in the Drift card's header uses the same label over a current or stale reading.
+/* The session header's re-run control uses the same label over a current or stale reading.
    Inert, never gone, where a press cannot run: calls paused, an analysis running (Cancel is that state's
    control), an unsaved edit, or a later direction's question, which owns the one run path while it stands
    ([DEC-27](../../../docs/design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)).

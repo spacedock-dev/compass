@@ -75,7 +75,7 @@ function WholeList({
             {pending.length > 1 ? (
               <span className="next-cockpit-source">{datedClock(Number(entry.at) || 0, now)}</span>
             ) : null}
-            <span className="next-cockpit-direction-whole-text wrap-anywhere">
+            <span className="next-cockpit-direction-whole-text wrap-anywhere" data-authored>
               {opened?.text ?? stripPasteWrapper(String(entry.summary || ''))}
             </span>
             {opened?.clipped ? <p className="next-cockpit-held-full">{DIRECTION_CLIPPED}</p> : null}
@@ -153,6 +153,7 @@ export function DirectionQuestion({ primary = false }: DirectionQuestionProps) {
               data-next-direction-select
               data-next-focus={`direction-pick:${key}`}
               aria-label="Direction"
+              data-authored={Boolean(earliest.summary) || undefined}
               title={String(earliest.summary || 'Your direction')}
             >
               <SelectValue />
@@ -160,7 +161,7 @@ export function DirectionQuestion({ primary = false }: DirectionQuestionProps) {
             <SelectContent>
               {pending.map((entry) => (
                 <SelectItem key={entry.id} value={entry.id}>
-                  {directionLabel(entry)}
+                  <span data-authored>{directionLabel(entry)}</span>
                 </SelectItem>
               ))}
             </SelectContent>

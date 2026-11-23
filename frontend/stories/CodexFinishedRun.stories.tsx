@@ -82,9 +82,7 @@ export const FinishedAndInteractive: Story = {
       expect(root.getByRole('heading', { level: 1 })).toHaveTextContent('Synthetic exec'),
     );
     await expect(
-      within(canvasElement.querySelector('.next-session-detail-meta') as HTMLElement).getByText(
-        /Run finished 10m ago/,
-      ),
+      within(root.getByRole('region', { name: 'Right now' })).getByText(/Run finished 10m ago/),
     ).toBeVisible();
     await expect(
       canvasElement.querySelector('[data-next-session-command="activity"]')?.textContent,
@@ -94,7 +92,7 @@ export const FinishedAndInteractive: Story = {
       expect(root.getByRole('heading', { level: 1 })).toHaveTextContent('Synthetic tui'),
     );
     await expect(
-      within(canvasElement.querySelector('.next-session-detail-meta') as HTMLElement).getByText(
+      within(root.getByRole('region', { name: 'Right now' })).getByText(
         /Turn ended .* · waiting for you/,
       ),
     ).toBeVisible();
@@ -111,7 +109,7 @@ export const InteractiveStillWaits: Story = {
       expect(root.getByRole('heading', { level: 1 })).toHaveTextContent('Synthetic tui'),
     );
     await expect(
-      within(canvasElement.querySelector('.next-session-detail-meta') as HTMLElement).getByText(
+      within(root.getByRole('region', { name: 'Right now' })).getByText(
         /Turn ended .* · waiting for you/,
       ),
     ).toBeVisible();
@@ -160,7 +158,7 @@ export const StoredProgressWithoutALevel: Story = {
   play: async ({ canvasElement }) => {
     const progress = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await expect(
-      await within(progress).findByRole('button', { name: 'Check progress again' }),
+      await within(canvasElement).findByRole('button', { name: 'Check progress again' }),
     ).toBeVisible();
     await expect(
       progress.querySelector(

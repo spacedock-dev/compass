@@ -13,20 +13,24 @@ export function DriftStamp() {
   if ((model.annotate && routeRefusal(model.payload, model.session)) || (model.job && !again))
     return null;
   return (
-    <div className="flex min-w-0 flex-col items-start gap-1" data-next-drift-status>
-      <div className="flex flex-wrap items-center gap-2">
-        {again ? (
-          <RerunControl board={board} />
-        ) : (
-          <RunPress
-            board={board}
-            weight={model.unsettled ? 'secondary' : 'primary'}
-            label={GLOSSARY.checkProgress.plain}
-            focusKey={`reading:${model.key}`}
-          />
-        )}
-      </div>
-      {model.job ? null : <WhatIsSent about={again ? '' : SCOPE} />}
+    <div className="flex min-w-0 flex-col items-end gap-1" data-next-drift-status>
+      {again ? (
+        <RerunControl board={board} />
+      ) : (
+        <RunPress
+          board={board}
+          weight={model.unsettled ? 'secondary' : 'primary'}
+          label={GLOSSARY.checkProgress.plain}
+          focusKey={`reading:${model.key}`}
+        />
+      )}
     </div>
   );
+}
+
+export function ProgressDisclosure() {
+  const { model } = useDrift();
+  if (model.job || (model.annotate && routeRefusal(model.payload, model.session))) return null;
+  const again = Boolean(model.raw || model.annotation?.['reading_refused'] === true);
+  return <WhatIsSent about={again ? '' : SCOPE} />;
 }

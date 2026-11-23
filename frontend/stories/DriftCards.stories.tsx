@@ -1479,7 +1479,7 @@ export const ProgressBeforeEvidence: Story = {
     await expect(progress.querySelector('[data-next-cite], [data-next-cited-entries]')).toBeNull();
     await expect(progress.textContent).not.toMatch(/#\d|\b(?:drift|analyze)\b/i);
     await expect(
-      first
+      canvas
         .getByRole('button', { name: 'Check progress again' })
         .querySelector('svg[data-icon="check-progress"]'),
     ).not.toBeNull();

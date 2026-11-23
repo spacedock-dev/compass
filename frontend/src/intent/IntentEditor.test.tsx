@@ -35,7 +35,7 @@ describe('a goal-less session arrives with its first prompt drafted and nothing 
     expect(text('[data-next-cockpit-draft-marks]')).toBe(
       'Drafted from your first prompt · not saved',
     );
-    // The draft is adopted by Save intent, which is live over it; nothing else is.
+    // The draft is adopted by Save goal, which is live over it; nothing else is.
     expect(inert(control('held-save'))).toBe(false);
     expect(control('held-undo')?.getAttribute('aria-disabled')).toBe('true');
     expect(page.posts()).toBe(0);
@@ -144,7 +144,7 @@ describe('typing in the goal box', () => {
   });
 });
 
-describe('Save intent', () => {
+describe('Save goal', () => {
   it('sends the typed goal once, with the revision both boxes were drawn against, and says it saved', async () => {
     const page = mountSession({
       routes: {
@@ -559,7 +559,7 @@ describe('the header status and source line after a prompt adoption', () => {
   });
 });
 
-describe('the header status over a change Save intent would not write', () => {
+describe('the header status over a change Save goal would not write', () => {
   it('says nothing unsaved when a drafted prompt is emptied over a goal-less session', async () => {
     const page = mountSession();
     await settle(page);

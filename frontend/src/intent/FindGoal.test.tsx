@@ -215,7 +215,7 @@ describe('a press', () => {
     expect(source()).toBe('You typed this · not saved');
   });
 
-  it('is saved as the words in the box and nothing more, by Save intent', async () => {
+  it('is saved as the words in the box and nothing more, by Save goal', async () => {
     const page = mount({ find: () => json(FOUND), routes: { '/api/annotate': () => stored(1) } });
     await settle(page);
     await press(find());

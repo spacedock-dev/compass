@@ -3,6 +3,7 @@ import { useContext, useRef, useState, type ComponentProps, type ReactNode } fro
 import { DriftContext } from './context';
 import { evidenceRows } from './level';
 import { citedLine } from './result';
+import { formatTimestamp } from '../shell/format';
 
 /* A citation: its number as a link. Hovering or focusing it shows the cited entry's own words in place, so
    reading a summary never means leaving it; "See in context of the session" is the press that closes the card,
@@ -17,6 +18,7 @@ export function CitationLink({
   id,
   onJump,
   className = '',
+  plain = false,
   children,
   ...props
 }: {
@@ -24,6 +26,7 @@ export function CitationLink({
   /** The jump to the entry in Activity log; `origin` is the number the reader pressed, where focus returns. */
   readonly onJump: (origin: HTMLElement | null) => void;
   readonly className?: string;
+  readonly plain?: boolean;
   readonly children: ReactNode;
 } & Omit<ComponentProps<'a'>, 'onClick' | 'href' | 'children'>) {
   const drift = useContext(DriftContext);
@@ -66,9 +69,14 @@ export function CitationLink({
           >
             {entry && row ? (
               <>
-                <p className="m-0 text-label text-muted-foreground">{row.shown.head}</p>
+                <p className="m-0 text-label text-muted-foreground">
+                  {plain
+                    ? formatTimestamp(entry.at, drift?.model.generated, { style: 'clock' })
+                    : row.shown.head}
+                </p>
                 <p
                   className="m-0 line-clamp-6 text-body leading-[1.5] [overflow-wrap:anywhere]"
+                  data-authored
                   data-next-citation-snippet
                 >
                   {citedLine(entry)}

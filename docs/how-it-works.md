@@ -60,19 +60,21 @@ the session's full activity.
 
 ## A session's page
 
-Each session's page has three cards, one under another:
+The session header shows its name, current state and Check progress. At 1100 px and wider,
+Goal, Is it on track? and What's happened so far are on the left. Right now, At a glance
+and Project are on the right. On narrower windows, Right now follows Is it on track?
+before the summary.
 
 - Goal shows your saved goal and what done looks like. How goals work explains what Compass reads.
-- What the session has done: Compass's own outline of a Claude Code or Codex session, built without a
-  model. It keeps reading on later page updates and says when work remains unread or a limit leaves
-  a gap. Check counts may change while earlier checks are reconciled with later recorded work.
-  Codex outlines only your messages. On Claude Code it adds a model-written summary: an opening
-  paragraph, then phases that start closed and open when you press them. A phase holding evidence of drift, or failed test runs, says so
-  on its heading. Long messages can span several parts; a citation still opens the original entry.
-  The card distinguishes source it could not collect from parts it collected but did not summarize.
-  A finished outline does not fill gaps in a saved summary or confirm that the summary is current.
-  Update summary can continue an interrupted message; older summaries made from excerpts offer Summarize again.
-- Is it on track? gives the progress answer and its next actions.
+- Is it on track? shows the progress answer and the actions you can take.
+- Right now shows the latest published activity, helpers, next step and whether the session is
+  blocked. At a glance shows the figures Compass has for this session.
+- What's happened so far starts with Compass's outline, made from the record without a model.
+  Codex outlines only your messages. A Claude Code summary adds an opening paragraph and short
+  phases. Open one phase at a time. Off course here opens the matching evidence, and Source opens
+  the recorded entry. The card says when source material could not be collected or when a collected
+  part could not be summarized. Update summary can continue an interrupted message. Older
+  summaries made from excerpts offer Summarize again.
 
 At the foot of the page, Show technical details opens the Activity log. Evidence holds the
 check's findings, numbered sources, and reading limits. A citation opens Activity log

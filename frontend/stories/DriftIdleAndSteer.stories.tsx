@@ -366,6 +366,8 @@ export const AnOutOfDateCheckShowsTheEarlierFindingBesideSteering: Story = {
       'data-variant',
       'default',
     );
-    await expect(progress.getByRole('button', { name: 'Check progress again' })).toBeVisible();
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Check progress again' }),
+    ).toBeVisible();
   },
 };

@@ -16,11 +16,7 @@ import { GLOSSARY } from '../language/glossary';
 import { PanelContext, useHeldVersion, useIntentCtx, type Panel } from './useIntent';
 import { workSource } from './work';
 
-/* The Intent card, the What the session has done card and the Drift card, top to bottom in the session page's
-   one column: the reader's own words first (the goal, the expected outcome and the one save for both), then
-   what the session did, then the Drift section, where the reading, its control and the departures belong to
-   the Analyze step and arrive through `drift`. Your words come first, so nothing above the reading is a
-   model's.
+/* The Goal and progress cards share the same editor and observed record.
 
    Everything the panel sends it sends on a press: a save, a discard, an adopted prompt, a direction opened
    for review. Mounting it, mounting it twice under StrictMode, a board refresh or a reconnect sends none of
@@ -35,10 +31,6 @@ export interface IntentPanelProps {
   readonly project: string;
   /** The Drift section's body: the live estimate, the reading control, the reading and its departures. */
   readonly drift?: ReactNode;
-  /** The What the session has done card, drawn between the Intent card and the Drift card. */
-  readonly summary?: ReactNode;
-  /** The Drift card header's model and when the analysis last ran, beside its title. */
-  readonly stamp?: ReactNode;
   /** What the Drift card header holds beside its title: its settings, and Resume while calls are paused. */
   readonly actions?: ReactNode;
   /** What the session page composes beneath: the departures raised away. */
@@ -61,8 +53,6 @@ export function IntentPanel({
   payload,
   project,
   drift,
-  summary,
-  stamp,
   actions,
   children,
 }: IntentPanelProps) {
@@ -162,8 +152,6 @@ export function IntentPanel({
         data-next-session-panel="intent"
       >
         <IntentSection editable={annotating} />
-        {/* The design's order is Intent, what the session has done, Drift: the work reads before the verdict on it. */}
-        {summary}
         <Card
           variant="drift-panel"
           as="section"
@@ -180,7 +168,6 @@ export function IntentPanel({
                 >
                   {GLOSSARY.isItOnTrack.plain}
                 </h2>
-                {stamp}
               </div>
               <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 empty:hidden">
                 {/* While AI use is paused, Resume AI use:

@@ -57,7 +57,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 const card = (root: HTMLElement) =>
-  within(root).findByRole('region', { name: 'What the session has done' });
+  within(root).findByRole('region', { name: "What's happened so far" });
 const summaryOf = (region: HTMLElement) =>
   waitFor(() => {
     const node = region.querySelector<HTMLElement>('[data-next-summary]');
@@ -113,7 +113,7 @@ async function attributed(summary: HTMLElement) {
       await expect(entry).not.toBeNull();
       if (kind === 'said') await expect(entry?.textContent).toMatch(/Agentsaid/);
       if (kind === 'asked') await expect(entry?.textContent).toMatch(/You/);
-      if (entry) await expect(chip.textContent).toMatch(/^\[\d+(\.\d+)?\]$/);
+      if (entry) await expect(chip.textContent).toBe('Source');
     }
   }
 }
@@ -132,16 +132,20 @@ export const Ready: Story = {
     await expect(summary.querySelector('[data-next-summary-lede]')).toHaveTextContent(
       LEDE.replace(/^The person/, 'You'),
     );
-    const headings = within(summary).getAllByRole('heading', { level: 3 });
+    const headings = [...summary.querySelectorAll('[data-next-summary-phase-title]')];
     await expect(headings.map((node) => node.textContent)).toEqual([
       FIRST_PHASE.title,
       SECOND_PHASE.title,
     ]);
-    await expect(region.querySelector('[data-next-outline-stamp]')).toHaveTextContent(
-      /^claude-sonnet-5-5 · summarized at \d\d:\d\d$/,
+    await expect(summary.querySelectorAll('[data-next-summary-label]')).toHaveLength(1);
+    await expect(summary.querySelector('[data-next-summary-label]')).toHaveTextContent(
+      /^Summarized by AI from the session · .*\d{1,2}:\d{2}/,
     );
+    await expect(region.querySelector('[data-next-outline-stamp]')).toBeNull();
+    await expect(summary.querySelector('[data-next-summary-preview]')).toBeVisible();
+    await expect(within(region).getByRole('button', { name: 'Turn off summaries' })).toBeVisible();
     await waitFor(() =>
-      expect(summary.querySelector('[data-next-outline-entry="a1"]')).toHaveTextContent('[2]'),
+      expect(summary.querySelector('[data-next-outline-entry="a1"]')).toHaveTextContent('Source'),
     );
     await attributed(summary);
     // The model wrote "Reverting the test edit." for a `said` bullet: it is drawn as the agent's words.
@@ -161,7 +165,9 @@ export const Ready: Story = {
       summary.querySelectorAll('a:not([data-next-outline-entry]), strong, em, code, img'),
     ).toHaveLength(0);
     // A chip opens Activity log at its entry.
-    await seeInContext(within(summary).getByRole('link', { name: /^Open entry #2\.1, cited for/ }));
+    await seeInContext(
+      summary.querySelector<HTMLElement>('[data-next-outline-entry="c1"]') as HTMLElement,
+    );
     await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'c1')));
     await expect(summaryPosts()).toHaveLength(0);
     for (const width of [1280, 400])
@@ -385,7 +391,9 @@ export const ChipLandsOnScreenWithFullActivityClosed: Story = {
         .querySelector('[data-next-session-full-activity] .technical-details-trigger')
         ?.getAttribute('aria-expanded'),
     ).toBe('false');
-    await seeInContext(within(summary).getByRole('link', { name: /^Open entry #2\.1, cited for/ }));
+    await seeInContext(
+      summary.querySelector<HTMLElement>('[data-next-outline-entry="c1"]') as HTMLElement,
+    );
     const row = await waitFor(() => {
       const node = entryRow(canvasElement, 'c1');
       expect(document.activeElement).toBe(node);
@@ -441,7 +449,9 @@ export const CitationCardShowsTheEntry: Story = {
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
-    const citation = within(summary).getByRole('link', { name: /^Open entry #2\.1, cited for/ });
+    const citation = summary.querySelector<HTMLElement>(
+      '[data-next-outline-entry="c1"]',
+    ) as HTMLElement;
     await expect(document.querySelector('[data-next-citation-card]')).toBeNull();
     await userEvent.hover(citation);
     const shown = await waitFor(() => {
@@ -452,7 +462,7 @@ export const CitationCardShowsTheEntry: Story = {
     await expect(shown.querySelector('[data-next-citation-snippet]')?.textContent ?? '').not.toBe(
       '',
     );
-    await expect(shown).toHaveTextContent('#2.1');
+    await expect(shown).not.toHaveTextContent('#2.1');
     await expect(getComputedStyle(shown).boxShadow).toContain('rgba(31, 41, 51, 0.18)');
     // Seeing the entry did not open Activity log or move focus to it.
     await expect(
@@ -477,8 +487,8 @@ export const ReadyStillRunning: Story = {
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     await summaryOf(region);
-    await expect(region.querySelector('[data-next-outline-stamp]')).toHaveTextContent(
-      /^claude-sonnet-5-5 · updated \d\d:\d\d · still running$/,
+    await expect(region.querySelector('[data-next-summary-label]')).toHaveTextContent(
+      /^Summarized by AI from the session · .* · session still running$/,
     );
     await poll();
     await expect(summaryPosts()).toHaveLength(0);
@@ -492,8 +502,8 @@ export const ReadyIdleIsNotStillRunning: Story = {
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     await summaryOf(region);
-    await expect(region.querySelector('[data-next-outline-stamp]')).toHaveTextContent(
-      /^claude-sonnet-5-5 · summarized at \d\d:\d\d$/,
+    await expect(region.querySelector('[data-next-summary-label]')).toHaveTextContent(
+      /^Summarized by AI from the session · .*\d{1,2}:\d{2}/,
     );
     await expect(region).not.toHaveTextContent('still running');
   },
@@ -846,8 +856,8 @@ export const WorkingOverASavedSummary: Story = {
       GAP_RUNNING,
     );
     // The header does not date a summary a job is still writing.
-    await expect(region.querySelector('[data-next-outline-stamp]')).toHaveTextContent(
-      /^claude-sonnet-5-5 · summarizing…$/,
+    await expect(region.querySelector('[data-next-summary-label]')).toHaveTextContent(
+      /^Summarized by AI from the session · still summarizing$/,
     );
   },
 };
@@ -992,8 +1002,10 @@ export const Partial: Story = {
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
     await waitFor(() =>
-      expect(within(summary).getByText(/^This summary starts at #3/)).toHaveTextContent(
-        'This summary starts at #3, not at the session’s first entry.',
+      expect(
+        within(summary).getByText(/^This summary starts partway through the session/),
+      ).toHaveTextContent(
+        'This summary starts partway through the session, not at its first entry.',
       ),
     );
     const disclosure = within(region).getByRole('button', {
@@ -1045,7 +1057,7 @@ export const Partial: Story = {
     await expect(document.activeElement).toBe(disclosure);
     await openPhases(summary);
     await seeInContext(
-      within(summary).getByRole('link', { name: /^Open entry #3, cited for “You asked to keep/ }),
+      within(summary).getByRole('link', { name: /^Open the source, cited for “You asked to keep/ }),
     );
     await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'p2')));
     await expect(script.posts).toEqual([]);
@@ -1338,9 +1350,7 @@ export const NoticeOnceThenAgainOnChange: Story = {
     await expect(fold).toHaveAttribute('aria-expanded', 'false');
     await userEvent.click(fold);
     await expect(first).toHaveTextContent('Anthropic');
-    await waitFor(() =>
-      expect(within(first).getByRole('button', { name: 'Turn off summaries' })).toBeVisible(),
-    );
+    await expect(within(region).getByRole('button', { name: 'Turn off summaries' })).toBeVisible();
     await press();
     await waitFor(() => expect(region.querySelector('[data-next-summary-notice]')).toBeNull());
     await press();
@@ -1384,18 +1394,18 @@ export const DepartureMarked: Story = {
     const phaseTrigger = marked.querySelector('[data-slot="accordion-trigger"]');
     await expect(phaseTrigger).toHaveAttribute('aria-expanded', 'false');
     await expect(marked.querySelector('[data-next-summary-holds]')).toHaveTextContent(
-      `${SUMMARY_HOLDS}Departure · Goal`,
+      `${SUMMARY_HOLDS}Off course here`,
     );
     const technical = within(canvasElement).getByRole('button', { name: 'Show technical details' });
     await expect(technical).toHaveAttribute('aria-expanded', 'false');
     await userEvent.click(
-      within(marked).getByRole('button', { name: 'Departure · Goal, go to the card' }),
+      within(marked).getByRole('button', { name: 'Off course here: evidence for Goal' }),
     );
     const evidence = await within(canvasElement).findByRole('tabpanel', { name: 'Evidence' });
     const departure = evidence.querySelector<HTMLElement>('[data-next-departure="goal"]');
     await waitFor(() => expect(departure?.querySelector('h4')).toHaveFocus());
     const back = departure?.querySelector<HTMLElement>('[data-next-departure-summary="phase"]');
-    await expect(back).toHaveTextContent(`In What the session has done:${SECOND_PHASE.title}`);
+    await expect(back).toHaveTextContent(`In What's happened so far:${SECOND_PHASE.title}`);
     await userEvent.click(
       within(back as HTMLElement).getByRole('button', {
         name: `Go to the summary phase that holds this evidence: ${SECOND_PHASE.title}`,
@@ -1465,7 +1475,7 @@ function unmatched(
       });
       await expect(line.dataset['nextDepartureSummary']).toBe(where);
       await expect(line.textContent).not.toMatch(/outline covers/i);
-      await expect(line).toHaveTextContent(`In What the session has done:${PLACE_LINES[where]}`);
+      await expect(line).toHaveTextContent(`In What's happened so far:${PLACE_LINES[where]}`);
       await expect(canvasElement.querySelector('[data-next-summary-marked]')).toBeNull();
     },
   } satisfies Story;
@@ -1551,12 +1561,12 @@ export const NewWorkKeepsTheMarks: Story = {
     );
     await expect(
       within(marked).getByRole('button', {
-        name: /^Departure · Goal, from the \d\d:\d\d analysis, before newer work, go to the card$/,
+        name: /^Off course here: evidence for Goal, from the \d\d:\d\d progress check, before newer work$/,
       }),
-    ).toHaveTextContent('Departure · Goal');
+    ).toHaveTextContent('Off course here');
     await expect(
       canvasElement.querySelector('[data-next-departure-summary="phase"]'),
-    ).toHaveTextContent(`In What the session has done:${SECOND_PHASE.title}`);
+    ).toHaveTextContent(`In What's happened so far:${SECOND_PHASE.title}`);
   },
 };
 
@@ -1608,7 +1618,7 @@ export const ColdReopenCitesAnOlderPage: Story = {
       '[data-next-summary-phase="0:0"] [data-next-outline-entry="p1"]',
     ) as HTMLElement;
     await expect(chip).toHaveAccessibleName(
-      'Open an older entry the page has not read yet, cited for “You asked for retry with backoff on the webhook handler.”, in Activity log',
+      'Open an older source the page has not read yet, cited for “You asked for retry with backoff on the webhook handler.”, in Activity log',
     );
     await expect(entryRow(canvasElement, 'p1')).toBeNull();
     await seeInContext(chip);
@@ -1638,7 +1648,7 @@ export const CitationThatCannotLoad: Story = {
     const summary = await summaryOf(region);
     await seeInContext(
       within(summary).getByRole('link', {
-        name: /^Open an older entry the page has not read yet, cited for “You asked about a missing entry\.”/,
+        name: /^Open an older source the page has not read yet, cited for “You asked about a missing entry\.”/,
       }),
     );
     await waitFor(() =>
@@ -2164,7 +2174,7 @@ export const WithheldRunCollapses: Story = {
     const [first, second] = runs as [HTMLElement, HTMLElement];
     await waitFor(() =>
       expect(first.querySelector('[data-next-summary-hidden-line]')).toHaveTextContent(
-        '2 lines were left out because the record does not back them. Entries #2 to #2.1.',
+        '2 lines were left out because the record does not back them.',
       ),
     );
     await expect(second.querySelector('[data-next-summary-hidden-line]')).toHaveTextContent(
@@ -2184,11 +2194,11 @@ export const WithheldRunCollapses: Story = {
       await waitFor(() => expect(reason).toBeVisible());
       await expect(reason).toHaveTextContent(WITHHELD_LINES.completion_claim ?? '');
     }
-    await waitFor(() =>
-      expect(
-        within(first).getByRole('link', { name: /^Open entry #2\.1, cited for a hidden line/ }),
-      ).toBeVisible(),
-    );
+    const sources = within(first).getAllByRole('link', {
+      name: /^Open the source, cited for a hidden line/,
+    });
+    await expect(sources).toHaveLength(2);
+    for (const source of sources) await waitFor(() => expect(source).toBeVisible());
     await expect(summary.querySelectorAll('[data-next-summary-bullet]')).toHaveLength(1);
     for (const width of [1280, 400])
       await atWidth(width, async () => {
@@ -2243,10 +2253,10 @@ export const SavedIntentKeepsEarlierNumbers: Story = {
     const summary = await summaryOf(region);
     const earlier = await waitFor(() => {
       const chip = summary.querySelector<HTMLElement>('[data-next-outline-entry="a1"]');
-      if (!chip?.textContent?.startsWith('[')) throw new Error('no number yet');
+      if (!chip) throw new Error('no source yet');
       return chip;
     });
-    await expect(earlier).toHaveTextContent('[2]');
+    await expect(earlier).toHaveTextContent('Source');
     await expect(earlier.hasAttribute('data-next-entry-outside')).toBe(true);
     await expect(earlier.getAttribute('aria-label')).toContain(OUTSIDE_WINDOW);
     const inside = summary.querySelector<HTMLElement>('[data-next-outline-entry="p2"]');
@@ -2294,16 +2304,13 @@ export const UnnumberedChipsSayWhy: Story = {
       if (!chip?.hasAttribute('data-next-entry-outside')) throw new Error('not outside yet');
       return chip;
     });
-    await expect(earlier).toHaveTextContent('[?]');
-    await expect(earlier.getAttribute('aria-label')).toContain('before your intent’s start');
+    await expect(earlier).toHaveTextContent('Source');
+    await expect(earlier.getAttribute('aria-label')).toContain('before the start of your goal');
     const unread = summary.querySelector<HTMLElement>('[data-next-outline-entry="p-unread"]');
-    await expect(unread).toHaveTextContent('[?]');
+    await expect(unread).toHaveTextContent('Source');
     await expect(unread?.getAttribute('aria-label')).toContain('the page has not read yet');
-    for (const chip of region.querySelectorAll('[data-next-outline-entry]')) {
-      await expect(chip.textContent).not.toBe('entry');
-      if (!/^[#[]/.test(chip.textContent ?? ''))
-        await expect(chip.hasAttribute('data-next-entry-unnumbered')).toBe(true);
-    }
+    for (const chip of region.querySelectorAll('[data-next-outline-entry]'))
+      await expect(chip.textContent).toMatch(/^(Source|See in Activity log)$/);
     for (const width of [1280, 400])
       await atWidth(width, async () => {
         await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
@@ -2513,6 +2520,9 @@ export const PhasesStartClosedAndStayOpenOnceOpened: Story = {
     await poll();
     await expect(trigger(0)).toHaveAttribute('aria-expanded', 'true');
     await expect(trigger(1)).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(trigger(1));
+    await expect(trigger(0)).toHaveAttribute('aria-expanded', 'false');
+    await expect(trigger(1)).toHaveAttribute('aria-expanded', 'true');
   },
 };
 
@@ -2568,7 +2578,7 @@ export const FullActivityLimitSaidOnce: Story = {
 
 /* The badge on a phase counts failed test runs. A build that failed, or a browser run the agent's sandbox
    refused, is still drawn as a failed line, and is not counted as a test failure. */
-export const OnlyTestFailuresAreBadged: Story = {
+export const ToolFailuresStayInTheStory: Story = {
   render: () => (
     <SummaryPage
       summary={storedSummary({
@@ -2601,11 +2611,8 @@ export const OnlyTestFailuresAreBadged: Story = {
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
-    const [tests, build] = [...summary.querySelectorAll<HTMLElement>('[data-next-summary-phase]')];
-    await expect(tests?.querySelector('[data-next-summary-failures]')).toHaveTextContent(
-      /^1 test failure$/,
-    );
-    await expect(build?.querySelector('[data-next-summary-failures]')).toBeNull();
+    await expect(summary.querySelector('[data-next-summary-failures]')).toBeNull();
+    await expect(summary.querySelector('[data-next-summary-marked]')).toBeNull();
     // The failed lines are all still said.
     await expect(summary.querySelectorAll('[data-next-summary-bullet="failed"]')).toHaveLength(3);
   },

@@ -3,7 +3,7 @@ import {
   toHaveAttribute,
   toHaveTextContent,
 } from '@testing-library/jest-dom/matchers';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, it } from 'vitest';
 import { payloadSessionRows } from '../observed';
 import { scenarios } from '../project/generate.test.helper';
@@ -13,7 +13,7 @@ import { sessionSubagents } from './detail';
 
 expect.extend({ toBeInTheDocument, toHaveAttribute, toHaveTextContent });
 
-it('counts only helpers observed running and keeps inactive and unmeasured helpers distinct', () => {
+it('counts the helpers shown and keeps working, inactive and unmeasured helpers distinct', () => {
   const helpers = sessionSubagents(
     [
       { name: 'unmeasured helper' },
@@ -25,7 +25,7 @@ it('counts only helpers observed running and keeps inactive and unmeasured helpe
   );
   if (!helpers) throw new Error('Expected three helpers');
   const { container } = render(<SubagentsView subagents={helpers} />);
-  expect.soft(screen.queryByText('1 RUNNING SUBAGENT')).toBeInTheDocument();
+  expect.soft(screen.queryByRole('list', { name: 'Helpers (3)' })).toBeInTheDocument();
   for (const [name, word] of [
     ['unmeasured helper', 'Activity not published'],
     ['inactive helper', 'Not running'],
@@ -36,8 +36,8 @@ it('counts only helpers observed running and keeps inactive and unmeasured helpe
   }
   const working = screen.getByText('working helper').parentElement;
   if (!working) throw new Error('Expected a working helper row');
-  expect.soft(within(working).queryByRole('img', { name: 'Working' })).toBeInTheDocument();
-  expect.soft(container.querySelectorAll('[data-icon="working"]')).toHaveLength(1);
+  expect.soft(working).toHaveTextContent('Working');
+  expect.soft(container.querySelectorAll('svg')).toHaveLength(0);
 });
 
 it('names plan status in words beside decorative icons', async () => {

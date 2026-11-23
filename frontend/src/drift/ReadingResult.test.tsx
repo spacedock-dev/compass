@@ -205,7 +205,7 @@ describe('a stored reading', () => {
     // The run control is the header's, from the first reading on.
     expect(byAction('reading-ask')?.textContent).toBe('Check progress again');
     expect(
-      document.querySelector('.next-session-drift-head')?.contains(byAction('reading-ask')),
+      document.querySelector('.next-session-detail-header')?.contains(byAction('reading-ask')),
     ).toBe(true);
     expect(textOf('[data-next-technical-evidence]')).toContain('1 drift check requested');
     // Under the cap the budget is not mentioned anywhere.

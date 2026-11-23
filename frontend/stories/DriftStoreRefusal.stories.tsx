@@ -24,7 +24,11 @@ const NOTICE =
 
 async function pressAnalyze(canvasElement: HTMLElement): Promise<HTMLElement> {
   const card = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
-  await userEvent.click(await within(card).findByRole('button', { name: 'Check progress' }));
+  await userEvent.click(
+    await within(card.closest('article') as HTMLElement).findByRole('button', {
+      name: 'Check progress',
+    }),
+  );
   return card;
 }
 

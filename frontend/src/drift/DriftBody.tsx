@@ -5,6 +5,7 @@ import { nextNumber } from '../api/bootstrap';
 import { datedClock } from '../observed/values';
 import { useDrift } from './context';
 import { steerOffer, steerWithheld } from './correction';
+import { ProgressDisclosure } from './DriftStamp';
 import { ProgressAnswer } from './DriftLevelView';
 import { ReadingControl } from './ReadingControl';
 import { ReadingResult, ResultFoot } from './ReadingResult';
@@ -91,6 +92,7 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
             {steerLimit}
           </p>
         ) : null}
+        <ProgressDisclosure />
       </div>
       <LiveMonitorNote />
       <UnaskedPermission key={key} payload={payload} session={session} />

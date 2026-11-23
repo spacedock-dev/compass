@@ -132,9 +132,6 @@ export function PromptSelect({
                         aria-selected={false}
                         key={option.value}
                         data-value={option.value}
-                        title={
-                          whole !== undefined ? `${head ? `${head} — ` : ''}${whole}` : option.label
-                        }
                         className="box-border block w-full min-h-[44px] cursor-pointer border-0 bg-transparent px-3.5 py-2 text-start text-body text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-none"
                         onClick={() => {
                           choosePrompt(
@@ -154,7 +151,13 @@ export function PromptSelect({
                             </span>{' '}
                           </>
                         ) : null}
-                        <span className="line-clamp-3 [overflow-wrap:anywhere]">{body}</span>
+                        <span
+                          className="line-clamp-3 [overflow-wrap:anywhere]"
+                          data-authored
+                          title={whole ?? body}
+                        >
+                          {body}
+                        </span>
                       </button>
                     );
                   })

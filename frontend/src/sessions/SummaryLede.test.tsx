@@ -20,7 +20,7 @@ describe('the lede of a stored summary', () => {
     ['phase bullet', /cited for “.*pytest/i, 'c1'],
   ] as const)('keeps the entry reached from a summary %s in Cited', async (_surface, label, id) => {
     render(<SummaryPage summary={storedSummary()} />);
-    const region = await screen.findByRole('region', { name: 'What the session has done' });
+    const region = await screen.findByRole('region', { name: "What's happened so far" });
     if (id === 'c1') {
       const phase = await waitFor(() => {
         const trigger = region.querySelector(
@@ -58,7 +58,7 @@ describe('the lede of a stored summary', () => {
         summary={storedSummary({ lede: { text: LEDE, cites: ['fold-2'] } })}
       />,
     );
-    const region = await screen.findByRole('region', { name: 'What the session has done' });
+    const region = await screen.findByRole('region', { name: "What's happened so far" });
     const chip = await within(region).findByRole('link', { name: /cited for the opening summary/ });
     fireEvent.click(await screen.findByRole('button', { name: 'Show technical details' }));
     const log = await screen.findByRole('tabpanel', { name: 'Activity log' });
@@ -98,7 +98,7 @@ describe('the lede of a stored summary', () => {
         })}
       />,
     );
-    const region = await screen.findByRole('region', { name: 'What the session has done' });
+    const region = await screen.findByRole('region', { name: "What's happened so far" });
     const lede = await waitFor(() => {
       const node = region.querySelector<HTMLElement>('[data-next-summary-lede]');
       if (!node) throw new Error('no lede');

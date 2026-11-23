@@ -39,12 +39,9 @@
       "tracking": 15
     },
     "frontend/src/sessions/sessions.css": {
-      "monospace": 19,
+      "monospace": 16,
       "uppercase": 2,
-      "tracking": 17
-    },
-    "frontend/src/sessions/SummaryParts.tsx": {
-      "monospace": 2
+      "tracking": 15
     },
     "frontend/src/sessions/WhatItDid.tsx": {
       "monospace": 4
@@ -540,28 +537,6 @@
     "sessions-named-by-its-goal--session-page-names-the-held-goal",
     "sessions-named-by-its-goal--session-without-goal-keeps-its-name",
     "sessions-named-by-its-goal--untitled-waiting-session",
-    "sessions-one-column-page--citation-set-aside-by-the-reading-says-so",
-    "sessions-one-column-page--citation-that-cannot-load-says-so",
-    "sessions-one-column-page--ended-with-an-open-question",
-    "sessions-one-column-page--exact-request-keeps-its-own-block",
-    "sessions-one-column-page--full-activity-links-to-goal-history",
-    "sessions-one-column-page--harness-gate-says-where-to-answer",
-    "sessions-one-column-page--harness-gate-with-exact-request",
-    "sessions-one-column-page--harness-gate-with-no-way-back-names-no-command",
-    "sessions-one-column-page--helper-activity",
-    "sessions-one-column-page--holds-control-under-pointer",
-    "sessions-one-column-page--idle-question-precedes-turn-end",
-    "sessions-one-column-page--idle-shows-no-rate",
-    "sessions-one-column-page--more-is-retired-for-an-ended-session",
-    "sessions-one-column-page--note-leaves-with-its-reading",
-    "sessions-one-column-page--question-leads-and-answers-once",
-    "sessions-one-column-page--regions-in-order",
-    "sessions-one-column-page--retained-reading-cites-before-the-window",
-    "sessions-one-column-page--shortened-question",
-    "sessions-one-column-page--slow-read-ends-after-a-new-reading",
-    "sessions-one-column-page--unshortened-question-has-no-note",
-    "sessions-one-column-page--waiting-edge-stays-beside-the-title",
-    "sessions-one-column-page--working-session-carries-no-waiting-sign",
     "sessions-search-and-filters--project-activity-icons",
     "sessions-what-the-session-has-done--a-fixed-red-test-is-not-a-failure",
     "sessions-what-the-session-has-done--an-opening-failure-before-the-gap-is-unknown",
@@ -638,7 +613,6 @@
     "sessions-what-the-session-has-done-summary--notice-once-then-again-on-change",
     "sessions-what-the-session-has-done-summary--off-at-the-cap",
     "sessions-what-the-session-has-done-summary--off-stays-off",
-    "sessions-what-the-session-has-done-summary--only-test-failures-are-badged",
     "sessions-what-the-session-has-done-summary--out-of-date-changed-earlier",
     "sessions-what-the-session-has-done-summary--out-of-date-new-entries",
     "sessions-what-the-session-has-done-summary--partial",

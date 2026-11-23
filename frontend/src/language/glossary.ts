@@ -920,6 +920,44 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ),
   }) as const)();
 
+/* Each pattern records a ruled retirement or allowance for the DOM guard. The
+   display column also describes old layouts and concepts, so it is not tokenized. */
+const firstLayerRules: Partial<
+  Record<keyof typeof GLOSSARY, { retired?: RegExp; allowed?: RegExp }>
+> = {
+  compass: { allowed: /\bClaude Code\b/gi },
+  goal: { retired: /\bintent\b/i },
+  checkProgress: { retired: /\bdrift\b/i },
+  checkProgressAgain: { retired: /^(?:Analyze again|Check again)$/i },
+  readingLooksWrong: { retired: /\bmark as inaccurate\b/i },
+  helpers: { retired: /^(?:\d+ )?(?:running )?subagents?\b/i },
+  quiet: { retired: /^(?:state:\s*)?(?:idle|paused)\s*(?:$|[·:])/i },
+  ended: { retired: /^(?:state:\s*)?finished(?: cleanly)?\s*(?:$|[·:])/i },
+  onTrack: { retired: /^(?:none or low|low)\s*(?:$|[·:])/i },
+  slightlyOffCourse: { retired: /^medium\s*(?:$|[·:])/i },
+  offCourse: { retired: /^high\s*(?:$|[·:])/i },
+  wayOffCourse: { retired: /^extreme\s*(?:$|[·:])/i },
+  notCheckedYet: { retired: /^not checked(?! yet\b)\s*(?:$|[·:.])/i },
+  pauseAi: { retired: /\bpause model calls\b/i },
+  resumeAi: { retired: /\bresume model calls\b/i },
+  liveMonitor: { retired: /\blive monitor\s*·\s*haiku\b/i },
+  showTechnicalDetails: {
+    // A bare pull request number such as #482 is permitted.
+    retired:
+      /\b(?:revision\s+#?\d+|entry\s+(?:id|number|#\d+))\b|\[\d+(?:\.\d+)?\]|\b(?:[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}|(?=[a-f0-9]*[a-f])(?=[a-f0-9]*\d)[a-f0-9]{8,64})\b/i,
+  },
+};
+
+function firstLayerPatterns(kind: 'retired' | 'allowed'): RegExp[] {
+  return Object.entries(firstLayerRules).flatMap(([key, rule]) => {
+    const pattern = rule[kind];
+    return GLOSSARY[key as keyof typeof GLOSSARY].status === 'ruled' && pattern ? [pattern] : [];
+  });
+}
+
+export const FIRST_LAYER_RETIREMENTS = /* @__PURE__ */ firstLayerPatterns('retired');
+export const FIRST_LAYER_EXCEPTIONS = /* @__PURE__ */ firstLayerPatterns('allowed');
+
 export const PROGRESS_LEVEL_WORDS = new Map([
   ['none_or_low', GLOSSARY.onTrack.plain],
   ['medium', GLOSSARY.slightlyOffCourse.plain],

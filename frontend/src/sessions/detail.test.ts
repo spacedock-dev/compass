@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sessionMeta, turnEndedSentence } from './detail';
+import { sessionFigures, sessionMeta, turnEndedSentence } from './detail';
 
 describe('the entries clause of the line under the title', () => {
   const session = { harness: 'claude', sid: 's', state: 'idle' };
@@ -82,5 +82,23 @@ describe('metadata while a question is open', () => {
       expect(meta).toContain('3 entries');
       expect(sessionMeta({ ...session, headless }, 10000, 3)).toMatch(/Turn ended|Run finished/);
     }
+  });
+});
+
+describe('At a glance', () => {
+  it('shows published figures, including a measured zero and a partial record count', () => {
+    expect(
+      sessionFigures({ session_output_tokens: 0, turn_output_tokens: 1350 }, 14, true),
+    ).toEqual([
+      { label: 'Recorded entries', value: 'At least 14' },
+      { label: 'Session output tokens', value: '0' },
+      { label: 'Turn output tokens', value: '1,350' },
+    ]);
+  });
+
+  it('omits unavailable figures instead of counting missing fields as zero', () => {
+    expect(
+      sessionFigures({ session_output_tokens: null, turn_output_tokens: '0' }, null, false),
+    ).toEqual([]);
   });
 });

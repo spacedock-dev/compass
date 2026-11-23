@@ -292,6 +292,11 @@ disclosures packaged at 2,418,739 bytes on the corrected technical tabs. The rev
 bytes, for a measured page bound of 2,418,919 bytes on Node 26.10.0 and pnpm 12.17.0.
 The fixture bound stays at 250,000 bytes.
 
+On 2026-11-23, the Session layout, side cards and story brought the packaged page from
+2,413,527 bytes at `86892305` to 2,415,987 bytes on Node 26.10.0 and pnpm 12.17.0.
+The allowance increases by the measured 2,460 bytes, from 2,418,919 to 2,421,379.
+The fixture allowance stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.
@@ -324,21 +329,16 @@ with one is never summarized on open.
 
 ## The marks
 
-Each mark is a numbered (i) beside the part it explains, in the order a reader meets the parts down
-the one-column page, which puts What the session has done before the Drift card as the design draws it
-(owner, 2026-10-21; it was the other way round from 2026-10-20):
+Each mark is numbered in reading order. The progress card comes before What's happened so far
+in the current [Session layout](design-reading-a-session.md#amended-2026-11-22-owner-the-session-page-has-two-columns-from-1100-px).
 
 1. **Your goal**, on the Goal card.
-2. **What the session has done**, beside the summary card's heading, outside it, so the card's name
-   stays the heading's words.
-3. **A phase that holds a departure**, on the first phase marked as holding one, once.
+2. **A departure, and its evidence**, beside the finding that links to Evidence.
+3. **Steer back**.
 4. **What is sent, and Pause all AI use**, beside the progress card's disclosure.
-5. **A departure, and its evidence**, beside the compact finding that links to Evidence.
-6. **Steer back**.
-7. **Activity log: everything the session did**, beside the technical details trigger.
-
-The first sample's tour noted the drift level and the analysis headline instead of the summary and
-the phase. Neither is noted now, because the summary is what the redesigned page leads with.
+5. **What's happened so far**, beside the story card's heading.
+6. **A phase that holds a departure**, on the first phase that carries the flag.
+7. **Activity log**, beside the technical details trigger.
 
 The activity note says a number never moves, which holds for the entries a summary line or a finding
 cites. A number written inside quoted speech counts the original session's live board, as

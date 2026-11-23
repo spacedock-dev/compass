@@ -294,7 +294,7 @@ describe('Add as a line', () => {
     );
   });
 
-  it('saves an unsaved goal edit first and then the line, from the card’s one Save intent', async () => {
+  it('saves an unsaved goal edit first and then the line, from the card’s one Save goal', async () => {
     const page = mountSession({
       store: SAVED,
       session: SAVED_AT,
@@ -309,7 +309,7 @@ describe('Add as a line', () => {
     await settle(page);
     editGoal();
     type(goalBox(), 'Edited goal');
-    // No "save first" refusal beside the line: the one Save intent carries both.
+    // No "save first" refusal beside the line: the one Save goal carries both.
     expect(text('#next-cockpit-direction-why')).toBe('');
     expect(inert(control('held-save'))).toBe(false);
     await press(control('held-save'));

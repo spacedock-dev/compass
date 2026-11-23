@@ -53,7 +53,7 @@ export const SUMMARY_INCOMPLETE =
   'This summary does not cover every part of the session. Summarize again reads it from the start.';
 export const REPLY_CUT =
   'The model’s reply for this part was cut short, so only the phases it finished are shown.';
-export const SUMMARY_LABEL = 'Summary: written by a model from this session’s record';
+export const SUMMARY_LABEL = 'Summarized by AI from the session';
 
 const plural = (n: number, one: string, many: string) => `${String(n)} ${n === 1 ? one : many}`;
 

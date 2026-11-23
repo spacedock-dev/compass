@@ -206,7 +206,7 @@ export const SummaryHoldsADeparture: Story = {
     ).toBeGreaterThanOrEqual(4);
     await expect(summary.querySelector('[data-next-summary-withheld]')).not.toBeNull();
     const marked = summary.querySelector('[data-next-summary-marked]') as HTMLElement;
-    const jump = within(marked).getByRole('button', { name: 'Departure · Goal, go to the card' });
+    const jump = within(marked).getByRole('button', { name: 'Off course here: evidence for Goal' });
     await userEvent.click(jump);
     await waitFor(() =>
       expect(document.activeElement?.closest('[data-next-departure="goal"]')).not.toBeNull(),
@@ -527,18 +527,14 @@ export const PhasesStartClosedAndMarkTheirHeads: Story = {
     const held = phases.find((phase) => phase.querySelector('[data-next-summary-holds]'));
     await expect(held).toBeDefined();
     const pills = within(held as HTMLElement).getAllByRole('button', {
-      name: /^Departure · .+, go to the card$/,
+      name: /^Off course here: evidence for/,
     });
     await expect(pills[0]).toBeVisible();
-    const failing = phases.find((phase) => phase.querySelector('[data-next-summary-failures]'));
-    await expect(failing?.querySelector('[data-next-summary-failures]')).toHaveTextContent(
-      /^\d+ test failures?$/,
-    );
-    await expect(failing?.querySelector('[data-next-summary-failures]')).toBeVisible();
+    await expect(canvasElement.querySelector('[data-next-summary-failures]')).toBeNull();
     // Opening a phase shows its lines.
-    const trigger = failing?.querySelector('[data-slot="accordion-trigger"]') as HTMLElement;
+    const trigger = held?.querySelector('[data-slot="accordion-trigger"]') as HTMLElement;
     await userEvent.click(trigger);
-    await waitFor(() => expect(failing?.querySelector('[data-next-summary-bullet]')).toBeVisible());
+    await waitFor(() => expect(held?.querySelector('[data-next-summary-bullet]')).toBeVisible());
   },
 };
 
@@ -586,6 +582,6 @@ export const IntentIsAGoalAloneAndTheDepartureIsFromIt: Story = {
     await expect(departures.filter((kind) => kind !== 'goal' && kind !== 'claims')).toEqual([]);
     await expect(canvasElement.querySelectorAll('[data-next-summary-marked]')).toHaveLength(3);
     for (const phase of canvasElement.querySelectorAll('[data-next-summary-marked]'))
-      await expect(phase).toHaveTextContent('Departure · Goal');
+      await expect(phase).toHaveTextContent('Off course here');
   },
 };

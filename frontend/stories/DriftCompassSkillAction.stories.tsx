@@ -197,7 +197,7 @@ export const TheOutlineOpensNoPhaseForACompassSkillAction: Story = {
   render: () => <OutlinePage outline={published.outline} />,
   play: async ({ canvasElement }) => {
     const region = await within(canvasElement).findByRole('region', {
-      name: 'What the session has done',
+      name: "What's happened so far",
     });
     const blocks = await waitFor(() => {
       const found = region.querySelectorAll<HTMLElement>('[data-next-outline-block]');

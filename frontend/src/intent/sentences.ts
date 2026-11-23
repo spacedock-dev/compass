@@ -132,7 +132,7 @@ export function readsFromSentence(kind: string): string {
 /* What Read from my latest message does, said where the reader chooses it. Saving alone keeps the start the first reading
    had, so the work already done toward earlier words stays read. */
 export const READ_FROM_NOW_WHY =
-  'Saves your intent and reads the session from your latest message on. Work before that message is not read. Save intent alone keeps reading from where it started.';
+  'Saves your goal and reads the session from your latest message on. Work before that message is not read. Save goal alone keeps reading from where it started.';
 
 /* The reply's `outcome` token to the cue it earns. An unknown token, from a server newer than this page,
    falls back on `persisted`, which keeps its meaning across builds. */

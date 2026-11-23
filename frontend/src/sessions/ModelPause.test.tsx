@@ -71,7 +71,7 @@ describe('the summaries switch is nested under Pause model calls', () => {
     await act(async () => {
       fireEvent.click(pause);
     });
-    const region = await screen.findByRole('region', { name: 'What the session has done' });
+    const region = await screen.findByRole('region', { name: "What's happened so far" });
     const label = off ? 'Turn summaries on' : 'Turn off summaries';
     await waitFor(() =>
       expect(
@@ -119,7 +119,7 @@ describe('the summaries switch is nested under Pause model calls', () => {
     await act(async () => {
       fireEvent.click(pause);
     });
-    const region = await screen.findByRole('region', { name: 'What the session has done' });
+    const region = await screen.findByRole('region', { name: "What's happened so far" });
     await waitFor(() =>
       expect(script.summary?.['job']).toMatchObject({
         state: 'stopping',
@@ -161,7 +161,7 @@ describe('the summaries switch is nested under Pause model calls', () => {
         }
       />,
     );
-    const region = await screen.findByRole('region', { name: 'What the session has done' });
+    const region = await screen.findByRole('region', { name: "What's happened so far" });
     const update = await within(region).findByRole('button', { name: 'Update summary' });
     await act(async () => {
       fireEvent.click(update);

@@ -426,10 +426,10 @@ function absenceStory(
     play: async ({ canvasElement }) => {
       const progress = await progressCard(canvasElement);
       await expectAbsence(progress, label, reason);
-      const card = within(progress);
-      const button = card.getByRole('button', { name: check });
+      const view = within(canvasElement);
+      const button = view.getByRole('button', { name: check });
       await expect(button.querySelector('svg[data-icon="check-progress"]')).not.toBeNull();
-      await expect(card.getByText(/^Uses AI/)).toBeVisible();
+      await expect(view.getByText(/^Uses AI/)).toBeVisible();
       await expect(progress.textContent).not.toMatch(/\b(?:drift|analyze)\b/i);
     },
   };
@@ -593,7 +593,9 @@ export const Progress11Withdrawn: Story = {
     await expect(card.queryByText('What the earlier check found')).toBeNull();
     await expect(card.queryByRole('button', { name: 'Steer back' })).toBeNull();
     await expect(canvasElement.querySelector('[data-next-session-progress]')).toBeNull();
-    await expect(card.getByRole('button', { name: 'Check progress again' })).toBeVisible();
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Check progress again' }),
+    ).toBeVisible();
   },
 };
 
@@ -640,7 +642,9 @@ export const Progress13NewerCheckFailed: Story = {
     await expect(card.queryByText('Where it went off course')).toBeNull();
     await expect(card.queryByText(/^Checked .* against your goal$/)).toBeNull();
     await expect(canvasElement.querySelector('[data-next-session-progress]')).toBeNull();
-    await expect(card.getByRole('button', { name: 'Check progress again' })).toBeVisible();
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Check progress again' }),
+    ).toBeVisible();
   },
 };
 
@@ -678,7 +682,9 @@ function monitorStory(name: string, run: boolean): Story {
           /The Live monitor has not completed a check yet/,
         );
       }
-      await expect(within(progress).getByRole('button', { name: 'Check progress' })).toBeVisible();
+      await expect(
+        within(canvasElement).getByRole('button', { name: 'Check progress' }),
+      ).toBeVisible();
     },
   };
 }

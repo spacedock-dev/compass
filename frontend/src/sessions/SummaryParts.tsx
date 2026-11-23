@@ -5,6 +5,7 @@ import {
   type StoredSummary,
   type SummaryBullet,
   type SummaryGrant,
+  type SummaryPhase,
   type SummaryJob,
 } from '../api/summary';
 import { Disclosure, disclosureKey, useControls } from '../controls';
@@ -15,7 +16,8 @@ import { ActionButton } from '../intent/ActionButton';
 import { SampleMark } from '../sample/SampleMark';
 import { clock } from '../observed';
 import { useShell } from '../shell/context';
-import { formatSize } from '../shell/format';
+import { GLOSSARY } from '../language/glossary';
+import { formatSize, formatTimestamp } from '../shell/format';
 import {
   FRESHNESS_UNKNOWN,
   LEDE_LAST,
@@ -37,8 +39,6 @@ import {
   blockName,
   bulletWords,
   gapSentence,
-  isTestFailure,
-  hiddenRange,
   hiddenKey,
   hiddenSentence,
   ledeWords,
@@ -97,7 +97,12 @@ function Turn({
     <>
       <ActionButton
         weight={quiet ? 'quiet' : 'secondary'}
-        {...(quiet ? { tone: 'muted' as const } : {})}
+        {...(quiet
+          ? {
+              className:
+                'border-transparent bg-transparent text-primary hover:border-transparent hover:underline',
+            }
+          : {})}
         inert={paused}
         {...(paused ? { describedBy: reasonId } : {})}
         label={on ? 'Turn summaries on' : 'Turn off summaries'}
@@ -179,7 +184,9 @@ function Sent({ state }: { readonly state: SummaryState }) {
           </Disclosure>
         </>
       ) : null}
-      <Turn state={state} on={summariesOff(state.grant)} />
+      {!state.stored || summariesOff(state.grant) ? (
+        <Turn state={state} on={summariesOff(state.grant)} />
+      ) : null}
     </Why>
   );
 }
@@ -208,6 +215,18 @@ function OffSwitch({ state }: { readonly state: SummaryState }) {
   );
 }
 
+export function ReadySummaryOff({ state }: { readonly state: SummaryState }) {
+  if (
+    !state.stored ||
+    !state.grant ||
+    jobActive(state.job) ||
+    state.grant.reason ||
+    summariesOff(state.grant)
+  )
+    return null;
+  return <Turn state={state} on={false} quiet />;
+}
+
 /* The notice the first summary on this machine shows, and again when where it goes or what it sends changes:
    the same notice card a reading's notice uses, with Turn off summaries beside it. It is the whole card while a
    request runs, and once the summary stands it folds to one line that names what it holds: it once stayed open
@@ -227,7 +246,6 @@ function Notice({
       <div data-next-summary-notice data-next-summary-notice-folded>
         <Why name="summary-notice" summary="What this request sent to Claude Code">
           <NoticeBody notice={notice} provider="Claude Code" parts={parts} />
-          <Turn state={state} on={false} />
         </Why>
       </div>
     );
@@ -239,7 +257,7 @@ function Notice({
         provider="Claude Code"
         parts={parts}
       >
-        <Turn state={state} on={false} />
+        <Turn state={state} on={false} quiet />
       </ModelNotice>
     </div>
   );
@@ -435,7 +453,11 @@ function ShownText({
       </span>
     );
   return (
-    <span className="[overflow-wrap:anywhere]" {...(cited ? { 'data-next-summary-text': '' } : {})}>
+    <span
+      data-authored
+      className="[overflow-wrap:anywhere]"
+      {...(cited ? { 'data-next-summary-text': '' } : {})}
+    >
       {subject === 'opening summary' ? ledeWords(value.text) : value.text}
     </span>
   );
@@ -550,18 +572,13 @@ function Hidden({
   readonly name: string;
   readonly chip: (id: string, purpose: string) => ReactNode;
 }) {
-  const { model } = useDrift();
   const reasons = bullets.map(reasonOf);
-  const range = hiddenRange(
-    bullets.flatMap((bullet) => bullet.cites),
-    model.labels,
-  );
   return (
     <li
       className="text-body text-muted-foreground [overflow-wrap:anywhere]"
       data-next-summary-hidden={bullets.length}
     >
-      <span data-next-summary-hidden-line>{hiddenSentence(reasons, range)}</span>
+      <span data-next-summary-hidden-line>{hiddenSentence(reasons, '')}</span>
       <Why name={name} summary={bullets.length === 1 ? 'Why it was hidden' : 'Why each was hidden'}>
         <ol className="m-0 flex flex-col gap-1 pl-5">
           {bullets.map((bullet, n) => (
@@ -589,61 +606,41 @@ function Hidden({
 const unavailableReason = (reason: string) =>
   reason === 'session_not_matched' ? reason : 'store-unavailable';
 
-const PILL =
-  'inline-flex min-h-0 min-w-0 items-center rounded-full px-2.5 py-0.5 text-label font-semibold [font-family:var(--mono)]';
-
-/* What a phase holds that a reader should know, drawn on its heading and right-aligned: the
-   departures its entries are evidence for, each a pill that goes to the card, and a count of its failed test runs
-   (a failed build or a run the agent's sandbox refused is not badged as one).
-   They sit outside the accordion's trigger so they stay in view while the lines are folded away. */
+/* A flag stays outside the phase trigger so opening the evidence and opening the phase
+   are separate actions, each reachable with the keyboard. */
 function Mark({
   marks,
-  before = null,
-  failures,
+  before,
   tour,
 }: {
   readonly marks: readonly DepartureMark[];
-  /** When the analysis behind the marks was made, where work has arrived since it. */
-  readonly before?: number | null;
-  readonly failures: number;
+  readonly before: number | null;
   readonly tour: boolean;
 }) {
   const { model } = useDrift();
   const controls = useControls();
-  if (!marks.length && !failures) return null;
-  /* The Drift card says the analysis predates newer work; a pill read on its own says so too. */
-  const since = before === null ? '' : `, from the ${clock(before)} analysis, before newer work`;
+  if (!marks.length) return null;
+  const since =
+    before === null ? '' : `, from the ${clock(before)} progress check, before newer work`;
   return (
-    <>
-      {marks.length ? (
-        <span
-          className="contents"
-          data-next-summary-holds={before === null ? '' : 'before-newer-work'}
-        >
-          <span className="sr-only">{SUMMARY_HOLDS}</span>
-          {tour ? <SampleMark id="phase" /> : null}
-          {marks.map((mark) => (
-            <JumpButton
-              key={mark.key}
-              target={`departure-head:${model.key}:${mark.key}`}
-              label={`Departure · ${mark.name}`}
-              /* WCAG 2.5.3: the accessible name begins with the visible label. */
-              name={`Departure · ${mark.name}${since}, go to the card`}
-              className={`${PILL} cursor-pointer border-0 bg-[var(--clay)] text-[color:var(--bg)] no-underline hover:brightness-110`}
-              onJump={(focus) => showEvidence(controls, model.project, model.session, focus)}
-            />
-          ))}
-        </span>
-      ) : null}
-      {failures ? (
-        <span
-          className={`${PILL} border border-solid border-[var(--clay)] text-[var(--clay)]`}
-          data-next-summary-failures={failures}
-        >
-          {`${String(failures)} test ${failures === 1 ? 'failure' : 'failures'}`}
-        </span>
-      ) : null}
-    </>
+    <span className="contents" data-next-summary-holds={before === null ? '' : 'before-newer-work'}>
+      <span className="sr-only">{SUMMARY_HOLDS}</span>
+      {tour ? <SampleMark id="phase" /> : null}
+      {marks.map((mark) => (
+        <JumpButton
+          key={mark.key}
+          target={`departure-head:${model.key}:${mark.key}`}
+          label={
+            <span className="rounded-pill bg-[var(--status-waiting-bg)] px-2 py-1">
+              Off course here
+            </span>
+          }
+          name={`Off course here: evidence for ${mark.name}${since}`}
+          className="inline-flex min-h-[44px] items-center rounded-control border-0 bg-transparent px-1 text-label font-semibold text-[color:var(--clay)] hover:underline"
+          onJump={(focus) => showEvidence(controls, model.project, model.session, focus)}
+        />
+      ))}
+    </span>
   );
 }
 
@@ -651,6 +648,54 @@ function Mark({
    jump that opens it. */
 const phaseDisclosureKey = (project: string, scope: string, place: string) =>
   disclosureKey({ project, scope, name: `summary-phase:${place}` });
+
+const phaseGroup = (project: string, scope: string) =>
+  disclosureKey({ project, scope, name: 'summary-phases' });
+
+function PhaseHeading({ phase }: { readonly phase: SummaryPhase }) {
+  const { model } = useDrift();
+  const first = phase.bullets.find((bullet) => 'text' in bullet.text);
+  const times = phase.bullets.flatMap((bullet) =>
+    bullet.cites.flatMap((id) => {
+      const at = model.byId.get(id)?.at;
+      return typeof at === 'number' && Number.isFinite(at) && at > 0 ? [at] : [];
+    }),
+  );
+  const at = formatTimestamp(times.length ? Math.min(...times) : null, model.generated, {
+    style: 'clock',
+  });
+  return (
+    <span className="grid w-full min-w-0 grid-cols-[minmax(5ch,10ch)_minmax(0,1fr)] items-baseline gap-x-3 text-left [overflow-wrap:anywhere]">
+      <span className="text-label font-normal text-muted-foreground">
+        {at?.replace(/^at /, '')}
+      </span>
+      <span className="grid min-w-0 gap-1">
+        {'text' in phase.title ? (
+          <span data-authored data-next-summary-phase-title>
+            {phase.title.text}
+          </span>
+        ) : (
+          <span
+            className="font-normal text-muted-foreground"
+            data-next-summary-withheld={phase.title.withheld}
+          >
+            {withheldTitle(phase.title.withheld)}
+          </span>
+        )}
+        {first ? (
+          <span
+            className="line-clamp-2 text-body font-normal text-muted-foreground"
+            data-next-summary-preview
+          >
+            {'text' in first.text ? (
+              <span data-authored>{bulletWords(first.kind, first.text.text)}</span>
+            ) : null}
+          </span>
+        ) : null}
+      </span>
+    </span>
+  );
+}
 
 /* A press that moves focus to another card on this page. It reads, so the sample keeps it live, as it keeps the
    jump from a cited entry back to its finding. */
@@ -662,7 +707,7 @@ export function JumpButton({
   onJump,
 }: {
   readonly target: string;
-  readonly label: string;
+  readonly label: ReactNode;
   readonly name: string;
   readonly className?: string;
   /** Move focus after revealing a target inside a closed disclosure. */
@@ -756,18 +801,16 @@ function DeleteSummary({ state }: { readonly state: SummaryState }) {
 export function SummaryView({
   state,
   chip,
-  startsAt,
 }: {
   readonly state: SummaryState;
   readonly chip: (id: string, purpose: string) => ReactNode;
-  /** Where the summary starts, as the activity list numbers it, or empty. */
-  readonly startsAt: string;
 }) {
   const { model } = useDrift();
   const marks = useSummaryMarks();
   const stored = state.stored;
   if (!stored) return null;
   const running = jobActive(state.job);
+  const madeAt = formatTimestamp(stored.madeAt, model.generated, { style: 'clock' });
   const lede = stored.lede;
   /* The lede may cite a check or a file, which no record page holds, so it reads older pages only for ids a
      `said` or `asked` bullet also cites: those are message ids, as the bullets' own chips already treat them. */
@@ -800,16 +843,15 @@ export function SummaryView({
   )[0];
   return (
     <section className="flex flex-col gap-3" aria-label="Summary" data-next-summary>
-      <p
-        className="m-0 font-[family-name:var(--mono)] text-label text-muted-foreground"
-        data-next-summary-label
-      >
+      <p className="m-0 text-label text-muted-foreground" data-next-summary-label>
         {SUMMARY_LABEL}
+        {!running && madeAt ? ` · ${madeAt.replace(/^at /, '')}` : ''}
+        {running ? ' · still summarizing' : state.running ? ' · session still running' : ''}
       </p>
       {state.held.rewritten && running ? (
         <Line data-next-summary-rewritten>{SUMMARY_REWRITTEN}</Line>
       ) : null}
-      {summaryNotes(stored, startsAt).map((note) => (
+      {summaryNotes(stored, '').map((note) => (
         <Line key={note} data-next-summary-note>
           {note}
         </Line>
@@ -861,38 +903,19 @@ export function SummaryView({
                 >
                   <Disclosure
                     disclosureKey={phaseDisclosureKey(model.project, model.key, place)}
-                    className="next-summary-phase [&_[data-slot=accordion-trigger]]:min-h-[34px] [&_[data-slot=accordion-trigger]]:font-semibold [&_[data-slot=accordion-trigger]]:text-foreground"
+                    exclusiveGroup={phaseGroup(model.project, model.key)}
+                    className="next-summary-phase border-0 border-t border-solid border-[var(--rule)] py-1"
+                    triggerClassName="[inline-size:100%]! gap-2 font-semibold text-foreground"
                     headerProps={{
                       render: <h3 className="m-0 text-body font-semibold text-foreground" />,
                       id: phaseId(state.key, place),
                       tabIndex: -1,
                     }}
-                    summary={
-                      'text' in phase.title ? (
-                        phase.title.text
-                      ) : (
-                        <span
-                          className="font-normal text-muted-foreground"
-                          data-next-summary-withheld={phase.title.withheld}
-                        >
-                          {withheldTitle(phase.title.withheld)}
-                        </span>
-                      )
-                    }
+                    summary={<PhaseHeading phase={phase} />}
                     aside={
-                      <Mark
-                        marks={held}
-                        before={marks.before}
-                        failures={
-                          phase.bullets.filter(
-                            (line) =>
-                              line.kind === 'failed' &&
-                              'text' in line.text &&
-                              isTestFailure(line.text.text),
-                          ).length
-                        }
-                        tour={place === toured}
-                      />
+                      held.length ? (
+                        <Mark marks={held} before={marks.before} tour={place === toured} />
+                      ) : null
                     }
                   >
                     <ul className="m-0 flex flex-col gap-1.5 pl-5">
@@ -969,7 +992,7 @@ export function DepartureSummaryLine({ row }: { readonly row: string }) {
       className="m-0 flex flex-wrap items-center gap-x-2 text-label text-muted-foreground"
       data-next-departure-summary={mark.placement.where}
     >
-      <span>In What the session has done:</span>
+      <span>{`In ${GLOSSARY.whatsHappened.plain}:`}</span>
       {mark.placement.where === 'phase' ? (
         titles.map(({ place, title }) => (
           <JumpButton
@@ -978,7 +1001,11 @@ export function DepartureSummaryLine({ row }: { readonly row: string }) {
             label={title}
             name={`Go to the summary phase that holds this evidence: ${title}`}
             onJump={(focus) => {
-              disclosures.set(phaseDisclosureKey(model.project, key, place), true);
+              disclosures.set(
+                phaseDisclosureKey(model.project, key, place),
+                true,
+                phaseGroup(model.project, key),
+              );
               focus();
             }}
           />

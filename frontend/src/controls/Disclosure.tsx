@@ -36,7 +36,7 @@ export interface DisclosureProps {
   readonly triggerClassName?: string;
   /** Opens below the trigger and scrolls in the room there, never flipping above or beside it. Popover only. */
   readonly vertical?: boolean;
-  /** A card-scoped choice group. Opening one popover closes its peers. Popover only. */
+  /** A card-scoped choice group. Opening one disclosure closes its peers. */
   readonly exclusiveGroup?: string;
   /** While open, holds the board's background paint as an open Select does, so what the popover counts does not
    * move under the pointer. Popover only. */
@@ -85,6 +85,7 @@ function AccordionDisclosure({
   openByDefault = false,
   openWhen = false,
   onOpenPress,
+  exclusiveGroup,
   searchable = true,
   children,
 }: DisclosureProps) {
@@ -95,8 +96,8 @@ function AccordionDisclosure({
      again, and one never touched opens exactly once. */
   useLayoutEffect(() => {
     if (openByDefault && controls.disclosures.version(disclosureKey) === 0)
-      controls.disclosures.set(disclosureKey, true);
-  }, [openByDefault, controls.disclosures, disclosureKey]);
+      controls.disclosures.set(disclosureKey, true, exclusiveGroup);
+  }, [openByDefault, controls.disclosures, disclosureKey, exclusiveGroup]);
   /* A first draw honours a reader's earlier close (the key has a version), and a later rise does not: it is a
      new fact the reader has not yet seen the panel hold. */
   useLayoutEffect(() => {
@@ -104,8 +105,8 @@ function AccordionDisclosure({
     wasWhen.current = openWhen;
     if (!openWhen || before === true) return;
     if (before === null && controls.disclosures.version(disclosureKey) !== 0) return;
-    controls.disclosures.set(disclosureKey, true);
-  }, [openWhen, controls.disclosures, disclosureKey]);
+    controls.disclosures.set(disclosureKey, true, exclusiveGroup);
+  }, [openWhen, controls.disclosures, disclosureKey, exclusiveGroup]);
   const triggerRef = useFocusKey<HTMLButtonElement>(controls.focusLane, focusKey ?? null);
   const panelRef = useRevealFragment(disclosureKey);
   const triggerClasses = [
@@ -126,7 +127,7 @@ function AccordionDisclosure({
           controls.noteToggle();
           if (!open && value.includes(disclosureKey)) onOpenPress?.();
         }
-        controls.disclosures.set(disclosureKey, value.includes(disclosureKey));
+        controls.disclosures.set(disclosureKey, value.includes(disclosureKey), exclusiveGroup);
       }}
     >
       <AccordionItem value={disclosureKey}>

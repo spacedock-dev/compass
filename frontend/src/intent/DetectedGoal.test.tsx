@@ -103,7 +103,7 @@ describe('a /goal over a session with no saved goal', () => {
     expect(labels[1]).toMatch(/^First prompt/);
   });
 
-  it('saves with Save intent, naming the goal and its time', async () => {
+  it('saves with Save goal, naming the goal and its time', async () => {
     const page = mountSession({
       session: { session_goal: DETECTED },
       routes: { '/api/annotate': () => stored(1) },
@@ -215,7 +215,7 @@ describe('a /goal after the reader saved their own', () => {
     expect(offer()).toBeNull();
   });
 
-  it('puts the new goal in the box when taken, and records its source and time on Save intent', async () => {
+  it('puts the new goal in the box when taken, and records its source and time on Save goal', async () => {
     const page = mountSession({
       ...savedOwn,
       session: { ...savedOwn.session, session_goal: { text: LATER, at: 600 } },

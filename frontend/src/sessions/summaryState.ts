@@ -3,7 +3,6 @@ import {
   jobActive,
   parseFocusedSummary,
   parseGrant,
-  stampModel,
   type FocusedSummary,
   type StoredSummary,
   type SummaryGrant,
@@ -14,7 +13,7 @@ import type { SessionIdentity } from '../api/types';
 import { useDrift } from '../drift/context';
 import { TourContext } from '../sample/tourContext';
 import { useShell } from '../shell/context';
-import { autoStartDue, summaryStamp, type ReasonContext } from './summary';
+import { autoStartDue, type ReasonContext } from './summary';
 import { startSummary } from './summaryActions';
 import { grantShown, summaryHeldFor, useSummaryHeld, type SessionSummaryHeld } from './summaryHeld';
 
@@ -111,14 +110,4 @@ export function useOpenSummary(state: SummaryState): void {
   useEffect(() => {
     if (jobOver && held.rewritten) summaryHeldFor(shell.runtime).patch(key, { rewritten: false });
   }, [jobOver, held.rewritten, key, shell]);
-}
-
-export function summaryHeader(state: SummaryState): string {
-  if (!state.stored) return '';
-  return summaryStamp(
-    state.stored,
-    state.running,
-    stampModel(state.stored.modelStamp),
-    jobActive(state.job),
-  );
 }

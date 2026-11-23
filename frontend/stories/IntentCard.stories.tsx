@@ -287,7 +287,7 @@ export const TypedSourceAndSavedStatus: Story = {
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(
       'Unsaved changes',
     );
-    await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+    await userEvent.click(view.getByRole('button', { name: 'Save goal' }));
     await waitFor(async () => {
       await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saved');
     });
@@ -485,7 +485,7 @@ export const SavingStatus: Story = {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Goal' });
     const view = within(card);
-    await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+    await userEvent.click(view.getByRole('button', { name: 'Save goal' }));
     await waitFor(async () => {
       await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saving…');
     });
@@ -517,7 +517,7 @@ export const NotConfirmedStatus: Story = {
     await enterGoalEditor(view);
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ' edited');
-    await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+    await userEvent.click(view.getByRole('button', { name: 'Save goal' }));
     await waitFor(async () => {
       await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(
         'Not confirmed',
@@ -555,7 +555,7 @@ export const RefusedStatus: Story = {
     await enterGoalEditor(view);
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ' edited');
-    await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+    await userEvent.click(view.getByRole('button', { name: 'Save goal' }));
     await waitFor(async () => {
       await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Not saved');
     });
@@ -631,7 +631,7 @@ export const GoalEditKeepsTheReadingStart: Story = {
     );
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ' and record the ruling');
-    await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+    await userEvent.click(view.getByRole('button', { name: 'Save goal' }));
     await waitFor(async () => {
       await expect(
         card.querySelector('.next-cockpit-held-footer .next-cockpit-held-cue'),
@@ -656,7 +656,7 @@ export const UsingAPromptAsTheGoalKeepsTheReadingStart: Story = {
     await userEvent.click(
       await doc.findByRole('option', { name: /Latest prompt · \d\d:\d\d · excerpt Add streaming/ }),
     );
-    await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+    await userEvent.click(view.getByRole('button', { name: 'Save goal' }));
     await waitFor(async () => {
       await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
         'Add streaming tokenizer benchmarks before touching the AST',
@@ -847,7 +847,7 @@ export const EndedSessionCaveatBeforeAndAfterSave: Story = {
     await expect(card.querySelector('[data-next-ended-goal]')).toHaveTextContent(ENDED_CAVEAT);
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ' after end');
-    await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+    await userEvent.click(view.getByRole('button', { name: 'Save goal' }));
     await waitFor(async () => {
       await expect(
         card.querySelector('.next-cockpit-held-footer .next-cockpit-held-cue'),
@@ -874,7 +874,7 @@ export const TypedWordsStayThroughSlowSave: Story = {
         release = resolve;
       });
     try {
-      await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+      await userEvent.click(view.getByRole('button', { name: 'Save goal' }));
       await waitFor(async () => {
         await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saving…');
       });
@@ -933,7 +933,7 @@ export const AdoptedPromptStaysThroughSlowSave: Story = {
       });
     const status = () => card.querySelector('[data-next-intent-status]');
     try {
-      await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+      await userEvent.click(view.getByRole('button', { name: 'Save goal' }));
       await waitFor(async () => {
         await expect(status()).toHaveTextContent('Saving…');
       });
@@ -965,13 +965,13 @@ async function openOutcomes(view: ReturnType<typeof within>) {
   await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'true'));
 }
 
-/* The five states of the card, each held to the design: a three-row goal, Save intent and Undo changes
+/* The five states of the card, each held to the design: a three-row goal, Save goal and Undo changes
    together on the left and drawn from the first view, one word of status, the card's meta row reduced to the
    reading start beside one quiet menu, and Expected outcome folded into an accordion that holds Add a line.
    Closed, it draws nothing but its trigger; open, Add a line and each line's Remove are drawn in it. */
 async function controlsTogether(card: HTMLElement, outcomes: 'open' | 'closed') {
   const view = within(card);
-  const save = view.getByRole('button', { name: 'Save intent' });
+  const save = view.getByRole('button', { name: 'Save goal' });
   const undo = view.getByRole('button', { name: 'Undo changes' });
   await expect(save).toBeVisible();
   await expect(undo).toBeVisible();
@@ -1980,7 +1980,7 @@ export const AddingALineInsideTheAccordionSaves: Story = {
       await view.findByRole('textbox', { name: 'Done line 2' }),
       'Benchmarks run',
     );
-    await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+    await userEvent.click(view.getByRole('button', { name: 'Save goal' }));
     await waitFor(async () => {
       await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saved');
     });
@@ -2041,14 +2041,14 @@ export const OverCapLineBlocksSave: Story = {
     await expect(
       canvasElement.ownerDocument.getElementById('next-cockpit-cue-status'),
     ).toHaveTextContent('Line 1 is 900 characters; the limit is 800.');
-    await expect(view.getByRole('button', { name: 'Save intent' })).toHaveAttribute(
+    await expect(view.getByRole('button', { name: 'Save goal' })).toHaveAttribute(
       'aria-disabled',
       'true',
     );
     await userEvent.clear(box);
     await userEvent.paste('😀'.repeat(800));
     await expect(view.getByText('800 / 800')).toHaveAttribute('data-over', 'false');
-    await expect(view.getByRole('button', { name: 'Save intent' })).not.toHaveAttribute(
+    await expect(view.getByRole('button', { name: 'Save goal' })).not.toHaveAttribute(
       'aria-disabled',
       'true',
     );
@@ -2097,7 +2097,7 @@ export const RefusedSaveShowsReason: Story = {
     const box = view.getByRole('textbox', { name: 'Done line 1' });
     await userEvent.clear(box);
     await userEvent.type(box, 'Changed line');
-    await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+    await userEvent.click(view.getByRole('button', { name: 'Save goal' }));
     await expect(
       await view.findByText('Not saved: line 1 is 900 characters; the limit is 800.'),
     ).toBeVisible();
@@ -2117,13 +2117,13 @@ export const OverCapGoalBlocksSave: Story = {
     await expect(box).toHaveValue('g'.repeat(1100));
     await expect(view.getByText('1100 / 1000')).toHaveAttribute('data-over', 'true');
     await expect(view.getByText('The goal is 1,100 characters; the limit is 1,000.')).toBeVisible();
-    await expect(view.getByRole('button', { name: 'Save intent' })).toHaveAttribute(
+    await expect(view.getByRole('button', { name: 'Save goal' })).toHaveAttribute(
       'aria-disabled',
       'true',
     );
     await userEvent.clear(box);
     await userEvent.paste('g'.repeat(1000));
-    await expect(view.getByRole('button', { name: 'Save intent' })).not.toHaveAttribute(
+    await expect(view.getByRole('button', { name: 'Save goal' })).not.toHaveAttribute(
       'aria-disabled',
       'true',
     );

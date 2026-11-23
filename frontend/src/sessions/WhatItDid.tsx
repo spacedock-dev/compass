@@ -10,8 +10,8 @@ import { useDisplayed, useShell } from '../shell/context';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Card } from '../ui/card';
 import { Disclosure, disclosureKey } from '../controls';
-import { SummaryControls, SummaryView } from './SummaryParts';
-import { summaryHeader, useOpenSummary, useSummaryState } from './summaryState';
+import { ReadySummaryOff, SummaryControls, SummaryView } from './SummaryParts';
+import { useOpenSummary, useSummaryState } from './summaryState';
 import {
   missingSentence,
   OUTLINE_EMPTY,
@@ -22,22 +22,15 @@ import {
   outlineView,
   type BlockView,
 } from './outline';
+import { GLOSSARY } from '../language/glossary';
 import { useSteadyOutline } from './steadyOutline';
 
 export const WHAT_IT_DID_PLACEHOLDER =
   'An outline of what this session did is not drawn here yet. Activity log below shows the recorded activity available to this page.';
 
-/* An entry chip: its `#n` where the page holds and numbers the entry. Pressing it opens Activity log and lands
-   on the entry, reading older record pages for it first when the page does not hold it, as Show cited entries
-   does (docs/design-reader-state.md#the-inventory). An entry from before the intent's window keeps its number,
-   muted, and says why Analyze does not read it. */
-export const OUTSIDE_WINDOW = 'Before your intent’s start; not read by Analyze';
-/* A chip never reads as the bare word "entry". An entry with no number says why it has none: counted numbers start
-   at the intent's window, so an earlier entry has none to keep, and a message the page has not read yet has none
-   until its record page arrives (the press reads for it). */
-export const UNNUMBERED_BEFORE = 'before your intent';
-export const UNNUMBERED_OLDER = 'older entry';
-export const UNNUMBERED_COMMAND = 'command';
+/* A Source link opens a preview, then Activity log on the recorded entry.
+   Only Activity log displays the entry's number. */
+export const OUTSIDE_WINDOW = 'Before the start of your goal; outside the progress check';
 export function EntryChip({
   id,
   purpose,
@@ -47,7 +40,7 @@ export function EntryChip({
   readonly id: string;
   readonly purpose: string;
   readonly onOpen: (id: string, n: string | null) => void;
-  /** A citation in a line of text: its number in brackets, as a footnote. Otherwise `#n` in running words. */
+  /** A summary source opens a preview before the jump to Activity log. */
   readonly cite?: boolean;
 }) {
   const drift = useDrift();
@@ -57,20 +50,13 @@ export function EntryChip({
   /* A command is on the page and takes no number, so it is not an older entry the page has yet to read. */
   const subject = model.byId.get(id)?.subject;
   const command = !n && !outside && (subject === 'command' || subject === 'ci_command');
-  const word = n
-    ? cite
-      ? `[${n}]`
-      : `#${n}`
-    : command
-      ? cite
-        ? '[command]'
-        : UNNUMBERED_COMMAND
-      : cite
-        ? '[?]'
-        : outside
-          ? UNNUMBERED_BEFORE
-          : UNNUMBERED_OLDER;
-  const label = `Open ${n ? `entry #${n}` : command ? 'a command, not numbered' : outside ? 'the entry before your intent’s start' : 'an older entry the page has not read yet'}, ${purpose}, in Activity log${outside ? `. ${OUTSIDE_WINDOW}` : ''}`;
+  const word = cite ? 'Source' : 'See in Activity log';
+  const subjectLabel = outside
+    ? 'the source before the start of your goal'
+    : n || command
+      ? 'the source'
+      : 'an older source the page has not read yet';
+  const label = `Open ${subjectLabel}, ${purpose}, in Activity log${outside ? `. ${OUTSIDE_WINDOW}` : ''}`;
   const marks = {
     'data-next-outline-entry': id,
     'data-next-cockpit-action': 'finding-jump',
@@ -81,6 +67,7 @@ export function EntryChip({
   const chip = cite ? (
     <CitationLink
       id={id}
+      plain
       className={tone}
       aria-label={label}
       onJump={() => onOpen(id, n)}
@@ -144,7 +131,7 @@ function Block({
             {block.noPrompt}
           </span>
         ) : (
-          <q data-next-outline-prompt title={block.promptFull ?? undefined}>
+          <q data-authored data-next-outline-prompt title={block.promptFull ?? undefined}>
             {block.prompt}
           </q>
         )}
@@ -184,8 +171,7 @@ function Block({
 /* Long enough for a smooth scroll over a long record to end; short enough that a reader's own scroll after it is
    not mistaken for the landing's. */
 
-/* The What the session has done card: a stable region between the Intent card and the Drift card. Until a
-   summary exists it holds Compass's outline, one block per message of the reader's, read from the focused
+/* The story card. Until a summary exists it holds Compass's outline, one block per message of the reader's, read from the focused
    context and updated with the board; once one is saved, the summary stands in the slot and the outline is one
    press below it, where every gap points. `data-next-session-summary-controls` holds the summary's notice and
    controls, above the slot in every state, and is empty where this server publishes no summaries. */
@@ -259,9 +245,8 @@ export function WhatItDid({
       entriesHeld(snapshot, scope),
     );
   }, [runtime, identity, model.projectKey, model.session, pending.join(',')]);
-  const stamp = summary.stored
-    ? summaryHeader(summary)
-    : outline?.state === 'ok'
+  const stamp =
+    !summary.stored && outline?.state === 'ok'
       ? outlineStamp(entry?.revision ?? null, running, Boolean(entry?.error))
       : '';
 
@@ -291,11 +276,12 @@ export function WhatItDid({
       <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         {/* The sample's mark beside the heading, outside it, so the card's name stays the heading's words. */}
         <span className="flex items-baseline">
-          <h2 id="next-session-summary-heading" className="next-session-drift-heading">
-            What the session has done
+          <h2 id="next-session-summary-heading" className="m-0 text-head font-bold text-foreground">
+            {GLOSSARY.whatsHappened.plain}
           </h2>
           <SampleMark id="summary" />
         </span>
+        <ReadySummaryOff state={summary} />
         {stamp ? (
           <span
             className="font-[family-name:var(--mono)] text-label text-muted-foreground"
@@ -312,11 +298,6 @@ export function WhatItDid({
             {missing?.from === 'summary' ? <MissingLine missing={missing.what} /> : null}
             <SummaryView
               state={summary}
-              startsAt={
-                summary.stored.startsAt && model.numbers.get(summary.stored.startsAt)
-                  ? `#${model.numbers.get(summary.stored.startsAt) ?? ''}`
-                  : ''
-              }
               chip={(id, purpose) => (
                 <EntryChip id={id} purpose={purpose} onOpen={open('summary')} cite />
               )}
