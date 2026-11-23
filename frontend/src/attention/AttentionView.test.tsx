@@ -182,7 +182,9 @@ describe('the four queues', () => {
     expect(subject.textContent).toContain(
       'Repeated tool failures: Bash failed 4 times, nothing succeeded',
     );
-    expect(subject.textContent).toContain('Attribution conflict');
+    expect(subject.querySelector('[data-layer="technical"]')?.textContent).toContain(
+      'Sources disagree',
+    );
     // And it is not duplicated as a risk row of its own.
     expect(
       section('risk').querySelectorAll(
