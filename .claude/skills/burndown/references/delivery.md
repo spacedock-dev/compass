@@ -7,17 +7,25 @@ all stack, verification and merge rules here are shared. Read
 ## 4. Build a layer
 
 In the layer's worktree. Items 1, 2, 5 and 6 are the build stage, 4 is the review stage, and 3 is the
-orchestrator's. A build subagent stops after item 2 and hands back its worktree and review-server
-port. After the review, item 5 says who makes the fixes; item 6 goes with them.
+orchestrator's. The builder runs items 1, 2 and the final-head checks in item 5, then hands back
+its worktree, commit, verification and review-server port. Apply the same checks to a correction
+round's final head.
 
 1. **REQUIRED SUB-SKILL:** invoke `superpowers:test-driven-development`. Write the failing test first
    and watch it fail, then the code. A change to a component or view updates its story, and
    `pnpm test:stories` (in the suite) proves it. If the layer touches the web surface, run
-   `pnpm build` before the suite: the suite includes `pnpm build:check`, which fails on a stale
+   `pnpm build` before the gate: the gate includes `pnpm build:check`, which fails on a stale
    bundle, and the Mode 2 walk serves whatever `react.html` is in the worktree, so without the build
-   it reviews the old page. Run the touched test modules and the checks that can catch what changed,
-   not the whole suite: the suite runs once per pull request, in item 5. A parity or shape test is
-   held to a fixture built from a captured real payload, as
+   it reviews the old page. Run touched modules while building. Keep test probes and fixtures in
+   a temporary directory outside the checkout, with copies of the config they need. A probe under
+   `frontend/` raced the package test's directory copy and ejected #1035 with `ENOENT`.
+   For each card or row that publishes an answer, give every answer and absence state its own
+   Storybook story, including withdrawn, stale, failed over an earlier answer, unreadable and
+   Codex when applicable. Each `play` asserts
+   the exact words and excludes the other states' words. A withdrawn reading shown as current led
+   a round with 17 confirmed findings. Check frontend matchers and assertions after a server
+   sentence rename. A literal matcher and its old-word test escaped one layer.
+   Base each parity or shape test on a fixture built from a captured real payload, as
    [planning](planning.md#2-plan-group-order-estimate-choose-models) says.
 2. Invoke `sync-docs` in the layer that ships the behaviour, never once for the whole stack. The
    shipped `SKILL.md` and `HOW_TO_USE.md` change in the layer that ships what they describe. Never
@@ -58,32 +66,40 @@ port. After the review, item 5 says who makes the fixes; item 6 goes with them.
    together at the higher of their tiers, and submit them together. Submitting the lower one first
    would cost a second CI cycle for every fix the combined review finds in it. Freeze the stack
    while a reviewer is reading: a restack rewrites the layers above under them and turns correct
-   findings into false refutations. File what a review defers.
+   findings into false refutations. Apply the tier's [finding rules](delegation.md#when-the-stages-disagree).
 5. Fix what the walk and the review found. One correction round per layer is the default; after a
    round with several fixes, re-check against a live board, because fix rounds here produce about
    one new defect per four fixes. The orchestrator makes a small fix (a few lines and its test)
    inline: measured on 2026-11-06, an inline fix took about 5 minutes and a fresh builder round 20
    to 45, most of it the full suite. A larger round goes to a builder: resume the one that built the
    layer when the harness still holds it, or dispatch a fresh build-stage subagent. Either way the
-   round runs the touched tests. Then, once per pull request and before it is submitted, rebuild if
-   anything touched the web surface and run the canonical pre-PR suite from **AGENTS.md, "Pre-PR
-   Checks"**, from there rather than from a copy. Give `scripts/run_tests.py` a `-j` share of the
-   cores when another suite is running. `test_documentation` asserts `SKILL.md`, `SECURITY.md` and
-   `README.md`.
+   round runs touched tests. For a **stacked page layer**, the builder runs
+   `python3 scripts/pre_pr.py -j 4` once after the final commit and reports the lane summary.
+   CI was the first full run for twelve redesign PRs. After that pass, fix failures this layer
+   caused and rerun the printed failed commands. Repeat the gate only if the fix touches a file
+   another lane reads. One builder spent about 20 minutes per pass and hit a two-hour cap.
+   For a **standalone PR off main in this burndown**, run focused tests and let CI run the full gate.
+   Three builders waiting on the shared lock cost up to two gate runs of idle time.
+   **AGENTS.md, "Pre-PR Checks"** owns the commands and the runner's lane selection.
+   When a standalone docs branch takes a base containing a newly landed page layer, use
+   `scripts/ci_scope.py`'s `frontend_docs_tests` output to rerun the affected Vitest files before
+   pushing. A newly landed Settings test pinned a sentence in `MANUAL.md` and caught the rewrite
+   in CI.
 6. Make the rebuilt bundle the last commit of any web-surface layer: after the last source change,
    `pnpm build`, commit the built files, then `pnpm build:check`. Never resolve or compute the
    bundle by hand.
 
-Keep CI waiting productive: once a layer is submitted, build the next layer on top of it while its
-checks run.
+If a criterion depends on a later layer, build the target or other reachable part now and report
+the rest under `Deferred to <issue>`. Ship working links and controls. Four builders stopped on
+later-layer dependencies before this hand-back convention.
 
 ## 5. Stack, submit and land
 
-**Build the web-surface stack serially in one worktree,** because each layer's tree depends on the
-one below. gh-stack keeps one stack catalog in the git common directory, shared by every linked
-worktree, and `rebase` and `sync` update a branch checked out in another worktree as long as that
-worktree is clean and idle. A dirty, busy or mid-rebase worktree blocks the update, and neither
-command stashes for you, so have builders commit and stop before you restack.
+**Keep one line of history for the web surface.** Use two or three layers per slice, as the owner
+ruled after restack work grew with the square of the layer count. Keep each upper slice on its
+known base until the lower slice lands, then restack it onto `main`. An early restack would need
+repeating if CI changed a lower tip. gh-stack shares its catalog across linked worktrees.
+Have builders commit and stop before a restack. A dirty, busy or mid-rebase worktree blocks it.
 
 - Layer by layer in the stack's worktree: `gh stack init --base main <branch-1>`, commit, then
   `gh stack add <branch-2>` for the next layer, and so on.
@@ -115,16 +131,31 @@ ready for release notes, with no tracker brand, issue key or tracker URL (recent
 - A `## Verification` section naming what ran and what it said.
 
 An independent group is an ordinary pull request on `main`: `gh pr create`, then land it as below.
+Check its change against `git merge-base origin/main HEAD` so a moved `origin/main` cannot make a
+standalone branch appear to edit the page. Keep any required web-surface edits for the page line
+and report them under `Needs the page line`. A standalone terminal fix once rebuilt the page.
+Parse `gh` stdout alone. Read the PR number with `gh pr list --head <branch>`: a stderr hint from
+`gh pr create` once replaced the URL passed to `gh stack link`.
 
-**Fix a lower layer.** `gh stack checkout <branch-k>`, commit with `-s`, then
-`gh stack rebase --upstack`. When a rebase stops on one of the built files (`react.html`,
-`react.integrity.json`, `react-licenses.txt`), take either side, run `pnpm build`, `git add` the
-result, and `gh stack rebase --continue`. Resolve a conflict in a source under `frontend/` by hand,
-then rebuild. Then check out each layer above from the bottom up and run `pnpm build:check` and the
-suite; where `build:check` fails with no textual conflict, rebuild, amend that layer's bundle commit
-and `gh stack rebase --upstack` from it. Then `gh stack push`. Only layer k and the layers above
-it re-run CI. A clean rebase can still break at runtime: grep the renamed symbols across every
-layer.
+**Fix a lower layer.** After committing the fix with `-s`, use
+[`restack.sh`](../scripts/restack.sh) in an idle worktree that can check out the affected branches.
+Save each old parent tip before rewriting it and pass the layers bottom-up. Set
+`RESTACK_GENERATED_PATHS` to the newline-separated relative build outputs and CSS budget files.
+For Compass these are `react.html`, `react.integrity.json` and `react-licenses.txt` under the
+runtime's `web/` directory, plus `frontend/css-budget.json` and `frontend/css-coverage.json`.
+For Compass, set `RESTACK_PAGE_NOTES` to `docs/design-sample-session.md` and `RESTACK_PAGE_TEST` to
+`frontend/build/page-size.test.mjs`. A known measurement conflict keeps both paragraphs and
+the larger bound for remeasurement after the rebuild. The helper takes a temporary side for
+generated conflicts, rebuilds from source, checks the result and stops on a source conflict.
+Set `RESTACK_COMMIT_GIT=/usr/bin/git` for Compass's sign-off path.
+Six agent restacks in slice 1 prompted the helper. Its first live run preserved the fix without
+a new bundle commit.
+
+Resolve source conflicts before continuing the restack. After a delegated resolution, compare
+every affected file against both sides for unexpected shrinkage. One rebase truncated three
+files. Check the exit status and resulting branch before any push or retarget. A failed rebase
+once went through a pipeline that masked its exit and opened a PR on the old base. Run the layer's
+affected checks and grep renamed symbols across the upper layers, then `gh stack push`.
 
 **Main moved** (an independent pull request landed, or a sibling): once no review is reading the
 stack, `gh stack sync`. It fetches, rebases and pushes every layer. On a rebase conflict it restores
@@ -150,10 +181,14 @@ ruleset requires one. The commands below are the same either way; what they do d
   each entry on top of `main` and the entries ahead of it, runs the required checks on that result,
   and lands it with its own merge method, squash. Nothing has to be up to date first, so never run
   `gh pr update-branch`. Landing is done when the pull requests show `MERGED`, not when the command
-  returns: watch `gh pr view <n> --json state,mergeStateStatus`. While a stack is queued, `gh stack sync` skips its queued branches and `gh stack modify` refuses, so do
-  not restructure it until it lands or leaves the queue. An entry whose group fails a check or
+  returns. Poll PR `state`, `mergeStateStatus` and GraphQL `mergeQueueEntry.state`. A nonexistent
+  field hid an ejection for hours. While a stack is queued, `gh stack sync` skips its queued
+  branches and `gh stack modify` refuses. Restructure after it lands or leaves the queue.
+  An entry whose group fails a check or
   conflicts is removed from the queue: fix it with the lower-layer procedure, wait for green on the
   new head, and merge again.
+  Wait for a queued PR to land before linking another PR onto it. Restack and retarget the
+  successor onto `main` after the landing. A queued layer once refused the next link.
 - **Without one,** the ruleset requires each branch be up to date, and `gh stack merge` merges at
   once. A sibling landing first puts the stack behind: `gh stack sync` and a full CI re-run before
   merging.
@@ -166,7 +201,8 @@ head SHA (a run that finished before a push still reports green); `mergeStateSta
 every review thread on every layer is resolved, because the ruleset requires thread resolution and
 one open thread fails the whole atomic merge. Read Copilot's inline comments, not only top-level
 reviews. Disposition each thread (fix it with the lower-layer procedure, or reply and file it), then
-resolve it; a `BLOCKED` state with no failing check means an open thread. Then:
+resolve it; a `BLOCKED` state with no failing check means an open thread. For a stack that fits
+the queue window, or when there is no queue:
 
 ```bash
 gh stack merge --squash --yes
@@ -188,6 +224,11 @@ that number. Once those layers land, GitHub rebases and retargets the rest, whic
 heads: `gh stack sync`, so the local branches and the pushed heads agree again, then wait for CI on
 the new heads before merging again.
 
+With Compass's measured queue window, enqueue at most five consecutive stacked entries at a time.
+The sixth entry once failed `merge_conflict` outside that build window and ejected everything
+above it. Only five of twelve merged. An entry outside the window can read `UNMERGEABLE` with no
+merge-group commit while its PR reads `CLEAN`. Judge its checks once it enters the window.
+
 **Never, on a stacked branch:** `gh pr merge` (it merges a layer into its parent branch, leaving
 its code off `main` even if tracker automation calls it finished), `gh pr update-branch`, a plain `git rebase origin/main`,
 `--delete-branch`, or the server-side "Rebase stack" button, whose commits are unsigned. A pull
@@ -200,12 +241,26 @@ that holds the branch. Without a queue, `gh pr merge <n> --squash --delete-branc
 and nothing needs updating; once it shows `MERGED`, delete the local branch. The repository deletes
 a merged head branch on GitHub by itself either way.
 
+Use [`wait-merge.sh`](../scripts/wait-merge.sh) for an approved independent landing. Dry-run it
+once with `WAIT_MERGE_DRY_RUN=1` and verify the fields. The waiter checks the current head, confirms
+an enqueue by observing a real entry, retries if it is still absent and reports only state changes.
+Its result is one of `MERGED`, `CLOSED`, `CI FAILURE`, `DIRTY` and `TIMEOUT`. Two consecutive
+`DIRTY` observations on the same head rule out the transient result after a force-push. A silent
+merge failure once looked queued, and a single transient `DIRTY` once stopped a waiter. After a
+stack landing, check independent PRs touching shared story files for conflicts. One such PR sat
+dirty for an hour before the waiter gained that terminal state.
+
 ## Parallel work
 
 Read **AGENTS.md, "Parallel Work"** before starting a second builder, and hand its contention list
 to every one.
 
-- The web-surface stack is built serially in one worktree. Its layers depend on each other's trees.
+- Pipeline a page layer's build on the lower hand-back only when its files are disjoint from the
+  lower fix round. A concurrent build and local gate recreated load flakes. An approved
+  critical-path exception can accept known overlap and a later restack. One dependency blocked
+  seven of eleven next-slice issues, and starting early saved about two hours at a cost of
+  about 45 minutes resolving eight source conflicts. Keep the dependency landing order so the
+  upper layer restacks once.
 - An independent group may run in its own worktree with its own subagent, its own review-server
   port, and a `-j` share of the cores. Its builder stops after step 4.2 and hands back; the
   orchestrator walks it, and steps 4.5 and 4.6 go as item 5 of step 4 says.
@@ -223,7 +278,12 @@ to every one.
 - A loopback-port failure under concurrent suites is contention, not a regression: rerun that module
   alone before believing it.
 - Record every CI flake and every "Passed only on retry" test before re-running or re-queuing, as
-  **AGENTS.md, "Flaky tests"** says.
+  **AGENTS.md, "Flaky tests"** says. Run `python3 -m unittest scripts.tests.test_flaky_tally` after
+  changing the ledger. A malformed test or status cell broke its parser. In Storybook, read
+  positions after layout settles with `settledLayout` or `settledRect`: three stories failed
+  on transitional geometry in two days. Keep browser shards when changing story coverage.
+  Chromium previously closed around story 842 of 846, and three fresh browser shards fixed
+  the recurring queue failure.
 
 ## Delivery invariants
 

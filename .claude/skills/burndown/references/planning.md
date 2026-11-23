@@ -31,12 +31,13 @@ last.
   everything `pnpm build` reads: `page.py`'s font table, the font rows of `styles.css` and the
   lockfile (**AGENTS.md, "Parallel Work"**). Otherwise: the shipped `SKILL.md`, `SECURITY.md` or
   `HOW_TO_USE.md`, `config.py`, or Python only.
-- Review tier, from the table in **AGENTS.md, "Calibrating Effort"**: **self-verify** for a change
+- Review tier, based on the risks in **AGENTS.md, "Calibrating Effort"**: **self-verify** for a change
   with no user-visible behaviour change that nothing calls yet; **full adversarial** for the
   `Security` label, credential handling, data loss, or a change to a boundary `SECURITY.md` names
-  (such as the history prompt-text allowlist); **two lenses plus an arbiter** otherwise. Mark the
-  layer that makes a behaviour reachable (the one that wires a new action, command or route to a
-  person), because the review depth is spent there, on the combined diff of the layers it exposes,
+  (such as the history prompt-text allowlist); **standard** otherwise. Use the
+  [burndown's review procedure](delegation.md#when-the-stages-disagree) for standard and full
+  adversarial. Mark the layer that makes a behaviour reachable (the one that wires a new action,
+  command or route to a person), because the review depth is spent there on the combined diff,
   as [delivery](delivery.md#4-build-a-layer) says. Code nothing calls is reviewed best once
   something does: on 2026-11-06 the layer that made earlier code reachable without a prompt had its
   review find four defects in that code which the earlier layer's own review had missed.
@@ -114,7 +115,7 @@ price:
 |---|---|---|
 | Plan | the deep dive, the User value brief, a decision issue's recommendation | 3 |
 | Build | the failing test, the code, the suite, `sync-docs`; after the walk and review, the fixes, the re-run and the bundle | 4.1, 4.2, 4.5, 4.6 |
-| Review | the lenses and the arbiter at the group's tier | 4.4 |
+| Review | the lenses and, for full adversarial, the arbiter | 4.4 |
 
 The orchestrating session keeps steps 1, 2, 5, 6 and 7, step 3's Mode 1 walk, acceptance criteria
 and tracker writes, step 4.3's Mode 2 walk, and a self-verify review, on its own model. Those are
@@ -130,7 +131,7 @@ mapping. `--models recommended` selects these available recommendations, not una
 |---|---|---|---|
 | Plan | Sonnet · medium | Opus · high when the group holds a decision issue, a `## Design reference`, a full-adversarial issue, or an issue citing a `DEC-*` or `NUI-*` ruling | Sonnet · low when every open issue is S or smaller and self-verify |
 | Build | Sonnet · medium | Sonnet · high for a web-surface group of L or more, or one touching `config.py` or the shipped `SKILL.md`; Opus · high for a full-adversarial group | Haiku · medium for a self-verify group of XS or S that changes prose or tests only |
-| Review | lenses Sonnet · medium, arbiter Sonnet · high | Opus · high for both on a full-adversarial group | none: a self-verify group has no reviewer subagent, and Haiku never reviews, because a false refutation or a false blocker costs a CI cycle |
+| Review | lenses Sonnet · medium | Opus · high for lenses and arbiter on a full-adversarial group | none: a self-verify group has no reviewer subagent, and Haiku never reviews, because a false refutation or a false blocker costs a CI cycle |
 
 A step-up or step-down applies to the groups that earn it, not the whole run, so the recommended
 answer for a stage can be composite ("Sonnet · medium; Opus · high for G3"). Record each answer as

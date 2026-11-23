@@ -75,11 +75,11 @@ burndown "Long session coverage" --tracker github --repo spacedock-dev/compass -
 | When | Read | Owns |
 |---|---|---|
 | Planning and issue understanding | [Planning, steps 1–3](references/planning.md) | Scope inventory, grouping, dependencies, estimates, review tiers, stage models and issue analysis |
-| An approved group is ready to build | [Delivery, steps 4–5](references/delivery.md) | TDD, visual walks, reviews, stacks, CI, merges and parallel-work rules |
-| After each landing and at closeout | [Reconciliation, steps 6–7](references/reconciliation.md) | Receipts, discoveries, cleanup, replanning and completion |
+| An approved group is ready to build | [Delivery, steps 4–5](references/delivery.md) | TDD, visual walks, gates, stacks, merges and parallel-work rules |
+| After each landing and at closeout | [Reconciliation, steps 6–7](references/reconciliation.md) | Receipts, discoveries, replanning and completion |
 | Run start (the ledger), closeout, and any stop | [Cleanup pass](references/cleanup.md) | The run ledger, this run's teardown, the census of older leftovers and the cleanup questions to the owner |
 | An issue has `## Design reference` | [Design-reference rules](references/design-reference.md) | Required design reads and markup constraints |
-| `--delegate`, from planning on | [Delegation mode](references/delegation.md) | Who runs each stage, live model choice, Codex and AGY dispatch mechanics |
+| `--delegate`, from planning on, or when applying review tiers | [Delegation and review](references/delegation.md) | Stage roles, live models, dispatch, finding reproduction and the status board |
 
 Read only the selected adapter and the current stage; revisit the next stage when reached. Do not
 preload all references. Here, “milestone” in the shared stages means the selected scope, including
@@ -126,9 +126,10 @@ receipts and live background work. Stop before an operation whose required capab
 
 ## Shared prerequisites and boundaries
 
-Execution needs TDD, `sync-docs`, `visual-review-and-fix`, DCO commits and the canonical
-**AGENTS.md, “Pre-PR Checks”** suite. Stacked delivery needs `gh-stack` v0.3.0 or later, the same
-version across worktrees. Missing browser automation degrades the walks: report which did not run.
+Execution needs TDD, `sync-docs`, `visual-review-and-fix` and DCO commits. For the local gate
+at each layer, see [delivery](references/delivery.md#4-build-a-layer). Stacked delivery needs
+`gh-stack` v0.3.0 or later, the same version across worktrees. Missing browser automation degrades
+the walks: report which did not run.
 The real-session check needs a logged-in `claude` on PATH; without one, say so in the pull request
 rather than skipping it silently. Design access is required only for issues carrying a design
 reference. Linear-only prerequisites live in its adapter; GitHub planning must not depend on them.

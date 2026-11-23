@@ -8,6 +8,11 @@ criteria, the PR and merge commit, verification, remaining scope, dependent work
 wording changes. Read back tracker writes and relations. A partially delivered issue remains open.
 A research or Verification issue may close on its findings/verdict as the planning rules allow.
 
+When a slice lands as a batch, reconcile it in one pass in dependency order, then run one
+`sync-project` for a Linear slice. One Sonnet pass handled 17 issues this way with no rework.
+Give the delegate confirmed merge SHAs, verification and deferrals. If it returns text
+or lacks tracker access, the orchestrator writes the receipts and reads the writes back.
+
 ## 7. Next landing, or close the milestone
 
 Tear down what the landing finished, scoped to what this run started: its review servers, worktrees
@@ -18,6 +23,12 @@ census of older leftovers and the questions that ask the owner which of those to
 
 Then refetch the milestone (issues move outside this session), recompute the plan, and continue. A
 changed plan needs approval as the Invocation section sets out.
+
+Keep a round-trip tally in run scratch space. For each fix round, restack, CI failure, builder
+stop, queue ejection or coordinator error, record the date, layer, measured cause and any process
+change. Slice 1 needed 106 dispatches and 45 worktrees. The tally showed which round trips recurred
+and gave the owner evidence for changing the next slice. Carry confirmed lessons into the
+owning stage and report proposals as proposals.
 
 **Discoveries.** Use the selected adapter to file a defect this scope's work created, or a gap a
 review deferred, in the current scope with a blocking dependency to the Verification issue (not an
