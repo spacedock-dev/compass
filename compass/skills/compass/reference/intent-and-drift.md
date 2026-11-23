@@ -97,21 +97,24 @@ so rather than leaving you to assume otherwise.
 Below the two fields the Drift section holds the run control (or the question about a later
 direction), the reading and the departures on record. Notes about your saved words are in the
 Goal card under the save. At the foot of the page, Show technical details opens the Activity log.
-It lists the loaded entries, with the session's current activity and end evidence below. The
-departures section appears only with `--unasked-readings` on, or once a reading or a departure is
-on record. Grey entries fall before the current goal's reading window. A progress check for that
-window leaves them out. A Claude Code session's numbers are fixed: #1 is its oldest message,
-a message keeps its number as the session grows, and a check or file is numbered by the message
-it follows and its place after it (#41.2). Other harnesses number the loaded entries in the
-window, from the oldest. Use All, You, Agent, Commands, Files or Cited to filter the loaded
-entries. The log counts the rows hidden by a filter. An entry a departure cites is flagged "Cited" and always listed, and a direction you
-gave after saving is flagged "A later direction you gave", which records no finding. In a Claude Code
+It lists every loaded entry, with the session's current activity and end evidence below.
+The heading labels a partial count as loaded and withholds the count while the record is unread
+or unavailable. The departures section appears only with `--unasked-readings` on, or once a
+reading or a departure is on record. Entries marked "Before reading window" fall outside a
+progress check for your current goal. A Claude Code session's numbers are fixed: #1 is its oldest
+message, a message keeps its number as the session grows, and a check or file is numbered by
+the message it follows and its place after it (#41.2). Other harnesses number the loaded entries
+in the window, from the oldest. An entry without a published time is shown without a number.
+Use All, You, Agent, Commands, Files or Cited to filter the loaded entries. The log counts the
+loaded rows each filter hides. Cited includes entries linked from readings and summaries. A
+departure's cited row carries a "Cited" flag. A direction you gave after saving is flagged
+"A later direction you gave", which records no finding. In a Claude Code
 session a message you sent while the agent was working, and your answer to its multiple-choice question, are
 directions you gave too, at the time you typed or answered. Numbers are
 worked out again on every render. Each cited entry's number on a finding opens the Activity log,
-scrolls to that entry and marks every entry the finding cites with its saved words and their current
-numbers, and tints each of those rows so it stands apart from the list, without requesting another
-analysis. An entry it cites that is not loaded yet is read from older record pages first; one no
+keeps the selected filter if it includes the entry, and switches to All if needed. It reveals the
+entry if it was folded, then focuses and scrolls to it. The finding's cited rows carry its saved
+words, their current numbers and an accent tint. Opening a citation requests no new analysis. An entry it cites that is not loaded yet is read from older record pages first; one no
 page returns is named as not loaded, and focus goes there instead. Escape or "Back to the finding"
 returns focus to the number. A finding that cites nothing resolvable says so and marks nothing.
 On a harness without fixed numbers, a check that re-runs or a file written again moves the entries

@@ -74,9 +74,11 @@ Each session's page has three cards, one under another:
 - Drift: the check described above, and what became of anything it raised.
 
 At the foot of the page, Show technical details opens the Activity log. A citation opens the
-log and takes you to its entry. Choose All, You, Agent, Commands, Files or Cited to narrow the
-loaded record. The log counts the entries hidden by the selected filter. Grey entries fall
-before the reading window for your current goal.
+log and takes you to its entry. The log keeps your filter if it includes the entry and switches
+to All if needed. Choose You, Agent, Commands, Files or Cited to narrow the loaded record.
+Cited includes entries linked from readings and summaries. The log says how many loaded entries
+the filter hides. Entries marked "Before reading window" fall outside the progress check for
+your current goal.
 
 On a Claude Code session, open Drift settings in the Drift card to find the Live monitor switch.
 It says "Checks progress about once a minute while you watch". With it on, Compass asks

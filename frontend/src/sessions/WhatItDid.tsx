@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { contextKey } from '../api/identity';
 import { parseOutline } from '../api/outline';
-import { useControls } from '../controls';
 import { entriesHeld } from '../drift/citations';
-import { afterPanelSettles } from '../drift/panelSettle';
 import { CitationLink } from '../drift/CitationLink';
-import { landOnEntry } from '../drift/jumpToEntry';
+import { openEntry } from '../drift/jumpToEntry';
 import { useDrift } from '../drift/context';
 import { SampleMark } from '../sample/SampleMark';
 import { useDisplayed, useShell } from '../shell/context';
@@ -14,7 +12,6 @@ import { Card } from '../ui/card';
 import { Disclosure, disclosureKey } from '../controls';
 import { SummaryControls, SummaryView } from './SummaryParts';
 import { summaryHeader, useOpenSummary, useSummaryState } from './summaryState';
-import { showActivityLog } from './fullActivityKey';
 import {
   missingSentence,
   OUTLINE_EMPTY,
@@ -53,7 +50,8 @@ export function EntryChip({
   /** A citation in a line of text: its number in brackets, as a footnote. Otherwise `#n` in running words. */
   readonly cite?: boolean;
 }) {
-  const { model } = useDrift();
+  const drift = useDrift();
+  const { model } = drift;
   const n = model.labels.get(id) ?? null;
   const outside = model.outside.has(id);
   /* A command is on the page and takes no number, so it is not an older entry the page has yet to read. */
@@ -126,7 +124,8 @@ function Block({
   readonly block: BlockView;
   readonly onOpen: (id: string, n: string | null) => void;
 }) {
-  const { model } = useDrift();
+  const drift = useDrift();
+  const { model } = drift;
   return (
     <li
       className="flex flex-col gap-1 border-l-2 border-[var(--rule)] pl-3"
@@ -197,9 +196,9 @@ export function WhatItDid({
   readonly running: boolean;
   readonly harness: string;
 }) {
-  const { model } = useDrift();
+  const drift = useDrift();
+  const { model } = drift;
   const { runtime } = useShell();
-  const controls = useControls();
   const read = useDisplayed((snapshot) =>
     snapshot.contexts.get(contextKey(model.projectKey, model.session as never)),
   );
@@ -229,8 +228,6 @@ export function WhatItDid({
     readonly what: string;
     readonly from: 'summary' | 'outline';
   } | null>(null);
-  // The latest press: a read that ends after another press began says nothing about the one now standing.
-  const latestPress = useRef<object | null>(null);
   const summary = useSummaryState(entry, running, harness);
   useOpenSummary(summary);
   /* A summary's citations read as numbers, and a message the page has not read yet has none until its record
@@ -268,38 +265,11 @@ export function WhatItDid({
       ? outlineStamp(entry?.revision ?? null, running, Boolean(entry?.error))
       : '';
 
-  const land = landOnEntry;
   const open = (from: 'summary' | 'outline') => (id: string, n: string | null) => {
-    const press = {};
-    latestPress.current = press;
     setMissing(null);
-    showActivityLog(controls, model.project, model.session);
-    /* After Activity log has finished opening. A smooth scroll begun while its panel still grew was clamped
-       at the foot of a page not yet tall enough, and left the row at the bottom edge (top 728 of 729 px). */
-    const settle = () =>
-      requestAnimationFrame(() => {
-        if (latestPress.current !== press) return;
-        const panel = document.querySelector(
-          '[data-next-session-full-activity] [data-slot="accordion-content"]',
-        );
-        const growing = panel?.getAnimations?.() ?? [];
-        void Promise.allSettled(growing.map((animation) => animation.finished)).then(() => {
-          afterPanelSettles(() => {
-            if (latestPress.current !== press) return;
-            if (!land(id)) setMissing({ what: missingSentence(n, model.outside.has(id)), from });
-          });
-        });
-      });
-    if (model.byId.has(id) || !identity) {
-      settle();
-      return;
-    }
-    const scope = { projectKey: model.projectKey, session: model.session, cited: [id] };
-    void runtime
-      .resolveRecord({ projectKey: model.projectKey, focus: identity }, (snapshot) =>
-        entriesHeld(snapshot, scope),
-      )
-      .finally(settle);
+    void openEntry(drift, id).then((landed) => {
+      if (landed === false) setMissing({ what: missingSentence(n, model.outside.has(id)), from });
+    });
   };
 
   /* The notice and controls stay above what they act on, before and after a summary exists: they once sat below

@@ -85,7 +85,7 @@ export function FoundCites() {
                   if (!drift) return;
                   setMissing('');
                   void openEntry(drift, cite.factId).then((landed) => {
-                    if (!landed) setMissing(missingSentence(n, false));
+                    if (landed === false) setMissing(missingSentence(n, false));
                   });
                 }}
               >

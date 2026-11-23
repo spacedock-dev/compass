@@ -41,7 +41,6 @@ export function TechnicalDetails({
       <Disclosure
         disclosureKey={disclosureKey}
         variant="accordion"
-        searchable={false}
         {...(focusKey ? { focusKey } : {})}
         aside={aside}
         triggerClassName="technical-details-trigger min-h-[60px] w-full flex flex-wrap items-center gap-2 rounded-card border border-dashed border-[var(--line)] bg-[var(--raise)] px-4 py-3 text-body font-semibold text-foreground [&_[data-slot=disclosure-chevron]]:hidden"

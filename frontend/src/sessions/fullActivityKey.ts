@@ -11,16 +11,9 @@ export function fullActivityKey(project: string, session: Row): string {
   return disclosureKey({ project, scope: compatSessKey(session), name: 'full-activity' });
 }
 
-/* Entry jumps write both reader-state lanes before asking the Activity log to focus a row. */
-export function showActivityLog(
-  controls: Controls,
-  project: string,
-  session: Row,
-  keepCited = false,
-): void {
+/* Entry jumps select and open the Activity log before asking it to focus a row. */
+export function showActivityLog(controls: Controls, project: string, session: Row): void {
   const key = fullActivityKey(project, session);
   controls.technicalTabs.remember(key, ACTIVITY_LOG);
-  if (!keepCited || controls.activityLogFilters.read(key) !== 'cited')
-    controls.activityLogFilters.forget(key);
   controls.disclosures.set(key, true);
 }

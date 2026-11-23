@@ -823,7 +823,6 @@
     "|.next-cockpit-work-at|color:var(--ink-caption);font-family:var(--mono);font-size:var(--fs-label)",
     "|.next-cockpit-work-body|display:flex;flex-direction:column;gap:3px;min-width:0",
     "|.next-cockpit-work-checks|margin:0;color:var(--ink2);font:var(--fs-body)/1.5var(--sans)",
-    "|.next-cockpit-work-earlier|margin:0;color:var(--ink2);font:var(--fs-body)/1.5var(--sans)",
     "|.next-cockpit-work-head|display:flex;flex-wrap:wrap;align-items:baseline;gap:3px8px",
     "|.next-cockpit-work-limit|margin:0;color:var(--ink-absence);font:var(--fs-body)/1.5var(--sans)",
     "|.next-cockpit-work-mix|margin:0;color:var(--ink2);font:500var(--fs-body)/1.55var(--sans);max-width:var(--measure)",

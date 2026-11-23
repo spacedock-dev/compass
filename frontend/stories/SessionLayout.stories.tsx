@@ -41,7 +41,7 @@ const message = (n: number) => ({
 /* A stored reading whose Goal cites what `cites` names: `e5` sits on the older record page, `ghost` on none. */
 const reading = (cites: readonly string[], readAt: number, windowStart: number) => ({
   revision_read: 1,
-  revision_read_at: G - 190,
+  revision_read_at: G - 200,
   window_start: windowStart,
   read_at: readAt,
   evidence_through: G - 10,
@@ -129,6 +129,7 @@ function PageExample({
   ended = false,
   idle = false,
   readingWindow = G - 200,
+  revised = false,
   entries,
 }: {
   readonly asking?: boolean;
@@ -144,6 +145,7 @@ function PageExample({
   readonly ended?: boolean;
   readonly idle?: boolean;
   readonly readingWindow?: number;
+  readonly revised?: boolean;
   readonly entries?: readonly Record<string, unknown>[];
 }) {
   const [shell] = useState(() => {
@@ -234,6 +236,14 @@ function PageExample({
                 annotation_at: G - 200,
                 annotation_goal_saved_at: G - 200,
                 annotation_window_start: windowStart,
+                ...(revised
+                  ? {
+                      annotation_revision: 2,
+                      annotation_revision_count: 2,
+                      annotation_at: G - 5,
+                      annotation_goal_saved_at: G - 5,
+                    }
+                  : {}),
                 annotation_binding_why: 'These words are bound to claude:s1.',
                 ...(cites
                   ? {
@@ -454,7 +464,9 @@ export const TechnicalDetailsContinuity: Story = {
     const trigger = await canvas.findByRole('button', { name: 'Show technical details' });
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await expect(trigger.querySelector('svg[data-icon="details"]')).not.toBeNull();
-    await expect(canvas.queryByRole('tablist', { name: 'Technical details' })).toBeNull();
+    await expect(
+      canvas.getByRole('tablist', { name: 'Technical details', hidden: true }),
+    ).not.toBeVisible();
     await userEvent.click(trigger);
     const tabs = canvas.getByRole('tablist', { name: 'Technical details' });
     const activityTab = within(tabs).getByRole('tab', { name: 'Activity log', selected: true });
@@ -484,8 +496,39 @@ export const TechnicalDetailsContinuity: Story = {
   },
 };
 
+export const TechnicalDetailsRevealsRecordFragment: Story = {
+  render: () => <PageExample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const trigger = await canvas.findByRole('button', { name: 'Show technical details' });
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    const target = await waitFor(() => {
+      const button = within(canvasElement)
+        .getAllByRole('button', { hidden: true })
+        .find((element) => element.textContent?.trim() === 'About this record');
+      if (!button?.id) throw new Error('The record disclosure target has not arrived');
+      return button;
+    });
+    await expect(target).not.toBeVisible();
+
+    const closed = target.closest('[hidden]');
+    await expect(closed).toHaveAttribute('hidden', 'until-found');
+    const previousUrl = window.location.href;
+    const runner = '__vitest_browser_runner__' in window;
+    try {
+      // A fragment navigation disconnects Vitest's test frame. Exercise the same browser event there.
+      if (runner) closed?.dispatchEvent(new Event('beforematch'));
+      else window.location.hash = encodeURIComponent(target.id);
+      await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'true'));
+      await expect(target).toBeVisible();
+    } finally {
+      if (!runner) window.history.replaceState(window.history.state, '', previousUrl);
+    }
+  },
+};
+
 const logEntries = [
-  { ...message(1), type: 'user_message', by: 'person:claude' },
+  { ...message(1), at: G - 205, type: 'user_message', by: 'person:claude' },
   message(2),
   { ...message(3), type: 'tool_report', subject: 'command' },
   { ...message(4), type: 'tool_report', subject: 'write' },
@@ -493,12 +536,41 @@ const logEntries = [
   message(6),
 ];
 
-export const ActivityLogFilters: Story = {
-  render: () => <PageExample entries={logEntries} cites={['e2']} windowStart={G - 98} />,
+async function activityLogPanel(canvasElement: HTMLElement): Promise<HTMLElement> {
+  const canvas = within(canvasElement);
+  const panel = await canvas.findByRole('tabpanel', { name: 'Activity log' });
+  const heading = await within(panel).findByRole('heading', { name: /^Activity log ·/ });
+  await waitFor(() => expect(heading).toBeVisible());
+  const rows = await within(panel).findAllByRole('listitem');
+  await waitFor(() => expect(rows[0]).toBeVisible());
+  return panel;
+}
+
+export const ActivityLogPartialCount: Story = {
+  render: () => <PageExample />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole('button', { name: 'Show technical details' }));
-    const panel = canvas.getByRole('tabpanel', { name: 'Activity log' });
+    const panel = within(await activityLogPanel(canvasElement));
+    await expect(
+      panel.getByRole('heading', { name: 'Activity log · 50 entries loaded' }),
+    ).toBeVisible();
+    await userEvent.click(panel.getByRole('button', { name: 'You' }));
+    await expect(panel.getByText('50 entries hidden')).toBeVisible();
+    await userEvent.click(panel.getByRole('button', { name: 'Show 50 older entries' }));
+    await expect(
+      await panel.findByRole('heading', { name: 'Activity log · 100 entries' }),
+    ).toBeVisible();
+    await expect(panel.getByText('100 entries hidden')).toBeVisible();
+  },
+};
+
+export const ActivityLogFilters: Story = {
+  render: () => <PageExample entries={logEntries} cites={['e2']} windowStart={G - 200} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: 'Show technical details' }));
+    const panel = await activityLogPanel(canvasElement);
     const contents = within(panel);
     const ids = () =>
       [...panel.querySelectorAll<HTMLElement>('[data-next-entry-id]')].map((row) =>
@@ -506,12 +578,25 @@ export const ActivityLogFilters: Story = {
       );
     await waitFor(() => expect(ids()).toEqual(['e6', 'e5', 'e4', 'e3', 'e2', 'e1']));
     await waitFor(() => expect(contents.getByText(/before the reading window/)).toBeVisible());
-    await expect(panel.querySelector('[data-next-entry-id="e1"]')).toHaveAttribute(
-      'data-before-window',
-    );
-    await expect(panel.querySelector('[data-next-entry-id="e2"]')).not.toHaveAttribute(
-      'data-before-window',
-    );
+    const first = within(panel)
+      .getByText('Synthetic entry 1')
+      .closest<HTMLElement>('[role="listitem"]');
+    const second = within(panel)
+      .getByText('Synthetic entry 2')
+      .closest<HTMLElement>('[role="listitem"]');
+    if (!first || !second) throw new Error('Missing activity rows');
+    await expect(first).toHaveAttribute('data-before-window');
+    await expect(second).not.toHaveAttribute('data-before-window');
+    const browser = '__vitest_browser_runner__' in window ? await import('vitest/browser') : null;
+    if (browser) await browser.commands.storyForcedColors('active');
+    try {
+      if (browser) await expect(matchMedia('(forced-colors: active)').matches).toBe(true);
+      await expect(within(first).getByText('Before reading window')).toBeVisible();
+      await expect(within(second).queryByText('Before reading window')).toBeNull();
+    } finally {
+      if (browser) await browser.commands.storyForcedColors(null);
+    }
+    await expect(first).not.toHaveTextContent('A later direction you gave');
     for (const [name, expected] of [
       ['You', ['e1']],
       ['Agent', ['e6', 'e2']],
@@ -607,9 +692,7 @@ export const MoreIsRetired: Story = {
     await expect(await within(head).findByText(DRIFT_SUBTITLE)).toBeVisible();
     const details = canvas.getByRole('button', { name: 'Show technical details' });
     await userEvent.click(details);
-    await waitFor(() =>
-      expect(canvas.getByRole('tabpanel', { name: 'Activity log' })).toBeVisible(),
-    );
+    await activityLogPanel(canvasElement);
     await userEvent.click(details);
     // The live monitor and Pause model calls are behind one Drift settings control in the head, and not in the body.
     await expect(inDrift.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
@@ -798,7 +881,7 @@ export const CitationThatCannotLoadSaysSo: Story = {
    that window and on the older record page. The first page already reaches past the window, so Show more says
    nothing about older entries, yet the press still reads the older page and lands on the entry. */
 export const RetainedReadingCitesBeforeTheWindow: Story = {
-  render: () => <PageExample cites={['e5']} windowStart={G - 30} />,
+  render: () => <PageExample cites={['e5']} windowStart={G - 30} revised />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await waitFor(() =>
@@ -817,6 +900,16 @@ export const RetainedReadingCitesBeforeTheWindow: Story = {
     });
     await waitFor(() => expect(document.activeElement).toBe(row));
     await expect(row).toHaveAttribute('data-next-cited');
+    const swatch = document.createElement('span');
+    swatch.style.backgroundColor = 'color-mix(in srgb, var(--accent) 13%, transparent)';
+    swatch.style.color = 'var(--accent)';
+    row.append(swatch);
+    const tint = getComputedStyle(swatch).backgroundColor;
+    const edge = getComputedStyle(swatch).color;
+    swatch.remove();
+    await expect(getComputedStyle(row).backgroundColor).toBe(tint);
+    await expect(getComputedStyle(row).borderLeftColor).toBe(edge);
+    await expect(within(row).getByText('Before reading window')).toBeVisible();
   },
 };
 

@@ -1,7 +1,16 @@
 import type { ProjectContext } from '../api/types';
 import { act } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { check, fact, jumpTo, mountDrift, openActivity, press } from './testing';
+import {
+  check,
+  contextRoute,
+  fact,
+  json,
+  jumpTo,
+  mountDrift,
+  openActivity,
+  press,
+} from './testing';
 
 /* The session's activity list reads newest first. The numbers are the oldest-first ones every "#<n>" and
    every citation names, so the column reads from the highest down to #1 and a reader opens on what just
@@ -16,6 +25,81 @@ const FACTS = [
 const session = { annotation_goal_saved_at: 500, annotation_at: 500 };
 
 describe('the session activity list', () => {
+  it.each([
+    ['unread', 'The observed record for this session has not been read yet.'],
+    ['error', /The observed record could not be read/],
+    ['omitted', /Its record is unread rather than empty/],
+    ['empty', 'No entry in the observed record names this session.'],
+    ['paged', null],
+  ] as const)('describes the %s record and qualifies its count', async (state, absence) => {
+    const entries = state === 'paged' ? [fact('loaded', 910)] : [];
+    const page = mountDrift({
+      session,
+      routes: {
+        '/api/session-record': () =>
+          state === 'unread'
+            ? 'hold'
+            : state === 'error'
+              ? new Response('', { status: 500 })
+              : json({
+                  session: { harness: 'claude', sid: 's1' },
+                  state: 'ok',
+                  entries,
+                  next: state === 'paged' ? 'older' : null,
+                  reached_start: state !== 'paged',
+                  kinds: ['user_message'],
+                }),
+        '/api/project-context':
+          state === 'unread'
+            ? () => 'hold'
+            : contextRoute([], {
+                omitted: state === 'omitted' ? [{ harness: 'claude', sid: 's1' }] : [],
+              }),
+      },
+    });
+    await page.settle();
+    await openActivity();
+    const heading = page.getByRole('heading', { name: /^Activity log/ });
+    if (absence) {
+      const text = heading
+        .closest('section')
+        ?.querySelector('.next-cockpit-work-absent')?.textContent;
+      expect(text).toMatch(absence);
+    }
+    if (state === 'paged') {
+      expect(heading.textContent).toMatch('Activity log · 1 entry loaded');
+      expect(page.getByRole('button', { name: /Show .* older entries/ })).toBeVisible();
+      await press(page.getByRole('button', { name: 'Agent' }));
+      expect(page.getByText('1 entry hidden')).toBeVisible();
+    } else if (state === 'empty') {
+      expect(heading.textContent).toMatch('Activity log · 0 entries');
+    } else {
+      expect(heading.textContent).toMatch(/^Activity log$/);
+      expect(page.getByRole('button', { name: 'Agent' }).hasAttribute('disabled')).toBe(true);
+      expect(page.queryByText(/entries hidden/)).toBeNull();
+    }
+  });
+
+  it('includes every loaded message in the total and keeps an untimed message unnumbered', async () => {
+    const page = mountDrift({
+      facts: [fact('timed', 910), fact('undated', 0, { at: null })],
+      session,
+    });
+    await page.settle();
+    await openActivity();
+    const panel = page.getByRole('tabpanel', { name: 'Activity log' });
+    const row = panel.querySelector('[data-next-entry-id="undated"]');
+    expect(row).toBeVisible();
+    expect(row?.hasAttribute('data-next-entry')).toBe(false);
+    expect(row?.textContent).toContain('time not published');
+    expect(page.getByRole('heading', { name: /^Activity log · 2 entries/ })).toBeVisible();
+    await press(page.getByRole('button', { name: 'You' }));
+    expect(panel.querySelectorAll('[data-next-entry-id]')).toHaveLength(2);
+    await press(page.getByRole('button', { name: 'Agent' }));
+    expect(panel.querySelectorAll('[data-next-entry-id]')).toHaveLength(0);
+    expect(page.getByText(/2 (loaded )?entries hidden/)).toBeVisible();
+  });
+
   it('reads newest first, each row keeping the number its time earned', async () => {
     const page = mountDrift({ facts: FACTS, session });
     await page.settle();
@@ -65,6 +149,83 @@ describe('the session activity list', () => {
     for (const row of panel.querySelectorAll('[data-next-entry-id]')) expect(row).toBeVisible();
     expect(panel.querySelectorAll('[data-next-entry-id]')).toHaveLength(3);
   });
+
+  it.each([
+    ['pi', 'result', 'check'],
+    ['claude', 'tool_report', 'ci_command'],
+  ])('includes %s %s commands under Commands', async (harness, type, subject) => {
+    const identity = { harness, sid: 's1' };
+    const page = mountDrift({
+      facts: [
+        fact('direction', 900, { source_session: identity }),
+        fact('command', 910, { source_session: identity, type, subject, by: 'agent' }),
+      ],
+      session: { ...session, ...identity },
+      hash: `#n=session:alpha%2Fapp:${harness}:s1`,
+    });
+    await page.settle();
+    await openActivity();
+    const panel = page.getByRole('tabpanel', { name: 'Activity log' });
+    expect(panel.querySelector('[data-next-entry-id="command"]')).toBeVisible();
+    await press(page.getByRole('button', { name: 'Commands' }));
+    expect(panel.querySelector('[data-next-entry-id="command"]')).toBeVisible();
+    expect(panel.querySelector('[data-next-entry-id="direction"]')).toBeNull();
+  });
+
+  it.each([
+    { label: 'discounted by the reading window', windowStart: 950, marked: false, linked: false },
+    { label: 'marked inaccurate', windowStart: 100, marked: true, linked: true },
+    { label: 'demoted to Can’t tell', windowStart: 100, marked: false, linked: true },
+  ])(
+    'uses available citation links when the reading is $label',
+    async ({ windowStart, marked, linked }) => {
+      const page = mountDrift({
+        facts: [fact('evidence', 900)],
+        session: {
+          ...session,
+          annotation_window_start: 100,
+          annotation_not_accurate: marked,
+          annotation_reading_count: 1,
+          annotation_assessment: {
+            revision_read: 3,
+            revision_read_at: 990,
+            window_start: windowStart,
+            read_at: 1000,
+            evidence_through: 1000,
+            goal_source: 'typed',
+            scope: 'last-turn',
+            scope_text: 'Read up to its last turn.',
+            stamp: 'model · m',
+            cutoff: 'Evidence read to its end.',
+            coverage: {
+              tail_truncated: false,
+              tail_start: null,
+              unlisted: 0,
+              unread_checks: 0,
+              goal_source: 'typed',
+            },
+            criteria: {
+              goal: {
+                result: 'consistent with the evidence read',
+                cites: ['evidence'],
+                detail: 'Ship the queue',
+                clause: 'Ship the queue',
+              },
+            },
+          },
+        },
+      });
+      await page.settle();
+      await openActivity();
+      expect(
+        Boolean(document.querySelector('[data-next-result] [data-next-cite="evidence"]')),
+      ).toBe(linked);
+      await press(page.getByRole('button', { name: 'Cited' }));
+      const row = document.querySelector('[data-next-entry-id="evidence"]');
+      expect(Boolean(row)).toBe(linked);
+      expect(row?.querySelector('[data-next-entry-flag="cited"]') ?? null).toBeNull();
+    },
+  );
 
   it('marks only dated entries before the published reading window, by result time when available', async () => {
     const page = mountDrift({

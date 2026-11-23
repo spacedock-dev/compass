@@ -401,6 +401,37 @@ export const ChipLandsOnScreenWithFullActivityClosed: Story = {
   },
 };
 
+export const SummaryCitationRevealsFoldedCheck: Story = {
+  render: () => (
+    <SummaryPage
+      foldedChecks
+      session={{ annotation_line_1: '' }}
+      summary={storedSummary({ lede: { text: 'Three checks ran.', cites: ['fold-2'] } })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const link = within(summary).getByRole('link', { name: /cited for the opening summary/ });
+    await userEvent.click(canvas.getByRole('button', { name: 'Show technical details' }));
+    const log = within(canvas.getByRole('tabpanel', { name: 'Activity log' }));
+    await waitFor(() => expect(entryRow(canvasElement, 'fold-2')).not.toBeNull());
+    await expect(entryRow(canvasElement, 'fold-2')).not.toBeVisible();
+
+    await seeInContext(link);
+    await waitFor(() => expect(entryRow(canvasElement, 'fold-2')).toHaveFocus());
+    await expect(entryRow(canvasElement, 'fold-2')).toBeVisible();
+    await userEvent.click(log.getByRole('button', { name: 'Commands' }));
+
+    await seeInContext(link);
+    await waitFor(() => expect(entryRow(canvasElement, 'fold-2')).toHaveFocus());
+    await expect(log.getByRole('button', { name: 'Commands', pressed: true })).toBeVisible();
+    await userEvent.click(log.getByRole('button', { name: 'Cited' }));
+    await expect(entryRow(canvasElement, 'fold-2')).toBeVisible();
+  },
+};
+
 /* Hovering a citation shows the cited entry's own words in a card, and nothing moves. The card's last line is
    the only way to Activity log: it closes the card and lands on the row. */
 export const CitationCardShowsTheEntry: Story = {

@@ -19,6 +19,16 @@ import { formatSize } from '../shell/format';
    and none presents a citation as proof of the sentence beside it
    ([the known limit](../../../docs/design-session-summary.md#the-known-limit-relevance-is-not-checked)). */
 
+export function summaryCitationIds(summary: StoredSummary | null | undefined): readonly string[] {
+  if (!summary) return [];
+  return [
+    ...summary.ledeCites,
+    ...summary.blocks.flatMap((block) =>
+      block.phases.flatMap((phase) => phase.bullets.flatMap((bullet) => bullet.cites)),
+    ),
+  ];
+}
+
 export const SUMMARY_WORKING_KEEP = 'You can keep working. The summary will appear here.';
 export const SUMMARY_STARTING = 'Starting a summary of this finished session…';
 /* The switch is one for the whole machine, so the sentence says so: it once said "this session", and a reader

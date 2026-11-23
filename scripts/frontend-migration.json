@@ -1180,7 +1180,7 @@
         "frontend/stories/SessionLayout.stories.tsx",
         "frontend/stories/TechnicalDetails.stories.tsx"
       ],
-      "contract": "The inline disclosure starts closed and keeps its scoped open state through board updates and remounts. A citation press opens it.",
+      "contract": "The inline disclosure starts closed and keeps its scoped open state through board updates and remounts. A citation press or browser fragment into the panel opens it.",
       "disposition": "store-held"
     },
     {
@@ -1188,7 +1188,8 @@
       "owner": "DRC-4825",
       "oracles": [
         "frontend/stories/SessionLayout.stories.tsx",
-        "frontend/stories/TechnicalDetails.stories.tsx"
+        "frontend/stories/TechnicalDetails.stories.tsx",
+        "frontend/src/sessions/fullActivityKey.test.ts"
       ],
       "contract": "The controls provider holds the selected inline tab by disclosure key. A citation press selects Activity log before focusing a row.",
       "disposition": "store-held"
@@ -1200,7 +1201,7 @@
         "frontend/src/drift/WorkListView.test.tsx",
         "frontend/stories/SessionLayout.stories.tsx"
       ],
-      "contract": "The selected filter starts at All and survives board updates and remounts per session. A citation press reveals its target under Cited or All.",
+      "contract": "The selected filter starts at All and survives board updates and remounts per session. A citation press keeps a filter that includes the target and selects All if the filter hides it.",
       "disposition": "store-held"
     },
     {
@@ -1208,9 +1209,10 @@
       "owner": "DRC-4825",
       "oracles": [
         "frontend/stories/SessionSummary.stories.tsx",
-        "frontend/src/sessions/summary.test.ts"
+        "frontend/src/sessions/summary.test.ts",
+        "frontend/src/sessions/SummaryLede.test.tsx"
       ],
-      "contract": "The full-activity disclosure key is written open and the entry focused on the reader's press only; a summary that lands moves no focus and replaces no node an edit lives in. The phase and departure headings are focused only by the jump buttons. Which phase holds a departure is derived each render; nothing is stored.",
+      "contract": "A citation press opens the full-activity disclosure, selects Activity log, reveals the target and focuses its row; a summary that lands moves no focus and replaces no node an edit lives in. The phase and departure headings are focused only by the jump buttons. Which phase holds a departure is derived each render; nothing is stored.",
       "disposition": "stable-identity"
     },
     {

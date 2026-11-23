@@ -1,7 +1,7 @@
 import { Fragment, useContext, type ReactNode } from 'react';
 import { DriftContext } from './context';
 import { CitationLink } from './CitationLink';
-import { jumpToEntry } from './jumpToEntry';
+import { openEntry } from './jumpToEntry';
 
 /* Compass's own sentences name entries as "#12" or "#2.1". Where the page holds and numbers the entry, the
    number is drawn as the citation link the summary uses, and presses to the row in Activity log; a number
@@ -27,7 +27,7 @@ export function CitedText({ text }: { readonly text: string }): ReactNode {
         id={id}
         aria-label={`Entry #${n}`}
         data-next-outline-entry={id}
-        onJump={() => jumpToEntry(drift, id)}
+        onJump={() => void openEntry(drift, id)}
       >
         {match[0]}
       </CitationLink>,

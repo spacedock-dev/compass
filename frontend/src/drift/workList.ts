@@ -1,7 +1,6 @@
 import { nativeSession } from '../observed/native';
 import { nextNumber } from '../api/bootstrap';
 import {
-  conflictCandidates,
   entryLabel,
   entryNumbering,
   labelOrder,
@@ -428,17 +427,6 @@ export function entryActor(entry: WorkEntry): string {
   return author === 'derived' ? 'Compass’s summary' : 'Agent';
 }
 
-/* The clause for entries that are counted and not listed, naming the ones a departure cites, which are listed
-   anyway with their time and no number. An untimed entry has no time to list it with. */
-function unlistedClause(count: number, what: string, cited: number, timed = true): string {
-  const are = count === 1 ? 'is' : 'are';
-  const how = timed ? `with ${cited === 1 ? 'its' : 'their'} time and no number` : 'with no number';
-  const except = !cited
-    ? ''
-    : `, except ${cited === 1 ? 'the one' : `the ${String(cited)}`} the analysis cites, listed ${how}`;
-  return `${String(count)} ${what} ${are} counted and not listed${except}.`;
-}
-
 /* What the rows actually are, counted from the rows themselves. The block was headed WORK EVIDENCE, and on
    Claude and Codex every entry is a `user_message`, so a reader comparing their words against "work evidence"
    was reading their own sentences back on both sides of the comparison. The heading names the record rather
@@ -609,7 +597,6 @@ export interface WorkList {
   /** Said where no row is drawn and the record is not merely unnumbered. */
   readonly absent: string;
   readonly mix: string;
-  readonly unlisted: readonly string[];
   readonly checks: string;
   readonly bound: string;
   readonly reads: boolean;
@@ -625,40 +612,20 @@ export interface WorkListInput {
   readonly annotation: Annotation | null;
   readonly draft: Draft | null;
   readonly cited: ReadonlySet<string>;
-  readonly revealed?: ReadonlySet<string>;
   readonly generated: number;
 }
 
 export function workList(input: WorkListInput): WorkList {
   const { session, payload, source, annotation, cited } = input;
   const numbering = entryNumbering(session, source, payload);
-  const { all, numbers, earlier, untimed, unnumbered: noNumber, opened, ordinals } = numbering;
+  const { all, numbers, earlier, untimed, opened, ordinals } = numbering;
   const annotate = payload['annotate'] === true;
   const ann = annotate ? annotation : null;
   const later = new Set(laterDirections(ann, all, session, input.draft));
-  /* Every unsettled later direction is drawn at its own number, as a cited entry is, so the "#<n>" the
-     question before the press names is always a row on screen. One from before the window has no number and
-     is drawn with its time, as a cited earlier entry is, and is not counted among the earlier entries left
-     unlisted. A settled one takes the bound. */
-  const open = new Set(conflictCandidates(ann, all, session, input.draft));
-  const numbered = all.filter((entry) => numbers.has(entry));
   const isCited = (entry: WorkEntry): boolean => cited.has(entry.id);
-  const isRevealed = (entry: WorkEntry): boolean => Boolean(input.revealed?.has(entry.id));
-  /* An entry a fixed-number session published no number for (a workflow fact, say) is still in the window, so it
-     is drawn, without a number and with its time, as a cited earlier entry is. */
-  const unnumberedHere = new Set(noNumber);
   const datedEarlier = new Set(earlier);
-  const entries = all.filter(
-    (entry) =>
-      numbers.has(entry) ||
-      unnumberedHere.has(entry) ||
-      datedEarlier.has(entry) ||
-      isCited(entry) ||
-      isRevealed(entry) ||
-      open.has(entry),
-  );
   const turnOf = lastTurn(session, all);
-  const rows = entries.map((entry): WorkRow => {
+  const rows = all.map((entry): WorkRow => {
     const stamp = nextNumber(entry.at);
     const n =
       numbers.get(entry) ?? (ordinals && datedEarlier.has(entry) ? entryLabel(entry) : null);
@@ -726,18 +693,6 @@ export function workList(input: WorkListInput): WorkList {
         ? 'No entry in the record read here sits where your intent’s window opens, so #1 is the first entry after that point.'
         : 'The record read here no longer reaches back to where your intent’s window opens, so #1 is the first entry it holds after that point.'
       : '';
-  const unlisted: string[] = [];
-  if (untimed.length) {
-    unlisted.push(
-      unlistedClause(
-        untimed.length,
-        `${untimed.length === 1 ? 'entry' : 'entries'} with no published time`,
-        untimed.filter((entry) => isCited(entry) || isRevealed(entry)).length,
-        false,
-      ),
-    );
-  }
-  // Every timed entry in the loaded window is drawn; there is no hidden readability slice.
   const bound = '';
   /* Nothing numbered while the record holds entries is a fact about the window, not an empty record: "No entry
      names this session" beside a count of the entries it holds was false. */
@@ -759,8 +714,7 @@ export function workList(input: WorkListInput): WorkList {
     unnumbered,
     rows,
     absent: rows.length || unnumbered ? '' : workAbsence(source),
-    mix: numbered.length ? workMix(numbered) : '',
-    unlisted,
+    mix: all.length ? workMix(all) : '',
     checks: source.scan ? checkScan(source.scan) : '',
     bound,
     reads,
