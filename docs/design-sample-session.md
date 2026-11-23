@@ -189,6 +189,10 @@ The Settings review fixes packaged at 2,466,095 bytes, up 3,216 bytes. The incre
 covers save confirmation, browser availability and the fallback for unreadable preferences.
 The page bound rises to the measured size. The fixture bound stays at 250,000 bytes.
 
+With the landed Help, Projects and Session changes underneath, Settings packages to
+2,473,199 bytes on Node 26.10.0 and pnpm 12.17.0. The page bound follows the measured build,
+42,532 bytes above the previous page on main. The fixture bound stays at 250,000 bytes.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.
