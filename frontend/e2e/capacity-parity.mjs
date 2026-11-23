@@ -12,7 +12,8 @@
  * Where a loop once ran the same absolute assertions on both pages (a consent that sends no parameter, a selected
  * window that survives a reorder, a layout that fits), the React page now carries each such assertion whole: they
  * state what must hold rather than compare two pages. What is compared with the recording stays: the disclosure
- * sentence, the strip's keys, ticks, sub-limits and wording. Dropped with the previous interface: its overflow
+ * sentence and the allowance's keys, ticks, sub-limits and measured facts. The recorded rows are projected
+ * through the selected window and its disclosure. Dropped with the previous interface: its overflow
  * measures and keyboard traces, which were only recorded as notes, its screenshots, and, in the development run,
  * its origin standing in as the second origin of "the answer is per origin" (the production run opens the React
  * page at a second origin instead).
@@ -55,15 +56,11 @@ const only = process.env.COMPASS_E2E_STEPS ? new RegExp(process.env.COMPASS_E2E_
    testing nothing. */
 const MUTATIONS = {
   'figure-becomes-verdict': [
-    ['src/capacity/CapacityStrip.tsx', '{`${String(row.pct)}%`}', "{'safe'}"],
+    ['src/capacity/CapacityStrip.tsx', '{String(selected.pct)}% used', 'Safe to start'],
   ],
   // The strip's rows keep their wide desktop columns on a narrow window: the page scrolls sideways.
   'strip-wide-columns': [
-    [
-      'src/capacity/capacity.css',
-      '.next-capacity-row{position:relative;',
-      '.next-capacity-row{position:relative;min-width:560px;',
-    ],
+    ['src/capacity/CapacityStrip.tsx', 'mt-5 grid min-w-0 gap-3', 'mt-5 grid min-w-[560px] gap-3'],
   ],
   // A window row and the consent answers answer a pointer press and nothing else.
   'window-pointer-only': [
@@ -123,14 +120,19 @@ const MUTATIONS = {
   ],
   // A fallback is not held: the stored selection is never written back.
   'fallback-not-held': [
-    ['src/capacity/CapacityStrip.tsx', 'if (read) lane.set(selectedKey);', 'void read;'],
+    ['src/capacity/CapacityStrip.tsx', 'if (body !== null) lane.set(selectedKey);', 'void body;'],
   ],
   // A row with no clock is given a tick at the middle of its bar.
   'invented-tick': [
     [
       'src/capacity/CapacityStrip.tsx',
-      'if (row.elapsed === null) {\n    return (',
-      'if (row.elapsed === null && row.pct < 0) {\n    return (',
+      '{row.elapsed === null ? null : (',
+      '{row.pct < 0 ? null : (',
+    ],
+    [
+      'src/capacity/CapacityStrip.tsx',
+      '(row.elapsed * 100).toFixed(2)',
+      '((row.elapsed ?? 0.5) * 100).toFixed(2)',
     ],
   ],
 };
@@ -356,17 +358,34 @@ const stripOf = (page) =>
     const text = (node) => (node ? node.textContent.replace(/\s+/g, ' ').trim() : null);
     const section = globalThis.document.querySelector('[data-next-capacity]');
     if (!section) return null;
+    const progress = section.querySelector('progress');
+    const disclosure = section.querySelector('button[aria-controls]');
+    const details =
+      disclosure?.getAttribute('aria-expanded') === 'true'
+        ? globalThis.document.getElementById(disclosure.getAttribute('aria-controls'))
+        : null;
     return {
-      rows: [...section.querySelectorAll('[data-next-capacity-row]')].map((row) => ({
-        key: row.dataset.nextCapacityRow,
-        pressed: row.querySelector('button')?.getAttribute('aria-pressed') === 'true',
-        text: text(row),
-        tick: Boolean(row.querySelector('.next-capacity-tick')),
-        noclock: Boolean(row.querySelector('.next-capacity-noclock')),
+      rows: [...section.querySelectorAll('button[data-next-capacity-pick]')].map((button) => ({
+        key: button.dataset.nextCapacityPick,
+        pressed: button.getAttribute('aria-pressed') === 'true',
       })),
+      bar: progress && {
+        value: Number(progress.value),
+        name: progress.getAttribute('aria-label'),
+        tick: Boolean(section.querySelector('.next-capacity-tick')),
+        noclock: /publishes no clock/.test(progress.getAttribute('aria-valuetext')),
+      },
+      summary: text(section.querySelector('h2')?.nextElementSibling),
+      used: text(section.querySelector('progress')?.parentElement?.previousElementSibling),
       more: text(section.querySelector('.next-capacity-more')),
-      prospect: text(section.querySelector('.next-capacity-prospect')),
-      models: [...section.querySelectorAll('[data-next-capacity-models]')].map(text),
+      facts: Object.fromEntries(
+        [...(details?.querySelectorAll('dt') ?? [])].map((dt) => [
+          text(dt),
+          text(dt.nextElementSibling),
+        ]),
+      ),
+      prospect: text(details?.querySelector('.next-capacity-prospect')),
+      models: [...(details?.querySelectorAll('[data-next-capacity-models]') ?? [])].map(text),
     };
   });
 /* The quota line (`data-next-usage-switch`, `on` or `off`) and the retired question, which must stay gone. */
@@ -383,9 +402,9 @@ const consentOf = (page) =>
   });
 // The sentence and the button label, which `textContent` joins with no space between them.
 const ON_LINE =
-  /^Quota is read with the Claude Code and Cursor logins on this machine\. No session content is sent\.\s*Turn off$/;
+  /^Quota is read with the Claude Code and Cursor logins on this machine\. No session content is sent\.\s*Turn off quota reading$/;
 const OFF_LINE =
-  /^Quota reading is off\. (?:Windows above are the last cached read and will lapse|No window has been read)\.\s*Turn on$/;
+  /^Quota reading is off(?: for Claude Code and Cursor)?\. (?:Local readings are still shown|The last cached read will lapse|No window has been read)\.\s*Turn on quota reading$/;
 const withoutUsage = (view) => dataRequests(view).filter((r) => !/[?&]usage=1(&|$)/.test(r.path));
 const dataRequests = (view) => view.log.requests.filter((r) => r.path.startsWith('/api/data'));
 const usageRequests = (view) => dataRequests(view).filter((r) => /[?&]usage=/.test(r.path));
@@ -396,8 +415,10 @@ const modelRequests = (view) =>
 const pressUsage = (view, answer) =>
   view.page.locator(`[data-next-usage-answer="${answer}"]`).first().click();
 const pressedKey = async (view) => (await stripOf(view.page))?.rows.find((r) => r.pressed)?.key;
-const pressWindow = (view, key) =>
-  view.page.locator(`[data-next-capacity-row="${key}"] button`).first().click();
+const windowButton = (key) => `button[data-next-capacity-pick="${key}"]`;
+const pressWindow = (view, key) => view.page.locator(windowButton(key)).click();
+const explainAllowance = (view) =>
+  view.page.getByRole('button', { name: 'How the AI allowance works' }).click();
 const observerText = (page) =>
   page.evaluate(() => {
     const section = globalThis.document.querySelector('[data-next-observer-controls]');
@@ -516,7 +537,15 @@ try {
         () => dataRequests(view).length > 0,
         `${side.name} reading the board after the press`,
       );
+      await until(
+        async () => (await consentOf(view.page)).state === 'off',
+        'the line after reload',
+      );
       assert.match((await consentOf(view.page)).line, OFF_LINE);
+      const local = await stripOf(view.page);
+      assert.equal(local?.bar?.name, 'Codex 5-hour allowance used');
+      assert.equal(local?.bar?.value, 20);
+      assert.ok(local.rows.every(({ key }) => key.startsWith('codex:')));
       const frozen = (await eventsOf(side, 'usage_fetch')).length;
       await pause(2000);
       assert.deepEqual(usageRequests(view), [], `${side.name}: turned off and still sent usage=1`);
@@ -629,6 +658,11 @@ try {
     async () => {
       await steer(side, { windows: 'full' });
       await go(view, SESSIONS);
+      await until(async () => (await consentOf(view.page)).line, 'the quota line');
+      if ((await consentOf(view.page)).state === 'off') {
+        await pressUsage(view, 'granted');
+        await go(view, SESSIONS);
+      }
       const first = await until(
         async () => {
           const state = await stripOf(view.page);
@@ -653,8 +687,7 @@ try {
       const after = await until(
         async () => {
           const state = await stripOf(view.page);
-          const claude = state?.rows.find((r) => r.key === 'claude:fiveH');
-          return claude && /95%/.test(claude.text) ? state : null;
+          return state?.bar?.value === 5 ? state : null;
         },
         `${side.name} the reordered board`,
         patience(20000),
@@ -670,7 +703,7 @@ try {
         'codex:fiveH',
         `${side.name}: the selection moved with the rank`,
       );
-      assert.match(after.prospect, /Codex · 5-hour/);
+      assert.match(after.summary, /^Codex 5-hour plan · resets in/);
       await navigate(view, ELSEWHERE);
       await pause(300);
       await navigate(view, SESSIONS);
@@ -701,7 +734,9 @@ try {
       await until(
         async () => {
           const state = await stripOf(view.page);
-          return state && state.rows.every((r) => r.key.startsWith('claude:')) ? state : null;
+          return state?.rows.length && state.rows.every((r) => r.key.startsWith('claude:'))
+            ? state
+            : null;
         },
         `${side.name} the smaller board`,
         patience(20000),
@@ -716,11 +751,11 @@ try {
       assert.equal(await pressedKey(view), fell, `${side.name}: the fallback was not held`);
       await steer(side, { windows: 'none' });
       await until(
-        async () => (await stripOf(view.page)) === null,
-        `${side.name} no strip`,
+        async () => !(await stripOf(view.page))?.bar,
+        `${side.name} no measured allowance`,
         patience(20000),
       );
-      assert.equal(await view.page.locator('[data-next-capacity]').count(), 0);
+      assert.equal(await view.page.locator('button[data-next-capacity-pick]').count(), 0);
       await steer(side, { windows: 'full' });
       await until(async () => (await stripOf(view.page))?.rows.length, 'the strip returning');
       assert.equal(
@@ -732,78 +767,63 @@ try {
   );
 
   await step('the strip draws the recorded facts and invents no tick', async () => {
-    const facts = (state) => ({
-      keys: state.rows.map((r) => r.key),
-      ticks: state.rows.map((r) => r.tick),
-      noclock: state.rows.map((r) => r.noclock),
-      more: state.more,
-      models: state.models,
-    });
-    const read = (count) =>
-      until(
-        async () => {
-          const state = await stripOf(view.page);
-          return state && state.rows.length === count ? state : null;
-        },
-        `${side.name} ${count} windows`,
-        patience(20000),
-      );
-    for (const [windows, count] of [
-      ['full', 3],
-      ['fewer', 3],
-    ]) {
+    for (const windows of ['full', 'fewer']) {
       await steer(side, { windows });
       await go(view, SESSIONS);
-      const mine = await read(count);
+      const mine = await until(async () => {
+        const state = await stripOf(view.page);
+        return state?.rows.length === 3 ? state : null;
+      }, `${side.name} the ${windows} board`);
       const factsKey = `the strip's windows, ticks and sub-limits with the ${windows} board`;
-      golden.observe(factsKey);
-      golden.verify(factsKey, facts(mine));
+      const recorded = golden.observe(factsKey);
+      await explainAllowance(view);
+      const chosen = [];
+      for (const { key } of mine.rows) {
+        await pressWindow(view, key);
+        const card = await stripOf(view.page);
+        assert.equal(await pressedKey(view), key);
+        assert.ok(card.bar, `${key}: no progress element`);
+        chosen.push(card);
+      }
+      golden.verify(factsKey, {
+        keys: mine.rows.map(({ key }) => key),
+        ticks: chosen.map(({ bar }) => bar.tick),
+        noclock: chosen.map(({ bar }) => bar.noclock),
+        more: mine.more,
+        models: chosen
+          .flatMap(({ models }) => models)
+          .map((model) => model.replace('Within this weekly budget', 'WITHIN THIS WEEKLY BUDGET')),
+      });
+      assert.equal(chosen.length, recorded.keys.length);
       if (windows === 'full') {
-        // A spent budget says so, and the window with no clock is ranked last, behind the fold, untimed.
-        assert.match(mine.rows[0].text, /already spent/);
-        assert.match(mine.more, /^3 more windows, 1 of them not timed$/);
+        assert.equal(chosen[0].used, '100% used');
+        assert.equal(chosen[0].facts['Projected budget end'], 'Already spent');
         continue;
       }
-      // The window that publishes no clock draws a hatched gap and no tick: nothing is invented to fill it.
-      const month = mine.rows.find((r) => r.key === 'claude:month');
-      assert.ok(
-        month?.noclock && !month.tick,
-        'react: a window with no clock drew a bar or a tick',
+      const [short, week, month] = chosen;
+      assert.equal(month.facts.Window, 'billing cycle · length not published');
+      assert.equal(month.facts.Pace, 'Pace not measured');
+      assert.equal(month.facts['Projected budget end'], 'Not projected');
+      assert.equal(month.facts['Reset time'], 'Not published');
+      assert.match(week.facts['Reset time'], /^\w{3} \d{2}, \d{4} at \d{2}:\d{2}$/);
+      assert.match(week.facts.Source, /^Claude Code · read at /);
+      const said = golden.observe("the weekly window's prospect and rows, clocks aside");
+      for (const [index, card] of [short, week, month].entries()) {
+        const row = said.rows[index];
+        assert.match(row, new RegExp(`USED${card.bar.value}%`));
+        assert.equal(
+          card.facts.Pace,
+          /PACE(.*?)BUDGET ENDS/.exec(row)?.[1],
+          'the disclosed pace matches the recorded figure or absence',
+        );
+      }
+      const recordedProspect = said.prospect
+        .replace(/^Claude Code · weekly/, '')
+        .replace(' Resets in 3d 0h.', '');
+      assert.equal(
+        week.prospect.replace(/across \S+ and \d+ readings/, 'across <span> and <n> readings'),
+        recordedProspect,
       );
-      assert.match(month.text, /Window length not published/);
-      assert.match(month.text, /Pace not measured/);
-      assert.match(month.text, /not projected/);
-      await pressWindow(view, 'claude:week');
-      const week = await stripOf(view.page);
-      assert.ok(week.rows.find((r) => r.key === 'claude:week')?.pressed);
-      // The sub-limits hang under the weekly row only, and keep a measured zero.
-      assert.deepEqual(
-        week.models.map((m) => /Opus 71%.*Sonnet 0%/.test(m)),
-        [true],
-      );
-      /* The page samples the pace on its own clock, so the span and the number of readings it quotes ("across 8s and
-         3 readings") and the wall-clock minute a budget ends at differ from the recording's: a recording keeps the
-         sentences with the figures masked, because a clock minute and the weekday or date a budget ends on (the
-         browser's time zone, and today's date: the column draws "21:04", "Sat 21:04" or "Oct 12" by how far off the
-         end is) are not facts about the previous interface's code. Everything else is the same sentence and a
-         difference in it fails, and React's own text is asserted below, strictly. */
-      const unclocked = (text) =>
-        text
-          .replace(/across \S+ and \d+ readings/g, 'across <span> and <n> readings')
-          .replace(/\d{1,2}:\d{2}/g, '<time>')
-          .replace(/(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?= <time>)/g, '<day>')
-          .replace(
-            /BUDGET ENDS(?:<day> <time>|<time>|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{2})/g,
-            'BUDGET ENDS<instant>',
-          );
-      const weekKey = "the weekly window's prospect and rows, clocks aside";
-      const said = golden.observe(weekKey);
-      golden.verify(weekKey, {
-        prospect: unclocked(week.prospect),
-        rows: week.rows.map((r) => unclocked(r.text)),
-      });
-      assert.ok(said.rows.length > 0, 'the recording holds the weekly rows');
-      // The weekly row's recent pace is a measured zero, which is evidence and is not "not measured".
       assert.match(
         week.prospect,
         /Recent pace measured at zero: nothing spent across .+ and \d+ readings/,
@@ -1007,8 +1027,8 @@ try {
         return {
           overflow: root.scrollWidth - root.clientWidth,
           client: root.clientWidth,
-          rows: boxes('.next-capacity-row'),
-          actions: boxes('.next-usage-consent-actions button, .next-usage-switch button'),
+          rows: boxes('button[data-next-capacity-pick]'),
+          actions: boxes('[data-next-capacity] button[aria-controls], .next-usage-switch button'),
         };
       });
       assert.ok(
@@ -1089,9 +1109,9 @@ try {
           return {
             overflow: root.scrollWidth - root.clientWidth,
             client: root.clientWidth,
-            rows: boxes('.next-capacity-row'),
+            rows: boxes('button[data-next-capacity-pick]'),
             actions: boxes(
-              '.next-usage-consent-actions button, .next-usage-switch button, [data-next-observer-action]',
+              '[data-next-capacity] button[aria-controls], .next-usage-switch button, [data-next-observer-action]',
             ),
           };
         });
@@ -1209,22 +1229,29 @@ try {
           const keys = (await stripOf(rows.page)).rows.map((r) => r.key);
           const target = keys.at(-1);
           const before = keys.at(-2);
-          const buttonOf = (key) => `[data-next-capacity-row="${key}"] button`;
-          const name = await nameOf(rows.page, buttonOf(target));
+          const name = await nameOf(rows.page, windowButton(target));
           assert.ok(name, 'the last window row has no button');
           seen.rowTabs = await tabTo(rows.page, name);
           await rows.page.keyboard.press('Space');
           assert.equal(await pressedKey(rows), target, 'Space did not select the window');
-          assert.equal(await holdsFocus(rows.page, buttonOf(target)), true, 'focus left the row');
+          assert.equal(
+            await holdsFocus(rows.page, windowButton(target)),
+            true,
+            'focus left the row',
+          );
           await rows.page.keyboard.press('Shift+Tab');
           assert.equal(
-            await holdsFocus(rows.page, buttonOf(before)),
+            await holdsFocus(rows.page, windowButton(before)),
             true,
             'Shift+Tab did not reach the row before',
           );
           await rows.page.keyboard.press('Enter');
           assert.equal(await pressedKey(rows), before, 'Enter did not select the window');
-          assert.equal(await holdsFocus(rows.page, buttonOf(before)), true, 'focus left the row');
+          assert.equal(
+            await holdsFocus(rows.page, windowButton(before)),
+            true,
+            'focus left the row',
+          );
           seen.rows = [target, before];
         }
       } finally {

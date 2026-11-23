@@ -16,6 +16,29 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-23, the Sessions filter and history explanations open below their triggers and keep
+their open state across a refresh. The earlier sessions heading names the published window on a
+bounded board. An all-history board uses Session history.
+The old Sessions how-to body moved to the Goal card as **How goals work**. The two board-specific
+caveats moved to **How session history works**. The Sessions parity readers project the recorded
+heading and set aside the relocated text. The mounted and story proofs assert the new copies in
+their destinations. How goals work remains in the Goal card when annotations are off, with no
+editor. It describes the first press and distinguishes which harnesses contribute work from which
+sessions show a level. The Goal card's More, Drift settings, and the two What is sent disclosures
+open inline. Closing a disclosure uses its own trigger.
+
+The former quota table is now **Your AI allowance** on Sessions. One selected window supplies the
+percentage and reset sentence. The native bar keeps the elapsed-time tick. **How the AI allowance
+works** holds the pace, exact reset time, window, source, per-model sub-limits and projections.
+When credential-backed reads are off, fresh local windows stay available. The card names a cached
+credential window when there is no local window and holds back its figures. The mounted comparison
+checks recorded percentages for local windows that appear in the recorded choices. The browser
+proof selects each recorded window to check its measured facts, clock tick, and sub-limits. The
+weekly projection comparison drops the old window heading and the countdown now carried by the
+allowance sentence. The model comparison still checks the recorded figures and ranking directly.
+QuotaLine stories check the card, focus and consent. The painted bar audit samples both the fill
+and the track.
+
 2026-11-23, the header names the `attention` and `intent` destinations Needs you and Goal history.
 The active link gets a fill and Compass links to Sessions. The browser proof projects the recorded
 nav, breadcrumb and tab-title words onto these names and still checks every fragment and its

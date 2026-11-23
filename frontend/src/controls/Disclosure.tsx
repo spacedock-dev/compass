@@ -36,6 +36,8 @@ export interface DisclosureProps {
   readonly triggerClassName?: string;
   /** Opens below the trigger and scrolls in the room there, never flipping above or beside it. Popover only. */
   readonly vertical?: boolean;
+  /** A card-scoped choice group. Opening one popover closes its peers. Popover only. */
+  readonly exclusiveGroup?: string;
   /** While open, holds the board's background paint as an open Select does, so what the popover counts does not
    * move under the pointer. Popover only. */
   readonly holdPaint?: boolean;
@@ -44,6 +46,8 @@ export interface DisclosureProps {
   readonly aside?: ReactNode;
   /** The heading drawn around the trigger, for a summary that is a heading of the page. Accordion only. */
   readonly headerProps?: ComponentProps<typeof AccordionTrigger>['headerProps'];
+  /** Accordion only. Use the explanation link's quiet accent and underline. */
+  readonly explanation?: boolean;
   /** Opens the first time this key is drawn, and never again: a reader who closes it keeps it closed, because
    * the write that opened it is the store's own and the reader's close is the next one. Accordion only. */
   readonly openByDefault?: boolean;
@@ -53,6 +57,8 @@ export interface DisclosureProps {
   readonly openWhen?: boolean;
   /** Accordion only: an explicit reader opening, never restoration, fragments or programmatic opening. */
   readonly onOpenPress?: () => void;
+  /** Accordion only. Expose closed prose to the browser's Find and fragment navigation. */
+  readonly searchable?: boolean;
   readonly children: ReactNode;
 }
 
@@ -74,9 +80,11 @@ function AccordionDisclosure({
   focusKey,
   aside,
   headerProps,
+  explanation = false,
   openByDefault = false,
   openWhen = false,
   onOpenPress,
+  searchable = true,
   children,
 }: DisclosureProps) {
   const controls = useControls();
@@ -99,10 +107,14 @@ function AccordionDisclosure({
   }, [openWhen, controls.disclosures, disclosureKey]);
   const triggerRef = useFocusKey<HTMLButtonElement>(controls.focusLane, focusKey ?? null);
   const panelRef = useRevealFragment(disclosureKey);
+  const triggerClasses = explanation
+    ? 'text-[color:var(--accent)] text-label font-semibold hover:underline'
+    : '';
   return (
     <Accordion
       className={className ? `ctl-disclosure ${className}` : 'ctl-disclosure'}
       data-open={open ? '' : undefined}
+      data-explanation={explanation ? '' : undefined}
       multiple
       value={open ? [disclosureKey] : []}
       onValueChange={(value, detail) => {
@@ -119,6 +131,7 @@ function AccordionDisclosure({
             <div className="min-w-0 flex-1">
               <AccordionTrigger
                 ref={triggerRef}
+                className={triggerClasses}
                 {...(headerProps ? { headerProps } : {})}
                 {...(summaryLabel ? { 'aria-label': summaryLabel } : {})}
               >
@@ -130,13 +143,14 @@ function AccordionDisclosure({
         ) : (
           <AccordionTrigger
             ref={triggerRef}
+            className={triggerClasses}
             {...(headerProps ? { headerProps } : {})}
             {...(summaryLabel ? { 'aria-label': summaryLabel } : {})}
           >
             {summary}
           </AccordionTrigger>
         )}
-        <AccordionContent ref={panelRef} hiddenUntilFound>
+        <AccordionContent ref={panelRef} keepMounted hiddenUntilFound={searchable}>
           {children}
         </AccordionContent>
       </AccordionItem>
@@ -209,6 +223,7 @@ function PopoverDisclosure({
   focusKey,
   triggerClassName,
   vertical = false,
+  exclusiveGroup,
   holdPaint = false,
   children,
 }: DisclosureProps) {
@@ -229,14 +244,14 @@ function PopoverDisclosure({
       const releaseEscape = registerPopoverEscape(
         node,
         () => popupRef.current,
-        () => controls.disclosures.set(disclosureKey, false),
+        () => controls.disclosures.set(disclosureKey, false, exclusiveGroup),
       );
       return () => {
         releaseEscape();
         releaseFocus?.();
       };
     },
-    [controls, disclosureKey, focusRef],
+    [controls, disclosureKey, exclusiveGroup, focusRef],
   );
   // Base UI left a departure after window blur open in the Chromium proof.
   // A missing related target is window blur, not a departure within the page.
@@ -252,7 +267,7 @@ function PopoverDisclosure({
         : undefined;
     if (owners?.includes(triggerId)) return;
     if (!popupRef.current?.contains(next) && !triggerNode.current?.contains(next))
-      controls.disclosures.set(disclosureKey, false);
+      controls.disclosures.set(disclosureKey, false, exclusiveGroup);
   };
   return (
     <PopoverAncestors.Provider value={[...ancestors, triggerId]}>
@@ -266,7 +281,7 @@ function PopoverDisclosure({
             return;
           }
           if (detail.reason === 'trigger-press') controls.noteToggle();
-          controls.disclosures.set(disclosureKey, next);
+          controls.disclosures.set(disclosureKey, next, exclusiveGroup);
           if (!next || detail.reason !== 'trigger-press') return;
           const reduce = controls.reducedMotion();
           requestAnimationFrame(() =>

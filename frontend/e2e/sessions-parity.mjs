@@ -85,17 +85,7 @@ const summarizeList = () => {
   const root = document.querySelector('[data-next-view-body="sessions"]');
   if (!root) return { missing: true, text: norm(document.body).slice(0, 200) };
   return {
-    header: (() => {
-      const header = root.querySelector('.next-operations-header').cloneNode(true);
-      const trigger = header.querySelector('[data-slot=popover-trigger]');
-      const popup = [...document.querySelectorAll('[data-slot=popover-content]')].find(
-        (popup) => popup.getAttribute('aria-labelledby') === trigger?.id,
-      );
-      trigger?.parentElement.remove();
-      for (const body of popup?.querySelectorAll('.next-why-body') || [])
-        header.append(body.cloneNode(true));
-      return norm(header);
-    })(),
+    header: norm(root.querySelector('.next-operations-header')),
     fleet: [...root.querySelectorAll('[data-next-fleet-fact]')].map((node) => [
       node.dataset.nextFleetFact,
       norm(node),
@@ -355,7 +345,7 @@ try {
         );
         assert.equal(await o.page.locator('.next-operations-header > p').count(), 1);
         assert.equal(
-          await o.page.getByRole('button', { name: 'How Intent and drift works' }).count(),
+          await o.page.getByRole('button', { name: 'How session history works' }).count(),
           1,
         );
       }
@@ -422,7 +412,7 @@ try {
               : ''),
         );
         assert.equal(
-          await o.page.getByRole('button', { name: 'How Intent and drift works' }).count(),
+          await o.page.getByRole('button', { name: 'How session history works' }).count(),
           1,
         );
         assert.equal(
@@ -850,7 +840,7 @@ try {
       const o = await clocked('#n=sessions');
       try {
         await o.page.addStyleTag({ content: '#app{min-height:3200px}' });
-        await o.page.getByRole('button', { name: 'How Intent and drift works' }).click();
+        await o.page.getByRole('button', { name: 'How session history works' }).click();
         await o.page.evaluate(() => {
           const row = globalThis.document.querySelector('article[data-next-session="live-work"]');
           row.__mark = 'kept';
@@ -900,7 +890,11 @@ try {
           Math.abs(kept.linkTop - kept.before) <= 1,
           `the focused link stayed where it was on screen: ${kept.linkTop} against ${kept.before}`,
         );
-        assert.deepEqual(kept.open, [], 'the how-to closes when focus leaves for the row link');
+        assert.deepEqual(
+          kept.open,
+          ['How session history works'],
+          'the explanation stays open as focus moves',
+        );
         return kept;
       } finally {
         await o.close();
@@ -909,11 +903,11 @@ try {
   );
 
   await step(
-    'continuity: an open popover caveat stays open across a poll, and closes on Escape and on focus leaving',
+    'continuity: an inline explanation stays open across a poll and focus departure',
     async () => {
       const o = await clocked('#n=sessions');
       try {
-        await o.page.getByText('What recent means').click();
+        await o.page.getByText('How session history works').click();
         const open = () =>
           o.page.evaluate(() =>
             [
@@ -922,18 +916,17 @@ try {
               ),
             ].map((summary) => summary.textContent),
           );
-        assert.deepEqual(await open(), ['What recent means']);
+        assert.deepEqual(await open(), ['How session history works']);
         o.state.body = { ...real, generated: real.generated + 25 };
         await o.poll();
-        assert.deepEqual(await open(), ['What recent means'], 'a poll did not close it');
-        await o.page.keyboard.press('Escape');
-        assert.deepEqual(await open(), [], 'Escape closed it');
-        await o.page.getByText('What recent means').click();
+        assert.deepEqual(await open(), ['How session history works'], 'a poll did not close it');
         await o.page
           .locator('article[data-slot="card"][data-variant="session-row"] a.next-operation-route')
           .first()
           .focus();
-        assert.deepEqual(await open(), [], 'focus leaving closed it');
+        assert.deepEqual(await open(), ['How session history works'], 'focus leaving kept it open');
+        await o.page.getByRole('button', { name: 'How session history works' }).click();
+        assert.deepEqual(await open(), [], 'a second press closed it');
       } finally {
         await o.close();
       }
@@ -1019,7 +1012,7 @@ try {
     'keyboard: a caveat opens and closes with Enter and Space, and the page reports its state',
     async () => {
       await load(react, board.react.origin, '#n=sessions');
-      const summary = react.page.getByRole('button', { name: 'How Intent and drift works' });
+      const summary = react.page.getByRole('button', { name: 'How session history works' });
       await summary.focus();
       await react.page.keyboard.press('Enter');
       assert.equal(

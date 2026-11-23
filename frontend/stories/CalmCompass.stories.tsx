@@ -1,7 +1,9 @@
 import { Badge } from '../src/ui/badge';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, within } from 'storybook/test';
-import type { CSSProperties, ReactNode } from 'react';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { useState, type CSSProperties, type ReactNode } from 'react';
+import { ControlsProvider, Disclosure } from '../src/controls';
+import { testControls } from '../src/controls/testControls';
 import { GLOSSARY } from '../src/language/glossary';
 import { Alert } from '../src/ui/alert';
 import { Button } from '../src/ui/button';
@@ -306,6 +308,7 @@ function RadiusSamples() {
 }
 
 function ReservedExamples() {
+  const [kit] = useState(testControls);
   return (
     <Panel id="calm-reserved" title="Reserved examples">
       <div style={columns}>
@@ -318,8 +321,19 @@ function ReservedExamples() {
             On
           </Switch>
         </section>
+        <section style={row}>
+          <h3 style={subheading}>How … works</h3>
+          <ControlsProvider controls={kit.controls}>
+            <Disclosure
+              explanation
+              disclosureKey="guide:goals"
+              summary={GLOSSARY.howGoalsWork.plain}
+            >
+              <p style={caption}>Compass uses your saved goal to check progress.</p>
+            </Disclosure>
+          </ControlsProvider>
+        </section>
         {[
-          ['How … works', 'A short explanation opens beside the words it explains.'],
           [GLOSSARY.showTechnicalDetails.plain, 'Activity log, AI use, limits and raw evidence.'],
           ['Stepped slider', 'Choose how much a progress check reads.'],
           ['Forget everything', 'The explanation opens inline in the Your data card.'],
@@ -423,6 +437,13 @@ export const StyleGuide: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole('heading', { level: 1, name: 'Calm Compass' })).toBeVisible();
+    const examples = within(canvas.getByRole('region', { name: 'Reserved examples' }));
+    const explanation = examples.getByRole('button', { name: GLOSSARY.howGoalsWork.plain });
+    await expect(explanation.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+    await userEvent.click(explanation);
+    await waitFor(() =>
+      expect(examples.getByText('Compass uses your saved goal to check progress.')).toBeVisible(),
+    );
     const colors = canvas.getByRole('region', { name: 'Color' });
     const swatches = colors.querySelectorAll<HTMLElement>('[data-swatch]');
     await expect(swatches).toHaveLength(8);

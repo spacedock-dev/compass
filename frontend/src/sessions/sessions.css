@@ -322,7 +322,6 @@
 }
 
 /* ===== The shared controls and disclosure, where the legacy rules name their old elements ===== */
-.next-operations-header>.ctl-disclosure{grid-column:-2 / -1}
 .next-session-controls [data-control="raise"]{margin:0}
 .next-departure-reentry [data-control="raise"]{margin:0}
 .next-session-controls [data-control="raise"]:focus-visible{outline:2px solid var(--accent);outline-offset:3px}

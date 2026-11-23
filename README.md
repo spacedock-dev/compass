@@ -12,8 +12,7 @@ and when it is safe to walk away. One local screen, every harness you use, and n
 machine that you cannot switch off.
 
 Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
-goal and press `Analyze drift`. The `How Intent and drift works` entry in the Intent card's `More`
-menu explains the steps, the reading's limits and what a goal with no expected outcome line is
+goal and press `Analyze drift`. The Goal card's `How goals work` disclosure explains the steps, the reading's limits and what a goal with no expected outcome line is
 read against. The Claude reader's
 accuracy check has not passed, and its latest correction is unmeasured, so read a level as an
 account of the evidence, not a measurement.

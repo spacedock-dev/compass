@@ -11,7 +11,7 @@ import {
 } from 'react';
 import { Disclosure, disclosureKey, useControls, useFocusKey } from '../controls';
 import { DraftInput } from '../controls/DraftField';
-import { SHOWN } from '../language/glossary';
+import { EXPLANATIONS, SHOWN } from '../language/glossary';
 import { datedClock } from '../observed/values';
 import { useNavigate } from '../shell/context';
 import { keyIsTaken, SKIP_ROLE_SELECTOR } from '../shell/keyboard';
@@ -272,6 +272,7 @@ function FilterButton({
   return (
     <Disclosure
       variant="popover"
+      exclusiveGroup="sessions-filters"
       disclosureKey={disclosureKey({
         project: null,
         scope: null,
@@ -948,28 +949,25 @@ export function SessionsFilters({
             </Button>
           ))}
         </div>
-        <div className="ml-auto min-w-0 max-w-full">
-          <Disclosure
-            variant="popover"
-            disclosureKey={disclosureKey({
-              project: null,
-              scope: null,
-              name: 'sessions-filter-counts',
-            })}
-            summary="How these counts work"
-          >
-            <p className="next-why-body">
-              Each number beside an option is how many sessions with that value your other filters
-              keep. Choices inside one filter widen the list; separate filters and the search narrow
-              it.
-            </p>
-            <p className="next-why-body">
-              A session that does not publish a value is counted under its own option, never as zero
-              and never as older. ACTIVE NOW and WORKING above always count the whole board.
-            </p>
-          </Disclosure>
-        </div>
       </div>
+      <Disclosure
+        explanation
+        disclosureKey={disclosureKey({
+          project: null,
+          scope: null,
+          name: 'sessions-filter-counts',
+        })}
+        summary={EXPLANATIONS.filterCounts}
+      >
+        <p className="next-why-body">
+          Each number beside an option is how many sessions with that value your other filters keep.
+          Choices inside one filter widen the list; separate filters and the search narrow it.
+        </p>
+        <p className="next-why-body">
+          A session that does not publish a value is counted under its own option, never as zero and
+          never as older. Active now and Working above always count the whole board.
+        </p>
+      </Disclosure>
       {chips.length ? (
         <div ref={chipBox} className="flex flex-wrap items-center gap-2" data-sessions-chips>
           {chips.map((chip, index) => {

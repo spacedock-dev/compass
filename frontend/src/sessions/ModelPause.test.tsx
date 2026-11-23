@@ -154,7 +154,13 @@ describe('the summaries switch is nested under Pause model calls', () => {
     await act(async () => {
       fireEvent.click(pause);
     });
-    await waitFor(() => expect(within(region).getByText('Model calls are paused')).toBeVisible());
+    await waitFor(() =>
+      expect(
+        within(region)
+          .getByRole('button', { name: 'Turn off summaries' })
+          .getAttribute('aria-disabled'),
+      ).toBe('true'),
+    );
     /* The server cleared every notice with the pause; the tab does not keep drawing one. */
     expect(region.querySelector('[data-next-summary-notice]')).toBeNull();
   });

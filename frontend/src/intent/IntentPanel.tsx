@@ -161,7 +161,7 @@ export function IntentPanel({
         data-next-session-drift
         data-next-session-panel="intent"
       >
-        {annotating ? <IntentSection /> : null}
+        <IntentSection editable={annotating} />
         {/* The design's order is Intent, what the session has done, Drift: the work reads before the verdict on it. */}
         {summary}
         <Card
@@ -179,7 +179,7 @@ export function IntentPanel({
                 </h2>
                 {stamp}
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+              <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
                 <p className="next-session-drift-sub text-body">{DRIFT_SUBTITLE}</p>
                 {/* Drift settings (the live monitor and Pause model calls) and, while calls are paused, Resume:
                     one place in the head of the card they control, never in its body. Placement only: the

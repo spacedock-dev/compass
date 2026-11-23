@@ -294,7 +294,7 @@ function PageExample({
   );
 }
 
-const ORDER = ['Asked you', 'Intent', 'What the session has done', 'Drift', 'Full activity'];
+const ORDER = ['Asked you', 'Goal', 'What the session has done', 'Drift', 'Full activity'];
 /* A harness's own gate takes the asked block's place, and never stands beside it. */
 const REGIONS = [...ORDER, 'Waiting on you'];
 
@@ -349,7 +349,7 @@ export const RegionsInOrder: Story = {
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
     const breadcrumb = canvas.getByRole('navigation', { name: 'Breadcrumb' });
     await expect(breadcrumb.querySelector('svg[data-icon="caret-right"]')).toBeVisible();
-    const expected = ['Intent', 'What the session has done', 'Drift', 'Full activity'];
+    const expected = ['Goal', 'What the session has done', 'Drift', 'Full activity'];
     for (const width of [1280, 400]) {
       await atWidth(width, () => inOrderTopToBottom(canvasElement, expected));
     }
@@ -453,7 +453,7 @@ export const MoreIsRetired: Story = {
       const found = regions(canvasElement);
       const pick = (name: string) =>
         found.find((node) => (node.getAttribute('aria-label') ?? labelOf(node)) === name);
-      const both = [pick('Intent'), pick('Drift')];
+      const both = [pick('Goal'), pick('Drift')];
       if (!both[0] || !both[1]) throw new Error('cards not drawn yet');
       return both as [HTMLElement, HTMLElement];
     });
@@ -484,9 +484,7 @@ export const MoreIsRetired: Story = {
     await expect(
       await inIntent.findByRole('button', { name: /^Later directions: / }),
     ).toBeVisible();
-    await expect(
-      await inIntent.findByRole('button', { name: 'How Intent and drift works' }),
-    ).toBeVisible();
+    await expect(await inIntent.findByRole('button', { name: 'How goals work' })).toBeVisible();
     // Behind their summaries: the saved stamp's definition and binding key, the binding sentence, and the
     // limit under Later directions.
     await userEvent.click(
@@ -529,7 +527,7 @@ export const MoreIsRetired: Story = {
     const off = await waitFor(() => {
       const found = within(document.body)
         .getAllByRole('button', { name: 'Pause model calls' })
-        .find((node) => node.closest('[data-slot="popover-content"]'));
+        .find((node) => node.closest('[data-slot="accordion-content"]'));
       expect(found).toBeDefined();
       return found as HTMLElement;
     });
@@ -781,7 +779,7 @@ export const QuestionLeadsAndAnswersOnce: Story = {
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
     await waitFor(() =>
       expect(named(canvasElement)).toEqual([
-        'Intent',
+        'Goal',
         'What the session has done',
         'Drift',
         'Full activity',
@@ -801,7 +799,7 @@ export const QuestionLeadsAndAnswersOnce: Story = {
     await userEvent.click(within(asked).getByRole('button', { name: 'Not yet' }));
     await expect(log.answers).toHaveLength(1);
     log.release?.();
-    await waitFor(() => expect(named(canvasElement)[0]).toBe('Intent'));
+    await waitFor(() => expect(named(canvasElement)[0]).toBe('Goal'));
     await expect(log.answers).toHaveLength(1);
   },
 };

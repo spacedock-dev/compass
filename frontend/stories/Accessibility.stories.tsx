@@ -4,6 +4,7 @@ import '../src/drift/drift.css';
 import { Meter, Scale } from '../src/drift/DriftLevelView';
 import { LEVEL_SCALE } from '../src/drift/sentences';
 import { Button } from '../src/ui/button';
+import { CLAUDE_WINDOW, QuotaExample } from './quota.scenario';
 import {
   analysisRow,
   DriftScenario,
@@ -425,5 +426,115 @@ export const FocusInTheSteerBackBox: Story = {
     }
     await expect(reached, 'Tab reaches Copy correction').toBe(true);
     await expect(hasFocusRing(copy, resting), 'Copy correction shows a ring').toBe(true);
+  },
+};
+
+const PACE_WINDOWS = [20, 55, 90];
+const PACE_USAGE = PACE_WINDOWS.map((pct) => ({
+  ...CLAUDE_WINDOW[0],
+  fiveH: { pct, windowSec: 18000, resetAt: 9001 },
+}));
+
+async function quotaPixels(screenshot: string) {
+  const png = new Image();
+  png.src = screenshot;
+  await png.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = png.width;
+  canvas.height = png.height;
+  const paint = canvas.getContext('2d');
+  if (!paint) throw new Error('Cannot sample the quota bar');
+  paint.drawImage(png, 0, 0);
+  const sample = (fraction: number): [number, number, number] => {
+    const { data } = paint.getImageData(
+      Math.floor(canvas.width * fraction),
+      Math.floor(canvas.height / 2),
+      1,
+      1,
+    );
+    return [data[0] ?? 0, data[1] ?? 0, data[2] ?? 0];
+  };
+  return { fill: sample(0.1), track: sample(0.96) };
+}
+
+export const QuotaPaceTickContrast: Story = {
+  args: { scenario: {} },
+  render: () => (
+    <>
+      <section aria-label="Capacity strip">
+        {PACE_USAGE.map((entry) => (
+          <QuotaExample key={entry.fiveH.pct} strip usage={[entry]} />
+        ))}
+      </section>
+      <section aria-label="Console capacity rail">
+        {PACE_USAGE.map((entry) => (
+          <QuotaExample key={entry.fiveH.pct} rail usage={[entry]} />
+        ))}
+      </section>
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const browser = '__vitest_browser_runner__' in window ? await import('vitest/browser') : null;
+    for (const [label, prefix] of [
+      ['Capacity strip', 'next-capacity'],
+      ['Console capacity rail', 'next-rail-capacity'],
+    ] as const) {
+      const region = within(canvas.getByRole('region', { name: label }));
+      for (const pct of PACE_WINDOWS) {
+        const current = prefix === 'next-capacity';
+        const progress = current
+          ? (await region.findAllByRole('progressbar')).find(
+              (node) => node.getAttribute('value') === String(pct),
+            )
+          : null;
+        const bar = current
+          ? progress?.parentElement
+          : await region.findByRole('img', { name: new RegExp(`^${pct}%`) });
+        if (!bar) throw new Error(`Missing the quota bar at ${pct}%`);
+        const fill = progress ?? bar.querySelector(`.${prefix}-fill`);
+        const tick = bar.querySelector(`.${prefix}-tick`);
+        if (!fill || !tick) throw new Error(`Expected fill and clock tick for ${label} at ${pct}%`);
+        const track = bar.getBoundingClientRect();
+        const tickBox = tick.getBoundingClientRect();
+        await expect(tickBox.left - track.left).toBeCloseTo(track.width / 2, 0);
+        const fillRight = current
+          ? track.left + (track.width * pct) / 100
+          : fill.getBoundingClientRect().right;
+        const coversTick = fillRight > tickBox.left + tickBox.width / 2;
+        await expect(coversTick).toBe(pct > 50);
+
+        let adjacent = rgbOf(
+          current && coversTick
+            ? getComputedStyle(fill).getPropertyValue('--allowance-fill').trim()
+            : getComputedStyle(coversTick ? fill : bar).backgroundColor,
+        );
+        if (current && browser) {
+          // Chromium's computed progress pseudo-style does not describe the native fill it paints.
+          const pixels = await quotaPixels(
+            await browser.commands.storyScreenshot(
+              `[aria-label="Capacity strip"] progress[value="${pct}"]`,
+            ),
+          );
+          await expect(
+            contrastOf(pixels.fill, pixels.track),
+            `painted fill at ${pct}%`,
+          ).toBeGreaterThanOrEqual(3);
+          await expect(pixels.fill).toEqual(
+            rgbOf(getComputedStyle(fill).getPropertyValue('--allowance-fill').trim()),
+          );
+          adjacent = coversTick ? pixels.fill : pixels.track;
+        }
+        const style = getComputedStyle(tick);
+        const body = contrastOf(rgbOf(style.backgroundColor), adjacent);
+        const edge =
+          style.outlineStyle === 'solid' && Number.parseFloat(style.outlineWidth) >= 1
+            ? contrastOf(rgbOf(style.outlineColor), adjacent)
+            : 0;
+        await expect(Math.max(body, edge), `${label} tick at ${pct}% used`).toBeGreaterThanOrEqual(
+          3,
+        );
+      }
+    }
   },
 };

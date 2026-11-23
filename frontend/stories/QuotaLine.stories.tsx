@@ -1,84 +1,16 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, userEvent, within } from 'storybook/test';
-import { useEffect, useState } from 'react';
-import { CapacityStrip } from '../src/capacity/CapacityStrip';
-import { CapacityPanel } from '../src/delegation/CapacityPanel';
-import { observe } from '../src/observed';
-import { RailUsage } from '../src/capacity/UsageConsent';
-import { createShell } from '../src/shell/createShell';
-import { ShellContext } from '../src/shell/context';
-import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
-import { fakeBackend } from '../test/storage_backends';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { openInFlow } from './disclosure.flow';
+import { GLOSSARY } from '../src/language/glossary';
 import { contrastOf, rgbOf } from './a11y.audit';
+import {
+  CLAUDE_WINDOW,
+  CODEX_WINDOW,
+  QuotaExample,
+  refreshQuota,
+  requests,
+} from './quota.scenario';
 
-/* The quota fetch is on until the reader turns it off: one line says what is read and that no session content
-   is sent, and one button turns it off. Every `/api/data` URL the page sends is kept, so the story asserts the
-   request a press changes, not only the words. */
-const requests: string[] = [];
-const CLAUDE_WINDOW = [
-  { harness: 'claude', state: 'ok', asOf: 1, fiveH: { pct: 34, windowSec: 18000, resetAt: 9001 } },
-];
-function QuotaExample({
-  declined = false,
-  strip = false,
-  rail = false,
-  usage = [],
-}: {
-  readonly declined?: boolean;
-  readonly strip?: boolean;
-  readonly rail?: boolean;
-  readonly usage?: readonly unknown[];
-}) {
-  const railPayload = { generated: 1, harnesses: [{ key: 'claude', label: 'Claude Code' }], usage };
-  const [shell] = useState(() => {
-    requests.length = 0;
-    let generated = 1;
-    const backend = fakeBackend(declined ? { 'compass.next.usage.consent': 'declined' } : {});
-    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
-    return createShell({
-      env: createFakeEnvironment({ clock: createFakeClock() }),
-      provider: () => backend,
-      events: { addEventListener: () => undefined, removeEventListener: () => undefined },
-      search: '',
-      doc: null,
-      reducedMotion: () => true,
-      fetch: async (url) => {
-        if (url.startsWith('/api/data')) requests.push(url);
-        return json({
-          generated: generated++,
-          sessions: [],
-          harnesses: [{ key: 'claude', label: 'Claude Code' }],
-          usage_fetch: true,
-          usage,
-        });
-      },
-    });
-  });
-  useEffect(() => {
-    const release = shell.runtime.acquire();
-    void shell.runtime.refresh();
-    return () => {
-      release();
-      shell.runtime.dispose();
-      shell.display.dispose();
-    };
-  }, [shell]);
-  return (
-    <ShellContext.Provider value={shell}>
-      {strip ? (
-        <CapacityStrip />
-      ) : rail ? (
-        <CapacityPanel
-          payload={railPayload}
-          model={observe(railPayload)}
-          usage={(windows) => <RailUsage windows={windows} />}
-        />
-      ) : (
-        <RailUsage windows />
-      )}
-    </ShellContext.Provider>
-  );
-}
 const meta = { title: 'Capacity/Quota line', component: QuotaExample } satisfies Meta<
   typeof QuotaExample
 >;
@@ -86,6 +18,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const OnUntilTurnedOff: Story = {
+  args: { strip: true, usage: CLAUDE_WINDOW },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
@@ -94,24 +27,31 @@ export const OnUntilTurnedOff: Story = {
       ),
     ).toBeVisible();
     await expect(requests.at(-1)).toMatch(/usage=1/);
-    await userEvent.click(canvas.getByRole('button', { name: 'Turn off' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'Turn off quota reading' }));
     await expect(
-      await canvas.findByText(
-        'Quota reading is off. Windows above are the last cached read and will lapse.',
-      ),
+      await canvas.findByText('Quota reading is off. The last cached read will lapse.'),
     ).toBeVisible();
+    await expect(canvas.queryByRole('progressbar')).toBeNull();
     await expect(requests.at(-1)).not.toMatch(/usage=/);
   },
 };
 
 export const TurnedOffEarlier: Story = {
-  args: { declined: true },
+  args: { declined: true, strip: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(await canvas.findByRole('button', { name: 'Turn on' })).toBeVisible();
+    await expect(
+      await canvas.findByText('Quota reading is off. No window has been read.'),
+    ).toBeVisible();
+    await expect(canvas.queryByRole('progressbar')).toBeNull();
+    await expect(
+      await canvas.findByRole('button', { name: 'Turn on quota reading' }),
+    ).toBeVisible();
     await expect(requests.every((url) => !/usage=/.test(url))).toBe(true);
-    await userEvent.click(canvas.getByRole('button', { name: 'Turn on' }));
-    await expect(await canvas.findByRole('button', { name: 'Turn off' })).toBeVisible();
+    await userEvent.click(canvas.getByRole('button', { name: 'Turn on quota reading' }));
+    await expect(
+      await canvas.findByRole('button', { name: 'Turn off quota reading' }),
+    ).toBeVisible();
     await expect(requests.at(-1)).toMatch(/usage=1/);
   },
 };
@@ -124,7 +64,8 @@ export const TurnedOffWithNoWindowRead: Story = {
       await canvas.findByText('Quota reading is off. No window has been read.'),
     ).toBeVisible();
     await expect(canvas.queryByText(/last cached read/)).toBeNull();
-    await expect(canvas.getByRole('button', { name: 'Turn on' })).toBeVisible();
+    await expect(canvas.queryByRole('progressbar')).toBeNull();
+    await expect(canvas.getByRole('button', { name: 'Turn on quota reading' })).toBeVisible();
   },
 };
 
@@ -133,11 +74,26 @@ export const TurnedOffWithWindowsShown: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
-      await canvas.findByText(
-        'Quota reading is off. Windows above are the last cached read and will lapse.',
-      ),
+      await canvas.findByText('Quota reading is off. The last cached read will lapse.'),
     ).toBeVisible();
-    await expect(canvas.getByRole('button', { name: 'Turn on' })).toBeVisible();
+    await expect(canvas.queryByRole('progressbar')).toBeNull();
+    await expect(canvas.getByRole('button', { name: 'Turn on quota reading' })).toBeVisible();
+  },
+};
+
+export const TurningOffTheFetchKeepsLocalQuota: Story = {
+  args: { strip: true, usage: [...CLAUDE_WINDOW, ...CODEX_WINDOW] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: 'Turn off quota reading' }));
+    await expect(await canvas.findByText('71% used')).toBeVisible();
+    await expect(
+      canvas.getByRole('progressbar', { name: 'Codex 3-hour allowance used' }),
+    ).toBeVisible();
+    await expect(canvas.getByText('Codex 3-hour plan · resets in 2h 30m.')).toBeVisible();
+    await expect(canvas.queryByRole('button', { name: /Read Claude Code/ })).toBeNull();
+    await expect(canvas.getByText(/Local readings are still shown/)).toBeVisible();
+    await expect(requests.at(-1)).not.toMatch(/usage=/);
   },
 };
 
@@ -149,7 +105,7 @@ export const ConsoleRailTurnedOffWithNoWindowRead: Story = {
       await canvas.findByText('Quota reading is off. No window has been read.'),
     ).toBeVisible();
     await expect(canvas.queryByText(/last cached read/)).toBeNull();
-    await expect(canvas.getByRole('button', { name: 'Turn on' })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: 'Turn on quota reading' })).toBeVisible();
   },
 };
 
@@ -165,56 +121,113 @@ export const ConsoleRailTurnedOffWithWindowsShown: Story = {
   },
 };
 
-const PACE_WINDOWS = [20, 55, 90];
-const PACE_USAGE = PACE_WINDOWS.map((pct) => ({
-  ...CLAUDE_WINDOW[0],
-  fiveH: { pct, windowSec: 18000, resetAt: 9001 },
-}));
-
-export const PaceTickContrast: Story = {
-  render: () => (
-    <>
-      <section aria-label="Capacity strip">
-        {PACE_USAGE.map((entry) => (
-          <QuotaExample key={entry.fiveH.pct} strip usage={[entry]} />
-        ))}
-      </section>
-      <section aria-label="Console capacity rail">
-        {PACE_USAGE.map((entry) => (
-          <QuotaExample key={entry.fiveH.pct} rail usage={[entry]} />
-        ))}
-      </section>
-    </>
-  ),
+export const AllowanceAndItsExplanation: Story = {
+  args: { strip: true, usage: CLAUDE_WINDOW },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    for (const [label, prefix] of [
-      ['Capacity strip', 'next-capacity'],
-      ['Console capacity rail', 'next-rail-capacity'],
-    ] as const) {
-      const region = within(canvas.getByRole('region', { name: label }));
-      for (const pct of PACE_WINDOWS) {
-        const bar = await region.findByRole('img', { name: new RegExp(`^${pct}%`) });
-        const fill = bar.querySelector(`.${prefix}-fill`);
-        const tick = bar.querySelector(`.${prefix}-tick`);
-        if (!fill || !tick) throw new Error(`Expected fill and clock tick for ${label} at ${pct}%`);
-        const track = bar.getBoundingClientRect();
-        const tickBox = tick.getBoundingClientRect();
-        await expect(tickBox.left - track.left).toBeCloseTo(track.width / 2, 0);
-        const coversTick = fill.getBoundingClientRect().right > tickBox.left + tickBox.width / 2;
-        await expect(coversTick).toBe(pct > 50);
+    const card = await canvas.findByRole('region', { name: GLOSSARY.aiAllowance.plain });
+    const reader = within(card);
+    await expect(reader.getByText('Claude Code 5-hour plan · resets in 2h 30m.')).toBeVisible();
+    await expect(reader.getByText('34% used')).toBeVisible();
+    await expect(
+      reader.queryByText(/^(WINDOW|USED|BUDGET AGAINST CLOCK|PACE|BUDGET ENDS|RESETS)$/),
+    ).toBeNull();
+    const bar = reader.getByRole('progressbar', { name: 'Claude Code 5-hour allowance used' });
+    await expect(bar.tagName).toBe('PROGRESS');
+    await expect(bar).toHaveAttribute('value', '34');
+    await expect(bar).toHaveAttribute(
+      'aria-valuetext',
+      '34% of budget used, 50% of the window elapsed',
+    );
+    await expect(bar.parentElement?.querySelector('.next-capacity-tick')).toBeVisible();
+    const disclosure = reader.getByRole('button', { name: GLOSSARY.howAiAllowanceWorks.plain });
+    const consent = reader.getByRole('button', { name: 'Turn off quota reading' });
+    const panel = await openInFlow(disclosure, consent);
+    const facts = within(panel);
+    for (const name of ['Pace', 'Reset time', 'Window', 'Source'])
+      await expect(facts.getByText(name, { exact: true })).toBeVisible();
+    const before = requests.length;
+    await refreshQuota?.();
+    await waitFor(() => expect(requests.length).toBeGreaterThan(before));
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    await expect(facts.getByText('Source', { exact: true })).toBeVisible();
+  },
+};
 
-        const adjacent = rgbOf(getComputedStyle(coversTick ? fill : bar).backgroundColor);
-        const style = getComputedStyle(tick);
-        const body = contrastOf(rgbOf(style.backgroundColor), adjacent);
-        const edge =
-          style.outlineStyle === 'solid' && Number.parseFloat(style.outlineWidth) >= 1
-            ? contrastOf(rgbOf(style.outlineColor), adjacent)
-            : 0;
-        await expect(Math.max(body, edge), `${label} tick at ${pct}% used`).toBeGreaterThanOrEqual(
-          3,
-        );
+const LONG_PROJECT = `service-${'component'.repeat(18)}`;
+
+export const ALongProjectFitsTheOpenAllowanceOnAPhone: Story = {
+  args: {
+    strip: true,
+    usage: CLAUDE_WINDOW,
+    history: ['a', 'b'].flatMap((sid) => [
+      { sid, harness: 'claude', project: LONG_PROJECT, state: 'working', last_activity: 100 },
+      { sid, harness: 'claude', project: LONG_PROJECT, state: 'idle', last_activity: 600 },
+    ]),
+  },
+  play: async ({ canvasElement }) => {
+    const browser =
+      '__vitest_browser_runner__' in window ? (await import('vitest/browser')).page : null;
+    const before = { width: window.innerWidth, height: window.innerHeight };
+    if (browser) await browser.viewport(320, 800);
+    try {
+      const canvas = within(canvasElement);
+      const disclosure = await canvas.findByRole('button', {
+        name: GLOSSARY.howAiAllowanceWorks.plain,
+      });
+      await userEvent.click(disclosure);
+      const project = await canvas.findByText(LONG_PROJECT);
+      await waitFor(() => expect(project).toBeVisible());
+      if (browser) {
+        await expect(window.innerWidth).toBe(320);
+        await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
+        await expect(project.getBoundingClientRect().right).toBeLessThanOrEqual(320);
       }
+    } finally {
+      if (browser) await browser.viewport(before.width, before.height);
     }
+  },
+};
+
+export const SelectedWindowHasAVisibleMarker: Story = {
+  args: { strip: true, usage: [...CLAUDE_WINDOW, ...CODEX_WINDOW] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const codex = await canvas.findByRole('button', { name: 'Read Codex 3-hour window' });
+    const claude = canvas.getByRole('button', { name: 'Read Claude Code 5-hour window' });
+    await userEvent.click(claude);
+    for (const [selected, other] of [
+      [claude, codex],
+      [codex, claude],
+    ] as const) {
+      await userEvent.click(selected);
+      await expect(selected).toHaveAttribute('aria-pressed', 'true');
+      await expect(other).toHaveAttribute('aria-pressed', 'false');
+      const edge = getComputedStyle(selected);
+      await expect(Number.parseFloat(edge.borderLeftWidth)).toBeGreaterThanOrEqual(2);
+      await expect(edge.borderLeftWidth).not.toBe(getComputedStyle(other).borderLeftWidth);
+      await expect(
+        contrastOf(rgbOf(edge.borderLeftColor), rgbOf(edge.backgroundColor)),
+      ).toBeGreaterThanOrEqual(3);
+    }
+  },
+};
+
+export const TheEmptyTrackHasAVisibleEdge: Story = {
+  args: {
+    strip: true,
+    usage: [{ harness: 'claude', state: 'ok', fiveH: { pct: 0, windowSec: 18000, resetAt: 9060 } }],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const card = await canvas.findByRole('region', { name: GLOSSARY.aiAllowance.plain });
+    const bar = within(card).getByRole('progressbar');
+    await expect(bar).toHaveAttribute('value', '0');
+    if (!bar.parentElement) throw new Error('The progress track did not render');
+    const edge = getComputedStyle(bar.parentElement);
+    await expect(Number.parseFloat(edge.borderTopWidth)).toBeGreaterThanOrEqual(1);
+    await expect(
+      contrastOf(rgbOf(edge.borderTopColor), rgbOf(getComputedStyle(card).backgroundColor)),
+    ).toBeGreaterThanOrEqual(3);
   },
 };

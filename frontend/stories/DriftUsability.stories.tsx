@@ -202,7 +202,7 @@ export const CheckAgainBesideTheStaleBanner: Story = {
 /* Finding 13: Pause model calls is one press from the card's head in every state, inside Drift settings; the
    copy in What is sent closes its popover when pressed, and the head then offers Resume. Finding 12: the count
    says what it counts. */
-export const PauseInTheHeadAndThePopoverCloses: Story = {
+export const PauseInTheHeadAndTheDisclosureCloses: Story = {
   ...scenario({
     session: TWO_DEPARTURES,
     facts: [PERSON, PASSED, AGENT],
@@ -222,8 +222,11 @@ export const PauseInTheHeadAndThePopoverCloses: Story = {
     await userEvent.click(settings);
     await expect(drift).toHaveTextContent('2 drift checks requested');
     await expect(drift.textContent).not.toContain('model requests');
-    await userEvent.click(within(drift).getByRole('button', { name: /^What is sent/ }));
-    const sent = await within(document.body).findByRole('dialog', { name: /^What is sent/ });
+    const summary = within(drift).getByRole('button', { name: /^What is sent/ });
+    await userEvent.click(summary);
+    const sent = document.getElementById(
+      summary.getAttribute('aria-controls') ?? '',
+    ) as HTMLElement;
     const inside = await waitFor(() => {
       const found = within(sent).getByRole('button', { name: 'Pause model calls' });
       expect(found).toBeVisible();
@@ -234,7 +237,7 @@ export const PauseInTheHeadAndThePopoverCloses: Story = {
       expect(
         within(document.body)
           .queryAllByRole('button', { name: /model calls/ })
-          .filter((node) => node.closest('[data-slot="popover-content"]'))
+          .filter((node) => node.closest('[data-slot="accordion-content"]'))
           .filter((node) => node.checkVisibility()),
       ).toEqual([]),
     );

@@ -5,6 +5,7 @@ import { rowState } from './rows';
 import declared from '../../test/fixtures/declared-sessions.json';
 import liveBoard from '../../test/fixtures/client-contract/data-live-row.json';
 import { observe } from '../observed';
+import { GLOSSARY } from '../language/glossary';
 
 const NOW = 5000;
 const board = (sessions: unknown[], extra: Record<string, unknown> = {}) => ({
@@ -31,6 +32,68 @@ const rows = (group: string) =>
   ].map(
     (row) => `${row.getAttribute('data-next-harness')}/${row.getAttribute('data-next-session')}`,
   );
+
+it('explains the filter counts and published history window in place', async () => {
+  await open(
+    board([{ harness: 'claude', sid: 'a', project: 'p', state: 'idle' }], {
+      window_hours: 24,
+      annotate: true,
+    }),
+  );
+  expect(screen.getByRole('heading', { name: 'Earlier in the last 24 hours' })).toBeVisible();
+  for (const [name, sentences] of [
+    [
+      GLOSSARY.howFilterCountsWork.plain,
+      [
+        'Each number beside an option is how many sessions with that value your other filters keep.',
+        'Choices inside one filter widen the list; separate filters and the search narrow it.',
+        'A session that does not publish a value is counted under its own option, never as zero and never as older.',
+        'Active now and Working above always count the whole board.',
+      ],
+    ],
+    [
+      GLOSSARY.howSessionHistoryWorks.plain,
+      [
+        'Recently observed is not proof the harness process is still open or closed; rows marked Ended reported their own end.',
+        'Blocked sessions lead, followed by recorded departures, then working sessions.',
+        'The Active now figure counts active evidence only; a recorded departure adds no active session.',
+        'Your first prompt, or your latest where the first is not published, comes from Claude Code or Codex; other harnesses show only your typed words.',
+        'A goal marked from your prompt was adopted by you; showing a prompt alone adopts nothing, and the progress pill names a recorded departure.',
+      ],
+    ],
+  ] as const) {
+    const trigger = screen.getByRole('button', { name });
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(trigger);
+    const panel = document.getElementById(trigger.getAttribute('aria-controls') ?? '');
+    for (const sentence of sentences)
+      expect(panel?.textContent?.replace(/\s+/g, ' ')).toContain(sentence);
+  }
+});
+
+it('shows a three-day-old row in all history without a 24-hour heading', async () => {
+  await open({
+    generated: 73 * 3600,
+    show_all: true,
+    window_hours: 24,
+    sessions: [{ harness: 'codex', sid: 'old', project: 'p', state: 'ended', ended_at: 3600 }],
+  });
+  expect(rows('history')).toEqual(['codex/old']);
+  expect(screen.getByRole('heading', { name: 'Session history' })).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'Earlier in the last 24 hours' })).toBeNull();
+});
+
+it('explains what disappears from session history when annotations are off', async () => {
+  await open(
+    board([{ harness: 'claude', sid: 'a', project: 'p', state: 'idle' }], { annotate: false }),
+  );
+  fireEvent.click(screen.getByRole('button', { name: GLOSSARY.howSessionHistoryWorks.plain }));
+  expect(
+    screen.getByText(
+      'Annotations are off, so goals cannot be typed and progress pills are not shown.',
+    ),
+  ).toBeVisible();
+});
 
 describe('what the screen says when it has nothing to draw', () => {
   it('says the first payload has not arrived rather than drawing an empty board', async () => {
@@ -423,7 +486,7 @@ describe('a redraw leaves the reader’s place alone', () => {
   it('keeps the row nodes, an open caveat and a focused link across a poll that changes the rows', async () => {
     const page = await open(data);
     const alpha = document.querySelector('article[data-next-session="a"]');
-    const summary = screen.getByRole('button', { name: 'How Intent and drift works' });
+    const summary = screen.getByRole('button', { name: GLOSSARY.howSessionHistoryWorks.plain });
     fireEvent.click(summary);
     summary.focus();
     await page.poll(
@@ -532,7 +595,7 @@ describe('the Sessions first step', () => {
     },
     { annotate: true, reading_routes: { claude: { provider: '' } } },
   ])(
-    'keeps a truthful orientation and how-to when analysis is unavailable: %j',
+    'keeps a truthful orientation and history explanation when analysis is unavailable: %j',
     async (capabilities) => {
       await open(
         board([{ harness: 'claude', sid: 'a', project: 'p', state: 'idle' }], capabilities),
@@ -543,7 +606,7 @@ describe('the Sessions first step', () => {
       );
       expect(document.querySelectorAll('.next-operations-header > p')).toHaveLength(1);
       expect(
-        screen.getByRole('button', { name: 'How Intent and drift works' }),
+        screen.getByRole('button', { name: GLOSSARY.howSessionHistoryWorks.plain }),
       ).toBeInTheDocument();
     },
   );
@@ -560,7 +623,7 @@ describe('the Sessions first step', () => {
     expect(document.querySelectorAll('.next-operations-header > p')).toHaveLength(1);
   });
   it.each([false, true])(
-    'keeps orientation and the shared how-to when a checked session exists: %s',
+    'keeps orientation and the history explanation when a checked session exists: %s',
     async (checked) => {
       await open(
         board(
@@ -578,7 +641,7 @@ describe('the Sessions first step', () => {
       );
       expect(document.querySelector('[data-next-sessions-orientation]')).toBeInTheDocument();
       expect(
-        screen.getByRole('button', { name: 'How Intent and drift works' }),
+        screen.getByRole('button', { name: GLOSSARY.howSessionHistoryWorks.plain }),
       ).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'How rows are split' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Goal sources' })).toBeNull();

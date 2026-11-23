@@ -487,8 +487,8 @@ export function ReadingNotice() {
   );
 }
 
-/* What is sent, in one place on the card whatever its state: a disclosure that opens over the page and moves
-   nothing, with the off switch inside it. The route's words, and the notice the last request recorded where
+/* What is sent, in one place on the card whatever its state: a disclosure that opens in the card with
+   the off switch inside it. The route's words, and the notice the last request recorded where
    this tab holds one, are the same disclosure. Its summary names the receiver while a press would record a
    new notice, and always on a fallback route, whose receiver is a second provider. */
 export function WhatIsSent({ about = '' }: { readonly about?: string }) {
@@ -508,7 +508,7 @@ export function WhatIsSent({ about = '' }: { readonly about?: string }) {
     <SampleBeside id="sent">
       <Why
         name="reading-sent"
-        pop
+        searchable={false}
         summary={
           route?.['fallback'] === true || route?.['notice_due'] === true
             ? `What is sent to ${receiver}`

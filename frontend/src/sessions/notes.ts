@@ -14,10 +14,10 @@ export const BOARD_WHY =
   'Blocked sessions lead, followed by recorded departures, then working sessions. The Active now figure counts active evidence only; a recorded departure adds no active session.';
 
 export const GOAL_SOURCES_ON =
-  'Your first prompt, or your latest where the first is not published, comes from Claude Code or Codex; other harnesses show only your typed words. A goal marked from your prompt was adopted by you; showing a prompt alone adopts nothing, and Drift names a recorded departure.';
+  'Your first prompt, or your latest where the first is not published, comes from Claude Code or Codex; other harnesses show only your typed words. A goal marked from your prompt was adopted by you; showing a prompt alone adopts nothing, and the progress pill names a recorded departure.';
 
 export const GOAL_SOURCES_OFF =
-  'Annotations are off, so goals cannot be typed and Drift marks are not shown.';
+  'Annotations are off, so goals cannot be typed and progress pills are not shown.';
 
 export const RECENT_WHY =
-  'Recently observed is not proof the harness process is still open or closed; rows marked ENDED reported their own end.';
+  'Recently observed is not proof the harness process is still open or closed; rows marked Ended reported their own end.';

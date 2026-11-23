@@ -181,11 +181,11 @@ describe('a refusal is a state', () => {
   });
 });
 
-/* What is sent, as the disclosure holds it: the popover's panel is in the page while it is closed. */
+/* The accordion keeps its answer findable while closed. */
 const sentText = () =>
-  [...document.querySelectorAll('[data-slot="popover-content"]')]
-    .map((node) => node.textContent ?? '')
-    .join(' ');
+  document.querySelector(
+    '[data-next-session-drift] [data-slot="accordion-content"]:has([data-next-reading-prompt-limit])',
+  )?.textContent ?? '';
 
 describe('notices and the durable off switch', () => {
   const fresh = {
