@@ -3,8 +3,8 @@ import 'vitest';
 
 declare module 'vitest' {
   interface Assertion<T> {
-    toBeInTheDocument: TestingLibraryMatchers<T, void>['toBeInTheDocument'];
-    toBeVisible: TestingLibraryMatchers<T, void>['toBeVisible'];
-    toHaveAccessibleDescription: TestingLibraryMatchers<T, void>['toHaveAccessibleDescription'];
+    toBeInTheDocument: TestingLibraryMatchers<void, T>['toBeInTheDocument'];
+    toBeVisible: TestingLibraryMatchers<void, T>['toBeVisible'];
+    toHaveAccessibleDescription: TestingLibraryMatchers<void, T>['toHaveAccessibleDescription'];
   }
 }

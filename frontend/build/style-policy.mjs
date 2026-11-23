@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { isDeepStrictEqual } from 'node:util';
 import { loadCsf } from 'storybook/internal/csf-tools';
-import ts from 'typescript';
+import ts from '@typescript/typescript6';
 import { __unstable__loadDesignSystem } from 'tailwindcss';
 
 const utilityTypes = await __unstable__loadDesignSystem('@theme { --spacing: 0.25rem; }');
