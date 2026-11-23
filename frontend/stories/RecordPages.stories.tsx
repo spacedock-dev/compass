@@ -11,6 +11,7 @@ import { fakeRouterEnvironment } from '../src/router/testing';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
 import { openSessionTechnicalTab } from './sessionTechnical';
+import { settledLayout } from './settled-layout';
 
 const meta = {
   title: 'Drift/Record pages',
@@ -280,19 +281,14 @@ export const ReaderAppendsOlderEntries: Story = {
       top: button.getBoundingClientRect().top + window.scrollY - 200,
       behavior: 'instant',
     });
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-    );
-    const offset = window.scrollY;
+    const offset = await settledLayout(() => window.scrollY);
     await userEvent.click(button);
     await waitFor(() =>
       expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(100),
     );
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-    );
+    const after = await settledLayout(() => window.scrollY);
     await expect(document.activeElement).toBe(button);
-    await expect(window.scrollY).toBe(offset);
+    await expect(after).toBe(offset);
     await expect(canvas.getByText('Numbers count from the oldest entry loaded.')).toBeVisible();
     await expect(canvasElement.querySelector('[data-next-entry-id]')).toHaveAttribute(
       'data-next-entry',

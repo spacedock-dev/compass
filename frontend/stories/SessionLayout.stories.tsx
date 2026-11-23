@@ -16,6 +16,7 @@ import { WAITING_ANSWER_WHERE } from '../src/sessions/WaitingBlock';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
 import { routeOf } from './drift.scenario';
+import { settledLayout, settledRect } from './settled-layout';
 
 /* The session page as one column (owner, 2026-10-19): the header, the answer block when the session needs
    input, the Intent card, the What the session has done card, the Drift card and Activity log, collapsed.
@@ -619,26 +620,26 @@ export const HoldsControlUnderPointer: Story = {
       await userEvent.unhover(control);
       await userEvent.hover(control);
     }
-    const before = control.getBoundingClientRect().top;
-    const scrollBefore = window.scrollY;
+    const before = (await settledRect(control)).top;
+    const scrollBefore = await settledLayout(() => window.scrollY);
     log.asking = true;
     (canvas.getByRole('button', { name: 'Simulate board poll' }) as HTMLButtonElement).click();
     await waitFor(() =>
       expect(canvasElement.querySelector('.next-session-ask-question')).not.toBeNull(),
     );
-    await waitFor(() =>
-      expect(Math.abs(control.getBoundingClientRect().top - before)).toBeLessThan(1.5),
+    await waitFor(async () =>
+      expect(Math.abs((await settledRect(control)).top - before)).toBeLessThan(1.5),
     );
     // Content leaving above moves it back the same way, so a press never lands on what slid under it.
-    const grown = window.scrollY;
+    const grown = await settledLayout(() => window.scrollY);
     await expect(grown).toBeGreaterThan(scrollBefore);
     log.asking = false;
     (canvas.getByRole('button', { name: 'Simulate board poll' }) as HTMLButtonElement).click();
     await waitFor(() =>
       expect(canvasElement.querySelector('.next-session-ask-question')).toBeNull(),
     );
-    await waitFor(() =>
-      expect(Math.abs(control.getBoundingClientRect().top - before)).toBeLessThan(1.5),
+    await waitFor(async () =>
+      expect(Math.abs((await settledRect(control)).top - before)).toBeLessThan(1.5),
     );
   },
 };

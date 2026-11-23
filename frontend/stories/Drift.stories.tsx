@@ -27,6 +27,7 @@ import {
 import { REASON_CASES, routeFor } from './drift.reasons';
 import { neverDone, noCheckMark } from './drift.checks';
 import { openInFlow } from './disclosure.flow';
+import { settledLayout } from './settled-layout';
 
 /* The Intent and drift card, held by stage, by harness and by route. Each story mounts the real page over a
    scripted backend and asserts what a reader sees: the words the card prints and the controls it draws. The
@@ -83,13 +84,13 @@ export const SentAndSettingsStayInFlow: Story = {
     const title = inCard.getByRole('heading', { name: 'Is it on track?' });
     const answer = await inCard.findByText('No goal yet');
     const answerOffset = () =>
-      answer.getBoundingClientRect().top - title.getBoundingClientRect().top;
-    const before = answerOffset();
+      settledLayout(() => answer.getBoundingClientRect().top - title.getBoundingClientRect().top);
+    const before = await answerOffset();
     await userEvent.click(settings);
     await waitFor(() =>
       expect(within(canvasElement).getByRole('tabpanel', { name: 'Activity log' })).toBeVisible(),
     );
-    await expect(Math.abs(answerOffset() - before)).toBeLessThan(2);
+    await expect(Math.abs((await answerOffset()) - before)).toBeLessThan(2);
     await userEvent.click(settings);
     const sent = await inCard.findByRole('button', { name: /^What is sent/ });
     await openInFlow(sent, settings);
