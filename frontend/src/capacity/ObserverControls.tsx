@@ -12,7 +12,7 @@ import { resumeModelCalls, turnOffReadings } from '../api/readings';
 import { isRecord } from '../observed';
 import { ModelNotice } from '../drift/ModelNotice';
 import { noticeAnnouncement, noticeLabel } from '../drift/notice';
-import { MODEL_PAUSE_EXPLANATION, READINGS_OFF_CONSOLE } from '../drift/sentences';
+import { MODEL_PAUSE_EXPLANATION, READINGS_OFF } from '../drift/sentences';
 import { heldFor, useConsent } from './held';
 import './capacity.css';
 
@@ -78,7 +78,7 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
   const summarize = () => {
     setRefused(null);
     if (selectObserverOff(runtime.store.getSnapshot(), key, identity)) {
-      setRefused(READINGS_OFF_CONSOLE);
+      setRefused(READINGS_OFF);
       return;
     }
     const now: ProjectContext['observer_model'] | null = selectObserverModel(
@@ -179,7 +179,7 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
     </>
   );
   const status = off
-    ? READINGS_OFF_CONSOLE
+    ? READINGS_OFF
     : declined
       ? SUMMARIES_DECLINED
       : pending

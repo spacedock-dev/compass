@@ -58,7 +58,10 @@ export const PendingDirectionAndPauseKeepLatestOutcome: Story = {
     const root = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     const progress = within(root);
     await expect(await progress.findByRole('button', { name: 'Leave it' })).toBeVisible();
-    await expect(root).toHaveTextContent('Model calls are paused');
+    await expect(
+      progress.getByText('AI use is paused. Nothing is sent until you resume.'),
+    ).toBeVisible();
+    await expect(root).not.toHaveTextContent('Model calls are paused');
     await expect(
       await progress.findByText(LONG_INCOMPLETE_SENTENCE, { exact: false }),
     ).toBeVisible();

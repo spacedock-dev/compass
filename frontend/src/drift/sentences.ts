@@ -767,7 +767,6 @@ export const STORE_UNREADABLE_PRESS =
 export const NOTICE_SENT = 'This request sends:';
 export const NOTICE_WORDS = "The session's words, without the agent's messages.";
 export const NOTICE_WORDS_AND_MESSAGES = "The session's words and the agent's messages.";
-export const READINGS_OFF_CONSOLE = READINGS_OFF;
 export const noticeProvider = (label: string): string => `Provider: ${label}`;
 export const noticeDestination = (destination: string): string =>
   `Words go to: ${destination || 'destination not published'}`;
