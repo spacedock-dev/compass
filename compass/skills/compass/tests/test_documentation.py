@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import importlib
 import io
 import json
 import os
 import re
 import shlex
 import tempfile
+import time
 import unittest
 from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
+from unittest import mock
 
 from compass_runtime import (
     aggregate,
@@ -25,6 +28,8 @@ from compass_runtime import (
     reading,
     semantic_history,
     terminal_client,
+    terminal_drift,
+    terminal_sessions,
 )
 from compass_runtime import config as runtime_config
 from compass_runtime import events as runtime_events
@@ -35,6 +40,8 @@ from .support import (
     SERVER_PATH,
     make_config,
 )
+from .test_terminal_drift import drift, stored
+from .test_terminal_sessions import PAYLOAD as SESSIONS_PAYLOAD
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -301,6 +308,108 @@ class TerminalActionsMatchTheClientTest(unittest.TestCase):
             self.assertIn(phrase, section)
 
 
+class TerminalGuideTest(unittest.TestCase):
+    def test_terminal_output_fixtures_and_wording_are_public(self) -> None:
+        fixtures = SERVER_PATH.parents[3] / "frontend" / "test" / "fixtures"
+        names = (
+            "session-groups",
+            "terminal-wording",
+            "terminal-project",
+            "terminal-project-fo",
+            "terminal-goal",
+        )
+        output = [
+            *((fixtures / f"{name}.json").read_text(encoding="utf-8") for name in names),
+            *terminal_client.SENTENCES.values(),
+            *terminal_client.FOOTER_LEVELS.values(),
+            *terminal_drift.LEVEL_NAMES.values(),
+        ]
+        with tempfile.TemporaryDirectory(prefix="compass-terminal-output-") as directory:
+            draft = Path(directory) / "terminal-output.txt"
+            draft.write_text("\n".join(output), encoding="utf-8")
+            validate_plugins = importlib.import_module("scripts.validate_plugins")
+            self.assertEqual(0, validate_plugins.check_public_text(draft))
+
+    def test_the_guide_names_the_boards_controls_and_links_to_navigation(self) -> None:
+        root = SERVER_PATH.parents[3]
+        guide = (root / "HOW_TO_USE_TERMINAL.md").read_text(encoding="utf-8")
+        for word in ("Pause all AI use", "Resume AI use", "Check progress"):
+            self.assertIn(word, guide)
+        body = " ".join(line for line in guide.casefold().splitlines() if not line.startswith("#"))
+        for retired in (
+            "Active now",
+            "Recent history",
+            "Idle",
+            "Finished",
+            "None or low",
+            "Medium",
+            "High",
+            "Extreme",
+            "Not enough recorded yet",
+            "Pause model calls",
+            "Resume model calls",
+            "Analyze drift",
+            "Analyze again",
+            "Mark as inaccurate",
+            "Full activity",
+            "Intent card",
+            "Intent log",
+        ):
+            with self.subTest(retired=retired):
+                word = re.escape(retired.casefold())
+                without_one_parenthesis = re.sub(
+                    rf"\({word}\)", "", " ".join(body.split()), count=1
+                )
+                self.assertNotRegex(without_one_parenthesis, rf"\b{word}\b")
+        self.assertIn("docs/how-it-works.md#finding-your-way-around", guide)
+        self.assertIn("## Finding your way around", (root / "docs/how-it-works.md").read_text())
+
+    def test_the_terminal_guide_samples_come_from_the_commands(self) -> None:
+        guide = (SERVER_PATH.parents[3] / "HOW_TO_USE_TERMINAL.md").read_text(encoding="utf-8")
+        examples = {
+            "f6a7b8c9": {
+                "title": "Tidy the release notes",
+                "first_prompt": "Draft the notes for the next release.",
+            },
+            "a1b2c3d4": {
+                "title": "Wire the parser",
+                "first_prompt": "Add a config parser with tests.",
+                "state_detail": "running the parser tests",
+            },
+            "d4e5f6a7": {
+                "title": "Paginate the list endpoint",
+                "first_prompt": "Add a page cursor to the API response.",
+            },
+        }
+        payload = {
+            **SESSIONS_PAYLOAD,
+            "sessions": [
+                row | examples[row["sid"]]
+                for row in SESSIONS_PAYLOAD["sessions"]
+                if row["sid"] in examples
+            ],
+        }
+        sessions = "\n".join(
+            terminal_sessions.render_sessions(terminal_sessions.list_payload(payload))
+        )
+        with self.subTest(example="sessions"):
+            self.assertIn(f"```text\n{sessions}\n```", guide)
+        # Give the real terminal formatter a stable local zone even on systems without tzset.
+        with mock.patch.object(time, "localtime", time.gmtime):
+            code, out, err = drift(stored())
+        self.assertEqual((0, ""), (code, err))
+        with self.subTest(example="progress check"):
+            self.assertIn(f"```text\n{out.rstrip()}\n```", guide)
+        with self.subTest(example="entry number"):
+            citation = re.search(r"Numbers such as `(#\d+)`", guide)
+            self.assertIsNotNone(citation)
+            assert citation is not None
+            self.assertRegex(out, rf"entries .*{re.escape(citation[1])}(?![\d.])")
+        quota = {"rate_limits": {"five_hour": {"used_percentage": 82, "resets_at": 7741}}}
+        footer = terminal_client.compose_footer(quota, terminal_client.Line(2, ("Droid",), True), 1)
+        self.assertIn(f"`{footer}`", guide)
+
+
 class RuntimeDecisionCitationsTest(unittest.TestCase):
     def test_runtime_pointers_resolve(self) -> None:
         root = SERVER_PATH.parents[3]
@@ -415,8 +524,14 @@ DOC_VOCABULARY_FILES = (
     "docs/promise-map.md",
     "COMPATIBILITY.md",
     "HOW_TO_USE.md",
+    "HOW_TO_USE_TERMINAL.md",
     "MANUAL.md",
     "SECURITY.md",
+    "compass/skills/compass/SKILL.md",
+    "compass/skills/compass/reference/dashboard.md",
+    "compass/skills/compass/reference/intent-and-drift.md",
+    "compass/skills/compass/reference/notifications.md",
+    "compass/skills/compass/reference/options.md",
 )
 
 # The Replaces column also records redesign notes. See sync-docs check (f).
@@ -474,17 +589,6 @@ _DOC_LABEL_TYPE = (
 _DOC_LABEL_BEFORE = re.compile(rf"\b{_DOC_LABEL_TYPE}(?:\s+is)?\s*$", re.IGNORECASE)
 _DOC_LABEL_AFTER = re.compile(rf"^\s+{_DOC_LABEL_TYPE}\b", re.IGNORECASE)
 _DOC_LABEL_END = re.compile(r"""^\s*(?:$|[.,;:!?'"\])|]|\b(?:in|on|to|under)\b)""")
-# DRC-5510 owns these terminal descriptions. Keep checking the surrounding prose.
-_DOC_PENDING_TERMINAL_WORDS = {
-    "HOW_TO_USE.md": (
-        "Resume\n  model calls on the board clears it on the next footer refresh.",
-        "counts the needs on the board's Attention queue other than the session the line is in:",
-    ),
-    "MANUAL.md": (
-        "other needs on the Attention queue (sessions waiting on you and pending asks)",
-        "groups and words: **Active now** (working, waiting on you,",
-    ),
-}
 
 
 def _label_alternatives(labels: set[str]) -> str:
@@ -565,18 +669,49 @@ def _has_document_label_context(visible: str, match: re.Match[str]) -> bool:
     )
 
 
-def _document_vocabulary_errors(document: str) -> list[str]:
+_BOARD_GLOSSARY_HEADING = "## Words on the board"
+_BOARD_GLOSSARY_HEADER = ("| Board name | Earlier wording | What it means |", "|---|---|---|")
+_DASHBOARD_REFERENCE = "compass/skills/compass/reference/dashboard.md"
+
+
+def _earlier_board_wording(former: str) -> str:
+    if former == "Keeps current label":
+        return "Same wording"
+    return f"({former.removeprefix('Generic ')})"
+
+
+def _mask_board_glossary_aliases(block: str) -> str:
+    """Exempt agreed aliases in the Earlier wording cells, keeping the rest scannable."""
+    lines = block.splitlines()
+    if tuple(lines[:2]) != _BOARD_GLOSSARY_HEADER:
+        return block
+    glossary = dict(_glossary_words())
+    for index, line in enumerate(lines[2:], start=2):
+        cells = line.split("|")
+        if len(cells) != 5 or cells[0].strip() or cells[-1].strip():
+            break
+        label, former = (cell.strip() for cell in cells[1:3])
+        if label in glossary and former == _earlier_board_wording(glossary[label]):
+            cells[2] = " " * len(cells[2])
+            lines[index] = "|".join(cells)
+    return "\n".join(lines)
+
+
+def _document_vocabulary_errors(document: str, *, allow_board_glossary: bool = False) -> list[str]:
     labels, parenthetical, retired, contextual = _document_labels()
     lines = document.splitlines()
     seen_current: set[str] = set()
     used_former_names: set[str] = set()
     violations = []
+    in_board_glossary = False
     for start, block in _doc_blocks(lines):
         if _DOC_HEADING.match(block):
             seen_current.clear()
             used_former_names.clear()
+            in_board_glossary = allow_board_glossary and block == _BOARD_GLOSSARY_HEADING
             continue
-        visible = _DOC_LINE_BREAK.sub(" ", _DOC_MARKUP.sub(_doc_text, block))
+        prose = _mask_board_glossary_aliases(block) if in_board_glossary else block
+        visible = _DOC_LINE_BREAK.sub(" ", _DOC_MARKUP.sub(_doc_text, prose))
         pair_span = exempt = None
         for match in labels.finditer(visible):
             label = " ".join(match[0].split())
@@ -612,10 +747,19 @@ class DocumentVocabularyTest(unittest.TestCase):
                 "docs/promise-map.md",
                 "COMPATIBILITY.md",
                 "HOW_TO_USE.md",
+                "HOW_TO_USE_TERMINAL.md",
                 "MANUAL.md",
                 "SECURITY.md",
             },
             set(DOC_VOCABULARY_FILES),
+        )
+
+    def test_the_guard_covers_every_bundled_reference(self) -> None:
+        root = SERVER_PATH.parents[3]
+        skill = root / "compass/skills/compass"
+        shipped = (skill / "SKILL.md", *(skill / "reference").glob("*.md"))
+        self.assertLessEqual(
+            {path.relative_to(root).as_posix() for path in shipped}, set(DOC_VOCABULARY_FILES)
         )
 
     def test_retired_names_and_their_exceptions(self) -> None:
@@ -638,12 +782,6 @@ class DocumentVocabularyTest(unittest.TestCase):
             ),
             ("ambiguous former name in its pair", "Open Needs you (Attention).", []),
             ("ambiguous wrong pair", "Open Goal (Attention).", [1]),
-            ("first mention", "Press Check progress (Analyze drift).", []),
-            (
-                "same section",
-                "Check progress (Analyze drift).\n\nCheck progress (Analyze drift).",
-                [3],
-            ),
             (
                 "same retirement with different labels",
                 "Right now (Active now). Working now (Active now).",
@@ -654,6 +792,24 @@ class DocumentVocabularyTest(unittest.TestCase):
                 "Right now (Active now).\n\n## Count\n\nWorking now (Active now).",
                 [],
             ),
+            ("diagram line break", '   ```mermaid\nA["Press Analyze<br/>drift"]\n```', [2]),
+            ("wrapped parenthesis", "Press **Check progress**\n(Analyze drift).", []),
+            (
+                "pipe in prose",
+                "Press Check progress | (Analyze drift).",
+                [1],
+            ),
+            (
+                "multiple aliases in prose",
+                "Press Check progress again (Analyze again, Check again).",
+                [1, 1],
+            ),
+            ("first mention", "Press Check progress (Analyze drift).", []),
+            (
+                "same section",
+                "Check progress (Analyze drift).\n\nCheck progress (Analyze drift).",
+                [3],
+            ),
             ("anchored heading", "## Intent log\n\nOpen Intent log.", [3]),
             (
                 "security anchor",
@@ -663,11 +819,9 @@ class DocumentVocabularyTest(unittest.TestCase):
             ("commands", "Use `--pause-model-calls` or `$compass drift`.", []),
             ("ordinary words", "This can pause model calls.", []),
             ("diagram", '```mermaid\nA["Press Analyze drift"]\n```', [2]),
-            ("diagram line break", '```mermaid\nA["Press Analyze<br/>drift"]\n```', [2]),
             ("inline code", "Press `Analyze drift`.", [1]),
             ("wrapped control", "Press Analyze\ndrift.", [1]),
             ("wrapped first mention", "Press **Check progress** (Analyze\ndrift).", []),
-            ("wrapped parenthesis", "Press **Check progress**\n(Analyze drift).", []),
             ("wrong label", "Open Goal (Analyze drift).", [1]),
             (
                 "different sections",
@@ -681,17 +835,123 @@ class DocumentVocabularyTest(unittest.TestCase):
                 actual = _document_vocabulary_errors(document)
                 self.assertEqual(expected, [int(error.split(":", 1)[0]) for error in actual])
 
+    def test_only_the_glossary_table_can_repeat_known_aliases(self) -> None:
+        heading = "## Words on the board\n\n"
+        header = "\n".join((*_BOARD_GLOSSARY_HEADER, ""))
+        rows = (
+            "| Waiting on you | (Needs input, Needs you now) | A gate is open. |\n"
+            "| No goal yet | (Not checked) | Add a goal. |\n"
+            "| Not checked yet | (Not checked) | Check progress. |\n"
+        )
+        self.assertEqual(
+            _document_vocabulary_errors(heading + header + rows, allow_board_glossary=True), []
+        )
+        for text in (
+            heading + rows,
+            "## Elsewhere\n\n" + header + rows,
+            heading + header + rows.replace("Needs input, Needs you now", "Analyze drift"),
+            heading + header + rows.replace("A gate is open.", "Press Analyze drift."),
+            heading + header + rows + "\nPress Analyze drift.\n",
+        ):
+            with self.subTest(text=text):
+                self.assertTrue(_document_vocabulary_errors(text, allow_board_glossary=True))
+        self.assertTrue(_document_vocabulary_errors(heading + header + rows))
+
     def test_public_documents_use_the_glossary(self) -> None:
         root = SERVER_PATH.parents[3]
         for relative in DOC_VOCABULARY_FILES:
             with self.subTest(file=relative):
                 document = (root / relative).read_text(encoding="utf-8")
                 self.assertNotRegex(document, PUBLIC_TRACKER_TOKENS)
-                prose = document
-                for literal in _DOC_PENDING_TERMINAL_WORDS.get(relative, ()):
-                    prose = prose.replace(literal, re.sub(r"[^\n]", " ", literal), 1)
-                errors = _document_vocabulary_errors(prose)
+                if relative == _DASHBOARD_REFERENCE:
+                    # The old Needs you view still ships this heading. Its own redesign
+                    # updates the bundled reference and removes this occurrence.
+                    heading = "Also at risk, off the session count"
+                    view = (root / "frontend/src/attention/AttentionView.tsx").read_text(
+                        encoding="utf-8"
+                    )
+                    if f">{heading}</Heading>" in view:
+                        old = "\n## Needs you\n\nThe Needs you brief counts"
+                        start = document.find(old)
+                        legacy = f"**{heading}** holds quota pressure,"
+                        if start != -1:
+                            prefix, section = document[:start], document[start:]
+                            document = prefix + section.replace(legacy, " " * len(legacy), 1)
+                errors = _document_vocabulary_errors(
+                    document, allow_board_glossary=relative == _DASHBOARD_REFERENCE
+                )
                 self.assertFalse(errors, "\n".join(f"{relative}:{error}" for error in errors))
+
+    def test_cli_help_uses_the_board_words_without_tracker_references(self) -> None:
+        help_text = cli.build_parser().format_help()
+        self.assertNotRegex(help_text, PUBLIC_TRACKER_TOKENS)
+        self.assertEqual(_document_vocabulary_errors(help_text), [])
+        flat = " ".join(help_text.split())
+        self.assertNotIn("finished lately", flat)
+        for phrase in (
+            "Check progress is pressed",
+            "Is it on track?",
+            "Allow Codex to run unasked checks",
+            "Pause all AI use",
+            "Resume AI use",
+            "print a session's progress check",
+            "list the sessions running now and those that ended lately",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, flat)
+
+    def test_words_on_the_board_carries_the_ruled_states_levels_and_absences(self) -> None:
+        root = SERVER_PATH.parents[3]
+        dashboard = (root / _DASHBOARD_REFERENCE).read_text(encoding="utf-8")
+        heading = f"\n{_BOARD_GLOSSARY_HEADING}\n"
+        self.assertIn(heading, dashboard)
+        table = dashboard.split(heading, 1)[1].split("\n## ", 1)[0]
+        # The session card uses Can't tell for unreadable stores and failed checks as well
+        # as the goal-only reading described in Help.
+        expected_meanings = {
+            "Working": "The agent is working.",
+            "Waiting on you": "The session needs your input or approval to continue.",
+            "Quiet": "The agent finished its turn and is waiting for your next message.",
+            "Ended": "The session reported that it ended.",
+            "Worth a look": (
+                "A flag for a session that may need a closer look, "
+                "such as one that ended with uncommitted work."
+            ),
+            "State not published": "Compass has no published state for this session.",
+            "Waiting on child": "Compass has evidence that a linked child is still working.",
+            "Read by scanning: no turn end can be observed here": (
+                "A scan reports activity without evidence of whether the turn ended."
+            ),
+            "On track": "No departure found in what Compass read",
+            "Slightly off course": "Some work wandered from the goal.",
+            "Off course": "The work no longer serves the goal.",
+            "Way off course": "The work has gone far from the goal.",
+            "No goal yet": "Add a goal to give Compass something to read against.",
+            "Not checked yet": "Check progress to ask Compass to read the record against the goal.",
+            "Too early to tell": "The session has recorded too little for a reading.",
+            "Can't tell": (
+                "Compass couldn't establish progress. The card gives the reason, such as an "
+                "unreadable saved check, a failed check or too little evidence."
+            ),
+            "Goal too vague to check": "Say what should be true when the work is done.",
+            "Out of date": "The earlier reading no longer describes the evidence Compass can use.",
+        }
+        glossary = dict(_glossary_words())
+        expected_names = [
+            (word, _earlier_board_wording(glossary[word])) for word in expected_meanings
+        ]
+        rows = [
+            tuple(cell.strip() for cell in line.split("|")[1:-1])
+            for line in table.splitlines()
+            if line.startswith("|")
+        ]
+        self.assertEqual(
+            rows[:2], [("Board name", "Earlier wording", "What it means"), ("---", "---", "---")]
+        )
+        self.assertEqual([(word, former) for word, former, _ in rows[2:]], expected_names)
+        for word, _, meaning in rows[2:]:
+            with self.subTest(word=word):
+                self.assertEqual(meaning, expected_meanings[word])
 
 
 class DocumentationMatchesCodeTest(unittest.TestCase):
@@ -754,7 +1014,7 @@ class DocumentationMatchesCodeTest(unittest.TestCase):
                 self.assertRegex(
                     text,
                     r"(?i)no outcome line, Compass reads your goal's end state"
-                    r"[;,.] a goal too vague to read is\s+refused",
+                    r"[;.] a goal too vague to read is\s+refused",
                 )
         for relative in (
             "README.md",

@@ -700,7 +700,7 @@ class ReadinessTest(unittest.TestCase):
 
     def test_a_person_reads_one_sentence_for_each_known_refusal(self) -> None:
         for reason, words in (
-            ("paused", "paused"),
+            ("paused", "Live monitor cannot start while AI use is paused."),
             ("no-observer-model", "--no-observer-model"),
             ("ended", "ended"),
             ("settings-refused", "your Claude Code settings could send"),

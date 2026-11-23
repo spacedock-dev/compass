@@ -94,7 +94,7 @@ it.each([0, 1, 3])(
     render(<SummaryPage summary={raw} />);
     const region = await screen.findByRole('region', { name: 'Summary' });
     if (count) {
-      expect(shown.replaceAll('Full activity', 'Activity log')).toContain(unlinkedSentence(count));
+      expect(shown).toContain(unlinkedSentence(count));
       expect(within(region).getByText(unlinkedSentence(count))).toBeVisible();
     } else {
       expect(shown).not.toContain('cannot be opened from here');

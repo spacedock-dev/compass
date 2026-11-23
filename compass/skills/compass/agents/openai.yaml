@@ -1,4 +1,4 @@
 interface:
   display_name: "Compass"
-  short_description: "Live cartography of active coding-agent sessions"
+  short_description: "See which coding-agent sessions are waiting on you"
   default_prompt: "Use $compass to open the live agent cartography dashboard."

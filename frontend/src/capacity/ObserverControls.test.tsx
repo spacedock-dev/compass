@@ -179,7 +179,7 @@ describe('reader-started goal summaries', () => {
     expect(
       page.state.requests.filter((r) => r.method === 'POST' && r.path === '/api/reading')[0]?.body,
     ).toEqual({ consent: 'off', press: true, observer_model: 1 });
-    expect(text()).toContain('Model calls are paused.');
+    expect(text()).toContain('AI use is paused. Nothing is sent until you resume.');
     expect(action('request')).toBeNull();
   });
 
@@ -214,7 +214,7 @@ describe('reader-started goal summaries', () => {
       },
     });
     await page.settle();
-    expect(text()).toContain('Model calls are paused.');
+    expect(text()).toContain('AI use is paused. Nothing is sent until you resume.');
     expect(action('request')).toBeNull();
     expect(modelRequests(page)).toEqual([]);
   });

@@ -4,8 +4,8 @@ The recorded payload and the expected file are the ones `frontend/src/sessions/t
 checks the board against, so a pass here and a pass there mean the terminal and the board give one
 answer for the same payload.
 
-`session-groups.json` is the BOARD's output, committed by hand. It must never be regenerated from
-this module's port: a file the port wrote would agree with the port by construction and prove nothing.
+`session-groups.json` comes from the board. The frontend parity test documents how to generate a
+candidate from the mounted board.
 """
 
 from __future__ import annotations
@@ -32,7 +32,8 @@ GROUPS: dict[str, Any] = json.loads((FIXTURES / "session-groups.json").read_text
 EXPECTED: dict[str, Any] = GROUPS["board"]
 VOCABULARY: dict[str, Any] = json.loads((FIXTURES / "vocabulary.json").read_text(encoding="utf-8"))
 NOTHING = "Nothing is reported as waiting on you."
-LEVEL_WORDS = ("None or low", "Low", "Medium", "High", "Not enough recorded yet")
+PROGRESS = json.loads((FIXTURES / "terminal-wording.json").read_text(encoding="utf-8"))["drift"]
+DEPARTURES = {token: PROGRESS["levels"][token] for token in ("medium", "high", "extreme")}
 ESC = "\x1b"
 NASTY = f"plain {ESC}]52;c;QUJD\x07{ESC}[31mred{ESC}[0m \u202eevil\u2066 tail\x00\x08\x9b\n\tsecond line"
 
@@ -168,6 +169,8 @@ class ListProjectionTest(unittest.TestCase):
                 "sessions",
                 "harnesses",
                 "generated",
+                "window_hours",
+                "show_all",
                 "tripwires",
                 "ends_observable",
                 "ask",
@@ -197,6 +200,8 @@ class ListProjectionTest(unittest.TestCase):
             "resume_id",
             "state",
             "state_detail",
+            "acquisition",
+            "stored_progress",
             "wait_unconfirmed",
             "blocked_since",
             "title",
@@ -432,7 +437,7 @@ class SessionsRenderTest(unittest.TestCase):
     ) -> None:
         lines = self.render()
 
-        active, history = lines.index("Active now"), lines.index("Recent history")
+        active, history = (lines.index(label) for label in GROUPS["headings"][0]["labels"])
         self.assertLess(active, history)
         self.assertLess(lines.index(next(x for x in lines if "Wire the parser" in x)), history)
         self.assertGreater(lines.index(next(x for x in lines if "Idle and recent" in x)), history)
@@ -482,32 +487,81 @@ class SessionsRenderTest(unittest.TestCase):
         self.assertIn("3 changed entries", text)
         self.assertIn("2 changed entries", text)
 
-    def test_no_row_prints_a_drift_level_even_where_a_stored_reading_departs(self) -> None:
-        departing = {
-            "criteria": {
-                "goal": {"result": "departure", "cites": ["the third step"]},
-            },
-            "revision_read": 1,
-            "read_at": 1_899_999_000.0,
-        }
-        payload = with_rows(f6a7b8c9={"annotation_assessment": departing})
+    def test_group_headings_match_the_board_through_the_list_projection(self) -> None:
+        for heading in GROUPS["headings"]:
+            with self.subTest(heading=heading):
+                payload = {key: value for key, value in PAYLOAD.items() if key != "window_hours"}
+                labels = heading["labels"]
+                payload.update({key: value for key, value in heading.items() if key != "labels"})
+                lines = self.render(terminal_sessions.list_payload(payload))
+                self.assertLess(lines.index(labels[0]), lines.index(labels[1]))
 
-        text = "\n".join(self.render(payload))
+    def test_a_row_keeps_the_board_absences_and_declared_child_wording(self) -> None:
+        fixture = json.loads((FIXTURES / "declared-sessions.json").read_text(encoding="utf-8"))
+        payload = fixture["payload"]
+        payload["sessions"].append(
+            {
+                "sid": "scan",
+                "harness": "gemini",
+                "project": "demo",
+                "title": "Scan-only notes",
+                "state": "idle",
+                "acquisition": "scan-only",
+            }
+        )
+        text = "\n".join(self.render(terminal_sessions.list_payload(payload)))
+        self.assertIn('Waiting on child "Check build"', text)
+        self.assertIn("Child of Coordinate release", text)
+        self.assertIn("State not published", text)
+        self.assertIn("Read by scanning: no turn end can be observed here", text)
+        self.assertNotIn("helper", text.lower())
 
-        self.assertIn("Drift · ", text)
-        for word in LEVEL_WORDS:
-            self.assertNotIn(word, text)
-        self.assertNotIn("Medium or higher", text)
+    def test_only_a_validated_stored_departure_marks_a_session(self) -> None:
+        sid = "f6a7b8c9"  # The board already recorded a departure for this row.
+        for case in GROUPS["unpublishedProgress"]:
+            with self.subTest(case=case["name"]):
+                fields = {key: value for key, value in case.items() if key not in ("name", "mark")}
+                payload = terminal_sessions.list_payload(with_rows(**{sid: fields}))
+                text = "\n".join(self.render(payload))
+                self.assertTrue(all(f"  {word}" not in text for word in DEPARTURES.values()))
+                self.assertNotIn("Drift ·", text)
+        for token, word in DEPARTURES.items():
+            with self.subTest(token=token):
+                payload = terminal_sessions.list_payload(
+                    with_rows(**{sid: {"stored_progress": token}})
+                )
+                self.assertIn(f"  {word}", self.render(payload))
+                codex = with_rows(
+                    **{"019c0000-1111-7222-8333-444455557777": {"stored_progress": token}}
+                )
+                self.assertNotIn(f"  {word}", self.render(codex))
+        for token in ("none_or_low", "checked", "no-goal", "not_enough"):
+            with self.subTest(token=token):
+                self.assertTrue(
+                    all(
+                        row.drift is None
+                        for row in terminal_sessions.board(
+                            with_rows(**{sid: {"stored_progress": token}})
+                        ).active
+                    )
+                )
 
-    def test_a_departure_prints_its_age_against_the_payload_clock(self) -> None:
-        text = "\n".join(self.render())
-
-        self.assertIn("Drift · 10 minutes ago", text)
-
-    def test_a_departure_with_no_time_prints_that_its_age_is_unknown(self) -> None:
-        payload = with_rows(f6a7b8c9={"departures": [{"revision": 1}]})
-
-        self.assertIn("Drift · age unknown", "\n".join(self.render(payload)))
+    def test_annotation_availability_withholds_stored_progress_from_the_api_and_output(
+        self,
+    ) -> None:
+        sid = "f6a7b8c9"
+        source = with_rows(**{sid: {"stored_progress": "high"}})
+        for availability in (
+            {"annotate": False},
+            {"annotate": True, "annotate_unreadable": "Annotations store could not be read."},
+        ):
+            with self.subTest(availability=availability):
+                payload = source | availability
+                self.assertNotIn("  Off course", self.render(payload))
+                projected = terminal_sessions.list_payload(payload)
+                row = next(row for row in projected["sessions"] if row["sid"] == sid)
+                self.assertIsNone(row.get("stored_progress"))
+                self.assertNotIn("  Off course", self.render(projected))
 
     def test_a_command_prints_only_for_a_claude_or_codex_row_with_a_valid_published_id(
         self,
@@ -766,8 +820,8 @@ class WaitingRenderTest(unittest.TestCase):
 
         self.assertEqual(NOTHING, lines[0])
         self.assertIn("0 of 0 sessions report block state · 0 unknown · ends unobservable", text)
-        self.assertIn("Gemini CLI: Harness does not report blocks", text)
-        for word in ("all clear", "All clear", "nothing to do", *LEVEL_WORDS):
+        self.assertIn("Gemini CLI: Waits not reported", text)
+        for word in ("all clear", "All clear", "nothing to do", *PROGRESS["levels"].values()):
             self.assertNotIn(word, text)
 
     def test_the_coverage_line_is_derived_from_the_rows_and_never_authored(self) -> None:
@@ -827,7 +881,7 @@ class CoverageTextTest(unittest.TestCase):
 
         assert_clean(self, sessions)
         assert_clean(self, waiting)
-        self.assertIn("Harness does not report blocks", waiting)
+        self.assertIn("Waits not reported", waiting)
 
     def test_a_label_that_is_nothing_but_controls_falls_back_to_a_plain_name(self) -> None:
         payload = copy.deepcopy(PAYLOAD)
@@ -838,7 +892,7 @@ class CoverageTextTest(unittest.TestCase):
             terminal_sessions.render_waiting(payload, port=4553, exclude=None, nothing=NOTHING)
         )
 
-        self.assertIn("Harness not published: Harness does not report blocks", waiting)
+        self.assertIn("Harness not published: Waits not reported", waiting)
 
 
 class AbsurdNumbersTest(unittest.TestCase):
@@ -860,22 +914,22 @@ class AbsurdNumbersTest(unittest.TestCase):
 
         sessions, waiting = self.renders(payload)
 
-        self.assertIn("Active now", sessions)
+        self.assertIn("Right now", sessions)
         self.assertIn("Waiting on you", waiting)
 
-    def test_a_huge_departure_time_is_an_unknown_age_not_a_crash(self) -> None:
+    def test_a_huge_legacy_departure_time_does_not_print_a_mark(self) -> None:
         payload = with_rows(f6a7b8c9={"departures": [{"at": self.HUGE, "revision": 1}]})
 
         sessions, _ = self.renders(payload)
 
-        self.assertIn("  Drift · age unknown", sessions)
+        self.assertNotIn("Drift ·", sessions)
 
     def test_a_huge_loop_error_count_prints_both_listings(self) -> None:
         payload = with_rows(a7b8c9d0={"loop": {"errors": self.HUGE, "failures": self.HUGE}})
 
         sessions, waiting = self.renders(payload)
 
-        self.assertIn("Active now", sessions)
+        self.assertIn("Right now", sessions)
         self.assertNotIn("Ended while it still asked for input", "\n".join(waiting))
 
 

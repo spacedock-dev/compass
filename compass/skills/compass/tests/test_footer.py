@@ -27,7 +27,6 @@ from compass_runtime import (
     lifecycle,
     live_lease,
     terminal_client,
-    terminal_drift,
 )
 
 from .support import SERVER_PATH
@@ -607,13 +606,11 @@ class ReadLineTest(unittest.TestCase):
             with self.subTest(value=value):
                 line_file(self.home, "claude", "sess-1", good_line(model_calls_paused=value))
                 text = terminal_client.compose_footer(payload, self.read(), NOW)
-                self.assertEqual(expected, "model calls paused" in text)
+                self.assertEqual(expected, "AI use paused" in text)
                 self.assertIn("2 waiting", text)
                 self.assertIn("5h 60%", text)
         line_file(self.home, "claude", "sess-1", good_line(model_calls_paused=True, at=NOW - 10000))
-        self.assertNotIn(
-            "model calls paused", terminal_client.compose_footer(payload, self.read(), NOW)
-        )
+        self.assertNotIn("AI use paused", terminal_client.compose_footer(payload, self.read(), NOW))
 
     def test_a_person_sees_model_calls_paused_once_when_their_monitor_ended_for_it(self) -> None:
         line_file(
@@ -625,8 +622,8 @@ class ReadLineTest(unittest.TestCase):
             ),
         )
         text = terminal_client.compose_footer(None, self.read(), NOW)
-        self.assertEqual("model calls paused · monitor off · 2 waiting", text)
-        self.assertEqual(1, text.count("model calls paused"))
+        self.assertEqual("AI use paused · monitor off · 2 waiting", text)
+        self.assertEqual(1, text.count("AI use paused"))
         self.assertNotIn("monitor off:", text)
 
     def test_a_person_who_resumes_loses_pause_text_even_after_a_monitor_ended_paused(self) -> None:
@@ -639,7 +636,7 @@ class ReadLineTest(unittest.TestCase):
             ),
         )
         text = terminal_client.compose_footer(None, self.read(), NOW)
-        self.assertNotIn("model calls paused", text)
+        self.assertNotIn("AI use paused", text)
         self.assertIn("2 waiting", text)
 
     def test_a_fresh_line_is_read(self) -> None:
@@ -720,33 +717,40 @@ class MonitorFooterTest(ReadLineTest):
             self.footer(monitor=False, level="high", blind=["Antigravity"]),
         )
 
-    def test_a_person_sees_the_pages_level_first_or_a_stated_absence(self) -> None:
-        for token, label in terminal_drift.LEVEL_NAMES.items():
+    def test_only_a_stored_departure_can_name_a_level(self) -> None:
+        root = SERVER_PATH.parents[3]
+        words = json.loads((root / "frontend/test/fixtures/terminal-wording.json").read_text())[
+            "drift"
+        ]["levels"]
+        for token in ("medium", "high", "extreme"):
             with self.subTest(token=token):
+                self.assertEqual(words[token], self.footer(monitor=False, stored_progress=token))
                 self.assertEqual(
-                    f"drift {label} · waits not reported for Antigravity",
-                    self.footer(monitor=True, level=token, blind=["Antigravity"]),
+                    f"{words[token]} · Live monitor on · waits not reported for Antigravity",
+                    self.footer(monitor=True, stored_progress=token, blind=["Antigravity"]),
                 )
-        self.assertEqual("drift: no level yet", self.footer(monitor=True, level=None))
+        for absent in (None, "none_or_low", "checked", "out-of-date", "future-level"):
+            with self.subTest(absent=absent):
+                self.assertEqual("", self.footer(stored_progress=absent))
+                self.assertEqual(
+                    "Live monitor on", self.footer(monitor=True, stored_progress=absent)
+                )
 
-    def test_a_person_never_sees_an_unknown_level_or_a_truthy_monitor(self) -> None:
-        for monitor, level in (
-            (True, "bogus"),
-            (True, "no_live_level"),
-            (True, []),
-            (1, "high"),
-            ("true", "high"),
-            (None, "high"),
-        ):
-            with self.subTest(monitor=monitor, level=level):
-                self.assertEqual(
-                    "waits not reported for Antigravity",
-                    self.footer(monitor=monitor, level=level, blind=["Antigravity"]),
-                )
+    def test_the_live_estimate_and_old_footer_file_never_name_a_level(self) -> None:
+        for level in ("high", "no_live_level", None):
+            with self.subTest(level=level):
+                self.assertEqual("Live monitor on", self.footer(monitor=True, level=level))
+        self.assertEqual("", self.footer(monitor="true", level="high"))
+
+    def test_a_codex_footer_cannot_name_even_a_published_departure(self) -> None:
+        line_file(self.home, "codex", "sess-1", good_line(waiting=1, stored_progress="high"))
+        session = terminal_client.Session("codex", "sess-1", "status line")
+        line = terminal_client.read_line(self.home, session, NOW)
+        self.assertEqual("1 waiting", terminal_client.compose_footer(None, line, NOW))
 
     def test_a_persons_unknown_live_level_never_revives_an_old_end_note(self) -> None:
         self.assertEqual(
-            "waits not reported for Antigravity",
+            "Live monitor on · waits not reported for Antigravity",
             self.footer(
                 monitor=True,
                 level="bogus",
@@ -780,7 +784,7 @@ class MonitorFooterTest(ReadLineTest):
                     ),
                 )
         self.assertEqual(
-            "drift High",
+            "Live monitor on",
             self.footer(monitor=True, level="high", last_end={"reason": "paused", "at": NOW}),
         )
 
@@ -818,7 +822,7 @@ class MonitorFooterTest(ReadLineTest):
 
     def test_the_persons_level_and_end_vocabularies_agree_with_the_producers(self) -> None:
         self.assertEqual(
-            set(levels.DRIFT_SCALE) | {levels.NOT_ENOUGH}, set(terminal_client.FOOTER_LEVELS)
+            set(levels.DRIFT_SCALE) - {"none_or_low"}, set(terminal_client.FOOTER_LEVELS)
         )
         self.assertEqual(set(live_lease.END_REASONS), set(terminal_client.MONITOR_END_NOTES))
 
@@ -1026,7 +1030,7 @@ class RunFooterTest(unittest.TestCase):
             code, out, _ = self.run_footer(["--footer"], json.dumps(pro_payload()))
 
         self.assertEqual(0, code)
-        self.assertTrue(out.startswith("drift High · 2 waiting"))
+        self.assertTrue(out.startswith("Live monitor on · 2 waiting"))
 
 
 class FooterDispatchTest(unittest.TestCase):
@@ -1113,7 +1117,10 @@ class FooterLightPathTest(unittest.TestCase):
     def test_footer_through_server_py_imports_neither_the_cli_nor_an_http_client(self) -> None:
         with tempfile.TemporaryDirectory() as home:
             line_file(
-                home, "claude", "sess-1", good_line(at=time.time(), monitor=True, level="medium")
+                home,
+                "claude",
+                "sess-1",
+                good_line(at=time.time(), monitor=False, stored_progress="medium"),
             )
             payload = pro_payload(
                 rate_limits={"five_hour": {"used_percentage": 12, "resets_at": time.time() + 3600}}
@@ -1123,7 +1130,8 @@ class FooterLightPathTest(unittest.TestCase):
 
         self.assertEqual(0, done.returncode)
         self.assertTrue(
-            done.stdout.startswith("drift Medium · 2 waiting · 5h 12% resets in "), done.stdout
+            done.stdout.startswith("Slightly off course · 2 waiting · 5h 12% resets in "),
+            done.stdout,
         )
         loaded = [
             name

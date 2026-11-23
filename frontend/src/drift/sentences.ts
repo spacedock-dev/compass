@@ -754,7 +754,7 @@ export const absenceAttr = (text: string): Record<string, string> => {
 
 export const MODEL_PAUSE_EXPLANATION =
   'Compass stops sending session text to Claude Code or Codex, so it uses none of your tokens, and stays paused until you resume.';
-export const READINGS_OFF = 'Model calls are paused. Nothing is sent until you resume.';
+export const READINGS_OFF = 'AI use is paused. Nothing is sent until you resume.';
 export const PAGE_OUTDATED = 'Reload this page before resuming model calls. Nothing was sent.';
 /* The store of what the reader typed could not take a press: another writer held it past the wait, or its
    file could not be used (unreadable, or its lock refused this user). Nothing was started or spent, so neither
@@ -767,7 +767,6 @@ export const STORE_UNREADABLE_PRESS =
 export const NOTICE_SENT = 'This request sends:';
 export const NOTICE_WORDS = "The session's words, without the agent's messages.";
 export const NOTICE_WORDS_AND_MESSAGES = "The session's words and the agent's messages.";
-export const READINGS_OFF_CONSOLE = 'Model calls are paused. Nothing is sent until you resume.';
 export const noticeProvider = (label: string): string => `Provider: ${label}`;
 export const noticeDestination = (destination: string): string =>
   `Words go to: ${destination || 'destination not published'}`;

@@ -23,7 +23,6 @@ from compass_runtime import (
     dismissals,
     drift_view,
     events,
-    footer_lines,
     http_api,
     live_monitor,
     observation,
@@ -195,10 +194,6 @@ class ParentDeclarations(unittest.TestCase):
                         project_context.collect(config, state, [current], "project", now=NOW)
                     )
             self.assertEqual(contexts[0], contexts[1])
-            self.assertEqual(
-                footer_lines._projection_inputs({}, native),
-                footer_lines._projection_inputs({}, held),
-            )
 
     def test_a_completed_reading_stays_completed_while_its_session_waits_on_a_child(self) -> None:
         fixtures = Path(__file__).resolve().parents[4] / "frontend/test/fixtures/client-contract"

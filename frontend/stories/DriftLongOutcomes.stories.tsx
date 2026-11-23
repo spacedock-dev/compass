@@ -81,7 +81,10 @@ export const PendingDirectionAndPauseKeepTheRestartOutcome: Story = {
       await within(root).findByText(new RegExp('Last analysis.*Compass stopped before')),
     ).toHaveTextContent(LONG_INTERRUPTED_SENTENCE);
     await expect(await within(root).findByRole('button', { name: 'Leave it' })).toBeVisible();
-    await expect(root).toHaveTextContent('Model calls are paused');
+    await expect(
+      within(root).getByText('AI use is paused. Nothing is sent until you resume.'),
+    ).toBeVisible();
+    await expect(root).not.toHaveTextContent('Model calls are paused');
     await expect(root.querySelectorAll('[data-next-long-interrupted]')).toHaveLength(1);
     await expect(reading.posts).toHaveLength(0);
   },

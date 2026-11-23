@@ -185,8 +185,10 @@ from future ends and quiet observations. The observed model comparison projects 
 age and delegated-launch source fields that Needs you uses. The board's
 [`terminalParity.test.ts`](../frontend/src/sessions/terminalParity.test.ts) and the terminal's
 [`test_terminal_sessions.py`](../compass/skills/compass/tests/test_terminal_sessions.py) read
-the same hand-updated parity fixtures, including the unowned question age and unusable
-observations. The [`recordedSessionStatus`](../frontend/test/recordedSessionStatus.ts) projection
+the same parity fixtures, including the unowned question age and unusable observations.
+The Sessions parity test records state and progress pills from mounted rows and reads wait coverage
+from the open Needs you disclosure. Its candidate generator records those answers from the board.
+The [`recordedSessionStatus`](../frontend/test/recordedSessionStatus.ts) projection
 sets aside the Sessions-only Now field and compares the wait caution in its written-out
 spelling. The recorded answers remain unchanged.
 
@@ -251,7 +253,7 @@ templates in Chromium. The differential comparison uses
 `frontend/test/sessionRowDeviation.ts` to set aside the old Drift mark and state presentation. It aligns
 title and harness order and still compares groups, row order, facts and links. The Sessions
 stories hold placement, contrast, the visible legend and the keyboard tooltip. Terminal
-grouping keeps its shared recorded answers. Terminal row wording follows in DRC-5510.
+grouping keeps its shared recorded answers.
 The row puts the assignment and location notice on separate lines. The status story
 checks the 44 px tooltip target around its 40 px artwork. The browser proof for the Session
 header keeps its recorded badge geometry and checks the approved Inter face, weight and
@@ -262,9 +264,9 @@ Project comparisons mask the retired text marks at their render sites and compar
 words and structure. The observed-model and Project member comparisons project the old outcome
 marks only for reported ends. The presentation proofs compare the new state and limit lines,
 plan status words and helper counts against their own evidence. The recorded-answer comparisons
-omit those fields and keep the surrounding text, order, identities and timing. The terminal
-comparison maps recorded Idle to Quiet for the rows with a turn stop and to State not published for
-the four rows without one. The activity proofs retain the hollow and marked circle distinction.
+omit those fields and keep the surrounding text, order, identities and timing. The terminal parity fixture records Quiet for rows with a turn stop and State not published for
+rows without one. Its group labels come from the rendered Sessions view, and the recorded
+departure has no visible level in the absence of published stored progress. The activity proofs retain the hollow and marked circle distinction.
 The browser title's attention cue keeps its text. The recorded answers stay fixed.
 
 2026-11-23, reported ends take precedence over open questions in the Sessions row and the session
@@ -278,6 +280,11 @@ omits the working, waiting, quiet and unclassified subtotals because declared ch
 exact requests and idle rows without turn ends move between those buckets. The terminal-brief
 comparison expects the revised web subtotals for its idle rows, which publish no turn end.
 `Projects Quiet Rollup` and `Project Displayed State Rollup` in Storybook check both web surfaces.
+
+The terminal Project brief prints State not published below the member identity. Its parity
+fixture records the board's separate limit. The progress-check and summary parity tests use the
+board's AI use pause notice and Activity log citation notice directly. The paused progress-check
+stories assert the new notice on the page.
 
 Attention's coverage requires the same state evidence. `omitAttentionQuietSubtotals` masks
 only the quiet and unclassified subtotals in the recorded comparisons. The observed-model

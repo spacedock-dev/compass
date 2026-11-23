@@ -1,34 +1,37 @@
 {
   "label": "terminal-project",
   "key": "key-terminal-project",
-  "counts": "4 sessions · 1 ended · 3 quiet",
-  "warning": "4 sessions share this display label; shared location is not established",
+  "counts": "4 sessions · 1 ended · 3 in no counted state",
+  "warning": "Location not measured for 4 sessions with this display label",
   "members": [
     {
       "key": "claude:a1b2c3d4",
       "title": "Build the parser",
-      "state": "idle",
+      "state": "State not published",
+      "state_limit": "State not published",
       "age": "2m",
       "harness": "Claude Code"
     },
     {
       "key": "claude:e5f6a7b8",
       "title": "Review sk-…REDACTED",
-      "state": "idle",
+      "state": "State not published",
+      "state_limit": "State not published",
       "age": "30s",
       "harness": "Claude Code"
     },
     {
       "key": "codex:019c0000-1111-7222-8333-444455556666",
       "title": "Document the parser",
-      "state": "idle",
+      "state": "State not published",
+      "state_limit": "State not published",
       "age": "1m",
       "harness": "Codex"
     },
     {
       "key": "claude:deadbeef",
       "title": "Finished migration",
-      "state": "working",
+      "state": "Ended",
       "age": "30s",
       "harness": "Claude Code"
     }
@@ -82,5 +85,12 @@
   "coverage": "Coverage complete · 2 of 2 active sessions",
   "attention_heading": "FO INSPECTING",
   "attention_truth": "Captain not needed",
-  "authority_gloss": "FO is the first officer, the agent driving this workflow; Captain is you."
+  "authority_gloss": "FO is the first officer, the agent driving this workflow; Captain is you.",
+  "terminal_attention": [
+    "  CHECKING",
+    "  You are not needed",
+    "  Coverage complete · 2 of 2 active sessions",
+    "  AGENT · REFRESH · refresh workflow discovery (spacedock status --discover · project root unavailable from observed sessions)",
+    "  Technical: FO is the first officer, the agent driving this workflow; Captain is you."
+  ]
 }

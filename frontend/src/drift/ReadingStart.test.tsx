@@ -350,10 +350,10 @@ describe('notices and the durable off switch', () => {
       ...document.querySelectorAll('.next-session-drift-check .next-cockpit-reading-why'),
     ]
       .map((node) => node.textContent ?? '')
-      .filter((line) => /Analysis limit|Model calls are paused/.test(line));
-    expect(lines[0]).toContain('Model calls are paused');
+      .filter((line) => /Analysis limit|Model calls are paused|AI use is paused/.test(line));
+    expect(lines[0]).toBe('AI use is paused. Nothing is sent until you resume.');
     expect(byAction('reading-on')?.getAttribute('aria-disabled')).toBeNull();
-    expect(lines).toContain('Model calls are paused. Nothing is sent until you resume.');
+    expect(lines).not.toContain('Model calls are paused. Nothing is sent until you resume.');
   });
 
   it('keeps the last notice while another press is pending or its response is lost', async () => {
@@ -457,7 +457,7 @@ describe('notices and the durable off switch', () => {
     expect(byAction('reading-ask')?.getAttribute('aria-disabled')).toBe('true');
     expect(document.querySelectorAll('[data-next-cockpit-action="reading-on"]')).toHaveLength(1);
     expect(textOf('.next-session-drift-check')).toContain(
-      'Model calls are paused. Nothing is sent until you resume.',
+      'AI use is paused. Nothing is sent until you resume.',
     );
     expect(readingPosts(page)).toHaveLength(0);
     expect(byAction('reading-on')?.textContent).toBe('Resume AI use');

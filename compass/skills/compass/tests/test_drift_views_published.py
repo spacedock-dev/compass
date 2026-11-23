@@ -118,14 +118,11 @@ class WhereTheViewRidesTest(unittest.TestCase):
         self.assertEqual([], work["live_levels"])
         (view,) = work["drift_views"]
         self.assertEqual((None, None, None), (view["pill"], view["analysis"], view["estimate"]))
-        self.assertNotIn(
-            "Level:",
-            "\n".join(
-                terminal_drift.render(
-                    row, _payload(row), terminal_drift.adapt(view), adopted=None, again_hint=""
-                )
-            ),
+        lines = terminal_drift.render(
+            row, _payload(row), terminal_drift.adapt(view), adopted=None, again_hint=""
         )
+        self.assertTrue(lines[0].startswith("Progress check · codex:s1"))
+        self.assertNotIn("Level:", "\n".join(lines))
 
     def test_a_line_resting_on_a_message_only_the_record_page_holds_keeps_it(self) -> None:
         row = _row("claude")

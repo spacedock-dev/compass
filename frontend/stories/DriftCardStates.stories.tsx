@@ -396,7 +396,7 @@ export const IntentChanged: Story = {
   },
 };
 
-/* Paused: Resume model calls is in the header, the result stays, and the re-run control is there, inert. */
+/* Paused: Resume AI use is in the header, the result stays, and the rerun control is inert. */
 export const Paused: Story = {
   ...scenario({
     session: STORED_READING,
@@ -413,8 +413,11 @@ export const Paused: Story = {
     await expect(again[0]).toHaveAttribute('aria-disabled', 'true');
     await expect(rerun(canvasElement)).toHaveLength(1);
     await expect(
-      within(card).getAllByText('Model calls are paused. Nothing is sent until you resume.')[0],
+      within(card).getAllByText('AI use is paused. Nothing is sent until you resume.')[0],
     ).toBeVisible();
+    await expect(
+      within(card).queryByText('Model calls are paused. Nothing is sent until you resume.'),
+    ).toBeNull();
   },
 };
 

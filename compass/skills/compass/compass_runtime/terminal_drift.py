@@ -103,11 +103,11 @@ ROUTE_UNREAD: Final = (
 )
 POLICY_UNREADABLE: Final = (
     "Reading permission or its daily budget could not be read or saved. Restore access to the "
-    "Compass store before analyzing drift."
+    "Compass store before checking progress."
 )
-READINGS_OFF: Final = "Model calls are paused. Nothing is sent until you resume."
+READINGS_OFF: Final = "AI use is paused. Nothing is sent until you resume."
 PROMPT_TIME_UNPUBLISHED: Final = (
-    "The prompt time was not published, so it cannot be adopted. Type a goal to analyze drift."
+    "The prompt time was not published, so it cannot be adopted. Type a goal to check progress."
 )
 PROVIDER_CHANGED: Final = (
     "The reader for this session changed while this was sending, so nothing was sent; "
@@ -211,13 +211,11 @@ PRESS_LINES: Final[dict[str, str]] = {
 }
 PRESS_EVENTS: Final = "{control} opens while this session runs or once it ends."
 
-# `drift/sentences.ts` LIVE_LEVEL_NAMES.
+# The level words the board glossary gives these published tokens.
 LEVEL_NAMES: Final[dict[str, str]] = {
-    "none_or_low": "None or low",
-    "medium": "Medium",
-    "high": "High",
-    "extreme": "Extreme",
-    "not_enough": "Not enough recorded yet",
+    "none_or_low": "On track",
+    **terminal_sessions.STORED_DEPARTURE_LEVELS,
+    "not_enough": "Too early to tell",
 }
 # `drift/result.ts` ResultState, as the card's own words say each.
 STATE_WORDS: Final[dict[str, str]] = {
@@ -931,19 +929,33 @@ def adapt(view: Mapping[str, Any]) -> View:
         or (level is not None and level not in LEVEL_NAMES)
         or (stale is not None and stale.kind not in ("intent", "work"))
     )
-    # `DriftLevelView`: a stored reading held at not_enough, or one beside a drafted goal, draws no
-    # level; the scope line and the line states say what it found.
-    drawn = isinstance(level, str) and level != "not_enough" and view.get("drafted") is not True
+    # The progress absence is for a mid-flight reading that found an outcome not reached yet.
+    # A withheld level, unclear goal or unsettled direction keeps its own explanation.
+    unsettled = view.get("unsettled") is True
+    too_early = (
+        level == "not_enough"
+        and _rec(analysis)
+        and analysis.get("withheld") is False
+        and analysis.get("reasons") == ["outcome-not-reached"]
+        and view.get("so_far") is True
+        and stale is None
+        and not unsettled
+    )
+    drawn = (
+        isinstance(level, str)
+        and (level != "not_enough" or too_early)
+        and view.get("drafted") is not True
+    )
     return View(
         malformed=malformed or ("unknown" if unknown else ""),
         level=level if drawn else None,
         so_far=view.get("so_far") is True,
-        level_so_far=_rec(pill) and pill.get("so_far") is True,
+        level_so_far=level != "not_enough" and _rec(pill) and pill.get("so_far") is True,
         lines=lines,
         departures=departures,
         priors=priors,
         stale=stale,
-        unsettled=view.get("unsettled") is True,
+        unsettled=unsettled,
         unsettled_count=count if type(count) is int and count >= 0 else None,
     )
 
@@ -1033,7 +1045,7 @@ def render(  # noqa: C901, PLR0912 - one optional block per field, in the order 
 ) -> list[str]:
     """The reading, one field per line, every value from the board through `printable`."""
     harness, sid = _text(row.get("harness")), _text(row.get("sid"))
-    head = f"Drift · {printable(harness)}:{printable(sid)}"
+    head = f"Progress check · {printable(harness)}:{printable(sid)}"
     title = printable(row.get("title"))
     lines = [f"{head} · {title}" if title else head]
     goal = printable(goal_text(row, payload))
@@ -1050,14 +1062,16 @@ def render(  # noqa: C901, PLR0912 - one optional block per field, in the order 
         so_far = " · so far" if view.so_far else ""
         lines.append(f"Read at {clock_text(read_at)}, {age} ago{so_far}")
     if view.stale is not None:
+        lines.append("Out of date")
         lines.append(f"{stale_head(view.stale)} {again_hint}")
-    if view.so_far:
+    elif view.so_far:
         lines.append(SO_FAR_LINE)
     if said := unsettled_line(view):
         lines.append(said)
     lines.append(PROVENANCE)
     if view.level is not None:
-        lines.append(f"Level: {LEVEL_NAMES[view.level]}{' so far' if view.level_so_far else ''}")
+        label = "Earlier level" if view.stale is not None else "Level"
+        lines.append(f"{label}: {LEVEL_NAMES[view.level]}{' so far' if view.level_so_far else ''}")
     if view.lines:
         lines.append("Outcome lines:")
         lines.extend(_outcome_line(row, line) for line in view.lines)

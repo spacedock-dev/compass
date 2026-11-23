@@ -954,19 +954,17 @@ after a turn ends may wait until the next turn to appear. Claude Code runs a sta
 
 What the line says, and when it says nothing:
 
-- `model calls paused` appears while the shared permission store confirms pause, even without a Live
-  monitor. Pause on the board or run `spacedock-compass --pause-model-calls` from any shell. Resume
-  model calls on the board clears it on the next footer refresh.
-- `drift High` appears while the Live monitor is on for this session. It uses the same level as
-  the page's pill and keeps the last level visible while you work, until the next check replaces it.
-  Replacing your saved intent or annotation revision clears the old level at once. It says
-  `drift: no level yet` when there is no level to show. Turn the monitor on
-  from another terminal with `spacedock-compass --monitor --session claude:ID`,
-  by typing `/compass:compass monitor on` inside the session, or from the session page. When the lease ends,
-  the level disappears on the next refresh. A short reason such as `monitor off: session ended`
-  stays for five minutes after the end. Your own Off is silent. Waiting counts keep refreshing.
-- `N waiting` counts the needs on the board's Attention queue other than the session the line is in: other
-  sessions that are waiting on you, and questions a session has put to you through the ask lane. It is left
+- `AI use paused` appears while the shared permission store confirms the pause. Choose Pause all AI
+  use on the board or run `spacedock-compass --pause-model-calls` from any shell. Choose Resume AI
+  use on the board to clear the message on the next footer refresh.
+- A level appears only when the dashboard publishes a stored check that found a departure.
+- `Live monitor on` means this session's monitor is on. Start it from the session page, type
+  `/compass:compass monitor on` inside the session, or run
+  `spacedock-compass --monitor --session claude:ID` from another terminal. A short reason such as
+  `monitor off: session ended` can appear for five minutes after it stops. Turning the monitor
+  off yourself is silent.
+- `N waiting` counts other sessions waiting on you and pending questions in the Needs you queue.
+  The count leaves out the session showing the status line. It is left
   out when the count is zero, when the dashboard is not running, or when the file is more than a minute old.
   While nothing is collecting, the dashboard restamps a file whose content has not changed every 15 seconds,
   so a state that changes only with the passing of time is not seen until the next event or collection.

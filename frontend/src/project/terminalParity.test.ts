@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { expect, it } from 'vitest';
 import { observe, type Row } from '../observed';
 import { groupFor, stableKey, workingSessions, sessKey } from './group';
@@ -59,7 +60,8 @@ for (const name of ['terminal-project', 'terminal-project-fo']) {
         .map((link) => ({
           key: link.key,
           title: link.title,
-          state: link.meta?.state,
+          state: link.meta?.label || link.limit,
+          ...(link.limit ? { state_limit: link.limit } : {}),
           age: link.meta?.age,
           harness: link.scope.detail,
         })),
@@ -103,22 +105,22 @@ for (const name of ['terminal-project', 'terminal-project-fo']) {
       expect(board.attention.some((item) => item.label === 'recover First handoff')).toBe(true);
       expect(board.attention.some((item) => item.label === 'recover Second handoff')).toBe(false);
     }
-    // Expected briefs come from the rendered React page, never from the Python port.
+    // Workflow authority wording below the terminal's Needs you line is specific to the CLI.
+    const { terminal_attention: terminalAttention, ...recorded } = read(name);
+    // Emit candidates from the rendered board for review, leaving the fixture untouched.
     if (process.env['COMPASS_WRITE_PROJECT_PARITY'] === '1') {
-      writeFileSync(
-        resolve('frontend/test/fixtures', `${name}.json`),
-        `${JSON.stringify(board, null, 2)}\n`,
+      const candidate = join(
+        mkdtempSync(join(tmpdir(), 'compass-terminal-project-')),
+        `${name}.json`,
       );
+      writeFileSync(
+        candidate,
+        `${JSON.stringify({ ...board, terminal_attention: terminalAttention }, null, 2)}\n`,
+      );
+      console.info(`Project candidate: ${candidate}`);
+      return;
     }
-    // The recorded rows publish neither measured locations nor turn stops for their idle sessions.
-    expect(board).toEqual({
-      ...read(name),
-      counts:
-        name === 'terminal-project-fo'
-          ? '4 sessions · 1 ended · 3 in no counted state'
-          : '4 sessions · 1 working · 1 waiting on you · 1 ended · 1 in no counted state',
-      warning: 'Location not measured for 4 sessions with this display label',
-    });
+    expect(board).toEqual(recorded);
   });
 }
 

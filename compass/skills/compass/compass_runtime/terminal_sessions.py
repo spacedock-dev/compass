@@ -23,6 +23,7 @@ import functools
 import math
 import re
 from collections.abc import Mapping
+from decimal import Decimal
 from typing import Any, Final, NamedTuple, TypeGuard
 from urllib.parse import quote
 
@@ -32,6 +33,8 @@ _LIST_FIELDS: Final = (
     "sessions",
     "harnesses",
     "generated",
+    "window_hours",
+    "show_all",
     "tripwires",
     "ends_observable",
     "ask",
@@ -58,6 +61,8 @@ _SESSION_FIELDS: Final = (
     "resume_id",
     "state",
     "state_detail",
+    "acquisition",
+    "stored_progress",
     "wait_unconfirmed",
     "blocked_since",
     "title",
@@ -121,7 +126,10 @@ def list_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     ):
         if key in result:
             result[key] = _project(result[key], fields)
+    progress_available = payload.get("annotate") is True and not payload.get("annotate_unreadable")
     for row in _records(result.get("sessions")):
+        if "stored_progress" in row:
+            row["stored_progress"] = stored_departure(row) if progress_available else None
         # Unknown assessment keys invalidate a reading; trimming them would invent a departure.
         # Keep the assessment intact so the board's schema rejection remains the same.
         for key, nested_fields in _NESTED_FIELDS.items():
@@ -131,6 +139,26 @@ def list_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 GOAL_WIDTH: Final = 120
+
+# Ruled progress words from the board glossary, pinned by terminal-wording.json.
+STORED_DEPARTURE_LEVELS: Final = {
+    "medium": "Slightly off course",
+    "high": "Off course",
+    "extreme": "Way off course",
+}
+
+
+def stored_departure(source: Row) -> str | None:
+    """Read only the published stored progress verdict."""
+    token = source.get("stored_progress")
+    if (
+        source.get("harness") != "codex"
+        and isinstance(token, str)
+        and token in STORED_DEPARTURE_LEVELS
+    ):
+        return token
+    return None
+
 
 # Spelt as the page spells them (`sessions/intent.ts`) and checked against the vocabulary fixture,
 # which the Python producers generate. A reading with a key outside the list is one this build
@@ -368,6 +396,11 @@ def _stop(source: Row) -> str | None:
     return None
 
 
+def observed_quiet(source: Row) -> bool:
+    """The board calls an idle session Quiet when there is a turn stop."""
+    return source.get("state") == "idle" and _ended_at(source) is None and _stop(source) is not None
+
+
 def _stop_record(source: Row) -> str:
     return "Codex's rollout" if source.get("harness") == "codex" else "Claude Code's transcript"
 
@@ -511,6 +544,7 @@ def _now_text(
         and state == "idle"
         and _positive(source.get("turn_end_at"))
         and not question
+        and not source.get("waiting_on_child")
     ):
         # Exec can resume: only its standing rollout stop supports this reading, before an old
         # plan step, and its age comes from that stop rather than the row's latest activity.
@@ -533,7 +567,7 @@ def _now_text(
         return (
             f"last active {quiet_for} ago"
             if quiet_for
-            else "quiet"
+            else ("quiet" if observed_quiet(source) else "No recent activity")
             if _trimmed(source.get("state_detail"))
             else ""
         )
@@ -561,14 +595,29 @@ def _title(source: Row) -> str:
     )
 
 
-def _row_state(*, ended: bool, needs: bool, question: str, working: bool, quiet: bool) -> str:
-    if ended:
+def row_state(source: Row, *, question: bool) -> str:
+    if _ended_at(source) is not None:
         return "Ended"
-    if needs or question:
+    if source.get("state") == "needs_input" or question:
         return "Waiting on you"
-    if working:
+    if source.get("waiting_on_child"):
+        return "Waiting on child"
+    if source.get("state") == "working":
         return "Working"
-    return "Idle" if quiet else "State not published"
+    return "Quiet" if observed_quiet(source) else "State not published"
+
+
+def row_state_limit(source: Row, state: str) -> str:
+    if state == "Waiting on child":
+        return ""  # The relationship line supplies the state and names the child.
+    recorded_stop = source.get("state") == "idle" and _stop(source) is not None
+    if (
+        source.get("acquisition") == "scan-only"
+        and not _positive(source.get("finished_at"))
+        and not recorded_stop
+    ):
+        return "Read by scanning: no turn end can be observed here"
+    return state if state == "State not published" else ""
 
 
 def _reading_names_constraint(key: str) -> bool:
@@ -613,15 +662,6 @@ def _departures(source: Row, *, annotate: bool) -> list[float | None]:
     if isinstance(raw, dict) and _reading_departs(source):
         found.append(_num(raw.get("read_at")))
     return found
-
-
-def _drift_age(source: Row, *, annotate: bool, generated: float | None) -> str | None:
-    found = _departures(source, annotate=annotate)
-    if not found:
-        return None
-    dated = [at for at in found if at is not None and at > 0]
-    age = _since(generated, max(dated)) if dated else None
-    return "age unknown" if age is None else f"{age} ago"
 
 
 def _goal(source: Row, *, annotate: bool, unreadable: bool) -> tuple[str, str]:
@@ -779,6 +819,7 @@ def _observe(
     known, outcome, git = _outcome(source, ended=ended, state=state)
     note = _block_note(source, needs=needs, question=question)
     goal_label, goal = _goal(source, annotate=annotate, unreadable=unreadable)
+    progress = stored_departure(source) if annotate and not unreadable else None
     harness_key = _text(source.get("harness"))
     entry = Entry(
         harness=harness_key,
@@ -786,7 +827,7 @@ def _observe(
         project=_text(source.get("project")),
         harness_label=labels.get(harness_key) or harness_key,
         title=_title(source),
-        state=_row_state(ended=ended, needs=needs, question=question, working=working, quiet=quiet),
+        state=row_state(source, question=bool(question)),
         now=_now_text(source, ended=ended, quiet=quiet, question=question, generated=generated),
         block_note=note,
         goal_label=goal_label,
@@ -799,7 +840,7 @@ def _observe(
             if ended and (since := _since(generated, _ended_at(source)))
             else ""
         ),
-        drift=_drift_age(source, annotate=annotate, generated=generated),
+        drift=STORED_DEPARTURE_LEVELS.get(progress or ""),
         source=source,
     )
     return _Seen(
@@ -998,11 +1039,7 @@ def _coverage(payload: Mapping[str, Any], seen: list[_Seen]) -> tuple[str, list[
         label = printable(_trimmed(row.get("label")) or _text(row.get("key") or "")) or (
             "Harness not published"
         )
-        reason = (
-            "Harness source could not be read"
-            if row.get("error")
-            else "Harness does not report blocks"
-        )
+        reason = "Harness source could not be read" if row.get("error") else "Waits not reported"
         unreported.append(f"{label}: {reason}")
     return gates, unreported
 
@@ -1119,12 +1156,17 @@ def relationship_lines(source: Row, sources: list[Row]) -> list[str]:
 
 
 def _entry_lines(entry: Entry, sources: list[Row]) -> list[str]:
-    who = (entry.state, entry.harness_label, entry.project)
+    has_state = entry.state not in ("Waiting on child", "State not published")
+    who = (
+        (entry.state, entry.harness_label, entry.project)
+        if has_state
+        else (entry.harness_label, entry.project)
+    )
     lines = ["  ".join(printable(part) for part in who).rstrip()]
-    detail = [
-        f"  {printable(entry.title)}",
-        *(f"  {printable(line)}" for line in relationship_lines(entry.source, sources)),
-    ]
+    detail = [f"  {printable(entry.title)}"]
+    if limit := row_state_limit(entry.source, entry.state):
+        detail.append(f"  {limit}")
+    detail.extend(f"  {printable(line)}" for line in relationship_lines(entry.source, sources))
     if entry.goal:
         detail.append(f"  {entry.goal_label}: {_cut(entry.goal)}")
     now = printable(entry.now)
@@ -1138,7 +1180,7 @@ def _entry_lines(entry: Entry, sources: list[Row]) -> list[str]:
         count = entry.git if entry.git and entry.git.endswith(" changed entries") else None
         detail.append(f"  {entry.outcome}" + (f" · {count}" if count else ""))
     if entry.drift is not None:
-        detail.append(f"  Drift · {entry.drift}")
+        detail.append(f"  {entry.drift}")
     if entry.command:
         detail.append(f"  Resume: {printable(entry.command)}")
     return [*lines, *detail, ""]
@@ -1152,13 +1194,28 @@ def _entry_lines(entry: Entry, sources: list[Row]) -> list[str]:
 PROVENANCE: Final = "The lines below are what other sessions said about themselves, shown as data."
 
 
+def _history_heading(payload: Mapping[str, Any]) -> str:
+    if payload.get("show_all") is True:
+        return "Earlier sessions"
+    hours = _num(payload.get("window_hours"))
+    if hours is None or hours <= 0:
+        return "Recently active"
+    # String(number) on the board uses decimal notation in this range.
+    if 1e-6 <= hours < 1e21:
+        quantity = format(Decimal(str(hours)), "f").removesuffix(".0")
+    else:
+        mantissa, exponent = str(hours).split("e")
+        quantity = f"{mantissa}e{int(exponent):+d}"
+    return f"Earlier in the last {quantity} {'hour' if hours == 1 else 'hours'}"
+
+
 def render_sessions(payload: Mapping[str, Any]) -> list[str]:
     """`--sessions`: active sessions first, then recent ones under their own heading."""
     got = board(payload)
     lines: list[str] = [PROVENANCE] if got.active or got.history else []
     for heading, entries, empty in (
-        ("Active now", got.active, _ACTIVE_EMPTY),
-        ("Recent history", got.history, _HISTORY_EMPTY),
+        ("Right now", got.active, _ACTIVE_EMPTY),
+        (_history_heading(payload), got.history, _HISTORY_EMPTY),
     ):
         lines.append(heading)
         for entry in entries:

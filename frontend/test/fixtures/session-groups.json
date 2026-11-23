@@ -42,12 +42,12 @@
           "claude",
           "f6a7b8c9"
         ],
-        "state": "Idle",
+        "state": "State not published",
         "outcome": null,
         "git": null,
         "command": "claude --resume f6a7b8c9-11111111-2222-4333-8444-555500000006",
         "ended": "",
-        "drift": "10 minutes ago"
+        "drift": null
       },
       {
         "key": [
@@ -104,7 +104,7 @@
           "claude",
           "d0e1f2a3"
         ],
-        "state": "Idle",
+        "state": "State not published",
         "outcome": null,
         "git": null,
         "command": "",
@@ -116,7 +116,7 @@
           "claude",
           "d4e5f6a7"
         ],
-        "state": "Idle",
+        "state": "Quiet",
         "outcome": "Stop observed with uncommitted work",
         "git": "3 changed entries",
         "command": "claude --resume d4e5f6a7-11111111-2222-4333-8444-555500000004",
@@ -128,7 +128,7 @@
           "codex",
           "019c0000-1111-7222-8333-444455557777"
         ],
-        "state": "Idle",
+        "state": "State not published",
         "outcome": null,
         "git": null,
         "command": "",
@@ -140,7 +140,7 @@
           "gemini",
           "gem-0001"
         ],
-        "state": "Idle",
+        "state": "State not published",
         "outcome": null,
         "git": null,
         "command": "",
@@ -152,7 +152,7 @@
           "claude",
           "c9d0e1f2"
         ],
-        "state": "Idle",
+        "state": "Quiet",
         "outcome": "Turn stop in Claude Code's transcript; git state not measured",
         "git": "Git state was not measured",
         "command": "claude --resume c9d0e1f2-11111111-2222-4333-8444-555500000009",
@@ -184,30 +184,126 @@
     ],
     "coverage": "12 of 13 sessions report block state · 1 unknown · ends unobservable",
     "unreported": [
-      "Gemini CLI: Harness does not report blocks"
+      "Gemini CLI: Waits not reported"
     ]
   },
   "unownedWaits": [
-    ["ask-fixture-2", "4 minutes"]
+    [
+      "ask-fixture-2",
+      "4 minutes"
+    ]
   ],
   "unusableAges": [
     {
       "generated": 0,
       "stamp": 100000,
-      "ended": [["Session reported its own end", ""]],
-      "waiting": [null]
+      "ended": [
+        [
+          "Session reported its own end",
+          ""
+        ]
+      ],
+      "waiting": [
+        null
+      ]
     },
     {
       "generated": 100000,
       "stamp": 1e+100,
-      "ended": [["Session reported its own end", ""]],
-      "waiting": [null]
+      "ended": [
+        [
+          "Session reported its own end",
+          ""
+        ]
+      ],
+      "waiting": [
+        null
+      ]
     },
     {
       "generated": 100000,
       "stamp": 100001,
-      "ended": [["Session reported its own end", ""]],
-      "waiting": [null]
+      "ended": [
+        [
+          "Session reported its own end",
+          ""
+        ]
+      ],
+      "waiting": [
+        null
+      ]
+    }
+  ],
+  "headings": [
+    {
+      "window_hours": 24,
+      "labels": [
+        "Right now",
+        "Earlier in the last 24 hours"
+      ]
+    },
+    {
+      "window_hours": 48,
+      "labels": [
+        "Right now",
+        "Earlier in the last 48 hours"
+      ]
+    },
+    {
+      "window_hours": 1,
+      "labels": [
+        "Right now",
+        "Earlier in the last 1 hour"
+      ]
+    },
+    {
+      "window_hours": 0.00001,
+      "labels": [
+        "Right now",
+        "Earlier in the last 0.00001 hours"
+      ]
+    },
+    {
+      "window_hours": 1e-7,
+      "labels": [
+        "Right now",
+        "Earlier in the last 1e-7 hours"
+      ]
+    },
+    {
+      "labels": [
+        "Right now",
+        "Recently active"
+      ]
+    },
+    {
+      "show_all": true,
+      "window_hours": 24,
+      "labels": [
+        "Right now",
+        "Earlier sessions"
+      ]
+    }
+  ],
+  "unpublishedProgress": [
+    {
+      "name": "old response with a recorded departure",
+      "mark": null
+    },
+    {
+      "name": "unrecognized token",
+      "stored_progress": "future-level",
+      "mark": null
+    },
+    {
+      "name": "stale or withdrawn",
+      "stored_progress": "out-of-date",
+      "mark": null
+    },
+    {
+      "name": "live estimate only",
+      "live_level": "high",
+      "mark": null
     }
   ]
 }
