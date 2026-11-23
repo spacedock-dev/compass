@@ -43,7 +43,7 @@ def render(payload: Mapping[str, Any], *, port: int) -> list[str]:
         if isinstance(note, str) and note
     )
     if payload.get("annotate") is not True:
-        lines.append("Saving intent is unavailable on this dashboard.")
+        lines.append("Saving a goal is unavailable on this dashboard.")
     lines.append(
         terminal_drift.session_url(port, str(row.get("project") or ""), row["harness"], row["sid"])
     )
@@ -67,7 +67,7 @@ def _snapshot(board: Board, named: Session) -> dict[str, Any] | None:
 def _body(request: GoalRequest, payload: Mapping[str, Any]) -> dict[str, Any] | str:
     row = payload["session"]
     if payload.get("annotate") is not True or payload.get("annotate_unreadable"):
-        return "Goal not saved: saving intent is unavailable or its store is unreadable."
+        return "Goal not saved: saving a goal is unavailable or its store is unreadable."
     revision = row.get("annotation_revision")
     if revision is not None and (type(revision) is not int or revision < 0):
         return "Goal not saved: the saved revision could not be read."

@@ -112,7 +112,7 @@ SENTENCES: Final[dict[str, str]] = {
     "monitor_unreadable": "Compass could not read the board to find this live Claude Code session.",
     "monitor_unavailable": "Compass could not find this live Claude Code session.",
     "monitor_refused": "Compass refused this Live monitor start.",
-    "monitor_paused": "Live monitor cannot start while model calls are paused.",
+    "monitor_paused": "Live monitor cannot start while AI use is paused.",
     "monitor_no-observer-model": "Live monitor cannot start under --no-observer-model.",
     "monitor_ended": "Live monitor cannot start because this session has ended.",
     "monitor_settings-refused": (
@@ -461,7 +461,7 @@ def run_summaries_off(*, port: int | None = None, environ: Mapping[str, str] | N
         print("Summaries are turned off for every session.")
         return 0
     print(
-        "Model calls are paused; summaries were not changed."
+        "AI use is paused; summaries were not changed."
         if data.get("reason") == "model-calls-paused"
         else "Compass could not confirm that summaries are off.",
         file=sys.stderr,
@@ -584,9 +584,9 @@ def run_pause_model_calls(
     except DashboardUnreachable:
         confirmed = False
     if not confirmed:
-        print("Compass could not confirm that model calls are paused. Try again.", file=sys.stderr)
+        print("Compass could not confirm that AI use is paused. Try again.", file=sys.stderr)
         return 1
-    print(f"Model calls are paused on the dashboard at 127.0.0.1:{dashboard.port}.")
+    print(f"AI use is paused on the dashboard at 127.0.0.1:{dashboard.port}.")
     return 0
 
 
@@ -1268,24 +1268,18 @@ class Line(NamedTuple):
     waiting: int | None
     blind: tuple[str, ...]
     monitor: bool = False
-    level: str | None = None
+    stored_progress: str | None = None
     last_end: tuple[str, float] | None = None
     model_calls_paused: bool | None = None
 
 
 # Copies of the producer vocabularies, held equal by tests without importing the runtime here.
-FOOTER_LEVELS: Final = {
-    "none_or_low": "None or low",
-    "medium": "Medium",
-    "high": "High",
-    "extreme": "Extreme",
-    "not_enough": "Not enough recorded yet",
-}
+FOOTER_LEVELS: Final = terminal_sessions.STORED_DEPARTURE_LEVELS
 # Short forms of the page's `drift/monitor.ts` END_NOTES; the reader's own Off stays silent.
 MONITOR_END_NOTES: Final = {
     "ended": "monitor off: session ended",
     "left": "monitor off: check-in expired",
-    "paused": "monitor off: model calls paused",
+    "paused": "monitor off",
     "unanswered": "monitor off: no answer",
     "declined": "monitor off: as you asked",
     "cap": "monitor off: check limit reached",
@@ -1415,10 +1409,8 @@ def read_line(home: str, session: Session, now: float) -> Line | None:
     labels = data.get("blind")
     blind = tuple(x for x in (_label(v) for v in labels) if x) if isinstance(labels, list) else ()
     monitor = data.get("monitor") is True
-    raw_level = data.get("level")
-    level = raw_level if isinstance(raw_level, str) and raw_level in FOOTER_LEVELS else None
-    # An unknown token is not the stated absence: suppress only its drift segment.
-    monitor = monitor and (raw_level is None or level is not None)
+    # Older dashboards published a live estimate as "level". Only the stored verdict can name one.
+    stored = terminal_sessions.stored_departure({**data, "harness": session.harness})
     raw_end = data.get("last_end")
     last_end = None
     if data.get("monitor") is False and isinstance(raw_end, dict):
@@ -1431,36 +1423,32 @@ def read_line(home: str, session: Session, now: float) -> Line | None:
         ):
             last_end = (reason, ended_at)
     paused = data.get("model_calls_paused")
-    return Line(count, blind, monitor, level, last_end, paused if type(paused) is bool else None)
+    return Line(count, blind, monitor, stored, last_end, paused if type(paused) is bool else None)
 
 
-def _monitor_parts(line: Line | None, now: float) -> list[str]:
-    parts: list[str] = []
-    if line is not None:
-        if line.monitor is True:
-            if line.level is None:
-                parts.append("drift: no level yet")
-            elif line.level in FOOTER_LEVELS:
-                parts.append(f"drift {FOOTER_LEVELS[line.level]}")
-        elif line.last_end is not None:
-            reason, ended_at = line.last_end
-            note = MONITOR_END_NOTES.get(reason)
-            if reason == "paused":
-                note = "monitor off"
-            if note and -LINE_FUTURE_SLACK_SEC <= now - ended_at < MONITOR_END_SEC:
-                parts.append(note)
-    return parts
+def _monitor_note(line: Line, now: float) -> str:
+    if line.monitor:
+        return "Live monitor on"
+    if line.last_end is not None:
+        reason, ended_at = line.last_end
+        if -LINE_FUTURE_SLACK_SEC <= now - ended_at < MONITOR_END_SEC:
+            return MONITOR_END_NOTES.get(reason, "")
+    return ""
 
 
 def compose_footer(payload: Mapping[str, Any] | None, line: Line | None, now: float) -> str:
     """The one line: monitor, waiting, who cannot report a wait, then the tightest quota window.
 
-    An unmeasured or zero count prints nothing, and a steady board prints nothing at all.
+    A stored departure and the monitor state are independent. A steady board is silent.
     """
     parts: list[str] = []
-    if line is not None and line.model_calls_paused is True:
-        parts.append("model calls paused")
-    parts.extend(_monitor_parts(line, now))
+    if line is not None:
+        if line.model_calls_paused is True:
+            parts.append("AI use paused")
+        if word := FOOTER_LEVELS.get(line.stored_progress or ""):
+            parts.append(word)
+        if note := _monitor_note(line, now):
+            parts.append(note)
     if line is not None and line.waiting:
         parts.append(f"{line.waiting} waiting")
     if line is not None and line.blind:

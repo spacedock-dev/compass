@@ -1,10 +1,14 @@
 // @vitest-environment node
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { parseFocusedSummary, stampModel } from '../api/summary';
 import { refusalNote } from './monitor';
 import * as observed from '../observed';
 import { policyReason } from './route';
+import { GLOSSARY, SESSION_LIST_WORDS } from '../language/glossary';
+import { PROGRESS_OPTIONS } from '../sessions/filters';
 import * as sentences from './sentences';
 import {
   REPLY_CUT,
@@ -24,7 +28,6 @@ import {
 import {
   BASELINE_OPEN,
   CLAUSE_UNRETAINED,
-  LIVE_LEVEL_NAMES,
   PRESS_EVENTS,
   PRESS_LINES,
   UNVERIFIABLE,
@@ -33,7 +36,7 @@ import type { DriftCase } from './terminalParity.corpus.test.helper';
 import { pageView } from './terminalParity.view.test.helper';
 
 // Inputs are the existing real-server recording; wording is read from the page's own owners.
-// Regenerate approved text with COMPASS_WRITE_WORDING_PARITY=1; Python consumes the same file.
+// COMPASS_WRITE_WORDING_PARITY=1 emits a scratch candidate for review. Python reads the approved fixture.
 const path = new URL('../../test/fixtures/terminal-wording.json', import.meta.url);
 const recorded = (name: string) =>
   JSON.parse(
@@ -186,7 +189,15 @@ it('a person reads the page wording and derived reading in their terminal', () =
       drift: {
         press: PRESS_LINES,
         pressEvents: PRESS_EVENTS,
-        levels: LIVE_LEVEL_NAMES,
+        heading: SESSION_LIST_WORDS.progressCheck,
+        controls: [GLOSSARY.checkProgress.shown, GLOSSARY.checkProgressAgain.shown],
+        levels: {
+          none_or_low: GLOSSARY.onTrack.plain,
+          ...Object.fromEntries(
+            PROGRESS_OPTIONS.slice(0, 3).map(({ value, label }) => [value, label]),
+          ),
+          not_enough: GLOSSARY.tooEarlyToTell.plain,
+        },
         why: { 'baseline-open': BASELINE_OPEN },
         clause: CLAUSE_UNRETAINED,
         unverifiable: UNVERIFIABLE,
@@ -195,7 +206,8 @@ it('a person reads the page wording and derived reading in their terminal', () =
           MODEL_UNREAD: sentences.MODEL_UNREAD,
           MODEL_OFF: sentences.MODEL_OFF,
           ROUTE_UNREAD: sentences.ROUTE_UNREAD,
-          READINGS_OFF: sentences.READINGS_OFF,
+          // The status sentence uses the same subject as the shared pause switch.
+          READINGS_OFF: `${GLOSSARY.pauseAi.plain.replace(/^Pause all /, '')} is paused. Nothing is sent until you resume.`,
           STORE_BUSY: sentences.STORE_BUSY_PRESS,
           STORE_UNUSABLE: sentences.STORE_UNREADABLE_PRESS,
           POLICY_UNREADABLE: policyReason({ reason: 'store-unavailable' }),
@@ -216,7 +228,13 @@ it('a person reads the page wording and derived reading in their terminal', () =
       row.expected = row.expected.replace('Activity log', 'Full activity');
     }
     if (process.env['COMPASS_WRITE_WORDING_PARITY'] === '1') {
-      writeFileSync(path, `${JSON.stringify(actual, null, 2)}\n`);
+      const candidate = join(
+        mkdtempSync(join(tmpdir(), 'compass-terminal-wording-')),
+        'terminal-wording.json',
+      );
+      writeFileSync(candidate, `${JSON.stringify(actual, null, 2)}\n`);
+      console.info(`Wording candidate: ${candidate}`);
+      return;
     }
     const expected = JSON.parse(readFileSync(path, 'utf8'));
     const reasons = expected.drift.reasons;

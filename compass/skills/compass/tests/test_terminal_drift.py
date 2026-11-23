@@ -339,6 +339,11 @@ class APersonReadsPageWordingTest(unittest.TestCase):
         for name, sentence in expected["reasons"].items():
             self.assertEqual(sentence, getattr(terminal_drift, name), name)
         self.assertEqual(expected["press"], terminal_drift.PRESS_LINES)
+        self.assertEqual(
+            expected["controls"][0] + " opens while this session runs or once it ends.",
+            terminal_drift._press_line({"acquisition": "event"}, {"reason": "idle-unknown"}),
+        )
+        self.assertEqual("Progress check", expected["heading"])
         self.assertEqual(expected["pressEvents"], terminal_drift.PRESS_EVENTS)
         self.assertEqual(expected["levels"], terminal_drift.LEVEL_NAMES)
         self.assertEqual(expected["why"], terminal_drift.WHY_WORDS)
@@ -454,7 +459,7 @@ class FreeReadTest(unittest.TestCase):
         code, out, _err = drift(board)
         self.assertEqual(0, code)
         self.assertEqual(0, board.readings_started())
-        self.assertIn("Level: Medium", out)
+        self.assertIn("Level: Slightly off course", out)
         self.assertNotIn("Next Analyze prompt", out)
         read_clock = time.strftime("%H:%M", time.localtime(NOW - 600))
         self.assertIn(f"Read at {read_clock}, 10m ago", out)
@@ -468,7 +473,7 @@ class FreeReadTest(unittest.TestCase):
         self.assertEqual(0, second)
         self.assertEqual(1, board.model_calls)
         self.assertEqual(1, board.readings_started())
-        self.assertIn("Level: Medium", out)
+        self.assertIn("Level: Slightly off course", out)
 
     def test_a_person_who_asks_again_spends_even_over_a_current_reading(self) -> None:
         board = stored()
@@ -526,7 +531,20 @@ class FreeReadTest(unittest.TestCase):
         board = FakeBoard(a_payload(a_row(annotation_assessment=dict(ASSESSMENT))), view=view)
         _code, out, _err = drift(board)
         self.assertNotIn("Level:", out)
-        self.assertNotIn("Not enough recorded yet", out)
+        self.assertNotIn("Too early to tell", out)
+
+    def test_a_person_whose_in_progress_outcome_was_not_reached_reads_too_early(self) -> None:
+        view = a_view(
+            departures=[],
+            pill=None,
+            so_far=True,
+            analysis={"level": "not_enough", "reasons": ["outcome-not-reached"], "withheld": False},
+        )
+        view["lines"][0].update(state="not-reached")
+        board = FakeBoard(a_payload(a_row(annotation_assessment=dict(ASSESSMENT))), view=view)
+        code, out, err = drift(board)
+        self.assertEqual((0, ""), (code, err))
+        self.assertIn("Level: Too early to tell", out.splitlines())
 
     def test_a_person_over_a_drafted_goal_reads_no_level_as_the_page_draws_none(self) -> None:
         board = FakeBoard(
@@ -728,7 +746,7 @@ class SpendTest(unittest.TestCase):
                 code, out, err = drift(board)
                 self.assertEqual(sentence + "\n", err)
                 self.assertEqual(1, code)
-                self.assertNotIn("Drift ·", out)
+                self.assertNotIn("Progress check ·", out)
                 self.assertNotIn("Outcome lines:", out)
                 self.assertNotIn("written by a model", out)
                 self.assertEqual(1, board.readings_started())
@@ -818,7 +836,7 @@ class SpendTest(unittest.TestCase):
         code, out, _err = drift(board, clock=clock)
         self.assertEqual(0, code)
         self.assertGreater(clock.at - NOW, 600)
-        self.assertIn("Level: Medium", out)
+        self.assertIn("Level: Slightly off course", out)
 
     def test_a_person_who_interrupts_a_reading_they_started_cancels_exactly_it(self) -> None:
         board = FakeBoard(job_polls=50)
@@ -982,7 +1000,7 @@ class SpendTest(unittest.TestCase):
         code, out, _err = drift(board, at_shell=False)
         self.assertEqual(0, code)
         self.assertEqual(1, board.readings_started())
-        self.assertIn("Level: Medium", out)
+        self.assertIn("Level: Slightly off course", out)
 
     def test_a_person_in_a_session_who_follows_the_still_reading_line_spends_nothing_more(
         self,
@@ -1001,7 +1019,7 @@ class SpendTest(unittest.TestCase):
         code, out, _err = drift(board, again=again, at_shell=False)
         self.assertEqual(0, code)
         self.assertEqual(1, board.readings_started())
-        self.assertIn("Level: Medium", out)
+        self.assertIn("Level: Slightly off course", out)
 
     def test_a_person_in_a_session_hears_still_reading_within_the_wait_counted_from_the_start(
         self,
@@ -1033,7 +1051,7 @@ class SpendTest(unittest.TestCase):
         code, out, _err = drift(board, at_shell=True, clock=clock, began=NOW - 99)
         self.assertEqual(0, code)
         self.assertEqual(1, board.readings_started())
-        self.assertIn("Level: Medium", out)
+        self.assertIn("Level: Slightly off course", out)
 
     def test_a_person_in_a_session_whose_last_read_ran_out_of_time_hears_it_keeps_running(
         self,
@@ -1127,7 +1145,7 @@ class SpendTest(unittest.TestCase):
         code, out, _err = drift(board, again=True)
         self.assertEqual(0, code)
         self.assertEqual(0, board.readings_started())
-        self.assertIn("Level: Medium", out)
+        self.assertIn("Level: Slightly off course", out)
 
     def test_a_person_told_in_flight_with_the_job_waits_for_that_job(self) -> None:
         board = FakeBoard(
@@ -1207,7 +1225,7 @@ class TypedCommandTest(unittest.TestCase):
         code, out, _err = drift(board, at_shell=False, in_session=True)
         self.assertEqual(0, code)
         self.assertNotIn("/api/reading", [path for path, _ in board.posts])
-        self.assertIn("Level: Medium", out)
+        self.assertIn("Level: Slightly off course", out)
 
 
 class ManagedPolicyTest(unittest.TestCase):
@@ -1676,7 +1694,7 @@ class RefusalTest(unittest.TestCase):
 
     def test_model_calls_paused(self) -> None:
         payload = a_payload(reading={"reason": "model-calls-paused", "off": True})
-        self.refuse(FakeBoard(payload), terminal_drift.READINGS_OFF)
+        self.refuse(FakeBoard(payload), "AI use is paused. Nothing is sent until you resume.")
 
     def test_reading_availability_not_published(self) -> None:
         self.refuse(FakeBoard(a_payload(reading=None)), terminal_drift.MODEL_UNREAD)
@@ -1891,7 +1909,7 @@ class AdapterTest(unittest.TestCase):
         row = {"harness": "claude", "sid": "abc"}
         out = "\n".join(terminal_drift.render(row, {}, adapted, adopted=None, again_hint=""))
         self.assertNotIn("So far:", out)
-        self.assertIn("Level: Medium so far", out)
+        self.assertIn("Level: Slightly off course so far", out)
 
     def test_a_person_reads_a_supported_medium_from_the_recorded_server_in_the_terminal(
         self,
@@ -1912,7 +1930,7 @@ class AdapterTest(unittest.TestCase):
                 {"harness": "claude", "sid": "a1b2c3d4"}, {}, adapted, adopted=None, again_hint=""
             )
         )
-        self.assertIn("Level: Medium", out)
+        self.assertIn("Level: Slightly off course", out)
 
     def test_the_recorded_server_row_reads_through_adapt_and_render(self) -> None:
         # The fixture is layer B's own recorded response, so this stays bound to what is published.

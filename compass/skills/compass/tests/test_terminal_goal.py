@@ -300,6 +300,21 @@ class APersonUsesTheirGoal(LeaseRoute):
         self.assertEqual((1, ""), (code, out))
         self.assertIn("not saved", err)
 
+    def test_a_person_is_told_when_saving_a_goal_is_unavailable(self) -> None:
+        application = self.app()
+        application.config = dataclasses.replace(application.config, annotations_enabled=False)
+        with self.serving(application) as port:
+            code, out, err = self.command(port, "--goal", "--session", "claude:" + SID)
+            self.assertEqual((0, ""), (code, err))
+            self.assertIn("Saving a goal is unavailable on this dashboard.", out.splitlines())
+            code, out, err = self.command(
+                port, "--goal", "A new goal", "--session", "claude:" + SID
+            )
+            self.assertEqual((1, ""), (code, out))
+            self.assertIn(
+                "Goal not saved: saving a goal is unavailable or its store is unreadable.", err
+            )
+
     def test_a_person_cannot_send_overlong_words_to_the_store(self) -> None:
         with self.serving() as port, mock.patch.object(terminal_client, "post") as post:
             code, out, err = self.command(port, "--goal", "x" * 1001, "--session", "claude:" + SID)
@@ -379,38 +394,29 @@ class APersonUsesTheirGoal(LeaseRoute):
         self.assertNotIn("The saved goal is empty", out)
         self.assertNotIn("draft is now offered", out)
 
-    def test_a_persons_terminal_save_hides_the_old_footer_level_until_a_monitor_rechecks(
+    def test_a_persons_terminal_save_clears_a_previous_stored_departure_from_the_footer(
         self,
     ) -> None:
         application = self.app()
         collected = json.loads(application.collect_json(show_all=False)[1])
+        row = collected["sessions"][0]
+        row["stored_progress"] = "medium"
         source = http_api.FooterMonitorSource(application)
-        with (
-            mock.patch.object(
-                source, "state", return_value={"on": True, "episode": 1, "started_at": self.now}
-            ),
-            mock.patch.object(source, "view", return_value={"pill": {"level": "medium"}}),
-            mock.patch("time.monotonic", return_value=0.0),
-            self.serving(application) as port,
-        ):
+        with self.serving(application) as port:
             lines = footer_lines.Lines(self.config.state_home, monitor=source)
             application.footer_lines = lines
             self.addCleanup(lines.remove_all)
-            row = collected["sessions"][0]
             path = Path(lines.directory) / footer_lines.line_name(
                 "claude", row.get("resume_id") or row["sid"]
             )
             lines.update(collected, self.now)
-            lines.touch(self.now)
-            self.assertEqual("medium", json.loads(path.read_text())["level"])
+            self.assertEqual("medium", json.loads(path.read_text())["stored_progress"])
             code, out, err = self.command(
                 port, "--goal", "A changed goal", "--session", "claude:" + SID
             )
             self.assertEqual((0, ""), (code, err))
             self.assertNotIn("level", out.lower())
-            self.assertIsNone(json.loads(path.read_text())["level"])
-            lines.touch(self.now + 15)
-            self.assertEqual("medium", json.loads(path.read_text())["level"])
+            self.assertIsNone(json.loads(path.read_text())["stored_progress"])
 
 
 class APersonChoosesOneGoalOperation(unittest.TestCase):

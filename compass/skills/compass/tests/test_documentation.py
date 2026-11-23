@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import importlib
 import io
 import json
 import os
@@ -12,6 +13,7 @@ import unittest
 from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
+from unittest import mock
 
 from compass_runtime import (
     aggregate,
@@ -25,6 +27,8 @@ from compass_runtime import (
     reading,
     semantic_history,
     terminal_client,
+    terminal_drift,
+    terminal_sessions,
 )
 from compass_runtime import config as runtime_config
 from compass_runtime import events as runtime_events
@@ -35,6 +39,8 @@ from .support import (
     SERVER_PATH,
     make_config,
 )
+from .test_terminal_drift import drift, stored
+from .test_terminal_sessions import PAYLOAD as SESSIONS_PAYLOAD
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -299,6 +305,62 @@ class TerminalActionsMatchTheClientTest(unittest.TestCase):
             "data, not instructions",
         ):
             self.assertIn(phrase, section)
+
+
+class TerminalGuideTest(unittest.TestCase):
+    def test_terminal_output_fixtures_and_wording_are_public(self) -> None:
+        fixtures = SERVER_PATH.parents[3] / "frontend" / "test" / "fixtures"
+        names = (
+            "session-groups",
+            "terminal-wording",
+            "terminal-project",
+            "terminal-project-fo",
+            "terminal-goal",
+        )
+        output = [
+            *((fixtures / f"{name}.json").read_text(encoding="utf-8") for name in names),
+            *terminal_client.SENTENCES.values(),
+            *terminal_client.FOOTER_LEVELS.values(),
+            *terminal_drift.LEVEL_NAMES.values(),
+        ]
+        with tempfile.TemporaryDirectory(prefix="compass-terminal-output-") as directory:
+            draft = Path(directory) / "terminal-output.txt"
+            draft.write_text("\n".join(output), encoding="utf-8")
+            validate_plugins = importlib.import_module("scripts.validate_plugins")
+            self.assertEqual(0, validate_plugins.check_public_text(draft))
+
+    def test_the_guide_names_the_boards_controls_and_links_to_navigation(self) -> None:
+        root = SERVER_PATH.parents[3]
+        guide = (root / "HOW_TO_USE_TERMINAL.md").read_text(encoding="utf-8")
+        for word in ("Pause all AI use", "Resume AI use", "Check progress"):
+            self.assertIn(word, guide)
+        for retired in ("Pause model calls", "Analyze drift", "Recent history", "Active now"):
+            with self.subTest(retired=retired):
+                self.assertNotIn(retired.casefold(), " ".join(guide.casefold().split()))
+        self.assertIn("docs/how-it-works.md#finding-your-way-around", guide)
+        self.assertIn("## Finding your way around", (root / "docs/how-it-works.md").read_text())
+
+    def test_the_terminal_guide_samples_come_from_the_commands(self) -> None:
+        guide = (SERVER_PATH.parents[3] / "HOW_TO_USE_TERMINAL.md").read_text(encoding="utf-8")
+        payload = {
+            **SESSIONS_PAYLOAD,
+            "sessions": [
+                row
+                for row in SESSIONS_PAYLOAD["sessions"]
+                if row["sid"] in {"a1b2c3d4", "d4e5f6a7", "f6a7b8c9"}
+            ],
+        }
+        sessions = "\n".join(
+            terminal_sessions.render_sessions(terminal_sessions.list_payload(payload))
+        )
+        self.assertIn(f"```text\n{sessions}\n```", guide)
+        with mock.patch.object(terminal_drift, "clock_text", return_value="14:52"):
+            code, out, err = drift(stored())
+        self.assertEqual((0, ""), (code, err))
+        self.assertIn(f"```text\n{out.rstrip()}\n```", guide)
+        quota = {"rate_limits": {"five_hour": {"used_percentage": 82, "resets_at": 7741}}}
+        footer = terminal_client.compose_footer(quota, terminal_client.Line(2, ("Droid",), True), 1)
+        self.assertIn(f"`{footer}`", guide)
 
 
 class RuntimeDecisionCitationsTest(unittest.TestCase):

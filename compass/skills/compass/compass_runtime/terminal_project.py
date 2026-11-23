@@ -33,6 +33,8 @@ from compass_runtime.terminal_sessions import (
     format_duration,
     printable,
     relationship_lines,
+    row_state,
+    row_state_limit,
 )
 
 Row = Mapping[str, Any]
@@ -183,7 +185,7 @@ def children_of(rows: list[Row], context: Row, generated: float | None) -> list[
     return active
 
 
-def coverage_of(context: Row | None, *, workflow: bool = False) -> tuple[str, str, str]:
+def coverage_of(context: Row | None) -> tuple[str, str, str]:
     # project/recovery.ts: attentionCoverage, with the ordinary-project vocabulary.
     raw = record(record(record(context).get("semantic")).get("projections"))
     raw = record(raw.get("command_attention_coverage"))
@@ -198,7 +200,7 @@ def coverage_of(context: Row | None, *, workflow: bool = False) -> tuple[str, st
     ):
         return (
             "unavailable",
-            "Captain attention unavailable" if workflow else "Attention unavailable",
+            "Attention unavailable",
             "project context coverage unavailable"
             if context is not None
             else "project context request failed",
@@ -213,12 +215,25 @@ def coverage_of(context: Row | None, *, workflow: bool = False) -> tuple[str, st
     return str(state), label, str(raw.get("source") or "active-session attention scan")
 
 
+def questions_by_session(payload: Row) -> dict[str, list[str]]:
+    asks = records(payload.get("asks")) if payload.get("ask") is True else []
+    by_owner: dict[str, list[str]] = {}
+    all_rows = records(payload.get("sessions"))
+    for ask in asks:
+        question = str(ask.get("question") or "").strip()
+        owner = ask_owner(all_rows, ask) if question else None
+        if owner is not None:
+            by_owner.setdefault(key(owner), []).append(question)
+    return by_owner
+
+
 def attention_of(  # noqa: C901, PLR0912, PLR0915 - port of commandAttention, kept in source order
     payload: Row,
     rows: list[Row],
     context: Row | None,
     children: list[dict[str, Any]],
     labels: dict[str, str],
+    by_owner: dict[str, list[str]],
 ) -> list[dict[str, str]]:
     # project/recovery.ts: commandAttention, sourceFailures
     attention: list[dict[str, str]] = []
@@ -250,24 +265,14 @@ def attention_of(  # noqa: C901, PLR0912, PLR0915 - port of commandAttention, ke
                 source,
                 kind,
             )
-    workflow = workflow_of(payload, rows)
-    coverage, _, source = coverage_of(context, workflow=workflow)
+    coverage, _, source = coverage_of(context)
     if coverage != "complete":
         add(
             "FO",
-            ("refresh " if coverage == "unavailable" else "complete ")
-            + ("captain-attention scan" if workflow else "attention scan"),
+            ("refresh " if coverage == "unavailable" else "complete ") + "attention scan",
             source,
             "coverage_inspection",
         )
-    asks = records(payload.get("asks")) if payload.get("ask") is True else []
-    by_owner: dict[str, list[str]] = {}
-    all_rows = records(payload.get("sessions"))
-    for ask in asks:
-        question = str(ask.get("question") or "").strip()
-        owner = ask_owner(all_rows, ask) if question else None
-        if owner is not None:
-            by_owner.setdefault(key(owner), []).append(question)
     for row in rows:
         questions = by_owner.get(key(row), [])
         if questions:
@@ -485,24 +490,18 @@ def workflow_of(payload: Row, rows: list[Row]) -> bool:
 
 
 def attention_status(
-    attention: list[dict[str, str]], coverage: str, *, workflow: bool, needs: bool
+    attention: list[dict[str, str]], coverage: str, *, needs: bool
 ) -> tuple[str, str]:
-    # project/RecoveryStrip.tsx: Attention. Native waits also prevent a not-needed claim.
-    captain = any(item["owner"] == "CAPTAIN" for item in attention)
-    inspecting = coverage != "complete" or any(item["owner"] == "FO" for item in attention)
-    heading = (
-        ("CAPTAIN NEEDED" if workflow else "NEEDS YOU")
-        if captain
-        else ("FO INSPECTING" if workflow else "CHECKING")
-        if inspecting
-        else ("FO CONTINUES" if workflow else "CONTINUES")
-    )
+    # Native waits also prevent a not-needed claim.
+    caller_needed = any(item["owner"] == "CAPTAIN" for item in attention)
+    checking = coverage != "complete" or any(item["owner"] == "FO" for item in attention)
+    heading = "NEEDS YOU" if caller_needed else "CHECKING" if checking else "CONTINUES"
     truth = (
         ""
-        if captain or needs
-        else ("Captain not needed" if workflow else "You are not needed")
+        if caller_needed or needs
+        else "You are not needed"
         if coverage == "complete"
-        else ("Captain state unknown" if workflow else "Your attention is unknown")
+        else "Your attention is unknown"
     )
     return heading, truth
 
@@ -513,21 +512,18 @@ def derive(payload: Row, context: Row | None, *, label: str) -> dict[str, Any]:
         str(row.get("key")): str(row.get("label") or row.get("key"))
         for row in records(payload.get("harnesses"))
     }
-    # observed/project.ts: observeProject (ended takes precedence only in counts).
+    # observed/project.ts: the project rollup counts the displayed state of each session.
+    questions = questions_by_session(payload)
+    states = {key(row): row_state(row, question=bool(questions.get(key(row)))) for row in rows}
+    state_words = [states[key(row)] for row in rows]
     counts = [f"{len(rows)} {'session' if len(rows) == 1 else 'sessions'}"]
-    classified = [
-        sum(working(row) for row in rows),
-        sum(row.get("state") == "needs_input" and ended_at(row) is None for row in rows),
-        sum(ended_at(row) is not None for row in rows),
-        sum(row.get("state") == "idle" and ended_at(row) is None for row in rows),
-    ]
-    for count, name in zip(
-        [*classified, len(rows) - sum(classified)],
-        ("working", "waiting on you", "ended", "quiet", "in no counted state"),
-        strict=True,
-    ):
-        if count:
-            counts.append(f"{count} {name}")
+    classified = 0
+    for word in ("Working", "Waiting on you", "Ended", "Quiet"):
+        if count := state_words.count(word):
+            counts.append(f"{count} {word.lower()}")
+            classified += count
+    if classified < len(rows):
+        counts.append(f"{len(rows) - classified} in no counted state")
     # project/scope.ts: scopeLinks (working, waiting, idle, other; harness then compatibility key).
     ordered = sorted(
         rows,
@@ -548,15 +544,13 @@ def derive(payload: Row, context: Row | None, *, label: str) -> dict[str, Any]:
     task, stage, source = assignment_of(rows, record(context))
     instruction, heading, instruction_source = instruction_of(rows)
     workflow = workflow_of(payload, rows)
-    attention = attention_of(payload, rows, context, children, labels)
-    coverage, coverage_label, _ = coverage_of(context, workflow=workflow)
+    attention = attention_of(payload, rows, context, children, labels, questions)
+    coverage, coverage_label, _ = coverage_of(context)
     attention_heading, attention_truth = attention_status(
-        attention, coverage, workflow=workflow, needs=bool(classified[1])
+        attention, coverage, needs="Waiting on you" in state_words
     )
-    if attention_heading in ("FO CONTINUES", "CONTINUES") and not children and not classified[1]:
-        attention_heading += (
-            " · Continue current task" if workflow else " · Continue the current task"
-        )
+    if attention_heading == "CONTINUES" and not children and "Waiting on you" not in state_words:
+        attention_heading += " · Continue the current task"
     return {
         "label": label,
         "key": project_key(payload, label),
@@ -570,7 +564,13 @@ def derive(payload: Row, context: Row | None, *, label: str) -> dict[str, Any]:
                     " ",
                     str(row.get("title") or "").strip() or "Session title not published",
                 ),
-                "state": str(row.get("state") or "unknown"),
+                "state": states[key(row)],
+                **(
+                    {"state_limit": limit}
+                    if (limit := row_state_limit(row, states[key(row)]))
+                    and limit != states[key(row)]
+                    else {}
+                ),
                 **(
                     {"relationships": links}
                     if (links := relationship_lines(row, records(payload.get("sessions"))))
@@ -640,11 +640,15 @@ def render(brief: Row, *, caller: tuple[str, str]) -> list[str]:
         lines.append(printable(brief["warning"]))
     for member in brief["members"]:
         marker = " [this session]" if member["key"] == ":".join(caller) else ""
-        lines.append(
-            f"  {clip(member['key'])}{marker} · {clip(member['harness'])} · "
-            f"{clip(member['state'])} · {clip(member['age']) or 'age unavailable'} · "
-            f"{clip(member['title'])}"
-        )
+        parts = [f"{clip(member['key'])}{marker}", clip(member["harness"])]
+        state = member["state"]
+        limit = member.get("state_limit")
+        if state != "Waiting on child" and (state != "State not published" or not limit):
+            parts.append(clip(state))
+        parts.extend((clip(member["age"]) or "age unavailable", clip(member["title"])))
+        lines.append("  " + " · ".join(parts))
+        if limit:
+            lines.append(f"    {clip(limit)}")
         lines.extend(f"    {clip(line)}" for line in member.get("relationships", []))
     lines.extend(
         [
@@ -670,19 +674,15 @@ def render(brief: Row, *, caller: tuple[str, str]) -> list[str]:
         for child in brief["children"]
     )
     lines.extend(["Needs you:", f"  {clip(brief['attention_heading'])}"])
-    if brief["authority_gloss"]:
-        lines.append(f"  {clip(brief['authority_gloss'])}")
     if brief["attention_truth"]:
         lines.append(f"  {clip(brief['attention_truth'])}")
     lines.append(f"  {clip(brief['coverage'])}")
     for item in brief["attention"]:
-        owner = (
-            item["owner"]
-            if brief["authority_gloss"]
-            else ("YOU" if item["owner"] == "CAPTAIN" else "AGENT")
-        )
+        owner = "YOU" if item["owner"] == "CAPTAIN" else "AGENT"
         lines.append(
             f"  {clip(owner)} · {authority_verb(item)} · {clip(item['label'])} "
             f"({clip(item['source'])})"
         )
+    if brief["authority_gloss"]:
+        lines.append(f"  Technical: {clip(brief['authority_gloss'])}")
     return lines

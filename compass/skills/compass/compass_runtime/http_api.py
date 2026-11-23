@@ -1055,13 +1055,11 @@ def assemble_project_drift(
     *,
     refresh: bool = False,
     model_consent: bool = False,
-    lease: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """The page's context assembly, shared with the footer without collecting the board again.
+    """Assemble the page context, including its focused reading view when requested.
 
-    Marks and ordinals precede levels and lease state; the view then merges the newest record
-    page. The footer supplies its already-read lease so it never creates a table or recollects
-    through `_lease_row`. The reading route's `_session_context` still receives no levels.
+    Marks and ordinals precede levels and lease state. The view then merges the newest record
+    page. The reading route's `_session_context` still receives no levels.
     """
     rows = collected["sessions"]
     result = runtime_project_context.collect(
@@ -1084,21 +1082,16 @@ def assemble_project_drift(
         )
         result = _with_message_ordinals(application, result, focus)
         result = _with_levels(application, result, rows, focus, project)
-        result = (
-            _with_lease(application, result, rows, focus)
-            if lease is None
-            else _attach_lease(result, lease)
-        )
+        result = _with_lease(application, result, rows, focus)
         result = _with_drift_view(application, result, collected, focus, project, cursor_key)
     return result
 
 
 class FooterMonitorSource:
-    """The footer's serving-only bridge to existing leases and the page's focused assembly."""
+    """The footer's serving-only bridge to existing monitor leases."""
 
     def __init__(self, application: Any) -> None:
         self.application = application
-        self._cursor_key = os.urandom(32)
 
     def state(self, row: Mapping[str, Any]) -> Mapping[str, Any]:
         leases = self.application.live_leases
@@ -1108,34 +1101,6 @@ class FooterMonitorSource:
             str(row["harness"]), str(row["sid"]), ended=bool(row.get("ended_at"))
         )
         return published
-
-    def record_stamp(self, row: Mapping[str, Any]) -> object:
-        """Notice record changes without spending another context or record-page read."""
-        path = runtime_observer.resolve_transcript(
-            self.application.config, self.application.state, str(row["harness"]), str(row["sid"])
-        )
-        if not path:
-            return None
-        try:
-            info = os.stat(path)
-        except OSError:
-            return (path, None)
-        return (path, info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
-
-    def view(
-        self, collection: Mapping[str, Any], row: Mapping[str, Any], lease: Mapping[str, Any]
-    ) -> Mapping[str, Any] | None:
-        context = assemble_project_drift(
-            self.application,
-            dict(collection),
-            str(row.get("project_key") or row.get("project") or ""),
-            (str(row["harness"]), str(row["sid"])),
-            self._cursor_key,
-            lease=lease,
-        )
-        views = context.get("sources", {}).get("work", {}).get("drift_views", [])
-        result: Mapping[str, Any] | None = views[0] if len(views) == 1 else None
-        return result
 
 
 def _read_ci(

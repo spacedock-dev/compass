@@ -1292,7 +1292,6 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # writer. A leaf over `io` and `terminal_sessions`, so the module that owns collection never
         # imports it. The second edge is the one definition of what waits, shared with `--sessions`.
         "compass_runtime.footer_lines": {
-            "compass_runtime.declared_sessions",
             "compass_runtime.io",
             "compass_runtime.terminal_sessions",
         },

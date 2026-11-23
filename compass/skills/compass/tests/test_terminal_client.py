@@ -1075,9 +1075,9 @@ class PauseCommandTest(HomeCase):
                 code, out, err = self.pause(fake.port if explicit else None)
                 self.assertEqual((0, ""), (code, err))
                 self.assertEqual(
-                    f"Model calls are paused on the dashboard at 127.0.0.1:{fake.port}.\n", out
+                    f"AI use is paused on the dashboard at 127.0.0.1:{fake.port}.\n", out
                 )
-                self.assertNotEqual("Model calls are paused.\n", out)
+                self.assertNotEqual("AI use is paused.\n", out)
                 self.assertEqual([("POST", "/api/reading")], fake.posts())
 
     def test_a_person_without_a_dashboard_starts_nothing_when_pausing(self) -> None:
@@ -1383,7 +1383,7 @@ class SessionsCommandTest(HomeCase):
                 code, out, err = self.run_sessions(mode, port=fake.port)
                 self.assertEqual((0, ""), (code, err))
                 self.assertIn(
-                    "Active now" if mode is None else terminal_client.sentence("nothing_waiting"),
+                    "Right now" if mode is None else terminal_client.sentence("nothing_waiting"),
                     out,
                 )
 
@@ -1773,7 +1773,7 @@ class DriftCommandTest(HomeCase):
                 code, out, err = self.run_drift(port=fake.port, environ=env, tty=tty)
 
                 self.assertEqual((0, ""), (code, err))
-                self.assertIn("Drift · codex:abc", out)
+                self.assertIn("Progress check · codex:abc", out)
                 self.assertIn("Departures:", out)
                 self.assertNotIn("Level:", out)
                 self.assertNotIn("/api/correction", [r[1] for r in fake.requests])
@@ -1784,7 +1784,7 @@ class DriftCommandTest(HomeCase):
             code, out, _err = self.run_drift(session="codex:abc", port=fake.port, tty=True)
 
         self.assertEqual(0, code)
-        self.assertIn("Drift · codex:abc", out)
+        self.assertIn("Progress check · codex:abc", out)
 
     def test_a_person_in_codex_is_not_read_as_a_session_the_marker_does_not_name(self) -> None:
         # Another action cannot identify a Codex caller: only drift resolves the marker.
@@ -1813,7 +1813,7 @@ class DriftCommandTest(HomeCase):
             )
 
         self.assertEqual(0, code)
-        self.assertIn("Level: Medium", out)
+        self.assertIn("Level: Slightly off course", out)
 
     def test_a_person_whose_drift_started_compass_reads_that_in_the_session(self) -> None:
         # The skill prints standard output on success, so the line goes there inside a session.
@@ -1917,7 +1917,7 @@ class DriftCommandTest(HomeCase):
             code, out, err = self.run_drift(session="claude:abc", port=fake.port, tty=True)
 
         self.assertEqual((0, ""), (code, err))
-        self.assertIn("Level: Medium", out)
+        self.assertIn("Level: Slightly off course", out)
         self.assertIn("Correction to copy:\nKeep accepting tabs.", out)
         self.assertNotIn(("POST", "/api/reading"), fake.requests)
 
@@ -1931,7 +1931,7 @@ class DriftCommandTest(HomeCase):
             code, out, _err = self.run_drift(session="claude:abc", port=fake.port, tty=False)
 
         self.assertEqual(0, code)
-        self.assertIn("Level: Medium", out)
+        self.assertIn("Level: Slightly off course", out)
         self.assertNotIn("Keep accepting tabs.", out)
         self.assertNotIn("Correction to copy:", out)
         self.assertIn("A correction is ready to copy on the session page", out)

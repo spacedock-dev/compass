@@ -1,11 +1,15 @@
-// @vitest-environment node
+// @vitest-environment jsdom
 /* The terminal's `--sessions` and `--sessions waiting` against the board. The recorded payload and the
    expected file are read by this test and by `tests/test_terminal_sessions.py`, so the two readers are held
    to one answer: this file proves the board gives it, that one proves the terminal does.
 
-   `session-groups.json` is the BOARD's output, committed by hand after reading it. It must never be
-   regenerated from the Python port: a file the port wrote would agree with the port by construction. */
-import { readFileSync } from 'node:fs';
+   COMPASS_WRITE_SESSIONS_PARITY=1 pnpm exec vitest run frontend/src/sessions/terminalParity.test.ts
+   writes a scratch candidate for session-groups.json from the board. Review it before copying it
+   into the fixtures directory. The Python port reads the approved answer. */
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fireEvent, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { attentionModel } from '../attention/model';
 import { riskSourceText, subjectSource } from '../attention/text';
@@ -13,8 +17,12 @@ import { riskSubject } from '../attention/subjects';
 import { resumeCommand } from '../controls/resumeCommand';
 import { observe, sessionKey, type Row } from '../observed';
 import { asPayload } from '../observed/values';
-import { buildSessionsScreen, rowState } from './rows';
+import { buildSessionsScreen } from './rows';
 import { groupLabel } from './declared';
+import { PROGRESS_OPTIONS } from './filters';
+import { mountSessions } from './testing';
+
+const departingLabels = PROGRESS_OPTIONS.slice(0, 3).map(({ label }) => label);
 
 const read = (path: string): unknown =>
   JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
@@ -32,18 +40,20 @@ const finishedRuns = read('../../test/fixtures/finished-run-terminal.json') as {
 const keyOf = (row: Row): [string, string] => [String(row['harness']), String(row['sid'])];
 
 /* What a reader of the board is told, per row, in the board's own words. */
-function boardView(payload: Row) {
+function boardView(payload: Row, root: HTMLElement, needsYou: HTMLElement) {
   const model = observe(payload);
   const screen = buildSessionsScreen(payload, model);
   const rows = (list: typeof screen.active) =>
     list.map((row) => ({
       key: keyOf(row.session),
-      state: rowState(row.session),
+      state: sessionRow(root, row.session.sid)
+        .querySelector('[data-next-row-state]')
+        ?.getAttribute('data-next-row-state'),
       outcome: row.session.outcomeKnown ? row.session.outcomeText : null,
       git: row.session.outcomeKnown ? row.session.gitText : null,
       command: resumeCommand(row.session.harness, String(row.session.resume_id ?? '')),
       ended: row.endedSince,
-      drift: row.drift ? row.drift.age : null,
+      drift: rowProgress(root, row.session.sid),
     }));
   const attention = attentionModel(payload);
   const drawn = new Set(
@@ -55,16 +65,34 @@ function boardView(payload: Row) {
       const row = subject.session;
       return row ? keyOf(row) : ['ask', String(subject.asks[0]?.['id'])];
     });
-  const unreported = model.coverage.rows
-    .filter((row) => !row.blockKnown)
-    .map((row) => `${row.label}: ${row.blockText}`);
+  const coverage = needsYou.querySelector('.next-attention-coverage');
+  if (!coverage) throw new Error('Needs you coverage was not rendered');
+  const unreported = [...coverage.querySelectorAll('[data-next-coverage-harness]')]
+    .filter((row) => row.querySelector('[data-known]')?.getAttribute('data-known') === 'false')
+    .map(
+      (row) =>
+        `${row.querySelector('strong')?.textContent}: ${row.lastElementChild?.textContent?.split(' · ')[0]}`,
+    );
   return {
     active: rows(screen.active),
     history: rows(screen.history),
     waiting,
-    coverage: model.coverage.gates,
+    coverage: coverage.querySelector(':scope > p')?.textContent,
     unreported,
   };
+}
+
+function sessionRow(root: HTMLElement, sid: string) {
+  const row = [...root.querySelectorAll('article[data-next-session]')].find(
+    (node) => node.getAttribute('data-next-session') === sid,
+  );
+  if (!row) throw new Error(`Session row not rendered: ${sid}`);
+  return row;
+}
+
+function rowProgress(root: HTMLElement, sid: string) {
+  const row = sessionRow(root, sid);
+  return departingLabels.find((label) => row.textContent?.includes(label)) ?? null;
 }
 
 /* An ownerless request is drawn as a board risk row on the Attention screen; the terminal still lists it,
@@ -76,35 +104,47 @@ function drawnAsRiskRow(subject: { key: string; session: Row | null }, drawn: Se
 describe('the board against the terminal listing', () => {
   const payload = asPayload(fixture.response.body);
 
-  it('holds the sessions the terminal lists, in its groups, with the board’s evidence-based state wording', () => {
-    // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
-    type Board = ReturnType<typeof boardView>;
-    type RecordedRow = Omit<Board['active'][number], 'state'> & { state: string };
-    const recorded = expected['board'] as Omit<Board, 'active' | 'history'> & {
-      active: RecordedRow[];
-      history: RecordedRow[];
-    };
-    // The recorded Idle bucket includes four rows with no observed stop.
-    const withoutStop = new Set([
-      'claude:f6a7b8c9',
-      'claude:d0e1f2a3',
-      'codex:019c0000-1111-7222-8333-444455557777',
-      'gemini:gem-0001',
-    ]);
-    const idleOnBoard = (rows: typeof recorded.active) =>
-      rows.map((row) =>
-        row.state === 'Idle'
-          ? { ...row, state: withoutStop.has(row.key.join(':')) ? 'State not published' : 'Quiet' }
-          : row,
+  it('holds the sessions, states and visible marks the board shows', async () => {
+    const board = mountSessions({ data: payload });
+    const needsYou = mountSessions({ hash: '#n=attention', data: payload });
+    await board.settle();
+    await needsYou.settle();
+    fireEvent.click(
+      within(needsYou.container).getByRole('button', { name: "What Compass can't see" }),
+    );
+    const actual = boardView(payload, board.container, needsYou.container);
+    if (process.env['COMPASS_WRITE_SESSIONS_PARITY'] === '1') {
+      const candidate = join(
+        mkdtempSync(join(tmpdir(), 'compass-terminal-sessions-')),
+        'session-groups.json',
       );
-    expect(boardView(payload)).toEqual({
-      ...recorded,
-      active: idleOnBoard(recorded.active),
-      history: idleOnBoard(recorded.history),
-      unreported: recorded.unreported.map((line) =>
-        line.replace(/: Harness does not report blocks$/, ': Waits not reported'),
-      ),
-    });
+      writeFileSync(candidate, `${JSON.stringify({ ...expected, board: actual }, null, 2)}\n`);
+      console.info(`Sessions candidate: ${candidate}`);
+      return;
+    }
+    expect(actual).toEqual(expected['board']);
+  });
+
+  const headings = expected['headings'] as ({ labels: string[] } & Row)[];
+  it.each(headings)('names its groups from $labels', async ({ labels, ...window }) => {
+    const { window_hours: _hours, ...data } = payload;
+    const board = mountSessions({ data: { ...data, ...window } });
+    await board.settle();
+    const groups = board.container.querySelectorAll(
+      '.next-operation-group h2, .next-operation-group h3',
+    );
+    expect([...groups].map((heading) => heading.textContent)).toEqual(labels);
+  });
+
+  const unavailable = expected['unpublishedProgress'] as ({ name: string; mark: null } & Row)[];
+  it.each(unavailable)('withholds a row mark: $name', async ({ name: _name, mark, ...fields }) => {
+    const sid = 'f6a7b8c9';
+    const sessions = (payload['sessions'] as Row[]).map((row) =>
+      row['sid'] === sid ? { ...row, ...fields } : row,
+    );
+    const board = mountSessions({ data: { ...payload, sessions } });
+    await board.settle();
+    expect(rowProgress(board.container, sid)).toBe(mark);
   });
 
   it.each(finishedRuns)('holds the terminal Now reading: $name', ({ payload, now }) => {

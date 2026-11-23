@@ -1,34 +1,34 @@
 {
   "label": "terminal-project",
   "key": "key-terminal-project",
-  "counts": "4 sessions · 1 working · 1 waiting on you · 1 ended · 1 quiet",
-  "warning": "4 sessions share this display label; shared location is not established",
+  "counts": "4 sessions · 1 working · 1 waiting on you · 1 ended · 1 in no counted state",
+  "warning": "Location not measured for 4 sessions with this display label",
   "members": [
     {
       "key": "claude:a1b2c3d4",
       "title": "Build the parser",
-      "state": "working",
+      "state": "Working",
       "age": "30s",
       "harness": "Claude Code"
     },
     {
       "key": "claude:e5f6a7b8",
       "title": "Review sk-…REDACTED",
-      "state": "needs_input",
+      "state": "Waiting on you",
       "age": "30s",
       "harness": "Claude Code"
     },
     {
       "key": "codex:019c0000-1111-7222-8333-444455556666",
       "title": "Document the parser",
-      "state": "idle",
+      "state": "State not published",
       "age": "1m",
       "harness": "Codex"
     },
     {
       "key": "claude:deadbeef",
       "title": "Finished migration",
-      "state": "working",
+      "state": "Ended",
       "age": "30s",
       "harness": "Claude Code"
     }

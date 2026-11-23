@@ -535,7 +535,7 @@ class APersonTurnsSummariesOff(unittest.TestCase):
             (
                 403,
                 {"reason": "model-calls-paused"},
-                "Model calls are paused; summaries were not changed.",
+                "AI use is paused; summaries were not changed.",
             ),
         ):
             out, err = io.StringIO(), io.StringIO()

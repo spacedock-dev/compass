@@ -4601,24 +4601,21 @@ directory), written atomically. The name is the first 32 hex characters of the S
 id, so an id never reaches a path and the file name does not reveal it. The file holds one line of
 JSON: a shape version, a time, the dashboard's process id, the count of the other needs on the
 Needs you queue, sessions waiting on you and pending asks (`null` when no harness that can report a wait was read), the board's names for harnesses that
-cannot report one, a `monitor` boolean, a `level` token or `null`, and `last_end` (`null` or an
-end reason and time), and `model_calls_paused` (`true`, `false` or `null` for unknown). The level comes from the page's pill and is written only while that session's
-Live monitor lease stands. It holds no title, no path, no prompt, no session id and no tool output.
+cannot report one, a `monitor` boolean, `stored_progress` (a departing level token or `null`),
+`last_end` (`null` or an end reason and time), and `model_calls_paused` (`true`, `false` or `null`
+for unknown). The stored level comes from the published session row. The file holds no title,
+path, prompt, session id or tool output.
 
 The dashboard writes only the page-default snapshot, only while it is serving, and never fails a
 request over it (`test_footer_lines`). A file is rewritten when its content changes and otherwise
 every 15 seconds, so its time says it was confirmed recently. Refreshes with no change also check lease
 endings and sample the shared permission store outside the writer lock. Updates sample that store too,
-so an older collection cannot supply a stale pause answer. Samples are ordered before store I/O;
-a late older read cannot replace a newer answer. Unknown clears an earlier assertion.
-The client prints `model calls paused` only for exact `true`, independently of the monitor, and
-keeps waiting and quota segments. Resume clears the pause segment on the next refresh.
-The last projected level stays visible until a new projection replaces it, including while
-this session's row inputs, view settings or record file stamp change. Projections run at most once per
-15 seconds. Checking the file stamp reads no record page. Replacing the saved intent or annotation
-revision clears the level at once, as does an end or restart. Slow projections cannot restore a level
-from an earlier lease episode or superseded inputs. Waiting counts keep refreshing; a monitored session that
-leaves the board gets one final write, retried if it fails. The client shows an end note for five
+so an older collection cannot supply a stale pause answer. Samples are ordered before store I/O.
+A late older read cannot replace a newer answer. Unknown clears an earlier assertion.
+The client prints `AI use paused` only for exact `true`, independently of the monitor, and
+keeps waiting and quota segments. Resume AI use clears the pause segment on the next refresh.
+The writer clears stored progress when the next snapshot withholds it. A session with a stored
+departure or a standing monitor that leaves the board gets one final write, retried if it fails. The client shows an end note for five
 minutes after the recorded end, except for the reader's own Off. A dashboard that stops removes the
 files it wrote, including on `--stop`; a crash leaves them to the client's one-minute freshness
 ceiling, after which the client ignores them, and to a sweep that removes strays older than an hour.
