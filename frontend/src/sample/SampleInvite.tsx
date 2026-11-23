@@ -1,12 +1,12 @@
 import { RouteLink } from '../shell/RouteLink';
+import { Alert } from '../ui/alert';
 import { SAMPLE_HARNESS, SAMPLE_PROJECT, SAMPLE_SID } from './ids';
 
-/* How a new reader finds the sample: one quiet line above the Sessions list, with the link. It is its own
-   component, outside the Sessions list, so the list stays exactly what the rows promise. */
+/* How a new reader finds the sample, above the Sessions list. */
 export function SampleInvite() {
   return (
-    <p className="mb-3 text-muted-foreground" data-sample-invite>
-      New to Compass?{' '}
+    <Alert as="p" variant="notice" announce={false} className="mb-3" data-sample-invite>
+      <strong>New to Compass?</strong>{' '}
       <RouteLink
         route={{
           view: 'session',
@@ -17,7 +17,7 @@ export function SampleInvite() {
       >
         See a sample session (view only)
       </RouteLink>{' '}
-      to learn what the Session page and Intent and drift show.
-    </p>
+      to see how Compass shows a session’s goal and the results of progress checks.
+    </Alert>
   );
 }

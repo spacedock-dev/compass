@@ -314,6 +314,47 @@ export const DefaultBoard: Story = {
   },
 };
 
+export const TitlesOpenSessions: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = await ready(canvasElement);
+    const title = canvas.getAllByRole('link', { name: /^Open session / })[0] as HTMLElement;
+    const sentence = canvas.getByRole('link', { name: 'See a sample session (view only)' });
+    const decoration = (link: HTMLElement) => getComputedStyle(link).textDecorationLine;
+    await expect(title).toHaveAttribute('href', expect.stringContaining('#'));
+    await expect(decoration(title)).toBe('none');
+    await expect(decoration(sentence)).toBe('underline');
+    const invite = sentence.closest('[data-sample-invite]');
+    await expect(invite).toHaveTextContent(
+      'to see how Compass shows a session’s goal and the results of progress checks.',
+    );
+    await expect(invite).toHaveStyle({
+      backgroundColor: 'rgb(230, 242, 236)',
+      borderLeftWidth: '1px',
+    });
+    await expect(title.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+    await expect(title.getBoundingClientRect().width).toBeGreaterThanOrEqual(44);
+    if ('__vitest_browser_runner__' in window) {
+      const { page } = await import('vitest/browser');
+      await page
+        .getByRole('link', { name: /^Open session / })
+        .first()
+        .hover();
+      await expect(decoration(title)).toBe('underline');
+      await page.getByRole('searchbox', { name: 'Search sessions' }).hover();
+      await expect(decoration(title)).toBe('none');
+    }
+    title.focus();
+    await expect(title).toHaveFocus();
+    await expect(decoration(title)).toBe('underline');
+    await expect(title).toHaveStyle({
+      outlineWidth: '2px',
+      outlineStyle: 'solid',
+      outlineColor: 'rgb(47, 125, 91)',
+      outlineOffset: '2px',
+    });
+  },
+};
+
 /* 2 */
 export const SearchByWords: Story = {
   play: async ({ canvasElement }) => {
@@ -328,6 +369,13 @@ export const SearchByWords: Story = {
     );
     await expect(shownRows(canvasElement)).toBe('BK');
     await expect(shownLines(canvasElement)).toEqual(['1 of 4 shown', '1 of 8 shown']);
+    const shown = canvasElement.querySelector('[data-next-sessions-shown="active"]') as HTMLElement;
+    const clear = within(shown).getByRole('button', { name: 'Clear filters' });
+    await expect(clear).toHaveStyle({
+      borderColor: 'rgba(0, 0, 0, 0)',
+      color: 'rgb(47, 125, 91)',
+      textDecorationLine: 'none',
+    });
     await expect(
       rowOf(canvasElement, 'B')?.querySelector('[data-next-row-hint]'),
     ).toHaveTextContent('Matched in your first prompt: "write the release notes for 2.4"');

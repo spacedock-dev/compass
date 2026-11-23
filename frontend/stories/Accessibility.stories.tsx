@@ -3,6 +3,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 import '../src/drift/drift.css';
 import { Meter, Scale } from '../src/drift/DriftLevelView';
 import { LEVEL_SCALE } from '../src/drift/sentences';
+import { Button } from '../src/ui/button';
 import {
   analysisRow,
   DriftScenario,
@@ -248,6 +249,7 @@ const reachable = (canvasElement: HTMLElement): HTMLElement[] =>
 async function tabThrough(
   canvasElement: HTMLElement,
   controls: HTMLElement[],
+  checkFocus?: (control: HTMLElement) => Promise<void>,
 ): Promise<HTMLElement[]> {
   const driver = await tabber();
   if (!driver) return [];
@@ -263,13 +265,18 @@ async function tabThrough(
       hasFocusRing(now, resting.get(now) ?? restingRing(now)),
       `no focus ring on ${now.outerHTML.slice(0, 80)}`,
     ).toBe(true);
+    await checkFocus?.(now);
   }
   return visited;
 }
 
 /* Every control the page offers takes focus from Tab, in the order the page reads, with a ring, and nothing
    inert takes it. */
-async function everyControlTakesFocus(canvasElement: HTMLElement, ready: string): Promise<void> {
+async function everyControlTakesFocus(
+  canvasElement: HTMLElement,
+  ready: string,
+  checkFocus?: (control: HTMLElement) => Promise<void>,
+): Promise<void> {
   if (!(await tabber())) return;
   await waitFor(() => expect(canvasElement.querySelector(ready)).not.toBeNull(), {
     timeout: 5000,
@@ -278,7 +285,7 @@ async function everyControlTakesFocus(canvasElement: HTMLElement, ready: string)
   await settled();
   const controls = reachable(canvasElement);
   await expect(controls.length).toBeGreaterThan(5);
-  const visited = await tabThrough(canvasElement, controls);
+  const visited = await tabThrough(canvasElement, controls, checkFocus);
   await expect(visited.length, 'Tab moved focus through the page').toBeGreaterThan(5);
   const missed = controls.filter((control) => !visited.includes(control));
   await expect(
@@ -297,7 +304,51 @@ async function everyControlTakesFocus(canvasElement: HTMLElement, ready: string)
 
 export const EveryControlTakesFocusInReadingOrderWithARing: Story = {
   args: { scenario: RESULT },
-  play: ({ canvasElement }) => everyControlTakesFocus(canvasElement, '[data-next-result]'),
+  render: (args) => (
+    <>
+      <DriftScenario {...args} />
+      <section aria-label="Shared controls">
+        <Button emphasis="primary">Check progress</Button>
+        <Button emphasis="secondary">Edit goal</Button>
+        <Button emphasis="quiet">Not now</Button>
+        <Button emphasis="danger">Remove item</Button>
+        <Button emphasis="danger-solid">Delete item</Button>
+        <Button variant="filter-chip">Remove filter</Button>
+        <a href="#shared-controls" className="inline-flex min-h-[44px] min-w-[44px] items-center">
+          Read about the controls
+        </a>
+        <details>
+          <summary>How progress checks work</summary>
+          <p>Progress checks use AI.</p>
+        </details>
+      </section>
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    const shared = within(canvasElement).getByRole('region', { name: 'Shared controls' });
+    await within(canvasElement).findByRole('button', { name: 'Steer back' });
+    await settled();
+    await expect(reachable(shared)).toHaveLength(8);
+    const controls = reachable(canvasElement).filter((control) =>
+      control.matches('a[href], button, summary'),
+    );
+    for (const control of controls) {
+      const { width, height } = control.getBoundingClientRect();
+      const label = control.getAttribute('aria-label') ?? control.textContent;
+      await expect(width, `${label} target width`).toBeGreaterThanOrEqual(44);
+      await expect(height, `${label} target height`).toBeGreaterThanOrEqual(44);
+    }
+    await everyControlTakesFocus(canvasElement, '[data-next-result]', async (control) => {
+      if (!control.matches('a[href], button, summary')) return;
+      const label = control.getAttribute('aria-label') ?? control.textContent;
+      await expect(control, `${label} keyboard focus ring`).toHaveStyle({
+        outlineWidth: '2px',
+        outlineStyle: 'solid',
+        outlineColor: 'rgb(47, 125, 91)',
+        outlineOffset: '2px',
+      });
+    });
+  },
 };
 
 /* A re-run in progress dims the old result and makes it inert; the controls outside it stay reachable. */
@@ -343,9 +394,26 @@ export const FocusInTheSteerBackBox: Story = {
   play: async ({ canvasElement }) => {
     const driver = await tabber();
     if (!driver) return;
-    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const session = within(canvasElement);
+    const card = await session.findByRole('region', { name: 'Drift' });
+    const primaryActions = () =>
+      session
+        .getAllByRole('button')
+        .filter((button) =>
+          button.matches(
+            '[data-emphasis="primary"], [data-variant="primary"], [data-variant="raise-primary"]',
+          ),
+        );
+    await expect(
+      primaryActions().length,
+      'primary actions on the Session page',
+    ).toBeLessThanOrEqual(1);
     await userEvent.click(await within(card).findByRole('button', { name: 'Steer back' }));
     const copy = await within(card).findByRole('button', { name: 'Copy correction' });
+    await expect(
+      primaryActions().length,
+      'primary actions with Steer back open',
+    ).toBeLessThanOrEqual(1);
     await settled();
     const box = copy.closest('[data-next-steer-section], section') ?? card;
     await expect(box.contains(document.activeElement), 'focus moved into the box').toBe(true);

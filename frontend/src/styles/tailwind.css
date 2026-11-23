@@ -46,6 +46,7 @@
 
   --radius-control: var(--r-control);
   --radius-card: var(--r-card);
+  --radius-standard-card: var(--r-standard-card);
   --radius-shell: var(--r-shell);
   --radius-pill: var(--r-pill);
 
@@ -112,6 +113,9 @@
   --progress-way-off-course: #7c2d12;
   --worth-a-look: #92400e;
   --destructive-solid: #9a3412;
+  --color-danger-hover: #883217;
+  --color-danger-outline-hover: #f8f1ee;
+  --color-danger-tint: #f7efec;
   /* type: five steps, floor 13px, sentences 15px */
   --fs-label: 0.8125rem;
   --fs-body: 0.9375rem;
@@ -123,6 +127,7 @@
   --mono: ui-monospace, monospace;
   --r-control: 0.25rem;
   --r-card: 0.625rem;
+  --r-standard-card: 1rem;
   --r-shell: 1rem;
   --r-pill: 999px;
   --control-pad: 0.5625rem 0.875rem;

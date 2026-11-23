@@ -2,6 +2,7 @@ import { Icon, SESSION_STATE_ICONS } from '../ui/icons';
 import { groupName, groupOf, nestRows } from './declared';
 import { RelationshipLabels } from './DeclaredRelationships';
 import { Card } from '../ui/card';
+import { titleLink } from '../ui/link';
 import { Button } from '../ui/button';
 import {
   Fragment,
@@ -173,7 +174,7 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
       <span className="next-operation-harness">{row.harnessLabel}</span>
       <RouteAnchor
         route={row.route}
-        className="next-operation-route"
+        className={`next-operation-route block ${titleLink}`}
         label={`Open session ${session.titleText}`}
         focusKey={`sessions-row:${row.key}`}
         fallback={SEARCH_KEY}
@@ -493,12 +494,7 @@ const Group = memo(function Group({
             data-next-sessions-shown-count
           >{`${String(kept.length)} of ${String(rows.length)} shown`}</span>
           <span aria-hidden="true">·</span>
-          <Button
-            type="button"
-            variant="native"
-            className="cursor-pointer border-0 bg-transparent p-0 font-[family-name:var(--sans)] text-body text-foreground underline"
-            onClick={filter.onClear}
-          >
+          <Button type="button" emphasis="quiet" className="px-2" onClick={filter.onClear}>
             Clear filters
           </Button>
         </p>

@@ -2,9 +2,150 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, within } from 'storybook/test';
 import { useState } from 'react';
 import { Button } from '../src/ui/button';
+import { contrastOf, rgbOf } from './a11y.audit';
 const meta = { title: 'UI/Button', component: Button } satisfies Meta<typeof Button>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+const emphasis = {
+  primary: ['rgb(47, 125, 91)', 'rgb(47, 125, 91)', 'rgb(255, 255, 255)'],
+  secondary: ['rgb(255, 255, 255)', 'rgb(123, 135, 148)', 'rgb(31, 41, 51)'],
+  quiet: ['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)', 'rgb(47, 125, 91)'],
+  danger: ['rgb(255, 255, 255)', 'rgb(154, 52, 18)', 'rgb(154, 52, 18)'],
+  'danger-solid': ['rgb(154, 52, 18)', 'rgb(154, 52, 18)', 'rgb(255, 255, 255)'],
+} as const;
+
+function emphasisStory(kind: keyof typeof emphasis, label: string): Story {
+  return {
+    args: { emphasis: kind, children: label },
+    render: (args) => (
+      <>
+        <div style={{ background: 'var(--panel)', padding: 8 }}>
+          <Button {...args} />
+        </div>
+        <div style={{ background: 'var(--bg)', padding: 8 }}>
+          <Button {...args} />
+        </div>
+      </>
+    ),
+    play: async ({ canvasElement }) => {
+      const [backgroundColor, borderColor, color] = emphasis[kind];
+      for (const button of within(canvasElement).getAllByRole('button', { name: label })) {
+        await expect(button).toHaveStyle({ backgroundColor, borderColor, color });
+        const { height, width } = button.getBoundingClientRect();
+        await expect(height).toBeGreaterThanOrEqual(44);
+        await expect(width).toBeGreaterThanOrEqual(44);
+        const style = getComputedStyle(button);
+        const surface = getComputedStyle(button.parentElement as HTMLElement).backgroundColor;
+        const fill = kind === 'quiet' ? surface : style.backgroundColor;
+        await expect(contrastOf(rgbOf(style.color), rgbOf(fill))).toBeGreaterThanOrEqual(4.5);
+        if (kind === 'secondary' || kind === 'danger') {
+          await expect(style.borderTopWidth).toBe('1px');
+          await expect(style.borderTopStyle).toBe('solid');
+          await expect(
+            contrastOf(rgbOf(style.borderTopColor), rgbOf(surface)),
+          ).toBeGreaterThanOrEqual(3);
+        }
+      }
+    },
+  };
+}
+
+export const PrimaryEmphasis = emphasisStory('primary', 'Check progress');
+export const Secondary = emphasisStory('secondary', 'Edit goal');
+export const QuietEmphasis = emphasisStory('quiet', 'Not now');
+export const Danger = emphasisStory('danger', 'Remove item');
+export const DangerSolid = emphasisStory('danger-solid', 'Delete item');
+
+export const DefaultModifiers: Story = {
+  render: () => (
+    <>
+      <Button tone="muted">Save draft</Button>
+      <Button size="consent">Allow</Button>
+      <Button strongBorder>Strong border</Button>
+      <Button accentBorder>Accent border</Button>
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('button', { name: 'Save draft' })).toHaveStyle({
+      color: 'rgb(82, 96, 109)',
+    });
+    await expect(canvas.getByRole('button', { name: 'Allow' })).toHaveStyle({
+      paddingBlockStart: '6px',
+      paddingBlockEnd: '6px',
+    });
+    await expect(canvas.getByRole('button', { name: 'Strong border' })).toHaveStyle({
+      borderWidth: '2px',
+    });
+    await expect(canvas.getByRole('button', { name: 'Accent border' })).toHaveStyle({
+      borderColor: 'rgb(47, 125, 91)',
+    });
+  },
+};
+
+export const UnavailableEmphasis: Story = {
+  render: () => (
+    <>
+      <Button emphasis="primary" disabled>
+        Check progress
+      </Button>
+      <Button emphasis="quiet" aria-disabled>
+        Clear filters
+      </Button>
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const native = canvas.getByRole('button', { name: 'Check progress' });
+    const focusable = canvas.getByRole('button', { name: 'Clear filters' });
+    await expect(native).toBeDisabled();
+    await expect(focusable).toHaveAttribute('aria-disabled', 'true');
+    for (const button of [native, focusable]) {
+      const style = getComputedStyle(button);
+      await expect(style.backgroundImage).toContain('repeating-linear-gradient');
+      await expect(style.borderTopStyle).toBe('dashed');
+      await expect(style.borderTopColor).toBe('rgb(123, 135, 148)');
+    }
+  },
+};
+
+function SessionActionsExample() {
+  const [steering, setSteering] = useState(false);
+  return (
+    <section aria-label="Session actions">
+      <p>
+        <Button emphasis="primary">Check progress again</Button> Uses AI
+      </p>
+      <p>
+        <Button
+          emphasis="secondary"
+          aria-expanded={steering}
+          onClick={() => setSteering(!steering)}
+        >
+          Steer back
+        </Button>{' '}
+        <Button emphasis="quiet">Update my goal instead</Button>{' '}
+        <Button emphasis="quiet">This reading looks wrong</Button>
+      </p>
+      {steering && <Button emphasis="secondary">Copy message</Button>}
+    </section>
+  );
+}
+
+export const SessionActions: Story = {
+  render: () => <SessionActionsExample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'Steer back' }));
+    await expect(canvas.getByText('Uses AI')).toBeVisible();
+    const filled = canvas
+      .getAllByRole('button')
+      .filter((button) => getComputedStyle(button).backgroundColor === 'rgb(47, 125, 91)');
+    await expect(filled).toEqual([canvas.getByRole('button', { name: 'Check progress again' })]);
+    await expect(canvas.getByRole('button', { name: 'Copy message' })).toBeVisible();
+  },
+};
 export const Default: Story = {
   args: { variant: 'default', children: 'Button default' },
   play: async ({ canvasElement, args }) => {

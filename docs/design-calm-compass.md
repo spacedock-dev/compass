@@ -231,9 +231,14 @@ record the control decisions.
 Use a filled green primary action, a bordered secondary action and a quiet text action,
 for example Check progress, Edit goal and Not now. The style board uses 16 px card radius,
 a 1 px decorative border and 24 px padding, with a flat edge in place of stripes or deep
-shadows. An interactive card gives its destination before hover. "Open in Needs you" and
-"Show in the list below" are the cues on the at-a-glance cards. Preserve behavior for a
-keyboard or touch reader as well.
+shadows. The shared Button also provides outlined and filled danger actions. Keyboard focus adds
+a 2 px Compass green outline with a 2 px offset. Sessions row titles underline on hover and
+keyboard focus. Links in sentences keep their underline. Session citations and the link in their
+preview use the shared ring and 44 px targets. The shared Card rests flat. Both summary cards use
+Inter and share a border and hairline shadow on hover. The link says "Open in Needs you" with an
+arrow. The filter says "Show in the list below", names the list it controls and exposes whether
+the filter is pressed. The green-tinted New to Compass invitation links to the view-only sample
+and tells readers they can see a session's goal and the results of progress checks there.
 
 Settings uses switches for boolean preferences and stepped sliders for limits. A slider
 saves on release and a refusal restores that slider's previous value. The

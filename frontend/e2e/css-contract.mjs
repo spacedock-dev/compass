@@ -296,8 +296,8 @@ const MUTATIONS = {
   ],
   'focus-removed': [
     [
-      'sessions/sessions.css',
-      '.next-operation-route:focus-visible{outline:2px solid var(--accent);outline-offset:2px}',
+      'styles/controls.css',
+      ':where(a[href], summary):focus-visible {\n  outline: 2px solid var(--accent);\n  outline-offset: 2px;\n}',
       '',
     ],
   ],

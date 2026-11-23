@@ -12,7 +12,7 @@ import { citedLine } from './result';
    the number used to be, and an entry the page does not hold yet says so and keeps that press, which reads the
    older pages for it. */
 const LINK =
-  'min-h-0 min-w-0 rounded-control font-[family-name:var(--mono)] text-label text-cite no-underline hover:underline focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-[var(--accent)] focus-visible:outline-offset-1';
+  'justify-center rounded-control font-[family-name:var(--mono)] text-label text-cite no-underline hover:underline';
 
 export function CitationLink({
   id,
@@ -86,7 +86,7 @@ export function CitationLink({
             <a
               ref={context}
               href="#"
-              className={`${LINK} w-fit text-body`}
+              className={`${LINK} inline-flex min-h-[44px] min-w-[44px] w-fit items-center text-body`}
               data-next-citation-context
               onClick={(event) => {
                 event.preventDefault();

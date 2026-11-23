@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, within } from 'storybook/test';
 import type { CSSProperties, ReactNode } from 'react';
+import { Alert } from '../src/ui/alert';
 import { Button } from '../src/ui/button';
 import { Card } from '../src/ui/card';
 import { contrastOf } from './a11y.audit';
@@ -17,7 +18,7 @@ const palette = [
 ] as const;
 const radii = [
   ['Control', '--r-control'],
-  ['Card', '--r-card'],
+  ['Card', '--r-standard-card'],
   ['Shell', '--r-shell'],
   ['Pill', '--r-pill'],
 ] as const;
@@ -275,23 +276,26 @@ function Pieces() {
   return (
     <Panel id="calm-pieces" title="Pieces">
       <div style={buttons}>
-        <Button variant="primary">Check progress</Button>
-        <Button>Edit goal</Button>
-        <Button variant="quiet">Not now</Button>
+        <Button emphasis="primary">Check progress</Button>
+        <Button emphasis="secondary">Edit goal</Button>
+        <Button emphasis="quiet">Not now</Button>
       </div>
       <p style={{ ...caption, marginBlock: 'var(--sp-2) var(--sp-4)' }}>
         Uses AI · The daily count appears when 10 or fewer checks remain.
       </p>
       <div style={buttons}>
-        <Button variant="primary" disabled>
+        <Button emphasis="primary" disabled>
           Check progress unavailable
         </Button>
         <span style={caption}>Disabled</span>
       </div>
-      <Card variant="reading-notice" style={{ marginTop: 'var(--sp-4)' }}>
-        <h3 style={subheading}>Card example</h3>
-        <p style={{ margin: 0 }}>A shared Card using the current reading notice recipe.</p>
+      <Card style={{ marginBlock: 'var(--sp-4)' }}>
+        <h3 style={subheading}>Card</h3>
+        <p style={{ margin: 0 }}>16 px radius, 1 px border and 24 px padding.</p>
       </Card>
+      <Alert variant="notice" announce={false}>
+        New to Compass? See a sample session.
+      </Alert>
     </Panel>
   );
 }
@@ -492,7 +496,17 @@ export const StyleGuide: Story = {
     await expect(progress).toHaveAttribute('data-slot', 'button');
     await expect(progress.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
     await expect(pieces.getByRole('button', { name: 'Check progress unavailable' })).toBeDisabled();
-    await expect(pieces.getByText('Card example').closest('[data-slot="card"]')).toBeVisible();
+    const componentCard = pieces
+      .getByRole('heading', { name: 'Card' })
+      .closest('[data-slot="card"]');
+    await expect(componentCard).toHaveStyle({
+      borderLeftWidth: '1px',
+      borderRadius: '16px',
+      boxShadow: 'none',
+    });
+    await expect(pieces.getByText('New to Compass? See a sample session.')).toHaveStyle({
+      backgroundColor: 'rgb(230, 242, 236)',
+    });
     const reserved = within(canvas.getByRole('region', { name: 'Reserved examples' }));
     for (const heading of [
       'Switch',

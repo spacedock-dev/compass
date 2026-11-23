@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2347411,
+    "bytes": 2350203,
     "file": "react.html",
-    "sha256": "1d073c6df22a3879c78760e10e63d907c8ebe3222ff5fd7fc7f412bb5d91c5f2"
+    "sha256": "ca47812dba74f0af2b6de6bd1776b0b699efb564a015de45ad434ca08f6ceef7"
   },
   "format": 1,
   "frontend": "react",
@@ -507,7 +507,7 @@
       },
       {
         "file": "frontend/src/drift/CitationLink.tsx",
-        "sha256": "993a9f7a0c5c10ea713fad9380d4565d3ada5d0b732d0c98660b2bac40c9c032"
+        "sha256": "339c078f48864c126bef3901f8c0cc075944ac3b2804f6dc127d922311ea9bd1"
       },
       {
         "file": "frontend/src/drift/CitedText.tsx",
@@ -899,7 +899,7 @@
       },
       {
         "file": "frontend/src/lib/utils.ts",
-        "sha256": "e4fac79e8a0c5a2989f8e85b9c2473bd4de9374ab1d419dd8086e95db6410757"
+        "sha256": "10d67de54d89339af4d220dc5fcbb7706800aaf81d9e19599ab9f40d7729d945"
       },
       {
         "file": "frontend/src/main.tsx",
@@ -1095,7 +1095,7 @@
       },
       {
         "file": "frontend/src/sample/SampleInvite.tsx",
-        "sha256": "8d6766fe52eb68b6d670ae1a387cfafa95026d7411e4dbeae974440607134586"
+        "sha256": "7de1a2f65cc8910ef00472e245fa07f6778675dc28b3599948e2f345a12fff68"
       },
       {
         "file": "frontend/src/sample/SampleMark.tsx",
@@ -1187,7 +1187,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionsView.tsx",
-        "sha256": "4ef845b8234c002b127a48d356f7a676fe4f02ee721261ab3989f78727401ffd"
+        "sha256": "9362cc7b2ae4eb11dd8f47e16b5c44616c4e8deb35d72ddac5f40468dc70362a"
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",
@@ -1247,7 +1247,7 @@
       },
       {
         "file": "frontend/src/sessions/sessions.css",
-        "sha256": "a56203156f72d4bcb792a2835043aeef1b20adbf7a4445b5b329474d17954755"
+        "sha256": "59566b3990cda606b4c25ce5c43560baaa7ab346b5ef9170369c6ae735c8a4d5"
       },
       {
         "file": "frontend/src/sessions/steadyOutline.ts",
@@ -1495,15 +1495,15 @@
       },
       {
         "file": "frontend/src/styles/controls.css",
-        "sha256": "43cd99245eed0229e1f7443c22406f94a41eb21abeb98e7ea4714c780fcfd33f"
+        "sha256": "930d46f8fba12733dc17919f2fb6e0a93b8dedef86b5156cdca98c75c8775392"
       },
       {
         "file": "frontend/src/styles/shell.css",
-        "sha256": "2327a7ffddb4a00e14f2860f070762bb999a4780e5dd7bef02a3326e4db1a4bb"
+        "sha256": "d9515ed311c75b796740816438db7b7fdc49e1dec874e32a859e6da7b0746ae3"
       },
       {
         "file": "frontend/src/styles/tailwind.css",
-        "sha256": "8a941140fec42ba07856cee963badc30263fe543f521b2d48402eb3e598dbe8a"
+        "sha256": "f2aab25c2fcd7a43d15a301607025bcdf753b40f48298cbef73db0733e5260fa"
       },
       {
         "file": "frontend/src/terminal/TerminalSurface.tsx",
@@ -1655,7 +1655,7 @@
       },
       {
         "file": "frontend/src/ui/alert.tsx",
-        "sha256": "802317f61bbe7860d96c665bbc7573a71551f08f14119eee16dd497f1e2b3806"
+        "sha256": "bff503613508e067722e3cf984cef294683eacdeeffc31265424b9906d8e5a5f"
       },
       {
         "file": "frontend/src/ui/badge.tsx",
@@ -1663,11 +1663,11 @@
       },
       {
         "file": "frontend/src/ui/button.tsx",
-        "sha256": "9d986f442aac5417e80f5ed523ac94d2d53fb644afb06fd2ead82677d45a8c4f"
+        "sha256": "388fc1a386eb6554491e83c3f68fab6867b161db2007e255745f8e40f7aa8e84"
       },
       {
         "file": "frontend/src/ui/card.tsx",
-        "sha256": "916ffe351ce8abf93da02277a4d407e39031e59b9aa05affd931d23b607952ad"
+        "sha256": "6e61a300f7c34f8862ff655ca40894efc6787b91bb31f78ca27620f3344c20f4"
       },
       {
         "file": "frontend/src/ui/checkbox.tsx",
@@ -1692,6 +1692,10 @@
       {
         "file": "frontend/src/ui/label.tsx",
         "sha256": "a723fe54893471e1aa566c018c6ebe0b160e923c5f85db0c312309dc206d258b"
+      },
+      {
+        "file": "frontend/src/ui/link.ts",
+        "sha256": "b0018bfe984b652a63cbd9f46bfd9f64dc0ec8a99e2a4fdd7ccce17954222afe"
       },
       {
         "file": "frontend/src/ui/popover.tsx",

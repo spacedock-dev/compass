@@ -1,9 +1,129 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, within } from 'storybook/test';
-import { Card } from '../src/ui/card';
+import { expect, userEvent, within } from 'storybook/test';
+import { useEffect, useState } from 'react';
+import { createRouter } from '../src/router/router';
+import { fakeRouterEnvironment } from '../src/router/testing';
+import { ShellContext } from '../src/shell/context';
+import { createShell } from '../src/shell/createShell';
+import { Card, SummaryFilterCard, SummaryRouteCard } from '../src/ui/card';
+import { auditContrast, formatFailures } from './a11y.audit';
 const meta = { title: 'UI/Card', component: Card } satisfies Meta<typeof Card>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+export const Base: Story = {
+  args: {
+    as: 'article',
+    'aria-label': 'Session details',
+    children: 'A session is waiting on you.',
+  },
+  play: async ({ canvasElement }) => {
+    const card = within(canvasElement).getByRole('article', { name: 'Session details' });
+    await expect(card).toHaveStyle({
+      borderWidth: '1px',
+      borderLeftWidth: '1px',
+      borderRadius: '16px',
+      boxShadow: 'none',
+      padding: '24px',
+    });
+  },
+};
+
+function SummaryCardsExample() {
+  const [working, setWorking] = useState(false);
+  const [shell] = useState(() =>
+    createShell({
+      router: createRouter(fakeRouterEnvironment('#n=sessions').env),
+      doc: null,
+    }),
+  );
+  useEffect(
+    () => () => {
+      shell.runtime.dispose();
+      shell.display.dispose();
+    },
+    [shell],
+  );
+  return (
+    <ShellContext value={shell}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+        <SummaryRouteCard route={{ view: 'attention' }} cue="Open in Needs you">
+          <span>Waiting on you</span>
+        </SummaryRouteCard>
+        <SummaryFilterCard
+          controls="summary-sessions"
+          pressed={working}
+          onClick={() => setWorking(!working)}
+        >
+          <span>Working now</span>
+        </SummaryFilterCard>
+      </div>
+      <ul id="summary-sessions">
+        <li>Update the onboarding guide</li>
+        {!working && <li>Fix the flaky sign-in test</li>}
+      </ul>
+    </ShellContext>
+  );
+}
+
+export const SummaryCards: Story = {
+  render: () => <SummaryCardsExample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const route = canvas.getByRole('link', { name: /Open in Needs you/ });
+    const filter = canvas.getByRole('button', { name: /Show in the list below/ });
+    await expect(route).toHaveAttribute('href', '#n=attention');
+    await expect(route.querySelector('[data-icon="go-to-page"]')).toBeVisible();
+    await expect(filter.querySelector('[data-icon="show-below"]')).toBeVisible();
+    await expect(filter).toHaveAttribute('aria-controls', canvas.getByRole('list').id);
+    for (const card of [route, filter]) {
+      const box = card.getBoundingClientRect();
+      await expect(box.width).toBeGreaterThanOrEqual(44);
+      await expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+    if ('__vitest_browser_runner__' in window) {
+      const { page } = await import('vitest/browser');
+      const edge = (card: HTMLElement) => {
+        const style = getComputedStyle(card);
+        return [style.borderTopColor, style.boxShadow];
+      };
+      const away = page.getByText('Update the onboarding guide');
+      await away.hover();
+      const resting = ['rgb(123, 135, 148)', 'none'];
+      await expect(edge(route)).toEqual(resting);
+      await expect(edge(filter)).toEqual(resting);
+      await page.getByRole('link', { name: /Open in Needs you/ }).hover();
+      const hovered = edge(route);
+      await expect(hovered[0]).not.toBe(resting[0]);
+      await expect(hovered[1]).not.toBe('none');
+      await page.getByRole('button', { name: /Show in the list below/ }).hover();
+      await expect(edge(filter)).toEqual(hovered);
+      await away.hover();
+      await expect(edge(route)).toEqual(resting);
+      await expect(edge(filter)).toEqual(resting);
+    }
+    for (const label of [
+      'Waiting on you',
+      'Open in Needs you',
+      'Working now',
+      'Show in the list below',
+    ]) {
+      await expect(getComputedStyle(canvas.getByText(label)).fontFamily.split(',')[0]).toBe(
+        'Inter',
+      );
+    }
+    await expect(filter).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(filter);
+    await expect(filter).toHaveAttribute('aria-pressed', 'true');
+    await expect(filter.querySelector('[data-icon="check"]')).toBeVisible();
+    await expect(canvas.queryByText('Fix the flaky sign-in test')).toBeNull();
+    const selected = auditContrast(canvasElement);
+    await expect(selected.failures, formatFailures(selected)).toEqual([]);
+    await userEvent.click(filter);
+    await expect(filter).toHaveAttribute('aria-pressed', 'false');
+    await expect(canvas.getByText('Fix the flaky sign-in test')).toBeVisible();
+  },
+};
 export const SessionRow: Story = {
   args: { variant: 'session-row', children: 'Card session-row' },
   play: async ({ canvasElement, args }) => {
@@ -202,6 +322,7 @@ export const WorkPanel: Story = {
 };
 export const ToneUnknown: Story = {
   args: {
+    variant: 'session-current',
     tone: 'unknown',
     as: 'article',
     'aria-label': 'Current session',
@@ -215,6 +336,7 @@ export const ToneUnknown: Story = {
 };
 export const ToneWant: Story = {
   args: {
+    variant: 'session-current',
     tone: 'want',
     as: 'article',
     'aria-label': 'Current session',
@@ -228,6 +350,7 @@ export const ToneWant: Story = {
 };
 export const ToneBad: Story = {
   args: {
+    variant: 'session-current',
     tone: 'bad',
     as: 'article',
     'aria-label': 'Current session',
@@ -240,7 +363,13 @@ export const ToneBad: Story = {
   },
 };
 export const ToneOk: Story = {
-  args: { tone: 'ok', as: 'article', 'aria-label': 'Current session', children: 'Current session' },
+  args: {
+    variant: 'session-current',
+    tone: 'ok',
+    as: 'article',
+    'aria-label': 'Current session',
+    children: 'Current session',
+  },
   play: async ({ canvasElement }) => {
     await expect(
       within(canvasElement).getByRole('article', { name: 'Current session' }),
