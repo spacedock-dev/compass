@@ -445,7 +445,7 @@ class DocumentationMatchesCodeTest(unittest.TestCase):
             for phrase in stale:
                 self.assertNotIn(phrase, text, relative)
         reader_state = (root / "docs" / "design-reader-state.md").read_text(encoding="utf-8")
-        self.assertIn("intent-menu", reader_state)
+        self.assertIn("Moved to Discard everything", reader_state)
 
     def test_what_a_goal_with_no_outcome_line_reads_is_the_pages(self) -> None:
         # A goal alone is read for its own end state, or refused as too vague (owner, 2026-10-22). The
