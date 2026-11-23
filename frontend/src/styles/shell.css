@@ -252,10 +252,20 @@ summary,
   overflow-wrap: anywhere;
 }
 
+.next-board-header{column-gap:20px;padding-inline:16px}
+.next-board-compact{display:none}
+.next-board-nav{display:flex;flex:1}
+
 @media (max-width: 760px) {
   #app {
     padding: 18px 18px 48px;
   }
+
+  .next-board-header{column-gap:6px;padding-inline:0}
+  .next-board-compact{display:flex;flex-wrap:wrap;min-width:0;gap:6px;margin-inline-start:auto}
+  .next-board-nav{order:3;flex-basis:100%;border-top:1px solid var(--rule);padding-top:6px}
+  .next-board-nav:not([data-compact-open]){display:none}
+  .next-board-working{order:2;flex-basis:100%}
 
   .next-breadcrumb-current-separator {
     display: none;

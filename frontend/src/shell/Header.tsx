@@ -1,4 +1,5 @@
-import { buttonVariants } from '../ui/button';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Button, buttonVariants } from '../ui/button';
 import { Icon } from '../ui/icons';
 import { AttentionAnnouncer } from '../attention';
 import { selectAttentionSelection } from '../attention/select';
@@ -20,9 +21,13 @@ function currentView(route: Route): TopLevelView {
 function PrimaryNavigation({
   route,
   needsCount,
+  panelId,
+  open,
 }: {
   readonly route: Route;
   readonly needsCount: number;
+  readonly panelId: string;
+  readonly open: boolean;
 }) {
   const { controls } = useShell();
   const here = currentView(route);
@@ -30,7 +35,12 @@ function PrimaryNavigation({
      wrong (Retry now), so removing it hands focus to a place the reader can see. */
   const currentRef = useFocusKey<HTMLAnchorElement>(controls.focusLane, 'primary-current');
   return (
-    <nav aria-label={SHOWN.primary} className="flex flex-wrap items-center gap-x-1">
+    <nav
+      id={panelId}
+      aria-label={SHOWN.primary}
+      data-compact-open={open || undefined}
+      className="next-board-nav flex-wrap items-center gap-x-1"
+    >
       {PRIMARY.map((view) => (
         <RouteLink
           className="gap-2 rounded-card px-3 text-body font-medium text-foreground no-underline hover:bg-muted aria-[current=page]:bg-[var(--status-ended-bg)] aria-[current=page]:font-semibold aria-[current=page]:text-[var(--status-ended-ink)] forced-colors:aria-[current=page]:underline"
@@ -40,18 +50,22 @@ function PrimaryNavigation({
           current={view === here}
         >
           {SHOWN[view]}
-          {view === 'attention' && needsCount > 0 ? (
-            <>
-              {' '}
-              <span className="inline-grid min-w-5 place-items-center rounded-pill bg-[var(--amber)] px-1 text-label leading-5 font-semibold text-primary-foreground">
-                {needsCount}
-              </span>
-            </>
-          ) : null}
+          {view === 'attention' ? <NeedsBadge count={needsCount} /> : null}
         </RouteLink>
       ))}
     </nav>
   );
+}
+
+function NeedsBadge({ count }: { readonly count: number }) {
+  return count > 0 ? (
+    <>
+      {' '}
+      <span className="inline-grid min-w-5 place-items-center rounded-pill bg-[var(--amber)] px-1 text-label leading-5 font-semibold text-primary-foreground">
+        {count}
+      </span>
+    </>
+  ) : null;
 }
 
 function WorkingPill({
@@ -96,23 +110,76 @@ export function Header({ route }: { readonly route: Route }) {
   const selection = useDisplayed(selectAttentionSelection);
   const counts = selection?.counts;
   const unread = useDisplayed((snapshot) => snapshot.data === null);
+  const { router } = useShell();
+  const menu = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => {
+      setOpen(false);
+      menu.current?.focus({ preventScroll: true });
+    };
+    const onEscape = (event: KeyboardEvent) => {
+      if (
+        event.key !== 'Escape' ||
+        event.defaultPrevented ||
+        !menu.current?.getClientRects().length
+      )
+        return;
+      event.preventDefault();
+      close();
+    };
+    const unsubscribe = router.subscribe(close);
+    document.addEventListener('keydown', onEscape);
+    return () => {
+      unsubscribe();
+      document.removeEventListener('keydown', onEscape);
+    };
+  }, [open, router]);
+
   return (
-    <header className="-mt-[18px] -mx-[26px] flex min-h-16 flex-wrap items-center justify-between gap-x-5 gap-y-2 border-b border-[var(--rule)] bg-card px-4 py-2 [@media(max-width:760px)]:mx-0">
-      <div className="flex flex-wrap items-center gap-x-5">
-        <a
-          data-slot="button-link"
-          className={cn(
-            buttonVariants({ variant: 'native' }),
-            'gap-2.5 rounded-control text-value font-bold text-foreground no-underline',
-          )}
-          href="#n=sessions"
+    <header className="next-board-header -mt-[18px] -mx-[26px] flex min-h-16 flex-wrap items-center gap-y-2 border-b border-[var(--rule)] bg-card py-2 [@media(max-width:760px)]:mx-0">
+      <a
+        data-slot="button-link"
+        className={cn(
+          buttonVariants({ variant: 'native' }),
+          'inline-flex items-center gap-2 rounded-control text-value font-bold text-foreground no-underline',
+        )}
+        href="#n=sessions"
+      >
+        <Icon name="compass" size="1.35em" className="text-primary" />
+        {SHOWN.compass}
+      </a>
+      <div className="next-board-compact">
+        <Button
+          type="button"
+          aria-current={currentView(route) === 'attention' ? 'page' : undefined}
+          className="gap-1 px-2 text-label font-semibold"
+          onClick={() => router.navigate({ view: 'attention' })}
         >
-          <Icon name="compass" size="1.35em" className="text-primary" />
-          {SHOWN.compass}
-        </a>
-        <PrimaryNavigation route={route} needsCount={counts?.badge ?? 0} />
+          {SHOWN.attention}
+          <NeedsBadge count={counts?.badge ?? 0} />
+        </Button>
+        <Button
+          ref={menu}
+          type="button"
+          className="gap-1 px-2"
+          aria-expanded={open}
+          aria-controls={panelId}
+          onClick={() => setOpen(!open)}
+        >
+          <Icon name="menu" />
+          Menu
+        </Button>
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <PrimaryNavigation
+        route={route}
+        needsCount={counts?.badge ?? 0}
+        panelId={panelId}
+        open={open}
+      />
+      <div className="next-board-working">
         <WorkingPill count={counts?.working} unread={unread} />
       </div>
       <AttentionAnnouncer />

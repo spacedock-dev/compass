@@ -386,7 +386,7 @@ describe('the announcement', () => {
     await page.go('#n=sessions');
     await revise(page, attentionBoard({ generated: 1_000_025, gone: ['gate-1'] }));
     expect(status()).toMatch(
-      /^Attention updated: 5 need you, 5 at risk, 4 close the loop, 4 coming next$/,
+      /^Needs you updated: 4 waiting on you, 4 worth a look, 1 ready to wrap up\.$/,
     );
     expect(document.getElementById('next-attention-status')?.getAttribute('role')).toBe('status');
   });

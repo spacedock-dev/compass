@@ -759,15 +759,15 @@ export function SessionsFilters({
     <search
       role="search"
       aria-label="Find sessions"
-      className="mt-6 flex flex-col gap-3"
+      className="mt-6 flex flex-col gap-3 max-[620px]:grid"
       data-next-sessions-search
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="next-sessions-segments flex flex-wrap items-center justify-between gap-2 max-[620px]:contents">
         <h2 className="m-0 text-value font-semibold">{SESSION_LIST_WORDS.all}</h2>
         <div
           role="group"
           aria-label={SESSION_LIST_WORDS.status}
-          className="flex flex-wrap gap-1 rounded-card bg-muted p-1"
+          className="next-sessions-status flex gap-1 rounded-card bg-muted p-1"
         >
           {SESSION_SEGMENTS.map((segment) => (
             <Button
@@ -792,7 +792,7 @@ export function SessionsFilters({
           ))}
         </div>
       </div>
-      <div className="flex flex-wrap items-start gap-2">
+      <div className="next-sessions-find flex flex-wrap items-start gap-2 max-[620px]:contents">
         <div ref={fieldBox} className="relative min-w-0 flex-[1_1_22rem]">
           <Label htmlFor={searchId} className="sr-only">
             Search sessions
@@ -812,7 +812,7 @@ export function SessionsFilters({
             aria-keyshortcuts="/"
             autoComplete="off"
             spellCheck={false}
-            className="bg-card pl-9 pr-24 [&::-webkit-search-cancel-button]:appearance-none"
+            className="min-h-[48px] bg-card pl-9 pr-24 max-[620px]:pr-12 [&::-webkit-search-cancel-button]:appearance-none"
             onInput={(event) =>
               actions.change({ ...filters, query: event.currentTarget.value }, 'typing')
             }

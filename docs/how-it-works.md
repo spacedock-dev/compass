@@ -189,8 +189,9 @@ even on a project page.
 | Help | none | How Compass works, See an example, the icon legend, progress check terms and common questions. |
 
 `Escape` goes back to where you opened a session from. The example opened from Help returns to
-Help, and a session opened from a pasted link goes back to Sessions. The current view lives in the URL, so a reload or a pasted link comes back to
-the same place.
+Help, and a session opened from a pasted link goes back to Sessions. On a narrow screen, Menu opens
+the page links inline. Escape closes the open Menu and returns focus to its button. The current
+view lives in the URL, so a reload or a pasted link comes back to the same place.
 
 At a glance on Sessions shows what is waiting on you, what is working and what is worth a look.
 Waiting on you and Worth a look open Needs you. Working now selects Working and moves focus to

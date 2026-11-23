@@ -292,6 +292,16 @@ export function overflowReport(): { page: number; client: number; wide: string[]
   )) {
     if (isHidden(control)) continue;
     const box = control.getBoundingClientRect();
+    const rail = control.closest<HTMLElement>('.next-sessions-status');
+    if (rail && getComputedStyle(rail).overflowX === 'auto') {
+      const bounds = rail.getBoundingClientRect();
+      if (
+        bounds.left >= -0.5 &&
+        bounds.right <= scroller.clientWidth + 0.5 &&
+        box.width <= rail.clientWidth
+      )
+        continue;
+    }
     if (box.right > scroller.clientWidth + 0.5 || box.left < -0.5) {
       wide.push(
         `${describe(control)} "${(control.textContent || control.getAttribute('aria-label') || '').trim().slice(0, 40)}" ${Math.round(box.left)}..${Math.round(box.right)}`,
