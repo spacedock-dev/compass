@@ -175,6 +175,12 @@ or notification starts without an explicit press.
 `pnpm test:css:browser` is the stylesheet's readability contract on the rendered page, over the Sessions, session,
 Drift, Intent, Projects, project, Attention and capacity views of the fixture boards.
 
+The session first-view and Drift proofs keep their inventory and screenshots in separate temporary
+directories, one per run. Each prints its directory to stderr when it finishes, and the files stay
+there for inspection. The Drift proof uses the operating system's temporary directory even when
+`COMPASS_SCREENSHOTS` is set. Run `node --test frontend/e2e/support/capture-isolation.test.mjs` to
+check both writers against a read-only copy.
+
 Every proof above serves the React side through the development server by default. `pnpm test:production:browser`
 runs the same twelve proofs with `COMPASS_E2E_BUNDLE=production`, which has the Python backend serve the minified
 `react.html` that readers get (no Vite child, no hot refresh, no StrictMode double effect), so a difference only the
