@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2423571,
+    "bytes": 2426175,
     "file": "react.html",
-    "sha256": "8730726678d3bdbe587bd192e895e5324ec5d605e859a88f3d3aa3ede4a26dc4"
+    "sha256": "1e16a6ae20bf704f56f354714490305a74e0337dd92408ae42187bfc1069f5eb"
   },
   "format": 1,
   "frontend": "react",
@@ -307,7 +307,7 @@
       },
       {
         "file": "frontend/src/attention/select.ts",
-        "sha256": "879b1e6b30f212b077f637edbdb337eb5b761ab5ccec943dc0ea711a504643bb"
+        "sha256": "97264b41efbdd380a9528f8784fd28ea72bfa5b431b491101eb444c61d92baa6"
       },
       {
         "file": "frontend/src/attention/subjects.ts",
@@ -1003,7 +1003,7 @@
       },
       {
         "file": "frontend/src/project/CoursePanel.tsx",
-        "sha256": "a66d15dff0c1fe2feb6da0e0a84543791df19304e1bf44f4f10b5befb6e4349e"
+        "sha256": "63186412549e40381412c57fa5834614b8dca1dbf2133f0f12065a7f92a63369"
       },
       {
         "file": "frontend/src/project/PlanView.tsx",
@@ -1011,19 +1011,19 @@
       },
       {
         "file": "frontend/src/project/ProjectDetail.tsx",
-        "sha256": "39652a60180969b344139e129b34d64e6756651f24f920551b4b77940e95cca6"
+        "sha256": "08d32e66f118aa4a882acdaa870a9328e5e7d3adc4cd23aa3c27f6afbcc9ab02"
       },
       {
         "file": "frontend/src/project/ProjectOverview.tsx",
-        "sha256": "9cb2f98665ef603a92b10e37369301ffad8da9950b74420cd80b520d2a6c2260"
+        "sha256": "a3e3e4fcfdf66fd7c6bafde234202cfd84f721bcb337b6620ae926722ba3629d"
       },
       {
         "file": "frontend/src/project/ProjectsView.tsx",
-        "sha256": "b4a30adf4a5ac31230c9cc15b4ddca609d0352696e27e9a281f7d85ca3119074"
+        "sha256": "f289d4a2e6c4d224f5843812457848442d4a519e0f64c3a15e1595727e36de81"
       },
       {
         "file": "frontend/src/project/RecoveryStrip.tsx",
-        "sha256": "4085b8e340c0ebbda2d45f5c41d274216e6be7ebb9643abc2e4e3f00749710e3"
+        "sha256": "6cb473abe1b7fafcbab188d6f69c3f6adedbccd0992419071cbe7f28bc6ecc93"
       },
       {
         "file": "frontend/src/project/ScopeNav.tsx",
@@ -1075,11 +1075,15 @@
       },
       {
         "file": "frontend/src/project/project.css",
-        "sha256": "184a6af36d504d803d019c766809eafb8d17792b9e6b27cc24ec85ad6247665d"
+        "sha256": "f4d208fe020301334ee154a5bb051672dd8238f1135c4993196af099879dffaa"
+      },
+      {
+        "file": "frontend/src/project/projectActivity.ts",
+        "sha256": "39ceda3f17b5c485268973a9f4370bb617d984d76a7f019947d15612dccb3143"
       },
       {
         "file": "frontend/src/project/projectList.ts",
-        "sha256": "08e7652f90178643125e79dbd06d17e9d89acad494832d5d6383ce795c0cf244"
+        "sha256": "85987a973193525b0ff2e21b4fc8235c20ff7fa92c6151852ad2828a7f86c314"
       },
       {
         "file": "frontend/src/project/raw.ts",
@@ -1123,7 +1127,7 @@
       },
       {
         "file": "frontend/src/sample/SampleInvite.tsx",
-        "sha256": "8322ca8021e5062f5bdb251965a787aa70c3036e97575f26b9be532e12ff69f7"
+        "sha256": "aa23c1ab00d998d60a0df0b09a7de19e0fa740ec1518304a54c9eedf02ccd44b"
       },
       {
         "file": "frontend/src/sample/SampleMark.tsx",
@@ -1131,7 +1135,7 @@
       },
       {
         "file": "frontend/src/sample/SampleSession.tsx",
-        "sha256": "7d6397d9a7eac9d29ce9fe70c4b28a64b1ef0ac0d921ae538d70e8613c5fa833"
+        "sha256": "c5d873baac91ed568a042855ba23e74456639efaea418774fb8c9411840320e3"
       },
       {
         "file": "frontend/src/sample/ViewOnly.tsx",
