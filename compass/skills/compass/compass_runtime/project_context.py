@@ -7571,22 +7571,22 @@ def _continuous_native_record(records_: list[dict[str, Any]], lines: Sequence[by
     messages = False
     for row in records_:
         uid, parent = row.get("uuid"), row.get("parentUuid")
-        if row.get("type") not in {"user", "assistant"}:
-            # Claude can link the next user message to a system record (such
-            # as a compaction boundary) in the same native file.
-            if isinstance(uid, str) and uid:
-                seen.add(uid)
+        message = row.get("type") in {"user", "assistant"}
+        # System records can bridge two messages. Check their incoming links
+        # before admitting them as a parent, or a deleted direction can hide
+        # behind a surviving compaction boundary.
+        if not message and uid is None:
             continue
         if (
             not isinstance(uid, str)
             or not uid
             or uid in seen
-            or "parentUuid" not in row
+            or (message and "parentUuid" not in row)
             or (parent is not None and (not isinstance(parent, str) or parent not in seen))
         ):
             return False
         seen.add(uid)
-        messages = True
+        messages |= message
     return messages
 
 

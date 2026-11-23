@@ -35,6 +35,7 @@ from compass_runtime import (
     record_pages,
     semantic_history,
     session_progress,
+    snapshot,
 )
 from compass_runtime import annotations as annotation_store
 from compass_runtime import io as runtime_io
@@ -516,6 +517,9 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
         self.save_goal(lines=())
         self.session.prompt("Actually make the unrelated change first.")
         direction = self.session.rows[-1]
+        # A real Claude compaction boundary can sit between the removed user
+        # message and the next user or assistant record.
+        self.session._entry("system", [])
         self.record(self.departure())
         app = self.app()
         project_context.collect(
@@ -751,7 +755,7 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
         self.record(self.departure())
         app = self.fresh_app()
         revision, _ = app.collect_json(show_all=False)
-        token = http_api.runtime_snapshot.format_revision(revision)
+        token = snapshot.format_revision(revision)
         endpoint = _progress_path(token, ("claude", SHORT, "billing"))
         home = Path(self.config.state_home)
         before = {file.name: file.read_bytes() for file in home.iterdir() if file.is_file()}
@@ -809,7 +813,7 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
                 ),
             ),
         )
-        token = http_api.runtime_snapshot.format_revision
+        token = snapshot.format_revision
         revision, _ = app.collect_json(show_all=False)
         expanded_revision, _ = app.collect_json(show_all=True)
         with self.serving(app) as port:
