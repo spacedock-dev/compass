@@ -83,8 +83,8 @@ export function YourDataCard({ port }: { readonly port: Port }) {
           <h3 className="m-0 font-bold">Forget everything</h3>
           <p className="m-0 font-semibold">This cannot be undone.</p>
           <p className="m-0">
-            Run these commands in a terminal on the computer where Compass is running. Stop Compass
-            first, then run Forget everything.
+            Run these commands on the computer where Compass is running, using the same environment
+            you started it with. Stop Compass first, then run Forget everything.
           </p>
           {typeof port === 'number' ? (
             <>
@@ -93,8 +93,8 @@ export function YourDataCard({ port }: { readonly port: Port }) {
                 <div>{forget}</div>
               </div>
               <p className="m-0 text-label text-muted-foreground">
-                If you started Compass with Python, use the same path to server.py in place of
-                spacedock-compass.
+                If you started Compass with Python, replace spacedock-compass with the same Python
+                command you used to start server.py.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <Button variant="copy" onClick={() => void copy()}>
