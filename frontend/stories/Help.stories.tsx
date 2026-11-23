@@ -82,7 +82,8 @@ export const GoalExplainer: Story = {
     await expect(await canvas.findByText(explanation)).toBeVisible();
     await expect(canvas.getAllByText(explanation)).toHaveLength(1);
     const crumb = within(canvas.getByRole('navigation', { name: 'Breadcrumb' }));
-    await userEvent.click(crumb.getByRole('link', { name: 'Help' }));
+    await expect(crumb.getByRole('link', { name: 'Help' })).toHaveAttribute('href', '#n=help');
+    await userEvent.keyboard('{Escape}');
     await expect(await canvas.findByRole('heading', { name: 'How Compass works' })).toBeVisible();
   },
 };

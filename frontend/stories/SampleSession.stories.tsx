@@ -7,6 +7,7 @@ import { App } from '../src/App';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
 import { SAMPLE_FIXTURE, type SampleFixture, SampleFixtureContext } from '../src/sample/fixture';
+import { GLOSSARY } from '../src/language/glossary';
 import { SAMPLE_FRAGMENT } from '../src/sample/ids';
 import { TOUR } from '../src/sample/tour';
 import { createShell } from '../src/shell/createShell';
@@ -25,12 +26,19 @@ type Story = StoryObj<typeof meta>;
 
 type Json = Record<string, unknown>;
 
-function SampleExample({ fragment }: { readonly fragment: string }) {
+function SampleExample({
+  fragment,
+  browserNavigation = false,
+}: {
+  readonly fragment: string;
+  readonly browserNavigation?: boolean;
+}) {
   const [shell] = useState(() => {
     const history = fakeRouterEnvironment(fragment);
+    if (browserNavigation) window.history.replaceState(null, '', fragment);
     return createShell({
       env: createFakeEnvironment({ clock: createFakeClock() }),
-      router: createRouter(history.env),
+      router: createRouter(browserNavigation ? undefined : history.env),
       provider: () => fakeBackend(),
       events: { addEventListener: () => undefined, removeEventListener: () => undefined },
       search: '',
@@ -542,7 +550,7 @@ export const SessionsInvitesAReader: Story = {
   render: () => <SampleExample fragment="#n=sessions" />,
   play: async ({ canvasElement }) => {
     const link = await within(canvasElement).findByRole('link', {
-      name: 'See a sample session (view only)',
+      name: 'See an example',
     });
     await expect(link).toHaveAttribute('href', SAMPLE_FRAGMENT);
   },
@@ -592,5 +600,53 @@ export const ProjectNameHasNoLiveDestination: Story = {
     const project = within(await within(canvasElement).findByRole('region', { name: 'Project' }));
     await expect(project.getByText('acme/dashboard', { exact: true })).toBeVisible();
     await expect(project.queryByRole('link')).toBeNull();
+  },
+};
+
+export const DismissThenOpenFromHelp: Story = {
+  render: () => <SampleExample fragment="#n=sessions" browserNavigation />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'Not now' }));
+    await expect(canvas.queryByText('New to Compass?')).toBeNull();
+    const primary = within(canvas.getByRole('navigation', { name: 'Primary' }));
+    await userEvent.click(primary.getByRole('link', { name: 'Help' }));
+    const example = await canvas.findByRole('link', { name: 'See an example' });
+    await expect(example).toHaveAttribute('href', SAMPLE_FRAGMENT + '&from=help');
+    await userEvent.click(example);
+    await expect(await canvas.findByText('Sample session (view only)')).toBeVisible();
+    const crumb = within(canvas.getByRole('navigation', { name: 'Breadcrumb' }));
+    await userEvent.click(crumb.getByRole('link', { name: 'Help' }));
+    await userEvent.click(await canvas.findByRole('link', { name: 'See an example' }));
+    await userEvent.keyboard('{Escape}');
+    await expect(await canvas.findByRole('heading', { name: 'How Compass works' })).toBeVisible();
+    await userEvent.click(primary.getByRole('link', { name: 'Sessions' }));
+    await expect(canvas.queryByText('New to Compass?')).toBeNull();
+  },
+};
+
+export const PlainTourWords: Story = {
+  render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const banned = /analyze drift|intent and drift|mark as inaccurate|finished|paused|idle/i;
+    const banner = canvas.getByRole('region', { name: 'Sample session' });
+    await userEvent.click(within(banner).getByText('Read the tour as text'));
+    await expect(banner).not.toHaveTextContent(banned);
+    const text = within(banner);
+    const tour = text.getByText('Read the tour as text').parentElement as HTMLElement;
+    const lines = within(tour).getAllByRole('listitem');
+    await expect(lines).toHaveLength(TOUR.length);
+    for (const [index, note] of TOUR.entries())
+      await expect(lines[index]).toHaveTextContent(
+        `${String(index + 1)}. ${note.title}. ${note.body}`,
+      );
+    for (const word of [
+      GLOSSARY.goal.plain,
+      GLOSSARY.checkProgress.plain,
+      GLOSSARY.readingLooksWrong.plain,
+      GLOSSARY.steerBack.plain,
+    ])
+      await expect(banner).toHaveTextContent(word);
   },
 };

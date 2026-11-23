@@ -72,7 +72,7 @@ The route is `#n=session:acme%2Fdashboard:claude:sample`, an ordinary session ro
 project and session id. `sample` is not a shape any real session id takes, so it cannot collide with
 one. `RoutedView` in `frontend/src/shell/views.tsx` wraps the real `SessionView` for that route and
 for no other, so the page a reader sees is the page every session gets, with the same components, the
-same wording and the same layout. A reader finds it from a line above the Sessions list, and by link.
+same wording and the same layout. A reader opens it from See an example above the Sessions list or on Help. Not now hides the Sessions invitation in this browser. The Help entry remains available.
 The new sample kept the route, the project label and the id, so a link to the first sample opens this
 one.
 

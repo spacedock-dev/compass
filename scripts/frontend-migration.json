@@ -1541,6 +1541,16 @@
       "disposition": "store-held"
     },
     {
+      "name": "The dismissed New to Compass invitation",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/storage/sampleInvite.test.ts",
+        "frontend/stories/SampleSession.stories.tsx"
+      ],
+      "contract": "A dismissal survives reload, with a tab fallback. Help still opens the example.",
+      "disposition": "store-held"
+    },
+    {
       "name": "A dismissed update notice",
       "owner": "DRC-4823",
       "oracles": [
@@ -1697,6 +1707,16 @@
       ],
       "contract": "Dormant legacy project-use ordering remains compatibility data, not observed activity or React sort authority.",
       "format": "Fixed key JSON object label=>count; loader takes first200 entries,Math.floor(Number(value)),positive only,each<=999999; writes increment/clamp but do not bound total key count; no TTL; malformed/blocked storage yields in-memory fallback."
+    },
+    {
+      "name": "compass.sample-invite-dismissed.v1",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/storage/sampleInvite.test.ts",
+        "frontend/stories/SampleSession.stories.tsx"
+      ],
+      "contract": "Remember dismissal of the Sessions example invitation.",
+      "format": "The literal string 1 records dismissal. A missing or blocked store uses tab memory."
     },
     {
       "name": "compass.update-dismissed.v1",

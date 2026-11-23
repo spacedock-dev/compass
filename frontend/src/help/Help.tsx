@@ -3,26 +3,13 @@ import { Disclosure } from '../controls';
 import { EXPLANATIONS, GLOSSARY, SESSION_ROW_WORDS } from '../language/glossary';
 import { SAMPLE_HARNESS, SAMPLE_PROJECT, SAMPLE_SID } from '../sample/ids';
 import { RouteLink } from '../shell/RouteLink';
-import { buttonVariants } from '../ui/button';
 import { Card } from '../ui/card';
 import { Icon } from '../ui/icons';
-import { STATUS_LEGEND } from '../ui/status-legend';
+import { STATUS_LEGEND } from '../ui/statusLegendEntries';
+import { SUPPORTED_AGENTS } from './agents';
 import './help.css';
 
-export const SUPPORTED_AGENTS = {
-  antigravity: 'Antigravity CLI',
-  claude: 'Claude Code',
-  codex: 'Codex',
-  copilot: 'GitHub Copilot CLI',
-  cursor: 'Cursor CLI',
-  droid: 'Factory Droid',
-  gemini: 'Gemini CLI',
-  goose: 'Goose',
-  opencode: 'OpenCode',
-  pi: 'Pi',
-} as const;
-
-export const HELP_EXAMPLE = {
+const HELP_EXAMPLE = {
   view: 'session',
   project: SAMPLE_PROJECT,
   harness: SAMPLE_HARNESS,
@@ -103,7 +90,7 @@ export function Help() {
             this page and saves no changes.
           </p>
         </div>
-        <RouteLink route={HELP_EXAMPLE} className={buttonVariants({ variant: 'primary' })}>
+        <RouteLink route={HELP_EXAMPLE} variant="primary">
           See an example
         </RouteLink>
       </Card>

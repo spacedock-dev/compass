@@ -1,13 +1,29 @@
+import { useState } from 'react';
+import { GLOSSARY } from '../language/glossary';
 import { RouteLink } from '../shell/RouteLink';
+import { useShell } from '../shell/context';
 import { Alert } from '../ui/alert';
+import { Button } from '../ui/button';
 import { SAMPLE_HARNESS, SAMPLE_PROJECT, SAMPLE_SID } from './ids';
 
-/* How a new reader finds the sample, above the Sessions list. */
 export function SampleInvite() {
+  const { controls, runtime } = useShell();
+  const dismissal = runtime.storage.sampleInvite;
+  const [dismissed, setDismissed] = useState(() => dismissal.dismissed());
+  if (dismissed) return null;
   return (
-    <Alert as="p" variant="notice" announce={false} className="mb-3" data-sample-invite>
-      <strong>New to Compass?</strong>{' '}
+    <Alert
+      variant="notice"
+      announce={false}
+      className="my-4 flex flex-wrap items-center gap-4"
+      data-sample-invite
+    >
+      <p className="m-0 grow basis-[360px]">
+        <strong>New to Compass?</strong> Open an example session to see how goals, progress checks
+        and {GLOSSARY.steerBack.plain} work. Nothing in it is saved or sent.
+      </p>
       <RouteLink
+        variant="primary"
         route={{
           view: 'session',
           project: SAMPLE_PROJECT,
@@ -15,9 +31,19 @@ export function SampleInvite() {
           session: SAMPLE_SID,
         }}
       >
-        See a sample session (view only)
-      </RouteLink>{' '}
-      to see how Compass shows a session’s goal and the results of progress checks.
+        See an example
+      </RouteLink>
+      <Button
+        variant="native"
+        type="button"
+        onClick={() => {
+          dismissal.dismiss();
+          setDismissed(true);
+          controls.focusLane.focus('primary-current');
+        }}
+      >
+        Not now
+      </Button>
     </Alert>
   );
 }

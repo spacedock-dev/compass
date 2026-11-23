@@ -1,8 +1,9 @@
 import { use, useEffect, useRef, useState, type ReactNode } from 'react';
+import { GLOSSARY } from '../language/glossary';
 import { ControlsProvider } from '../controls/ControlsProvider';
 import { Card } from '../ui/card';
 import { RouteLink } from '../shell/RouteLink';
-import { ShellContext, useDisplayed, useShell } from '../shell/context';
+import { ShellContext, useDisplayed, useRoute, useShell } from '../shell/context';
 import { useBoardRuntime } from '../transport/hooks';
 import { SampleFixtureContext } from './fixture';
 import { TourContext } from './tourContext';
@@ -25,6 +26,8 @@ function FocusGoalExplanation() {
 }
 
 function Banner() {
+  const route = useRoute();
+  const fromHelp = route.view === 'session' && route.from === 'help';
   return (
     <Card
       as="section"
@@ -35,15 +38,14 @@ function Banner() {
     >
       <p className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <strong className="text-foreground">Sample session (view only)</strong>
-        <RouteLink className="ml-3" route={{ view: 'sessions', project: null, session: null }}>
-          Back to Sessions
+        <RouteLink className="ml-3" route={{ view: fromHelp ? 'help' : 'sessions' }}>
+          {fromHelp ? 'Back to Help' : 'Back to Sessions'}
         </RouteLink>
       </p>
       <p className="m-0 text-muted-foreground">
-        This is a real Claude Code session, anonymized and cut to about ninety minutes: an agent
-        working through a milestone. It shows the goal that was set, the summary of what the agent
-        did, and the one place it departed from that goal. Nothing here is saved, sent or run. Hover
-        or press the numbered (i) marks for a short tour.
+        This Claude Code session ended after about ninety minutes of work. Open its{' '}
+        {GLOSSARY.goal.plain}, read what the agent did and see where the work went off course.
+        Nothing here is saved, sent or run. Open the numbered marks for a short tour.
       </p>
       <div className="flex flex-col gap-1">
         <p className="m-0 text-foreground">To get this page for your own session:</p>
@@ -57,10 +59,10 @@ function Banner() {
             press Find goal, or let Compass pick up a goal you set with /goal in Claude Code, Codex
             or Antigravity.
           </li>
-          <li>Press Check progress.</li>
+          <li>Press {GLOSSARY.checkProgress.plain}.</li>
           <li>
-            Read where the session departed from the goal. Press Steer back if you want a correction
-            to paste into the session.
+            Read where the session departed from the goal. Press {GLOSSARY.steerBack.plain} if you
+            want a correction to paste into the session.
           </li>
         </ol>
       </div>

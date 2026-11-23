@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
-import { SUPPORTED_AGENTS } from './Help';
+import { SUPPORTED_AGENTS } from './agents';
 
 it('names exactly the collectors shipped with Compass', () => {
   const collectors = fileURLToPath(

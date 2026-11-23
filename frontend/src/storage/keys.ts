@@ -2,6 +2,7 @@ import { compatSessKey } from '../api/identity';
 
 /* Exact spellings of the persisted browser preferences and transport state. */
 export const STORAGE_KEYS = {
+  sampleInvite: 'compass.sample-invite-dismissed.v1',
   updateDismissed: 'compass.update-dismissed.v1',
   memoPrefix: 'compass.cockpit.memo.v2:',
   graphMode: 'compass.next.graph.mode',

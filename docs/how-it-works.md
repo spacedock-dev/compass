@@ -7,7 +7,7 @@ Codex and Gemini CLI) by reading the session records they already write.
 
 To try it, install the plugin (see the [README](../README.md#1-how-to-set-up)), then ask your agent to
 "open compass" or run `/compass:compass`. The dashboard opens at `http://127.0.0.1:4553/`. To see what
-a finished progress check looks like before you run one, open "See a sample session (view only)" above
+a finished progress check looks like before you run one, open "See an example" above
 the Sessions list.
 
 ## Checking a session for drift

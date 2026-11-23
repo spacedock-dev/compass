@@ -9,7 +9,7 @@ Return to [start, status and stop](../SKILL.md#start).
 Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
 goal and press `Analyze drift`. The Goal card's `How goals work` disclosure explains the steps, the
 reading's limits and what a goal with no expected outcome line is read against.
-New to it? `See a sample session (view only)`, above the Sessions list, opens an anonymized session
+New to it? `See an example`, above the Sessions list or on Help, opens an anonymized session
 that drifted, with a stored summary of what it did, its stored reading, the correction Compass
 composed and numbered (i) marks that explain each part. It is static page data: nothing in it is saved, sent or run.
 

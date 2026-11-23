@@ -220,7 +220,7 @@ describe('finding the sample', () => {
     const page = mountShell({ hash: '#n=sessions', data: BOARD });
     await page.settle();
     const invite = document.querySelector('[data-sample-invite]') as HTMLElement;
-    const link = within(invite).getByRole('link', { name: 'See a sample session (view only)' });
+    const link = within(invite).getByRole('link', { name: 'See an example' });
     expect(link.getAttribute('href')).toBe(SAMPLE_FRAGMENT);
   });
 });
