@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { act, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BOARD, mountShell } from '../shell/testing';
@@ -70,8 +71,10 @@ describe('the sample session', () => {
     await mountSample();
     expect(document.querySelectorAll('[data-next-entry-id]').length).toBeGreaterThanOrEqual(18);
     expect(document.body.textContent).toContain('Every issue in the');
-    expect(document.querySelector('[data-next-drift-level]')?.textContent).toContain('Medium');
-    expect(document.querySelector('[data-next-finding]')).not.toBeNull();
+    expect(document.querySelector('[data-next-drift-level]')?.textContent).toContain(
+      'Slightly off course',
+    );
+    expect(document.querySelector('[data-next-progress-finding]')).not.toBeNull();
     await waitFor(() => expect(document.querySelector('[data-next-summary]')).not.toBeNull());
     expect(document.querySelectorAll('[data-next-summary-phase]').length).toBeGreaterThanOrEqual(4);
     expect(document.querySelectorAll('[data-next-summary-marked]').length).toBeGreaterThanOrEqual(
@@ -120,55 +123,27 @@ describe('the sample session', () => {
     for (const each of TOUR) expect(legend.textContent).toContain(each.body);
   });
 
-  it('holds every press that would edit, save or run, and says why', async () => {
-    await mountSample();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit goal' }));
-    const remove = [...document.querySelectorAll('button')].find(
-      (button) => button.getAttribute('aria-label')?.startsWith('Remove') === true,
-    ) as HTMLElement;
-    const lines = () => document.querySelectorAll('[data-next-cockpit-held-line]').length;
-    const before = lines();
+  it('holds Edit goal and the progress check on the view-only sample', async () => {
+    const page = await mountSample();
+    const view = within(document.body);
     await act(async () => {
-      fireEvent.click(remove);
+      fireEvent.click(view.getByRole('button', { name: 'Edit goal' }));
     });
-    expect(lines()).toBe(before);
+    expect(view.queryByRole('textbox', { name: 'Goal' })).toBeNull();
     expect(held()).toBe('View only: this sample cannot be edited, saved or run.');
-    const box = document.querySelector('textarea') as HTMLTextAreaElement;
-    const text = box.value;
-    const typed = new InputEvent('beforeinput', {
-      data: 'x',
-      inputType: 'insertText',
-      bubbles: true,
-      cancelable: true,
+    await act(async () => {
+      fireEvent.click(view.getByRole('button', { name: 'Check progress again' }));
     });
-    box.dispatchEvent(typed);
-    expect(typed.defaultPrevented).toBe(true);
-    expect(box.value).toBe(text);
+    expect(page.posts()).toBe(0);
   });
 
-  it('holds a press on Clear in the Intent card, and lets the outline open', async () => {
+  it('opens the outline on the view-only sample', async () => {
     await mountSample();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit goal' }));
-    expect(document.querySelector('[data-next-session-more]')).toBeNull();
-    const clear = document.querySelector(
-      '[data-next-cockpit-action="held-clear"]',
-    ) as HTMLElement | null;
-    expect(clear).not.toBeNull();
-    const goal = document.querySelector('textarea') as HTMLTextAreaElement;
-    const before = goal.value;
-    expect(before.length).toBeGreaterThan(0);
-    await act(async () => {
-      fireEvent.click(clear as HTMLElement);
+    const outline = within(document.body).getByRole('button', {
+      name: "Compass's outline of this session",
     });
-    expect(goal.value).toBe(before);
-    expect(held()).toBe('View only: this sample cannot be edited, saved or run.');
-    const outline = [...document.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === "Compass's outline of this session",
-    ) as HTMLElement;
     expect(outline.getAttribute('aria-expanded')).toBe('false');
-    await act(async () => {
-      fireEvent.click(outline);
-    });
+    fireEvent.click(outline);
     expect(outline.getAttribute('aria-expanded')).toBe('true');
   });
 
@@ -193,6 +168,7 @@ describe('the sample session', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true });
     await mountSample();
     expect(document.querySelectorAll('[data-next-cited]')).toHaveLength(0);
+    await openSessionTechnicalTab('Evidence');
     const jump = document.querySelector('[data-next-finding="goal"]') as HTMLElement;
     await act(async () => {
       fireEvent.click(jump);
@@ -212,7 +188,11 @@ describe('the sample session', () => {
       fireEvent.click(document.querySelector('[data-next-jump-back]') as HTMLElement);
     });
     expect(held()).toBe('');
-    expect(document.activeElement).toBe(jump);
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute('data-next-cite')).toBe(
+        jump.getAttribute('data-next-cite'),
+      ),
+    );
   });
 
   it('composes the stored correction when Steer back is pressed, without sending anything', async () => {

@@ -14,12 +14,8 @@ import {
   type Scenario,
 } from './drift.scenario';
 
-/* The Drift card and the Sessions row after the 2026-10-20 usability review
-   (docs/design-reading-a-session.md#amended-2026-10-20-the-answer-first-and-what-quotes-the-entry). Each story
-   is one finding: the answer first in one sentence, What quoting the entry, the level always first, the
-   stale banner naming the message it predates with Check progress again beside it, Evidence's heading and local
-   times, Pause model calls in the card's head, the count's honest name, a Copied cue that lapses, and the
-   Sessions row's one state word and drift level. */
+/* A reader starts with the progress answer, opens Evidence to check the quote and what was read, and uses
+   the shared AI controls or a correction when needed. The Sessions row still names its own state. */
 
 const meta = {
   title: 'Drift/Usability review, 2026-10-20',
@@ -62,12 +58,8 @@ const MEDIUM = {
   analysis_levels: [{ ...analysisRow('claude', 'medium'), reasons: ['departure'], cites: ['m5'] }],
 };
 
-const headOf = (drift: HTMLElement) => drift.querySelector('header') as HTMLElement;
-
 async function card(canvasElement: HTMLElement): Promise<HTMLElement> {
-  const drift = await within(canvasElement).findByRole('region', { name: 'Drift' });
-  await waitFor(() => expect(drift.querySelector('[data-next-result]')).not.toBeNull());
-  return drift;
+  return within(canvasElement).findByRole('region', { name: 'Is it on track?' });
 }
 
 const before = (a: Element | null, b: Element | null) =>
@@ -77,7 +69,24 @@ const before = (a: Element | null, b: Element | null) =>
 export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
   ...scenario({ session: TWO_DEPARTURES, facts: [PERSON, PASSED, AGENT], work: MEDIUM }),
   play: async ({ canvasElement }) => {
-    const drift = await card(canvasElement);
+    const progress = await card(canvasElement);
+    const heading = within(progress).getByRole('heading', { name: 'Is it on track?' });
+    const finding = await within(progress).findByRole('heading', {
+      name: 'Where it went off course',
+    });
+    const level = progress.querySelector('[data-next-drift-pill]');
+    await expect(level).toHaveTextContent('Slightly off course');
+    await expect(before(heading, level)).toBe(true);
+    await expect(before(level, finding)).toBe(true);
+    await expect(progress).toHaveTextContent(
+      /Compass found 2 departures, both at the agent's message at/,
+    );
+    await expect(progress).not.toHaveTextContent(SAID);
+    await userEvent.click(
+      within(progress).getByRole('button', { name: 'See the quote behind this' }),
+    );
+    const drift = await within(canvasElement).findByRole('tabpanel', { name: 'Evidence' });
+    await waitFor(() => expect(drift).toBeVisible());
     const verdict = await waitFor(() => {
       const node = drift.querySelector<HTMLElement>('[data-next-drift-verdict]');
       expect(node).not.toBeNull();
@@ -87,11 +96,14 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
       `Medium: 2 departures, both at the agent's message at ${clock(650)}.`,
     );
     await expect(verdict).toBeVisible();
-    // Under the heading, ahead of the level and the result.
-    await expect(before(drift.querySelector('header'), verdict)).toBe(true);
+    // In Evidence, the verdict leads the supporting details.
     await expect(before(verdict, drift.querySelector('[data-next-drift-level]'))).toBe(true);
     const whats = [...drift.querySelectorAll<HTMLElement>('[data-next-departure-what]')];
     await expect(whats).toHaveLength(2);
+    const citations = whats.map((what) =>
+      within(what).getByRole('link', { name: /Show .* in Activity log/ }),
+    );
+    await waitFor(() => expect(citations[0]).toHaveFocus());
     for (const what of whats) {
       await expect(what).toHaveTextContent(/#\d+/);
       await expect(what).toHaveTextContent(`Agent said: “${SAID}”`);
@@ -100,7 +112,7 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
         within(what).getByRole('link', { name: /Show .* in Activity log/ }),
       ).toBeVisible();
     }
-    // Said once, inside What the analysis read, not between the verdict and the cards.
+    // Said once, inside What the check read, not between the verdict and the cards.
     await expect(drift.querySelector('[data-next-departure-status]')).toBeNull();
     await expect(drift.querySelector('[data-next-reading-coverage]')).toBeNull();
     const read = drift.querySelector('[data-next-read-section="session"]') as HTMLElement;
@@ -109,16 +121,16 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
     await expect(
       drift.querySelector('[data-next-drift-level] .next-session-drift-range'),
     ).toBeNull();
-    // The switch announces the cadence and model route in Drift settings.
-    await openSessionTechnicalTab('AI use and privacy');
-    await expect(
-      await within(document.body).findByRole('switch', { name: 'Live monitor' }),
-    ).toHaveAccessibleDescription(`${LIVE_HINT} ${LIVE_MONITOR_DETAILS}`);
     // The quote is the agent's, attributed: the result's own words still never say the work was done.
     const outsideWhat = drift.cloneNode(true) as HTMLElement;
     for (const node of outsideWhat.querySelectorAll('[data-next-departure-what], [data-next-read]'))
       node.remove();
     await neverDone(outsideWhat);
+    // The switch announces the cadence and model route in AI use and privacy.
+    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+    await expect(
+      await privacy.findByRole('switch', { name: 'Live monitor' }),
+    ).toHaveAccessibleDescription(`${LIVE_HINT} ${LIVE_MONITOR_DETAILS}`);
   },
 };
 
@@ -127,7 +139,8 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
 export const ADepartureCardHasNoEvidenceOrSourceFold: Story = {
   ...scenario({ session: TWO_DEPARTURES, facts: [PERSON, PASSED, AGENT], work: MEDIUM }),
   play: async ({ canvasElement }) => {
-    const drift = await card(canvasElement);
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    const drift = canvasElement;
     const goal = drift.querySelector('[data-next-departure="goal"]') as HTMLElement;
     await expect(within(goal).queryByRole('button', { name: /^(Evidence|Source)/ })).toBeNull();
     const line = goal.querySelector('[data-next-cited-entries] > li') as HTMLElement;
@@ -138,9 +151,9 @@ export const ADepartureCardHasNoEvidenceOrSourceFold: Story = {
   },
 };
 
-/* Finding 14: a later direction's question no longer moves the level below it, and the stale banner names
-   the message the check predates. */
-export const TheLevelStaysFirstOverALaterDirection: Story = {
+/* Finding 14: the progress answer still leads after a later direction, and Evidence names the message the
+   check predates. */
+export const TheProgressAnswerStaysFirstOverALaterDirection: Story = {
   ...scenario({
     session: TWO_DEPARTURES,
     facts: [
@@ -157,22 +170,22 @@ export const TheLevelStaysFirstOverALaterDirection: Story = {
   }),
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
+    const stale = await within(drift).findByText('Out of date');
     const question = await waitFor(() => {
       const node = drift.querySelector('[data-next-cockpit-direction-question]');
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
-    const level = drift.querySelector('[data-next-drift-level]');
-    await expect(before(drift.querySelector('[data-next-drift-verdict]'), level)).toBe(true);
-    await expect(before(level, question)).toBe(true);
-    await expect(drift.querySelector('[data-next-result-stale]')).toHaveTextContent(
-      `This check is from before your ${clock(1100)} message.`,
-    );
+    await expect(before(stale, question)).toBe(true);
+    await expect(drift.querySelector('[data-next-drift-pill]')).toBeNull();
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    const staleEvidence = canvasElement.querySelector('[data-next-evidence-stale]');
+    await expect(staleEvidence).toBeVisible();
+    await expect(staleEvidence).toHaveTextContent(`Read before your message at ${clock(1100)}.`);
   },
 };
 
-/* Finding 14: new work with no message from the reader: Check progress again stands beside the marker in the card's
-   head, the one run control on the card. */
+/* Finding 14: when new work makes the saved check stale, the card shows the reader one way to request a new check. */
 export const CheckAgainBesideTheStaleBanner: Story = {
   ...scenario({
     session: TWO_DEPARTURES,
@@ -186,23 +199,19 @@ export const CheckAgainBesideTheStaleBanner: Story = {
   }),
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
-    const stale = await waitFor(() => {
-      const node = drift.querySelector<HTMLElement>('[data-next-result-stale]');
-      expect(node).not.toBeNull();
-      return node as HTMLElement;
-    });
-    const again = within(headOf(drift)).getByRole('button', { name: 'Check progress again' });
+    const stale = await within(drift).findByText('Out of date');
+    const again = await within(drift).findByRole('button', { name: 'Check progress again' });
+    await expect(stale).toBeVisible();
     await expect(again).toBeVisible();
-    await expect(headOf(drift).contains(stale)).toBe(true);
+    await expect(again.closest('header')).not.toBeNull();
     await expect(within(drift).getAllByRole('button', { name: /^Check progress/ })).toEqual([
       again,
     ]);
   },
 };
 
-/* Finding 13: Pause model calls is one press from the card's head in every state, inside Drift settings; the
-   copy in What is sent closes its popover when pressed, and the head then offers Resume. Finding 12: the count
-   says what it counts. */
+/* Pause is in AI use and privacy and in What is sent. Using the copy in What is sent closes the disclosure,
+   and the card offers Resume. Evidence reports the number of checks requested. */
 export const PauseInTheHeadAndTheDisclosureCloses: Story = {
   ...scenario({
     session: TWO_DEPARTURES,
@@ -213,10 +222,11 @@ export const PauseInTheHeadAndTheDisclosureCloses: Story = {
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
     const head = drift.querySelector('header') as HTMLElement;
-    const privacy = await openSessionTechnicalTab('AI use and privacy');
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(await evidence.findByText('2 drift checks requested')).toBeVisible();
+    await expect(evidence.queryByText('model requests')).toBeNull();
+    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
     await expect(privacy.getByRole('switch', { name: 'Pause all AI use' })).toBeVisible();
-    await expect(drift).toHaveTextContent('2 drift checks requested');
-    await expect(drift.textContent).not.toContain('model requests');
     const summary = within(drift).getByRole('button', { name: /^What is sent/ });
     await userEvent.click(summary);
     const sent = document.getElementById(
@@ -278,10 +288,10 @@ export const CopiedLapsesBackToCopy: Story = {
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
     await userEvent.click(await within(drift).findByRole('button', { name: 'Steer back' }));
-    const copy = await within(drift).findByRole('button', { name: 'Copy correction' });
+    const copy = await within(drift).findByRole('button', { name: 'Copy message' });
     await userEvent.click(copy);
     await waitFor(() => expect(copy).toHaveTextContent('Copied'));
-    await waitFor(() => expect(copy).toHaveTextContent(/^Copy correction$/), { timeout: 4000 });
+    await waitFor(() => expect(copy).toHaveTextContent(/^Copy message$/), { timeout: 4000 });
   },
 };
 
@@ -309,10 +319,10 @@ export const TheLevelStaysOnTheSessionPage: Story = {
     await expect(within(first).queryByText('Slightly off course')).toBeNull();
     await expect(first.querySelector('.next-operation-progress')).toBeNull();
     await userEvent.click(first.querySelector('a.next-operation-route') as HTMLElement);
-    await card(canvasElement);
+    const drift = await card(canvasElement);
     await waitFor(() =>
-      expect(canvasElement.querySelector('[data-next-drift-pill]')).toHaveTextContent(
-        'Drift: Medium',
+      expect(drift.querySelector('[data-next-drift-pill]')).toHaveTextContent(
+        'Slightly off course',
       ),
     );
     SESSIONS_NAV.back?.();
@@ -343,7 +353,10 @@ export const ARaiseAloneNamesNoLevel: Story = {
         return node as HTMLElement;
       });
     await userEvent.click((await row()).querySelector('a.next-operation-route') as HTMLElement);
-    await card(canvasElement);
+    const drift = await card(canvasElement);
+    await waitFor(() =>
+      expect(drift.querySelector('[data-next-drift-pill]')).toHaveTextContent('On track'),
+    );
     RAISE_NAV.back?.();
     const back = await row();
     await expect(back.querySelector('[data-slot="badge"]')).toBeNull();

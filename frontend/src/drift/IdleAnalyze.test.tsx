@@ -1,7 +1,8 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { describe, expect, it } from 'vitest';
 import { screen } from '@testing-library/react';
 import { datedClock } from '../observed/values';
-import { byAction, fact, mountDrift, press, textOf } from './testing';
+import { byAction, fact, mountDrift, press, textOf, POLICY } from './testing';
 import { SCOPE_TEXT_IDLE, WHY_OFF } from './sentences';
 
 /* Owner, 2026-10-20: an idle Claude Code session whose last turn has no recorded finish is analyzed up to its
@@ -34,6 +35,7 @@ describe('an idle session analyzed up to its last recorded entry', () => {
       facts: SAID,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(textOf('[data-next-reading-idle]')).toBe(
       `Read up to the last recorded entry at ${datedClock(900)}; the last turn was not recorded as finished.`,
@@ -124,4 +126,23 @@ describe('a press on a refused Analyze', () => {
     expect(why.textContent).toContain(sentence);
     expect(document.body.textContent).not.toContain("Why it can't read");
   });
+});
+
+it('updates the cost from the measured daily count after a check', async () => {
+  const policy = { ...POLICY, used: 89, limit: 100 };
+  const page = mountDrift({ payload: { reading: policy } });
+  await page.settle();
+  const cost = () => textOf('[data-next-check-cost]');
+  expect(cost()).toBe('Uses AI');
+  await press(screen.getByRole('button', { name: 'Check progress' }));
+  expect(page.posts('/api/reading')).toBe(1);
+  await page.poll({ ...(page.state.data as object), reading: { ...policy, used: 90 } });
+  expect(cost()).toBe('Uses AI · 10 of 100 daily checks left');
+  await page.poll({ ...(page.state.data as object), reading: { ...policy, used: 100 } });
+  expect(cost()).toBe('Uses AI · 0 of 100 daily checks left');
+  await page.poll({
+    ...(page.state.data as object),
+    reading: { ...policy, reason: 'store-unavailable' },
+  });
+  expect(cost()).toBe('Uses AI');
 });

@@ -24,7 +24,7 @@ import {
 } from './drift.scenario';
 
 /* The parts of a stored analysis a reader tunes most: the spent-budget banner, the Mark as inaccurate control
-   and what it changes, and the What the analysis read panel. Each story mounts the real session page over a
+   and what it changes, and the What the check read panel. Each story mounts the real session page over a
    scripted backend, so the design can be iterated here and the play functions keep the behaviour honest.
    Parts with no role or name are found by the `data-` hook the page draws on them, never by a class. */
 
@@ -63,7 +63,8 @@ const RESULT: Scenario = {
 };
 
 async function card(canvasElement: HTMLElement): Promise<HTMLElement> {
-  return within(canvasElement).findByRole('region', { name: 'Drift' });
+  await openSessionTechnicalTab('Evidence', canvasElement);
+  return canvasElement;
 }
 
 /* The foot is the Mark as inaccurate row; `data-next-result-mark` names its state. */
@@ -151,7 +152,9 @@ export const UnderTheLimitSaysNothingAboutIt: Story = {
   ...scenario(RESULT),
   play: async ({ canvasElement }) => {
     await foot(await card(canvasElement));
-    await noBudgetLine(canvasElement);
+    await noBudgetLine(
+      await within(canvasElement).findByRole('region', { name: 'Is it on track?' }),
+    );
     await expect(canvasElement.querySelector('[data-next-reading-cap]')).toBeNull();
   },
 };
@@ -198,7 +201,7 @@ export const LimitReachedHoldsTheTopOfThePage: Story = {
     });
     await expect(banner).toHaveAttribute('role', 'status');
     await expect(banner).toHaveTextContent(
-      /^You’ve reached the limit of 100 drift analyses for the past 24 hours\. You can analyze again at .+\.$/,
+      /^You’ve reached the limit of 100 progress checks for the past 24 hours\. You can check progress again at .+\.$/,
     );
     // The top 2rem of the viewport, and still there once the page has scrolled.
     const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
@@ -207,7 +210,9 @@ export const LimitReachedHoldsTheTopOfThePage: Story = {
     window.scrollTo(0, document.documentElement.scrollHeight);
     await waitFor(() => expect(Math.round(banner.getBoundingClientRect().top)).toBe(0));
     window.scrollTo(0, 0);
-    await noBudgetLine(canvasElement);
+    await noBudgetLine(
+      await within(canvasElement).findByRole('region', { name: 'Is it on track?' }),
+    );
   },
 };
 
@@ -237,11 +242,9 @@ export const MarkAsInaccurateSaysWhatItDoes: Story = {
     // Said once: the foot no longer repeats it, and no second Undo stands there.
     await expect(row.textContent).not.toContain('Marked inaccurate');
     await expect(within(row).queryByRole('button', { name: RESULT_UNMARK })).toBeNull();
-    await expect(drift.textContent?.split(RESULT_MARKED).length).toBe(2);
+    await expect(within(notice).getAllByRole('status')).toHaveLength(1);
     const undo = within(notice).getByRole('button', { name: RESULT_UNMARK });
-    await expect(
-      within(notice).getByRole('button', { name: 'Check progress again' }),
-    ).toBeVisible();
+    await expect(within(drift).getByRole('button', { name: 'Check progress again' })).toBeVisible();
     // The level and Steer back left the column above; the foot stayed where the press was.
     await expect(Math.abs(row.getBoundingClientRect().top - before)).toBeLessThan(4);
     await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
@@ -272,9 +275,7 @@ export const MarkedInaccurate: Story = {
     });
     await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
     await expect(within(notice).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
-    await expect(
-      within(notice).getByRole('button', { name: 'Check progress again' }),
-    ).toBeVisible();
+    await expect(within(drift).getByRole('button', { name: 'Check progress again' })).toBeVisible();
     // The verdicts stay readable and are set aside: drawn grey, and under the one message. Grey rather than
     // faded, because a faded clay label fell to 2.8:1 and the accessibility audit holds every text to 4.5:1.
     const disowned = drift.querySelector<HTMLElement>('[data-next-disowned]');
@@ -323,9 +324,8 @@ export const MarkedInaccurateWithTheLiveMonitorOn: Story = {
     });
     await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
     await expect(within(notice).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
-    await expect(
-      within(notice).getByRole('button', { name: 'Check progress again' }),
-    ).toBeVisible();
+    await expect(within(drift).getByRole('button', { name: 'Check progress again' })).toBeVisible();
+    await openSessionTechnicalTab('Evidence', canvasElement);
     await expect(drift.querySelector('[data-next-disowned]')).not.toBeNull();
   },
 };

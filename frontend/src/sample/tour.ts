@@ -10,7 +10,7 @@ export interface TourNote {
 export const TOUR: readonly TourNote[] = [
   {
     id: 'intent',
-    title: 'Your intent',
+    title: 'Your goal',
     body: 'The goal for the session, written as what should be true when the work is done. Here the person set it once: “Every issue in the milestone is closed.” For your own session you can type it, choose one of your prompts, press Find goal, or let Compass pick up a goal you set with /goal in Claude Code. Compass checks the session against it and never writes into the session.',
   },
   {
@@ -24,19 +24,19 @@ export const TOUR: readonly TourNote[] = [
     body: 'A phase whose entries are evidence for a departure says so, and links to its card. Here three phases hold the one departure from the goal: the agent’s readback that the milestone stands at 97.3%, the walk finding a blocker so the milestone can’t close yet, and at the end the person replying that the open issue stays and is to be finished while a pull request is still behind main.',
   },
   {
+    id: 'sent',
+    title: 'What is sent, and Pause all AI use',
+    body: 'A summary or a progress check runs when you press its button, through your own Claude Code. What is sent explains what leaves your machine and where. Pause all AI use stops every one of them in one press. Each counts against a daily limit.',
+  },
+  {
     id: 'departure',
     title: 'A departure, and its evidence',
-    body: 'Check progress compares your goal with the record. Each departure shows what it rests on under What, every cited entry in its own words with its entry number, and says why in one sentence. Press a number and Activity log opens on that entry, with every cited entry lit up. It is an account of the evidence, never a verification that the work was done.',
+    body: 'Check progress compares your goal with the record. The card says where the work went off course. The quotes link opens Evidence, with each cited entry in its own words. Press a citation there to open Activity log on that entry, with every cited entry lit up. It is an account of the evidence, never a verification that the work was done.',
   },
   {
     id: 'steer',
     title: 'Steer back',
-    body: 'A correction written from your goal. For each departure it gives the time on your clock, the agent’s own words at that moment so the agent can find it, and why Compass reads it as drift. Copy it and paste it into the session yourself. Compass never sends anything into a session.',
-  },
-  {
-    id: 'sent',
-    title: 'What is sent, and Pause all AI use',
-    body: 'A summary or a progress check runs when you press its button, through your own Claude Code. The first of each kind says once what leaves your machine and where, and Pause all AI use stops every one of them in one press. Each counts against a daily limit.',
+    body: 'An editable message based on your goal. Copy it and paste it into the session yourself. Compass never sends it for you.',
   },
   {
     id: 'activity',

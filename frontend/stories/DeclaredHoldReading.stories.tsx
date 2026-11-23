@@ -9,6 +9,7 @@ import { createShell } from '../src/shell/createShell';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
 import { heldContext, heldData, heldParent, nativeData } from '../test/declaredHold';
+import { openSessionTechnicalTab } from './sessionTechnical';
 
 function Example() {
   const backend = useRef(false);
@@ -88,18 +89,22 @@ type Story = StoryObj<typeof meta>;
 export const CompletedReadingAndFinalResult: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const drift = await canvas.findByRole('region', { name: 'Drift' });
-    const pill = () => canvasElement.querySelector('[data-next-drift-pill]');
-    await waitFor(() => expect(pill()).toHaveTextContent('Drift: Medium'));
+    const drift = await canvas.findByRole('region', { name: 'Is it on track?' });
+    const progress = within(drift);
+    await expect(await progress.findByText('Out of date')).toBeVisible();
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    const medium = /^Medium: 1 departure/;
+    await expect(await evidence.findByText(medium)).toBeVisible();
+    await expect(evidence.getByText('It asked for a different change')).toBeVisible();
     const wording = drift.textContent;
-    const pillWords = pill()?.textContent;
-    await expect(pill()).not.toHaveTextContent('so far');
+    const verdict = evidence.getByText(medium).textContent;
+    await expect(evidence.getByText(medium)).not.toHaveTextContent('so far');
     await userEvent.click(canvas.getByRole('button', { name: 'Apply child display hold' }));
     const childWait = await canvas.findByRole('link', { name: 'Waiting on child "Check build"' });
     await expect(childWait).toBeVisible();
     await expect(canvasElement.querySelector('[data-next-session-status]')).toBeNull();
-    await expect(pill()?.textContent).toBe(pillWords);
     await expect(drift.textContent).toBe(wording);
+    await expect(evidence.getByText(medium).textContent).toBe(verdict);
     await userEvent.click(canvas.getByRole('button', { name: 'View final result' }));
     const timeline = await waitFor(() => {
       const node = canvasElement.querySelector<HTMLElement>('[data-next-cockpit-semantic]');

@@ -133,14 +133,14 @@ export function policyReason(policy: unknown, nowMs: number = Date.now()): strin
      [Consent notice payload](../../../docs/design-session-summary.md#consent-notice-payload) */
   if (policy['reason'] === 'run-disabled') return MODEL_OFF;
   if (policy['reason'] === 'store-unavailable') {
-    return 'Reading permission or its daily budget could not be read or saved. Restore access to the Compass store before analyzing drift.';
+    return 'Reading permission or its daily budget could not be read or saved. Restore access to the Compass store before checking progress.';
   }
   if (policy['off'] === true || policy['reason'] === 'model-calls-paused') return READINGS_OFF;
   if (policy['reason'] === 'daily-cap') {
     const at = nextNumber(policy['retry_at']);
     return at === null
-      ? 'Analysis limit reached. Wait for the next update.'
-      : `Analysis limit reached. You can analyze again at ${capReset(at, nowMs)}.`;
+      ? 'Daily check limit reached. Wait for the next update.'
+      : `Daily check limit reached. You can check progress again at ${capReset(at, nowMs)}.`;
   }
   return '';
 }
@@ -186,11 +186,11 @@ export function capReset(retryAt: number, nowMs: number): string {
 }
 
 export function capLine(cap: ReadingCap, nowMs: number): string {
-  const limit = cap.limit ? `${String(cap.limit)} drift analyses` : 'drift analyses';
+  const limit = cap.limit ? `${String(cap.limit)} progress checks` : 'progress checks';
   const head = `You’ve reached the limit of ${limit} for the past 24 hours.`;
   return cap.retryAt === null
     ? head
-    : `${head} You can analyze again at ${capReset(cap.retryAt, nowMs)}.`;
+    : `${head} You can check progress again at ${capReset(cap.retryAt, nowMs)}.`;
 }
 
 /* A discard record satisfies the nothing-typed arm too, and the wider answer is the less true of the two, so
@@ -257,7 +257,7 @@ export function promptReadingRefusal(
     const candidate =
       draft ?? (openedWithControl(session) ? null : promptCandidate(session, 'latest-prompt'));
     if (candidate && candidate.at === null) {
-      return 'The prompt time was not published, so it cannot be adopted. Type a goal to analyze drift.';
+      return 'The prompt time was not published, so it cannot be adopted. Type a goal to check progress.';
     }
     if (candidate) {
       annotation = { ...annotation, goal: candidate.text, discarded_at: null, discarded_why: '' };
@@ -276,4 +276,25 @@ export function disclosureParts(
   const parts = route?.['disclosure_parts'];
   if (provider && Array.isArray(parts) && parts.length) return parts.map(String);
   return provider && disclosure ? [disclosure] : [];
+}
+
+export function progressBudget(
+  payload: Row,
+): { readonly remaining: number; readonly limit: number } | null {
+  const policy = isRecord(payload['reading']) ? payload['reading'] : null;
+  const used = nextNumber(policy?.['used']);
+  const limit = nextNumber(policy?.['limit']);
+  if (
+    !policy ||
+    policy['reason'] === 'store-unavailable' ||
+    policy['reason'] === 'run-disabled' ||
+    used === null ||
+    !Number.isSafeInteger(used) ||
+    used < 0 ||
+    limit === null ||
+    !Number.isSafeInteger(limit) ||
+    limit <= 0
+  )
+    return null;
+  return { remaining: Math.max(0, limit - used), limit };
 }

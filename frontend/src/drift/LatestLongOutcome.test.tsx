@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { describe, expect, it, vi } from 'vitest';
 import { LONG_DIAGNOSTIC, LONG_INCOMPLETE_SENTENCE, LATEST_OLDER } from '../../test/longDiagnostic';
 import { EVIDENCE_PROGRESS, LONG_JOB } from '../../test/longProgress';
@@ -31,6 +32,7 @@ describe('the latest long outcome alongside a standing reading', () => {
       },
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     expect(textOf('[data-next-long-outcome]')).not.toContain(failure);
     expect(textOf('.next-cockpit-reading-outcome')).toContain(failure);
     expect(textOf('[data-next-long-outcome]')).toContain(LONG_INTERRUPTED_SENTENCE);
@@ -44,6 +46,7 @@ describe('the latest long outcome alongside a standing reading', () => {
         ...(pending ? { payload: { reading: { ...POLICY, off: true, consent: false } } } : {}),
       });
       await page.settle();
+      await openSessionTechnicalTab('Evidence');
       const latest = textOf('[data-next-long-outcome]');
       expect(latest).toContain('Long analysis did not produce a new result.');
       expect(textOf('.next-cockpit-reading-outcome')).toContain(LONG_INCOMPLETE_SENTENCE);
@@ -59,6 +62,7 @@ describe('the latest long outcome alongside a standing reading', () => {
   it('does not mark a newer reading, another revision, unbound or malformed metadata as older', async () => {
     const page = mountDrift({ session, facts });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     for (const changes of [
       { annotation_assessment: { ...PARTIAL_READING, read_at: 1200 } },
       {
@@ -89,6 +93,7 @@ describe('the latest long outcome alongside a standing reading', () => {
       },
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     expect(textOf('[data-next-long-outcome]')).toContain('Long analysis saved a partial result.');
     expect(textOf('[data-next-long-outcome]')).toContain('Reserved call accounting is unknown.');
     expect(textOf('[data-next-result]')).toContain(PARTIAL_WHY);
@@ -107,6 +112,7 @@ describe('long job announcements', () => {
     };
     const page = mountDrift({ session: { annotation_long_diagnostic: prior } });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll({
       ...driftBoard({ payload: payload(job), session: { annotation_long_diagnostic: prior } }),
       generated: 1100,
@@ -145,6 +151,7 @@ describe('long job announcements', () => {
   it('announces watched stage transitions once, never each pass or repeated poll', async () => {
     const page = mountDrift({});
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     const say = vi.spyOn(page.shell.announcer, 'announce');
     await page.poll({ ...driftBoard({ payload: payload(job) }), generated: 1100 });
     const evidence = { ...job, progress: EVIDENCE_PROGRESS };
@@ -186,6 +193,7 @@ describe('long job announcements', () => {
       session: { annotation_assessment: PARTIAL_READING },
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     expect(cue()).toBe('');
     await page.poll({ ...driftBoard({ payload: payload(job) }), generated: 1100 });
     expect(cue()).toBe('');
@@ -213,6 +221,7 @@ describe('long job announcements', () => {
   it('announces a bound new partial reading as partial and preserves specific cancellation', async () => {
     const page = mountDrift({});
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll({ ...driftBoard({ payload: payload(job) }), generated: 1100 });
     await page.poll({
       ...driftBoard({

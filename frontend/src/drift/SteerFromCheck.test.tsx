@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { describe, expect, it } from 'vitest';
 import { datedClock } from '../observed/values';
 import { byAction, check, fact, json, mountDrift, textOf } from './testing';
@@ -68,14 +69,16 @@ describe('Steer back from a check', () => {
     expect(steer?.getAttribute('data-variant')).not.toBe('primary');
     expect(document.querySelector('[data-next-steer-section] h3')?.textContent).toBe('Steer back');
     expect(
-      document.querySelector('[data-next-result-steer] [data-next-cockpit-action="update-intent"]'),
-    ).toBeNull();
+      document.querySelector('[data-next-result-steer] [data-next-cockpit-action="update-intent"]')
+        ?.textContent,
+    ).toBe('Update my goal instead');
   });
 
   it('says why beside the departures when the analysis was marked inaccurate', async () => {
     const page = mount({ session: { ...saidSession, annotation_not_accurate: true }, facts: SAID });
     await page.settle();
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     expect(document.querySelector('[data-next-departures]')).not.toBeNull();
     expect(byAction('steer-back')).toBeNull();
     expect(textOf('[data-next-steer-off]')).toBe(STEER_OFF_MARKED);

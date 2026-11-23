@@ -8568,9 +8568,9 @@ shared switch and the stored evidence.
 | Pause model calls / Resume model calls, in Drift settings | AI use and privacy | Pause all AI use / Resume AI use. It applies to every session and is the same server switch shown in Settings. Summaries stays nested under it in Settings and reads as paused when AI use is paused. |
 | Next Analyze prompt and reading limits | Check settings | Prompt size limit, messages and checks kept, checks and files listed, transcript scanned and the route estimate and caveats. Settings still owns the adjustable values. |
 | Long analysis options and Unfinished long analysis records | Check settings | Long check for very long sessions and Unfinished long checks. Their limits, preview, recovery and discard caveats stay with them. |
-| Reading evidence, What the analysis read and Mark as inaccurate | Evidence | The stored reading's cited entries, interpretation, claims, What the check read and This reading looks wrong. During the stack transition the first layer also shows its evidence. |
+| Reading evidence, What the analysis read and Mark as inaccurate | Evidence | The stored check's cited entries, interpretation, claims and What the check read. The progress card holds This reading looks wrong. |
 | How it landed, Command-shape reports and Notifications, in Activity log | Reports | Each keeps its sources and caveats. End evidence and who claims it finished stay distinct. |
-| Full activity | Activity log | The numbered session record and its filters. A citation opens this tab at the cited entry. Back to the finding returns to the Evidence tab if the citation was pressed there. |
+| Full activity | Activity log | The numbered session record and its filters. The first-layer quotes link opens Evidence and focuses the first citation. From Evidence, a citation can open Activity log and Back to the finding returns to that citation. |
 
 The privacy summary uses the route's destination for session words. It shows when the
 daily count is unavailable. What is sent labels the route's prompt estimate separately

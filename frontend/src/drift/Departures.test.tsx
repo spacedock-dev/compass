@@ -1,6 +1,8 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
+import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { datedClock } from '../observed/values';
-import { mountDrift, textOf } from './testing';
+import { check, mountDrift, press, textOf } from './testing';
 
 const ROW = {
   constraint: 'TYPED GOAL',
@@ -16,6 +18,7 @@ describe('the departures section', () => {
   it('draws nothing for a session with no raise and no sentence about why', async () => {
     const page = mountDrift({});
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(document.querySelector('.next-cockpit-departures')).toBeNull();
     expect(page.state.requests.filter((r) => r.method !== 'GET')).toEqual([]);
@@ -27,6 +30,7 @@ describe('the departures section', () => {
       session: { departures: [], departure_why: 'Not checked yet.', departure_checked: false },
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const section = document.querySelector('.next-cockpit-departures') as HTMLElement;
     expect(section.querySelector(':scope > .next-cockpit-departure-part')).not.toBeNull();
@@ -55,6 +59,7 @@ describe('the departures section', () => {
       },
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const section = document.querySelector('.next-cockpit-departures') as HTMLElement;
     expect(section.querySelector('[data-slot=accordion-trigger]')?.textContent).toBe(
@@ -88,9 +93,56 @@ describe('the departures section', () => {
       session: { departures: [ROW] },
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const text = textOf('.next-cockpit-departures');
     expect(text).toContain('The model off switch refuses unasked checks.');
     expect(text).toContain('What was already raised is still on record.');
   });
+});
+
+it('opens the distinct cited entries behind the compact answer in one press', async () => {
+  const page = mountDrift({
+    session: {
+      annotation_reading_count: 1,
+      annotation_assessment: {
+        revision_read: 3,
+        revision_read_at: 990,
+        window_start: 100,
+        read_at: 990,
+        evidence_through: 990,
+        goal_source: 'typed',
+        scope: 'last-turn',
+        criteria: {
+          goal: {
+            result: 'departure',
+            cites: ['c1', 'c1'],
+            detail: 'A check failed.',
+            clause: 'Ship the queue',
+          },
+          line_1: {
+            result: 'departure',
+            cites: ['c2'],
+            detail: 'Another check failed.',
+            clause: 'Tests pass',
+          },
+        },
+      },
+    },
+    facts: [
+      check('c1', 500, 'failed', { result_source: 'failed flag', summary: 'pytest -q' }),
+      check('c2', 600, 'failed', { result_source: 'failed flag', summary: 'pnpm test' }),
+    ],
+  });
+  await page.settle();
+  const progress = within(screen.getByRole('region', { name: 'Is it on track?' }));
+  const quotes = progress.getByRole('button', { name: 'See the 2 quotes behind this' });
+  expect(progress.queryByText(/pytest -q|pnpm test/)).toBeNull();
+  await press(quotes);
+  const evidence = within(screen.getByRole('tabpanel', { name: 'Evidence' }));
+  const goal = evidence.getByRole('link', { name: /Activity log for Goal: Ship the queue/ });
+  await waitFor(() => expect(document.activeElement).toBe(goal));
+  expect(
+    evidence.getByRole('link', { name: /Activity log for Expected outcome line 1: Tests pass/ }),
+  ).toBeVisible();
 });

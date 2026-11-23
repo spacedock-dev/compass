@@ -20,13 +20,13 @@
 @source '../sessions/{SessionDetail,WhatItDid,SummaryParts,DepartureParts,DetailParts,SessionsView,SessionsGlance,SessionsFilters,WaitingBlock,SessionAiPrivacy,SessionCheckSettings}.tsx';
 @source '../attention/AttentionView.tsx';
 @source '../steering/{StageConditions,Tripwires}.tsx';
-@source '../intent/PromptSelect.tsx';
+@source '../intent/{IntentSection,HowTo,PromptSelect,DirectionQuestion}.tsx';
 @source '../sample/**/*.{ts,tsx}';
 @source '../shell/{Breadcrumb,Header,UpdateNotice}.tsx';
 @source '../attention/WorthALookFlag.tsx';
 @source '../settings/**/*.{ts,tsx}';
 @source '../controls/{Disclosure,TechnicalDetails}.tsx';
-@source '../drift/{CitationLink,CitedText,EntrySource,DriftStamp,ReadingControl,ReadingResult,WorkListView,ActivityHead,ActivityMarks,CheckRun,ShowMore,SteerBack,DriftBody,CiReadNote}.tsx';
+@source '../drift/{CitationLink,CitedText,EntrySource,DriftLevelView,DriftStamp,ReadingControl,ReadingResult,WorkListView,ActivityHead,ActivityMarks,CheckRun,ShowMore,SteerBack,DriftBody,CiReadNote}.tsx';
 @source '../project/{ActivityViews,PlanView,ProjectsView,ScopeNav,parts}.tsx';
 @source '../workstream/ChangesPanel.tsx';
 @source not '../**/*.test.*';

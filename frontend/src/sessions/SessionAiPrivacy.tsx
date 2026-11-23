@@ -1,30 +1,17 @@
-import { nextNumber } from '../api/bootstrap';
+import { progressBudget } from '../drift/route';
 import { CiReadSwitch } from '../drift/CiReadNote';
 import { WhatIsSent } from '../drift/ReadingControl';
 import { useDrift } from '../drift/context';
 import { LiveMonitorSwitch } from '../intent/LiveMonitorSwitch';
 import { isSampleSession } from '../intent/liveMonitor';
 import { GLOSSARY } from '../language/glossary';
-import { isRecord } from '../observed';
 import { AiPauseSwitch } from '../settings/AiPauseSwitch';
 import { Separator } from '../ui/separator';
 
 export function SessionAiPrivacy() {
   const { model } = useDrift();
   const route = model.route;
-  const rawPolicy = model.payload['reading'];
-  const policy = isRecord(rawPolicy) ? rawPolicy : null;
-  const used = nextNumber(policy?.['used']);
-  const limit = nextNumber(policy?.['limit']);
-  const countAvailable =
-    policy?.['reason'] !== 'store-unavailable' &&
-    policy?.['reason'] !== 'run-disabled' &&
-    used !== null &&
-    Number.isSafeInteger(used) &&
-    used >= 0 &&
-    limit !== null &&
-    Number.isSafeInteger(limit) &&
-    limit > 0;
+  const budget = progressBudget(model.payload);
   const sample = isSampleSession(model.session);
   const facts = [
     [
@@ -36,8 +23,8 @@ export function SessionAiPrivacy() {
     ['Model', String(route?.['model'] ?? '')],
     [
       'Checks left today',
-      countAvailable
-        ? `${Math.max(0, limit - used)} of ${limit} daily checks`
+      budget
+        ? `${budget.remaining} of ${budget.limit} daily checks`
         : 'Daily check count unavailable.',
     ],
   ].filter(([, value]) => value);

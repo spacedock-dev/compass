@@ -85,10 +85,10 @@ describe('the first-layer glossary', () => {
     );
   });
 
-  it('uses the recorded update-intent button text as shown', () => {
+  it('uses the ruled goal-edit button text', () => {
     expect(GLOSSARY.updateGoalInstead).toMatchObject({
       plain: 'Update my goal instead',
-      shown: 'Update intent instead',
+      shown: 'Update my goal instead',
     });
   });
 });

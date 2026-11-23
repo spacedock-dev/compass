@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import {
@@ -61,12 +62,14 @@ const read = (ci: Record<string, unknown>): Pick<Story, 'args'> =>
     },
   });
 
-const note = async (canvasElement: HTMLElement): Promise<HTMLElement> =>
-  waitFor(() => {
+const note = async (canvasElement: HTMLElement): Promise<HTMLElement> => {
+  await openSessionTechnicalTab('Evidence', canvasElement);
+  return waitFor(() => {
     const node = canvasElement.querySelector<HTMLElement>('[data-next-ci-read]');
     if (!node) throw new Error('no CI note');
     return node;
   });
+};
 
 export const GreenOnTheSessionsCommit: Story = {
   ...read(record()),
@@ -115,7 +118,7 @@ export const GreenChecksCarryAConsistentLine: Story = {
   ...citing(record()),
   play: async ({ canvasElement }) => {
     await note(canvasElement);
-    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const card = canvasElement.querySelector('[data-next-result]');
     await waitFor(() => expect(card).toHaveTextContent('GitHub check'));
     await expect(card).not.toHaveTextContent('Can’t tell');
     await expect(card).not.toHaveTextContent("Can't tell");
@@ -134,7 +137,7 @@ export const GreenOnAGitlabMergeRequest: Story = {
     await expect(node).toHaveTextContent(
       /Read from GitLab at (\d{4}-\d{2}-\d{2} )?\d{1,2}:\d{2}: gitlab\.example\.com\/acme\/widgets!12, 2 passed, 1 skipped\./,
     );
-    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const card = canvasElement.querySelector('[data-next-result]');
     await waitFor(() => expect(card).toHaveTextContent('GitLab job'));
     await expect(card).not.toHaveTextContent('Can’t tell');
     await expect(card).not.toHaveTextContent("Can't tell");
@@ -198,7 +201,7 @@ export const ChecksOnAMovedHeadCannotCarryALine: Story = {
   ...citing(record({ head: OTHER, head_matches: false })),
   play: async ({ canvasElement }) => {
     await note(canvasElement);
-    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const card = canvasElement.querySelector('[data-next-result]');
     await waitFor(() => expect(card).toHaveTextContent("Can't tell"));
   },
 };
@@ -335,6 +338,7 @@ export const NoReadNoNote: Story = {
     },
   }),
   play: async ({ canvasElement }) => {
+    await openSessionTechnicalTab('Evidence', canvasElement);
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-drift-verdict]')).not.toBeNull(),
     );
@@ -345,7 +349,7 @@ export const NoReadNoNote: Story = {
 const SWITCH = '[data-next-ci-switch]';
 
 async function opened(canvasElement: HTMLElement): Promise<HTMLElement> {
-  const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+  const card = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
   const sent = await within(card).findByRole('button', { name: /^What is sent/ });
   await userEvent.click(sent);
   const panel = document.getElementById(sent.getAttribute('aria-controls') ?? '');
@@ -377,7 +381,7 @@ export const TheSwitchTurnsTheReadOffAndBackOn: Story = {
     });
     await expect(node).toHaveAttribute('data-next-ci-switch', 'on');
     await expect(node).toHaveTextContent(
-      'Pull request checks are read from GitHub or GitLab with your gh or glab login when you press Analyze.',
+      'Pull request checks are read from GitHub or GitLab with your gh or glab login when you press Check progress.',
     );
     await userEvent.click(
       within(node).getByRole('button', { name: 'Turn off the pull request read' }),

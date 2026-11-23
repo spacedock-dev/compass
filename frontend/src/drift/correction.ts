@@ -212,6 +212,7 @@ export interface HeldCorrection {
   open: boolean;
   pending: boolean;
   parts: CorrectionPart[] | null;
+  starter?: string;
   text: string | null;
   edited: boolean;
   why: string;

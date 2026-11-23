@@ -1,3 +1,4 @@
+import { GLOSSARY } from '../language/glossary';
 import { useState } from 'react';
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
 import { compatSessKey } from '../api/identity';
@@ -36,7 +37,7 @@ export function PromptSelect({ compact = false }: { readonly compact?: boolean }
   const bounded = ctx.held.prompts.get(compatSessKey(session))?.bounded;
   /* One label whatever the box holds: the face used to change to "Replace with your prompt", which made the
      control read as two. */
-  const face = 'Use your prompt';
+  const face = GLOSSARY.useYourPrompt.plain;
   const [open, setOpen] = useState(false);
   const focusKey = `${goalKey(session)}:prompt`;
   const ref = useFocusKey<HTMLButtonElement>(ctx.shell.controls.focusLane, focusKey);

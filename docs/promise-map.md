@@ -141,11 +141,11 @@ and a rolling 24-hour limit across the board, apart from Analyze's 100 attempts.
 keeps the source beside each outcome line, groups written paths by folder, and states whether your words changed or new work
 arrived after it. Both levels are recomputed from the evidence and are never stored.
 Once a reading exists, the card header offers Check progress again for current and stale
-readings. The control stays visible where a press is temporarily unavailable. Each departure is a card naming the constraint, quoting your words for
-it, listing the cited entries by number, and giving the analysis's reason. A cited entry's number
-opens Full activity at that entry, loading older record pages for one not yet listed, with every
-entry the finding cites marked with the finding's words and their current numbers. Departure
-citations keep the neutral `Cited` tag.
+readings. The control stays visible where a press is temporarily unavailable. Is it on track?
+gives the answer and links to the quotes behind it. Evidence under Show technical details
+names each goal or outcome line, gives the reason and lists the numbered sources. A cited
+number opens Activity log at the entry, loading older pages when needed. Departure citations
+keep the neutral `Cited` tag.
 From any shell, `spacedock-compass --drift --session claude:SESSION_ID` prints a Claude Code
 session's stored reading as the session page derives it: the goal and where it came from, the
 level, each outcome line's state and source, each departure with your words, its entry numbers and
@@ -297,7 +297,7 @@ most damaging and it is worth nothing to someone who is not at the desk. It send
 with `--unasked-readings` on. Claude Code checks its own sessions, Codex checks its own, and Pi
 and Antigravity prefer Claude Code, falling back only when the preferred provider is unavailable or
 unqualified. Codex needs permission for the current destination from "Allow Codex to run unasked
-checks" in the session's Drift card; Attention points to it when saved typed goals are waiting.
+checks" in the session's Is it on track? card; Attention points to it when saved typed goals are waiting.
 If a stored Codex grant no longer applies, Attention says "Unasked checks cannot run", explains
 why when the server can say, and links the affected sessions without inviting another grant.
 A harness with no session record reader shows why checks cannot run and offers no grant switch

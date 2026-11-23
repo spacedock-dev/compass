@@ -7,7 +7,7 @@ Codex and Gemini CLI) by reading the session records they already write.
 
 To try it, install the plugin (see the [README](../README.md#1-how-to-set-up)), then ask your agent to
 "open compass" or run `/compass:compass`. The dashboard opens at `http://127.0.0.1:4553/`. To see what
-a finished drift check looks like before you run one, open "See a sample session (view only)" above
+a finished progress check looks like before you run one, open "See a sample session (view only)" above
 the Sessions list.
 
 ## Checking a session for drift
@@ -17,15 +17,10 @@ want touched, stops short, or says it finished when its own record shows otherwi
 for drift by comparing your goal with what the session recorded: its messages, the checks and
 commands it ran, and the files it wrote.
 
-![The Drift card on the sample session: a Medium level with one departure from the goal, the agent's
-own messages and the reader's message it rests on, each with a numbered citation, and below it a
-claim the record contradicts.](images/how-it-works-drift-card.png)
-
-The picture above is the Drift card on the sample session. The agent reported the milestone 97.3%
-complete, then said it had found a blocker, and the reader then said a ticket was still open.
-Compass reads that as a departure from the goal "burn down the milestone", at a Medium level, and
-cites the three entries it rests on as `[41]`, `[79]` and `[80]`. Below it, the agent's claim that
-the build work was "done and merged" is shown as contradicted by entry `[80]`.
+In the sample session, the agent reported the milestone 97.3% complete and later found a
+blocker. The reader then said an issue was still open. Is it on track? shows Slightly off
+course. Follow the quotes link to see the entries behind the finding and the record that
+contradicts the agent's claim that the build work was done and merged.
 
 ```mermaid
 flowchart LR
@@ -44,14 +39,15 @@ A check goes like this:
    save up to six expected outcome lines.
 2. Press Check progress. This sends the session's content to a model (see
    [what can leave your machine](#what-can-leave-your-machine)).
-3. The Drift card shows a level: None or low, Medium, High or Extreme. When the record cannot support
-   a level, it says Not enough recorded yet. Under the level, each departure and each outcome line
-   says what the record shows, with citations.
-4. For a departure, press Steer back. Compass writes a correction from your own goal and outcome
-   lines. You edit it, copy it and paste it into the session yourself; Compass never types into a
-   session.
+3. Is it on track? shows On track, Slightly off course, Off course or Way off course when
+   the record supports a level. On track means Compass found no departure in what it read.
+   If there is no level, the card says why. Codex checks show their findings without a
+   level. The quotes link opens Evidence at the first cited entry.
+4. When Steer back is available, it opens an editable message based on your goal. Copy
+   message and paste it into the session yourself. Compass never sends it for you.
 5. Once a reading is saved, the button reads Check progress again. New work or a changed goal
-   can put the reading out of date.
+   can put the reading out of date. Uses AI stays beside the check. When 10 or fewer of
+   the daily checks remain, it also shows the count.
 
 Read a level as an account of the evidence, not a verdict you can rely on: the reader's accuracy
 check has not passed. A citation such as `[41]` lets you see the evidence for yourself. Hover over it
@@ -62,7 +58,7 @@ the session's full activity.
 
 Each session's page has three cards, one under another:
 
-- Intent: your goal and expected outcome lines.
+- Goal shows your saved goal and what done looks like. How goals work explains what Compass reads.
 - What the session has done: Compass's own outline of a Claude Code or Codex session, built without a
   model. It keeps reading on later page updates and says when work remains unread or a limit leaves
   a gap. Check counts may change while earlier checks are reconciled with later recorded work.
@@ -72,10 +68,11 @@ Each session's page has three cards, one under another:
   The card distinguishes source it could not collect from parts it collected but did not summarize.
   A finished outline does not fill gaps in a saved summary or confirm that the summary is current.
   Update summary can continue an interrupted message; older summaries made from excerpts offer Summarize again.
-- Drift: the check described above, and what became of anything it raised.
+- Is it on track? gives the progress answer and its next actions.
 
-At the foot of the page, Show technical details opens the Activity log. A citation opens the
-log and takes you to its entry. The log keeps your filter if it includes the entry and switches
+At the foot of the page, Show technical details opens the Activity log. Evidence holds the
+check's findings, numbered sources, and reading limits. A citation opens Activity log
+and takes you to its entry. The log keeps your filter if it includes the entry and switches
 to All if needed. Choose You, Agent, Commands, Files or Cited to narrow the loaded record.
 Cited includes entries linked from readings and summaries. The log says how many loaded entries
 the filter hides. Entries marked "Before reading window" fall outside the progress check for

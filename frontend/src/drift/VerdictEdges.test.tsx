@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { act } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { liveMonitorFor } from '../intent/liveMonitor';
@@ -101,6 +102,7 @@ describe('a reading that stands with no level', () => {
   it('says the live estimate is hidden, when the reader has it on and it has a level to draw', async () => {
     await open(NOTHING, work, true);
     expect(document.querySelector('[data-next-drift-level]')).toBeNull();
+    await openSessionTechnicalTab('Evidence');
     expect(textOf(HIDDEN)).toBe(
       'The live estimate is not drawn while this reading stands: it reads checks and file paths, never your intent.',
     );
@@ -139,6 +141,8 @@ describe('an empty verdict early in a session', () => {
 
   it('says it is early, and for how long the session had run', async () => {
     await open(NOTHING(), {}, false);
+    expect(textOf('[data-next-progress-absence]')).toContain('Too early to tell');
+    await openSessionTechnicalTab('Evidence');
     expect(textOf('[data-next-drift-verdict]')).toContain("Can't tell from what was read.");
     expect(textOf(EARLY)).toBe(
       'Early: this reading covers only the first 8m of the session. Read again once it has run its checks.',
@@ -177,7 +181,7 @@ describe('a goal-only reading that departs', () => {
       FAILED,
     );
     expect(document.querySelector('[data-next-drift-level]')).toBeNull();
-    expect(textOf('[data-next-drift-verdict]')).toMatch(/1 departure/);
+    expect(textOf('[data-next-progress-summary]')).toMatch(/1 departure/);
     expect(textOf('[data-next-drift-verdict]')).not.toMatch(/Can't tell/);
   });
 });

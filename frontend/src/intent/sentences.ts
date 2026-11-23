@@ -40,8 +40,8 @@ export function directionFailure(action: 'goal' | 'add' | 'keep', reason?: strin
 
 /* Analyze or Keep over an unsaved edit would read words that are not on screen, so the press is refused. Add's
    save has its own sentence, beside its line. */
-export const INTENT_EDITED = 'Save your intent, or undo your edit, to analyze drift.';
-export const INTENT_SAVING = 'Saving your intent…';
+export const INTENT_EDITED = 'Save your goal or undo your edit to check progress.';
+export const INTENT_SAVING = 'Saving your goal…';
 export const INTENT_EDITED_ADD = 'Save your intent, or undo your edit, to add this direction.';
 export const INTENT_CHOSEN_SAID = 'Goal filled from your prompt. Not saved.';
 export const INTENT_MEASURED =
@@ -80,7 +80,7 @@ export const EXCERPT_READ_WHOLE = ' · Shortened here; Analyze reads the whole p
    The ruled wording (docs/design-frontend-migration.md, 2026-10-13 departures): "up to" read as a limit that
    had bitten, so the sentence says it is how every prompt is read. */
 export const ANALYZE_PROMPT_CAP_CHARS = 1_000;
-export const ANALYZE_READS_PROMPT = `Analyze reads at most the first ${ANALYZE_PROMPT_CAP_CHARS.toLocaleString('en-US')} characters of any prompt.`;
+export const ANALYZE_READS_PROMPT = `A progress check reads at most the first ${ANALYZE_PROMPT_CAP_CHARS.toLocaleString('en-US')} characters of any prompt.`;
 export const GOAL_HINT =
   "Write what should be true when this session is done. Compass checks the session's work against it and never writes into the session.";
 

@@ -2,10 +2,7 @@ import { nextNumber } from '../api/bootstrap';
 import { ActionButton } from '../intent/ActionButton';
 import { markNotAccurate } from './actions';
 import { useDrift } from './context';
-import { RunPress } from './ReadingControl';
-import { GLOSSARY } from '../language/glossary';
 import { RESULT_MARK_UNSAVED, RESULT_MARKED, RESULT_UNMARK } from './sentences';
-import { useRunBoard } from './useRunBoard';
 
 /* What stands where the level was once the reader has marked a reading inaccurate: the one message that says
    so, with the way back (Undo) and the way forward (Analyze again) beside it. It asks nothing it keeps nowhere:
@@ -15,7 +12,6 @@ import { useRunBoard } from './useRunBoard';
    footer to here. */
 export function MarkedNotice() {
   const { ctx, model } = useDrift();
-  const { board } = useRunBoard();
   const readAt = nextNumber(model.raw?.['read_at']);
   const key = model.key;
   const unsaved = ctx.drift.notAccurate.has(key);
@@ -39,14 +35,6 @@ export function MarkedNotice() {
             }}
           />
         )}
-        <RunPress
-          board={board}
-          weight="quiet"
-          label={GLOSSARY.checkProgressAgain.shown}
-          focusKey={`reading-again-marked:${key}`}
-          fallbackKey={`reading:${key}`}
-          blocked={Boolean(model.job)}
-        />
       </div>
       {unsaved ? (
         <p className="next-cockpit-reading-why m-0" role="status">

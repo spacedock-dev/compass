@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { seeInContext } from './citation';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
@@ -19,6 +20,7 @@ import {
 import { neverDone, noCheckMark } from './drift.checks';
 import { routeFor } from './drift.reasons';
 import {
+  analysisRow,
   DEPARTURE_READING,
   DriftScenario,
   failedCheck,
@@ -89,7 +91,8 @@ const LINE_CONSISTENT = {
 };
 
 async function card(canvasElement: HTMLElement): Promise<HTMLElement> {
-  return within(canvasElement).findByRole('region', { name: 'Drift' });
+  await openSessionTechnicalTab('Evidence', canvasElement);
+  return canvasElement;
 }
 
 async function result(root: HTMLElement): Promise<HTMLElement> {
@@ -184,8 +187,8 @@ async function departureCard(
 
 async function stamp(root: HTMLElement) {
   await waitFor(() =>
-    expect(root.querySelector('[data-next-drift-stamp]')).toHaveTextContent(
-      /^claude-sonnet-5-5 · Analysis last run \d\d:\d\d$/,
+    expect(root.querySelector('[data-next-evidence-model]')).toHaveTextContent(
+      /^Reading by claude-sonnet-5-5 at \d\d:\d\d$/,
     ),
   );
 }
@@ -313,7 +316,7 @@ export const TwoDeparturesACantTellAndAClaim: Story = {
     const steer = await within(drift).findByRole('button', { name: 'Steer back' });
     await expect(primaries(canvasElement)).toEqual([steer]);
     await expect(
-      quiet.compareDocumentPosition(steer) & Node.DOCUMENT_POSITION_FOLLOWING,
+      steer.compareDocumentPosition(quiet) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     await neverDone(shown);
     await noRetiredResultWords(shown);
@@ -385,7 +388,11 @@ export const ANumberOpensFullActivityAtItsEntry: Story = {
     await expect(row).toHaveTextContent(`#${(second.textContent ?? '').slice(1, -1)}`);
     await expect(document.querySelectorAll('[data-next-cited]').length).toBe(2);
     await userEvent.click(within(row).getByRole('button', { name: 'Back to the finding' }));
-    await waitFor(() => expect(document.activeElement).toBe(second));
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute('data-next-cite')).toBe(
+        second.getAttribute('data-next-cite'),
+      ),
+    );
   },
 };
 
@@ -479,7 +486,9 @@ export const AGoalTooVagueIsRefused: Story = {
     await expect(shown.querySelector('[data-next-result-quiet]')).toBeNull();
     await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
     await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
-    await expect(within(drift).queryByRole('button', { name: 'Mark as inaccurate' })).toBeNull();
+    await expect(
+      within(drift).queryByRole('button', { name: 'This reading looks wrong' }),
+    ).toBeNull();
     await expect(drift).not.toHaveTextContent("Can't tell");
   },
 };
@@ -1178,7 +1187,7 @@ export const PendingLaterDirection: Story = {
     const drift = await card(canvasElement);
     const keep = await within(drift).findByRole('button', { name: 'Leave it' });
     const shown = await result(drift);
-    await expect(shown.contains(keep)).toBe(true);
+    await expect(shown.contains(keep)).toBe(false);
     await waitFor(() => expect(departures(shown)).toHaveLength(1));
     await expect(
       keep.compareDocumentPosition(departures(shown)[0] as HTMLElement) &
@@ -1190,11 +1199,8 @@ export const PendingLaterDirection: Story = {
     await expect(steer).toHaveAttribute('data-variant', 'default');
     await expect(steer.closest('[data-next-result-steer]')).not.toBeNull();
     await expect(
-      within(steer.closest('[data-next-steer-section]') as HTMLElement).getByRole('heading', {
-        name: 'Steer back',
-      }),
+      within(drift).getByRole('button', { name: 'Update my goal instead' }),
     ).toBeVisible();
-    await expect(within(drift).queryByRole('button', { name: 'Update intent instead' })).toBeNull();
     await neverDone(shown);
   },
 };
@@ -1271,7 +1277,7 @@ export const BlockedSessionSteerBackIsNotPrimary: Story = {
     const shown = await result(drift);
     await waitFor(() => expect(departures(shown)).toHaveLength(1));
     const steer = await within(drift).findByRole('button', { name: 'Steer back' });
-    await expect(steer).toHaveAttribute('data-variant', 'primary');
+    await expect(steer).toHaveAttribute('data-variant', 'default');
     await neverDone(shown);
   },
 };
@@ -1305,7 +1311,7 @@ export const CurrentPiResult: Story = {
   },
 };
 
-/* Mark as inaccurate and What the analysis read share one quiet footer row; the mark keeps its effect and Undo. */
+/* Mark as inaccurate and What the check read share one quiet footer row; the mark keeps its effect and Undo. */
 export const FooterMarkAsInaccurateAndUndo: Story = {
   ...scenario({
     session: stored(reading({ goal: GOAL_DEPARTS, line_1: LINE_CONSISTENT })),
@@ -1322,34 +1328,21 @@ export const FooterMarkAsInaccurateAndUndo: Story = {
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
-    const mark = await within(footer).findByRole('button', { name: RESULT_NOT_ACCURATE });
-    const read = within(footer).getByRole('button', { name: READ_SUMMARY });
-    // One row: the two controls share a line at this width.
-    await expect(
-      Math.abs(mark.getBoundingClientRect().top - read.getBoundingClientRect().top),
-    ).toBeLessThan(mark.getBoundingClientRect().height);
+    const mark = await within(drift).findByRole('button', { name: RESULT_NOT_ACCURATE });
+    await expect(within(footer).getByRole('button', { name: READ_SUMMARY })).toBeVisible();
+    await expect(footer.contains(mark)).toBe(false);
     await userEvent.click(mark);
-    await waitFor(() =>
-      expect(footer.querySelector('[data-next-result-mark]')).toHaveAttribute(
-        'data-next-result-mark',
-        'marked',
-      ),
-    );
     const notice = drift.querySelector<HTMLElement>('[data-next-drift-marked]') as HTMLElement;
     await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
     await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
     await userEvent.click(within(notice).getByRole('button', { name: RESULT_UNMARK }));
     await waitFor(() =>
-      expect(footer.querySelector('[data-next-result-mark]')).toHaveAttribute(
-        'data-next-result-mark',
-        'unmarked',
-      ),
+      expect(within(drift).getByRole('button', { name: RESULT_NOT_ACCURATE })).toBeVisible(),
     );
-    await within(drift).findByRole('button', { name: 'Steer back' });
   },
 };
 
-/* What the analysis read, from the footer: the model, the intent, the session and what is never read. */
+/* What the check read, from the footer: the model, the intent, the session and what is never read. */
 export const FooterWhatTheAnalysisRead: Story = {
   ...scenario({
     session: stored(reading({ goal: GOAL_DEPARTS, line_1: LINE_CONSISTENT })),
@@ -1447,5 +1440,63 @@ export const LinesDidNotFitThePrompt: Story = {
     ).toBeVisible();
     await expect(quietRow(drift, 'line_1')).toHaveTextContent('Tests pass');
     await expect(quietRow(drift, 'line_1')).toHaveAttribute('data-next-result-state', 'cant-tell');
+  },
+};
+
+export const ProgressBeforeEvidence: Story = {
+  ...scenario({
+    session: stored(
+      reading({
+        goal: { ...GOAL_DEPARTS, cites: ['c1', 'c1'] },
+        line_1: { ...GOAL_DEPARTS, cites: ['c2'], clause: 'Tests pass' },
+      }),
+    ),
+    route: {
+      provider: 'claude',
+      harness: 'claude',
+      destination: 'api',
+      label: 'Claude Code',
+      disclosure: 'This sends the session to Claude Code.',
+      model: 'm',
+      disclosure_parts: ['The record uses up to 524,288 bytes.'],
+    },
+    facts: [PERSON, FAILED, failedCheck('c2', 600)],
+    work: { analysis_levels: [analysisRow('claude', 'medium')] },
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const progress = await canvas.findByRole('region', { name: 'Is it on track?' });
+    const first = within(progress);
+    const pill = await waitFor(() => {
+      const node = progress.querySelector('[data-next-drift-pill]');
+      expect(node).toHaveTextContent('Slightly off course');
+      return node;
+    });
+    await expect(pill).toBeVisible();
+    await expect(progress.querySelectorAll('.next-session-drift-meter > span')).toHaveLength(4);
+    await expect(first.getByRole('heading', { name: 'Where it went off course' })).toBeVisible();
+    await expect(first.getByText(/^Compass found 2 departures,/)).toBeVisible();
+    await expect(progress.querySelector('[data-next-cite], [data-next-cited-entries]')).toBeNull();
+    await expect(progress.textContent).not.toMatch(/#\d|\b(?:drift|analyze)\b/i);
+    await expect(
+      first
+        .getByRole('button', { name: 'Check progress again' })
+        .querySelector('svg[data-icon="check-progress"]'),
+    ).not.toBeNull();
+    await userEvent.click(first.getByRole('button', { name: /^What is sent/ }));
+    await waitFor(() => expect(first.getByText(/512 KB/)).toBeVisible());
+    await expect(canvas.getByRole('button', { name: 'Show technical details' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    await userEvent.click(first.getByRole('button', { name: 'See the 2 quotes behind this' }));
+    const evidence = within(await canvas.findByRole('tabpanel', { name: 'Evidence' }));
+    const quote = await evidence.findByRole('link', {
+      name: /Activity log for Goal: Ship the queue/,
+    });
+    await waitFor(() => expect(quote).toHaveFocus());
+    await expect(
+      evidence.getByRole('link', { name: /Activity log for Expected outcome line 1: Tests pass/ }),
+    ).toBeVisible();
   },
 };

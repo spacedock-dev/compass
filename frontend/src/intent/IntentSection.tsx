@@ -179,7 +179,9 @@ export function IntentSection({ editable }: { readonly editable: boolean }) {
   const unreadable = storeUnreadable(payload);
   const key = goalKey(session);
   const saved =
-    unreadable || annotationDiscarded(annotation) ? '' : String(annotation?.['goal'] ?? '').trim();
+    !editable || unreadable || annotationDiscarded(annotation)
+      ? ''
+      : String(annotation?.['goal'] ?? '').trim();
   const draft = intentChanges(input);
   const pending =
     intentUnsaved(input) ||
@@ -201,6 +203,7 @@ export function IntentSection({ editable }: { readonly editable: boolean }) {
         <span className="flex items-baseline">
           <h2
             id="next-session-intent-heading"
+            className="m-0 text-title font-bold"
             ref={heading}
             tabIndex={-1}
             data-next-focus={`intent:${compatSessKey(session)}`}

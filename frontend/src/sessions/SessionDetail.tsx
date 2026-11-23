@@ -18,11 +18,9 @@ import { usePruneAnswerNotes } from './usePruneAnswerNotes';
 import {
   useDrift,
   DriftBody,
-  DriftPill,
   DriftProvider,
   DriftStamp,
   DriftHeadControls,
-  DeparturesSection,
   MonitorQuestion,
   ReadingCapBanner,
   WorkListView,
@@ -272,7 +270,6 @@ function Header({
             hasOpenRequest={observed.askKnown}
           />
         ) : null}
-        <DriftPill />
         <Controls session={session} observed={observed} route={route} />
       </div>
       {limit && status !== 'Waiting on child' ? (
@@ -377,9 +374,7 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
             stamp={<DriftStamp />}
             actions={<DriftHeadControls />}
             drift={<DriftBody primary={!(observed.isNeeds || observed.askKnown)} />}
-          >
-            <DeparturesSection />
-          </DriftSlot>
+          />
           <SessionTechnicalDetails
             project={route.project}
             session={session}

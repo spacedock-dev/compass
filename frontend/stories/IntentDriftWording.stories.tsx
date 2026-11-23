@@ -9,6 +9,7 @@ import { createFakeClock, createFakeEnvironment } from '../src/transport/testing
 import { fakeBackend } from '../test/storage_backends';
 import { GLOSSARY } from '../src/language/glossary';
 import { openInFlow } from './disclosure.flow';
+import { openSessionTechnicalTab } from './sessionTechnical';
 
 /* The words a reader meets at the edges of a reading: why a line reads "Can't tell", what the how-to says a
    reading can settle and how far to trust it, and what saving an intent on an ended session still cannot do.
@@ -191,15 +192,15 @@ const REASON =
   'What it cited does not show this: a departure needs its latest run failing, and a consistent its latest run passing with no change after it, both after the words you saved.';
 
 async function evidenceOf(canvasElement: HTMLElement) {
-  await waitFor(() =>
-    expect(canvasElement.querySelector('[data-next-drift-verdict]')).toHaveTextContent(
-      "Can't tell",
-    ),
+  const progress = within(
+    await within(canvasElement).findByRole('region', { name: 'Is it on track?' }),
   );
-  const goal = canvasElement.querySelector('[data-next-result-goal]') as HTMLElement;
-  // The reason is in view under the line; no Evidence fold holds it (owner, 2026-10-23).
-  await expect(within(goal).queryByRole('button', { name: /^(Evidence|Source)/ })).toBeNull();
-  return goal;
+  await expect(await progress.findByText("Can't tell")).toBeVisible();
+  await expect(progress.queryByText(REASON)).toBeNull();
+  const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+  const reason = await evidence.findByText(REASON);
+  await expect(reason).toBeVisible();
+  return reason.closest('[data-next-result-goal]');
 }
 
 export const CantTellWithNothingPublishedAsCited: Story = {
@@ -226,12 +227,17 @@ export const HowToSaysWhatAReadingCanSettleAndHowFarToTrustIt: Story = {
     const canvas = within(canvasElement);
     const goal = await canvas.findByRole('region', { name: GLOSSARY.goal.plain });
     const summary = within(goal).getByRole('button', { name: GLOSSARY.howGoalsWork.plain });
-    const popup = await openInFlow(summary, canvas.getByRole('heading', { name: 'Drift' }));
+    const popup = await openInFlow(
+      summary,
+      canvas.getByRole('heading', { name: 'Is it on track?' }),
+    );
     await expect(goal).toContainElement(popup);
     const settle = popup.querySelector('[data-next-intent-howto-settle]') as HTMLElement;
-    await expect(settle).toHaveTextContent("Readings settle a command's latest unpiped run");
-    await expect(settle).toHaveTextContent('nothing written after it');
-    await expect(settle).toHaveTextContent('A recorded write breaking a folder limit also departs');
+    await expect(settle).toHaveTextContent(
+      'The latest unpiped run settles when it fails or passes',
+    );
+    await expect(settle).toHaveTextContent('with no later write');
+    await expect(settle).toHaveTextContent('Writes outside folder limits also depart');
     await expect(popup.querySelector('[data-next-intent-howto-accuracy]')).toHaveTextContent(
       "The Claude reader's accuracy check has not passed, and its latest correction is unmeasured, so read a level as an account of the evidence, not a measurement.",
     );

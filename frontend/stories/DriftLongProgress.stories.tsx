@@ -12,7 +12,7 @@ const idle = readingScenario([]);
 export const UnknownUntilMeasured: Story = {
   args: { scenario: { payload: { reading_jobs: { 'claude:s1': LONG_JOB } }, reading: idle } },
   play: async ({ canvasElement }) => {
-    const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const root = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await expect(await within(root).findByText('Collecting source')).toBeVisible();
     await expect(root).toHaveTextContent('Source files verified: unknown.');
     await expect(root).toHaveTextContent('Evidence pass count: unknown.');
@@ -34,7 +34,7 @@ export const FourthOfSevenWithActualReservations: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const root = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await expect(await within(root).findByText('Evidence pass 4 of 7')).toBeVisible();
     await expect(root).toHaveTextContent('Evidence passes finished: 3 of 7.');
     await expect(root).toHaveTextContent('Calls reserved: 4.');
@@ -70,7 +70,7 @@ export const ReservedFinalSlotIsNotAnActualPassCount: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const root = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await expect(await within(root).findByText('Final comparison')).toBeVisible();
     await expect(root).toHaveTextContent('Evidence passes finished: 7 of 7.');
     await expect(root).toHaveTextContent('Calls reserved: at least 4.');
@@ -97,7 +97,7 @@ export const CleanupUnconfirmedAfterCancel: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const root = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await expect(
       await within(root).findByText(
         'Compass could not confirm that the analysis process ended. It may still be running. No new result was saved. Recorded calls remain counted.',
@@ -105,7 +105,7 @@ export const CleanupUnconfirmedAfterCancel: Story = {
     ).toBeVisible();
     await expect(root).toHaveTextContent('Analysis cleanup unconfirmed');
     await expect(root.textContent).not.toMatch(
-      /Evidence pass 4 of 7|result will appear|Analyzing drift|process stopped/,
+      /Evidence pass 4 of 7|result will appear|Checking progress|process stopped/,
     );
     await expect(root).toHaveTextContent('Calls reserved: 4.');
     const cancel = await within(root).findByRole('button', { name: 'Cancel' });
@@ -131,7 +131,7 @@ export const UnknownBlockedTokenIsNotDisplayed: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    const root = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await expect(await within(root).findByText('Collecting source')).toBeVisible();
     await expect(root.textContent).not.toMatch(/raw.private.failure|may still be running/);
     await expect(unknownCalls.posts).toHaveLength(0);

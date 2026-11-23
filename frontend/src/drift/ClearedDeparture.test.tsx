@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { describe, expect, it } from 'vitest';
 import { clock } from '../observed';
 import { check, driftBoard, fact, mountDrift, textOf } from './testing';
@@ -75,6 +76,7 @@ describe('a departure the next reading clears', () => {
   it('is named once, on the reading that no longer finds it, and not on the one after', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, DEPARTS, 1, 1100));
     await page.settle();
     expect(textOf('[data-next-drift-verdict]')).toContain('1 departure');
@@ -91,6 +93,7 @@ describe('a departure the next reading clears', () => {
   it('says how many cleared, and stays while the reading that cleared them stands', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, ['departure', 'departure'], 1, 1100));
     await page.settle();
     await page.poll(board(1200, NOTHING, 2, 1210));
@@ -106,6 +109,7 @@ describe('a departure the next reading clears', () => {
   it('is said for the one of two that went, with no correction pasted between', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, ['departure', 'departure'], 1, 1100));
     await page.settle();
     // The goal's departure stands again with the same reason; the line's is gone, and one still stands.
@@ -118,6 +122,7 @@ describe('a departure the next reading clears', () => {
   it('counts the fall and never more, where a model worded the survivor differently', async () => {
     const page = mountDrift({ facts: [...FACTS, ANOTHER], session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, ['departure', 'departure'], 1, 1100));
     await page.settle();
     // Both earlier departures differ in wording and entry from the one standing: two ended on paper, but
@@ -132,6 +137,7 @@ describe('a departure the next reading clears', () => {
   it('is not said where the earlier reading departs no more than the next, or never departed', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, NOTHING, 1, 1100));
     await page.poll(board(1200, NOTHING, 2, 1210));
     await page.settle();
@@ -141,6 +147,7 @@ describe('a departure the next reading clears', () => {
   it('is not said when a departure remains', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, DEPARTS, 1, 1100));
     await page.poll(board(1200, DEPARTS, 2, 1210));
     await page.settle();
@@ -150,6 +157,7 @@ describe('a departure the next reading clears', () => {
   it('is not said on a first sight of a reading with none, which the tab never saw depart', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1200, NOTHING, 2, 1210));
     await page.settle();
     expect(document.querySelector(CLEARED)).toBeNull();
@@ -174,6 +182,7 @@ describe('a departure the steer named, cleared by the reading after it', () => {
   it('says the correction named it, when one was pasted between the two readings', async () => {
     const page = mountDrift({ facts: [...FACTS, pasted(1100)], session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, DEPARTS, 1, 1090));
     await page.settle();
     await page.poll(board(1200, NOTHING, 2, 1210));
@@ -186,6 +195,7 @@ describe('a departure the steer named, cleared by the reading after it', () => {
   it('counts the departures the correction named', async () => {
     const page = mountDrift({ facts: [...FACTS, pasted(1100)], session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, ['departure', 'departure'], 1, 1090));
     await page.settle();
     await page.poll(board(1200, NOTHING, 2, 1210));
@@ -201,6 +211,7 @@ describe('a departure the steer named, cleared by the reading after it', () => {
       session: {},
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, DEPARTS, 1, 1090));
     await page.settle();
     await page.poll(board(1200, NOTHING, 2, 1210));
@@ -220,6 +231,7 @@ describe('a departure the steer named, replaced by a different one', () => {
   it('is said gone while another departure stands, when a correction was pasted between', async () => {
     const page = mountDrift({ facts: [...FACTS, ANOTHER, pasted(1100)], session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, DEPARTS, 1, 1090));
     await page.settle();
     await page.poll(board(1200, DEPARTS, 2, 1210, AGAIN, ['c2']));
@@ -233,6 +245,7 @@ describe('a departure the steer named, replaced by a different one', () => {
   it('is not said when the departure stands again, worded as before or resting on what it did', async () => {
     const page = mountDrift({ facts: [...FACTS, ANOTHER, pasted(1100)], session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, DEPARTS, 1, 1090));
     await page.settle();
     await page.poll(board(1200, DEPARTS, 2, 1210));
@@ -246,6 +259,7 @@ describe('a departure the steer named, replaced by a different one', () => {
   it('is said, without a correction, of a departure another replaced where none was pasted between', async () => {
     const page = mountDrift({ facts: [...FACTS, ANOTHER, pasted(900), pasted(1300)], session: {} });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, DEPARTS, 1, 1090));
     await page.settle();
     await page.poll(board(1200, DEPARTS, 2, 1210, AGAIN, ['c2']));
@@ -260,6 +274,7 @@ describe('a departure the steer named, replaced by a different one', () => {
       session: {},
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.poll(board(1000, ['departure', 'departure'], 1, 1090));
     await page.settle();
     // The goal's departure stands again; the line's is gone.

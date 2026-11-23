@@ -115,7 +115,7 @@ export const FlagOff: Story = {
   args: { scenario: scenario({ payload: { unasked: false } }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByRole('region', { name: 'Drift' });
+    await canvas.findByRole('region', { name: 'Is it on track?' });
     await expect(canvas.queryByRole('switch', { name: off })).toBeNull();
   },
 };
@@ -178,7 +178,7 @@ export const ClaudeNeedsNoToggle: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByRole('region', { name: 'Drift' });
+    await canvas.findByRole('region', { name: 'Is it on track?' });
     await expect(canvas.queryByRole('switch', { name: off })).toBeNull();
     // Named, with what each check sends, so a reader who turned the lane on sees where words go.
     const notice = await canvas.findByRole('region', { name: 'Unasked checks by Claude Code' });

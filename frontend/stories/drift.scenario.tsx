@@ -53,7 +53,7 @@ export function routeOf(harness: string, fields: RouteFields): Record<string, un
 
 /* Every harness has a reader on a healthy machine: Claude Code reads its own, Codex reads its own, and Pi and
    Antigravity have no producer of their own, so Codex reads them. */
-function healthyRoute(harness: Harness): Record<string, unknown> {
+export function healthyRoute(harness: Harness): Record<string, unknown> {
   if (harness === 'claude') {
     return routeOf(harness, {
       provider: 'claude',
@@ -256,7 +256,7 @@ const POLICY = {
   words: { claude: true, codex: true },
   tool_output: { claude: ['api'] },
   used: 1,
-  limit: 10,
+  limit: 100,
 };
 
 function DriftScenario({ scenario }: { readonly scenario: Scenario }) {

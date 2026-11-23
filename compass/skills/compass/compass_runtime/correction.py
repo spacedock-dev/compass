@@ -952,4 +952,13 @@ def compose(
         if not consistent:
             return {"ok": False, "reason": REASON_TOO_LONG, "why": TOO_LONG}
         del body[consistent[-1]]
-    return {"ok": True, "parts": assemble(explained=True)}
+    parts = assemble(explained=True)
+    answer: dict[str, Any] = {"ok": True, "parts": parts}
+    if head:
+        opening = str(head[0][0])
+        stop = "" if opening.endswith((".", "!", "?", "…")) else "."
+        answer["starter"] = (
+            f"{opening}{stop} "
+            "Please address the work that went off course and continue toward that goal."
+        )
+    return answer

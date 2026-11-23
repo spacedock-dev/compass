@@ -42,7 +42,7 @@ const READ_FACTS = [PERSON, ...WRITES, failedCheck('c1', 500), passedCheck('c2',
 const HIGH = { analysis_levels: [analysisRow('claude')] };
 
 async function drawn(canvasElement: HTMLElement): Promise<HTMLElement> {
-  return within(canvasElement).findByRole('region', { name: 'Drift' });
+  return within(canvasElement).findByRole('region', { name: 'Is it on track?' });
 }
 
 const head = (card: HTMLElement) => card.querySelector('header') as HTMLElement;
@@ -54,7 +54,7 @@ const rerun = (root: HTMLElement) =>
 
 async function readingDrawn(card: HTMLElement): Promise<HTMLElement> {
   return waitFor(() => {
-    const node = card.querySelector<HTMLElement>('[data-next-result]');
+    const node = card.querySelector<HTMLElement>('[data-next-progress-answer]');
     expect(node).not.toBeNull();
     return node as HTMLElement;
   });
@@ -97,11 +97,11 @@ export const Empty: Story = {
     const card = await drawn(canvasElement);
     const analyze = await within(card).findByRole('button', { name: 'Check progress' });
     await expect(analyze).toBeVisible();
-    await expect(within(head(card)).getByRole('heading', { name: 'Drift' })).toBeVisible();
     await expect(
-      within(head(card)).getByText('How far the session has moved from the goal'),
+      within(head(card)).getByRole('heading', { name: 'Is it on track?' }),
     ).toBeVisible();
-    await expect(within(card).queryByText('Not checked yet')).toBeNull();
+    await expect(within(card).getByText('Not checked yet')).toBeVisible();
+    await expect(within(card).getByText('How this works')).toBeVisible();
     await expect(card.querySelector('.next-session-drift-meter')).toBeNull();
     await expect(card.querySelector('.next-session-drift-scale')).toBeNull();
     await expect(card).not.toHaveTextContent(/drift checks? requested/);
@@ -112,11 +112,9 @@ export const Empty: Story = {
     await expect(sentButtons(card)).toHaveLength(1);
     // One sentence under Check progress, what it will read; "Runs in the background." is not a second.
     await expect(card).not.toHaveTextContent('Runs in the background');
-    const ask = analyze.closest('.next-cockpit-reading-ask') as HTMLElement;
-    const under = ask.nextElementSibling as HTMLElement;
-    await expect(under).toHaveTextContent(
-      /^Reads the work so far; the session is still running\.$/,
-    );
+    await expect(
+      within(card).getByText('Reads the work so far; the session is still running.'),
+    ).toBeVisible();
     // The settings are one press away, in the header.
     await openSessionTechnicalTab('AI use and privacy');
     const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
@@ -168,7 +166,7 @@ export const ReRunning: Story = {
     await expect(dimmed).not.toBeNull();
     await expect(dimmed).toHaveAttribute('aria-busy', 'true');
     await expect(dimmed).toHaveAttribute('inert');
-    await expect(within(result).getByText(/It stopped running the tests\./)).toBeInTheDocument();
+    await expect(dimmed?.querySelector('[data-next-progress-summary]')).not.toBeNull();
     const again = rerun(head(card));
     await expect(again).toHaveLength(1);
     await expect(again[0]).toHaveAttribute('aria-disabled', 'true');
@@ -182,8 +180,9 @@ export const ReRunning: Story = {
 export const Result: Story = {
   ...scenario({ session: STORED_READING, facts: READ_FACTS, work: HIGH }),
   play: async ({ canvasElement }) => {
-    const card = await drawn(canvasElement);
-    const result = await readingDrawn(card);
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    const card = canvasElement;
+    const result = card.querySelector('[data-next-result]') as HTMLElement;
     const verdict = card.querySelector('[data-next-drift-verdict]') as HTMLElement;
     await expect(verdict).toBeVisible();
     // The verdict is said once: no second heading restates it under the level.
@@ -191,26 +190,29 @@ export const Result: Story = {
     await expect(within(card).queryByText(RESULT_DEPARTS)).toBeNull();
     await expect(within(result).getByText(/It stopped running the tests\./)).toBeVisible();
     // Present from the first reading, in the header, enabled.
-    const again = rerun(head(card));
-    await expect(again).toHaveLength(1);
-    await expect(again[0]).toHaveAccessibleName('Check progress again');
-    await expect(again[0]).not.toHaveAttribute('aria-disabled', 'true');
+    const again = within(head(await drawn(canvasElement))).getByRole('button', {
+      name: 'Check progress again',
+    });
+    await expect(again).not.toHaveAttribute('aria-disabled', 'true');
     await expect(rerun(card)).toHaveLength(1);
     await expect(within(card).getByRole('button', { name: 'Steer back' })).toBeVisible();
     await expect(card).not.toHaveTextContent('Delegated work');
-    // Moved under What the analysis read, folded until it is opened.
-    await expect(within(card).getByText('Where the work went')).not.toBeVisible();
-    // A quiet footer: Mark as inaccurate and What the analysis read, then What is sent and the count, once.
+    // Moved under What the check read, folded until it is opened.
+    await expect(within(await drawn(canvasElement)).queryByText('Where the work went')).toBeNull();
+    await expect(within(result).getByText('Where the work went')).not.toBeVisible();
+    // Feedback and disclosure stay on the card. The check record and request count are in Evidence.
     const footer = card.querySelector<HTMLElement>('[data-next-result-footer]') as HTMLElement;
-    await expect(within(footer).getByRole('button', { name: 'Mark as inaccurate' })).toBeVisible();
     await expect(
-      within(footer).getByRole('button', { name: 'What the analysis read' }),
+      within(card).getByRole('button', { name: 'This reading looks wrong' }),
     ).toBeVisible();
+    await expect(within(footer).getByRole('button', { name: 'What the check read' })).toBeVisible();
     await expect(sentButtons(card)).toHaveLength(1);
-    await expect(footer.contains(sentButtons(card)[0] ?? null)).toBe(true);
-    await expect(footer).toHaveTextContent('1 drift check requested');
+    await expect(footer.contains(sentButtons(card)[0] ?? null)).toBe(false);
+    await expect(card.querySelector('[data-next-technical-evidence]')).toHaveTextContent(
+      '1 drift check requested',
+    );
     await expect(card.textContent?.match(/drift checks? requested/g)).toHaveLength(1);
-    await neverDone(card);
+    await neverDone(result);
   },
 };
 
@@ -231,31 +233,16 @@ export const EachVerdictAndTheReadTimeAppearOnce: Story = {
   }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
-    await readingDrawn(card);
-    const verdict = card.querySelector('[data-next-drift-verdict]') as HTMLElement;
-    await expect(verdict).toHaveTextContent(/^High: 1 departure/);
-    // The level word is the sentence's alone: the meter's own head holds only its source.
-    const level = card.querySelector('[data-next-drift-level]') as HTMLElement;
-    await expect(level.querySelector('.next-session-drift-level')).toBeNull();
-    await expect(level.querySelector('.next-session-drift-source')).toHaveTextContent('Analysis');
-    await expect(level.querySelector('.next-session-drift-meter [data-on]')).not.toBeNull();
-    await expect(card.querySelector('[data-next-result-heading]')).toBeNull();
-    await expect(within(card).queryByText(RESULT_DEPARTS)).toBeNull();
-    // The read time: the header says it, and nothing else on the card does, open or closed.
-    const stamp = card.querySelector('[data-next-drift-stamp]') as HTMLElement;
-    await expect(stamp).toHaveTextContent(/^claude-sonnet-5-5 · Analysis last run \d\d:\d\d$/);
-    await expect(level).not.toHaveTextContent(/last run|read at/);
-    await expect(level).toHaveTextContent(
-      'each line of your goal against the tests, builds and messages it cited.',
+    const level = await within(card).findByText('Off course', {
+      selector: '[data-next-drift-pill] strong',
+    });
+    await expect(level).toBeVisible();
+    await expect(card.querySelectorAll('[data-next-drift-stamp]')).toHaveLength(1);
+    await expect(card.querySelector('[data-next-drift-stamp]')).toHaveTextContent(
+      /^Checked .* against your goal$/,
     );
-    await userEvent.click(within(card).getByRole('button', { name: 'What the analysis read' }));
-    const model = card.querySelector('[data-next-read-section="model"]') as HTMLElement;
-    await expect(model).toHaveTextContent(/^Modelclaude-sonnet-5-5$/);
-    await expect(
-      card.textContent?.match(/(?:last run|read at|Analysis at) \d\d:\d\d/g),
-    ).toHaveLength(1);
-    // The delegated-work limit is not one of the things the analysis read.
-    await expect(card.textContent).not.toContain('Delegated work');
+    await expect(card.querySelectorAll('[data-next-progress-summary]')).toHaveLength(1);
+    await expect(card.querySelector('[data-next-cited-entries]')).toBeNull();
   },
 };
 
@@ -303,7 +290,8 @@ const PASSED_ELSEWHERE = fact('c4', 600, {
 export const AFixedRedTestRaisesNoFailedCheck: Story = {
   ...scenario({ session: ALL_CONSISTENT, facts: [PERSON, RED, FIXED, SAID] }),
   play: async ({ canvasElement }) => {
-    const card = await drawn(canvasElement);
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    const card = canvasElement;
     await readingDrawn(card);
     const verdict = card.querySelector('[data-next-drift-verdict]') as HTMLElement;
     await expect(verdict).not.toHaveTextContent(/A check failed/);
@@ -316,7 +304,8 @@ export const AFixedRedTestRaisesNoFailedCheck: Story = {
 export const AFailedCheckNothingFixedStillRaisesIt: Story = {
   ...scenario({ session: ALL_CONSISTENT, facts: [PERSON, RED, SAID] }),
   play: async ({ canvasElement }) => {
-    const card = await drawn(canvasElement);
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    const card = canvasElement;
     await readingDrawn(card);
     const verdict = card.querySelector('[data-next-drift-verdict]') as HTMLElement;
     await expect(verdict).toHaveTextContent(/^A check failed at \d\d:\d\d\./);
@@ -326,7 +315,8 @@ export const AFailedCheckNothingFixedStillRaisesIt: Story = {
 export const APassOfTheSameCommandInAnotherDirectoryFixesNothing: Story = {
   ...scenario({ session: ALL_CONSISTENT, facts: [PERSON, RED, PASSED_ELSEWHERE, SAID] }),
   play: async ({ canvasElement }) => {
-    const card = await drawn(canvasElement);
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    const card = canvasElement;
     await readingDrawn(card);
     const verdict = card.querySelector('[data-next-drift-verdict]') as HTMLElement;
     await expect(verdict).toHaveTextContent(/^A check failed at \d\d:\d\d\./);
@@ -346,14 +336,17 @@ export const NewWork: Story = {
     work: HIGH,
   }),
   play: async ({ canvasElement }) => {
-    const card = await drawn(canvasElement);
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    const card = canvasElement;
     const stale = await waitFor(() => {
       const node = card.querySelector<HTMLElement>('[data-next-result-stale="work"]');
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
-    await expect(head(card).contains(stale)).toBe(true);
-    await expect(stale).toHaveTextContent('New work since this analysis.');
+    await expect(stale).toHaveTextContent('Out of date');
+    await expect(card.querySelector('[data-next-evidence-stale="work"]')).toHaveTextContent(
+      'New work since this analysis.',
+    );
     await expect(stale.closest('[data-slot="card"]')).not.toHaveAttribute(
       'data-variant',
       'reading-stale',
@@ -361,11 +354,11 @@ export const NewWork: Story = {
     const again = rerun(card);
     await expect(again).toHaveLength(1);
     await expect(again[0]).toHaveAccessibleName('Check progress again');
-    await expect(head(card).contains(again[0] ?? null)).toBe(true);
+    await expect(head(await drawn(canvasElement)).contains(again[0] ?? null)).toBe(true);
     await expect(stale).not.toHaveTextContent(/drift checks? requested/);
     await expect(sentButtons(card)).toHaveLength(1);
     await expect(
-      within(card).getByRole('button', { name: 'What the analysis read' }),
+      within(card).getByRole('button', { name: 'What the check read' }),
     ).toBeInTheDocument();
   },
 };
@@ -378,18 +371,21 @@ export const IntentChanged: Story = {
     work: HIGH,
   }),
   play: async ({ canvasElement }) => {
-    const card = await drawn(canvasElement);
+    await openSessionTechnicalTab('Evidence', canvasElement);
+    const card = canvasElement;
     const stale = await waitFor(() => {
       const node = card.querySelector<HTMLElement>('[data-next-result-stale="intent"]');
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
-    await expect(head(card).contains(stale)).toBe(true);
-    await expect(stale).toHaveTextContent('Your intent changed after this analysis.');
+    await expect(stale).toHaveTextContent('Out of date');
+    await expect(card.querySelector('[data-next-evidence-stale="intent"]')).toHaveTextContent(
+      'Your intent changed after this analysis.',
+    );
     const again = rerun(card);
     await expect(again).toHaveLength(1);
     await expect(again[0]).toHaveAccessibleName('Check progress again');
-    await expect(head(card).contains(again[0] ?? null)).toBe(true);
+    await expect(head(await drawn(canvasElement)).contains(again[0] ?? null)).toBe(true);
     await expect(sentButtons(card)).toHaveLength(1);
   },
 };

@@ -31,10 +31,10 @@ describe('the analysis budget', () => {
     expect(today).not.toContain('tomorrow');
     expect(capReset(local(7, 15, 1), now)).toMatch(/tomorrow$/);
     expect(capLine({ limit: 100, retryAt: local(9, 38) }, now)).toBe(
-      `You’ve reached the limit of 100 drift analyses for the past 24 hours. You can analyze again at ${today}.`,
+      `You’ve reached the limit of 100 progress checks for the past 24 hours. You can check progress again at ${today}.`,
     );
     expect(capLine({ limit: 100, retryAt: null }, now)).toBe(
-      'You’ve reached the limit of 100 drift analyses for the past 24 hours.',
+      'You’ve reached the limit of 100 progress checks for the past 24 hours.',
     );
   });
 
@@ -55,7 +55,7 @@ describe('the analysis budget', () => {
     expect(banner).not.toBeNull();
     expect(banner.getAttribute('role')).toBe('status');
     expect(textOf('[data-next-reading-cap]')).toMatch(
-      /^You’ve reached the limit of 100 drift analyses for the past 24 hours\. You can analyze again at /,
+      /^You’ve reached the limit of 100 progress checks for the past 24 hours\. You can check progress again at /,
     );
     // First in the article, above the header and both columns.
     expect(banner.parentElement?.firstElementChild).toBe(banner);

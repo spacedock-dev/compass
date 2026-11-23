@@ -342,16 +342,18 @@ A withdrawn claim draws no row. Steer back is offered only with a departure from
 `You said "<its first sentence>" at 14:02; the record shows otherwise at 14:05.`
 Short titles and bare URLs are not quoted in the correction. Times are your local clock, the
 correction names no Compass entry number, and a departure cited at one of the agent's messages
-quotes that message's first sentence ("where you said …"). While departures are listed, Steer back
-is its own section after them, headed "Steer back", with the correction under it labelled "Built from your saved intent and the reading at HH:MM", including once the session is idle; where
-a mark or a reading of earlier words withholds it, a line beside the departures says why. "Where the work went" groups the written files by folder, under What the analysis read. The
+quotes that message's first sentence ("where you said …"). On the session page, Steer back
+starts with a short editable message naming your goal. Copy message copies what you see.
+Compass never sends it for you. Where a mark or a reading of earlier words withholds it,
+the card says why. The quotes link opens Evidence at the first cited entry. What the check
+read includes the written files grouped by folder. The
 card header offers Check progress again for current and stale readings. The control stays visible
-where a press is temporarily unavailable. The request count stays beside it.
-The shared budget is not shown until it is spent; then a banner holds the top of the session page,
-naming the limit and the time the next analysis can run. "Mark as inaccurate" marks the reading with
-a token that is stored beside it and never sent or counted, and says so beside the control; that
-reading no longer sets the level or Steer back until you press Undo. One message where the level was
-says so, with Undo and Check progress again beside it, and the reading's verdicts stay below it dimmed as disowned. A later
+where a press is temporarily unavailable. Evidence holds the request count.
+Uses AI appears beside the check, with the remaining daily count once 10 or fewer checks are left.
+When the budget is spent, the session page names the limit and when the next check can run.
+This reading looks wrong stores a local mark on the check without sending anything or spending a check.
+The mark sets aside its level and Steer back until you press Undo. Evidence keeps the marked findings
+available. A later
 direction alone offers no correction. A correction puts departures and failed checks first, dates
 a time from an earlier day, and asks for evidence where an outcome is not shown. Under each
 departure, and a contradicted claim, it carries the analysis's own explanation on an indented

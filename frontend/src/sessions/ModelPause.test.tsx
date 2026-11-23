@@ -38,7 +38,7 @@ describe('the summaries switch is nested under Pause model calls', () => {
         grant={grant({ off, consent: !off, reason: off ? 'summaries-off' : '' })}
       />,
     );
-    const drift = await screen.findByRole('region', { name: 'Drift' });
+    const drift = await screen.findByRole('region', { name: 'Is it on track?' });
     await act(async () => {
       fireEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
     });
@@ -86,7 +86,7 @@ describe('the summaries switch is nested under Pause model calls', () => {
 
   it('disables the summary switch when a running summary stops for the master pause', async () => {
     render(<SummaryPage summary={storedSummary({ job: job({ part: 1 }) })} />);
-    const drift = await screen.findByRole('region', { name: 'Drift' });
+    const drift = await screen.findByRole('region', { name: 'Is it on track?' });
     await act(async () => {
       fireEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
     });
@@ -146,7 +146,7 @@ describe('the summaries switch is nested under Pause model calls', () => {
        region beside the drift card's. */
     expect(region.querySelector('[data-next-summary-notice-folded]')).not.toBeNull();
     expect(within(region).queryByRole('region', { name: /request notice/ })).toBeNull();
-    const drift = await screen.findByRole('region', { name: 'Drift' });
+    const drift = await screen.findByRole('region', { name: 'Is it on track?' });
     await act(async () => {
       fireEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
     });

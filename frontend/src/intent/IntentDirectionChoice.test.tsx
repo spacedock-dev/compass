@@ -79,7 +79,7 @@ describe('a later direction is quoted where it is settled', () => {
     expect(text('[data-next-cockpit-direction-whole]')).toContain(WHOLE);
     expect(
       [...document.querySelectorAll('.next-cockpit-reading-ask button')].map((b) => b.textContent),
-    ).toEqual(['Add as a line', 'Make it the goal', 'Leave it', 'Check progress']);
+    ).toEqual(['Add as a line', 'Make it the goal', 'Leave it']);
   });
 
   it('settles on the first press of Leave it, with the words already on screen', async () => {

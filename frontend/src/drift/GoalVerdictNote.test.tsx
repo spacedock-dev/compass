@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { describe, expect, it } from 'vitest';
 import { check, mountDrift, textOf } from './testing';
 
@@ -64,6 +65,7 @@ describe('the harness verdict on the Drift card', () => {
   it('is the harness claim alone, with no level implied, before any analysis', async () => {
     const page = mountDrift({ session: withVerdict() });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(state()).toBe('claim-only');
     const text = textOf('[data-next-goal-verdict]');
@@ -83,6 +85,7 @@ describe('the harness verdict on the Drift card', () => {
       },
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const text = textOf('[data-next-goal-verdict]');
     expect(text).toMatch(/^The harness’s claim: Codex marked this goal met at /);
@@ -92,6 +95,7 @@ describe('the harness verdict on the Drift card', () => {
   it('keeps the card inset the level above it and the rows below it share', async () => {
     const page = mountDrift({ session: withVerdict() });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(note()?.classList.contains('next-session-drift-limit')).toBe(true);
     expect(note()?.classList.contains('next-cockpit-reading-why')).toBe(false);
@@ -104,6 +108,7 @@ describe('the harness verdict on the Drift card', () => {
       }),
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(textOf('[data-next-goal-verdict]')).toContain('“<b>done</b> findings.md”');
     expect(note()?.querySelector('b')).toBeNull();
@@ -115,6 +120,7 @@ describe('the harness verdict on the Drift card', () => {
       session: withVerdict(),
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const text = textOf('[data-next-goal-verdict]');
     expect(text).toContain('Claude Code marked this goal met');
@@ -127,6 +133,7 @@ describe('the harness verdict on the Drift card', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(state()).toBe('agrees');
     const text = textOf('[data-next-goal-verdict]');
@@ -149,6 +156,7 @@ describe('the harness verdict on the Drift card', () => {
       facts: [...FACTS, pr],
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(state()).toBe('agrees');
     expect(textOf('[data-next-goal-verdict]')).toContain(
@@ -162,6 +170,7 @@ describe('the harness verdict on the Drift card', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(textOf('[data-next-goal-verdict]')).toContain(
       'Compass agrees: the pull request its reason names is recorded as created before the verdict.',
@@ -209,6 +218,7 @@ describe('the harness verdict on the Drift card', () => {
             facts: FACTS,
           });
           await page.settle();
+          await openSessionTechnicalTab('Evidence');
           await page.settle();
           const text = textOf('[data-next-goal-verdict]');
           expect(text).toContain(`the ${noun} ${owner} names`);
@@ -241,6 +251,7 @@ describe('the harness verdict on the Drift card', () => {
         facts: FACTS,
       });
       await page.settle();
+      await openSessionTechnicalTab('Evidence');
       await page.settle();
       const note = textOf('[data-next-goal-verdict]');
       expect(note).toContain(`the ${noun} its reason names`);
@@ -260,6 +271,7 @@ describe('the harness verdict on the Drift card', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(state()).toBe('unconfirmed');
     const text = textOf('[data-next-goal-verdict]');
@@ -279,6 +291,7 @@ describe('the harness verdict on the Drift card', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(textOf('[data-next-goal-verdict]')).toContain(
       'the quoted text is in the output of a check Compass recorded',
@@ -301,6 +314,7 @@ describe('the harness verdict on the Drift card', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(textOf('[data-next-goal-verdict]')).not.toContain('the quoted text is in the output');
   });
@@ -311,6 +325,7 @@ describe('the harness verdict on the Drift card', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(state()).toBe('disputed');
     const text = textOf('[data-next-goal-verdict]');
@@ -335,6 +350,7 @@ describe('the harness verdict on the Drift card', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(state()).toBe('disputed');
     const text = textOf('[data-next-goal-verdict]');
@@ -359,6 +375,7 @@ describe('the harness verdict on the Drift card', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(state()).toBe('unchecked');
   });
@@ -369,6 +386,7 @@ describe('the harness verdict on the Drift card', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(state()).toBe('unconfirmed');
     expect(textOf('[data-next-goal-verdict]')).toContain('Compass could not confirm it');
@@ -391,6 +409,7 @@ describe('the harness verdict on the Drift card', () => {
         facts: FACTS,
       });
       await page.settle();
+      await openSessionTechnicalTab('Evidence');
       await page.settle();
       const text = textOf('[data-next-goal-verdict]');
       expect(text).toContain(said);
@@ -405,6 +424,7 @@ describe('the harness verdict on the Drift card', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(state()).toBe('unchecked');
     expect(textOf('[data-next-goal-verdict]')).toContain('Analyze again to check it');
@@ -420,6 +440,7 @@ describe('the harness verdict on the Drift card', () => {
       session: { session_goal: { ...GOAL, ...(verdict === undefined ? {} : { verdict }) } },
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(note()).toBeNull();
   });
@@ -430,6 +451,7 @@ describe('the harness verdict on the Drift card', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(document.body.textContent).toContain('goal_verdict');
     expect(state()).toBe('unchecked');
@@ -450,6 +472,7 @@ describe('the harness giving up on the goal, on the Drift card', () => {
   it('is the harness claim with its time and reason, never met, and implies no level', async () => {
     const page = mountDrift({ session: gaveUp() });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const text = textOf('[data-next-goal-gave-up]');
     expect(text).toMatch(
@@ -469,6 +492,7 @@ describe('the harness giving up on the goal, on the Drift card', () => {
       session: gaveUp(),
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const text = textOf('[data-next-goal-gave-up]');
     expect(text).toContain('Claude Code gave up on this goal');
@@ -481,6 +505,7 @@ describe('the harness giving up on the goal, on the Drift card', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     const text = textOf('[data-next-goal-gave-up]');
     expect(text).toContain('Claude Code gave up on this goal');
@@ -492,6 +517,7 @@ describe('the harness giving up on the goal, on the Drift card', () => {
   it('shares the card inset the met note uses', async () => {
     const page = mountDrift({ session: gaveUp() });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(gaveUpNote()?.classList.contains('next-session-drift-limit')).toBe(true);
   });
@@ -499,6 +525,7 @@ describe('the harness giving up on the goal, on the Drift card', () => {
   it('quotes the reason as text, never as markup, and omits an empty one', async () => {
     const page = mountDrift({ session: gaveUp({ reason: '<b>no</b>' }) });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(textOf('[data-next-goal-gave-up]')).toContain('“<b>no</b>”');
     expect(gaveUpNote()?.querySelector('b')).toBeNull();
@@ -521,6 +548,7 @@ describe('the harness giving up on the goal, on the Drift card', () => {
       },
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(gaveUpNote()).toBeNull();
   });
@@ -533,6 +561,7 @@ describe('the harness giving up on the goal, on the Drift card', () => {
       },
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     await page.settle();
     expect(gaveUpNote()).toBeNull();
   });

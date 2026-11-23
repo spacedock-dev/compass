@@ -813,7 +813,8 @@ export const MovedControlsInQuietRow: Story = {
     await expect(view.getByText(/^Reads from /)).toBeVisible();
     await enterGoalEditor(view);
     await expect(view.getByText('30 / 1000')).toBeVisible();
-    await expect(view.getByText('26 / 800')).toBeVisible();
+    await openOutcomes(view);
+    await waitFor(() => expect(view.getByText('26 / 800')).toBeVisible());
     await userEvent.click(view.getByRole('button', { name: 'Discard everything' }));
     const confirm = await view.findByRole('button', { name: 'Confirm discard' });
     await expect(confirm).toBeVisible();
@@ -1078,7 +1079,7 @@ export const StateDrafted: Story = {
     const sent = await within(canvasElement).findByRole('button', { name: /^What is sent/ });
     await userEvent.click(sent);
     const limit = await within(canvasElement).findByText(
-      'Analyze reads at most the first 1,000 characters of any prompt.',
+      'A progress check reads at most the first 1,000 characters of any prompt.',
     );
     await waitFor(() => expect(limit).toBeVisible());
   },

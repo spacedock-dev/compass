@@ -48,6 +48,7 @@ export function DirectionGoalButton({
   const focus = `direction-goal:${key}:${scope}:${factId}`;
   return (
     <DirectionActionButton
+      fit={scope === 'question'}
       feedbackKey={focus}
       weight="secondary"
       label={GOAL_DIRECTION}
@@ -237,7 +238,7 @@ function LineRow({
       ) : null}
       <ActionButton
         weight="secondary"
-        className="next-cockpit-held-remove col-start-3 row-start-1 row-span-2 self-start border-[var(--rule)] text-muted-foreground hover:text-foreground hover:border-[var(--line)]"
+        className="next-cockpit-held-remove col-start-3 row-start-1 row-span-2 self-start text-muted-foreground hover:text-foreground"
         icon="remove"
         label="Remove"
         action="held-line-remove"

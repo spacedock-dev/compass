@@ -20,9 +20,6 @@
       "monospace": 10,
       "tracking": 4
     },
-    "frontend/src/drift/DriftStamp.tsx": {
-      "monospace": 2
-    },
     "frontend/src/drift/ReadingResult.tsx": {
       "monospace": 1
     },
@@ -30,11 +27,8 @@
       "monospace": 1
     },
     "frontend/src/intent/intent.css": {
-      "monospace": 7,
+      "monospace": 6,
       "tracking": 1
-    },
-    "frontend/src/intent/IntentSection.tsx": {
-      "monospace": 1
     },
     "frontend/src/intent/OutcomeLines.tsx": {
       "monospace": 1
@@ -136,7 +130,6 @@
     "drift-a-compass-skill-action--the-same-turn-without-the-mark-is-new-work",
     "drift-a-level-needs-a-departure--a-cleared-departure-is-named-once-on-the-next-reading",
     "drift-a-level-needs-a-departure--a-contradicted-claim-alone-draws-no-medium",
-    "drift-a-level-needs-a-departure--a-departure-keeps-its-level-and-the-running-pill-says-so-far",
     "drift-a-level-needs-a-departure--a-partial-clear-is-named-on-the-next-reading",
     "drift-a-level-needs-a-departure--an-empty-verdict-early-in-a-session-says-it-is-early",
     "drift-a-level-needs-a-departure--cant-tell-on-every-line-draws-no-level",
@@ -411,7 +404,6 @@
     "drift-usability-review-2026-10-20--copied-lapses-back-to-copy",
     "drift-usability-review-2026-10-20--pause-in-the-head-and-the-disclosure-closes",
     "drift-usability-review-2026-10-20--the-answer-first-and-what-quotes-the-agent",
-    "drift-usability-review-2026-10-20--the-level-stays-first-over-a-later-direction",
     "intent-direction-actions--add-as-a-line-one-save",
     "intent-direction-actions--analyze-stays-available",
     "intent-direction-actions--make-it-the-goal-one-save",
@@ -442,7 +434,6 @@
     "intent-intentcard--adding-a-line-inside-the-accordion-saves",
     "intent-intentcard--adopted-prompt-stays-through-slow-save",
     "intent-intentcard--adopted-then-edited-source",
-    "intent-intentcard--after-a-refused-discard-focus-is-on-more",
     "intent-intentcard--annotations-off-keeps-the-goal-explanation",
     "intent-intentcard--armed-discard-is-kept-by-keep-my-words",
     "intent-intentcard--armed-discard-lapses-after-its-time",

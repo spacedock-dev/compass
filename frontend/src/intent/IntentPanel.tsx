@@ -12,7 +12,7 @@ import { DirectionQuestion } from './DirectionQuestion';
 import { chosenIsStale, goalKey, intentDraft, type DraftInput } from './derive';
 import { reconcileDirection } from './directions';
 import { IntentSection } from './IntentSection';
-import { DRIFT_SUBTITLE } from './sentences';
+import { GLOSSARY } from '../language/glossary';
 import { PanelContext, useHeldVersion, useIntentCtx, type Panel } from './useIntent';
 import { workSource } from './work';
 
@@ -174,13 +174,15 @@ export function IntentPanel({
           <header className="next-session-drift-head flex-col items-stretch max-[760px]:py-0">
             <div className="next-session-drift-titles flex flex-col">
               <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-                <h2 id="next-session-drift-heading" className="next-session-drift-heading">
-                  Drift
+                <h2
+                  id="next-session-drift-heading"
+                  className="m-0 text-title font-bold text-foreground"
+                >
+                  {GLOSSARY.isItOnTrack.plain}
                 </h2>
                 {stamp}
               </div>
-              <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
-                <p className="next-session-drift-sub text-body">{DRIFT_SUBTITLE}</p>
+              <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 empty:hidden">
                 {/* While AI use is paused, Resume AI use:
                     one place in the head of the card they control, never in its body. Placement only: the
                     switch's value and default are unchanged.

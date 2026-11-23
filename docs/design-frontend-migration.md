@@ -799,6 +799,13 @@ first back for the shape and result differentials, `recordedNumbering` in
 the drift browser proof restates the second and the third in the recorded steer box and live estimate.
 Every other word, the placeholders dropped and their order stay held to the recording.
 
+2026-11-23, Is it on track? shows one progress answer and a link to the cited entries. The
+full criterion rows, claims, limits, and earlier departures moved to the Evidence tab.
+The route differential projects the wording of progress controls and refusals before
+comparing the recorded answer. The mounted finding tests open Evidence before reading
+the former result rows. Shape and level derivations keep their tokens and recorded
+comparison cases. Terminal wording tests project the board's two new refusal spellings.
+
 2026-11-23, the Goal card opens a saved goal and its done lines for reading. Edit goal opens
 the fields. The provenance line uses the shared timestamp formatter. The Goal card's More
 trigger, separate saved stamp and saved-word disclosure are retired. How goals work holds their

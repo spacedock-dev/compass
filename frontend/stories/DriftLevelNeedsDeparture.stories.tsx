@@ -13,11 +13,8 @@ import {
   type Scenario,
 } from './drift.scenario';
 
-/* A level above None or low stands on a departure the reading shows, and a departure that clears is named
-   once
-   ([the amendment](../../docs/design-reading-a-session.md#amended-2026-10-21-a-level-needs-a-departure)).
-   A running turn is unfinished work, so the header pill says "so far" while it runs. Each story is one
-   thing a reader sees. */
+/* A level above On track stands on a departure the reading shows. Evidence accounts for departures that
+   clear and why a check could not place the work on the scale. */
 
 const meta = {
   title: 'Drift/A level needs a departure',
@@ -76,10 +73,11 @@ const LIVE_MEDIUM = {
   rose_from: '',
 };
 
-async function card(canvasElement: HTMLElement): Promise<HTMLElement> {
-  const drift = await within(canvasElement).findByRole('region', { name: 'Drift' });
-  await waitFor(() => expect(drift.querySelector('[data-next-result]')).not.toBeNull());
-  return drift;
+async function evidencePanel(canvasElement: HTMLElement): Promise<HTMLElement> {
+  await openSessionTechnicalTab('Evidence', canvasElement);
+  const panel = within(canvasElement).getByRole('tabpanel', { name: 'Evidence' });
+  await waitFor(() => expect(panel.querySelector('[data-next-result]')).not.toBeNull());
+  return panel;
 }
 
 const verdictOf = (drift: HTMLElement) =>
@@ -105,21 +103,25 @@ export const CantTellOnEveryLineDrawsNoLevel: Story = {
     },
   }),
   play: async ({ canvasElement }) => {
-    const drift = await card(canvasElement);
-    await openSessionTechnicalTab('AI use and privacy');
-    await userEvent.click(
-      await within(document.body).findByRole('switch', { name: 'Live monitor' }),
-    );
-    const verdict = await verdictOf(drift);
+    const progress = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
+    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+    const monitor = await privacy.findByRole('switch', { name: 'Live monitor' });
+    await userEvent.click(monitor);
+    await waitFor(() => expect(monitor).toHaveAttribute('aria-checked', 'true'));
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    const verdict = await evidence.findByText(/^A check failed at /);
     await expect(verdict.textContent).not.toMatch(/Medium|High|Extreme/);
-    await waitFor(() => expect(drift.querySelector('[data-next-drift-level]')).toBeNull());
-    await expect(drift.querySelector('.next-session-drift-meter')).toBeNull();
-    await expect(drift.textContent).not.toMatch(/\bMedium\b/);
-    await expect(canvasElement.querySelector('[data-next-drift-pill]')).toBeNull();
+    await expect(
+      await within(progress).findByText(/^(Can't tell|Too early to tell)$/),
+    ).toBeVisible();
+    await expect(progress.querySelector('.next-session-drift-meter')).toBeNull();
+    await expect(progress.querySelector('[data-next-drift-pill]')).toBeNull();
     // The switch is on and the estimate has a level, so the reader is told why it is not drawn.
-    await expect(drift.querySelector('[data-next-drift-live-hidden]')).toHaveTextContent(
-      'The live estimate is not drawn while this reading stands: it reads checks and file paths, never your intent.',
-    );
+    await expect(
+      await evidence.findByText(
+        'The live estimate is not drawn while this reading stands: it reads checks and file paths, never your intent.',
+      ),
+    ).toBeVisible();
   },
 };
 
@@ -143,7 +145,7 @@ export const ConsistentButHeldBackSaysWhyInTheSentence: Story = {
     },
   }),
   play: async ({ canvasElement }) => {
-    const drift = await card(canvasElement);
+    const drift = await evidencePanel(canvasElement);
     const verdict = await verdictOf(drift);
     await expect(verdict).toHaveTextContent(
       'Nothing found against what it read, but no level is drawn: a line of your intent is not shown by any check.',
@@ -174,7 +176,7 @@ export const GoalOnlyHeldBackNamesTheCheckItNeeds: Story = {
     },
   }),
   play: async ({ canvasElement }) => {
-    const drift = await card(canvasElement);
+    const drift = await evidencePanel(canvasElement);
     await expect(await verdictOf(drift)).toHaveTextContent(
       'Nothing departs from your goal, but no check shows it done, so no level is drawn. Run a check that shows the goal is done (a test, lint or build), then analyze again.',
     );
@@ -198,7 +200,7 @@ export const AContradictedClaimAloneDrawsNoMedium: Story = {
     },
   }),
   play: async ({ canvasElement }) => {
-    const drift = await card(canvasElement);
+    const drift = await evidencePanel(canvasElement);
     const verdict = await verdictOf(drift);
     await expect(verdict).toHaveTextContent(
       /^Nothing found against what it read, but no level is drawn: the record contradicts what the agent said\./,
@@ -208,9 +210,9 @@ export const AContradictedClaimAloneDrawsNoMedium: Story = {
   },
 };
 
-/* A reading that departs keeps its level in the card, and the pill says "so far" while the session runs (the
-   scenario's session publishes `working`). */
-export const ADepartureKeepsItsLevelAndTheRunningPillSaysSoFar: Story = {
+/* A reading that found a departure shows its plain level while the session works and keeps its supporting
+   evidence one click away. */
+export const ADepartureKeepsItsLevelWhileTheSessionWorks: Story = {
   ...scenario({
     session: READ({ goal: DEPARTS, line_1: CANT_TELL }),
     facts: [PERSON, FAILED, PASSED, AGENT],
@@ -219,19 +221,17 @@ export const ADepartureKeepsItsLevelAndTheRunningPillSaysSoFar: Story = {
     },
   }),
   play: async ({ canvasElement }) => {
-    const drift = await card(canvasElement);
-    const verdict = await verdictOf(drift);
-    await expect(verdict).toHaveTextContent(/^Medium: 1 departure/);
-    // The level's word is the sentence's alone; the meter's head holds its source.
-    await expect(drift.querySelector('[data-next-drift-level]')).toHaveTextContent(/^Analysis/);
-    await expect(drift.querySelector('[data-next-drift-level]')).toHaveTextContent(
-      'From the progress check at',
-    );
+    const progress = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await waitFor(() =>
-      expect(canvasElement.querySelector('[data-next-drift-pill]')).toHaveTextContent(
-        'Drift: Medium so far',
+      expect(progress.querySelector('[data-next-drift-pill]')).toHaveTextContent(
+        'Slightly off course',
       ),
     );
+    await expect(within(progress).getByText(/^Checked .* against your goal$/)).toBeVisible();
+    const drift = await evidencePanel(canvasElement);
+    const verdict = await verdictOf(drift);
+    await expect(verdict).toHaveTextContent(/^Medium: 1 departure/);
+    await expect(within(drift).getByText(/^From the progress check at/)).toBeVisible();
   },
 };
 
@@ -246,7 +246,7 @@ export const AStoredCodexDepartureKeepsItsReadingWithoutALevel: Story = {
     work: { analysis_levels: [analysisRow('codex', 'medium')] },
   }),
   play: async ({ canvasElement }) => {
-    const drift = await card(canvasElement);
+    const drift = await evidencePanel(canvasElement);
     await expect(within(drift).getByText(DEPARTS.detail)).toBeVisible();
     await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
     await expect(canvasElement.querySelector('[data-next-drift-pill]')).toBeNull();
@@ -276,7 +276,7 @@ export const AClearedDepartureIsNamedOnceOnTheNextReading: Story = {
     reading: CLEARING,
   }),
   play: async ({ canvasElement }) => {
-    await card(canvasElement);
+    await evidencePanel(canvasElement);
     await expect(canvasElement.querySelector('[data-next-drift-cleared]')).toBeNull();
     // The next reading clears it: nothing departs now, and the session has gone idle.
     CLEARING_SESSION['annotation_assessment'] = readAt(1100, {
@@ -324,7 +324,7 @@ export const APartialClearIsNamedOnTheNextReading: Story = {
     reading: PARTIAL,
   }),
   play: async ({ canvasElement }) => {
-    const drift = await card(canvasElement);
+    const drift = await evidencePanel(canvasElement);
     await expect(await verdictOf(drift)).toHaveTextContent(/2 departures/);
     await expect(canvasElement.querySelector('[data-next-drift-cleared]')).toBeNull();
     PARTIAL_SESSION['annotation_assessment'] = readAt(1100, {
@@ -364,7 +364,7 @@ export const AnEmptyVerdictEarlyInASessionSaysItIsEarly: Story = {
     work: { analysis_levels: [{ ...analysisRow('claude', 'not_enough'), reasons: [] }] },
   }),
   play: async ({ canvasElement }) => {
-    const drift = await card(canvasElement);
+    const drift = await evidencePanel(canvasElement);
     await expect(await verdictOf(drift)).toHaveTextContent("Can't tell from what was read.");
     await waitFor(() =>
       expect(drift.querySelector('[data-next-drift-early]')).toHaveTextContent(
@@ -373,3 +373,91 @@ export const AnEmptyVerdictEarlyInASessionSaysItIsEarly: Story = {
     );
   },
 };
+
+function absenceStory(
+  value: Scenario,
+  label: string,
+  reason: RegExp,
+  check = 'Check progress again',
+): Story {
+  return {
+    ...scenario(value),
+    play: async ({ canvasElement }) => {
+      const view = within(canvasElement);
+      const progress = await view.findByRole('region', { name: 'Is it on track?' });
+      const card = within(progress);
+      const word = await card.findByText(label, { exact: true });
+      const absence = word.closest('[data-next-progress-absence]');
+      await expect(absence).not.toBeNull();
+      await expect(within(absence as HTMLElement).getByText('How this works')).toBeVisible();
+      await expect(absence).toHaveTextContent(reason);
+      await expect(absence?.querySelector('svg')).toBeNull();
+      await expect(progress.querySelector('[data-next-drift-pill]')).toBeNull();
+      await expect(progress.querySelector('.next-session-drift-meter')).toBeNull();
+      await expect(card.queryByText('On track')).toBeNull();
+      const button = card.getByRole('button', { name: check });
+      await expect(button.querySelector('svg[data-icon="check-progress"]')).not.toBeNull();
+      await expect(card.getByText(/^Uses AI/)).toBeVisible();
+      await expect(progress.textContent).not.toMatch(/\b(?:drift|analyze)\b/i);
+    },
+  };
+}
+
+export const NoGoalYet = absenceStory(
+  {
+    unsaved: true,
+    session: { first_prompt: '', first_prompt_at: null, latest_prompt: '', latest_prompt_at: null },
+  },
+  'No goal yet',
+  /Give Compass a goal/,
+  'Check progress',
+);
+
+export const NotCheckedYet = absenceStory(
+  {},
+  'Not checked yet',
+  /no saved progress check/,
+  'Check progress',
+);
+
+export const TooEarlyToTell = absenceStory(
+  {
+    session: READ({ goal: CANT_TELL, line_1: CANT_TELL }),
+    facts: [fact('u-short', 850, { type: 'user_message', by: 'person:me' })],
+  },
+  'Too early to tell',
+  /first 2 minutes/,
+);
+
+export const CantTell = absenceStory(
+  {
+    session: READ({ goal: { ...CANT_TELL, clause: 'Ship the queue' }, line_1: CANT_TELL }),
+    facts: [PERSON, AGENT],
+  },
+  "Can't tell",
+  /enough evidence/,
+);
+
+export const GoalTooVagueToCheck = absenceStory(
+  {
+    session: READ({
+      goal: {
+        result: 'goal too vague to analyze against',
+        cites: [],
+        detail: '',
+        clause: 'Improve it',
+      },
+    }),
+  },
+  'Goal too vague to check',
+  /specific outcome/,
+);
+
+export const OutOfDate = absenceStory(
+  {
+    session: { ...READ({ goal: DEPARTS }), annotation_revision: 4 },
+    facts: [FAILED],
+  },
+  'Out of date',
+  /earlier work or an earlier goal/,
+);

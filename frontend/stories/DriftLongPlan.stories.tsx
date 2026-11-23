@@ -1,8 +1,8 @@
-import { openSessionTechnicalTab } from './sessionTechnical';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, userEvent, waitFor } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { LONG_PLAN } from '../test/longPlan';
 import { DriftScenario, readingScenario } from './drift.scenario';
+import { openSessionTechnicalTab } from './sessionTechnical';
 
 const meta = { title: 'Drift/Long analysis preview', component: DriftScenario } satisfies Meta<
   typeof DriftScenario
@@ -98,9 +98,9 @@ export const DraftedGoalSavesThenRequiresFreshPreview: Story = {
       expected_revision: 3,
     });
     await expect(adoptionPreview.gets).toBe(1);
-    await expect(
-      canvasElement.querySelector('textarea[data-next-cockpit-held-kind="goal"]'),
-    ).toHaveValue('Ship the queue');
+    const goal = within(await within(canvasElement).findByRole('region', { name: 'Goal' }));
+    await expect(goal.getByText('Ship the queue', { exact: true })).toBeVisible();
+    await expect(goal.getByText(/^From your first prompt · saved/)).toBeVisible();
     await userEvent.click(await checks.findByRole('button', { name: 'Refresh long preview' }));
     await waitFor(() => expect(canvasElement).toHaveTextContent('Saved intent revision: 4'));
     await expect(adoptionReading.posts).toHaveLength(0);

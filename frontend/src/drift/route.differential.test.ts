@@ -175,13 +175,13 @@ describe('the route and unchanged refusals read as the legacy page reads them', 
         text
           .replace(
             'The daily reading limit is reached. Wait for the next update.',
-            'Analysis limit reached. Wait for the next update.',
+            'Daily check limit reached. Wait for the next update.',
           )
           .replace(
             /The daily reading limit is reached\. Try again after [^.]*\./,
             retry === null
               ? ''
-              : `Analysis limit reached. You can analyze again at ${capReset(retry, Date.now())}.`,
+              : `Daily check limit reached. You can check progress again at ${capReset(retry, Date.now())}.`,
           );
       const same = (name: string, theirs: unknown, mine: unknown) => {
         const found = firstDifference(
@@ -209,6 +209,21 @@ describe('the route and unchanged refusals read as the legacy page reads them', 
                         : session['acquisition'] === 'event'
                           ? `${control} opens while this session runs or once it ends.`
                           : `${control} opens while this session runs.`,
+                    )
+                    .replace(
+                      'Save a goal above to analyze drift.',
+                      'Save a goal above to check progress.',
+                    )
+                    .replace(
+                      'Save your intent, or undo your edit, to analyze drift.',
+                      'Save your goal or undo your edit to check progress.',
+                    )
+                    .replace('Saving your intent…', 'Saving your goal…')
+                    .replace('before analyzing drift.', 'before checking progress.')
+                    .replace('Type a goal to analyze drift.', 'Type a goal to check progress.')
+                    .replace(
+                      'Analyzing drift is not enabled in this build, because the abstention check that gates it has not been recorded.',
+                      'Progress checks are unavailable in this build because the required accuracy check has not been recorded.',
                     )
                     // The control and the saved goal use the session page's labels.
                     .replace('Analyze opens while', `${control} opens while`)

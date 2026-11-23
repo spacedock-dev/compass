@@ -39,7 +39,7 @@ const asking = (over: Record<string, unknown> = {}) =>
   leaseState({ banner_due_at: 1100, deadline: 1700, confirm_by: 1700, now: 1120, ...over });
 
 const drawn = (canvasElement: HTMLElement) =>
-  within(canvasElement).findByRole('region', { name: 'Drift' });
+  within(canvasElement).findByRole('region', { name: 'Is it on track?' });
 const banner = () => document.querySelector<HTMLElement>('[data-next-live-question]');
 const note = () => document.querySelector('[data-next-live-note]');
 

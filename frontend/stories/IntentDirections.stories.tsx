@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, within, waitFor } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { App } from '../src/App';
+import { healthyRoute } from './drift.scenario';
 import { createShell } from '../src/shell/createShell';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
@@ -47,6 +48,9 @@ function DirectionsExample({
             annotate: true,
             annotate_cap: 240,
             annotate_goal_cap: 1000,
+            reading_check: 'passed',
+            reading: { used: 1, limit: 100 },
+            reading_routes: { claude: healthyRoute('claude') },
             sessions: [
               {
                 harness: 'claude',
@@ -241,7 +245,12 @@ export const QuotedBeforeAnyPress: Story = {
   args: { count: 1 },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByText(/^Your \d\d:\d\d message adds:$/);
+    const progress = within(await canvas.findByRole('region', { name: 'Is it on track?' }));
+    await expect(
+      await progress.findByRole('heading', { name: 'Is this part of your goal?' }),
+    ).toBeVisible();
+    const goal = within(canvas.getByRole('region', { name: 'Goal' }));
+    await expect(goal.queryByRole('heading', { name: 'Is this part of your goal?' })).toBeNull();
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-cockpit-direction-whole]')).toHaveTextContent(
         `Build synthetic outcome 1. ${AFTER}`,

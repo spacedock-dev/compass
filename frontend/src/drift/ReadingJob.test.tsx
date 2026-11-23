@@ -34,7 +34,7 @@ describe('a running analysis', () => {
     expect(steps[1]?.getAttribute('aria-current')).toBe('step');
     const box = document.querySelector('.next-cockpit-reading-job') as HTMLElement;
     expect(box.getAttribute('role')).toBeNull();
-    expect(textOf('.next-cockpit-reading-job-title')).toBe('Analyzing drift');
+    expect(textOf('.next-cockpit-reading-job-title')).toBe('Checking progress');
     expect(textOf('.next-cockpit-reading-job-note')).toContain('Reads only the work so far');
     // No new press is offered while one runs.
     expect(byAction('reading-ask')).toBeNull();
@@ -143,7 +143,7 @@ describe('the announcements a running analysis makes', () => {
       ...driftBoard({ session: { annotation_assessment: stored } }),
       generated: 1200,
     });
-    expect(cue()).toBe('The analysis finished. Its result is in the Drift section.');
+    expect(cue()).toBe('The progress check finished. Its result is in Is it on track?');
   });
 
   it("announces a job it saw begin, once, and a withheld end in the server's words", async () => {
@@ -151,12 +151,12 @@ describe('the announcements a running analysis makes', () => {
     await page.settle();
     await page.settle();
     await page.poll({ ...driftBoard({ payload: withJob(JOB) }), generated: 1100 });
-    expect(cue()).toBe('Analyzing drift');
+    expect(cue()).toBe('Checking progress');
     await page.poll({
       ...driftBoard({ payload: withJob({ ...JOB, phase: 'write' }) }),
       generated: 1150,
     });
-    expect(cue()).toBe('Analyzing drift');
+    expect(cue()).toBe('Checking progress');
     await page.poll({
       ...driftBoard({ session: { annotation_reading_withheld: 'The analysis was cancelled.' } }),
       generated: 1200,

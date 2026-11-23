@@ -179,7 +179,9 @@ describe('the header pill and the card', () => {
 
   it('draw the level of a reading that departs', async () => {
     await open([DEPARTS, CANT_TELL], 'medium');
-    expect(document.querySelector('[data-next-drift-pill] strong')?.textContent).toBe('Medium');
+    expect(document.querySelector('[data-next-drift-pill] strong')?.textContent).toBe(
+      'Slightly off course',
+    );
     expect(document.querySelector('[data-next-drift-level]')?.textContent).toContain(
       'From the progress check at',
     );
@@ -187,9 +189,9 @@ describe('the header pill and the card', () => {
 
   it('keeps the Codex departure reading visible without a level, pill or source', async () => {
     await open([DEPARTS, CANT_TELL], 'medium', { harness: 'codex' });
-    expect(
-      document.querySelector('[data-next-result-goal]')?.getAttribute('data-next-result-state'),
-    ).toBe('departs');
+    expect(document.querySelector('[data-next-progress-summary]')?.textContent).toContain(
+      'departure',
+    );
     expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
     expect(document.querySelector('[data-next-drift-level]')).toBeNull();
     expect(document.body.textContent).not.toContain('From the progress check at');
@@ -198,7 +200,7 @@ describe('the header pill and the card', () => {
   it('say "so far" while the session runs, and drop it once the session is idle', async () => {
     await open([DEPARTS, CANT_TELL], 'medium', { state: 'working' });
     expect(document.querySelector('[data-next-drift-pill]')?.textContent).toBe(
-      'Drift: Medium so far',
+      'Slightly off course',
     );
   });
 
@@ -207,12 +209,14 @@ describe('the header pill and the card', () => {
       annotation_assessment: { ...assessment([DEPARTS, CANT_TELL]), scope: 'mid-flight' },
     });
     expect(document.querySelector('[data-next-drift-pill]')?.textContent).toBe(
-      'Drift: Medium so far',
+      'Slightly off course',
     );
   });
 
   it('say no "so far" over a reading of a finished turn on an idle session', async () => {
     await open([DEPARTS, CANT_TELL], 'medium');
-    expect(document.querySelector('[data-next-drift-pill]')?.textContent).toBe('Drift: Medium');
+    expect(document.querySelector('[data-next-drift-pill]')?.textContent).toBe(
+      'Slightly off course',
+    );
   });
 });

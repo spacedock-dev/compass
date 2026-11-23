@@ -1,5 +1,11 @@
+import { LatestLongOutcome } from './LatestLongOutcome';
 import { olderThanLongAttempt } from './longOutcome';
 import { LONG_LATEST_OLDER } from './sentences';
+import { DeparturesSection } from './Departures';
+import { DriftLevelView } from './DriftLevelView';
+import { GoalVerdictNote } from './GoalVerdictNote';
+import { CiReadNote } from './CiReadNote';
+import { showEvidence } from '../sessions/fullActivityKey';
 import { SampleBeside } from '../sample/SampleMark';
 import { Button } from '../ui/button';
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
@@ -16,7 +22,7 @@ import { SESSION_GOAL } from '../sessions/intent';
 import { DepartureSummaryLine } from '../sessions/SummaryParts';
 import { useDrift } from './context';
 import { citedIdsOf } from './citations';
-import { GLOSSARY } from '../language/glossary';
+import { GLOSSARY, PROGRESS_LEVEL_WORDS } from '../language/glossary';
 import {
   arrivedLine,
   cantTellReason,
@@ -58,18 +64,19 @@ import {
   priorDepartureLine,
   priorListedLine,
   READ_INTENT,
+  READING_DEFINITION,
   READ_MODEL,
   READ_NEVER,
   READ_NOT_READ,
   READ_SESSION,
   READ_SUMMARY,
   GOAL_UNCLEAR_VERDICT,
+  UNKNOWN_KEY,
   RESULT_CANT_TELL,
   RESULT_DEPARTS,
   RESULT_MARK_UNSAVED,
   RESULT_MARKED,
   RESULT_UNMARK,
-  RESULT_NOT_ACCURATE,
   RESULT_NOT_ACCURATE_HINT,
   RESULT_NOTHING_FOUND,
   readIdle,
@@ -78,12 +85,11 @@ import {
   unloadedCites,
 } from './sentences';
 import { datedClock } from '../observed/values';
-import { ReadingCount, WhatIsSent, type SteerSlot } from './ReadingControl';
+import { ReadingCount } from './ReadingControl';
 import { PRIOR_FINDING, type PriorDeparture } from './prior';
 import { isOutcomeLine, type Criterion, type Shape } from './shape';
 import { CitationLink } from './CitationLink';
 import { CitedText } from './CitedText';
-import { SteerSection } from './SteerBack';
 import { Why } from './Why';
 
 /* Accent on a reading would read as "met", a claim about intent from partial evidence. The result keeps
@@ -111,12 +117,10 @@ function jumpName(key: string): string {
 function CitedEntries({
   row,
   findingKey = row.key,
-  technical = false,
 }: {
   readonly row: Criterion;
   /** What a press names: the row's own key, or an earlier departure's (`PRIOR_FINDING`). */
   readonly findingKey?: string;
-  readonly technical?: boolean;
 }) {
   const { model, chooseFinding, jumpMissing } = useDrift();
   const record = useDisplayed((snapshot) =>
@@ -142,18 +146,7 @@ function CitedEntries({
       'data-next-cite': id,
       'aria-label': `Show ${where} in Activity log for ${named}`,
     };
-    return technical ? (
-      <Button
-        key={id}
-        type="button"
-        variant="bare"
-        className="ml-1.5 text-cite underline"
-        {...attrs}
-        onClick={(event) => chooseFinding(findingKey, event.currentTarget, id)}
-      >
-        {where}
-      </Button>
-    ) : (
+    return (
       <CitationLink
         key={id}
         id={id}
@@ -205,11 +198,7 @@ function CitedEntries({
     ) : null;
   return (
     <>
-      {chips ? (
-        <SampleBeside id={!technical && row.key === 'goal' ? 'departure' : ''}>
-          {chips}
-        </SampleBeside>
-      ) : null}
+      {chips}
       {load}
       {older ? (
         <p className={QUIET} data-next-unloaded>
@@ -557,7 +546,7 @@ function WorkSection({ technical = false }: { readonly technical?: boolean }) {
    pressed it: the level and Steer back leave the column above, and the page would otherwise jump. */
 const HOLD_MS = 10_000;
 
-function ResultFoot({ technical = false }: { readonly technical?: boolean }) {
+export function ResultFoot() {
   const { ctx, model } = useDrift();
   const readAt = nextNumber(model.raw?.['read_at']);
   const marked = model.annotation?.['not_accurate'] === true;
@@ -579,12 +568,12 @@ function ResultFoot({ technical = false }: { readonly technical?: boolean }) {
     driftAnswer(model.shape, model.entries, model.source.scan).kind === 'goal-unclear';
   if (readAt === null || !model.annotate || (refused && !marked)) return null;
   const unsaved = ctx.drift.notAccurate.has(model.key);
-  const hintId = `${technical ? 'technical-' : ''}not-accurate-why:${model.key}`;
-  const focusKey = `${technical ? 'technical-' : ''}not-accurate:${model.key}`;
+  const hintId = `not-accurate-why:${model.key}`;
+  const focusKey = `not-accurate:${model.key}`;
   const control = (
     <ActionButton
       weight="quiet"
-      label={marked ? RESULT_UNMARK : technical ? 'This reading looks wrong' : RESULT_NOT_ACCURATE}
+      label={marked ? RESULT_UNMARK : GLOSSARY.readingLooksWrong.plain}
       busyLabel="Saving…"
       pendingKey={`not-accurate:${model.key}`}
       action="not-accurate"
@@ -607,15 +596,15 @@ function ResultFoot({ technical = false }: { readonly technical?: boolean }) {
       className="next-cockpit-result-foot"
       data-next-result-mark={marked ? 'marked' : 'unmarked'}
     >
-      {marked && !technical ? null : (
+      {marked ? null : (
         <>
           {control}
-          <span id={hintId} className={technical && marked ? QUIET : 'next-visually-hidden'}>
-            {marked ? RESULT_MARKED : RESULT_NOT_ACCURATE_HINT}
+          <span id={hintId} className="next-visually-hidden">
+            {RESULT_NOT_ACCURATE_HINT}
           </span>
         </>
       )}
-      {unsaved && (!marked || technical) ? (
+      {unsaved && !marked ? (
         <p className="next-cockpit-reading-why" role="status">
           {RESULT_MARK_UNSAVED}
         </p>
@@ -787,134 +776,114 @@ function Baseline({
   );
 }
 
-const EVIDENCE_LEVELS = new Map([
-  ['none_or_low', GLOSSARY.onTrack.plain],
-  ['medium', GLOSSARY.slightlyOffCourse.plain],
-  ['high', GLOSSARY.offCourse.plain],
-  ['extreme', GLOSSARY.wayOffCourse.plain],
-]);
+export function ReadingResult() {
+  const { ctx, model } = useDrift();
+  const { annotation, shape, raw, entries, source } = model;
+  if (!shape || shape.malformed || !raw || !annotation || annotation['not_accurate'] === true)
+    return null;
+  const answer = driftAnswer(shape, entries, source.scan);
+  if (answer.kind !== 'departs') return null;
+  const [first] = answer.departures;
+  const ids = new Set(answer.departures.flatMap((row) => row.citedIds));
+  if (!first || ids.size === 0) return null;
+  const text = verdictLine({
+    answer,
+    level: '',
+    byId: model.byId,
+    midFlight: shape.scope === 'mid-flight',
+    plain: true,
+  });
+  const openEvidence = () => {
+    showEvidence(ctx.shell.controls, model.project, model.session, () => {
+      const cite = first.citedIds[0];
+      const selector = `[data-next-finding="${CSS.escape(first.key)}"][data-next-cite="${CSS.escape(cite ?? '')}"]`;
+      document.querySelector<HTMLElement>(`[data-next-technical-evidence] ${selector}`)?.focus();
+    });
+  };
+  return (
+    <SampleBeside id="departure">
+      <div
+        className="mx-4 grid gap-1 rounded-card border border-[var(--rule)] bg-[var(--color-danger-outline-hover)] p-4"
+        data-next-progress-finding
+      >
+        <h3 className="m-0 text-body font-semibold">{GLOSSARY.whereOffCourse.plain}</h3>
+        <p className="m-0 text-body" data-next-progress-summary>
+          {text}
+        </p>
+        <Button
+          type="button"
+          variant="bare"
+          className="justify-self-start text-[var(--accent-dim)] underline"
+          data-next-cockpit-action="finding-jump"
+          onClick={openEvidence}
+        >
+          {ids.size === 1 ? 'See the quote behind this' : `See the ${ids.size} quotes behind this`}
+        </Button>
+      </div>
+    </SampleBeside>
+  );
+}
 
 export function TechnicalReadingEvidence() {
   const { model } = useDrift();
-  const { shape, raw, annotation, entries, source } = model;
+  const { shape, raw, annotation } = model;
   const unreadable = storeUnreadable(model.payload);
-  if (unreadable || !model.annotate) {
-    return (
-      <p className="m-0 pt-3 text-body text-muted-foreground">{unreadable || ANNOTATIONS_OFF}</p>
-    );
-  }
-  if (!shape || shape.malformed || !raw || !annotation) {
-    return (
-      <p className="m-0 pt-3 text-body text-muted-foreground">
-        {raw || annotation?.['reading_refused'] === true
-          ? 'This build could not read the stored check.'
-          : 'No stored check yet.'}
-      </p>
-    );
-  }
-  const answer = driftAnswer(shape, entries, source.scan);
-  const refused = answer.kind === 'goal-unclear';
-  const rows = refused
-    ? []
-    : shape.criteria.filter(
-        (row) => row.key !== CLAIMS && (row.citedIds.length > 0 || row.unloaded > 0),
-      );
-  const claims = refused ? [] : claimsDrawn(shape);
-  const coverage = coverageLimits(shape);
-  const time = nextNumber(raw['read_at']);
-  const at = time !== null && time > 0 ? `at ${clock(time)}` : '';
-  const modelName = stampModel(shape.stamp);
-  const subject = modelName
-    ? `Reading by ${modelName}`
-    : /^unasked check at \d{2}:\d{2}$/.test(shape.stamp)
-      ? 'Unasked check'
-      : at && 'Check recorded';
+  const level = PROGRESS_LEVEL_WORDS.get(model.analysis?.level ?? '');
   const cited = citedIdsOf(raw).length;
-  const metadata = [
-    [subject, at].filter(Boolean).join(' '),
-    cited ? `${cited} ${cited === 1 ? 'entry' : 'entries'} cited` : '',
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  const level = EVIDENCE_LEVELS.get(model.analysis?.level ?? '');
-  const stale = resultStale(shape, raw, annotation, entries);
-  const outcomes = shape.criteria.filter((row) => isOutcomeLine(row.key)).length;
+  const readAt = nextNumber(raw?.['read_at']);
+  const modelName = stampModel(shape?.stamp || '');
+  const source =
+    readAt && readAt > 0 && shape
+      ? modelName
+        ? `Reading by ${modelName} at ${clock(readAt)}`
+        : shape.stamp.startsWith('unasked check at ')
+          ? `Unasked check at ${clock(readAt)}`
+          : `Check recorded at ${clock(readAt)}`
+      : '';
+  const empty =
+    raw || annotation?.['reading_refused'] === true
+      ? shape?.malformed
+        ? UNKNOWN_KEY
+        : 'A reading is stored for this session and this build could not read it, so nothing from it is shown. Asking again replaces it.'
+      : 'No stored check yet.';
   return (
     <div className="flex max-w-[var(--measure)] flex-col gap-3 pt-3" data-next-technical-evidence>
-      <div>
-        <h2 className="m-0 text-value font-semibold">
-          {level ? `Evidence for “${level}”` : 'Evidence'}
-        </h2>
-        {metadata ? <p className="m-0 text-label text-muted-foreground">{metadata}</p> : null}
-      </div>
-      {stale ? <p className={QUIET}>{stale.head}</p> : null}
-      {coverage ? <p className={QUIET}>{coverage}</p> : null}
-      {rows.length ? (
-        <section className="flex flex-col gap-2">
-          <h3 className="m-0 text-body font-semibold">What the record says</h3>
-          {rows.map((row) => (
-            <div key={row.key} className="flex flex-col gap-1">
-              <h4 className="m-0 text-body font-semibold">{constraintName(row.key, outcomes)}</h4>
-              <CitedEntries row={row} technical />
-              {row.result === DEPARTURE ? (
-                <>
-                  <p className="m-0 text-body font-semibold">
-                    {level
-                      ? `Why Compass reads this as ${level.toLowerCase()}`
-                      : 'Why Compass found a departure'}
-                  </p>
-                  <p className="m-0 text-body">{row.detail || NO_DETAIL}</p>
-                </>
-              ) : null}
-              {row.coverage ? <p className={QUIET}>{row.coverage}</p> : null}
-              <Qualifiers row={row} />
-            </div>
-          ))}
+      <h2 className="m-0 text-value font-semibold">
+        {level ? `Evidence for “${level}”` : 'Evidence'}
+      </h2>
+      {source ? (
+        <p className={QUIET} data-next-evidence-model>
+          {source}
+        </p>
+      ) : null}
+      {cited ? (
+        <p className="text-label text-muted-foreground">{`${cited} ${cited === 1 ? 'entry' : 'entries'} cited`}</p>
+      ) : null}
+      {unreadable || !model.annotate || !shape || shape.malformed || !raw || !annotation ? (
+        <section className="next-cockpit-reading">
+          <p className="m-0 text-body text-muted-foreground">
+            {unreadable || (!model.annotate ? ANNOTATIONS_OFF : empty)}
+          </p>
+          {raw || annotation?.['reading_refused'] === true ? (
+            <p className={QUIET}>{READING_DEFINITION}</p>
+          ) : null}
+          {shape?.malformed ? <p className={QUIET}>{`Unrecognised: ${shape.malformed}.`}</p> : null}
         </section>
       ) : (
-        <p className={QUIET}>
-          {refused
-            ? GOAL_UNCLEAR_VERDICT
-            : 'The stored check has no cited entries for the goal or its outcomes.'}
-        </p>
+        <ReadingDetails />
       )}
-      {claims.length ? (
-        <section className="flex flex-col gap-2">
-          {claims.map((row) => (
-            <div key={row.key} className="flex flex-col gap-1">
-              <h3 className="m-0 text-body font-semibold">
-                {resultStatus(row, model.numbers, model.byId)}
-              </h3>
-              {row.clause ? <p className="m-0 text-body">{`“${row.clause}”`}</p> : null}
-              {row.detail ? <p className="m-0 text-body">{row.detail}</p> : null}
-              <CitedEntries row={row} technical />
-              <Qualifiers row={row} />
-            </div>
-          ))}
-        </section>
-      ) : null}
-      <ResultFoot technical />
-      <Baseline shape={shape} raw={raw} arrived={arrivedLine(annotation, entries)} technical />
+      <DriftLevelView />
       <p className={QUIET}>{READING_NOT_A_VERIFICATION}</p>
+      <GoalVerdictNote />
+      <CiReadNote />
+      <DeparturesSection />
+      <LatestLongOutcome />
+      <ReadingCount count={nextNumber(annotation?.['reading_count']) || 0} />
     </div>
   );
 }
 
-export function ReadingResult({
-  question,
-  again,
-  slotted,
-  steerOff = '',
-}: {
-  /** The question before the press, which keeps the result's head while a later direction is unsettled. */
-  readonly question: ReactNode;
-  /** Steer back's row and box, where the control offers it. */
-  readonly slotted: SteerSlot | null;
-  /** Why Steer back does not carry the departures listed, said beside them (`steerWithheld`). */
-  readonly steerOff?: string;
-  /** What a press was answered with under the result; the run control itself is the card header's. */
-  readonly again: (steer: SteerSlot | null) => ReactNode;
-}) {
+function ReadingDetails() {
   const { model } = useDrift();
   const { shape, raw, annotation, entries, source } = model;
   if (!shape || !raw || !annotation) return null;
@@ -922,6 +891,7 @@ export function ReadingResult({
     shape.criteria.length || shape.departures.length
       ? driftAnswer(shape, entries, source.scan)
       : null;
+  const stale = resultStale(shape, raw, annotation, entries);
   const coverage = coverageLimits(shape);
   const interruptedAt = nextNumber(annotation['reading_withheld_at']);
   const priorReadAt = nextNumber(raw['read_at']);
@@ -950,12 +920,6 @@ export function ReadingResult({
   const claimed = refused ? [] : claimsDrawn(shape);
   const quiet = goal.length + lines.length + claimed.length > 0;
   const priors = refused ? [] : model.priors;
-  /* A current result keeps the disclosure and accounting without a second run control: the card header holds
-     the one, in every state. A direction question owns the run path while it stands.
-     [DEC-27](../../../docs/design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result) */
-  const foot = question ? null : again(null);
-  /* The verdict sentence above the level says the answer once; a heading here says it only where that
-     sentence is not drawn, over a reading marked inaccurate. */
   const marked = annotation['not_accurate'] === true;
   const priorGroup = priors.length ? (
     <div className="flex flex-col gap-3.5" data-next-prior-departures>
@@ -966,7 +930,13 @@ export function ReadingResult({
   ) : null;
   return (
     <div className="next-session-drift-check next-cockpit-result gap-1" data-next-result>
-      {question}
+      {stale ? (
+        <div className={QUIET} data-next-evidence-stale={stale.kind}>
+          <p>{stale.head}</p>
+          {stale.superseded ? <p>{stale.superseded}</p> : null}
+        </div>
+      ) : null}
+      <DriftVerdict focus={false} />
       {olderLong || olderInterrupted ? (
         <p className="next-cockpit-reading-why" data-next-long-older>
           {olderLong ? LONG_LATEST_OLDER : LONG_INTERRUPTED_OLDER}
@@ -979,11 +949,7 @@ export function ReadingResult({
         {...(marked ? { 'data-next-disowned': '' } : {})}
       >
         {answer && marked ? (
-          <ResultAnswer
-            answer={answer}
-            midFlight={shape.scope === 'mid-flight'}
-            focusKey={question ? null : `reading:${model.key}`}
-          />
+          <ResultAnswer answer={answer} midFlight={shape.scope === 'mid-flight'} focusKey={null} />
         ) : null}
         {idle ? (
           <p className="next-cockpit-reading-why" data-next-reading-idle>
@@ -1001,11 +967,6 @@ export function ReadingResult({
               <DepartureCard key={row.key} row={row} outcomes={outcomes} />
             ))}
           </div>
-        ) : null}
-        {departures.length && steerOff ? (
-          <p className="next-cockpit-reading-why" data-next-steer-off>
-            {steerOff}
-          </p>
         ) : null}
         {/* Earlier departures the standing reading does not answer on the record, only with the agent's word or
             not at all: after the ones that stand, before the quiet rows, one of which is that later reading. */}
@@ -1030,23 +991,15 @@ export function ReadingResult({
             ))}
           </div>
         ) : null}
-        {/* Steer back, its own section after the departures it steers from. While a later direction stands the
-          question owns the primary press and Steer back is the secondary beside it (owner, 2026-10-20). */}
-        {slotted ? <SteerSection buttons={slotted.button} box={slotted.box} /> : null}
       </div>
       {/* The reader's mark sets aside the reading it was about, not what an earlier reading found. */}
       {marked ? priorGroup : null}
-      {foot ? <div className="next-cockpit-result-press">{foot}</div> : null}
       <div
         className="flex flex-wrap items-start gap-x-4 gap-y-2 border-t border-[var(--rule)] pt-2.5"
         data-next-result-footer
       >
-        <ResultFoot />
-        <Baseline shape={shape} raw={raw} arrived={arrived} />
-        {question ? null : <WhatIsSent />}
-        <div className="self-center empty:hidden">
-          <ReadingCount count={nextNumber(annotation['reading_count']) || 0} />
-        </div>
+        {marked ? <p className={QUIET}>{RESULT_MARKED}</p> : null}
+        <Baseline shape={shape} raw={raw} arrived={arrived} technical />
       </div>
     </div>
   );

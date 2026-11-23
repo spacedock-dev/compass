@@ -74,11 +74,11 @@ export const BASELINE_OPEN =
 export const CLAUSE_UNRETAINED = 'the words of the revision this reading read are not retained';
 export const UNKNOWN_KEY =
   'This board cannot read the reading it was given: it carries a field this build does not know. Nothing from it is shown, because a reading half-read is not a reading.';
-export const SAVE_STEP = 'Save a goal above to analyze drift.';
+export const SAVE_STEP = 'Save a goal above to check progress.';
 export const NO_WORDS = `Nothing has been typed for this session, so there is nothing to read it against. ${SAVE_STEP}`;
 export const MODEL_UNREAD =
   'Reading availability has not been read, so no reading can be offered. Compass asks again with the next update.';
-export const JOB_TITLE = 'Analyzing drift';
+export const JOB_TITLE = 'Checking progress';
 /* The title over a run that keeps the last result in view, dimmed, until the new one lands. */
 export const JOB_TITLE_AGAIN = 'Reading again';
 export const JOB_NOTE = 'You can keep working. The result will appear here.';
@@ -88,7 +88,7 @@ export const CANCEL_FAILED =
 export const MODEL_OFF =
   'Model calls are off for this run. Restart without --no-observer-model or its alias --no-harness-usage to allow a reading.';
 export const UNAUTHORIZED =
-  'Analyzing drift is not enabled in this build, because the abstention check that gates it has not been recorded. It waits on a later release; nothing on this page lifts it.';
+  'Progress checks are unavailable in this build because the required accuracy check has not been recorded. It waits on a later release; nothing on this page lifts it.';
 export const ANNOTATIONS_OFF =
   'Annotations are off for this run. Start without --no-annotations to type a goal and an expected output here.';
 export const ROUTE_UNREAD =
@@ -386,7 +386,7 @@ export const ciNotCounted = (count: number): string =>
   `${String(count)} non-required ${count === 1 ? 'check' : 'checks'} not counted.`;
 /* The switch beside the notice. `flag-off` is the run's own `--no-ci-read`, which the page cannot lift. */
 export const CI_SWITCH_ON =
-  'Pull request checks are read from GitHub or GitLab with your gh or glab login when you press Analyze.';
+  'Pull request checks are read from GitHub or GitLab with your gh or glab login when you press Check progress.';
 export const CI_SWITCH_OFF = 'Pull request checks are not read from GitHub or GitLab.';
 export const CI_SWITCH_FLAG =
   'Pull request checks are not read from GitHub or GitLab for this run (--no-ci-read).';
@@ -527,17 +527,17 @@ export const RESULT_NOTHING_FOUND =
   'Nothing found against what it read. This is not a check that the work was done.';
 /* The mark is a local flag on this one analysis. Each state says what the press does and what changed, beside
    the control, because both effects (the level and Steer back) are drawn far above it. */
-export const RESULT_NOT_ACCURATE = 'Mark as inaccurate';
+export const RESULT_NOT_ACCURATE = 'This reading looks wrong';
 export const RESULT_NOT_ACCURATE_HINT =
-  'Stops this analysis from setting the drift level or Steer back. Nothing is sent or re-run.';
+  'Sets this check aside and turns off Steer back for it. Nothing is sent or re-run.';
 export const RESULT_MARKED =
-  'Marked inaccurate. This analysis no longer sets the drift level or Steer back, and its verdicts below are set aside.';
+  'Marked inaccurate. This check is set aside and no longer offers Steer back.';
 export const RESULT_UNMARK = 'Undo';
 export const RESULT_MARK_UNSAVED = 'Your mark was not saved. Try again.';
 
 /* What it read: the model, the intent it read against, how much of the session it read, and what it never
    reads. Headings and short items rather than one paragraph of caveats. */
-export const READ_SUMMARY = 'What the analysis read';
+export const READ_SUMMARY = 'What the check read';
 export const READ_MODEL = 'Model';
 export const READ_INTENT = 'Your intent';
 export const READ_SESSION = 'The session';
@@ -565,7 +565,7 @@ export const readIdle = (at: string): string =>
 export function readScopeLine(scope: string, fallback: string): string {
   return Object.hasOwn(READ_SCOPE, scope) ? (READ_SCOPE[scope] as string) : fallback;
 }
-export const READING_FINISHED = 'The analysis finished. Its result is in the Drift section.';
+export const READING_FINISHED = 'The progress check finished. Its result is in Is it on track?';
 
 export const STEER_BY_HAND = 'Raised to you and nowhere else.';
 export const STEER_BY_HAND_WHY =
@@ -596,14 +596,14 @@ export const WHY_OFF = 'Why the progress check is off';
 
 export const FLIP_HOLD_MS = 10_000;
 export const FLIP_SAY_EVERY_MS = 60_000;
-export const FLIP_OPEN_RUNNING = 'Analyze is open again: the session is running.';
-export const FLIP_OPEN_LAST_TURN = "Analyze is open: the session's last turn finished.";
-export const FLIP_OPEN_ENDED = 'Analyze is open: the session ended.';
+export const FLIP_OPEN_RUNNING = 'Check progress is open again: the session is running.';
+export const FLIP_OPEN_LAST_TURN = "Check progress is open: the session's last turn finished.";
+export const FLIP_OPEN_ENDED = 'Check progress is open: the session ended.';
 /* "Went quiet", not "stopped": a close also follows a turn left on an open tool call or an interruption,
    which did not stop. */
-export const FLIP_CLOSED = 'Analyze closed: the session went quiet.';
+export const FLIP_CLOSED = 'Check progress closed: the session went quiet.';
 export const FLIP_CLOSED_REVISION =
-  'Analyze closed: your intent was saved after the session ended.';
+  'Check progress closed: your intent was saved after the session ended.';
 
 export const WORK_HARNESSES: readonly string[] = ['claude', 'codex', 'pi'];
 export const WORK_READ_FROM = 'Compass reads work results from Claude Code, Codex and Pi only.';
@@ -646,14 +646,15 @@ export const STEER_PURPOSE =
 /* Beside departures Steer back will not carry, so the button is never simply missing (owner, 2026-10-20). The
    rules are unchanged: a reading marked inaccurate, or one of an earlier version of the intent, sets no
    correction. With a failed check still offering one, the line says the departures are left out of it. */
-export const STEER_OFF_MARKED = 'Steer back is off because you marked this analysis inaccurate.';
+export const STEER_OFF_MARKED = 'Steer back is off because you marked this check inaccurate.';
 export const STEER_OFF_OLDER =
   'Steer back is off because this progress check read an earlier version of your goal.';
 export const STEER_LEAVES_MARKED =
-  'Steer back leaves these departures out because you marked this analysis inaccurate.';
+  'Steer back leaves these departures out because you marked this check inaccurate.';
 export const STEER_LEAVES_OLDER =
   'Steer back leaves these departures out because this analysis read an earlier version of your intent.';
-export const CORRECTION_HINT = 'Compass never sends this. Copy it and paste it into the session.';
+export const CORRECTION_HINT =
+  'Compass never sends this for you. You stay in control of what the agent hears.';
 export const CORRECTION_NOTHING = 'Nothing recorded now gives a correction to steer back from.';
 export const CORRECTION_FAILED = 'Could not compose a correction. Press Steer back again to retry.';
 export const CORRECTION_OLDER =

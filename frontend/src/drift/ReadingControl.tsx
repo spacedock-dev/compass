@@ -1,3 +1,4 @@
+import { progressBudget } from './route';
 import { longCleanupUnresolved } from '../api/longProgress';
 import { LongProgress } from './LongProgress';
 import { SampleBeside } from '../sample/SampleMark';
@@ -219,29 +220,11 @@ export function JobBox({
   );
 }
 
-export interface SteerSlot {
-  /** Steer back leads Analyze, as under a departure. */
-  readonly lead: boolean;
-  readonly button: ReactNode;
-  readonly box: ReactNode;
-}
-
 export function ReadingControl({
   board,
-  primary = true,
-  steer = null,
-  again = false,
-  about = '',
   refusalOf,
 }: {
   readonly board: Board;
-  readonly primary?: boolean;
-  readonly steer?: SteerSlot | null;
-  /** A result stands: its run control is the card header's, and this draws only what a press was answered with. */
-  readonly again?: boolean;
-  /** What a reading is, drawn inside "What is sent" while no reading is stored. */
-  readonly about?: string;
-  /** The refusal as the card computed it before the board's ranking, to drop a stale one. */
   readonly refusalOf: string;
 }) {
   const { ctx, model } = useDrift();
@@ -264,7 +247,6 @@ export function ReadingControl({
   const route = model.route;
   const provider = route?.['provider'] ? String(route['provider']) : '';
   const off = readingsOff(payload);
-  const count = nextNumber(annotation?.['reading_count']) || 0;
   /* What an analysis will read, under the control, and only where a press could read it: a provider, no
      refusal beside it, saved words, and words given before any observed end, which the server withholds by
      the same time the later-direction floor does. */
@@ -282,11 +264,10 @@ export function ReadingControl({
     !(ended !== null && given !== null && given > ended)
       ? readHint(session)
       : '';
-  const readLine = hint && !again ? hint : '';
+  const readLine = !model.raw ? hint : '';
   const job = readingJob(payload, session);
   /* Only from a published annotation: with the store off there is no count to read, and "0 requests" would be
      a default standing in for one. */
-  const counted = annotation ? <ReadingCount count={count} /> : null;
   /* What the last press or withdrawal came to, announced. Every arm prints it: a failed "Pause model calls"
      that says nothing leaves the reader believing a permission is gone that is still on record. */
   const answered = request?.message && !request.refusal ? String(request.message) : '';
@@ -304,7 +285,6 @@ export function ReadingControl({
      refusal is about a new press, which is not offered, so it waits. The notice stays under the box because
      the job carries it, so a reload mid-run still says where the words went. */
   /* Over a result that stays in view, dimmed, the box is the card body's, drawn above it. */
-  if (job && again) return null;
   if (job) {
     const running = ended === null && session['state'] !== 'idle';
     const kept = Boolean(model.raw && model.shape && !model.shape.malformed);
@@ -323,35 +303,17 @@ export function ReadingControl({
      for this one case; every other refusal keeps the inert control and its sentence. `--no-annotations` is one
      of those, so the store's state is checked first. */
   const noReader = model.annotate ? routeRefusal(payload, session) : '';
-  const aboutWhy = about ? (
-    <Why name="reading-about" summary="What a reading reads" body={about} />
-  ) : null;
-  const steerButton = steer?.button ?? null;
-  const steerBox = steer?.box ?? null;
-  const lead = Boolean(steer?.lead);
   if (noReader) {
     return (
       <>
         <div className="next-cockpit-reading-ask next-cockpit-reading-ask--none">
           <NoReader reason={noReader} />
           {off ? <p className="next-cockpit-reading-why">{READINGS_OFF}</p> : null}
-          {steerButton}
         </div>
-        {steerBox}
         {said(answered === noReader ? '' : answered)}
-        {counted}
-        {aboutWhy}
       </>
     );
   }
-  const press = (
-    <RunPress
-      board={board}
-      weight={primary ? 'primary' : 'secondary'}
-      label={GLOSSARY.checkProgress.shown}
-      focusKey={`reading:${key}`}
-    />
-  );
   /* The announcement and the description are one node while a refusal stands. Printing the stored message and
      the reason separately rendered the same sentence twice, adjacent and identical, where the contract is that
      it renders exactly once. The press is still announced, because this node carries `role="status"` when it
@@ -391,43 +353,17 @@ export function ReadingControl({
       {refused}
       {said(answered)}
       {outcome}
-      {steerBox}
       {readLine ? <p className="next-cockpit-reading-why">{readLine}</p> : null}
     </>
   );
   const changeLine = changed ? (
     <p className="next-cockpit-reading-why next-cockpit-reading-change">{changed}</p>
   ) : null;
-  /* Where a result stands the run control is the card header's, and what is sent is the footer's, once: this
-     draws only what a press was answered with. Idle, the disclosure is one press away beside Analyze. */
-  if (again) {
-    return (
-      <>
-        {changeLine}
-        {accounts}
-      </>
-    );
-  }
   return (
     <>
-      <div className="next-cockpit-reading-ask">
-        {lead ? (
-          <>
-            {steerButton}
-            {press}
-          </>
-        ) : (
-          <>
-            {press}
-            {steerButton}
-          </>
-        )}
-      </div>
       {off ? <p className="next-cockpit-reading-why">{MODEL_PAUSE_EXPLANATION}</p> : null}
       {changeLine}
-      {inert ? null : counted}
       {accounts}
-      <WhatIsSent about={about} />
     </>
   );
 }
@@ -477,7 +413,7 @@ export function ReadingNotice() {
     <ModelNotice
       notice={notice}
       provider={noticeLabel(notice)}
-      parts={noticeParts(notice, model.route)}
+      parts={noticeParts(notice, model.route).map(disclosureSize)}
     >
       <TurnOff />
       <CiReadSwitch />
@@ -597,6 +533,7 @@ export function RunPress({
       <ActionButton
         weight={pressWeight}
         label={label}
+        leadingIcon="check-progress"
         busyLabel="Starting…"
         pendingKey={`reading:${key}`}
         inert={!enabled}
@@ -622,8 +559,21 @@ export function RunPress({
           }
         }}
       />
-      <span className="text-label text-muted-foreground">{GLOSSARY.usesAi.shown}</span>
+      <CheckCost />
     </>
+  );
+}
+
+function CheckCost() {
+  const { model } = useDrift();
+  const budget = progressBudget(model.payload);
+  return (
+    <span className="text-label text-muted-foreground" data-next-check-cost>
+      {GLOSSARY.usesAi.plain}
+      {budget && budget.remaining <= 10
+        ? ` · ${budget.remaining} of ${budget.limit} daily checks left`
+        : ''}
+    </span>
   );
 }
 
@@ -641,40 +591,12 @@ export function RerunControl({ board }: { readonly board: Board }) {
     <>
       <RunPress
         board={board}
-        weight="quiet"
-        label={GLOSSARY.checkProgressAgain.shown}
+        weight="secondary"
+        label={GLOSSARY.checkProgressAgain.plain}
         focusKey={`reading-again:${key}`}
         fallbackKey={`reading:${key}`}
         blocked={Boolean(model.job)}
       />
-    </>
-  );
-}
-
-/* Why the question's Keep sends nothing while calls are paused. Resume is the Drift card head's, which stays
-   available while an earlier analysis unwinds. The direction question owns its job box and Cancel; this slot
-   adds neither again. */
-export function ReadingsOffAsk({ refusedId }: { readonly refusedId: boolean }) {
-  const { ctx, model } = useDrift();
-  const { key } = model;
-  const request = ctx.intent.held.requests.get(key);
-  const id = refusedId ? REFUSED_ID : undefined;
-  const answered = request?.message && !request.refusal ? String(request.message) : '';
-  return (
-    <>
-      <p className="next-cockpit-reading-why">{MODEL_PAUSE_EXPLANATION}</p>
-      <p className="next-cockpit-reading-why" id={id} {...absenceAttr(READINGS_OFF)}>
-        {READINGS_OFF}
-      </p>
-      {answered ? (
-        <p
-          className="next-cockpit-reading-why"
-          {...(request?.announced ? {} : { role: 'status' })}
-          {...absenceAttr(answered)}
-        >
-          {answered}
-        </p>
-      ) : null}
     </>
   );
 }

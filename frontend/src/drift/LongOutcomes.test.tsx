@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { describe, expect, it } from 'vitest';
 import {
   EARLIER_READING,
@@ -14,6 +15,7 @@ describe('qualified long outcomes', () => {
   it('keeps the local departure and says why other clauses cannot be judged', async () => {
     const page = mountDrift({ session, facts });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     const result = textOf('[data-next-result]');
     expect(result).toContain('The retry check failed.');
     expect(result).toContain("Can't tell");
@@ -37,6 +39,7 @@ describe('qualified long outcomes', () => {
         ...(pending ? { payload: { reading: { ...POLICY, off: true, consent: false } } } : {}),
       });
       await page.settle();
+      await openSessionTechnicalTab('Evidence');
       expect(textOf('[data-next-drift-body]')).toContain(LONG_INTERRUPTED_SENTENCE);
       expect(textOf('[data-next-result]')).toContain(EARLIER_READING);
       expect(textOf('[data-next-result]')).toContain('The retry check failed.');
@@ -56,6 +59,7 @@ describe('qualified long outcomes', () => {
       facts,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     expect(textOf('[data-next-result]')).not.toContain(EARLIER_READING);
   });
 
@@ -70,6 +74,7 @@ describe('qualified long outcomes', () => {
       facts,
     });
     await page.settle();
+    await openSessionTechnicalTab('Evidence');
     expect(textOf('[data-next-drift-body]')).toContain(LONG_INTERRUPTED_SENTENCE);
     expect(textOf('[data-next-result]')).not.toContain(EARLIER_READING);
     expect(document.querySelector('[data-next-long-interrupted]')).toBeNull();

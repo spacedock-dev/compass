@@ -237,6 +237,13 @@ class TemplateTest(unittest.TestCase):
             rendered(answer["parts"]),
         )
 
+    def test_the_board_starter_names_the_goal_and_asks_the_agent_to_return_to_it(self) -> None:
+        self.assertEqual(
+            "Back to my goal: Ship the placeholder parser. "
+            "Please address the work that went off course and continue toward that goal.",
+            compose()["starter"],
+        )
+
     def test_a_placeholder_carries_the_fact_id_and_nothing_else(self) -> None:
         for part in compose()["parts"]:
             if not isinstance(part, str):

@@ -1,6 +1,7 @@
 import type { Controls } from '../controls/kit';
 import { compatSessKey } from '../api/identity';
 import { disclosureKey } from '../controls/disclosureStore';
+import { afterPanelSettles } from '../drift/panelSettle';
 import type { Row } from '../observed';
 
 /* The open state of a session's Activity log, keyed like every other session disclosure so a refresh, a
@@ -17,4 +18,20 @@ export function showActivityLog(controls: Controls, project: string, session: Ro
   const key = fullActivityKey(project, session);
   controls.technicalTabs.remember(key, ACTIVITY_LOG);
   controls.disclosures.set(key, true);
+}
+
+export function showEvidence(
+  { disclosures, technicalTabs }: Controls,
+  project: string,
+  session: Row,
+  onOpen: () => void,
+): void {
+  const key = fullActivityKey(project, session);
+  technicalTabs.remember(key, TECHNICAL_EVIDENCE);
+  disclosures.set(key, true);
+  requestAnimationFrame(() =>
+    afterPanelSettles(() => {
+      if (disclosures.isOpen(key) && technicalTabs.read(key) === TECHNICAL_EVIDENCE) onOpen();
+    }),
+  );
 }

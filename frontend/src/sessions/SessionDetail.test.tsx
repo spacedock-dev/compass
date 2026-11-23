@@ -1,3 +1,4 @@
+import { openSessionTechnicalTab } from '../../test/sessionTechnical';
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { mountSessions, type AnswerScript } from './testing';
@@ -678,6 +679,7 @@ describe('the checks run while the reader was away, when that lane is off', () =
 
   it('prints the limit beside the rows it qualifies, as the legacy page does, so the label never reads as checks that ran', async () => {
     await open(board([departed], { unasked: false }));
+    await openSessionTechnicalTab('Evidence');
     expect(part().textContent).toContain(label);
     const sentences = [...part().querySelectorAll('[data-absence="run-config"]')].map(
       (node) => node.textContent,
@@ -691,6 +693,7 @@ describe('the checks run while the reader was away, when that lane is off', () =
 
   it('names the model off switch when that is why the lane is off', async () => {
     await open(board([departed], { unasked: false, unasked_off_reason: 'run-disabled' }));
+    await openSessionTechnicalTab('Evidence');
     const first = part().querySelector('[data-absence="run-config"]')?.textContent ?? '';
     expect(first).toBe(
       'The model off switch refuses unasked checks. Restart with --unasked-readings and without either --no-harness-usage or --no-observer-model to enable them.',
@@ -699,6 +702,7 @@ describe('the checks run while the reader was away, when that lane is off', () =
 
   it('adds no off-switch sentence when the lane is on', async () => {
     await open(board([departed], { unasked: true }));
+    await openSessionTechnicalTab('Evidence');
     expect(part().querySelector('[data-absence="run-config"]')).toBeNull();
     expect(part().textContent).toContain('The change widened the goal.');
   });

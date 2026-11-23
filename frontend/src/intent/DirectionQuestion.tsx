@@ -1,6 +1,6 @@
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../ui/select';
 import { Label } from '../ui/label';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect } from 'react';
 import { compatSessKey } from '../api/identity';
 import { useFocusKey } from '../controls';
 import { datedClock } from '../observed/values';
@@ -69,11 +69,14 @@ function WholeList({
         const id = String(entry.id || '');
         const opened = held?.texts.get(id);
         return (
-          <li key={id} className="next-cockpit-direction-whole-item">
+          <li
+            key={id}
+            className="next-cockpit-direction-whole-item border-l-2 border-[var(--line)] bg-card px-3 py-2"
+          >
             {pending.length > 1 ? (
               <span className="next-cockpit-source">{datedClock(Number(entry.at) || 0, now)}</span>
             ) : null}
-            <span className="next-cockpit-direction-whole-text">
+            <span className="next-cockpit-direction-whole-text wrap-anywhere">
               {opened?.text ?? stripPasteWrapper(String(entry.summary || ''))}
             </span>
             {opened?.clipped ? <p className="next-cockpit-held-full">{DIRECTION_CLIPPED}</p> : null}
@@ -84,23 +87,12 @@ function WholeList({
   );
 }
 
-export interface DirectionQuestionProps {
+interface DirectionQuestionProps {
   /** The one primary action a question can have, while the session is not waiting on the reader. */
   readonly primary?: boolean;
-  /** Controls the Analyze step draws beside Keep and Add (Pause model calls). */
-  readonly buttons?: ReactNode;
-  /** What the Analyze step draws under the answer: the disclosure, the count, the budget, a refusal. */
-  readonly after?: ReactNode;
-  /** The running analysis the question stands in front of, which the Analyze step draws above it. */
-  readonly before?: ReactNode;
 }
 
-export function DirectionQuestion({
-  primary = false,
-  buttons,
-  after,
-  before,
-}: DirectionQuestionProps) {
+export function DirectionQuestion({ primary = false }: DirectionQuestionProps) {
   const { ctx, input, session, source, payload, projectKey } = usePanel();
   const key = compatSessKey(session);
   const pending = directionsOpen(input, source);
@@ -140,80 +132,81 @@ export function DirectionQuestion({
       : `You sent ${String(count)} messages after your goal. Choose one to add or make the goal, or leave them all:`;
 
   return (
-    <>
-      {before}
-      <div
-        className="next-cockpit-direction-question gap-3 max-[760px]:gap-0.5"
-        data-next-cockpit-direction-question
-      >
-        <p className="next-cockpit-direction-said">{said}</p>
-        {count > 1 ? (
-          <Label className="next-direction-select">
-            {'Direction '}
-            <Select
-              value={earliest.id}
-              onValueChange={(value) => {
-                if (value) pickDirection(ctx, session, value);
-              }}
-              items={pending.map((entry) => ({ value: entry.id, label: directionLabel(entry) }))}
+    <div
+      className="next-cockpit-direction-question gap-3 rounded-card border border-[var(--rule)] bg-muted p-4"
+      data-next-cockpit-direction-question
+    >
+      <h3 className="m-0 text-body font-semibold">Is this part of your goal?</h3>
+      <p className="m-0 text-body text-muted-foreground">
+        Later in the session you asked for something your goal does not mention.
+      </p>
+      <p className="next-cockpit-direction-said next-visually-hidden">{said}</p>
+      {count > 1 ? (
+        <Label className="next-direction-select">
+          {'Direction '}
+          <Select
+            value={earliest.id}
+            onValueChange={(value) => {
+              if (value) pickDirection(ctx, session, value);
+            }}
+            items={pending.map((entry) => ({ value: entry.id, label: directionLabel(entry) }))}
+          >
+            <SelectTrigger
+              ref={pickRef}
+              data-next-direction-select
+              data-next-focus={`direction-pick:${key}`}
+              aria-label="Direction"
+              title={String(earliest.summary || 'Your direction')}
             >
-              <SelectTrigger
-                ref={pickRef}
-                data-next-direction-select
-                data-next-focus={`direction-pick:${key}`}
-                aria-label="Direction"
-                title={String(earliest.summary || 'Your direction')}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {pending.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.id}>
-                    {directionLabel(entry)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Label>
-        ) : null}
-        <WholeList pending={pending} selected={String(earliest.id || '')} />
-        <div className="next-cockpit-reading-ask items-start [&>button]:flex-auto">
-          <DirectionActionButton
-            weight={primary ? 'primary' : 'secondary'}
-            feedbackKey={`direction-add:${key}`}
-            label={ADD_DIRECTION}
-            busyLabel="Opening…"
-            pendingKey={`direction-add:${key}`}
-            action="direction-add"
-            arg={String(earliest.id || '')}
-            focusKey={`direction-add:${key}`}
-            onPress={() =>
-              void openDirection(ctx, session, String(earliest.id || ''), n ?? null, true)
-            }
-          />
-          <DirectionGoalButton factId={String(earliest.id || '')} scope="question" />
-          <DirectionActionButton
-            feedbackKey={`direction-keep:${key}`}
-            weight="secondary"
-            label={KEEP}
-            busyLabel="Leaving…"
-            pendingKey={`direction-keep:${key}`}
-            inert={!keepPending && (edited || Boolean(request?.pending))}
-            describes={described}
-            action="direction-keep"
-            focusKey={`direction-keep:${key}`}
-            fallbackKey={`reading:${key}`}
-            onPress={() => void keepIntent(ctx, session, projectKey)}
-          />
-          {buttons}
-        </div>
-        {edited ? (
-          <p className="next-cockpit-reading-why" id={REFUSED_ID}>
-            {reason}
-          </p>
-        ) : null}
-        {after}
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {pending.map((entry) => (
+                <SelectItem key={entry.id} value={entry.id}>
+                  {directionLabel(entry)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Label>
+      ) : null}
+      <WholeList pending={pending} selected={String(earliest.id || '')} />
+      <div className="next-cockpit-reading-ask items-start">
+        <DirectionActionButton
+          fit
+          weight={primary ? 'primary' : 'secondary'}
+          feedbackKey={`direction-add:${key}`}
+          label={ADD_DIRECTION}
+          busyLabel="Opening…"
+          pendingKey={`direction-add:${key}`}
+          action="direction-add"
+          arg={String(earliest.id || '')}
+          focusKey={`direction-add:${key}`}
+          onPress={() =>
+            void openDirection(ctx, session, String(earliest.id || ''), n ?? null, true)
+          }
+        />
+        <DirectionGoalButton factId={String(earliest.id || '')} scope="question" />
+        <DirectionActionButton
+          fit
+          feedbackKey={`direction-keep:${key}`}
+          weight="secondary"
+          label={KEEP}
+          busyLabel="Leaving…"
+          pendingKey={`direction-keep:${key}`}
+          inert={!keepPending && (edited || Boolean(request?.pending))}
+          describes={described}
+          action="direction-keep"
+          focusKey={`direction-keep:${key}`}
+          fallbackKey={`reading:${key}`}
+          onPress={() => void keepIntent(ctx, session, projectKey)}
+        />
       </div>
-    </>
+      {edited ? (
+        <p className="next-cockpit-reading-why" id={REFUSED_ID}>
+          {reason}
+        </p>
+      ) : null}
+    </div>
   );
 }

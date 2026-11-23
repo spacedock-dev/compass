@@ -67,7 +67,7 @@ describe('the question before the press', () => {
     expect(text('[data-next-cockpit-direction-whole]')).toContain('Do it the careful way');
     expect(
       [...document.querySelectorAll('.next-cockpit-reading-ask button')].map((b) => b.textContent),
-    ).toEqual(['Add as a line', 'Make it the goal', 'Leave it', 'Check progress']);
+    ).toEqual(['Add as a line', 'Make it the goal', 'Leave it']);
     expect(page.posts('/api/annotate')).toBe(0);
   });
 
@@ -551,7 +551,7 @@ describe('Leave it', () => {
     await press(control('direction-keep'));
     expect(presses(page)).toEqual([]);
     expect(text('#next-cockpit-cue-status')).toBe(
-      'Save your intent, or undo your edit, to analyze drift.',
+      'Save your goal or undo your edit to check progress.',
     );
   });
 

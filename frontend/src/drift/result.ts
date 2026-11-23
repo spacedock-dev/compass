@@ -817,12 +817,14 @@ export function citedLine(entry: WorkEntry): string {
 }
 
 /* An entry as the verdict sentence names it, with its time. */
-function entryPhrase(entry: WorkEntry): string {
+function entryPhrase(entry: WorkEntry, plain = false): string {
   const kind =
     entry.subject === 'command' || entry.subject === 'ci_command'
       ? `a ${commandKind(entry).toLowerCase()}`
       : entry.subject === 'check'
-        ? `a ${String(entry.result || 'recorded')} check`
+        ? plain
+          ? `a ${String(entry.result || 'recorded')} test or build`
+          : `a ${String(entry.result || 'recorded')} check`
         : entry.subject === 'write'
           ? 'a file write'
           : entry.subject === 'pr'
@@ -871,7 +873,9 @@ export function verdictLine({
   heldBack = [],
   byId,
   midFlight,
+  plain = false,
 }: {
+  readonly plain?: boolean;
   readonly answer: Answer;
   /** The analysis level's word, or empty where no level stands for this reading. */
   readonly level: string;
@@ -924,10 +928,10 @@ export function verdictLine({
   if (first && distinct.length === 1) {
     const all = answer.count === 1 ? '' : answer.count === 2 ? 'both ' : 'all ';
     where = held.every((rows) => rows.length)
-      ? `, ${all}at ${entryPhrase(first)}`
-      : `, at ${entryPhrase(first)}`;
+      ? `, ${all}at ${entryPhrase(first, plain)}`
+      : `, at ${entryPhrase(first, plain)}`;
   } else if (first && second && distinct.length === 2) {
-    where = `, at ${entryPhrase(first)} and ${entryPhrase(second)}`;
+    where = `, at ${entryPhrase(first, plain)} and ${entryPhrase(second, plain)}`;
   } else if (distinct.length > 2) {
     const times = distinct
       .map((entry) => nextNumber(entry.at))
@@ -938,7 +942,9 @@ export function verdictLine({
         : '';
     where = `, citing ${String(distinct.length)} entries${span}`;
   }
-  return levelled(`${count}${where}.`);
+  return plain
+    ? `${midFlight ? 'So far, Compass found' : 'Compass found'} ${count}${where}.`
+    : levelled(`${count}${where}.`);
 }
 
 /* How much of a session a reading may cover and still be called early. A judgement, not a measurement: it is
@@ -953,19 +959,19 @@ export const LIVE_HIDDEN =
    is the empty one over an outcome line, the session was not finished, the record was read from its start, and
    the span from its first entry to the end of what the reading read is inside the window. Nothing otherwise,
    because a start the page cannot see would make "early" a default. */
-export function earlyLine(
+export function earlyReadingSeconds(
   answer: Answer,
   shape: Shape,
   raw: unknown,
   entries: readonly WorkEntry[],
-): string {
+): number | null {
   if (
     answer.kind !== 'cant-tell' ||
     shape.scope === 'final' ||
     shape.coverage?.tail_truncated !== false ||
     !shape.criteria.some((row) => isOutcomeLine(row.key))
   ) {
-    return '';
+    return null;
   }
   const through = nextNumber((raw as Row | null)?.['evidence_through']);
   const times = entries
@@ -978,9 +984,21 @@ export function earlyLine(
     through - first <= 0 ||
     through - first >= EARLY_SECONDS
   ) {
-    return '';
+    return null;
   }
-  return `Early: this reading covers only the first ${fmtDur(through - first)} of the session. Read again once it has run its checks.`;
+  return through - first;
+}
+
+export function earlyLine(
+  answer: Answer,
+  shape: Shape,
+  raw: unknown,
+  entries: readonly WorkEntry[],
+): string {
+  const span = earlyReadingSeconds(answer, shape, raw, entries);
+  return span === null
+    ? ''
+    : `Early: this reading covers only the first ${fmtDur(span)} of the session. Read again once it has run its checks.`;
 }
 
 /* The model a stored reading names, from the stamp the server composes as "<model> · read at HH:MM". Only
