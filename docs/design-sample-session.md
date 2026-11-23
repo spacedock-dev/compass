@@ -288,8 +288,8 @@ measures 2,404,243 bytes. This sets the page bound to the measured 2,418,351 byt
 increase of 1,060 bytes over the previous bound. The fixture bound is 250,000 bytes.
 
 On 2026-11-23, the progress check control labels, Uses AI note, level source lines and sending
-disclosures brought the packaged page from 2,417,291 bytes at `d66ed1bc` to 2,417,679 bytes.
-The page bound rises by the measured 388 bytes (0.016%). The fixture bound stays at 250,000 bytes.
+disclosures added 388 bytes. Restacked on the corrected technical tabs, the packaged page measures
+2,418,739 bytes, and the page bound is that measured figure. The fixture bound stays at 250,000 bytes.
 
 ## View only
 
