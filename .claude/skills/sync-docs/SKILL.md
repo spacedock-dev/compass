@@ -51,6 +51,7 @@ diff-and-reconcile pass, not a rewrite.
 | `compass/skills/compass/SKILL.md` and its bundled `reference/*.md` | **Canonical** product surface: the loaded body holds terminal actions, disclosures and start/status/stop; the references hold data sources, session states, Intent and drift, notifications, options, interpretation notes and common mistakes. | *Shipped, validated artifacts* — see the constraints below. They are installed without the repository, so links must resolve inside the installed plugin and must never describe repo process. Keep the complete action body within 24,000 bytes. |
 | `docs/promise-map.md` | **Canonical** user-facing promise: the five questions of a user's day, one promise each, the shipped capability that backs it, and the limit that keeps it honest. | A promise may not enter it before the capability ships, and the wording of each promise is duplicated verbatim in `docs/visibility-2x2/items.json` (`columns[].promise`) and in the Linear project description. Change one, change all three. [Development tracking](../../../docs/development-tracking.md#how-work-links-to-a-promise) owns promise IDs and the move taxonomy; keep them out of user-facing tracker prose. |
 | `docs/development-tracking.md` | **Canonical** development taxonomy: promise IDs, journey labels, board columns, moves and tracker copies. | Preserve development provenance here; the public promise map owns reader-facing behavior and limits. |
+| `docs/design-calm-compass.md` | **Canonical** redesign record and glossary for the first layer and technical details. | Keep the glossary's five columns and row order. The [glossary test](../../../frontend/src/language/glossary.test.ts) compares them with [`frontend/src/language/glossary.ts`](../../../frontend/src/language/glossary.ts). Change the table and module together. |
 | `docs/flaky-tests.md` | The flaky-test ledger: one row per test that failed in CI and passed on the same code, and a second table of flakes seen only under local load, with their causes. | Rows come from AGENTS.md's "Flaky tests" rule, not from a docs pass. Keep the table's columns; `scripts/tests/test_flaky_tally.py` reads it and refuses a malformed row. |
 | `docs/design-runtime-architecture.md` | **Canonical** module map: what each runtime file owns, the inward-only dependency rule, top-level import identity, and the config/state/application split. | Other design docs link here for the module map instead of restating it. The import allowlist it describes is asserted by a test. |
 | `docs/design-*.md` | The durable *why/how* per area — decisions that outlive the build, **including alternatives that were tried and rejected and the reason why**. | A decision earns a place here if re-deriving it would cost a day, or if a maintainer would otherwise re-attempt something already proven wrong. |
@@ -106,6 +107,23 @@ publishing. An external body must be read back and checked after publication; th
 cannot inspect it. Moving the promise taxonomy also requires repointing all development consumers
 to [its owner](../../../docs/development-tracking.md#how-work-links-to-a-promise) while keeping the
 five canonical promise sentences unchanged.
+
+## Product words in docs
+
+Name each control by the first-layer label the page ships. If a reader needs the technical
+name too, put it in parentheses after the first mention in the section, then use the plain
+label. Use the ruled form `How <subject> works` for explanation links and take the subject
+from the glossary. Keep CLI flags, skill action names, route slugs, data tokens and model
+prompt text verbatim.
+
+Keep the words in anchored headings so existing links resolve. Design records keep the
+names that were true when the decision was made. Link to the
+[current glossary](../../../docs/design-calm-compass.md#glossary) for today's names. A
+changed signed ruling belongs in a dated owner amendment in its own record, with a link
+to the redesign record.
+
+Use the glossary when writing the shipped skill, which has a 24,000-byte body cap. Keep
+the glossary itself in its owning design record and module.
 
 ## Voice and tone
 
@@ -337,8 +355,10 @@ minutes, a Python version. Stale counts are this repository's most common drift.
    above is the ground truth. If the marker is missing or unresolvable, fall back to
    `origin/main..HEAD` and say so in the report.
 2. **Reconcile each doc against the code truth.** Every real item must appear correctly wherever it
-   is documented, and every doc claim must still match the code. Build the full checklist of edits
-   before making any. **Prune as you go:** tighten entries that bloated into specs, collapse an
+   is documented, and every doc claim must still match the code. Take control names from the
+   [glossary module](../../../frontend/src/language/glossary.ts) and confirm them on the rendered page.
+   Build the full checklist of edits before making any. **Prune as you go:** tighten entries
+   that bloated into specs, collapse an
    explanation repeated across docs down to the one owner plus a link, and delete shipped TODOs and
    caveats that no longer apply.
 3. **Diff the command lists against each other.** The pre-PR suite, the CI workflows and the PR
@@ -402,7 +422,7 @@ minutes, a Python version. Stale counts are this repository's most common drift.
    then cannot resolve the marker it is supposed to read. A merge-base sha is already on `main` and
    stays there. (This was learned twice the hard way: markers pointing at `a4eb54c` and `ef480af`
    were both orphaned by the squash that shipped them.)
-10. **Verify.** All five checks, every run. Use `git status`/`git diff HEAD`, **not** plain
+10. **Verify.** All six checks, every run. Use `git status`/`git diff HEAD`, **not** plain
    `git diff` — a bare `git diff` shows neither your new untracked docs nor a staged deletion, so it
    reports "clean" for exactly the changes this pass makes:
    ```bash
@@ -423,7 +443,7 @@ minutes, a Python version. Stale counts are this repository's most common drift.
    python3 -m unittest discover -s compass/skills/compass/tests -t .
 
    # e. Tone: no em/en dashes or curly quotes in the human-facing prose docs. Nothing in CI
-   #    enforces this, so it is the one anti-drift check that only exists here.
+   #    enforces this.
    #    `git ls-files` builds the list, for two reasons. Step 4 deletes plan docs, and a bare
    #    `docs/plans/*.md` that matches nothing stays literal and makes grep exit 2 on a
    #    "No such file" error. And `docs/plans/` is where per-issue deep-dive notes are kept
@@ -449,17 +469,102 @@ minutes, a Python version. Stale counts are this repository's most common drift.
    else
      echo "tone clean"
    fi
+
+   # f. Product words: run this command from the repository root with the pinned Node version.
+   #    Default: report new occurrences on the branch, including staged and untracked docs.
+   #    Set PRODUCT_WORDS_SCOPE=--all for a full inventory, or set it to a scratch file's path.
+   python3 - "${PRODUCT_WORDS_SCOPE:---branch}" <<'PY'
+   from collections import Counter
+   import json
+   from pathlib import Path
+   import re
+   import subprocess
+   import sys
+
+   from scripts.validate_plugins import ROOT, _public_doc_candidate, _public_document
+
+   def git(*args):
+       return subprocess.check_output(["git", *args], cwd=ROOT, text=True, encoding="utf-8")
+
+   glossary = json.loads(subprocess.check_output(
+       ["node", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--input-type=module", "-e",
+        "import { GLOSSARY } from './frontend/src/language/glossary.ts';"
+        "console.log(JSON.stringify(GLOSSARY));"],
+       cwd=ROOT, text=True, encoding="utf-8",
+   ))
+   # These rows use former labels in Replaces. Other rows describe migrations
+   # in prose, or name state and progress values rather than controls.
+   control_rows = """
+   goal doneLooksLike intent checkProgress checkProgressAgain progressCheck
+   progressRecords departureRecorded readingLooksWrong updateGoalInstead attention
+   pauseAi resumeAi aiAllowance progressCheckReadSize howGoalsWork howFilterCountsWork
+   howSessionHistoryWorks howProgressChecksWork howProjectGroupingWorks howAiAllowanceWorks
+   isItOnTrack activityLog
+   """.split()
+   labels = {
+       label for key in control_rows for label in glossary[key]["replaces"].split(", ")
+       if label != glossary[key]["plain"]
+   }
+   longest_first = sorted(labels, key=lambda name: (-len(name), name))
+   alternatives = "|".join(map(re.escape, longest_first))
+   retired = re.compile(rf"(?<![\w-])(?:{alternatives})(?![\w-])")
+   parenthetical = re.compile(rf"""\(\s*([`"']?)(?:{alternatives})\1\s*\)""")
+
+   scope = sys.argv[1]
+   base = git("merge-base", "origin/main", "HEAD").strip() if scope == "--branch" else None
+   if scope in {"--all", "--branch"}:
+       untracked = git("ls-files", "-z", "--others", "--exclude-standard")
+       tracked = (
+           git("diff", "--name-only", "-z", "--diff-filter=ACMRT", "--no-renames", base, "--")
+           if base else git("ls-files", "-z")
+       )
+       paths = [
+           ROOT / name for name in sorted(set((tracked + untracked).split("\0")) - {""})
+           if _public_doc_candidate(ROOT / name) and _public_document(ROOT / name)
+       ]
+   else:
+       paths = [Path(scope)]
+
+   found = False
+   for path in paths:
+       if not path.exists() and scope in {"--all", "--branch"}:
+           continue  # Tracked deletion.
+       display = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+       previous = Counter()
+       if base:
+           source = f"{base}:{display.as_posix()}"
+           if subprocess.run(
+               ["git", "cat-file", "-e", source], cwd=ROOT, capture_output=True, check=False
+           ).returncode == 0:
+               previous.update(git("show", source).splitlines())
+       for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+           if previous[line]:
+               previous[line] -= 1
+           elif retired.search(parenthetical.sub("", line)):
+               print(f"{display}:{number}:{line}")
+               found = True
+   if found:
+       print("PRODUCT WORD DRIFT: review the lines above")
+   else:
+       print("product words clean")
+   sys.exit(int(found))
+   PY
    ```
+   Review exact matches in context. The scan can also find an anchored heading or an ordinary
+   use of a word that once named a control. Leave the heading intact and use the glossary
+   wording in nearby prose. The branch scan compares occurrences with the merge base, so an
+   unchanged match appears only in the full inventory.
+
    **Then decide whether you owe the full gate, by who authors the PR:**
-   - **Pre-PR-gate run** — checks a to e are enough. The suite in `AGENTS.md` § Pre-PR Checks ran on
+   - **Pre-PR-gate run** — checks a to f are enough. The suite in `AGENTS.md` § Pre-PR Checks ran on
      this same tree minutes ago and the human author owns the result.
    - **Standalone/periodic run** — you are the PR author, so run the **whole** pre-PR suite from
      `AGENTS.md` before opening anything. `quality-gate` is a required check covering ruff, format,
      `mypy --strict`, the frontend lint, strict types and tests, coverage against `fail_under`, and, for a
-     platform-sensitive change, `platform-tests` on macOS; none of that is implied by a to e. Opening a PR you have not gated pushes your own
+     platform-sensitive change, `platform-tests` on macOS; none of that is implied by a to f. Opening a PR you have not gated pushes your own
      verification onto the reviewer.
 
-   Never open or update a PR on the strength of a to e alone.
+   Never open or update a PR on the strength of a to f alone.
 11. **Stage, commit in the right place, then report.** Never commit to `main`. Stage explicitly —
     new docs are untracked, so `git commit -a` would silently skip them:
     ```bash
@@ -491,5 +596,7 @@ minutes, a Python version. Stale counts are this repository's most common drift.
 - A `docs/design-*.md` entry that explains why an approach was **rejected**. It describes code that
   does not exist, which is exactly what makes it look stale and exactly why it is there. Never
   prune it on those grounds.
+- Old control names in a design record are part of the decision's history. Keep the names and add
+  a pointer to the [current glossary](../../../docs/design-calm-compass.md#glossary) when needed.
 - Version and description fields, per the hard boundaries above.
 - Any file in the exclusion table, or any file whose classification you are unsure of.
