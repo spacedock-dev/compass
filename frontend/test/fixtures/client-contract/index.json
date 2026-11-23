@@ -869,14 +869,14 @@
       "method": "GET",
       "name": "sessions-terminal-project",
       "route": "/api/sessions",
-      "sha256": "c3352a7d92e6b4a95a6f96d2b5598d5198b1985b908ad0d8b49258a382f9333d",
+      "sha256": "7dbc12f7ad9f006030ae987841a8647be475867018a0175a044b1668e5c3bacf",
       "status": 200
     },
     {
       "method": "GET",
       "name": "sessions-terminal-project-fo",
       "route": "/api/sessions",
-      "sha256": "3d93f52709f69711de622dd39fe77215b3de69b46668efe0cbb7645340de2383",
+      "sha256": "0810ade6f1f261b39f6502089485fd33be533513dbcff685ce02b954553a3a6b",
       "status": 200
     },
     {

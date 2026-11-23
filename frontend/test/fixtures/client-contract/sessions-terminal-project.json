@@ -31,6 +31,7 @@
       ],
       "sessions": [
         {
+          "acquisition": null,
           "annotation_assessment": null,
           "annotation_goal": "",
           "annotation_goal_source": null,
@@ -84,6 +85,7 @@
           "waiting_on_child": null
         },
         {
+          "acquisition": null,
           "annotation_assessment": null,
           "annotation_goal": "",
           "annotation_goal_source": null,
@@ -143,6 +145,7 @@
           "waiting_on_child": null
         },
         {
+          "acquisition": null,
           "annotation_assessment": null,
           "annotation_goal": "",
           "annotation_goal_source": null,
@@ -201,6 +204,7 @@
           "waiting_on_child": null
         },
         {
+          "acquisition": null,
           "annotation_assessment": null,
           "annotation_goal": "",
           "annotation_goal_source": null,
@@ -250,13 +254,15 @@
           "waiting_on_child": null
         }
       ],
+      "show_all": false,
       "tripwires": {
         "enabled": false
-      }
+      },
+      "window_hours": 24.0
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "5144",
+      "Content-Length": "5257",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json"
     },
