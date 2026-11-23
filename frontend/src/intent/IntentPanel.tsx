@@ -176,7 +176,7 @@ export function IntentPanel({
               <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
                 <h2
                   id="next-session-drift-heading"
-                  className="m-0 text-title font-bold text-foreground"
+                  className="m-0 text-head font-bold text-foreground"
                 >
                   {GLOSSARY.isItOnTrack.plain}
                 </h2>

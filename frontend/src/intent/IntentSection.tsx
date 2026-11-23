@@ -145,7 +145,7 @@ function SavedGoal({ goal }: { readonly goal: string }) {
         {`${provenance} · ${when}`}
         {written ? '' : (source.match(/ · saved( · .*)$/)?.[1] ?? '')}
       </p>
-      <p className="wrap-anywhere text-title font-bold">{goal}</p>
+      <p className="wrap-anywhere text-value font-bold">{goal}</p>
       {lines.length ? (
         <div>
           <h3 className="text-body font-semibold">What “done” looks like</h3>
@@ -203,7 +203,7 @@ export function IntentSection({ editable }: { readonly editable: boolean }) {
         <span className="flex items-baseline">
           <h2
             id="next-session-intent-heading"
-            className="m-0 text-title font-bold"
+            className="m-0 text-head font-bold"
             ref={heading}
             tabIndex={-1}
             data-next-focus={`intent:${compatSessKey(session)}`}

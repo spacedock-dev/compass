@@ -118,7 +118,7 @@ describe('the Intent how-to', () => {
       );
       expect(popup.textContent).toContain('Compass never writes into sessions.');
       expect(popup.querySelector('[data-next-intent-howto-no-line]')?.textContent).toBe(
-        'Without outcome lines, the goal needs a specific end state.',
+        "With no outcome line, Compass reads your goal's end state. A goal too vague to read is refused.",
       );
       expect(popup.textContent).not.toContain('Not enough recorded yet');
       expect(popup.querySelector('[data-next-intent-howto-settle]')?.textContent).toBe(

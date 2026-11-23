@@ -15,12 +15,11 @@
 @source '../ui/**/*.{ts,tsx}';
 @source '../lib/**/*.{ts,tsx}';
 @source '../terminal/TerminalSurface.tsx';
-@source '../intent/{DirectionQuestion,GoalField,HowTo,IntentPanel,IntentSection,LiveMonitorSwitch,OutcomeLines,DirectionActionButton}.tsx';
+@source '../intent/{DirectionActionButton,DirectionQuestion,GoalField,HowTo,IntentPanel,IntentSection,LiveMonitorSwitch,OutcomeLines,PromptSelect}.tsx';
 @source '../capacity/CapacityStrip.tsx';
 @source '../sessions/{SessionDetail,WhatItDid,SummaryParts,DepartureParts,DetailParts,SessionsView,SessionsGlance,SessionsFilters,WaitingBlock,SessionAiPrivacy,SessionCheckSettings}.tsx';
 @source '../attention/AttentionView.tsx';
 @source '../steering/{StageConditions,Tripwires}.tsx';
-@source '../intent/{IntentSection,HowTo,PromptSelect,DirectionQuestion}.tsx';
 @source '../sample/**/*.{ts,tsx}';
 @source '../shell/{Breadcrumb,Header,UpdateNotice}.tsx';
 @source '../attention/WorthALookFlag.tsx';

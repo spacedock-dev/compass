@@ -117,7 +117,7 @@ Code session, turning on the Live monitor, or setting an endpoint URL.
 |---|---|---|---|
 | Quota reading | On by default | Your login token to your vendor, so the page can show quota windows. No session content. The Anthropic login covers any harness signed in to the same Claude subscription; Cursor is read on macOS only. | The switch in the page, or `--no-usage` |
 | Model calls | When you press a button that needs one, open a finished Claude Code session, or turn on the Live monitor | Session content, through the Claude Code or Codex CLI already on your machine, signed in as you | Pause all AI use, or `--no-observer-model` |
-| CI checks | When you press Analyze drift on a session tied to a pull request (or a GitLab merge request your goal names by its URL, on a host `glab` already knows), in a session whose folder is known | The repository and the pull request number, or the branch name, through your own `gh` or `glab`. The checks it reads go on to the reading model. Where GitHub names the required checks, only those count. | The switch beside the notice, `--no-ci-read`, or anything that stops model calls |
+| CI checks | When you press Check progress on a session tied to a pull request (or a GitLab merge request your goal names by its URL, on a host `glab` already knows), in a session whose folder is known | The repository and the pull request number, or the branch name, through your own `gh` or `glab`. The checks it reads go on to the reading model. Where GitHub names the required checks, only those count. | The switch beside the notice, `--no-ci-read`, or anything that stops model calls |
 | Release lookup | On by default; after server start and at most once per UTC day per Compass home | Only a `compass/<version> (<os>; <arch>[; ci][; internal])` User-Agent beyond urllib's standard headers to spacedock.md, with no query string. The route counts the lookup itself from its headers. The site counts checks in PostHog without an IP and in Plausible with the caller's IP and user agent; CI-marked checks are not counted. Plausible stores neither and derives approximate location from the address. No identifier or session content. | Turn off daily update checks in Settings, or `--no-update-check` |
 | Reach nudges | Only after you set an endpoint URL | Counts only, such as how many sessions are waiting on you, to the endpoint you set | Leave the URL unset, or `--no-reach` |
 
@@ -128,13 +128,13 @@ how much.
 One more path starts from you and is not traffic Compass sends. When you invoke the `compass` skill
 with `sessions` or `sessions waiting`, the agent runs that read-only operation and the list it prints
 becomes part of that session's context, so it goes to that session's model provider. `drift` and
-`drift again` do the same with that session's own drift reading, and can spend one reading, as
-Analyze drift does; the correction stays out of the session. The list covers
+`drift again` do the same with that session's own progress reading. Like Check progress, they can
+spend one reading. The correction stays out of the session. The list covers
 every session on the board, in any harness or project, and
 [what can reach into a session](../SECURITY.md#what-can-reach-into-a-session) names each field and what
 does and does not stop it. The same command run in a terminal outside the session prints to that
 terminal only. There `--drift` needs `--session claude:SESSION_ID` (or `codex:THREAD_ID`) and refuses without it, and a
-reading it asks for is stored on the session's page as Analyze drift's is.
+reading it asks for is stored on the session's page alongside readings from Check progress.
 
 ### What calls a model
 
@@ -143,7 +143,7 @@ your machine.
 
 | What happens | Which CLI |
 |---|---|
-| You press Analyze drift | Claude Code for a Claude Code session (Codex if `claude` is not installed), Codex for a Codex session, and Codex first for other harnesses |
+| You press Check progress | Claude Code for a Claude Code session (Codex if `claude` is not installed), Codex for a Codex session, and Codex first for other harnesses |
 | You open a finished Claude Code session, press Summarize or Update summary, or request a summary from the terminal | Claude Code, to write the session summary; a stored terminal read spends nothing |
 | You press Find goal | A model reads the prompts you typed to find the session's goal |
 | You press Summarize this session in a project's Console | Codex, to summarize the focused session and up to three active child sessions |

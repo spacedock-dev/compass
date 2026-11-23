@@ -24,7 +24,7 @@ Four steps, and only the first two are required.
    harness it finds on the machine regardless of which one launched it. No account, no cloud
    service, no repository token. The server binds IPv4 loopback and nothing else.
 3. Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
-   goal and press `Analyze drift`. The Goal card's `How goals work` disclosure explains the steps, the
+   goal and press `Check progress`. The Goal card's `How goals work` disclosure explains the steps, the
    reading's limits and what a goal with no expected outcome line is read against.
 
    Sessions separates active work from recent history and gives each active
@@ -87,10 +87,10 @@ disabled rather than silently missing.
 current turn it is, and an estimate of when that turn ends. It tells you when that changes instead
 of making you poll. The first screen sets your goal or a permitted prompt beside current activity
 and brings recorded departures forward. The session page tells you what a reading sends and where. AI use and privacy in technical
-details keeps the disclosure with exact sizes in bytes. Pause all AI use stops Analyze drift, goal summaries, session
+details keeps the disclosure with exact sizes in bytes. Pause all AI use stops progress checks, goal summaries, session
 summaries and the Live monitor until Resume AI use. Turn off summaries stops session summaries
 only; while paused it stays disabled and keeps its saved answer. Open a session, set a goal and
-press Analyze drift. The Goal card's How goals work disclosure explains
+press Check progress. The Goal card's How goals work disclosure explains
 the steps and the limits; with no outcome line, Compass reads your goal's end state; a goal too
 vague to read is refused under the Goal field, with no level for that run. On Claude Code sessions,
 you can turn on the Live monitor from the page or with `--monitor` in a terminal. It says what it sends and how to stop. With no saved goal or outcome lines, a terminal start saves the page's drafted goal and prints its source and the session page URL; with no draft it says why no check can run. About once a minute while you view the session or a terminal holder keeps it on, a Haiku check
@@ -223,7 +223,7 @@ status, and a pending one is not a pass. A reading by another vendor than the se
 command's line and exit status and no output
 ([DEC-29](design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes),
 [DEC-31](design-reading-a-session.md#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor)).
-Pressing Analyze drift also reads one pull request's CI checks from GitHub with your own `gh` login
+Pressing Check progress also reads one pull request's CI checks from GitHub with your own `gh` login
 when your goal names the pull request by its URL, or when a Claude Code session records one for the
 repository its folder points at, and only in a session whose folder is known, since the pull request's head
 has to match its commit

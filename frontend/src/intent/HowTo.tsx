@@ -71,7 +71,8 @@ export function GoalExplanation() {
           data-next-intent-howto-limit
         >{`Compass can read recorded work from ${listed(WORK_HARNESSES)}. Progress levels appear only for ${listed(WORK_HARNESSES.filter((key) => key !== 'codex'))} sessions. ${availability} Compass never writes into sessions.`}</p>
         <p data-next-intent-howto-no-line>
-          Without outcome lines, the goal needs a specific end state.
+          With no outcome line, Compass reads your goal's end state. A goal too vague to read is
+          refused.
         </p>
         <p data-next-intent-howto-settle>
           The latest unpiped run settles when it fails or passes with no later write. Writes outside

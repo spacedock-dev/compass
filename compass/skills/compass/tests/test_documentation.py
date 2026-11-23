@@ -2928,7 +2928,7 @@ class TheLiveMonitorIsSaidToCallAModelTest(unittest.TestCase):
         self.assertIn("the Live monitor", self._text("docs/promise-map.md"))
         self.assertRegex(
             self._text("docs/promise-map.md"),
-            r"Pause all AI use stops Analyze drift, goal summaries, session summaries and the Live monitor",
+            r"Pause all AI use stops progress checks, goal summaries, session summaries and the Live monitor",
         )
 
     def test_a_person_knows_when_terminal_monitoring_spends_with_nobody_watching(self) -> None:
