@@ -66,6 +66,15 @@ describe.each(families)('%s', (_name, family, key) => {
 });
 
 describe('the two consents', () => {
+  it('uses the tab’s plan usage decline when a readable stored grant cannot be replaced', () => {
+    const store = createLegacyStorage(() =>
+      readOnlyBackend({ [STORAGE_KEYS.usageConsent]: 'granted' }),
+    ).usageConsent;
+    expect(store.get()).toBe('granted');
+    expect(store.set('declined')).toBe(false);
+    expect(store.get()).toBe('declined');
+  });
+
   it('are independent keys and independent memos', () => {
     const backend = fakeBackend();
     const storage = createLegacyStorage(() => backend);

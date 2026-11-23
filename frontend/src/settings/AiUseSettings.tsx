@@ -1,5 +1,6 @@
 import { useId } from 'react';
-import { parseGrant } from '../api/summary';
+import { parseGrant, parseSummaryPreference } from '../api/summary';
+import type { SettingsBody } from '../api/types';
 import { Disclosure } from '../controls';
 import { GLOSSARY } from '../language/glossary';
 import { isRecord } from '../observed';
@@ -15,17 +16,24 @@ import { SettingsRow } from './SettingsRow';
 function SummariesSwitch({ paused }: { readonly paused: boolean | null }) {
   const descriptionId = useId();
   const shell = useShell();
-  const data = useDisplayed((snapshot) => snapshot.data);
-  const pending = useDisplayed((snapshot) => snapshot.pending.includes('summary-grant:settings'));
+  const { data, failures, pending: writes } = useDisplayed((snapshot) => snapshot);
+  const pending = writes.some((key) => key.startsWith('summary-grant:'));
+  const pauseSaving = writes.includes('reading-off') || writes.includes('reading-on');
   const held = summaryHeldFor(shell.runtime);
   const note = useSummaryHeld(held, 'settings');
-  const grant = grantShown(held, parseGrant(data?.['summaries']), Number(data?.generated ?? 0));
+  const grant = grantShown(
+    held,
+    failures ? null : parseSummaryPreference(data?.['summaries']),
+    Number(data?.generated ?? 0),
+  );
   const available = paused !== null && grant && grant.reason !== 'store-unavailable';
   const on = available && !paused && !grant.off;
   const words = paused
     ? 'Paused while AI use is paused.'
     : !available
-      ? 'The Summaries setting is unavailable.'
+      ? failures
+        ? 'Compass could not refresh the Summaries setting.'
+        : 'The Summaries setting is unavailable.'
       : grant.off
         ? 'Summaries are off.'
         : grant.reason === 'daily-cap'
@@ -37,14 +45,12 @@ function SummariesSwitch({ paused }: { readonly paused: boolean | null }) {
         title="Summaries"
         description={
           <>
-            <p className="m-0">
-              Write a short summary when you open a finished Claude Code session.
-            </p>
+            <p className="m-0">Write a short summary when you open a ended Claude Code session.</p>
             <p id={descriptionId} className="m-0">
               {words}
             </p>
             <p className="m-0" role="status">
-              {note.failed}
+              {pending ? 'Saving the Summaries preference…' : note.failed}
             </p>
           </>
         }
@@ -53,9 +59,9 @@ function SummariesSwitch({ paused }: { readonly paused: boolean | null }) {
           <Switch
             aria-label="Summaries"
             aria-describedby={descriptionId}
-            aria-disabled={paused || pending || undefined}
+            aria-disabled={paused || pending || pauseSaving || undefined}
             aria-busy={pending || undefined}
-            readOnly={paused || pending || false}
+            readOnly={paused || pending || pauseSaving}
             checked={Boolean(on)}
             onCheckedChange={(next) => void setSummaries(shell, null, next)}
           />
@@ -65,7 +71,8 @@ function SummariesSwitch({ paused }: { readonly paused: boolean | null }) {
   );
 }
 
-function WhatIsSent({ promptBytes }: { readonly promptBytes: number | null }) {
+function WhatIsSent({ settings }: { readonly settings: SettingsBody | null }) {
+  const promptBytes = settings?.values['analyze_prompt_bytes'];
   const board = useDisplayed((snapshot) => (snapshot.failures ? null : snapshot.data));
   const summary = parseGrant(board?.['summaries']);
   const routes = board?.reading_routes;
@@ -99,13 +106,17 @@ function WhatIsSent({ promptBytes }: { readonly promptBytes: number | null }) {
             <p className="m-0">
               Published destinations: <span data-authored>{destinations.join(', ')}</span>.
             </p>
+          ) : board?.annotate === true && board.sessions?.length === 0 ? (
+            <p className="m-0">There are no sessions with a progress check destination yet.</p>
           ) : (
             <p className="m-0">The progress check destination is unavailable.</p>
           )}
           <p className="m-0">
-            {promptBytes === null
+            {promptBytes === undefined
               ? 'The saved prompt size limit is unavailable.'
-              : `Saved prompt size limit: ${kilobytes(promptBytes)}.`}
+              : settings?.store_readable === false
+                ? `Using the recommended prompt size limit: ${kilobytes(promptBytes)}. Compass could not read the saved limit.`
+                : `Saved prompt size limit: ${kilobytes(promptBytes)}.`}
           </p>
         </div>
         <div>
@@ -123,7 +134,7 @@ function WhatIsSent({ promptBytes }: { readonly promptBytes: number | null }) {
   );
 }
 
-export function AiUseSettings({ promptBytes }: { readonly promptBytes: number | null }) {
+export function AiUseSettings({ settings }: { readonly settings: SettingsBody | null }) {
   return (
     <Card as="section" aria-labelledby="settings-ai-use" className="mt-4 p-0">
       <div className="px-4 pt-4 sm:px-6">
@@ -138,11 +149,12 @@ export function AiUseSettings({ promptBytes }: { readonly promptBytes: number | 
         <AiPauseSwitch>{(paused) => <SummariesSwitch paused={paused} />}</AiPauseSwitch>
       </div>
       <p className="m-0 [border-block-start:1px_solid_var(--rule)] px-4 py-3 text-body text-muted-foreground sm:px-6">
-        <strong className="text-foreground">{GLOSSARY.liveMonitor.plain}:</strong> Turn it on in a
-        session’s technical details. It checks progress about once a minute while you watch.
+        <strong className="text-foreground">{GLOSSARY.liveMonitor.plain}:</strong> Turn it on in the
+        technical details of an eligible Claude Code session. It checks progress about once a minute
+        while you watch.
       </p>
       <div className="[border-block-start:1px_solid_var(--rule)] px-4 sm:px-6">
-        <WhatIsSent promptBytes={promptBytes} />
+        <WhatIsSent settings={settings} />
       </div>
     </Card>
   );

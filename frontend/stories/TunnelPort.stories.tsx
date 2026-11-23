@@ -77,7 +77,7 @@ export const ARefusedActionExplainsTheMatchingPort: Story = {
     const canvas = within(canvasElement);
     const sentence = "For an ssh -L tunnel, the local port must match the Compass server's port.";
     await userEvent.click(await canvas.findByRole('button', { name: 'Customize' }));
-    const field = await canvas.findByRole('slider', { name: 'Messages and checks kept' });
+    const field = await canvas.findByRole('slider', { name: 'Messages, tests and builds kept' });
     await expect(canvas.queryByText(sentence)).toBeNull();
     await expect(field).toHaveAttribute('aria-valuetext', '2,000');
     field.focus();

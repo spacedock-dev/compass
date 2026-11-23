@@ -121,6 +121,20 @@ describe('the Settings screen', () => {
     expect(server.posts()[1]?.body).toEqual({ values: { analyze_prompt_bytes: null } });
   });
 
+  it('keeps confirmed limits when reset answers with an empty receipt', async () => {
+    const server = backend(
+      [production(2097152)],
+      [{ status: 200, body: { values: {}, limits: [] } }],
+    );
+    await mount(server);
+    const card = await open();
+    fireEvent.click(card.getByRole('button', { name: 'Reset Prompt size' }));
+    await flush();
+    expect(card.getByRole('status').textContent).toContain('Compass could not confirm the change.');
+    expect(prompt().getAttribute('aria-valuetext')).toBe('2,048 KB');
+    expect(card.queryByText('Limits saved.')).toBeNull();
+  });
+
   it('posts null for each server limit when the reader resets all', async () => {
     const server = backend([ok({ ...DEFAULTS, analyze_record_events: 5000 })], [ok()]);
     await mount(server);

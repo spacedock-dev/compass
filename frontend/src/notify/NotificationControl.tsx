@@ -1,6 +1,5 @@
 import { useSyncExternalStore } from 'react';
 import { useFocusKey } from '../controls/useFocusKey';
-import { isRecord } from '../observed';
 import { SettingsRow } from '../settings/SettingsRow';
 import { useDisplayed, useShell } from '../shell/context';
 import { Button } from '../ui/button';
@@ -11,25 +10,31 @@ const WORDS: Readonly<Record<string, string>> = {
   denied:
     'Blocked in this browser. To allow notifications, change this site’s permissions in your browser.',
   unsupported: 'This browser does not support desktop notifications.',
-  default: 'Permission has not been requested in this browser.',
+  default: 'No notification permission decision yet.',
 };
 
 export function NotificationControl() {
   const { runtime, controls } = useShell();
   const owner = notifyOwnerFor(runtime);
   useSyncExternalStore(owner.subscribe, owner.version);
-  const native = useDisplayed(({ data }) => isRecord(data) && Boolean(data['native_notify']));
+  const board = useDisplayed((snapshot) => snapshot);
+  const native = Boolean(board.data?.['native_notify']);
+  const browserOwns = Boolean(board.data) && !board.failures && !native;
   const stateRef = useFocusKey<HTMLParagraphElement>(controls.focusLane, 'notify-permission');
   const buttonRef = useFocusKey<HTMLButtonElement>(controls.focusLane, 'notify-enable', {
     fallback: 'notify-permission',
   });
   const permission = owner.permission();
   const pending = owner.requesting();
-  const message = native
-    ? 'Compass sends desktop notifications directly on this computer.'
-    : pending
-      ? 'Waiting for your browser’s permission.'
-      : (WORDS[permission] ?? 'The browser did not report its notification permission.');
+  const message = board.failures
+    ? 'Compass could not refresh the desktop notification setting.'
+    : !board.data
+      ? 'Reading the desktop notification setting.'
+      : native
+        ? 'Compass sends desktop notifications directly on this computer.'
+        : pending
+          ? 'Waiting for your browser’s permission.'
+          : (WORDS[permission] ?? 'The browser did not report its notification permission.');
   return (
     <SettingsRow
       title="Desktop notifications"
@@ -42,11 +47,12 @@ export function NotificationControl() {
         </>
       }
     >
-      {!native && permission === 'default' ? (
+      {browserOwns && permission === 'default' ? (
         <Button
           ref={buttonRef}
           type="button"
           aria-busy={pending || undefined}
+          aria-disabled={pending || undefined}
           onClick={() => owner.request()}
         >
           Allow

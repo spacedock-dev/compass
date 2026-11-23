@@ -131,7 +131,10 @@ def _stored(config: RuntimeConfig) -> dict[str, Any] | None:
 
 def load(config: RuntimeConfig) -> Settings:
     """The settings in force: each stored value that is valid, else its default."""
-    stored = _stored(config) or {}
+    return _effective(_stored(config) or {})
+
+
+def _effective(stored: dict[str, Any]) -> Settings:
     return Settings(
         **{
             limit.key: stored[limit.key] if _valid(limit, stored.get(limit.key)) else limit.default
@@ -140,10 +143,19 @@ def load(config: RuntimeConfig) -> Settings:
     )
 
 
+def preferences(config: RuntimeConfig) -> tuple[Settings, bool, bool]:
+    """The effective limits, update refusal and store readability from one read."""
+    stored = _stored(config)
+    return _effective(stored or {}), _updates_off(stored), stored is not None
+
+
+def _updates_off(stored: dict[str, Any] | None) -> bool:
+    return stored is None or stored.get("no_update_check", False) is not False
+
+
 def no_update_check(config: RuntimeConfig) -> bool:
     """Keep the outbound preference separate from reading limits, and fail closed on damage."""
-    stored = _stored(config)
-    return stored is None or stored.get("no_update_check", False) is not False
+    return _updates_off(_stored(config))
 
 
 def save(config: RuntimeConfig, changes: Mapping[str, Any]) -> Settings:

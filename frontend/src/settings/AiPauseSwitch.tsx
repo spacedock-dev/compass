@@ -1,48 +1,20 @@
 import { useId, useState } from 'react';
 import { readingOff, readingOn } from '../drift/actions';
-import { currentPayload, overlaid } from '../drift/overlay';
-import { readingsOff, readingsOn } from '../drift/route';
-import { driftCtxFor, useDriftVersion } from '../drift/state';
+import { currentPayload } from '../drift/overlay';
 import { GLOSSARY } from '../language/glossary';
-import { isRecord, type Row } from '../observed';
-import { useDisplayed, useShell } from '../shell/context';
 import { Switch } from '../ui/switch';
+import { modelPause, useAiPause } from './useAiPause';
 import type { ReactNode } from 'react';
-
-function modelPause(payload: Row): boolean | null {
-  if (readingsOff(payload)) return true;
-  if (readingsOn(payload)) return false;
-
-  // Summaries publishes the master pause reason even when annotations are off.
-  const summary = payload['summaries'];
-  if (!isRecord(summary)) return null;
-  if (summary['reason'] === 'model-calls-paused') return true;
-  if (summary['reason'] === 'summaries-off' || summary['reason'] === 'daily-cap') return false;
-  return summary['consent'] === true ? false : null;
-}
 
 export function AiPauseSwitch({
   children,
 }: {
   readonly children?: (paused: boolean | null) => ReactNode;
 }) {
-  const shell = useShell();
-  const ctx = driftCtxFor(shell);
-  useDriftVersion(ctx.drift);
-  const board = useDisplayed((snapshot) => snapshot);
-  const payload = board.data
-    ? overlaid(board.data as unknown as Row, ctx.drift.getOverlay(), board.acceptedCount)
-    : null;
-  const fresh =
-    !board.failures ||
-    Boolean(ctx.drift.getOverlay().reading && ctx.drift.getOverlay().stamp === board.acceptedCount);
-  const paused = payload && fresh ? modelPause(payload) : null;
+  const { ctx, paused, fresh, pending } = useAiPause();
   const [failure, setFailure] = useState('');
   const id = useId();
   const label = paused ? GLOSSARY.resumeAi.plain : GLOSSARY.pauseAi.plain;
-  const pending = board.pending.some(
-    (key) => key === 'reading-on' || key === 'reading-off' || /^reading-(off|on):/.test(key),
-  );
 
   if (paused === null) {
     return (
@@ -87,7 +59,9 @@ export function AiPauseSwitch({
           }}
         />
       </div>
-      {failure ? <p role="status">{failure}</p> : null}
+      {pending || failure ? (
+        <p role="status">{pending ? 'Saving the AI pause preference…' : failure}</p>
+      ) : null}
       {children?.(paused)}
     </div>
   );

@@ -12,20 +12,20 @@ const COPY: Readonly<Record<string, { label: string; help: string; scale: number
       unit: 'KB',
     },
     analyze_record_events: {
-      label: 'Messages and checks kept',
-      help: 'How many messages and checks are kept after reading back to where your goal starts.',
+      label: 'Messages, tests and builds kept',
+      help: 'How many messages, tests and builds are kept after reading back to where your goal starts.',
       scale: 1,
       unit: '',
     },
     analyze_listed_checks: {
-      label: 'Checks and files listed',
-      help: 'How many checks and written files are listed for the AI. The session page itself still lists 12.',
+      label: 'Tests, builds and files listed',
+      help: 'How many tests, builds and written files are listed for the AI. The session page itself still lists 12.',
       scale: 1,
       unit: '',
     },
     analyze_scan_megabytes: {
-      label: 'Transcript scanned for checks',
-      help: 'How much of the session and its helpers Compass scans for checks and files. A larger scan takes longer and uses more memory.',
+      label: 'Transcript scanned for tests and builds',
+      help: 'How much of the session and its helpers Compass scans for tests, builds and files. A larger scan takes longer and uses more memory.',
       scale: 1024,
       unit: 'KB',
     },
@@ -89,9 +89,14 @@ function isLimit(value: unknown): value is SettingLimit {
 /** An answer the screen can draw from, or null: a body missing either half is not one. */
 export function settingsBody(body: unknown): SettingsBody | null {
   if (typeof body !== 'object' || body === null) return null;
-  const { values, limits, capacities, update_check } = body as Record<string, unknown>;
+  const { values, limits, capacities, update_check, store_readable } = body as Record<
+    string,
+    unknown
+  >;
   if (typeof values !== 'object' || values === null || Array.isArray(values)) return null;
   if (!Array.isArray(limits) || !limits.every(isLimit)) return null;
+  if (new Set(limits.map(({ key }) => key)).size !== limits.length) return null;
+  if (store_readable !== undefined && typeof store_readable !== 'boolean') return null;
   const numbers = values as Record<string, unknown>;
   if (
     !limits.every(({ key, minimum, maximum }) => {
@@ -117,6 +122,7 @@ export function settingsBody(body: unknown): SettingsBody | null {
     typeof (update_check as Record<string, unknown>)['cli_disabled'] === 'boolean'
       ? { update_check: update_check as NonNullable<SettingsBody['update_check']> }
       : {}),
+    ...(typeof store_readable === 'boolean' ? { store_readable } : {}),
     values: numbers as Record<string, number>,
     limits,
     capacities: {
@@ -124,4 +130,19 @@ export function settingsBody(body: unknown): SettingsBody | null {
       codex: capacityPreview(routes['codex']),
     },
   };
+}
+
+/** A successful response confirms the requested values and still carries every rendered limit. */
+export function confirmsSettings(
+  before: SettingsBody,
+  after: SettingsBody,
+  sent: Readonly<Record<string, number | boolean | null>>,
+): boolean {
+  if (after.store_readable === false || (before.update_check && !after.update_check)) return false;
+  const defaults = new Map(after.limits.map((limit) => [limit.key, limit.default]));
+  if (before.limits.some(({ key }) => !defaults.has(key))) return false;
+  return Object.entries(sent).every(([key, value]) => {
+    if (key === 'no_update_check') return after.update_check?.disabled === (value ?? false);
+    return defaults.has(key) && after.values[key] === (value ?? defaults.get(key));
+  });
 }

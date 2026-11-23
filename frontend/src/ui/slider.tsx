@@ -36,6 +36,7 @@ export function Slider({
     if (disabled) input.current?.setAttribute('aria-disabled', 'true');
     else input.current?.removeAttribute('aria-disabled');
   }, [disabled]);
+  const cancelled = useRef(false);
   const key = useRef<{ readonly name: string; readonly value: number } | null>(null);
   return (
     <Primitive.Root
@@ -46,7 +47,7 @@ export function Slider({
       max={lastStop}
       aria-disabled={disabled || undefined}
       onValueChange={(next, detail) => {
-        if (disabled) detail.cancel();
+        if (disabled || (cancelled.current && detail.reason !== 'keyboard')) detail.cancel();
         else onChange(next);
       }}
       onValueCommitted={(next, detail) => {
@@ -54,7 +55,7 @@ export function Slider({
         // Base UI commits keyboard changes on every keydown, including repeats.
         if (detail.reason === 'keyboard' && detail.event instanceof KeyboardEvent) {
           key.current = { name: detail.event.key, value: next };
-        } else if (detail.event.type === 'pointermove') {
+        } else if (cancelled.current || detail.event.type === 'pointermove') {
           onCancel();
         } else {
           onRelease(next);
@@ -62,8 +63,13 @@ export function Slider({
       }}
       onPointerDownCapture={() => {
         key.current = null;
+        cancelled.current = false;
       }}
-      onPointerCancel={onCancel}
+      onPointerCancelCapture={() => {
+        // Mobile scrolling can cancel the pointer before Base UI receives touchend.
+        cancelled.current = true;
+        onCancel();
+      }}
       onBlur={() => {
         if (!key.current) return;
         key.current = null;

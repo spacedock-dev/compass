@@ -54,6 +54,12 @@ export function parseGrant(value: unknown): SummaryGrant | null {
   };
 }
 
+/** A preference control needs an explicit on/off value, including when consent is withheld. */
+export function parseSummaryPreference(value: unknown): SummaryGrant | null {
+  const raw = record(value);
+  return typeof raw?.['off'] === 'boolean' ? parseGrant(raw) : null;
+}
+
 export type JobState =
   | 'running'
   | 'stopping'

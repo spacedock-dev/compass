@@ -11,7 +11,7 @@ import { PullRequestReadSetting, UsageConsentSetting } from './Connections';
 import { SettingsLimitsCard } from './SettingsLimitsCard';
 import { SettingsRow } from './SettingsRow';
 import { DashboardDataCard } from './YourDataCard';
-import { fieldsOf, settingsBody } from './model';
+import { confirmsSettings, fieldsOf, settingsBody } from './model';
 
 export type SettingsClient = Pick<ApiClient, 'getSettings' | 'postSettings'>;
 
@@ -42,6 +42,8 @@ function updateStatus(load: Load) {
   if (!update) return 'The update check setting is unavailable.';
   if (update.cli_disabled) return 'Update checks are off for this run (--no-update-check).';
   if (!update.default_enabled) return 'Update checks are off in this build.';
+  if (load.state === 'ready' && load.body.store_readable === false)
+    return 'The update check setting could not be read. Update checks are off.';
   return update.disabled ? 'Update checks are off.' : 'Asks spacedock.md at most once a day.';
 }
 
@@ -53,13 +55,16 @@ export function SettingsScreen({
   yourData,
 }: {
   readonly client: SettingsClient;
-  readonly aiUse?: (promptBytes: number | null) => ReactNode;
+  readonly aiUse?: (body: SettingsBody | null) => ReactNode;
   readonly pullRequestRead?: ReactNode;
   readonly browserSettings?: ReactNode;
   readonly yourData?: ReactNode;
 }) {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
-  const [pending, setPending] = useState<Write | null>(null);
+  const [pending, setPending] = useState<{
+    kind: Write;
+    keys: readonly string[];
+  } | null>(null);
   const [outcome, setOutcome] = useState<{ kind: Write; text: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const write = useRef<AbortController | null>(null);
@@ -83,7 +88,7 @@ export function SettingsScreen({
     if (load.state !== 'ready' || write.current) return;
     const controller = new AbortController();
     write.current = controller;
-    setPending(kind);
+    setPending({ kind, keys: Object.keys(values) });
     setOutcome(null);
     const result = await client.postSettings({ values }, controller.signal);
     write.current = null;
@@ -94,6 +99,13 @@ export function SettingsScreen({
       setOutcome({
         kind,
         text: refusal(result.kind === 'ok' ? { kind: 'malformed', status: result.status } : result),
+      });
+      return;
+    }
+    if (!confirmsSettings(load.body, body, values)) {
+      setOutcome({
+        kind,
+        text: 'Compass could not confirm the change. Reload to see the settings in force.',
       });
       return;
     }
@@ -115,7 +127,7 @@ export function SettingsScreen({
       <div className="mx-auto w-full max-w-[47.5rem] pb-5">
         <h1>Settings</h1>
         <p className="m-0 text-body text-muted-foreground">Changes save as you make them.</p>
-        {aiUse?.(body?.values['analyze_prompt_bytes'] ?? null)}
+        {aiUse?.(body)}
         <Card as="section" aria-labelledby="settings-connections" className="mt-4 p-0">
           <h2 id="settings-connections" className="m-0 px-4 pt-4 text-value font-bold sm:px-6">
             Connections
@@ -130,19 +142,23 @@ export function SettingsScreen({
                     {updateStatus(load)}
                   </p>
                   <p role="status" className="m-0">
-                    {outcome?.kind === 'update' ? outcome.text : ''}
+                    {pending?.kind === 'update'
+                      ? 'Saving the update check preference…'
+                      : outcome?.kind === 'update'
+                        ? outcome.text
+                        : ''}
                   </p>
                 </>
               }
             >
-              {update?.default_enabled && !update.cli_disabled ? (
+              {update?.default_enabled && !update.cli_disabled && body?.store_readable !== false ? (
                 <Switch
                   aria-label={UPDATE_NAME}
                   aria-describedby={updateDescription}
                   checked={!update.disabled}
                   readOnly={pending !== null}
                   aria-disabled={pending !== null || undefined}
-                  aria-busy={pending === 'update' || undefined}
+                  aria-busy={pending?.kind === 'update' || undefined}
                   onCheckedChange={(checked) => void send('update', { no_update_check: !checked })}
                 />
               ) : null}
@@ -155,6 +171,8 @@ export function SettingsScreen({
             fields={fieldsOf(body)}
             capacities={body.capacities}
             locked={pending !== null}
+            savingKeys={pending?.kind === 'limits' ? pending.keys : []}
+            storeUnreadable={body.store_readable === false}
             onWrite={(values) => send('limits', values)}
             outcome={outcome?.kind === 'limits' ? outcome.text : ''}
           />
@@ -192,7 +210,7 @@ export function SettingsView() {
   return (
     <SettingsScreen
       client={runtime.client}
-      aiUse={(promptBytes) => <AiUseSettings promptBytes={promptBytes} />}
+      aiUse={(body) => <AiUseSettings settings={body} />}
       pullRequestRead={<PullRequestReadSetting />}
       browserSettings={
         <>

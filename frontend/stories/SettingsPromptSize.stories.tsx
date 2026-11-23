@@ -8,6 +8,7 @@ import { SettingsScreen } from '../src/settings/SettingsView';
 import { atPageWidth } from './PageFit';
 import { settled } from './a11y.audit';
 import { auditCalm } from './calm.audit';
+import { settledLayout, settledRect } from './settled-layout';
 
 const LIMITS = [
   { key: 'analyze_prompt_bytes', default: 524288, minimum: 16384, maximum: 2097152 },
@@ -177,9 +178,9 @@ export const RecommendedLimits: Story = {
     await expect(limits.getByRole('heading', { name: TITLE })).toBeVisible();
     for (const [name, value] of [
       ['Prompt size', '512 KB'],
-      ['Messages and checks kept', '2,000'],
-      ['Checks and files listed', '1,000'],
-      ['Transcript scanned for checks', '524,288 KB'],
+      ['Messages, tests and builds kept', '2,000'],
+      ['Tests, builds and files listed', '1,000'],
+      ['Transcript scanned for tests and builds', '524,288 KB'],
     ] as const)
       await expect(limits.getByRole('slider', { name })).toHaveAttribute('aria-valuetext', value);
     await expect(
@@ -207,7 +208,7 @@ export const ChangedOverCodexCapacity: Story = {
     await expect(limits.queryByText(/Using the recommended limits/)).toBeNull();
     const reset = limits.getByRole('button', { name: 'Reset Prompt size' });
     await expect(reset.querySelector('svg[data-icon="reset"]')).not.toBeNull();
-    const box = reset.getBoundingClientRect();
+    const box = await settledRect(reset);
     await expect(Math.min(box.height, box.width)).toBeGreaterThanOrEqual(44);
     await userEvent.click(reset);
     await waitFor(() => expect(limits.queryByText(WARNING)).toBeNull());
@@ -243,10 +244,13 @@ export const ARefusedWriteRevertsTheSlider: Story = {
     await expect(posted).toHaveLength(0);
     fireEvent.keyUp(slider, { key: 'End' });
     await waitFor(() => expect(slider).toHaveAttribute('aria-disabled', 'true'));
+    await expect(limits.getByText('Saving prompt size…', { exact: true })).toBeVisible();
+    await expect(limits.queryByText('Limits saved.')).toBeNull();
     fireEvent.keyUp(slider, { key: 'End' });
     await expect(posted).toEqual([{ analyze_prompt_bytes: 2097152 }]);
     finishPost?.();
     await expect(await limits.findByText(REFUSED)).toBeVisible();
+    await expect(limits.queryByText('Saving prompt size…')).toBeNull();
     await expect(slider).toHaveAttribute('aria-valuetext', '512 KB');
     await expect(limits.queryByText('Changed')).toBeNull();
     await expect(limits.queryByText('Limits saved.')).toBeNull();
@@ -362,12 +366,37 @@ export const TheFirstTouchKeepsTheSavedStop: Story = {
     const slider = limits.getByRole('slider', { name: 'Prompt size' });
     const thumb = slider.closest('[data-slot="slider-thumb"]');
     if (!thumb) throw new Error('Missing slider thumb');
-    const box = thumb.getBoundingClientRect();
+    const box = await settledRect(thumb);
     const position = { clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 };
     fireEvent.pointerDown(thumb, { ...position, button: 0, buttons: 1 });
     fireEvent.pointerUp(thumb, { ...position, button: 0, buttons: 0 });
     await expect(slider).toHaveAttribute('aria-valuetext', '529 KB');
     await expect(posted).toEqual([]);
+  },
+};
+
+export const ACancelledTouchDoesNotSave: Story = {
+  args: { scenario: 'changed' },
+  play: async ({ canvasElement }) => {
+    const limits = await customize(canvasElement);
+    const slider = limits.getByRole('slider', { name: 'Prompt size' });
+    const control = slider.closest('[data-slot="slider-control"]');
+    if (!control) throw new Error('Missing slider control');
+    const box = await settledRect(control);
+    const point = { clientX: box.x + box.width * 0.2, clientY: box.y + box.height / 2 };
+    const touches = [new Touch({ identifier: 1, target: control, ...point })];
+    fireEvent.pointerDown(control, { ...point, pointerType: 'touch', button: 0, buttons: 1 });
+    fireEvent.touchStart(control, { changedTouches: touches });
+    await expect(slider).not.toHaveAttribute('aria-valuetext', '1,024 KB');
+    fireEvent.pointerCancel(control, { pointerType: 'touch' });
+    fireEvent.touchEnd(control, { changedTouches: touches });
+    await expect(slider).toHaveAttribute('aria-valuetext', '1,024 KB');
+    await expect(posted).toEqual([]);
+    await expect(limits.queryByText('Limits saved.')).toBeNull();
+    slider.focus();
+    await userEvent.keyboard('{End}');
+    await expect(await limits.findByText('Limits saved.')).toBeVisible();
+    await expect(posted).toEqual([{ analyze_prompt_bytes: 2097152 }]);
   },
 };
 
@@ -377,11 +406,14 @@ function fit(width: number): Story {
     play: async ({ canvasElement }) => {
       await atPageWidth(width, async () => {
         const limits = await customize(canvasElement);
-        await expect(document.documentElement.scrollWidth).toBe(window.innerWidth);
+        await settled();
+        await expect(await settledLayout(() => document.documentElement.scrollWidth)).toBe(
+          window.innerWidth,
+        );
         for (const element of canvasElement.querySelectorAll(
           '[data-settings-limit], [data-slot="slider-control"]',
         )) {
-          const box = element.getBoundingClientRect();
+          const box = await settledRect(element);
           await expect(box.left).toBeGreaterThanOrEqual(0);
           await expect(box.right).toBeLessThanOrEqual(window.innerWidth);
         }
@@ -391,11 +423,10 @@ function fit(width: number): Story {
         await expect(resets).toHaveLength(4);
         for (const reset of resets) {
           await expect(reset).toBeVisible();
-          const box = reset.getBoundingClientRect();
+          const box = await settledRect(reset);
           await expect(Math.min(box.height, box.width)).toBeGreaterThanOrEqual(44);
           await expect(reset.querySelector('svg[data-icon="reset"]')).not.toBeNull();
         }
-        await settled();
         await expect(auditCalm(canvasElement)).toEqual([]);
       });
     },

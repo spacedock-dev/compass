@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useState } from 'react';
 import { expect, fireEvent, userEvent, waitFor } from 'storybook/test';
 import { Slider } from '../src/ui/slider';
+import { settledRect } from './settled-layout';
 
 const sizes = ['16 KB', '32 KB', '64 KB', '128 KB', '256 KB'];
 const size = (stop: number): string => sizes[stop] ?? '';
@@ -42,7 +43,8 @@ export const ArrowKeysSaveOnRelease: Story = {
     await userEvent.tab();
     await expect(slider).toHaveFocus();
     const control = slider.closest('[data-slot="slider-control"]');
-    await expect(control?.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+    if (!control) throw new Error('Missing slider control');
+    await expect((await settledRect(control)).height).toBeGreaterThanOrEqual(44);
     fireEvent.keyDown(slider, { key: 'ArrowRight' });
     await waitFor(() => expect(slider).toHaveAttribute('aria-valuetext', '64 KB'));
     fireEvent.keyDown(slider, { key: 'ArrowRight', repeat: true });

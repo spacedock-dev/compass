@@ -113,6 +113,7 @@ interface Log {
   served: number;
   previews: number;
   summaryWrites: number;
+  failBoard: boolean;
   stallOlder: boolean;
   olderAsked: boolean;
   releaseOlder: (() => void) | null;
@@ -128,6 +129,7 @@ const log: Log = {
   served: 0,
   previews: 0,
   summaryWrites: 0,
+  failBoard: false,
   stallOlder: false,
   olderAsked: false,
   releaseOlder: null,
@@ -199,6 +201,7 @@ function PageExample({
     log.served = 0;
     log.previews = 0;
     log.summaryWrites = 0;
+    log.failBoard = false;
     log.stallOlder = stallOlder;
     log.olderAsked = false;
     log.releaseOlder = null;
@@ -249,6 +252,7 @@ function PageExample({
       reducedMotion: () => true,
       fetch: async (url, init) => {
         if (url.startsWith('/api/data')) {
+          if (log.failBoard) return new Response(null, { status: 503 });
           log.served += 1;
           return json({
             generated: generation++,
@@ -972,6 +976,26 @@ export const SharedAiPause: Story = {
   },
 };
 
+export const FailedRefreshWithholdsBothPauseControls: Story = {
+  render: () => <PageExample technical />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+    await userEvent.click(await privacy.findByRole('switch', { name: 'Pause all AI use' }));
+    const resume = await privacy.findByRole('switch', { name: 'Resume AI use' });
+    await expect(resume).toBeChecked();
+    await waitFor(() => expect(resume).not.toHaveAttribute('aria-busy'));
+    await expect(await canvas.findByRole('button', { name: 'Resume AI use' })).toBeVisible();
+    log.failBoard = true;
+    await userEvent.click(canvas.getByRole('button', { name: 'Simulate board poll' }));
+    await expect(
+      await privacy.findByText('Compass could not refresh the AI pause setting.'),
+    ).toBeVisible();
+    await expect(privacy.queryByRole('switch', { name: 'Resume AI use' })).toBeNull();
+    await expect(canvas.queryByRole('button', { name: 'Resume AI use' })).toBeNull();
+  },
+};
+
 export const UnavailableSummaryGrant: Story = {
   render: () => <PageExample technical summariesUnavailable />,
   play: async ({ canvasElement }) => {
@@ -1006,11 +1030,11 @@ export const TechnicalTabsAtPhoneWidth: Story = {
         name: 'Read pull request status in Settings',
       });
       const explanation = privacy.getByText(/pull request checks are read from GitHub or GitLab/i);
-      await expect(explanation.getBoundingClientRect().top).toBeGreaterThanOrEqual(
-        pause.getBoundingClientRect().bottom,
+      await expect((await settledRect(explanation)).top).toBeGreaterThanOrEqual(
+        (await settledRect(pause)).bottom,
       );
-      await expect(pullRequests.getBoundingClientRect().top).toBeGreaterThanOrEqual(
-        explanation.getBoundingClientRect().bottom,
+      await expect((await settledRect(pullRequests)).top).toBeGreaterThanOrEqual(
+        (await settledRect(explanation)).bottom,
       );
     });
   },
@@ -1103,9 +1127,9 @@ async function technicalTabInventory(canvasElement: HTMLElement) {
   await expect(await checks.findByText(/16 KB of 2,048 KB/)).toBeVisible();
   for (const label of [
     'Prompt size limit',
-    'Messages and checks kept',
-    'Checks and files listed',
-    'Transcript scanned for checks',
+    'Messages, tests and builds kept',
+    'Tests, builds and files listed',
+    'Transcript scanned for tests and builds',
   ]) {
     await expect(checks.getByText(label)).toBeVisible();
   }

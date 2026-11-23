@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { setCiRead } from '../api/readings';
-import { useConsent, useUsageAnswer, useUsageOffered } from '../capacity/held';
+import { useConsent, useUsageAnswer } from '../capacity/held';
 import { CI_SWITCH_FAILED } from '../drift/sentences';
 import { GLOSSARY } from '../language/glossary';
 import { isRecord } from '../observed';
@@ -40,12 +40,15 @@ export function PullRequestReadSetting() {
   } | null>(null);
   const [failure, setFailure] = useState('');
   const pending = board.pending.includes('ci-read:settings');
+  const published = board.data?.ci_read;
   const shown =
     receipt && board.acceptedCount <= receipt.acceptedCount
       ? receipt.value
       : board.failures
         ? null
-        : publishedCiRead(board.data?.reading_routes);
+        : isReadSetting(published)
+          ? published
+          : publishedCiRead(board.data?.reading_routes);
   const description = shown
     ? PULL_REQUEST_STATUS[shown]
     : board.failures
@@ -82,7 +85,7 @@ export function PullRequestReadSetting() {
             {description}
           </p>
           <p className="m-0" role="status">
-            {failure}
+            {pending ? 'Saving the pull request read preference…' : failure}
           </p>
         </>
       }
@@ -105,7 +108,8 @@ export function PullRequestReadSetting() {
 export function UsageConsentSetting() {
   const answer = useUsageAnswer();
   const consent = useConsent('usage');
-  const offered = useUsageOffered();
+  const board = useDisplayed((snapshot) => snapshot);
+  const offered = !board.failures && board.data?.usage_fetch === true;
   const [failed, setFailed] = useState(false);
   const off = consent === 'declined';
   return (
@@ -118,11 +122,15 @@ export function UsageConsentSetting() {
             Kept in this browser.
           </p>
           <p className="m-0">
-            {off
-              ? 'Plan usage is turned off in this browser.'
-              : offered
-                ? 'Plan usage is allowed in this browser.'
-                : 'Plan usage is unavailable on this dashboard.'}
+            {board.failures
+              ? 'Compass could not refresh the plan usage setting.'
+              : !board.data
+                ? 'Reading the plan usage setting.'
+                : !offered
+                  ? 'Plan usage is unavailable on this dashboard.'
+                  : off
+                    ? 'Plan usage is turned off in this browser.'
+                    : 'Plan usage is allowed in this browser.'}
           </p>
           <p role="status" className="m-0">
             {failed ? 'The browser kept this choice for this tab only.' : ''}
@@ -130,13 +138,15 @@ export function UsageConsentSetting() {
         </>
       }
     >
-      <Button
-        type="button"
-        aria-label={off ? 'Allow plan usage' : 'Turn off plan usage'}
-        onClick={() => setFailed(!answer(off ? 'granted' : 'declined'))}
-      >
-        {off ? 'Allow' : 'Turn off'}
-      </Button>
+      {offered ? (
+        <Button
+          type="button"
+          aria-label={off ? 'Allow plan usage' : 'Turn off plan usage'}
+          onClick={() => setFailed(!answer(off ? 'granted' : 'declined'))}
+        >
+          {off ? 'Allow' : 'Turn off'}
+        </Button>
+      ) : null}
     </SettingsRow>
   );
 }

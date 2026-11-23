@@ -1601,7 +1601,7 @@
         "frontend/stories/Settings.stories.tsx",
         "frontend/stories/SessionLayout.stories.tsx"
       ],
-      "contract": "The server owns one preference. Settings holds a write receipt until a newer board arrives and shows the run flag without a switch.",
+      "contract": "The board publishes one server preference even with no sessions or annotations. Settings holds a write receipt until a newer board arrives and shows the run flag without a switch.",
       "disposition": "store-held"
     },
     {
@@ -1621,6 +1621,16 @@
         "frontend/stories/Settings.stories.tsx"
       ],
       "contract": "The browser owns notification permission. The tab watches every route for notifications and Settings keeps focus on the permission answer.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "Plan usage preference",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/storage/consent.test.ts",
+        "frontend/stories/Settings.stories.tsx"
+      ],
+      "contract": "Browser storage keeps the choice. If a write is refused, the new tab choice governs subsequent usage requests.",
       "disposition": "store-held"
     },
     {

@@ -69,10 +69,12 @@ function RouteEstimates({
 export function LimitSlider({
   field,
   locked,
+  saving = false,
   onWrite,
 }: {
   readonly field: Field;
   readonly locked: boolean;
+  readonly saving?: boolean;
   readonly onWrite: (value: number | null) => Promise<void>;
 }) {
   const id = useId();
@@ -124,6 +126,9 @@ export function LimitSlider({
         <span className="text-center">{`Recommended: ${withUnit(field, field.fallback)}`}</span>
         <span className="text-end">{withUnit(field, field.maximum)}</span>
       </div>
+      {saving ? (
+        <p role="status" className="m-0 text-label">{`Saving ${field.label.toLowerCase()}…`}</p>
+      ) : null}
       {changed ? (
         <div className="mt-1 flex flex-wrap items-center gap-2 text-label">
           <span className="rounded-pill bg-accent px-2 py-1 font-semibold">Changed</span>
@@ -149,12 +154,16 @@ export function SettingsLimitsCard({
   fields,
   capacities,
   locked,
+  savingKeys,
+  storeUnreadable,
   onWrite,
   outcome,
 }: {
   readonly fields: readonly Field[];
   readonly capacities: SettingsBody['capacities'];
   readonly locked: boolean;
+  readonly savingKeys: readonly string[];
+  readonly storeUnreadable: boolean;
   readonly onWrite: (values: Record<string, number | null>) => Promise<void>;
   readonly outcome: string;
 }) {
@@ -171,6 +180,7 @@ export function SettingsLimitsCard({
       key={field.key}
       field={field}
       locked={locked}
+      saving={savingKeys.length === 1 && savingKeys.includes(field.key)}
       onWrite={(value) => onWrite({ [field.key]: value })}
     />
   );
@@ -181,9 +191,11 @@ export function SettingsLimitsCard({
           {GLOSSARY.progressCheckReadSize.plain}
         </h2>
         <p className="mt-1 mb-0 text-body text-muted-foreground">
-          {changed
-            ? `${changed} ${changed === 1 ? 'limit' : 'limits'} changed.`
-            : 'Using the recommended limits.'}{' '}
+          {storeUnreadable
+            ? 'Compass could not read the saved limits. Progress checks use the recommended limits.'
+            : changed
+              ? `${changed} ${changed === 1 ? 'limit' : 'limits'} changed.`
+              : 'Using the recommended limits.'}{' '}
           Bigger limits read more but take longer.
         </p>
       </div>
@@ -234,7 +246,7 @@ export function SettingsLimitsCard({
         </div>
       </Disclosure>
       <p role="status" className="m-0 text-label">
-        {outcome}
+        {savingKeys.length > 1 ? 'Resetting the limits to recommended…' : outcome}
       </p>
     </Card>
   );

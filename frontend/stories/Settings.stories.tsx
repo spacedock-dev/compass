@@ -8,8 +8,10 @@ import { ShellContext } from '../src/shell/context';
 import { createShell } from '../src/shell/createShell';
 import { useBoardRuntime } from '../src/transport/hooks';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
-import { fakeBackend } from '../test/storage_backends';
+import { STORAGE_KEYS } from '../src/storage';
+import { fakeBackend, readOnlyBackend } from '../test/storage_backends';
 import { atPageWidth } from './PageFit';
+import { settledLayout, settledRect } from './settled-layout';
 
 const LIMITS = [
   { key: 'analyze_prompt_bytes', default: 524288, minimum: 16384, maximum: 2097152 },
@@ -20,20 +22,36 @@ const LIMITS = [
 
 interface Scenario {
   readonly pause: 'on' | 'paused' | 'unknown' | 'refused';
-  readonly summaries: 'on' | 'off' | 'unreadable' | 'daily-cap' | 'refused';
+  readonly summaries: 'on' | 'off' | 'unreadable' | 'partial' | 'daily-cap' | 'refused';
   readonly ci: 'on' | 'off' | 'flag-off' | 'unknown' | 'refused' | 'withheld';
   readonly notifications: 'granted' | 'denied' | 'default' | 'unsupported' | 'native';
-  readonly update: 'on' | 'off' | 'flag-off' | 'build-off' | 'unreadable' | 'refused' | 'holds-off';
+  readonly update:
+    | 'on'
+    | 'off'
+    | 'flag-off'
+    | 'build-off'
+    | 'unreadable'
+    | 'damaged'
+    | 'refused'
+    | 'holds-off';
   readonly usage: 'allowed' | 'declined' | 'unavailable';
   readonly harness: 'claude' | 'codex';
   readonly annotations: boolean;
   readonly port: 'known' | 'missing' | 'loading';
   readonly copy: 'ok' | 'refused';
+  readonly board: 'ready' | 'loading' | 'initial-failure';
+  readonly hold: 'none' | 'post' | 'permission';
+  readonly permissionAnswer: 'granted' | 'default';
+  readonly usageStorage: 'writable' | 'read-only';
+  readonly pauseRefresh: 'ready' | 'stale';
 }
 
 const posted: { readonly url: string; readonly body: unknown }[] = [];
 const copied: string[] = [];
 let permissionPrompts = 0;
+let finishPost: (() => void) | undefined;
+let finishPermission: (() => void) | undefined;
+const dataRequests: string[] = [];
 let publishBoard: (state: 'stale' | 'withdrawn') => void;
 
 const summaryDisclosure =
@@ -44,6 +62,9 @@ function SettingsExample(props: Scenario) {
     posted.length = 0;
     copied.length = 0;
     permissionPrompts = 0;
+    finishPost = undefined;
+    finishPermission = undefined;
+    dataRequests.length = 0;
     let generation = 0;
     let withdrawn = false;
     let stalled = false;
@@ -51,28 +72,32 @@ function SettingsExample(props: Scenario) {
     let ci = props.ci === 'refused' || props.ci === 'withheld' ? 'on' : props.ci;
     let paused = props.pause === 'paused';
     let summariesOff = props.summaries === 'off';
-    let updateOff = props.update === 'off' || props.update === 'holds-off';
+    let updateOff = ['off', 'holds-off', 'damaged'].includes(props.update);
     const values = Object.fromEntries(LIMITS.map((limit) => [limit.key, limit.default]));
     const reading = () => ({
       off: paused,
       consent: !paused,
       reason: paused ? 'model-calls-paused' : '',
     });
-    const summaries = () => ({
-      off: summariesOff,
-      consent: !summariesOff && !paused,
-      reason: paused
-        ? 'model-calls-paused'
-        : props.summaries === 'unreadable'
-          ? 'store-unavailable'
-          : props.summaries === 'daily-cap'
-            ? 'daily-cap'
-            : summariesOff
-              ? 'summaries-off'
-              : '',
-      disclosure: summaryDisclosure,
-    });
+    const summaries = () =>
+      props.summaries === 'partial'
+        ? { consent: false }
+        : {
+            off: summariesOff,
+            consent: !summariesOff && !paused,
+            reason: paused
+              ? 'model-calls-paused'
+              : props.summaries === 'unreadable'
+                ? 'store-unavailable'
+                : props.summaries === 'daily-cap'
+                  ? 'daily-cap'
+                  : summariesOff
+                    ? 'summaries-off'
+                    : '',
+            disclosure: summaryDisclosure,
+          };
     const settings = () => ({
+      store_readable: props.update !== 'damaged',
       values,
       limits: LIMITS,
       update_check: {
@@ -82,7 +107,10 @@ function SettingsExample(props: Scenario) {
       },
     });
 
-    const backend = fakeBackend();
+    const backend =
+      props.usageStorage === 'read-only'
+        ? readOnlyBackend({ [STORAGE_KEYS.usageConsent]: 'granted' })
+        : fakeBackend();
     const next = createShell({
       env: createFakeEnvironment({ clock: createFakeClock() }),
       provider: () => backend,
@@ -102,12 +130,20 @@ function SettingsExample(props: Scenario) {
         if (url === '/api/health')
           return Response.json(props.port === 'known' ? { port: 6226 } : {});
         if (url.startsWith('/api/data')) {
-          if (stalled) return new Response('', { status: 503 });
+          dataRequests.push(url);
+          if (props.board === 'loading') return new Promise<Response>(() => undefined);
+          if (stalled || props.board === 'initial-failure')
+            return new Response('', { status: 503 });
           generation += 1;
           return Response.json(
             {
               generated: generation,
-              sessions: [],
+              sessions:
+                props.harness === 'codex'
+                  ? [{ id: 'sample-codex', harness: 'codex', sid: 'sample-codex', state: 'idle' }]
+                  : [],
+              annotate: props.annotations,
+              ...(!withdrawn && ci !== 'unknown' ? { ci_read: ci } : {}),
               usage_fetch: props.usage !== 'unavailable',
               browser_lane: true,
               native_notify: props.notifications === 'native' ? 'osascript' : '',
@@ -115,7 +151,7 @@ function SettingsExample(props: Scenario) {
               ...(!withdrawn && props.annotations && props.pause !== 'unknown'
                 ? { reading: reading() }
                 : {}),
-              ...(!withdrawn && props.annotations && ci !== 'unknown'
+              ...(!withdrawn && props.annotations && props.harness === 'codex'
                 ? {
                     reading_routes: {
                       [props.harness]: {
@@ -139,6 +175,10 @@ function SettingsExample(props: Scenario) {
           readonly values?: Record<string, number | boolean | null>;
         };
         posted.push({ url, body });
+        if (props.hold === 'post')
+          await new Promise<void>((resolve) => {
+            finishPost = resolve;
+          });
         if (url === '/api/reading' && body.ci_read) {
           if (props.ci === 'refused') return new Response('', { status: 503 });
           if (props.ci !== 'withheld') ci = body.ci_read;
@@ -147,6 +187,7 @@ function SettingsExample(props: Scenario) {
         if (url === '/api/reading' && body.consent) {
           if (props.pause === 'refused') return new Response('', { status: 503 });
           paused = body.consent === 'off';
+          stalled = props.pauseRefresh === 'stale';
           return Response.json({ ok: true, reading: reading() });
         }
         if (url === '/api/summary' && body.consent) {
@@ -175,8 +216,12 @@ function SettingsExample(props: Scenario) {
         permission: () => permission,
         request: (done) => {
           permissionPrompts += 1;
-          permission = 'granted';
-          done();
+          const finish = () => {
+            permission = props.permissionAnswer;
+            done();
+          };
+          if (props.hold === 'permission') finishPermission = finish;
+          else finish();
         },
         create: () => undefined,
       },
@@ -215,6 +260,11 @@ const meta = {
     annotations: true,
     port: 'known',
     copy: 'ok',
+    board: 'ready',
+    hold: 'none',
+    permissionAnswer: 'granted',
+    usageStorage: 'writable',
+    pauseRefresh: 'ready',
   },
 } satisfies Meta<typeof SettingsExample>;
 export default meta;
@@ -231,7 +281,7 @@ const SUMMARY_PAUSED = 'Paused while AI use is paused.';
 const SUMMARY_ON = 'Summaries are on.';
 const SUMMARY_OFF = 'Summaries are off.';
 const SUMMARY_UNKNOWN = 'The Summaries setting is unavailable.';
-const NOT_ASKED = 'Permission has not been requested in this browser.';
+const NOT_ASKED = 'No notification permission decision yet.';
 const ALLOWED = 'Allowed in this browser.';
 const BLOCKED =
   'Blocked in this browser. To allow notifications, change this site’s permissions in your browser.';
@@ -246,7 +296,9 @@ export const SavesChangesWithoutSave: Story = {
     await expect(canvas.getByText('Desktop notifications')).toBeVisible();
     await expect(canvas.getByText('Show my AI allowance')).toBeVisible();
     await expect(canvas.getByText(/Kept in this browser/)).toBeVisible();
-    await expect(canvas.getByText(/Turn it on in a session’s technical details/)).toBeVisible();
+    await expect(
+      canvas.getByText(/technical details of an eligible Claude Code session/),
+    ).toBeVisible();
     await expect(canvas.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
     await expect(canvas.queryByRole('button', { name: 'Save' })).toBeNull();
     await expect(canvas.queryByRole('button', { name: 'Restore all defaults' })).toBeNull();
@@ -277,15 +329,20 @@ export const UpdateChecksOff: Story = {
   },
 };
 
-export const UpdateAnswerTakesPrecedence: Story = {
+export const UpdateAnswerDoesNotConfirmTheChange: Story = {
   args: { update: 'holds-off' },
   play: async ({ canvas }) => {
     const control = await canvas.findByRole('switch', { name: UPDATE });
     await userEvent.click(control);
-    await expect(await canvas.findByText('Update check preference saved.')).toBeVisible();
+    await expect(
+      await canvas.findByText(
+        'Compass could not confirm the change. Reload to see the settings in force.',
+      ),
+    ).toBeVisible();
     await expect(control).toHaveAttribute('aria-checked', 'false');
     await expect(canvas.getByText(UPDATE_OFF)).toBeVisible();
     await expect(canvas.queryByText(UPDATE_ON)).toBeNull();
+    await expect(canvas.queryByText('Update check preference saved.')).toBeNull();
     await expect(posted).toHaveLength(1);
   },
 };
@@ -356,7 +413,7 @@ export const PullRequestReadOff: Story = {
 };
 
 export const PullRequestReadFlagOff: Story = {
-  args: { ci: 'flag-off' },
+  args: { ci: 'flag-off', annotations: false },
   play: async ({ canvas }) => {
     await expect(await canvas.findByText(CI_FLAG)).toBeVisible();
     await expect(canvas.queryByRole('switch', { name: CI })).toBeNull();
@@ -468,11 +525,22 @@ export const BoardSettingsAreStale: Story = {
     await expect(
       canvas.getByText('Compass could not refresh the pull request read setting.'),
     ).toBeVisible();
-    await expect(canvas.getByText(SUMMARY_UNKNOWN)).toBeVisible();
+    await expect(
+      canvas.getByText('Compass could not refresh the Summaries setting.'),
+    ).toBeVisible();
     await expect(
       canvas.queryByRole('switch', {
         name: /Pause all AI use|Resume AI use|Summaries|Read pull request status/,
       }),
+    ).toBeNull();
+    await expect(
+      canvas.getByText('Compass could not refresh the plan usage setting.'),
+    ).toBeVisible();
+    await expect(
+      canvas.getByText('Compass could not refresh the desktop notification setting.'),
+    ).toBeVisible();
+    await expect(
+      canvas.queryByRole('button', { name: /^(Allow|Turn off plan usage)$/ }),
     ).toBeNull();
     await expect(canvas.queryByText(CI_ON)).toBeNull();
     await expect(canvas.queryByText(SUMMARY_ON)).toBeNull();
@@ -613,7 +681,7 @@ export const NativeNotifications = notifications(
 );
 export const NotificationsNotYetAsked: Story = {
   play: async ({ canvas }) => {
-    await expect(canvas.getByText(NOT_ASKED)).toBeVisible();
+    await expect(await canvas.findByText(NOT_ASKED)).toBeVisible();
     await expect(canvas.queryByText(ALLOWED)).toBeNull();
     await expect(canvas.queryByText(BLOCKED)).toBeNull();
     await expect(permissionPrompts).toBe(0);
@@ -637,7 +705,9 @@ export const PlanUsageAllowed: Story = {
 export const PlanUsageDeclined: Story = {
   args: { usage: 'declined' },
   play: async ({ canvas }) => {
-    await expect(canvas.getByText('Plan usage is turned off in this browser.')).toBeVisible();
+    await expect(
+      await canvas.findByText('Plan usage is turned off in this browser.'),
+    ).toBeVisible();
     await expect(canvas.getByRole('button', { name: 'Allow plan usage' })).toBeVisible();
     await expect(canvas.queryByText('Plan usage is allowed in this browser.')).toBeNull();
   },
@@ -648,6 +718,171 @@ export const PlanUsageUnavailable: Story = {
     await canvas.findByRole('switch', { name: 'Pause all AI use' });
     await expect(canvas.getByText('Plan usage is unavailable on this dashboard.')).toBeVisible();
     await expect(canvas.queryByText('Plan usage is allowed in this browser.')).toBeNull();
+    await expect(canvas.queryByRole('button', { name: /plan usage/i })).toBeNull();
+  },
+};
+
+function savingSwitch(name: string, sentence: string, outcome: string): Story {
+  return {
+    args: { hold: 'post' },
+    play: async ({ canvas }) => {
+      const control = await canvas.findByRole('switch', { name });
+      const before = control.getAttribute('aria-checked');
+      await userEvent.click(control);
+      await expect(await canvas.findByText(sentence, { exact: true })).toBeVisible();
+      await expect(control).toHaveAttribute('aria-busy', 'true');
+      await expect(control).toHaveAttribute('aria-disabled', 'true');
+      await expect(control).toHaveAttribute('aria-checked', before);
+      await expect(canvas.queryByText(outcome, { exact: true })).toBeNull();
+      await userEvent.click(control);
+      await expect(posted).toHaveLength(1);
+      finishPost?.();
+      await expect(await canvas.findByText(outcome, { exact: true })).toBeVisible();
+      await waitFor(() => expect(control).not.toHaveAttribute('aria-busy'));
+      await expect(canvas.queryByText(sentence, { exact: true })).toBeNull();
+    },
+  };
+}
+
+export const SavingAiPause = savingSwitch(
+  'Pause all AI use',
+  'Saving the AI pause preference…',
+  SUMMARY_PAUSED,
+);
+export const SavingSummaries = savingSwitch(
+  'Summaries',
+  'Saving the Summaries preference…',
+  SUMMARY_OFF,
+);
+export const SavingPullRequestRead = savingSwitch(
+  CI,
+  'Saving the pull request read preference…',
+  CI_OFF,
+);
+export const SavingUpdateChecks = savingSwitch(
+  UPDATE,
+  'Saving the update check preference…',
+  'Update check preference saved.',
+);
+
+export const BrowserSettingsLoading: Story = {
+  args: { board: 'loading' },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByText('Reading the desktop notification setting.')).toBeVisible();
+    await expect(canvas.getByText('Reading the plan usage setting.')).toBeVisible();
+    await expect(canvas.queryByText(NOT_ASKED)).toBeNull();
+    await expect(canvas.queryByText('Plan usage is unavailable on this dashboard.')).toBeNull();
+    await expect(
+      canvas.queryByRole('button', { name: /^(Allow|Turn off plan usage)$/ }),
+    ).toBeNull();
+  },
+};
+
+export const BrowserSettingsInitialFailure: Story = {
+  args: { board: 'initial-failure' },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('Compass could not refresh the desktop notification setting.'),
+    ).toBeVisible();
+    await expect(
+      canvas.getByText('Compass could not refresh the plan usage setting.'),
+    ).toBeVisible();
+    await expect(canvas.queryByText(NOT_ASKED)).toBeNull();
+    await expect(canvas.queryByText('Plan usage is unavailable on this dashboard.')).toBeNull();
+    await expect(
+      canvas.queryByRole('button', { name: /^(Allow|Turn off plan usage)$/ }),
+    ).toBeNull();
+  },
+};
+
+export const NotificationPermissionPending: Story = {
+  args: { hold: 'permission' },
+  play: async ({ canvas }) => {
+    const allow = await canvas.findByRole('button', { name: 'Allow', exact: true });
+    await userEvent.click(allow);
+    await expect(canvas.getByText('Waiting for your browser’s permission.')).toBeVisible();
+    await expect(allow).toHaveAttribute('aria-busy', 'true');
+    await expect(canvas.queryByText(NOT_ASKED)).toBeNull();
+    await expect(canvas.queryByText(ALLOWED)).toBeNull();
+    await userEvent.click(allow);
+    await expect(permissionPrompts).toBe(1);
+    finishPermission?.();
+    await expect(await canvas.findByText(ALLOWED)).toBeVisible();
+  },
+};
+
+export const NotificationPermissionDismissed: Story = {
+  args: { permissionAnswer: 'default' },
+  play: async ({ canvas }) => {
+    const allow = await canvas.findByRole('button', { name: 'Allow', exact: true });
+    await userEvent.click(allow);
+    await expect(permissionPrompts).toBe(1);
+    await expect(canvas.getByText(NOT_ASKED)).toBeVisible();
+    await expect(
+      canvas.queryByText('Permission has not been requested in this browser.'),
+    ).toBeNull();
+    await expect(canvas.queryByText(ALLOWED)).toBeNull();
+    await expect(allow).not.toHaveAttribute('aria-busy');
+  },
+};
+
+export const PlanUsageDeclineForThisTab: Story = {
+  args: { usageStorage: 'read-only' },
+  play: async ({ canvas }) => {
+    const off = await canvas.findByRole('button', { name: 'Turn off plan usage' });
+    await expect(dataRequests.at(-1)).toContain('usage=1');
+    await userEvent.click(off);
+    await expect(canvas.getByText('The browser kept this choice for this tab only.')).toBeVisible();
+    await expect(canvas.getByText('Plan usage is turned off in this browser.')).toBeVisible();
+    await expect(canvas.queryByText('Plan usage is allowed in this browser.')).toBeNull();
+    await waitFor(() => expect(dataRequests.at(-1)).not.toContain('usage=1'));
+  },
+};
+
+export const SummariesPartialPreference: Story = {
+  args: { summaries: 'partial' },
+  play: async (context) => SummariesUnreadable.play?.(context),
+};
+
+export const SummariesRefreshFailedAfterResume: Story = {
+  args: { pause: 'paused', pauseRefresh: 'stale' },
+  play: async ({ canvas }) => {
+    const resume = await canvas.findByRole('switch', { name: 'Resume AI use' });
+    await userEvent.click(resume);
+    await expect(await canvas.findByRole('switch', { name: 'Pause all AI use' })).toBeVisible();
+    await expect(
+      await canvas.findByText('Compass could not refresh the Summaries setting.'),
+    ).toBeVisible();
+    await expect(canvas.queryByRole('switch', { name: 'Summaries' })).toBeNull();
+    for (const other of [SUMMARY_PAUSED, SUMMARY_ON, SUMMARY_OFF])
+      await expect(canvas.queryByText(other)).toBeNull();
+  },
+};
+
+export const UnreadableSettingsStoreUsesRecommendedLimits: Story = {
+  args: { update: 'damaged' },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('The update check setting could not be read. Update checks are off.'),
+    ).toBeVisible();
+    await expect(canvas.queryByRole('switch', { name: UPDATE })).toBeNull();
+    await expect(
+      canvas.getByText(
+        /Compass could not read the saved limits. Progress checks use the recommended limits./,
+      ),
+    ).toBeVisible();
+    await userEvent.click(canvas.getByRole('button', { name: 'What is sent, and where' }));
+    await waitFor(() =>
+      expect(
+        canvas.getByText(
+          'Using the recommended prompt size limit: 512 KB. Compass could not read the saved limit.',
+        ),
+      ).toBeVisible(),
+    );
+    await expect(
+      canvas.getByText('There are no sessions with a progress check destination yet.'),
+    ).toBeVisible();
+    await expect(canvas.queryByText('Saved prompt size limit: 512 KB.')).toBeNull();
   },
 };
 
@@ -685,10 +920,12 @@ function fit(width: number): Story {
     play: async ({ canvas, canvasElement }) => {
       await atPageWidth(width, async () => {
         await canvas.findByRole('switch', { name: CI });
-        await expect(document.documentElement.scrollWidth).toBe(window.innerWidth);
+        await expect(await settledLayout(() => document.documentElement.scrollWidth)).toBe(
+          window.innerWidth,
+        );
         for (const target of canvasElement.querySelectorAll('button, a[href]')) {
           if (target.closest('[hidden]')) continue;
-          const box = target.getBoundingClientRect();
+          const box = await settledRect(target);
           if (box.width === 0 && box.height === 0) continue;
           await expect(
             Math.min(box.width, box.height),

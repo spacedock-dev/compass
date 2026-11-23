@@ -67,8 +67,9 @@ describe('Forget everything in Settings', () => {
     expect(forget).toContain('unexpired spend timestamps remain');
     expect(forget).not.toContain('dismissals.forget(config)');
     const manualRow = manual.match(/^\| `--forget` .*$/m)?.[0];
-    expect(manualRow).toContain('the words and group labels you typed');
-    expect(manualRow).toContain('compass-typed-presses.json');
+    expect(manualRow).toContain(
+      'Preserve the words and group labels you typed, unexpired model-spend timestamps and `compass-typed-presses.json`',
+    );
 
     const page = mount(6226);
     try {
