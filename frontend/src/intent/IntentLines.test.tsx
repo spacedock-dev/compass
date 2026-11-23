@@ -140,7 +140,7 @@ describe('the outcome checklist', () => {
     };
     await page.poll(page.state.data);
     expect(text('.next-cockpit-held')).toContain('The annotation store could not be read.');
-    // Nothing is drafted over a store Save intent could not write.
+    // Nothing is drafted over a store Save goal could not write.
     expect(document.querySelector('[data-next-cockpit-draft-marks]')).toBeNull();
     expect(json({})).toBeTruthy();
     expect(goalBox().value).toBe('');

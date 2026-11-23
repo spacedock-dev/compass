@@ -1,6 +1,14 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
-import { expect, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { SHOWN, SESSION_ROW_WORDS, GLOSSARY } from '../src/language/glossary';
+import {
+  TOP_LEVEL_VIEWS,
+  fragmentForRoute,
+  type RouteInput,
+  type TopLevelView,
+} from '../src/router/grammar';
+import { headerBoard } from '../test/headerBoard';
 import { App } from '../src/App';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
@@ -211,5 +219,175 @@ export const AbsoluteTimesWithoutBoardClock: Story = {
       const member = canvas.getByRole('link', { name: new RegExp(`Checkout ${index + 1} ·`) });
       await expect(member).toHaveTextContent(`Start time ${absoluteTime(time)}`);
     }
+  },
+};
+
+const navOrder = [
+  'sessions',
+  'projects',
+  'attention',
+  'intent',
+  'settings',
+] as const satisfies readonly TopLevelView[];
+const headerRoutes: readonly (readonly [RouteInput, TopLevelView])[] = [
+  ...navOrder.map((view) => [{ view }, view] as const),
+  [{ view: 'project', project: 'acme/dashboard' }, 'projects'],
+  [
+    { view: 'session', project: 'acme/dashboard', harness: 'claude', session: 'active' },
+    'projects',
+  ],
+  [
+    {
+      view: 'session',
+      project: 'acme/dashboard',
+      harness: 'claude',
+      session: 'active',
+      from: 'sessions',
+    },
+    'sessions',
+  ],
+];
+
+function HeaderExample() {
+  const [example] = useState(() => {
+    const base = headerBoard();
+    const fixture = {
+      ...base,
+      sessions: [
+        ...base.sessions,
+        {
+          harness: 'claude',
+          project: 'acme/dashboard',
+          sid: 'reported-block',
+          title: 'Review the settings',
+          state: 'needs_input',
+          state_detail: 'Permission prompt: Read settings',
+        },
+      ],
+    };
+    let data = fixture;
+    let publish: () => void = () => undefined;
+    const firstBoard = new Promise<void>((resolve) => {
+      publish = resolve;
+    });
+    const router = createRouter(fakeRouterEnvironment('#n=sessions').env);
+    const shell = createShell({
+      env: createFakeEnvironment(),
+      router,
+      provider: () => fakeBackend(),
+      doc: null,
+      search: '',
+      reducedMotion: () => true,
+      fetch: async (url) => {
+        if (!url.startsWith('/api/data')) return new Response('{}');
+        await firstBoard;
+        return new Response(JSON.stringify(data));
+      },
+    });
+    return {
+      shell,
+      publish,
+      stopWork: () => {
+        data = {
+          ...fixture,
+          generated: fixture.generated + 1,
+          sessions: fixture.sessions.filter(
+            (session) => !('state' in session) || session.state !== 'working',
+          ),
+        };
+        return shell.runtime.refresh();
+      },
+    };
+  });
+  useEffect(
+    () => () => {
+      example.shell.runtime.dispose();
+      example.shell.display.dispose();
+    },
+    [example],
+  );
+  return (
+    <>
+      <App shell={example.shell} />
+      <button type="button" onClick={example.publish}>
+        Publish the first board
+      </button>
+      <button type="button" onClick={() => void example.stopWork()}>
+        Publish a board with no working sessions
+      </button>
+      {headerRoutes.map(([route]) => {
+        const fragment = fragmentForRoute(route);
+        return (
+          <button type="button" key={fragment} onClick={() => example.shell.router.navigate(route)}>
+            Visit {fragment}
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+export const HeaderTracksTheCurrentPageAndBoard: Story = {
+  render: () => <HeaderExample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const primary = within(canvas.getByRole('navigation', { name: SHOWN.primary }));
+    const pill = canvas.getByRole('status', { name: SHOWN.workingSessions });
+    await expect(pill).toHaveTextContent(SHOWN.waitingForBoard);
+    await expect(primary.getByRole('link', { name: SHOWN.attention })).toBeVisible();
+    await userEvent.click(canvas.getByRole('button', { name: 'Publish the first board' }));
+    const count = SHOWN.workingCountMany.replace('{count}', '2');
+    await waitFor(() => expect(pill).toHaveTextContent(count));
+    await expect(new Set(navOrder)).toEqual(new Set(TOP_LEVEL_VIEWS));
+    for (const [route, current] of headerRoutes) {
+      await userEvent.click(
+        canvas.getByRole('button', { name: `Visit ${fragmentForRoute(route)}` }),
+      );
+      const links = primary.getAllByRole('link');
+      await expect(links.map((link) => link.textContent?.trim().replace(/\s+\d+$/, ''))).toEqual(
+        navOrder.map((view) => SHOWN[view]),
+      );
+      await waitFor(() =>
+        expect(primary.getAllByRole('link', { current: 'page' })).toEqual([
+          links[navOrder.indexOf(current)],
+        ]),
+      );
+      await expect(pill).toHaveTextContent(count);
+      if (current === 'attention') {
+        const rows = (section: string) =>
+          canvasElement.querySelectorAll(
+            `[data-next-attention-section="${section}"] > ol > li:not([hidden])`,
+          ).length;
+        const waiting = rows('needs');
+        const worth = rows('risk');
+        await expect(waiting).toBe(3);
+        await expect(worth).toBe(1);
+        await expect(
+          canvas.getByRole('heading', { name: `${SESSION_ROW_WORDS.waitingOnYou} (${waiting})` }),
+        ).toBeVisible();
+        await expect(
+          canvas.getByRole('heading', { name: `${SESSION_ROW_WORDS.worthALook} (${worth})` }),
+        ).toBeVisible();
+        await expect(
+          primary.getByRole('link', { name: `${SHOWN.attention} ${waiting + worth}` }),
+        ).toBeVisible();
+        await expect(canvas.getByText('Approve the command?')).toBeVisible();
+        await expect(
+          canvas.getByText('Permission prompt: Read settings', { exact: false }),
+        ).toBeVisible();
+      }
+      if (route.view === 'session') {
+        const details = canvas.getAllByRole('button', {
+          name: GLOSSARY.showTechnicalDetails.plain,
+        });
+        await expect(details).toHaveLength(1);
+        await expect(details[0]).toHaveAttribute('aria-expanded', 'false');
+      }
+    }
+    await userEvent.click(canvas.getByRole('button', { name: 'Visit #n=sessions' }));
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Publish a board with no working sessions' }),
+    );
+    await waitFor(() => expect(pill).toHaveTextContent(SHOWN.nothingWorking));
   },
 };

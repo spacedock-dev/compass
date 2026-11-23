@@ -124,7 +124,7 @@ export const AnalyzeOpensOnAStoppedCodexSession: Story = {
     await expect(canvasElement.textContent).not.toContain(CODEX_REFUSED);
     await expect(canvasElement.textContent).not.toContain(WHY_OFF);
     await expect(
-      await canvas.findByText(/^Reads the session up to its last turn against your intent\./),
+      await canvas.findByText(/^Reads the session up to its last turn against your goal\./),
     ).toBeVisible();
   },
 };
@@ -264,7 +264,7 @@ export const SteerBackFromAnIdleSession: Story = {
     // The scenario's own clock reads 1000 s, so the reading was today on the page's clock.
     await expect(
       await canvas.findByText(
-        `Built from your saved intent and the reading at ${datedClock(1000, 1000)}`,
+        `Built from your saved goal and the reading at ${datedClock(1000, 1000)}`,
       ),
     ).toBeVisible();
     const box = (await canvas.findByLabelText(
@@ -366,6 +366,8 @@ export const AnOutOfDateCheckShowsTheEarlierFindingBesideSteering: Story = {
       'data-variant',
       'default',
     );
-    await expect(progress.getByRole('button', { name: 'Check progress again' })).toBeVisible();
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Check progress again' }),
+    ).toBeVisible();
   },
 };

@@ -93,7 +93,7 @@ export function GoalExplanation() {
             it.
           </p>
         ) : null}
-        {revision ? <p>{`${revision}. ${REVISION_DEFINITION} Session: ${scope}.`}</p> : null}
+        {revision ? <p>{`${revision}. ${REVISION_DEFINITION}`}</p> : null}
       </div>
     </Disclosure>
   );

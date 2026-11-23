@@ -240,16 +240,8 @@ function unchangedView(summary: Summary, counterpart: Summary, restored: Set<str
       ({ kind, subjectKey }) =>
         kind !== 'collision' && kind !== 'checkout' && !restored.has(subjectKey),
     );
-    if (!items.length) return [];
-    if (section.name !== 'next') return [{ ...section, items }];
-    return [
-      {
-        ...section,
-        heading: 'Coming next',
-        toggle: null,
-        items: items.map((item) => ({ ...item, hidden: false })),
-      },
-    ];
+    // Pending tasks now appear in Right now on their own session.
+    return items.length && section.name !== 'next' ? [{ ...section, items }] : [];
   });
   return {
     ...summary,

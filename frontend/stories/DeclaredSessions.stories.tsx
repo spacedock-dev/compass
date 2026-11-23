@@ -199,6 +199,31 @@ export const GroupFilterAndGrouping: Story = {
     await expect(canvas.getByRole('button', { name: /Group: "release/ })).toBeVisible();
   },
 };
+export const ParentPageShowsHelpersApartFromChildren: Story = {
+  args: {
+    hash: '#n=session:demo:claude:parent',
+    board: {
+      sessions: fixture.payload.sessions.map((one) =>
+        one.sid === 'parent'
+          ? { ...one, subagents: [{ name: 'Read release notes', active: true }] }
+          : one,
+      ),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const right = within(await canvas.findByRole('region', { name: 'Right now' }));
+    const helpers = right.getByRole('list', { name: 'Helpers (1)' });
+    await expect(helpers).toHaveTextContent('Read release notes');
+    await expect(helpers).toHaveTextContent('Working');
+    await expect(helpers.querySelector('svg')).toBeNull();
+    await expect(helpers).not.toHaveTextContent('Check build');
+    await expect(canvas.getByRole('region', { name: 'Linked children' })).toHaveTextContent(
+      'Check build',
+    );
+  },
+};
+
 export const ParentPageNamesChildrenAndTheirState: Story = {
   args: { hash: '#n=session:demo:claude:parent' },
   play: async ({ canvasElement }) => {

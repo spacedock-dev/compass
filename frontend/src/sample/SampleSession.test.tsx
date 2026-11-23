@@ -24,6 +24,13 @@ const marks = () => [...document.querySelectorAll<HTMLElement>('[data-sample-mar
 const held = () => document.querySelector('[data-sample-held]')?.textContent ?? '';
 
 describe('the sample session', () => {
+  it('names the sample project without offering a live destination for it', async () => {
+    const page = await mountSample();
+    const project = within(page.container).getByRole('region', { name: 'Project' });
+    expect(within(project).getByText('acme/dashboard', { exact: true })).toBeVisible();
+    expect(within(project).queryByRole('link')).not.toBeInTheDocument();
+  });
+
   it('says it is a view-only sample and links back to Sessions', async () => {
     await mountSample();
     const banner = document.querySelector('[data-sample-banner]') as HTMLElement;

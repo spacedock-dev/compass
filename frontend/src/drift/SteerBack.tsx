@@ -168,6 +168,7 @@ function CorrectionBox({
         key={boxKey}
         ref={ref}
         id="next-cockpit-correction"
+        data-authored
         rows={correctionRows(initial)}
         defaultValue={initial}
         data-next-cockpit-correction-key={key}

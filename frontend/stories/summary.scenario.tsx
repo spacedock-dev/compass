@@ -301,6 +301,7 @@ export interface SummaryScript {
   /** The focused `sources.outline`. */
   outline: Record<string, unknown>;
   shell: Shell | null;
+  releaseOlder: (() => void) | null;
 }
 
 export const script: SummaryScript = {
@@ -314,6 +315,7 @@ export const script: SummaryScript = {
   boards: 0,
   outline: {},
   shell: null,
+  releaseOlder: null,
 };
 
 export const defaultAnswer = (path: string, body: Record<string, unknown>): Reply => {
@@ -337,22 +339,26 @@ export function SummaryPage({
   summary = ABSENT,
   ended = true,
   paged = false,
+  holdOlder = false,
   session = {},
   answer = defaultAnswer,
   outline = claudeOutline({}, true),
   counted = false,
   foldedChecks = false,
+  unreadable = false,
 }: {
   readonly grant?: Record<string, unknown> | null;
   readonly summary?: Record<string, unknown> | null;
   readonly ended?: boolean;
   readonly paged?: boolean;
+  readonly holdOlder?: boolean;
   readonly session?: Record<string, unknown>;
   readonly answer?: SummaryScript['answer'];
   readonly outline?: Record<string, unknown>;
   /** The record carries no fixed numbers, so the page counts its entries from the intent's window. */
   readonly counted?: boolean;
   readonly foldedChecks?: boolean;
+  readonly unreadable?: boolean;
 }) {
   const [shell] = useState(() => {
     script.grant =
@@ -371,6 +377,12 @@ export function SummaryPage({
     script.answer = answer;
     script.boards = 0;
     script.outline = outline;
+    script.releaseOlder = null;
+    const olderReady = holdOlder
+      ? new Promise<void>((resolve) => {
+          script.releaseOlder = resolve;
+        })
+      : null;
     const history = fakeRouterEnvironment('#n=session:demo:claude:s1');
     let generation = G;
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
@@ -428,6 +440,9 @@ export function SummaryPage({
           return json({
             generated: generation++,
             annotate: true,
+            ...(unreadable
+              ? { annotate_unreadable: 'The annotation store could not be read.' }
+              : {}),
             annotate_cap: 240,
             annotate_goal_cap: 1000,
             reading_check: 'passed',
@@ -491,6 +506,7 @@ export function SummaryPage({
           return json({ annotations: [], intent_revision: 'r1' });
         if (url.startsWith('/api/session-record')) {
           const older = url.includes('before=');
+          if (older && olderReady) await olderReady;
           const page = !paged
             ? record
             : record.filter((row) => (older ? (row.ordinal ?? 0) < 3 : (row.ordinal ?? 0) >= 3));

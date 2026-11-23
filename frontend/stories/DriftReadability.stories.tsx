@@ -17,7 +17,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 const WHOLE =
-  'That direction could not be verified as later than your intent in the current record. Nothing was settled and no analysis was started.';
+  'That direction could not be verified as later than your goal in the current record. Nothing was settled and no analysis was started.';
 
 export const PressAnswerIsOneLine: Story = {
   args: { id: 'answer', message: WHOLE },

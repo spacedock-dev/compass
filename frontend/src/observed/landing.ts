@@ -223,7 +223,7 @@ export function readHint(source: Row): string {
           ? 'its last turn'
           : ''
         : '';
-  return cutoff ? `Reads the session up to ${cutoff} against your intent.` : '';
+  return cutoff ? `Reads the session up to ${cutoff} against your goal.` : '';
 }
 
 export interface Goal {

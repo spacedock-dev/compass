@@ -8,6 +8,8 @@ import { SAMPLE_FIXTURE } from '../sample/fixture';
 import { isSampleRoute } from '../sample/ids';
 import { findSession, sessionTitle } from './derive';
 import { useDisplayed } from './context';
+import { pageTitleOf } from '../observed/session';
+import type { Row } from '../observed';
 
 /* The crumb a reader sees for the location they are in. Top-level views carry none. A session's crumb
    starts at the view the reader came from (a pasted link carries no origin and starts at Sessions), and
@@ -46,7 +48,12 @@ export function Breadcrumb({ route }: { readonly route: Route }) {
     const current = (
       <>
         {separator}
-        <span aria-current="page">{label}</span>
+        <span
+          aria-current="page"
+          data-authored={Boolean(session && pageTitleOf(session as unknown as Row)) || undefined}
+        >
+          {label}
+        </span>
       </>
     );
     const home = sessionHome(route);
@@ -80,7 +87,7 @@ export function Breadcrumb({ route }: { readonly route: Route }) {
             className={cn('next-crumb', buttonVariants({ variant: 'native' }))}
             href={fragmentForRoute({ view: 'project', project: route.project })}
           >
-            {route.project}
+            <span data-authored>{route.project}</span>
           </a>
           {current}
         </>

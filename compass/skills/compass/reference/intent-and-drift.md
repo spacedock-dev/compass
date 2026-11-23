@@ -347,9 +347,8 @@ starts with a short editable message naming your goal or, when only lines are sa
 line the check found a departure from. Copy message copies what you see. Compass never sends
 it for you. Where a mark or a reading of earlier words withholds it, the card says why. The
 quotes link counts distinct stored citations for the departures and opens Evidence at the first
-available quote. What the check
-read includes the written files grouped by folder. The
-card header offers Check progress again for current and stale readings. The control stays visible
+available quote. What the check read includes the written files grouped by folder. The
+session header offers Check progress again for current and stale readings. The control stays visible
 where a press is temporarily unavailable. Evidence holds the request count.
 Uses AI appears beside the check, with the remaining daily count once 10 or fewer checks are left.
 When the budget is spent, the session page names the limit and when the next check can run.

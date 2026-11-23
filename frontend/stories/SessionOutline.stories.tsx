@@ -30,7 +30,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 const card = async (root: HTMLElement) =>
-  within(root).findByRole('region', { name: 'What the session has done' });
+  within(root).findByRole('region', { name: "What's happened so far" });
 
 async function atWidth(width: number, check: () => Promise<void>) {
   const browserPage =
@@ -106,7 +106,7 @@ export const MatchedIdsFutureCase: Story = {
     })) as HTMLElement;
     await expect(first.querySelector('[data-next-outline-span]')).toBeNull();
     const chip = await within(region).findByRole('link', {
-      name: 'Open entry #2.1, the failed check, in Activity log',
+      name: 'Open the source, the failed check, in Activity log',
     });
     await userEvent.click(chip);
     await waitFor(() =>

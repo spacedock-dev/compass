@@ -1,7 +1,7 @@
 import { Card } from '../ui/card';
 import { resumeCommand } from '../controls';
 import { SHOWN } from '../language/glossary';
-import type { ObservedSession } from '../observed';
+import { SESSION_TEXT_ORIGIN, type ObservedSession } from '../observed';
 import { RouteLink } from '../shell/RouteLink';
 
 export const WAITING_ANSWER_WHERE =
@@ -24,13 +24,17 @@ export function WaitingBlock({ observed }: { readonly observed: ObservedSession 
     >
       <div className="next-session-ask-callout">
         <span>
-          {'WAITING ON YOU · '}
+          {'Waiting on you · '}
           <span className="next-session-wait" data-known={String(observed.waitedKnown === true)}>
             {observed.waitedText}
           </span>
         </span>
       </div>
-      <p className="next-session-ask-question mt-[10px] mb-[6px]" data-next-session-wait-note>
+      <p
+        className="next-session-ask-question mt-[10px] mb-[6px]"
+        data-next-session-wait-note
+        data-authored={observed[SESSION_TEXT_ORIGIN].blockNote || undefined}
+      >
         {observed.blockNote}
       </p>
       <p className="m-0 text-muted-foreground text-body">

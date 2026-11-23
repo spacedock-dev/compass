@@ -38,7 +38,7 @@ import { PromptSelect } from './PromptSelect';
 import { usePanel } from './useIntent';
 import { GoalExplanation } from './HowTo';
 
-/* The controls sit together on the left and are always drawn, as the design has them: Save intent and Undo
+/* The controls sit together on the left and are always drawn, as the design has them: Save goal and Undo
    changes, inert until there is something to undo. Add a line lives inside the Expected outcome accordion. */
 function Footer() {
   const { ctx, input, session, payload } = usePanel();
@@ -89,7 +89,7 @@ function Footer() {
       <span className="next-cockpit-held-tools">
         <ClearGoal />
         <ActionButton
-          label="Save intent"
+          label="Save goal"
           className={`font-bold px-4 ${saveLive || saving ? 'border-[var(--accent)] text-[color:var(--accent)]' : ''}`}
           busyLabel="Saving…"
           pendingKey={`${key}:save`}
@@ -145,7 +145,9 @@ function SavedGoal({ goal }: { readonly goal: string }) {
         {`${provenance} · ${when}`}
         {written ? '' : (source.match(/ · saved( · .*)$/)?.[1] ?? '')}
       </p>
-      <p className="wrap-anywhere text-value font-bold">{goal}</p>
+      <p className="wrap-anywhere text-value font-bold" data-authored>
+        {goal}
+      </p>
       {lines.length ? (
         <div>
           <h3 className="text-body font-semibold">{GLOSSARY.doneLooksLike.shown}</h3>
@@ -153,7 +155,9 @@ function SavedGoal({ goal }: { readonly goal: string }) {
             {lines.map((line, index) => (
               <li key={index} className="flex items-start gap-2 wrap-anywhere">
                 <Icon name="check" className="mt-0.5 shrink-0 text-[var(--accent)]" />
-                <span className="min-w-0">{line}</span>
+                <span className="min-w-0" data-authored>
+                  {line}
+                </span>
               </li>
             ))}
           </ul>

@@ -9,7 +9,7 @@ it.each([true, false, null])(
   async (complete) => {
     const summary = collectedPartialSummary();
     render(<SummaryPage summary={{ ...summary, coverage: { ...summary.coverage, complete } }} />);
-    const region = await screen.findByRole('region', { name: 'What the session has done' });
+    const region = await screen.findByRole('region', { name: "What's happened so far" });
     const box = within(region);
     await box.findByText(
       'Compass could not read the whole record now, so it cannot tell whether this summary is current.',

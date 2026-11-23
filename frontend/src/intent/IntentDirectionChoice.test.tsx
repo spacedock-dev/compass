@@ -17,7 +17,7 @@ import {
 
 /* A later direction is quoted, with its time, where the reader chooses what to do with it, and each choice
    acts on its first press. Add as a line and Make it the goal start from the rule in the message rather than
-   the whole message, say so, and are saved by the card's one Save intent. */
+   the whole message, say so, and are saved by the card's one Save goal. */
 
 const settle = async (page: { settle: () => Promise<void> }) => {
   await page.settle();
@@ -156,7 +156,7 @@ describe('Leave it names the revision on screen', () => {
   });
 });
 
-describe('Save intent beside the unanswered lines question', () => {
+describe('Save goal beside the unanswered lines question', () => {
   it('stays inert after Make it the goal then Add as a line, with one goal button', async () => {
     const page = mountSession({
       store: { goal: 'Ship the worker', lines: ['A standing line'], revision: 2 },
@@ -188,7 +188,7 @@ describe('Save intent beside the unanswered lines question', () => {
 });
 
 describe('Add as a line', () => {
-  it('opens the rule with its hint on the first press and is saved by the one Save intent', async () => {
+  it('opens the rule with its hint on the first press and is saved by the one Save goal', async () => {
     const page = mount();
     await settle(page);
     await press(control('direction-add'));
@@ -202,7 +202,7 @@ describe('Add as a line', () => {
     const saves = [...document.querySelectorAll('button')].filter((b) =>
       /^save\b/i.test(b.textContent ?? ''),
     );
-    expect(saves.map((b) => b.textContent)).toEqual(['Save intent']);
+    expect(saves.map((b) => b.textContent)).toEqual(['Save goal']);
     expect(inert(control('held-save'))).toBe(false);
     await press(control('held-save'));
     await settle(page);
@@ -216,7 +216,7 @@ describe('Add as a line', () => {
 });
 
 describe('Make it the goal', () => {
-  it('fills the goal with the rule and its hint on the first press, saved by the one Save intent', async () => {
+  it('fills the goal with the rule and its hint on the first press, saved by the one Save goal', async () => {
     const page = mount();
     await settle(page);
     await press(control('direction-goal'));
@@ -226,7 +226,7 @@ describe('Make it the goal', () => {
     const saves = [...document.querySelectorAll('button')].filter((b) =>
       /^save\b/i.test(b.textContent ?? ''),
     );
-    expect(saves.map((b) => b.textContent)).toEqual(['Save intent']);
+    expect(saves.map((b) => b.textContent)).toEqual(['Save goal']);
   });
 });
 

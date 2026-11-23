@@ -178,32 +178,37 @@ a separate prototype store; `--forget` does not delete it. The terminal is also 
 requires both interaction flags and registration from inside the selected session's tmux pane,
 and accepts no input. Its xterm assets are vendored and served from loopback.
 
-Exact session detail is reachable from Sessions, cockpit session links and Goal history. The
-page is one column at every width. It opens with the session's name (a Claude Code session holding a `/goal` is named by that goal, so a replaced or cleared `/goal` never names it; a generated title still wins; a Codex session started with `/goal` and not prompted since is named by its goal), the state word
-and what it is doing, then the question first when the session is waiting on you. A wait on the harness's
-own prompt, whose question Compass cannot answer, is said instead under "Waiting on you", with how long it
-has stood and where it is answered; while the open session waits, the tab's title starts "● Needs you" and
-its icon turns amber. Then come the
-**Intent** card with the goal and the expected outcome lines you typed, a **What the session has
-done** card, and a **Drift** card with the `Analyze drift` control, what an analysis reads and
-sends under it, the reading, and every departure on record, asked for or not. While a direction you
-gave after your intent is unsettled, the question about it stands where `Analyze drift` would be
-(see [Intent and drift](intent-and-drift.md#recording-what-a-session-should-achieve)). On Claude Code and Codex, What the session has done shows Compass's own outline of
-the record, one group per message of yours, opening at your first, in short sentences naming its checks, failures and folders, made with no model
-call; other harnesses keep no record it can page through and say so. On Claude Code it also holds a
-model-written summary in phases, each line citing the entries it rests on: a finished session is
-summarized when you open it, once Compass has observed its end (without one the card offers
-`Summarize` instead), a running one on `Summarize` or `Update summary`, and a stored summary
-opens without a call. Source collection continues through bounded pages in the background; `Planning the summary…`
-keeps `Cancel` available. Collection limits and unread regions remain explicit, separately from
-the model's window and call limits; an incomplete update keeps the saved summary.
-`Delete summary` removes it after a second press, says what it removes before that press, and reports the deletion; and a line that claims in its own voice that the
-work is done is withheld. **Show technical details** at the foot of the page opens the **Activity log**, with the session's numbered entries, agent activity, recorded request, tasks, subagents, token measurements and end evidence. Filters narrow the loaded entries by speaker, kind or citation. On a harness other than Claude Code or Pi the Drift section says "Compass
-can't read work from this harness" where a drift level will go; `Analyze drift` stays wherever a
-reader is named. With no reader on this machine, the reason stands where the control would be. The
-page has at most one primary run control. No answer option is ever emphasised: a session blocked on
-you gives the primary to the terminal raise when one is offered, and otherwise nothing is primary
-while its question is open.
+Open a session from Sessions, a project session link or Goal history. The session header shows
+the title, state and Check progress. A request that needs an answer appears below the header.
+Compass shows where to answer a native prompt and how long it has waited. The browser tab's title
+starts "● Needs you" while a request waits.
+
+At 1100 px and wider the header spans two columns. Goal, Is it on track? and What's happened so
+far sit on the left. Right now, At a glance and Project sit on the right. In a narrower window
+the cards stack, with Right now following Is it on track? before the story. Right now shows the
+published activity, helpers, next step and reported block. The next-step and block rows disappear
+when the session reports its own end. At a glance shows published figures and says "At least"
+when Compass holds an incomplete entry count.
+
+Goal shows what you want the session to do, including the outcome lines you set. Is it on track?
+shows what a progress check reads. Open What is sent before pressing Check progress to see what
+the check sends. If you gave a later direction and have yet to settle it, the page asks about that direction. See [recording what a session should achieve](intent-and-drift.md#recording-what-a-session-should-achieve).
+Codex sessions keep the evidence without a progress level.
+
+What's happened so far starts with an outline grouped by your messages, made without a model call.
+Codex outlines only your messages. The page explains when a record is unavailable. A stored
+Claude Code summary opens without a call, with an opening paragraph and short phases. Open one
+phase at a time. A phase time appears when the cited timestamps establish it. Off course here
+opens matching evidence from a progress check. Tool-reported failures use a separate legend.
+You can summarize a Claude Code session while it is running, and a reported end allows automatic
+summarizing when summaries are enabled. Cancel stays available during planning and collection.
+An incomplete update keeps the saved summary. Delete summary explains what it removes before the
+second press. The summary withholds a claim of completion when its cited record cannot support it.
+
+Show technical details at the foot of the page opens Activity log with numbered entries and
+filters for speaker, commands, files and cited entries. Evidence holds the progress findings,
+sources and reading limits. For a native prompt, use the terminal raise control when offered.
+Answer options have equal weight.
 With no outcome line, Compass reads your goal's end state; a goal too vague to read is refused. The refusal reads "This goal is too vague to analyze against. Rewrite it with what should be true when the work is done, then try again." under the Goal field, shows no level, departures or Steer back for that run, clears when you edit the goal, and counts against the daily cap like any press. A link to a session
 the board no longer holds names that session and says it is not in the current payload.
 
@@ -293,8 +298,7 @@ extension UI prompts on 0.85.1. Neither proves installation or reconstructs a wa
 request has cleared. A stop leaves the session available for another turn. A session end conveys
 no readership, remote commit or termination cause. Later lifecycle activity for the same id can
 clear an end mark. Stop followed by SessionEnd still reads ended. A late SessionEnd after resumed
-activity also reads ended because hooks cannot identify which process sent it. **Coming next**
-groups the strongest published next action by project.
+activity also reads ended because hooks cannot identify which process sent it.
 
 ## Usage and rate limits
 

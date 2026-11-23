@@ -208,7 +208,7 @@ function ClaudeUnasked({ route }: { readonly route: Row }) {
     <section aria-label="Unasked checks by Claude Code" className="next-session-drift-check">
       <p className="next-cockpit-reading-why">
         Claude Code checks this session against your typed goal while you are away. It needs no
-        separate permission. Pause model calls stops it. Each check sends:
+        separate permission. Pause all AI use stops it. Each check sends:
       </p>
       {Array.isArray(parts) ? <DisclosureParts parts={parts.map(String)} /> : null}
     </section>

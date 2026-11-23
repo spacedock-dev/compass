@@ -40,9 +40,9 @@ describe('a reader watching automatic outline progress', () => {
         })}
       />,
     );
-    const region = await screen.findByRole('region', { name: 'What the session has done' });
+    const region = await screen.findByRole('region', { name: "What's happened so far" });
     const box = within(region);
-    await box.findByText(/^This summary starts at #3/);
+    await box.findByText(/^This summary starts partway through the session/);
     const disclosure = box.getByRole('button', { name: "Compass's outline of this session" });
     fireEvent.click(disclosure);
     disclosure.focus();
@@ -57,7 +57,7 @@ describe('a reader watching automatic outline progress', () => {
       region.querySelector('[data-next-summary] [data-next-outline-entry="p2"]'),
     ).not.toBeNull();
     const saved = box.getByRole('region', { name: 'Summary' });
-    const omission = box.getByText(/^This summary starts at #3/);
+    const omission = box.getByText(/^This summary starts partway through the session/);
     const unknown = box.getByText(
       'This saved summary used message excerpts; full message coverage was not recorded.',
     );
@@ -99,7 +99,7 @@ describe('a reader watching automatic outline progress', () => {
           summary={PARTIAL_SUMMARY_PLAN}
         />,
       );
-      const region = await screen.findByRole('region', { name: 'What the session has done' });
+      const region = await screen.findByRole('region', { name: "What's happened so far" });
       await within(region).findByText('Check the retry tests before continuing.');
       const size = region.querySelector('[data-next-summary-size]')?.textContent;
       expect(size).toMatch(/^More than /);
@@ -114,7 +114,7 @@ describe('a reader watching automatic outline progress', () => {
     render(
       <SummaryPage ended={false} outline={progressiveOutline(0)} summary={PARTIAL_SUMMARY_PLAN} />,
     );
-    const region = await screen.findByRole('region', { name: 'What the session has done' });
+    const region = await screen.findByRole('region', { name: "What's happened so far" });
     const box = within(region);
     await box.findByText(
       'This outline is partial. Compass will try to read more on later updates.',

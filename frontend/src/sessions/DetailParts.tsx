@@ -2,12 +2,21 @@ import { Alert } from '../ui/alert';
 import { Card } from '../ui/card';
 import { Separator } from '../ui/separator';
 import { Disclosure } from '../controls';
-import { SHOWN } from '../language/glossary';
-import type { Landing } from '../observed';
+import { GLOSSARY, SESSION_LIST_WORDS, SESSION_ROW_WORDS, SHOWN } from '../language/glossary';
+import { SESSION_TEXT_ORIGIN, type Landing, type ObservedSession } from '../observed';
 import { RouteAnchor } from './RouteAnchor';
-import { durationSince, isRecord, promptCopied, type Row } from '../observed';
+import { durationSince, gapNames, isRecord, promptCopied, type Row } from '../observed';
 import { Icon } from '../ui/icons';
-import type { CommandReports, Delivery, Facts, Health, Subagents, Tasks } from './detail';
+import {
+  sessionFigures,
+  turnEndedSentence,
+  type CommandReports,
+  type Delivery,
+  type Facts,
+  type Health,
+  type Subagents,
+  type Tasks,
+} from './detail';
 
 /* The parts of the session page that are a sentence or a list and nothing more. Each takes what the pure
    half derived and draws it; none reads the payload itself, so a figure on screen is always the one the
@@ -42,7 +51,9 @@ export function InstructionLine({
     <p className={className} data-next-instruction={String(instruction['label'])}>
       <span className="next-instruction-label">{label}</span>
       {`${age === null ? ':' : `, ${age}:`} `}
-      <span className="next-instruction-text">{text}</span>
+      <span className="next-instruction-text" data-authored>
+        {text}
+      </span>
     </p>
   );
 }
@@ -138,40 +149,172 @@ export function TasksView({ tasks }: { readonly tasks: Tasks }) {
 }
 
 export function SubagentsView({ subagents }: { readonly subagents: Subagents }) {
+  const heading = `${GLOSSARY.helpers.plain} (${subagents.rows.length})`;
   return (
-    <div className="next-session-current-subagents" data-next-session-subagents>
-      <span>{subagents.label}</span>
-      {subagents.rows.map((row) => (
-        <div
-          key={row.index}
-          className={row.live ? 'next-session-subagent next-live' : 'next-session-subagent'}
-          data-next-session-subagent={row.index}
-        >
-          {row.live ? (
-            <span role="img" aria-label="Working" className="next-session-subagent-glyph">
-              <Icon name="working" className="next-status-icon" />
+    <div className="grid gap-1.5" data-next-session-subagents>
+      <h3 className="m-0 text-label font-semibold">{heading}</h3>
+      <ul aria-label={heading} className="m-0 grid list-none gap-1 p-0">
+        {subagents.rows.map((row) => (
+          <li
+            key={row.index}
+            className="flex flex-wrap justify-between gap-x-2 [overflow-wrap:anywhere]"
+            data-next-session-subagent={row.index}
+          >
+            {row.name ? (
+              <span data-authored>{row.parent ? `${row.name} · ${row.parent}` : row.name}</span>
+            ) : (
+              <span>
+                Unnamed helper
+                {row.parent ? (
+                  <>
+                    {' '}
+                    · <span data-authored>{row.parent}</span>
+                  </>
+                ) : null}
+              </span>
+            )}
+            <span className="text-label text-muted-foreground">
+              {row.live === true
+                ? SESSION_ROW_WORDS.working
+                : row.live === false
+                  ? 'Not running'
+                  : 'Activity not published'}
+              {row.elapsed ? ` · ${row.elapsed}` : ''}
             </span>
-          ) : null}
-          <strong className="next-session-subagent-name">
-            {row.name}
-            {row.parent ? (
-              <span className="next-session-subagent-parent">{` · ${row.parent}`}</span>
-            ) : null}
-          </strong>
-          {row.elapsed !== null ? (
-            <span className="next-session-subagent-elapsed">{row.elapsed}</span>
-          ) : null}
-          {row.live === true ? null : (
-            <span className="next-session-subagent-state">
-              {row.live === false ? 'Not running' : 'Activity not published'}
-            </span>
-          )}
-        </div>
-      ))}
+          </li>
+        ))}
+      </ul>
       {subagents.omitted > 0 ? (
-        <div className="next-session-subagents-omitted">{`+${String(subagents.omitted)} older finished worker${subagents.omitted === 1 ? '' : 's'} omitted`}</div>
+        <p className="m-0 text-label text-muted-foreground">
+          {`${subagents.omitted} older ${subagents.omitted === 1 ? 'helper' : 'helpers'} omitted`}
+        </p>
       ) : null}
     </div>
+  );
+}
+
+export function RightNow({
+  session,
+  observed,
+  generated,
+  subagents,
+}: {
+  readonly session: Row;
+  readonly observed: ObservedSession;
+  readonly generated: number | null;
+  readonly subagents: Subagents | null;
+}) {
+  const origin = observed[SESSION_TEXT_ORIGIN];
+  const gaps = gapNames(session);
+  const turnEnd = session['waiting_on_child']
+    ? null
+    : turnEndedSentence(session, generated, observed.askKnown);
+  return (
+    <Card
+      as="section"
+      variant="drift-panel"
+      className="next-session-right-now grid gap-3 p-4"
+      aria-labelledby="session-right-now"
+    >
+      <h2 id="session-right-now" className="m-0 text-value font-semibold">
+        {SESSION_LIST_WORDS.rightNow}
+      </h2>
+      <p
+        className="m-0 [overflow-wrap:anywhere]"
+        data-authored={(!turnEnd && origin.now) || undefined}
+      >
+        {turnEnd ?? observed.nowWords}
+      </p>
+      {gaps.length ? (
+        <p className="m-0 text-label text-muted-foreground">
+          Some activity could not be read: {gaps.join(', ')}.
+        </p>
+      ) : null}
+      {subagents ? <SubagentsView subagents={subagents} /> : null}
+      {!observed.isEnded ? (
+        <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-body">
+          <dt className="text-muted-foreground">Next step</dt>
+          <dd
+            className="m-0 [overflow-wrap:anywhere]"
+            data-authored={observed.nextKnown || undefined}
+          >
+            {observed.nextText}
+          </dd>
+          <dt className="text-muted-foreground">Blocked?</dt>
+          <dd className="m-0 [overflow-wrap:anywhere]">
+            {observed.blockKnown || gaps.includes('block state')
+              ? observed.blockText
+              : 'This agent does not report blocks'}
+            {observed.blockNote ? (
+              <span className="block" data-authored={origin.blockNote || undefined}>
+                {observed.blockNote}
+              </span>
+            ) : null}
+          </dd>
+        </dl>
+      ) : null}
+    </Card>
+  );
+}
+
+export function AtAGlance({ figures }: { readonly figures: ReturnType<typeof sessionFigures> }) {
+  return (
+    <Card
+      as="section"
+      variant="drift-panel"
+      className="next-session-at-a-glance grid gap-3 p-4"
+      aria-labelledby="session-at-a-glance"
+    >
+      <h2 id="session-at-a-glance" className="m-0 text-value font-semibold">
+        {SESSION_LIST_WORDS.atAGlance}
+      </h2>
+      {figures.length ? (
+        <dl className="m-0 grid grid-cols-2 gap-3 [overflow-wrap:anywhere]">
+          {figures.map(({ label, value }) => (
+            <div key={label} className="flex flex-col-reverse">
+              <dt className="text-label text-muted-foreground">{label}</dt>
+              <dd className="m-0 text-value font-semibold">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="m-0 text-muted-foreground">No figures published for this session.</p>
+      )}
+    </Card>
+  );
+}
+
+export function SessionProject({
+  project,
+  viewOnly,
+}: {
+  readonly project: string;
+  readonly viewOnly: boolean;
+}) {
+  return (
+    <Card
+      as="section"
+      variant="drift-panel"
+      className="next-session-project grid gap-3 p-4"
+      aria-labelledby="session-project"
+    >
+      <h2 id="session-project" className="m-0 text-value font-semibold">
+        Project
+      </h2>
+      {project ? (
+        <p className="m-0 [overflow-wrap:anywhere]">
+          {viewOnly ? (
+            <span data-authored>{project}</span>
+          ) : (
+            <RouteAnchor route={{ view: 'project', project }} className="text-primary">
+              <span data-authored>{project}</span>
+            </RouteAnchor>
+          )}
+        </p>
+      ) : (
+        <p className="m-0 text-muted-foreground">Project not published.</p>
+      )}
+    </Card>
   );
 }
 

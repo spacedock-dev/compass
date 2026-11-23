@@ -200,13 +200,15 @@ export const CheckAgainBesideTheStaleBanner: Story = {
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
     const stale = await within(drift).findByText('Out of date');
-    const again = await within(drift).findByRole('button', { name: 'Check progress again' });
+    const again = await within(canvasElement).findByRole('button', {
+      name: 'Check progress again',
+    });
     await expect(stale).toBeVisible();
     await expect(again).toBeVisible();
     await expect(again.closest('header')).not.toBeNull();
-    await expect(within(drift).getAllByRole('button', { name: /^Check progress/ })).toEqual([
-      again,
-    ]);
+    await expect(within(canvasElement).getAllByRole('button', { name: /^Check progress/ })).toEqual(
+      [again],
+    );
   },
 };
 

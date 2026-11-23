@@ -53,7 +53,7 @@ describe('Steer back from a check', () => {
     await page.settle();
     // The page's own clock says the reading was today, so the hours stand alone (`datedClock` below for a date).
     expect(textOf('[data-next-steer-from]')).toBe(
-      `Built from your saved intent and the reading at ${datedClock(1000, 1000)}`,
+      `Built from your saved goal and the reading at ${datedClock(1000, 1000)}`,
     );
     expect(document.querySelector('[data-next-steer-off]')).toBeNull();
   });

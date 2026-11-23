@@ -46,6 +46,8 @@ async function drawn(canvasElement: HTMLElement): Promise<HTMLElement> {
 }
 
 const head = (card: HTMLElement) => card.querySelector('header') as HTMLElement;
+const sessionHead = (canvas: HTMLElement) =>
+  canvas.querySelector('.next-session-detail-header') as HTMLElement;
 
 /* The re-run controls the card draws, by name: Check progress again over a current reading, Check progress again over one
    that new work or a changed intent left behind. */
@@ -82,7 +84,9 @@ export const UndatedReadingOffersRetryAfterFailure: Story = {
     const card = await drawn(canvasElement);
     await readingDrawn(card);
     await expect(within(card).getByText(undatedFailure, { exact: false })).toBeVisible();
-    const retry = within(card).getByRole('button', { name: 'Check progress again' });
+    const retry = within(sessionHead(canvasElement)).getByRole('button', {
+      name: 'Check progress again',
+    });
     await expect(retry).toBeVisible();
     await expect(retry.nextElementSibling).toHaveTextContent('Uses AI');
     await expect(card.querySelector('[data-next-drift-stamp]')).toBeNull();
@@ -95,7 +99,9 @@ export const Empty: Story = {
   ...scenario({ facts: [PERSON, failedCheck('c1', 500)] }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
-    const analyze = await within(card).findByRole('button', { name: 'Check progress' });
+    const analyze = await within(sessionHead(canvasElement)).findByRole('button', {
+      name: 'Check progress',
+    });
     await expect(analyze).toBeVisible();
     await expect(
       within(head(card)).getByRole('heading', { name: 'Is it on track?' }),
@@ -108,7 +114,7 @@ export const Empty: Story = {
     await expect(within(card).queryByRole('button', { name: 'Steer back' })).toBeNull();
     await expect(within(card).queryByRole('button', { name: /model calls$/ })).toBeNull();
     await expect(within(card).queryByRole('switch', { name: 'Live monitor' })).toBeNull();
-    await expect(rerun(card)).toHaveLength(0);
+    await expect(rerun(canvasElement)).toHaveLength(0);
     await expect(sentButtons(card)).toHaveLength(1);
     // One sentence under Check progress, what it will read; "Runs in the background." is not a second.
     await expect(card).not.toHaveTextContent('Runs in the background');
@@ -143,7 +149,7 @@ export const Running: Story = {
     await expect(card.querySelector('.next-session-drift-meter')).toBeNull();
     await expect(card).not.toHaveTextContent(/drift checks? requested/);
     await expect(card.querySelector('[data-next-result]')).toBeNull();
-    await expect(rerun(card)).toHaveLength(0);
+    await expect(rerun(canvasElement)).toHaveLength(0);
     await expect(within(card).queryByRole('button', { name: 'Steer back' })).toBeNull();
   },
 };
@@ -167,10 +173,10 @@ export const ReRunning: Story = {
     await expect(dimmed).toHaveAttribute('aria-busy', 'true');
     await expect(dimmed).toHaveAttribute('inert');
     await expect(dimmed?.querySelector('[data-next-progress-summary]')).not.toBeNull();
-    const again = rerun(head(card));
+    const again = rerun(sessionHead(canvasElement));
     await expect(again).toHaveLength(1);
     await expect(again[0]).toHaveAttribute('aria-disabled', 'true');
-    await expect(rerun(card)).toHaveLength(1);
+    await expect(rerun(canvasElement)).toHaveLength(1);
   },
 };
 
@@ -190,11 +196,11 @@ export const Result: Story = {
     await expect(within(card).queryByText(RESULT_DEPARTS)).toBeNull();
     await expect(within(result).getByText(/It stopped running the tests\./)).toBeVisible();
     // Present from the first reading, in the header, enabled.
-    const again = within(head(await drawn(canvasElement))).getByRole('button', {
+    const again = within(sessionHead(canvasElement)).getByRole('button', {
       name: 'Check progress again',
     });
     await expect(again).not.toHaveAttribute('aria-disabled', 'true');
-    await expect(rerun(card)).toHaveLength(1);
+    await expect(rerun(canvasElement)).toHaveLength(1);
     await expect(within(card).getByRole('button', { name: 'Steer back' })).toBeVisible();
     await expect(card).not.toHaveTextContent('Delegated work');
     // Moved under What the check read, folded until it is opened.
@@ -351,10 +357,10 @@ export const NewWork: Story = {
       'data-variant',
       'reading-stale',
     );
-    const again = rerun(card);
+    const again = rerun(canvasElement);
     await expect(again).toHaveLength(1);
     await expect(again[0]).toHaveAccessibleName('Check progress again');
-    await expect(head(await drawn(canvasElement)).contains(again[0] ?? null)).toBe(true);
+    await expect(sessionHead(canvasElement).contains(again[0] ?? null)).toBe(true);
     await expect(stale).not.toHaveTextContent(/drift checks? requested/);
     await expect(sentButtons(card)).toHaveLength(1);
     await expect(
@@ -382,10 +388,10 @@ export const IntentChanged: Story = {
     await expect(card.querySelector('[data-next-evidence-stale="intent"]')).toHaveTextContent(
       'Your intent changed after this analysis.',
     );
-    const again = rerun(card);
+    const again = rerun(canvasElement);
     await expect(again).toHaveLength(1);
     await expect(again[0]).toHaveAccessibleName('Check progress again');
-    await expect(head(await drawn(canvasElement)).contains(again[0] ?? null)).toBe(true);
+    await expect(sessionHead(canvasElement).contains(again[0] ?? null)).toBe(true);
     await expect(sentButtons(card)).toHaveLength(1);
   },
 };
@@ -402,10 +408,10 @@ export const Paused: Story = {
     const card = await drawn(canvasElement);
     await readingDrawn(card);
     await expect(within(head(card)).getByRole('button', { name: 'Resume AI use' })).toBeVisible();
-    const again = rerun(head(card));
+    const again = rerun(sessionHead(canvasElement));
     await expect(again).toHaveLength(1);
     await expect(again[0]).toHaveAttribute('aria-disabled', 'true');
-    await expect(rerun(card)).toHaveLength(1);
+    await expect(rerun(canvasElement)).toHaveLength(1);
     await expect(
       within(card).getAllByText('Model calls are paused. Nothing is sent until you resume.')[0],
     ).toBeVisible();
@@ -435,7 +441,7 @@ export const NoticeCollapsesOnceRead: Story = {
     const card = await drawn(canvasElement);
     await readingDrawn(card);
     await expect(card.querySelector('[data-next-reading-notice]')).toBeNull();
-    await userEvent.click(rerun(card)[0] as HTMLElement);
+    await userEvent.click(rerun(canvasElement)[0] as HTMLElement);
     const open = await waitFor(() => {
       const node = card.querySelector<HTMLElement>('[data-next-reading-notice]');
       expect(node).not.toBeNull();
@@ -457,6 +463,6 @@ export const NoticeCollapsesOnceRead: Story = {
     await waitFor(() =>
       expect(within(panel).getByRole('button', { name: 'Pause all AI use' })).toBeVisible(),
     );
-    await expect(rerun(card)).toHaveLength(1);
+    await expect(rerun(canvasElement)).toHaveLength(1);
   },
 };

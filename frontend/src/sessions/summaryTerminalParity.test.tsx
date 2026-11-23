@@ -192,7 +192,7 @@ beforeEach(() => vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true));
 it('a person turning summaries off in a terminal sees machine-wide off on the page without a new summary', async () => {
   const receipt = grant({ consent: false, off: true, reason: 'summaries-off' });
   render(<SummaryPage grant={receipt} summary={fixture.context.sources.summary} />);
-  const region = await screen.findByRole('region', { name: 'What the session has done' });
+  const region = await screen.findByRole('region', { name: "What's happened so far" });
   await within(region).findByText(
     'Summaries are turned off for every session. Nothing is sent for a summary until you turn them on.',
   );

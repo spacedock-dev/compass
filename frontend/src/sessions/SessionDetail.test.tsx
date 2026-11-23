@@ -71,8 +71,8 @@ const RATED = {
 };
 const header = () => document.querySelector('.next-session-detail-header') as HTMLElement;
 
-describe('the header as one line', () => {
-  it('a working session names its token rate, its state, its activity and its turn in one row', async () => {
+describe('session identity and activity', () => {
+  it('a working session puts the published activity in Right now and its rate in technical details', async () => {
     await open(
       board(
         [
@@ -88,11 +88,13 @@ describe('the header as one line', () => {
         RATED,
       ),
     );
-    const bar = header().querySelector('.next-session-detail-bar') as HTMLElement;
-    expect(bar.querySelector('.next-session-identity')).not.toBeNull();
-    expect(bar.querySelector('.next-session-detail-meta')).not.toBeNull();
-    expect(bar.textContent).toContain('1,450 tokens/min');
-    expect(bar.textContent).toContain('running Bash');
+    expect(header().textContent).toContain('Working');
+    expect(header().textContent).not.toContain('1,450 tokens/min');
+    expect(screen.getByRole('region', { name: 'Right now' }).textContent).toContain('running Bash');
+    await openSessionTechnicalTab('Activity log');
+    expect(screen.getByRole('tabpanel', { name: 'Activity log' }).textContent).toContain(
+      '1,450 tokens/min',
+    );
   });
   it('an idle session shows no token rate', async () => {
     await open(
@@ -558,7 +560,7 @@ describe('what the page says about what it could not see', () => {
     });
     const text = document.body.textContent ?? '';
     expect(text).toContain('Title not published');
-    expect(text).toContain('Harness does not report blocks');
+    expect(text).toContain('This agent does not report blocks');
     expect(text).toContain('Session facts: No stop or end observed · Git state was not measured');
   });
 
@@ -613,7 +615,14 @@ describe('what the page says about what it could not see', () => {
     ]);
   });
 
-  it('lists workers with their own state, counts only direct children in the heading, and says how many older ones were left out', async () => {
+  it('keeps published token figures together in At a glance', async () => {
+    await open(board([{ ...ONE, session_output_tokens: 100, turn_output_tokens: 5 }]));
+    const figures = screen.getByRole('region', { name: 'At a glance' });
+    expect(figures.textContent).toContain('Session output tokens100Turn output tokens5');
+    expect(screen.queryByText(/output tokens this (?:turn|session)/i)).toBeNull();
+  });
+
+  it('lists helpers with their own state and says how many older ones were left out', async () => {
     await open(
       board([
         {
@@ -628,14 +637,10 @@ describe('what the page says about what it could not see', () => {
         },
       ]),
     );
-    const block = document.querySelector('[data-next-session-subagents]');
-    expect(block?.querySelector('span')?.textContent).toBe(
-      '1 RUNNING SUBAGENT · 1 WORKER RUNNING BENEATH',
-    );
-    expect(block?.querySelectorAll('.next-session-subagent')).toHaveLength(3);
-    expect(block?.querySelector('.next-session-subagents-omitted')?.textContent).toBe(
-      '+2 older finished workers omitted',
-    );
+    const helpers = screen.getByRole('list', { name: 'Helpers (3)' });
+    expect(within(helpers).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(helpers).getByText('child · lead')).toBeVisible();
+    expect(screen.getByText('2 older helpers omitted')).toBeVisible();
   });
 });
 

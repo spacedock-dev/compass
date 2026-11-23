@@ -399,16 +399,16 @@ describe('a turn stop is the hook’s, or the transcript’s named as the transc
       'Reads the work so far; the session is still running.',
     );
     expect(readHint({ harness: 'claude', state: 'idle', ended_at: 4 })).toBe(
-      'Reads the session up to its end against your intent.',
+      'Reads the session up to its end against your goal.',
     );
     expect(readHint({ harness: 'claude', state: 'idle', finished_at: 4 })).toBe(
-      'Reads the session up to its last turn against your intent.',
+      'Reads the session up to its last turn against your goal.',
     );
     expect(readHint({ harness: 'codex', state: 'idle', finished_at: 4 })).toBe(
-      'Reads the session up to its last turn against your intent.',
+      'Reads the session up to its last turn against your goal.',
     );
     expect(readHint({ harness: 'codex', state: 'idle', turn_end_at: 4 })).toBe(
-      'Reads the session up to its last turn against your intent.',
+      'Reads the session up to its last turn against your goal.',
     );
     expect(readHint({ harness: 'antigravity', state: 'idle', finished_at: 4 })).toBe('');
   });

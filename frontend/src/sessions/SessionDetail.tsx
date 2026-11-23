@@ -4,11 +4,12 @@ import { RelationshipLabels, LinkedChildren } from './DeclaredRelationships';
 import { Badge } from '../ui/badge';
 import { useHoldStill } from './useHoldStill';
 import { Card } from '../ui/card';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Disclosure, RaiseControl, disclosureKey, useFocusKey } from '../controls';
 import { noTitleText, pageTitleOf, type ObservedSession, type Row } from '../observed';
 import { selectObserved } from '../observed/select';
-import { sessionHome, type SessionRoute } from '../router/grammar';
+import type { SessionRoute } from '../router/grammar';
+import { isSampleRoute } from '../sample/ids';
 import { useDisplayed, useShell } from '../shell/context';
 import type { PayloadData } from '../api/types';
 import { AnswerBlock } from './AnswerBlock';
@@ -30,6 +31,7 @@ import { DriftSlot } from './DriftSlot';
 import { SessionTechnicalDetails } from './SessionTechnicalDetails';
 import { WhatItDid } from './WhatItDid';
 import {
+  AtAGlance,
   CommandReportsView,
   DeliveryView,
   DeparturesKept,
@@ -37,7 +39,8 @@ import {
   HealthView,
   InstructionLine,
   LandedView,
-  SubagentsView,
+  RightNow,
+  SessionProject,
   TasksView,
 } from './DetailParts';
 import {
@@ -48,28 +51,20 @@ import {
   sessionAsks,
   sessionDelivery,
   sessionFacts,
-  sessionFooter,
+  sessionFigures,
   sessionHealth,
   sessionMeta,
   turnEndedSentence,
   sessionSubagents,
   sessionTasks,
 } from './detail';
-import { RouteAnchor } from './RouteAnchor';
 import { harnessLabels } from './rows';
 import { sessionInstruction } from './intent';
 import { worktreeOf } from './worktree';
 import './sessions.css';
 
-/* The session page: one exact session, its state, what it is waiting on, and what it has done. Identity is
-   the harness and the sid together, never the display id, and every control it carries acts only when
-   pressed. The legacy `next-session.js` is the oracle for every sentence outside the Intent, summary and
-   Drift cards.
-
-   One column at every width, top to bottom: the header, the answer block when the session needs input, the
-   Intent card, the What the session has done card, the Drift card, and Activity log, collapsed. The owner
-   reversed the two-column layout on 2026-10-19:
-   [one column again](../../../docs/design-reading-a-session.md#amended-2026-10-19-owner-one-column-again). */
+/* The two columns and narrow reading order follow the
+   [dated layout amendment](../../../docs/design-reading-a-session.md#amended-2026-11-22-owner-the-session-page-has-two-columns-from-1100-px). */
 
 function Controls({
   session,
@@ -208,9 +203,11 @@ function Header({
   generated,
   payload,
   sessions,
+  harnessLabel,
 }: {
   readonly payload: Row;
   readonly sessions: readonly ObservedSession[];
+  readonly harnessLabel: string | undefined;
   readonly session: Row;
   readonly observed: ObservedSession;
   readonly route: SessionRoute;
@@ -222,55 +219,46 @@ function Header({
   const status = sessionState(observed);
   const limit = sessionStateLimit(observed, status);
   const showState = status !== 'State not published' && status !== 'Waiting on child';
-  const label = observed.project;
   const title = pageTitleOf(session);
-  const showRate = observed.rateKnown && !observed.isEnded && !observed.isQuiet;
   return (
     <header
       /* The edge runs beside the title and its status alone, padded off the text: drawn down the whole
          unpadded page it ran its full height and over the title's first letter (owner, 2026-10-29). */
       className={`next-session-detail-header${observed.isNeeds || observed.askKnown ? ' pb-0 border-l-[3px] border-l-[var(--amber)] pl-[14px]' : ''}`}
     >
-      <div className="next-session-detail-title">
-        <h1
-          ref={titleRef}
-          tabIndex={-1}
-          className={`${title ? '' : 'next-session-absent'}${observed.isNeeds || observed.askKnown ? ' line-clamp-2' : ''}`}
-          title={title || noTitleText(session)}
-        >
-          {title || noTitleText(session)}
-        </h1>
+      <div className="next-session-heading-row">
+        <div className="next-session-detail-title">
+          <h1
+            ref={titleRef}
+            tabIndex={-1}
+            className={`${title ? '' : 'next-session-absent'}${observed.isNeeds || observed.askKnown ? ' line-clamp-2' : ''}`}
+            title={title || noTitleText(session)}
+            data-authored={Boolean(title) || undefined}
+          >
+            {title || noTitleText(session)}
+          </h1>
+          {showState ? (
+            <span className="inline-flex" data-next-session-status>
+              <Badge variant="status" className="next-session-state">
+                <span className="next-visually-hidden">State: </span>
+                {status}
+              </Badge>
+            </span>
+          ) : null}
+        </div>
+        <DriftStamp />
       </div>
       <div className="next-session-detail-bar">
-        {showState ? (
-          <span className="inline-flex" data-next-session-status>
-            <Badge variant="status" className="next-session-state">
-              <span className="next-visually-hidden">State: </span>
-              {status}
-            </Badge>
-          </span>
-        ) : null}
         <p className="next-session-identity">
-          {`${observed.harness} · ${observed.sid}`}
-          {/* A rate belongs to a session that is producing tokens: an idle or ended one reports its last burst, which reads as speed it no longer has.
-              Named in full here, where it stands alone among identifiers: a bare "44 /m" said no unit. */}
-          {showRate ? ` · ${observed.rateText.replace(/ \/m$/, ' tokens/min')}` : ''}
-          {label && sessionHome(route) !== 'projects' ? (
+          {harnessLabel ?? 'Session source not published'}
+          {worktreeOf(session) ? (
             <>
-              {' · '}
-              <RouteAnchor route={{ view: 'project', project: label }}>{label}</RouteAnchor>
+              {' '}
+              · worktree <span data-authored>{worktreeOf(session)}</span>
             </>
           ) : null}
-          {worktreeOf(session) ? ` · worktree ${worktreeOf(session)}` : ''}
           <SessionAge session={session} generated={generated} />
         </p>
-        {!(observed.isNeeds || observed.askKnown) ? (
-          <SessionMetadata
-            session={session}
-            generated={generated}
-            hasOpenRequest={observed.askKnown}
-          />
-        ) : null}
         <SessionProgressLevel />
         <Controls session={session} observed={observed} route={route} />
       </div>
@@ -289,10 +277,30 @@ function Header({
   );
 }
 
+function SessionFigures({ session }: { readonly session: Row }) {
+  const { model } = useDrift();
+  const { entryCount, recordComplete } = model;
+  // A complete record can establish zero. Retained entries from a partial read only give a floor.
+  const recorded = recordComplete ? (entryCount ?? 0) : entryCount || null;
+  return <AtAGlance figures={sessionFigures(session, recorded, !recordComplete)} />;
+}
+
 export interface SessionDetailProps {
   readonly route: SessionRoute;
   readonly data: PayloadData;
   readonly session: Row;
+}
+
+const sessionColumns = '(min-width: 1100px)';
+
+function subscribeToColumns(listener: () => void) {
+  const media = globalThis.matchMedia?.(sessionColumns);
+  media?.addEventListener?.('change', listener);
+  return () => media?.removeEventListener?.('change', listener);
+}
+
+function hasTwoColumns(): boolean {
+  return globalThis.matchMedia?.(sessionColumns).matches ?? false;
 }
 
 export function SessionDetail({ route, data, session }: SessionDetailProps): ReactNode {
@@ -316,6 +324,7 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
   const asks = useMemo(() => sessionAsks(payload, session), [payload, session]);
   usePruneAnswerNotes(payload);
   const scope = `${route.harness ?? ''}:${route.session}`;
+  const wide = useSyncExternalStore(subscribeToColumns, hasTwoColumns);
   const [page, setPage] = useState<HTMLElement | null>(null);
   useHoldStill(page);
   if (!observed) return null;
@@ -327,9 +336,11 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
   const health = sessionHealth(session);
   const reports = commandReports(payload, session);
   const delivery = sessionDelivery(session);
-  const footer = sessionFooter(session);
   const asked = sessionInstruction(session, 'asked');
   const factKey = (name: string) => disclosureKey({ project: route.project, scope, name });
+  const rightNow = (
+    <RightNow session={session} observed={observed} generated={generated} subagents={subagents} />
+  );
   return (
     <article
       ref={setPage}
@@ -348,6 +359,7 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
           generated={generated}
           payload={payload}
           sessions={model.sessions}
+          harnessLabel={labels.get(observed.harness)}
         />
         {observed.askKnown ? (
           <AnswerBlock
@@ -360,23 +372,26 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
         ) : observed.isNeeds ? (
           <WaitingBlock observed={observed} />
         ) : null}
-        <div className="next-session-columns flex flex-col gap-5">
-          <DriftSlot
-            session={session}
-            payload={payload}
-            project={route.project}
-            summary={
-              <WhatItDid
-                // Running is what the session is doing now, not that it has not ended: an idle or
-                // completed session is open but does nothing until the person writes again.
-                running={observed.isWorking || observed.isNeeds}
-                harness={labels.get(observed.harness) ?? observed.harness}
-              />
-            }
-            stamp={<DriftStamp />}
-            actions={<DriftHeadControls />}
-            drift={<DriftBody primary={!(observed.isNeeds || observed.askKnown)} />}
-          />
+        <div className="next-session-columns" data-wide={wide || undefined}>
+          <div className="next-session-column">
+            <DriftSlot
+              session={session}
+              payload={payload}
+              project={route.project}
+              actions={<DriftHeadControls />}
+              drift={<DriftBody primary={!(observed.isNeeds || observed.askKnown)} />}
+            />
+            {wide ? null : rightNow}
+            <WhatItDid
+              running={observed.isWorking || observed.isNeeds}
+              harness={labels.get(observed.harness) ?? observed.harness}
+            />
+          </div>
+          <div className="next-session-column">
+            {wide ? rightNow : null}
+            <SessionFigures session={session} />
+            <SessionProject project={observed.project} viewOnly={isSampleRoute(route)} />
+          </div>
           <SessionTechnicalDetails
             project={route.project}
             session={session}
@@ -393,16 +408,19 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
               </div>
             }
           >
-            {observed.isNeeds || observed.askKnown ? (
-              <SessionMetadata
-                session={session}
-                generated={generated}
-                hasOpenRequest={observed.askKnown}
-              />
-            ) : null}
+            <SessionMetadata
+              session={session}
+              generated={generated}
+              hasOpenRequest={observed.askKnown}
+            />
+            <p className="next-session-identity">
+              {`${observed.harness} · ${observed.sid}`}
+              {observed.rateKnown && !observed.isEnded && !observed.isQuiet
+                ? ` · ${observed.rateText.replace(/ \/m$/, ' tokens/min')}`
+                : ''}
+            </p>
             <WorkListView />
             <CommandSurface session={session} observed={observed} generated={generated} />
-            {subagents ? <SubagentsView subagents={subagents} /> : null}
             <FactsView facts={facts} disclosureKey={factKey('session-facts')} />
             <div className="next-session-evidence">
               {asked ? (
@@ -423,11 +441,6 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
             ) : null}
           </SessionTechnicalDetails>
         </div>
-        {footer ? (
-          <footer className="next-session-footer" data-next-session-tokens={footer.source}>
-            {footer.text}
-          </footer>
-        ) : null}
       </DriftProvider>
     </article>
   );

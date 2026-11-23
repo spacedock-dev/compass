@@ -249,7 +249,7 @@ async function saveTyped(canvasElement: HTMLElement) {
   const goal = await canvas.findByRole('textbox', { name: 'Goal' });
   await userEvent.clear(goal);
   await userEvent.type(goal, 'Land the worker behind a flag');
-  await userEvent.click(canvas.getByRole('button', { name: 'Save intent' }));
+  await userEvent.click(canvas.getByRole('button', { name: 'Save goal' }));
   const footer = canvasElement.querySelector('.next-cockpit-held-footer') as HTMLElement;
   await waitFor(() => expect(footer).toHaveTextContent('Saved.'));
   return footer;

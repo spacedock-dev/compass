@@ -66,7 +66,9 @@ async function drawn(canvasElement: HTMLElement): Promise<HTMLElement> {
 }
 
 /* The controls load with the facts, after the card itself: a story waits for the one it asserts. */
-const analyzeButton = (card: HTMLElement) => findButton(card, /^Check progress$/);
+const sessionHeader = (card: HTMLElement) =>
+  card.closest('article')?.querySelector<HTMLElement>('.next-session-detail-header') as HTMLElement;
+const analyzeButton = (card: HTMLElement) => findButton(sessionHeader(card), /^Check progress$/);
 const steerBack = (card: HTMLElement) => findButton(card, 'Steer back');
 
 export const SentAndSettingsStayInFlow: Story = {
@@ -120,7 +122,7 @@ const WRITES = [
 ];
 
 /* Stage 1: no saved words. The first prompt is drafted into the goal box and marked as the prompt's, nothing
-   is stored, and the press that reads it adopts it, so Analyze is the one primary. Save intent is live over
+   is stored, and the press that reads it adopts it, so Analyze is the one primary. Save goal is live over
    the draft and stays quiet. */
 export const IdleWithADraftedGoal: Story = {
   ...scenario({ unsaved: true }),
@@ -130,7 +132,7 @@ export const IdleWithADraftedGoal: Story = {
     const goal = await page.findByRole('textbox', { name: 'Goal' });
     await expect(goal).toHaveValue('Ship the queue worker');
     await expect(await page.findByText('Drafted from your first prompt · not saved')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Save intent' })).not.toHaveAttribute(
+    await expect(page.getByRole('button', { name: 'Save goal' })).not.toHaveAttribute(
       'aria-disabled',
       'true',
     );
@@ -152,7 +154,7 @@ export const IdleWithAnEditedDraft: Story = {
     const goal = await within(canvasElement).findByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ', then verify');
     await within(card).findByText(INTENT_EDITED);
-    const analyze = button(card, /^Check progress$/);
+    const analyze = button(sessionHeader(card), /^Check progress$/);
     await expect(analyze).toHaveAttribute('aria-disabled', 'true');
     await expect(primaries(canvasElement)).toEqual([analyze]);
     await neverRetired(canvasElement);
@@ -235,7 +237,9 @@ export const Analyzing: Story = {
     await expect(steps[1]).toHaveAttribute('aria-current', 'step');
     await expect(within(box).getByText(JOB_NOTE_SO_FAR)).toBeVisible();
     await expect(button(card, 'Cancel')).toBeVisible();
-    await expect(within(card).queryByRole('button', { name: /^Check progress/ })).toBeNull();
+    await expect(
+      within(canvasElement).queryByRole('button', { name: /^Check progress/ }),
+    ).toBeNull();
     await noCheckMark(box);
     // The running analysis is the card's state, not a press to make: nothing on the page asks for one.
     await expect(primaries(canvasElement)).toHaveLength(0);
@@ -314,10 +318,10 @@ export const ResultUnderADeparture: Story = {
     const steer = await steerBack(card);
     await expect(button(card, 'Update my goal instead')).toBeVisible();
     await expect(primaries(canvasElement)).toEqual([steer]);
-    await expect(within(card).getAllByRole('button', { name: /^Check progress/ })).toHaveLength(1);
     await expect(
-      button(card.querySelector('header') as HTMLElement, 'Check progress again'),
-    ).toBeVisible();
+      within(canvasElement).getAllByRole('button', { name: /^Check progress/ }),
+    ).toHaveLength(1);
+    await expect(button(sessionHeader(card), 'Check progress again')).toBeVisible();
     await neverDone(result);
     await neverRetired(canvasElement);
   },
@@ -340,8 +344,10 @@ export const StaleResult: Story = {
     const card = await drawn(canvasElement);
     await expect(await within(card).findByText('Out of date')).toBeVisible();
     await expect(card.querySelector('[data-next-drift-pill]')).toBeNull();
-    const again = await findButton(card, 'Check progress again');
-    await expect(within(card).getAllByRole('button', { name: /^Check progress/ })).toEqual([again]);
+    const again = await findButton(sessionHeader(card), 'Check progress again');
+    await expect(within(canvasElement).getAllByRole('button', { name: /^Check progress/ })).toEqual(
+      [again],
+    );
     const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
     await expect(await evidence.findByText('New work since this analysis.')).toBeVisible();
     await userEvent.click(evidence.getByRole('button', { name: 'What the check read' }));
@@ -362,7 +368,7 @@ export const StaleResult: Story = {
 async function noReaderStory(canvasElement: HTMLElement, card: HTMLElement, reason: string) {
   const note = REASON_CASES[reason]?.note as string;
   await expect(await within(card).findByText(note)).toBeVisible();
-  await expect(within(card).queryByRole('button', { name: /^Check progress/ })).toBeNull();
+  await expect(within(canvasElement).queryByRole('button', { name: /^Check progress/ })).toBeNull();
   await expect(card).not.toHaveTextContent('Check progress');
   // A failed check alone offers no Steer back: it waits for a departure from the intent.
   await expect(within(card).queryByRole('button', { name: 'Steer back' })).toBeNull();
@@ -672,10 +678,9 @@ export const ModelCallsPausedUntilResume: Story = {
     ).toBeVisible();
     /* Analyze stays in its place, refused; Resume is the Drift card head's alone (usability review,
        2026-10-20). */
-    await expect(within(card).getByRole('button', { name: 'Check progress' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
+    await expect(
+      within(sessionHeader(card)).getByRole('button', { name: 'Check progress' }),
+    ).toHaveAttribute('aria-disabled', 'true');
     await expect(within(card).getAllByRole('button', { name: 'Resume AI use' })).toHaveLength(1);
     const on = within(card).getByRole('button', { name: 'Resume AI use' });
     await expect(on).toBeVisible();
@@ -686,10 +691,9 @@ export const ModelCallsPausedUntilResume: Story = {
     await expect(offReading.posts).toHaveLength(0);
     await userEvent.click(on);
     await waitFor(() =>
-      expect(within(card).getByRole('button', { name: 'Check progress' })).not.toHaveAttribute(
-        'aria-disabled',
-        'true',
-      ),
+      expect(
+        within(sessionHeader(card)).getByRole('button', { name: 'Check progress' }),
+      ).not.toHaveAttribute('aria-disabled', 'true'),
     );
     await expect(card.querySelector('[data-next-analyzing]')).toBeNull();
     await expect(offReading.posts).toHaveLength(1);

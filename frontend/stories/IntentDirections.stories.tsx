@@ -199,7 +199,7 @@ export const MissingRecord: Story = {
     await failedPress(
       canvasElement,
       'direction-keep',
-      'That direction could not be verified as later than your intent in the current record. Nothing was settled and no analysis was started.',
+      'That direction could not be verified as later than your goal in the current record. Nothing was settled and no analysis was started.',
     );
   },
 };
@@ -234,7 +234,7 @@ export const TwentyTwoDirections: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Leave it' }));
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-action-feedback]')).toHaveTextContent(
-        'Kept your intent and settled all 22 directions. No analysis was started.',
+        'Kept your goal and settled all 22 directions. No analysis was started.',
       ),
     );
   },
@@ -263,7 +263,7 @@ export const QuotedBeforeAnyPress: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Leave it' }));
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-action-feedback]')).toHaveTextContent(
-        'Kept your intent and settled the direction. No analysis was started.',
+        'Kept your goal and settled the direction. No analysis was started.',
       ),
     );
   },
@@ -283,7 +283,7 @@ export const AnalyzeStaysAvailable: Story = {
 };
 
 /* Add as a line opens the rule, not the whole message, on the first press, with its hint, and the card's one
-   Save intent saves it: the pending line draws no Save of its own. */
+   Save goal saves it: the pending line draws no Save of its own. */
 export const AddAsALineOneSave: Story = {
   args: { count: 2 },
   play: async ({ canvasElement }) => {
@@ -294,11 +294,11 @@ export const AddAsALineOneSave: Story = {
     // A pending line opens the Expected outcome accordion, which eases open.
     await waitFor(() => expect(canvas.getByText('Write the rule, not the moment.')).toBeVisible());
     await expect(canvas.getAllByRole('button', { name: /^Save\b/ })).toHaveLength(1);
-    await expect(canvas.getByRole('button', { name: 'Save intent' })).not.toHaveAttribute(
+    await expect(canvas.getByRole('button', { name: 'Save goal' })).not.toHaveAttribute(
       'aria-disabled',
       'true',
     );
-    await userEvent.click(canvas.getByRole('button', { name: 'Save intent' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'Save goal' }));
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-cockpit-direction-line]')).toBeNull(),
     );
@@ -375,7 +375,7 @@ export const PhoneDirectionAndPendingLine: Story = {
       await expect(line).toHaveValue('My reviewed synthetic outcome');
       await expect(line.getBoundingClientRect().width).toBeLessThanOrEqual(window.innerWidth);
       await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
-      await expect(canvas.getByRole('button', { name: 'Save intent' })).toBeVisible();
+      await expect(canvas.getByRole('button', { name: 'Save goal' })).toBeVisible();
       await expect(canvas.getByRole('button', { name: 'Remove' })).toBeVisible();
     } finally {
       if (browserPage) await browserPage.viewport(before.width, before.height);

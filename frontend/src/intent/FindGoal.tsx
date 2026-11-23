@@ -101,11 +101,9 @@ export function FoundCites() {
         const n = number(cite.factId, cite.ordinal);
         const where = n ? `#${n}` : clockText(cite.at ?? found.foundAt);
         return (
-          <small
-            key={cite.factId}
-            className="next-cockpit-held-source"
-            data-next-found-quote
-          >{`${where} ${cite.quotes.map((quote) => `“${quote}”`).join(' ')}`}</small>
+          <small key={cite.factId} className="next-cockpit-held-source" data-next-found-quote>
+            {where} <span data-authored>{cite.quotes.map((quote) => `“${quote}”`).join(' ')}</span>
+          </small>
         );
       })}
       {missing ? (

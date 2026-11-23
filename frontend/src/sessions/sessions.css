@@ -114,32 +114,28 @@
 .next-attention-risk-next{color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label)}
 
 /* ===== SESSION ===== */
-/* One column at every width (owner, 2026-10-19): the header, the answer
-   block, Intent, What the session has done, Drift and Activity log, in that
-   order, with no second track. The page scrolls as one document with no
-   scroll container; only the spent-budget banner sticks, and it holds no
-   state. */
 .next-session-detail{--mono:var(--sans);margin:12px 0 0;padding:0 0 34px;box-shadow:none}
 .next-session-panel{display:flex;flex-direction:column;gap:var(--sp-5);min-width:0}
+.next-session-columns,.next-session-column{display:grid;gap:var(--sp-5);align-items:start;min-width:0}
+.next-session-column>*{min-width:0}
+@media(min-width:1100px){
+  .next-session-columns[data-wide]{grid-template-columns:minmax(0,7fr) minmax(0,3fr)}
+}
+.next-session-columns>.next-session-activity{grid-column:1 / -1}
+.next-session-heading-row{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:start;gap:var(--sp-3)}
 .next-session-activity{min-width:0}
 
-/* Two rows: state, name and id; then the measured line with the controls on
-   its right. One element per line took 205px and pushed Analyze drift to
-   978-1022px at 1440x900 (DRC-4680 walk). */
 .next-session-detail-header{display:flex;flex-direction:column;gap:6px;padding:8px 0 14px}
 .next-session-detail-title{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;min-width:0}
 .next-session-detail-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
-.next-session-detail-bar>.next-session-detail-meta{flex:1 1 16rem}
 .next-session-section>h2,.next-session-ask-callout>span{display:block;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em;text-transform:uppercase}
-.next-session-detail h1{margin:0;font-size:var(--fs-value);font-weight:600;letter-spacing:-.015em;overflow-wrap:anywhere}
+.next-session-detail h1{margin:0;font-size:var(--fs-hero);font-weight:700;letter-spacing:-.015em;overflow-wrap:anywhere}
 
 .next-instruction-label{color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em;text-transform:uppercase}
 .next-session-detail-meta{margin:0;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label)}
 .next-session-command-surface{margin-top:0}
 .next-session-command-surface h2,.next-session-current-label{display:block;margin:0 0 10px;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
 .next-session-current>strong,.next-session-command-facts strong,.next-session-command-context{display:block;margin:0;font-size:var(--fs-body);font-weight:500;line-height:1.5;overflow-wrap:anywhere}
-.next-session-current-subagents{margin-top:16px;border-top:1px solid var(--rule)}
-.next-session-current-subagents>span,.next-session-subagents-omitted{display:block;padding:10px 8px 5px;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
 
 .next-session-health{margin:20px 0 0}
 .next-session-health strong{color:var(--ink);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
@@ -154,14 +150,9 @@
 .next-session-answer-options{display:flex;flex-wrap:wrap;gap:9px}
 .next-session-answer-empty{margin:10px 0 0;color:var(--ink2);font-size:var(--fs-label)}
 .next-session-answer-failure{margin:10px 0 0}
-.next-session-task,.next-session-subagent{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:44px;padding:9px 8px;border-top:1px solid var(--rule)}
+.next-session-task{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:44px;padding:9px 8px;border-top:1px solid var(--rule)}
 .next-session-task--pending{color:var(--ink2)}
-.next-session-task-subject,.next-session-subagent-name{font-size:var(--fs-body);font-weight:500}
-.next-session-subagent-name{grid-column:2}
-.next-session-subagent-state{grid-column:2;color:var(--ink2);font-size:var(--fs-label)}
-.next-session-subagent-elapsed{grid-column:3;color:var(--ink2);font-family:var(--mono);font-size:var(--fs-label)}
-.next-session-subagent-parent{color:var(--ink2);font-weight:400;overflow-wrap:anywhere}
-.next-session-footer{padding:20px 0;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label);text-align:right}
+.next-session-task-subject{font-size:var(--fs-body);font-weight:500}
 .next-session-detail-empty{margin-top:34px;padding:24px;border:1px solid var(--rule);color:var(--ink2);font-size:var(--fs-body)}
 .next-session-current>strong{font-size:var(--fs-body);font-weight:600}
 .next-session-detail .next-session-absent{color:var(--ink-absence);font-family:var(--sans)}
@@ -172,10 +163,10 @@
 .next-session-reentry-none{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;flex:1 1 100%;justify-content:flex-end;color:var(--ink2);font-size:var(--fs-body)}
 
 .next-session-ask-callout{margin:0;padding:0;border:0;background:transparent}
-.next-session-ask-callout>span{color:var(--amber);font-size:var(--fs-label);letter-spacing:.07em}
+.next-session-ask-callout>span{color:var(--amber);font-size:var(--fs-label);font-family:var(--sans);letter-spacing:normal;text-transform:none}
 .next-session-wait{color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label);letter-spacing:normal;text-transform:none}
 .next-session-wait[data-known="true"]{color:var(--amber);font-family:var(--mono);font-size:var(--fs-label)}
-.next-session-ask-callout h2{margin:7px 0 0;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
+.next-session-ask-callout h2{margin:7px 0 0;color:var(--ink-label);font-family:var(--sans);font-size:var(--fs-label);font-weight:600}
 .next-session-facts{margin:20px 0 0}
 .next-session-facts-more{margin:10px 0 0}
 
@@ -190,8 +181,7 @@
   .next-session-detail{padding:0}
   .next-session-facts>div{grid-template-columns:90px minmax(0,1fr);gap:12px}
 
-  .next-session-task,.next-session-subagent{grid-template-columns:20px minmax(0,1fr)}
-  .next-session-subagent-elapsed{grid-column:2}
+  .next-session-task{grid-template-columns:20px minmax(0,1fr)}
 }
 
 /* ===== Departures, delivery and re-entry ===== */

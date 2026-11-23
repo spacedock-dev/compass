@@ -112,7 +112,7 @@ export function pageTitleOf(source: Row): string {
       .split('\n')
       .find((part) => part.trim())
       ?.trim() ?? '';
-  if (!line) return title;
+  if (!line) return '';
   return line.length > TITLE_WIDTH ? `${line.slice(0, TITLE_WIDTH - 1).trimEnd()}…` : line;
 }
 

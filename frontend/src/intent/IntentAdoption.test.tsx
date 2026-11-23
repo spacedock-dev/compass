@@ -15,7 +15,7 @@ import {
 } from './panel.testing';
 
 /* Prompt adoption: a prompt chosen from "Use your prompt" stands in the goal box as a pending adoption and
-   saves nothing. Save intent adopts it, naming the fact, the words and the time, and nothing the reader
+   saves nothing. Save goal adopts it, naming the fact, the words and the time, and nothing the reader
    typed, chose or changed while the request was open is dropped. */
 
 const settle = async (page: { settle: () => Promise<void> }) => {
@@ -141,7 +141,7 @@ describe('the "Use your prompt" menu', () => {
   });
 });
 
-describe('Save intent over an adopted prompt', () => {
+describe('Save goal over an adopted prompt', () => {
   it('adopts the chosen prompt naming its fact, words and time, and the revision the box was drawn against', async () => {
     const page = mountSession({
       store: { goal: 'Saved goal', revision: 3 },
@@ -181,7 +181,7 @@ describe('Save intent over an adopted prompt', () => {
     );
   });
 
-  it('adopts an untouched first prompt with Save intent, and nothing else does', async () => {
+  it('adopts an untouched first prompt with Save goal, and nothing else does', async () => {
     const page = mountSession({
       routes: {
         '/api/annotate': () => {

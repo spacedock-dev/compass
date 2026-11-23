@@ -22,7 +22,7 @@ import { harnessLabels } from './rows';
    real shell. The Intent and drift panel is outside the comparison (it is a stated slot here, and a stub
    there), and so is the activity list the panel feeds; everything else on the page is compared as
    text: the header with its state word, identity, measured line and controls, the held request with its
-   answer options, the activity column, the footer, and the attributes the page carries on its root. */
+   answer options, the activity column and the attributes the page carries on its root. */
 
 const legacy = loadLegacyViews();
 const norm = (node: Element | null): string =>
@@ -54,7 +54,12 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
       links: [],
     };
   const copy = article.cloneNode(true) as Element;
-  copy.querySelector('.next-session-panel')?.remove();
+  // The redesigned header, side cards and helper list have their own reader-facing stories.
+  // Compare the rest of the recorded page, including the activity and reports behind the disclosure.
+  for (const node of copy.querySelectorAll(
+    '.next-session-panel, .next-session-footer, [data-next-drift-status], .next-session-identity, .next-session-right-now, .next-session-at-a-glance, .next-session-project, [data-next-session-summary], [data-next-session-subagents], .next-session-current-subagents, .next-session-ask-callout',
+  ))
+    node.remove();
   maskDetailLifecycle(copy);
   /* The one-column page (owner, 2026-10-19; docs/design-frontend-migration.md#held-to-recorded-answers): the
      state badge moved under the title beside a new line that restates CURRENT ACTIVITY and the turn, and the
@@ -132,13 +137,19 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
     },
     text: norm(copy),
     disclosures: disclosureReadings(copy),
-    workers: article.querySelectorAll('.next-session-subagent').length,
+    workers: article.querySelectorAll('.next-session-subagent, [data-next-session-subagent]')
+      .length,
     answers: [...article.querySelectorAll('[data-next-answer]')].map(
       (button) =>
         `${button.getAttribute('data-next-answer')}#${button.getAttribute('data-next-answer-index')}:${norm(button)}`,
     ),
     links: [...article.querySelectorAll('a')]
-      .filter((anchor) => !anchor.closest('[data-next-session-section="waiting"]'))
+      .filter(
+        (anchor) =>
+          !anchor.closest(
+            '[data-next-session-section="waiting"], .next-session-identity, [data-next-drift-status], .next-session-project, .next-session-right-now',
+          ),
+      )
       .map((anchor) => anchor.getAttribute('href') ?? ''),
   };
 }
@@ -419,7 +430,7 @@ describe('the session page reads as the legacy page does, over generated payload
       const payload = genPayload(seed, { wellFormed: true });
       for (const route of routesOf(payload)) {
         const old = legacySummary(payload, route);
-        seen.ask += old.text.includes('ASKED YOU') ? 1 : 0;
+        seen.ask += old.answers.length ? 1 : 0;
         seen.ended += old.text.includes('ended') ? 1 : 0;
         seen.tasks += old.text.includes('TASKS ·') ? 1 : 0;
         seen.workers += old.workers > 0 ? 1 : 0;

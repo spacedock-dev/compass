@@ -22,6 +22,7 @@ function nodeLabel(element: Element, text: string): string {
 const TECHNICAL = '[data-layer="technical"]';
 const ACRONYMS = new Set([
   'AI',
+  'AM',
   'API',
   'CLI',
   'CPU',
@@ -38,6 +39,7 @@ const ACRONYMS = new Set([
   'MCP',
   'OS',
   'PDF',
+  'PM',
   'PR',
   'RAM',
   'RGB',

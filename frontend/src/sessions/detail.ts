@@ -316,16 +316,10 @@ export interface SubagentRow {
 }
 
 export interface Subagents {
-  readonly label: string;
   readonly rows: readonly SubagentRow[];
   readonly omitted: number;
 }
 
-/* Every number in the heading counts DIRECT children, so the leading clause agrees with the row's state
-   line above it: a grandchild is deliberately not in that population. A worker beneath a teammate is a
-   third population and gets its own clause rather than being folded into either count. The heading has to
-   survive a finished board still inside the display window, every element inactive: hiding the list there
-   would be the vanishing act, so the heading tells the truth and the rows stay. */
 export function sessionSubagents(
   subagents: readonly unknown[],
   omitted: number,
@@ -336,59 +330,29 @@ export function sessionSubagents(
     const parent = field(subagent, 'parent');
     return parent ? String(parent) : '';
   };
-  const direct = subagents.filter((subagent) => !parentOf(subagent));
-  const running = direct.filter((subagent) => subagentActivity(subagent) === true).length;
-  const unmeasured = direct.some((subagent) => subagentActivity(subagent) === null);
-  const beneath = subagents.filter(
-    (subagent) => parentOf(subagent) && subagentActivity(subagent) === true,
-  ).length;
-  const label =
-    (running === 0
-      ? `${String(direct.length)} SUBAGENT${direct.length === 1 ? '' : 'S'} · ${unmeasured ? 'NONE OBSERVED RUNNING' : 'NONE RUNNING'}`
-      : running === 1
-        ? '1 RUNNING SUBAGENT'
-        : `${String(running)} RUNNING SUBAGENTS`) +
-    (beneath === 0
-      ? ''
-      : ` · ${String(beneath)} WORKER${beneath === 1 ? '' : 'S'} RUNNING BENEATH`);
   return {
-    label,
     omitted: omitted || 0,
     rows: subagents.map((subagent, index) => ({
       index,
       live: subagentActivity(subagent),
-      name: String(field(subagent, 'name') || 'subagent'),
+      name: String(field(subagent, 'name') || '').trim(),
       parent: parentOf(subagent),
       elapsed: durationSince(generated, field(subagent, 'started_at')),
     })),
   };
 }
 
-export function compactTokens(value: number): string {
-  if (value < 1000) return Math.round(value).toLocaleString('en-US');
-  return `${String(Math.round(value / 100) / 10)}k`;
-}
-
-export interface Footer {
-  readonly source: 'turn' | 'session';
-  readonly text: string;
-}
-
-/* The turn's tokens while it runs, the session's otherwise, and the other where the preferred one was not
-   published. Nothing where neither was: a zero would be a default and not a count. */
-export function sessionFooter(session: Row): Footer | null {
-  session = nativeSession(session);
-  const sessionTotal = nextNumber(session['session_output_tokens']);
-  const turnTotal = nextNumber(session['turn_output_tokens']);
-  let source: 'turn' | 'session' = session['state'] === 'working' ? 'turn' : 'session';
-  let value = source === 'turn' ? turnTotal : sessionTotal;
-  if (value === null) {
-    source = source === 'turn' ? 'session' : 'turn';
-    value = source === 'turn' ? turnTotal : sessionTotal;
-  }
-  return value === null
-    ? null
-    : { source, text: `${compactTokens(value)} output tokens this ${source}` };
+export function sessionFigures(session: Row, entries: number | null, partial: boolean) {
+  const figures = [
+    { label: 'Recorded entries', count: entries, partial },
+    { label: 'Session output tokens', count: nextNumber(session['session_output_tokens']) },
+    { label: 'Turn output tokens', count: nextNumber(session['turn_output_tokens']) },
+  ];
+  return figures.flatMap(({ label, count, partial }) =>
+    count === null || count < 0
+      ? []
+      : [{ label, value: `${partial ? 'At least ' : ''}${count.toLocaleString('en-US')}` }],
+  );
 }
 
 export interface Delivery {

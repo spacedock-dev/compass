@@ -45,7 +45,7 @@ function Heading({ section, children }: { readonly section: string; readonly chi
   );
 }
 
-/* One of the three queues under At risk. Empty draws nothing at all: a heading over no rows would claim a
+/* A queue under Worth a look. Empty draws nothing at all: a heading over no rows would claim a
    queue that was looked at and held nothing, which the coverage lines say once and in numbers. */
 function QueueSection({
   section,
@@ -170,10 +170,6 @@ function Board({
     (subject) => subject.kind === 'quota' && subject.identity?.project.startsWith('model:'),
   );
   const boardKeys = occurrences(boardRisks.map((risk) => `${risk.kind}\u0000${risk.identity}`));
-  const alreadyShown = new Set(
-    [...observed.risks, ...observed.boardRisks].map((risk) => riskSubject(risk, model)?.key),
-  );
-  const next = model.next.filter((subject) => !alreadyShown.has(subject.key));
   const waitingKeys = new Set(selection?.waitingOnYou.map(sessionKey));
   const needs = model.needs.filter((subject) => waitingKeys.has(subject.key));
   const subjects = new Map(
@@ -265,7 +261,6 @@ function Board({
           model={model}
         />
         <QueueSection section="close" title="Ready to wrap up" subjects={close} model={model} />
-        <QueueSection section="next" title="Coming next" subjects={next} model={model} />
       </section>
       <section className="next-attention-section" data-next-attention-section="board-risk">
         <div className="next-attention-section-heading">

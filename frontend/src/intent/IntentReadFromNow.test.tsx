@@ -14,7 +14,7 @@ import {
 } from './panel.testing';
 
 /* The owner's ruling of 2026-10-21 (docs/design-reading-a-session.md, "Amended 2026-10-21 (owner): editing the
-   goal keeps the reading's start"): Save intent keeps the reading's original start, and Read from my latest message is the
+   goal keeps the reading's start"): Save goal keeps the reading's original start, and Read from my latest message is the
    reader's explicit choice to move it, said in the moment with the time it moved to. */
 
 const OPENED = 1_000;
@@ -64,7 +64,7 @@ describe('Read from my latest message', () => {
     expect(control('held-save-from-now')).toBeNull();
   });
 
-  it('is offered beside Save intent over saved words, inert until there is something to save', async () => {
+  it('is offered beside Save goal over saved words, inert until there is something to save', async () => {
     const page = mountSession({
       store: { goal: 'Ship the queue worker', revision: 1 },
       session: saved(OPENED),

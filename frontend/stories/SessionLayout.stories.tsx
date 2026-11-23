@@ -10,19 +10,17 @@ import { App } from '../src/App';
 import { INTENT_MEASURED } from '../src/intent/sentences';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
-import { WHAT_IT_DID_PLACEHOLDER } from '../src/sessions/WhatItDid';
 import { createShell } from '../src/shell/createShell';
+import { GLOSSARY } from '../src/language/glossary';
 import { WAITING_ANSWER_WHERE } from '../src/sessions/WaitingBlock';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
 import { routeOf } from './drift.scenario';
 import { settledLayout, settledRect } from './settled-layout';
 
-/* The session page as one column (owner, 2026-10-19): the header, the answer block when the session needs
-   input, the Intent card, the What the session has done card, the Drift card and Activity log, collapsed.
-   Every story mounts the real page over a scripted backend; a path nobody scripted answers `{}`. */
+/* The real session page over a scripted backend. */
 
-const meta = { title: 'Sessions/One-column page' } satisfies Meta;
+const meta = { title: 'Sessions/Session page' } satisfies Meta;
 export default meta;
 type Story = StoryObj<typeof meta>;
 
@@ -157,6 +155,11 @@ function PageExample({
   annotations = true,
   settingsUnavailable = false,
   summariesUnavailable = false,
+  sessionOverrides = {},
+  recordState = 'ok',
+  olderFails = false,
+  contextFacts = [],
+  reportsBlocks = true,
 }: {
   readonly asking?: boolean;
   /** The exact request published while `asking`. */
@@ -179,6 +182,11 @@ function PageExample({
   readonly settingsUnavailable?: boolean;
   readonly summariesUnavailable?: boolean;
   readonly entries?: readonly Record<string, unknown>[];
+  readonly sessionOverrides?: Record<string, unknown>;
+  readonly recordState?: 'ok' | 'unsupported' | 'unavailable';
+  readonly olderFails?: boolean;
+  readonly contextFacts?: readonly Record<string, unknown>[];
+  readonly reportsBlocks?: boolean;
 }) {
   const [shell] = useState(() => {
     log.answers = [];
@@ -302,7 +310,13 @@ function PageExample({
               },
             },
             harnesses: [
-              { key: 'claude', label: 'Claude Code', reports_rate: true, discovered: true },
+              {
+                key: 'claude',
+                label: 'Claude Code',
+                reports_rate: true,
+                reports_needs_input: reportsBlocks,
+                discovered: true,
+              },
             ],
             ...(log.asking ? { ask: true, asks: [log.ask] } : {}),
             sessions: [
@@ -321,7 +335,10 @@ function PageExample({
                   : idle
                     ? { finished_at: G - 600, state_detail: 'awaiting your message' }
                     : {
-                        tasks: [{ subject: 'running Bash', status: 'in_progress' }],
+                        tasks: [
+                          { subject: 'running Bash', status: 'in_progress' },
+                          { subject: 'Write the release notes', status: 'pending' },
+                        ],
                         state_detail: 'running Bash',
                         turn: { elapsed_h: '3m' },
                       }),
@@ -356,6 +373,7 @@ function PageExample({
                       annotation_assessment: reading(cites, log.readAt, readingWindow, evidence),
                     }
                   : {}),
+                ...sessionOverrides,
               },
             ],
           });
@@ -394,7 +412,7 @@ function PageExample({
         }
         if (url.startsWith('/api/project-context'))
           return json({
-            semantic: { facts: [] },
+            semantic: { facts: contextFacts },
             sources: {
               work: {
                 tool_reports: [],
@@ -428,7 +446,7 @@ function PageExample({
             });
           }
           return json({
-            state: 'ok',
+            state: older && olderFails ? 'unavailable' : recordState,
             session: { harness: 'claude', sid: 's1' },
             entries:
               entries ?? Array.from({ length: 50 }, (_, i) => message((older ? 50 : 100) - i)),
@@ -492,8 +510,11 @@ function PageExample({
 const ORDER = [
   'Asked you',
   'Goal',
-  'What the session has done',
   'Is it on track?',
+  'Right now',
+  "What's happened so far",
+  'At a glance',
+  'Project',
   'Show technical details',
 ];
 /* A harness's own gate takes the asked block's place, and never stands beside it. */
@@ -547,36 +568,70 @@ export const RegionsInOrder: Story = {
   render: () => <PageExample />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
-    const breadcrumb = canvas.getByRole('navigation', { name: 'Breadcrumb' });
-    await expect(breadcrumb.querySelector('svg[data-icon="caret-right"]')).toBeVisible();
+    const title = await canvas.findByRole('heading', {
+      level: 1,
+      name: 'Synthetic layout session',
+    });
+    const header = title.closest('header') as HTMLElement;
+    const progress = canvas.getByRole('button', { name: 'Check progress' });
+    await expect(header).toContainElement(progress);
+    await expect(header).toHaveTextContent('State: Working');
+    await expect(header.querySelector('[data-next-session-status] svg')).toBeNull();
+    await expect(
+      within(canvas.getByRole('region', { name: 'Right now' })).getByText(
+        'Write the release notes',
+      ),
+    ).toBeVisible();
     const expected = [
       'Goal',
-      'What the session has done',
       'Is it on track?',
-      'Show technical details',
+      'Right now',
+      "What's happened so far",
+      'At a glance',
+      'Project',
     ];
-    for (const width of [1280, 400]) {
-      await atWidth(width, () => inOrderTopToBottom(canvasElement, expected));
+    const wide = () =>
+      waitFor(async () => {
+        await expect(canvasElement.querySelector('.next-session-columns')).toHaveAttribute(
+          'data-wide',
+          'true',
+        );
+        const bounds = (name: string) =>
+          canvas.getByRole('region', { name }).getBoundingClientRect();
+        const head = header.getBoundingClientRect();
+        const first = bounds('Goal');
+        const right = bounds('Right now');
+        await expect(Math.abs(head.left - first.left)).toBeLessThan(1);
+        await expect(Math.abs(head.right - right.right)).toBeLessThan(1);
+        await expect(first.top).toBeGreaterThanOrEqual(head.bottom);
+        await expect(right.top).toBeGreaterThanOrEqual(head.bottom);
+        await expect(right.left).toBeGreaterThan(first.right);
+        for (const name of expected.slice(4))
+          await expect(Math.abs(bounds(name).left - right.left)).toBeLessThan(1);
+        for (const name of ['Is it on track?', "What's happened so far"])
+          await expect(Math.abs(bounds(name).left - first.left)).toBeLessThan(1);
+      });
+    const narrow = () => inOrderTopToBottom(canvasElement, [...expected, 'Show technical details']);
+    if ('__vitest_browser_runner__' in window) {
+      const { page } = await import('vitest/browser');
+      const before = { width: window.innerWidth, height: window.innerHeight };
+      try {
+        for (const width of [375, 1099]) {
+          await page.viewport(width, 800);
+          await expect(window.innerWidth).toBe(width);
+          await narrow();
+        }
+        await page.viewport(1100, 800);
+        await expect(window.innerWidth).toBe(1100);
+        await wide();
+      } finally {
+        await page.viewport(before.width, before.height);
+      }
+    } else if (window.innerWidth >= 1100) {
+      await wide();
+    } else {
+      await narrow();
     }
-    // The state word leads the line that says what it is doing.
-    const status = canvasElement.querySelector('[data-next-session-status]') as HTMLElement;
-    await expect(status).toHaveTextContent('State: Working');
-    await expect(status.querySelector('svg')).toBeNull();
-    const meta = canvasElement.querySelector('.next-session-detail-meta') as HTMLElement;
-    await expect(meta).toHaveTextContent(/running Bash · turn started 3m ago/);
-    // One line, as the design draws it: the state, the identity with its rate and the measured words share a row.
-    const identity = canvasElement.querySelector('.next-session-identity') as HTMLElement;
-    await expect(identity).toHaveTextContent('1,450 tokens/min');
-    await atWidth(1280, async () => {
-      const rows = [status, identity, meta].map((node) => node.getBoundingClientRect());
-      for (const box of rows)
-        await expect(Math.abs(box.top - (rows[0] as DOMRect).top)).toBeLessThan(12);
-    });
-    await expect(canvas.getByText(WHAT_IT_DID_PLACEHOLDER)).toBeVisible();
-    await expect(
-      canvas.getByRole('button', { name: /^(Show|Hide) technical details$/ }),
-    ).toHaveAttribute('aria-expanded', 'false');
   },
 };
 
@@ -590,7 +645,9 @@ export const IdleShowsNoRate: Story = {
     const header = canvasElement.querySelector('.next-session-detail-header') as HTMLElement;
     await expect(header).toHaveTextContent('State: Quiet');
     await expect(header).not.toHaveTextContent('tokens/min');
-    await expect(header).toHaveTextContent(/Turn ended \d\d:\d\d · waiting for you/);
+    await expect(
+      within(canvasElement).getByRole('region', { name: 'Right now' }),
+    ).toHaveTextContent(/Turn ended \d\d:\d\d · waiting for you/);
     await expect(canvasElement).not.toHaveTextContent('idle · awaiting your message');
   },
 };
@@ -648,14 +705,20 @@ export const TechnicalDetailsContinuity: Story = {
   render: () => <PageExample />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const open = () => canvas.getByRole('button', { name: 'Hide technical details' });
-    const trigger = await canvas.findByRole('button', { name: 'Show technical details' });
+    const open = () => canvas.getByRole('button', { name: GLOSSARY.hideTechnicalDetails.plain });
+    const trigger = await canvas.findByRole('button', {
+      name: GLOSSARY.showTechnicalDetails.plain,
+    });
+    await expect(
+      canvas.getAllByRole('button', { name: GLOSSARY.showTechnicalDetails.plain }),
+    ).toHaveLength(1);
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await expect(trigger.querySelector('svg[data-icon="details"]')).not.toBeNull();
     await expect(
       canvas.getByRole('tablist', { name: 'Technical details', hidden: true }),
     ).not.toBeVisible();
     await userEvent.click(trigger);
+    await expect(open()).toBe(trigger);
     const tabs = canvas.getByRole('tablist', { name: 'Technical details' });
     const activityTab = within(tabs).getByRole('tab', { name: 'Activity log', selected: true });
     const panel = canvas.getByRole('tabpanel', { name: 'Activity log' });
@@ -1110,7 +1173,7 @@ export const MoreIsRetired: Story = {
     await expect(inDrift.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
     await expect(inDrift.queryByRole('button', { name: 'Drift settings' })).toBeNull();
     await expect(inDrift.queryByText(/^Delegated work:/)).toBeNull();
-    await expect(inDrift.getByRole('button', { name: 'Check progress' })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: 'Check progress' })).toBeVisible();
     await userEvent.click(inDrift.getByRole('button', { name: 'What is sent' }));
     await waitFor(() =>
       expect(inDrift.getByText('Estimated prompt ceiling for this route: 512 KB.')).toBeVisible(),
@@ -1390,16 +1453,11 @@ export const QuestionLeadsAndAnswersOnce: Story = {
     const canvas = within(canvasElement);
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
     await waitFor(() =>
-      expect(named(canvasElement)).toEqual([
-        'Goal',
-        'What the session has done',
-        'Is it on track?',
-        'Show technical details',
-      ]),
+      expect(named(canvasElement)).toEqual(expect.arrayContaining(ORDER.slice(1))),
     );
     log.asking = true;
     await userEvent.click(canvas.getByRole('button', { name: 'Simulate board poll' }));
-    await inOrderTopToBottom(canvasElement, ORDER);
+    await atWidth(1099, () => inOrderTopToBottom(canvasElement, ORDER));
     const asked = regions(canvasElement)[0] as HTMLElement;
     await expect(asked).toHaveTextContent('Run the synthetic migration now?');
     const yes = within(asked).getByRole('button', { name: 'Yes, run it' });
@@ -1490,7 +1548,7 @@ export const HarnessGateSaysWhereToAnswer: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const block = await canvas.findByRole('region', { name: 'Waiting on you' });
-    await expect(block).toHaveTextContent('WAITING ON YOU · 15m');
+    await expect(block).toHaveTextContent('Waiting on you · 15m');
     await expect(block).toHaveTextContent('Permission prompt: Bash');
     await expect(block).toHaveTextContent(WAITING_ANSWER_WHERE);
     const link = within(block).getByRole('link', { name: 'Needs you' });
@@ -1562,7 +1620,9 @@ export const HarnessGateWithExactRequest: Story = {
     const canvas = within(canvasElement);
     const asked = within(await canvas.findByRole('region', { name: 'Asked you' }));
     await expect(asked.getByText(String(ASK.question))).toBeVisible();
-    await expect(asked.getByText('Permission prompt: Bash', { exact: false })).toBeVisible();
+    await expect(asked.getByText('Permission prompt: Bash', { exact: true })).toBeVisible();
+    await expect(asked.getByText('Agent reports:', { exact: true })).toBeVisible();
+    await expect(asked.queryByText('Harness reports:', { exact: true })).toBeNull();
     await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
   },
 };
@@ -1634,8 +1694,9 @@ export const HelperActivity: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByText('1 RUNNING SUBAGENT')).toBeVisible();
-    await expect(canvas.getByRole('img', { name: 'Working' })).toBeVisible();
+    const helpers = canvas.getByRole('list', { name: 'Helpers (3)' });
+    await expect(helpers).toHaveTextContent('Working');
+    await expect(helpers.querySelector('svg')).toBeNull();
     for (const [name, word] of [
       ['Read documentation', 'Not running'],
       ['Check types', 'Activity not published'],
@@ -1646,3 +1707,169 @@ export const HelperActivity: Story = {
     }
   },
 };
+
+export const EndedHasNoCurrentNextStep: Story = {
+  render: () => <PageExample ended />,
+  play: async ({ canvasElement }) => {
+    const now = within(await within(canvasElement).findByRole('region', { name: 'Right now' }));
+    await expect(now.getByText('Session reported its own end', { exact: true })).toBeVisible();
+    await expect(now.queryByText('Next step', { exact: true })).toBeNull();
+    await expect(now.queryByText('Write the release notes', { exact: true })).toBeNull();
+    await expect(now.queryByText('No reported block', { exact: true })).toBeNull();
+  },
+};
+
+export const IdentifierOnlyTitle: Story = {
+  render: () => <PageExample sessionOverrides={{ title: 's1', annotation_goal: '' }} />,
+  play: async ({ canvasElement }) => {
+    const title = await within(canvasElement).findByRole('heading', {
+      level: 1,
+      name: 'Title not published',
+    });
+    await expect(title).not.toHaveAttribute('data-authored');
+  },
+};
+
+export const UnnamedHelper: Story = {
+  render: () => <PageExample sessionOverrides={{ subagents: [{ active: true }] }} />,
+  play: async ({ canvasElement }) => {
+    const now = within(await within(canvasElement).findByRole('region', { name: 'Right now' }));
+    await expect(now.getByRole('heading', { name: 'Helpers (1)' })).toBeVisible();
+    await expect(now.getByText('Unnamed helper', { exact: true })).not.toHaveAttribute(
+      'data-authored',
+    );
+    await expect(now.getByText('Working', { exact: true })).toBeVisible();
+    await expect(now.queryByText('subagent', { exact: true })).toBeNull();
+  },
+};
+
+function figuresStory(
+  props: Parameters<typeof PageExample>[0],
+  words: string,
+  absent: string,
+): Story {
+  return {
+    render: () => <PageExample {...props} />,
+    play: async ({ canvasElement }) => {
+      const region = await within(canvasElement).findByRole('region', { name: 'At a glance' });
+      await waitFor(() => expect(region.textContent).toBe(`At a glance${words}`));
+      await expect(within(region).queryByText(absent, { exact: true })).toBeNull();
+    },
+  };
+}
+
+export const FiguresPublished = figuresStory(
+  { entries: [message(1)] },
+  'Recorded entries1',
+  'At least 1',
+);
+export const FiguresMeasuredZero = figuresStory(
+  { entries: [] },
+  'Recorded entries0',
+  'No figures published for this session.',
+);
+export const FiguresPartial = figuresStory({}, 'Recorded entriesAt least 50', '50');
+export const FiguresUnsupported = figuresStory(
+  { recordState: 'unsupported' },
+  'No figures published for this session.',
+  'Recorded entries',
+);
+export const FiguresUnavailable = figuresStory(
+  { recordState: 'unavailable' },
+  'No figures published for this session.',
+  'Recorded entries',
+);
+
+export const FailedOlderPageKeepsFiguresPartial: Story = {
+  render: () => <PageExample olderFails />,
+  play: async ({ canvasElement }) => {
+    const region = await within(canvasElement).findByRole('region', { name: 'At a glance' });
+    await expect(await within(region).findByText('At least 50', { exact: true })).toBeVisible();
+    await openSessionTechnicalTab('Activity log', canvasElement);
+    await userEvent.click(
+      await within(canvasElement).findByRole('button', { name: /^Show \d+ older entries$/ }),
+    );
+    await expect(
+      await within(canvasElement).findByText('Could not read older entries', { exact: true }),
+    ).toBeVisible();
+    await expect(region.textContent).toBe('At a glanceRecorded entriesAt least 50');
+    await expect(within(region).queryByText('50', { exact: true })).toBeNull();
+  },
+};
+
+export const FiguresUnavailableWithRetainedEntry = figuresStory(
+  { recordState: 'unavailable', contextFacts: [message(1)] },
+  'Recorded entriesAt least 1',
+  '1',
+);
+
+export const PublishedTokenFigures = figuresStory(
+  {
+    recordState: 'unsupported',
+    sessionOverrides: { session_output_tokens: 0, turn_output_tokens: 1234 },
+  },
+  'Session output tokens0Turn output tokens1,234',
+  'Recorded entries',
+);
+
+const noActivity = { tasks: undefined, state_detail: undefined };
+function nowStory(
+  props: Parameters<typeof PageExample>[0],
+  words: string,
+  forbidden: readonly string[],
+): Story {
+  return {
+    render: () => <PageExample {...props} />,
+    play: async ({ canvasElement }) => {
+      const region = await within(canvasElement).findByRole('region', { name: 'Right now' });
+      await expect(region.textContent).toBe(`Right now${words}`);
+      for (const word of forbidden)
+        await expect(within(region).queryByText(word, { exact: true })).toBeNull();
+    },
+  };
+}
+
+export const RightNowWithoutActivity = nowStory(
+  { sessionOverrides: noActivity },
+  'Activity not publishedNext stepNo pending step publishedBlocked?No reported block',
+  [
+    'No state published',
+    'Waiting on you',
+    'Block state could not be read',
+    'Write the release notes',
+  ],
+);
+
+export const RightNowWithoutState = nowStory(
+  { sessionOverrides: { ...noActivity, state: undefined } },
+  'No state publishedNext stepNo pending step publishedBlocked?No reported block',
+  [
+    'Activity not published',
+    'Waiting on you',
+    'Block state could not be read',
+    'Write the release notes',
+  ],
+);
+
+export const RightNowWithoutBlockReporting = nowStory(
+  { sessionOverrides: noActivity, reportsBlocks: false },
+  'Activity not publishedNext stepNo pending step publishedBlocked?This agent does not report blocks',
+  [
+    'Harness does not report blocks',
+    'No reported block',
+    'Waiting on you',
+    'Block state could not be read',
+  ],
+);
+
+export const RightNowWithUnreadableBlock = nowStory(
+  { sessionOverrides: { ...noActivity, source_gaps: ['block state'] } },
+  'Activity not publishedSome activity could not be read: block state.Next stepNo pending step publishedBlocked?Block state could not be read',
+  ['No reported block', 'Waiting on you', 'This agent does not report blocks'],
+);
+
+export const RightNowWithReportedBlock = nowStory(
+  { gate: true },
+  'Permission prompt: BashNext stepNo pending step publishedBlocked?Waiting on youPermission prompt: Bash',
+  ['No reported block', 'Block state could not be read', 'Write the release notes'],
+);

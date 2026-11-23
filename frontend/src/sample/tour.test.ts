@@ -22,7 +22,7 @@ describe('the sample tour', () => {
 
   it('says the summary phases start closed, and that a reader presses one to read it', () => {
     expect(words('summary')).toMatch(/start closed/);
-    expect(words('summary')).toMatch(/press a phase/i);
+    expect(words('summary')).toMatch(/open a phase/i);
   });
 
   it('says the three phases that hold the one departure from the goal', () => {

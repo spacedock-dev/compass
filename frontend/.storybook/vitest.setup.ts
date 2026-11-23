@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect } from 'vitest';
 import { commands } from 'vitest/browser';
 import budget from '../first-layer-budget.json';
 import { auditCalm } from '../stories/calm.audit';
+import { boardCopyViolations } from '../test/firstLayer';
 import {
   auditContrast,
   formatFailures,
@@ -54,4 +55,12 @@ afterEach(async ({ task }) => {
   await settled();
   const failures = auditCalm(document.body);
   expect(failures, `${id}\n${failures.join('\n')}`).toEqual([]);
+});
+
+afterEach(async () => {
+  await settled();
+  const board = document.querySelector(
+    '[data-next-view-body="sessions"], [data-next-session-detail]',
+  );
+  if (board) expect(boardCopyViolations(board)).toEqual([]);
 });

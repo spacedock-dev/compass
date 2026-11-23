@@ -24,7 +24,11 @@ const NOTICE =
 
 async function pressAnalyze(canvasElement: HTMLElement): Promise<HTMLElement> {
   const card = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
-  await userEvent.click(await within(card).findByRole('button', { name: 'Check progress' }));
+  await userEvent.click(
+    await within(card.closest('article') as HTMLElement).findByRole('button', {
+      name: 'Check progress',
+    }),
+  );
   return card;
 }
 
@@ -68,5 +72,12 @@ export const UnreadableStoreSaysSoAndPointsAtTheCardNotice: Story = {
     await waitFor(() =>
       expect(intent).toHaveTextContent('Move or repair that file to save again.'),
     );
+    const answer = card.querySelector('[data-next-progress-answer]');
+    await expect(answer).toBeVisible();
+    await expect(answer?.textContent?.trim()).toBe(NOTICE);
+    await expect(
+      card.querySelector('[data-next-drift-pill], .next-session-drift-meter'),
+    ).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-session-progress]')).toBeNull();
   },
 };

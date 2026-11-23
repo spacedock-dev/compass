@@ -86,6 +86,8 @@ export interface DriftModel {
   readonly pillSoFar: boolean;
   /** The header's "N entries": nothing where the record was not read, because 0 would be a default. */
   readonly entryCount: number | null;
+  /** The session record has been read through its start. Context excerpts alone give no total. */
+  readonly recordComplete: boolean;
   /** The count is a floor: only the newest pages of the record are held, and older ones remain to read. The
       header, the summary's size and the window count all read it with `entryCount`, so they say one thing. */
   readonly entriesPartial: boolean;
@@ -335,8 +337,7 @@ export function buildModel(input: ModelInput): DriftModel {
     latestCheckWithheld,
     pillSoFar,
     entryCount: read ? numbers.size + numbering.earlier.length : null,
-    /* From the record alone: whether Show more still helps is a question about the intent window, but the
-       count is a floor for as long as any older page is unread, window or none. */
+    recordComplete: input.record?.status === 'loaded' && input.record.reachedStart,
     entriesPartial: read && input.record?.status === 'loaded' && !input.record.reachedStart,
     windowCount: read && numbering.earlier.length ? numbers.size : null,
   };
