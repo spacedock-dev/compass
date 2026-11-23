@@ -39,7 +39,12 @@ const message = (n: number) => ({
 });
 
 /* A stored reading whose Goal cites what `cites` names: `e5` sits on the older record page, `ghost` on none. */
-const reading = (cites: readonly string[], readAt: number, windowStart: number) => ({
+const reading = (
+  cites: readonly string[],
+  readAt: number,
+  windowStart: number,
+  evidence?: 'model' | 'unasked',
+) => ({
   revision_read: 1,
   revision_read_at: G - 200,
   window_start: windowStart,
@@ -48,7 +53,7 @@ const reading = (cites: readonly string[], readAt: number, windowStart: number) 
   goal_source: 'typed',
   scope: 'last-turn',
   scope_text: 'Read up to its last turn.',
-  stamp: 'model: claude-sonnet-5-5, read at 01:46',
+  stamp: evidence === 'unasked' ? 'unasked check at 01:46' : 'claude-sonnet-5-5 · read at 01:46',
   cutoff: 'Evidence read to its end.',
   coverage: {
     tail_truncated: false,
@@ -59,11 +64,21 @@ const reading = (cites: readonly string[], readAt: number, windowStart: number) 
   },
   criteria: {
     goal: {
-      result: 'consistent with the evidence read',
+      result: evidence === 'model' ? 'departure' : 'consistent with the evidence read',
       cites,
-      detail: '',
+      detail: evidence ? 'The agent switched to an unrelated task.' : '',
       clause: 'Synthetic goal',
     },
+    ...(evidence === 'model'
+      ? {
+          line_1: {
+            result: 'consistent with the evidence read',
+            cites: ['e96'],
+            detail: '',
+            clause: 'The tests complete',
+          },
+        }
+      : {}),
   },
 });
 
@@ -98,6 +113,7 @@ interface Log {
   readAt: number;
   served: number;
   previews: number;
+  summaryWrites: number;
   stallOlder: boolean;
   olderAsked: boolean;
   releaseOlder: (() => void) | null;
@@ -112,6 +128,7 @@ const log: Log = {
   readAt: G - 10,
   served: 0,
   previews: 0,
+  summaryWrites: 0,
   stallOlder: false,
   olderAsked: false,
   releaseOlder: null,
@@ -134,6 +151,11 @@ function PageExample({
   revised = false,
   entries,
   technical = false,
+  evidence,
+  readingUnavailable = false,
+  annotations = true,
+  settingsUnavailable = false,
+  summariesUnavailable = false,
 }: {
   readonly asking?: boolean;
   /** The exact request published while `asking`. */
@@ -150,6 +172,11 @@ function PageExample({
   readonly readingWindow?: number;
   readonly revised?: boolean;
   readonly technical?: boolean;
+  readonly evidence?: 'model' | 'unasked';
+  readonly readingUnavailable?: boolean;
+  readonly annotations?: boolean;
+  readonly settingsUnavailable?: boolean;
+  readonly summariesUnavailable?: boolean;
   readonly entries?: readonly Record<string, unknown>[];
 }) {
   const [shell] = useState(() => {
@@ -162,32 +189,35 @@ function PageExample({
     log.readAt = G - 10;
     log.served = 0;
     log.previews = 0;
+    log.summaryWrites = 0;
     log.stallOlder = stallOlder;
     log.olderAsked = false;
     log.releaseOlder = null;
     const history = fakeRouterEnvironment('#n=session:demo:claude:s1');
     let generation = G;
     let paused = false;
+    let summariesOff = false;
+    let ciRead = 'on';
     let marked = false;
     const policy = () => ({
-      consent: true,
+      consent: !paused && !readingUnavailable,
       off: paused,
+      reason: readingUnavailable ? 'store-unavailable' : paused ? 'model-calls-paused' : '',
       providers: { claude: true },
       words: { claude: true },
       tool_output: { claude: ['api'] },
-      used: 1,
+      used: readingUnavailable ? 0 : 1,
       limit: technical ? 100 : 10,
     });
     const sent = [
       'Sent: your goal, a bounded set of entries, and your messages and the agent’s messages.',
-      'The prompt size limit is 524,288 bytes.',
       'The agent’s newest final reply goes whole, up to 16,384 characters.',
       'Tool output includes a check’s command, result and last 180 characters of output, and paths of files written.',
-      'To: api.anthropic.com, with credential shapes redacted, through your Claude Code sign-in.',
+      'To: reader.example, with credential shapes redacted, through your Claude Code sign-in.',
     ];
     const settings = {
       values: {
-        analyze_prompt_bytes: 524288,
+        analyze_prompt_bytes: 16384,
         analyze_record_events: 2000,
         analyze_listed_checks: 1000,
         analyze_scan_megabytes: 512,
@@ -213,17 +243,23 @@ function PageExample({
           log.served += 1;
           return json({
             generated: generation++,
-            annotate: true,
+            annotate: annotations,
             annotate_cap: 240,
             annotate_goal_cap: 1000,
             reading_check: 'passed',
-            reading: policy(),
+            ...(annotations ? { reading: policy() } : {}),
             ...(technical
               ? {
                   summaries: {
-                    consent: true,
-                    off: false,
-                    reason: paused ? 'model-calls-paused' : '',
+                    consent: !paused && !summariesOff && !summariesUnavailable,
+                    off: summariesOff,
+                    reason: summariesUnavailable
+                      ? 'store-unavailable'
+                      : paused
+                        ? 'model-calls-paused'
+                        : summariesOff
+                          ? 'summaries-off'
+                          : '',
                   },
                 }
               : {}),
@@ -240,7 +276,25 @@ function PageExample({
                   ? {
                       disclosure: sent.join(' '),
                       disclosure_parts: sent,
-                      destination: 'api.anthropic.com',
+                      destination: '',
+                      words_destination: 'reader.example',
+                      ci_read: ciRead,
+                      capacity: {
+                        kind: 'capacity-preview',
+                        policy: 'analyze-context-v1',
+                        maximum_prompt_bytes: 524288,
+                        window_tokens: null,
+                        window_source: 'unknown',
+                        generation_reserve_tokens: 128000,
+                        cli_reserve_tokens: 16384,
+                        estimated_system_tokens: 0,
+                        estimate_method: 'legacy-byte-cap',
+                        fit_verified: false,
+                        policy_verified: false,
+                        configuration_reason: '',
+                        reason: 'estimated',
+                        can_lower_prompt_setting: true,
+                      },
                       model: 'claude-sonnet-5-5',
                     }
                   : {}),
@@ -298,14 +352,22 @@ function PageExample({
                   ? {
                       annotation_reading_count: 1,
                       ...(marked ? { annotation_not_accurate: true } : {}),
-                      annotation_assessment: reading(cites, log.readAt, readingWindow),
+                      annotation_assessment: reading(cites, log.readAt, readingWindow, evidence),
                     }
                   : {}),
               },
             ],
           });
         }
-        if (technical && url === '/api/settings') return json(settings);
+        if (technical && url === '/api/settings')
+          return settingsUnavailable ? new Response(null, { status: 503 }) : json(settings);
+        if (technical && url === '/api/summary' && init?.method === 'POST') {
+          log.summaryWrites += 1;
+          const { consent } = JSON.parse(String(init.body));
+          if (paused) return new Response(null, { status: 403 });
+          summariesOff = consent === 'off';
+          return json({ ok: true, summaries: { consent: !summariesOff, off: summariesOff } });
+        }
         if (technical && url.startsWith('/api/reading-long-plan')) log.previews += 1;
         if (technical && url === '/api/annotate' && init?.method === 'POST') {
           const press = JSON.parse(String(init?.body));
@@ -313,7 +375,11 @@ function PageExample({
           return json({ outcome: 'stored', persisted: true });
         }
         if (technical && url === '/api/reading') {
-          const { consent } = JSON.parse(String(init?.body));
+          const { consent, ci_read } = JSON.parse(String(init?.body));
+          if (ci_read) {
+            ciRead = ci_read;
+            return json({ ok: true, ci_read: ciRead });
+          }
           paused = consent === 'off';
           return json({ ok: true, reading: policy() });
         }
@@ -326,7 +392,30 @@ function PageExample({
           return json({ answered: true });
         }
         if (url.startsWith('/api/project-context'))
-          return json({ semantic: { facts: [] }, sources: { work: { tool_reports: [] } } });
+          return json({
+            semantic: { facts: [] },
+            sources: {
+              work: {
+                tool_reports: [],
+                ...(evidence
+                  ? {
+                      analysis_levels: [
+                        {
+                          harness: 'claude',
+                          sid: 's1',
+                          revision_read: 1,
+                          read_at: log.readAt,
+                          computed_at: log.readAt,
+                          level: 'medium',
+                          reasons: ['departure'],
+                          cites,
+                        },
+                      ],
+                    }
+                  : {}),
+              },
+            },
+          });
         if (url.startsWith('/api/annotations'))
           return json({ annotations: [], intent_revision: 'r1' });
         if (url.startsWith('/api/session-record')) {
@@ -715,63 +804,163 @@ export const ActivityLogFilters: Story = {
 };
 
 export const OpenTechnicalDetails: Story = {
-  render: () => <PageExample technical cites={['e95']} />,
+  render: () => <PageExample technical readingUnavailable />,
   play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
     const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
-    const sent = privacy.getByRole('button', { name: 'What is sent' });
-    await userEvent.click(sent);
+    await expect(privacy.getByText('reader.example · Claude Code')).toBeVisible();
+    await expect(privacy.getByText('Daily check count unavailable.')).toBeVisible();
+    await expect(privacy.queryByText('100 of 100 daily checks')).toBeNull();
+    await userEvent.click(privacy.getByRole('button', { name: 'What is sent' }));
     await waitFor(() =>
-      expect(privacy.getByText('The prompt size limit is 524,288 bytes.')).toBeVisible(),
+      expect(
+        privacy.getByText('Estimated prompt ceiling for this route: 524,288 bytes.'),
+      ).toBeVisible(),
     );
+    const first = within(canvas.getByRole('region', { name: 'Drift' }));
+    await userEvent.click(first.getByRole('button', { name: 'What is sent' }));
+    await waitFor(() =>
+      expect(first.getByText('Estimated prompt ceiling for this route: 512 KB.')).toBeVisible(),
+    );
+    await expect(first.queryByText(/524,288 bytes/)).toBeNull();
+    const checks = await openSessionTechnicalTab('Check settings', canvasElement);
+    await expect(await checks.findByText('16 KB of 2,048 KB allowed (16,384 bytes)')).toBeVisible();
+  },
+};
+
+export const TechnicalPullRequestReadKeepsFocus: Story = {
+  render: () => <PageExample technical />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const first = within(await canvas.findByRole('region', { name: 'Drift' }));
+    await userEvent.click(first.getByRole('button', { name: 'What is sent' }));
+    await waitFor(() =>
+      expect(first.getByRole('button', { name: 'Turn off the pull request read' })).toBeVisible(),
+    );
+    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+    await userEvent.click(privacy.getByRole('button', { name: 'Stop pull request reads' }));
+    await waitFor(() =>
+      expect(privacy.getByRole('button', { name: 'Allow pull request reads' })).toHaveFocus(),
+    );
+    await expect(
+      first.getByRole('button', { name: 'Turn on the pull request read' }),
+    ).toBeVisible();
   },
 };
 
 export const SharedAiPause: Story = {
-  render: () => <PageExample technical />,
+  render: () => <PageExample technical annotations={false} settingsUnavailable />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const settings = canvas.getByRole('button', { name: 'Open Settings for the story' });
+    const session = canvas.getByRole('button', { name: 'Return to the session' });
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
-    await openSessionTechnicalTab('AI use and privacy', canvasElement);
-    const pause = await canvas.findByRole('switch', { name: 'Pause all AI use' });
-    await expect(pause).toHaveAttribute('aria-checked', 'false');
-    await userEvent.click(pause);
-    await expect(await canvas.findByRole('switch', { name: 'Resume AI use' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+    const firstPause = await privacy.findByRole('switch', { name: 'Pause all AI use' });
+    await expect(firstPause).not.toBeChecked();
+    await expect(firstPause).toHaveAccessibleDescription('Applies to every session.');
 
+    for (const savedOn of [true, false]) {
+      const pause = await canvas.findByRole('switch', { name: 'Pause all AI use' });
+      await userEvent.click(pause);
+      await expect(await canvas.findByRole('switch', { name: 'Resume AI use' })).toBeChecked();
+      await userEvent.click(settings);
+      await expect(await canvas.findByText(/could not be read/)).toBeVisible();
+      const resume = await canvas.findByRole('switch', { name: 'Resume AI use' });
+      await expect(resume).toBeChecked();
+      const summaries = canvas.getByRole('switch', { name: 'Summaries' });
+      await expect(summaries).not.toBeChecked();
+      await expect(summaries).toHaveAttribute('aria-disabled', 'true');
+      await expect(summaries).toHaveAccessibleDescription(/Paused/i);
+      const writes = log.summaryWrites;
+      await userEvent.click(summaries);
+      await expect(log.summaryWrites).toBe(writes);
+      await userEvent.click(resume);
+      await expect(
+        await canvas.findByRole('switch', { name: 'Pause all AI use' }),
+      ).not.toBeChecked();
+      await waitFor(() => expect(summaries.getAttribute('aria-checked')).toBe(String(savedOn)));
+      if (savedOn) {
+        await userEvent.click(summaries);
+        await waitFor(() => expect(summaries).not.toBeChecked());
+        await expect(log.summaryWrites).toBe(writes + 1);
+      }
+      await userEvent.click(session);
+      await expect(
+        await canvas.findByRole('switch', { name: 'Pause all AI use' }),
+      ).not.toBeChecked();
+    }
+  },
+};
+
+export const UnavailableSummaryGrant: Story = {
+  render: () => <PageExample technical summariesUnavailable />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole('button', { name: 'Open Settings for the story' }));
-    const resume = await canvas.findByRole('switch', { name: 'Resume AI use' });
-    await expect(resume).toHaveAttribute('aria-checked', 'true');
-    const summaries = canvas.getByRole('switch', { name: 'Summaries' });
-    await expect(summaries).toHaveAttribute('aria-disabled', 'true');
-    await expect(summaries).toHaveAccessibleDescription(/Paused/i);
-    await userEvent.click(resume);
-    await expect(await canvas.findByRole('switch', { name: 'Pause all AI use' })).toHaveAttribute(
-      'aria-checked',
-      'false',
-    );
-    await userEvent.click(canvas.getByRole('button', { name: 'Return to the session' }));
-    await expect(await canvas.findByRole('switch', { name: 'Pause all AI use' })).toHaveAttribute(
-      'aria-checked',
-      'false',
-    );
+    await expect(await canvas.findByText('The Summaries setting is unavailable.')).toBeVisible();
+    await expect(canvas.queryByRole('switch', { name: 'Summaries' })).toBeNull();
+    await expect(canvas.getByRole('switch', { name: 'Pause all AI use' })).toBeVisible();
+  },
+};
+
+export const TechnicalTabsAtPhoneWidth: Story = {
+  render: () => <PageExample technical />,
+  play: async ({ canvasElement }) => {
+    await atWidth(400, async () => {
+      const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+      const tabs = within(canvasElement).getAllByRole('tab');
+      const labels = tabs.map((tab) => {
+        const range = document.createRange();
+        range.selectNodeContents(tab);
+        return range.getBoundingClientRect();
+      });
+      const sameRow = labels.slice(1).flatMap((box, index) => {
+        const previous = labels[index];
+        return previous && Math.abs(previous.top - box.top) < 1 ? [box.left - previous.right] : [];
+      });
+      await expect(sameRow.length).toBeGreaterThan(0);
+      await expect(Math.min(...sameRow)).toBeGreaterThan(0);
+
+      const pause = privacy.getByText('Applies to every session.');
+      const pullRequests = privacy.getByRole('button', { name: 'Stop pull request reads' });
+      const explanation = privacy.getByText(/pull request checks are read from GitHub or GitLab/i);
+      await expect(
+        pullRequests.getBoundingClientRect().top - pause.getBoundingClientRect().bottom,
+      ).toBeGreaterThan(0);
+      await expect(explanation.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        pullRequests.getBoundingClientRect().bottom,
+      );
+    });
   },
 };
 
 export const TechnicalEvidence: Story = {
-  render: () => <PageExample technical cites={['e95']} />,
+  render: () => <PageExample technical evidence="model" cites={['e95']} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
     await openSessionTechnicalTab('Evidence', canvasElement);
     const evidence = within(await canvas.findByRole('tabpanel', { name: 'Evidence' }));
-    await expect(evidence.getByText('Synthetic entry 95', { exact: false })).toBeVisible();
+    await expect(
+      await evidence.findByRole('heading', { name: 'Evidence for “Slightly off course”' }),
+    ).toBeVisible();
+    await expect(
+      evidence.getByText(/Reading by claude-sonnet-5-5 at \d{2}:\d{2}/),
+    ).toHaveTextContent('2 entries cited');
+    const goal = evidence.getByRole('heading', { name: /^Goal$/ });
+    const outcome = evidence.getByRole('heading', { name: /^Expected outcome$/ });
+    if (!goal.parentElement || !outcome.parentElement) throw new Error('Missing criterion groups');
+    await expect(within(goal.parentElement).getByText(/Synthetic entry 95/)).toBeVisible();
+    await expect(within(outcome.parentElement).getByText(/Synthetic entry 96/)).toBeVisible();
     await expect(evidence.getByRole('button', { name: 'What the check read' })).toBeVisible();
     await expect(evidence.getByRole('button', { name: 'This reading looks wrong' })).toBeVisible();
     await userEvent.click(evidence.getByRole('button', { name: 'This reading looks wrong' }));
     const undo = await evidence.findByRole('button', { name: 'Undo' });
     await waitFor(() => expect(undo).toHaveFocus());
+    const marked = evidence.getByText(/^Marked inaccurate\./);
+    await expect(marked).toBeVisible();
+    await expect(marked.getBoundingClientRect().height).toBeGreaterThan(1);
     await userEvent.click(undo);
     await waitFor(() =>
       expect(evidence.getByRole('button', { name: 'This reading looks wrong' })).toHaveFocus(),
@@ -781,13 +970,93 @@ export const TechnicalEvidence: Story = {
         exact: false,
       }),
     ).toBeVisible();
-    const cite = await evidence.findByRole('button', { name: /^Show #.* in Activity log/ });
+    const cite = await evidence.findByRole('button', {
+      name: /^Show #.* in Activity log for Goal/,
+    });
     await userEvent.click(cite);
     const activity = within(await canvas.findByRole('tabpanel', { name: 'Activity log' }));
     await userEvent.click(await activity.findByRole('button', { name: 'Back to the finding' }));
     await waitFor(() =>
-      expect(evidence.getByRole('button', { name: /^Show #.* in Activity log/ })).toHaveFocus(),
+      expect(
+        evidence.getByRole('button', { name: /^Show #.* in Activity log for Goal/ }),
+      ).toHaveFocus(),
     );
+  },
+};
+
+export const TechnicalEvidenceUnasked: Story = {
+  render: () => <PageExample technical evidence="unasked" cites={['e95']} />,
+  play: async ({ canvasElement }) => {
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    await expect(evidence.getByText(/^Unasked check at \d{2}:\d{2}/)).toBeVisible();
+  },
+};
+
+async function technicalTabInventory(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement);
+  const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+  const monitor = privacy.getByRole('switch', { name: 'Live monitor' });
+  await expect(monitor).toBeVisible();
+  await expect(monitor).toHaveAccessibleDescription(
+    /Checks progress about once a minute while you watch/,
+  );
+  await expect(privacy.getByText('Live monitor · Haiku')).toBeVisible();
+  await expect(privacy.getByText(/Applies to every session/)).toBeVisible();
+  await expect(privacy.getByText('99 of 100 daily checks')).toBeVisible();
+  await expect(privacy.getByRole('button', { name: 'Stop pull request reads' })).toBeVisible();
+  await expect(privacy.getByRole('switch', { name: 'Pause all AI use' })).toBeVisible();
+  await userEvent.click(privacy.getByRole('button', { name: 'What is sent' }));
+  await waitFor(() =>
+    expect(
+      privacy.getByText('Estimated prompt ceiling for this route: 524,288 bytes.'),
+    ).toBeVisible(),
+  );
+  await expect(privacy.queryByRole('dialog')).toBeNull();
+  const disclosure = privacy.getByText('Estimated prompt ceiling for this route: 524,288 bytes.');
+  await expect(disclosure.closest('[data-slot="accordion-content"]')).not.toBeNull();
+  await expect(disclosure.closest('[data-slot="popover-content"]')).toBeNull();
+
+  const checks = await openSessionTechnicalTab('Check settings', canvasElement);
+  await expect(await checks.findByText(/16 KB of 2,048 KB/)).toBeVisible();
+  for (const label of [
+    'Prompt size limit',
+    'Messages and checks kept',
+    'Checks and files listed',
+    'Transcript scanned for checks',
+  ]) {
+    await expect(checks.getByText(label)).toBeVisible();
+  }
+  await expect(checks.getByRole('link', { name: 'Settings' })).toHaveAttribute(
+    'href',
+    '#n=settings',
+  );
+  await expect(checks.getByRole('button', { name: 'Unfinished long checks' })).toBeVisible();
+  await userEvent.click(checks.getByRole('button', { name: 'Long check for very long sessions' }));
+  await waitFor(() =>
+    expect(checks.getByRole('button', { name: 'Refresh long preview' })).toBeVisible(),
+  );
+  await userEvent.click(canvas.getByRole('button', { name: 'Remount session' }));
+  const restored = within(await canvas.findByRole('tabpanel', { name: 'Check settings' }));
+  await expect(log.previews).toBe(1);
+  await expect(
+    restored.getByRole('button', { name: 'Long check for very long sessions' }),
+  ).toHaveAttribute('aria-expanded', 'true');
+  await expect(restored.getByRole('button', { name: 'Refresh long preview' })).toBeVisible();
+
+  const reports = await openSessionTechnicalTab('Reports', canvasElement);
+  await expect(reports.getByRole('heading', { name: /How it landed/i })).toBeVisible();
+  await expect(reports.getByRole('button', { name: /^command-shape reports/i })).toBeVisible();
+  await expect(reports.getByText('Accepted by macOS.')).toBeVisible();
+
+  const activity = await openSessionTechnicalTab('Activity log', canvasElement);
+  await expect(activity.queryByText(/Command-shape reports/i)).toBeNull();
+  await expect(activity.queryByText('Accepted by macOS.')).toBeNull();
+}
+
+export const TechnicalTabInventory: Story = {
+  render: () => <PageExample technical />,
+  play: async ({ canvasElement }) => {
+    await technicalTabInventory(canvasElement);
   },
 };
 
@@ -862,3 +1131,540 @@ export const MoreIsRetired: Story = {
     await userEvent.click(details);
     await activityLogPanel(canvasElement);
     await userEvent.click(details);
+    await expect(inDrift.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
+    await expect(inDrift.queryByRole('button', { name: 'Drift settings' })).toBeNull();
+    await expect(inDrift.queryByText(/^Delegated work:/)).toBeNull();
+    await expect(inDrift.getByRole('button', { name: 'Analyze drift' })).toBeVisible();
+    await userEvent.click(inDrift.getByRole('button', { name: 'What is sent' }));
+    await waitFor(() =>
+      expect(inDrift.getByText('Estimated prompt ceiling for this route: 512 KB.')).toBeVisible(),
+    );
+
+    await technicalTabInventory(canvasElement);
+  },
+};
+
+/* An ended session: the note that nothing is promised to read what is saved sits in About these saved words. */
+export const MoreIsRetiredForAnEndedSession: Story = {
+  render: () => <PageExample ended />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
+    await userEvent.click(await canvas.findByRole('button', { name: 'More about these words' }));
+    const about = await canvas.findByRole('button', { name: 'About these saved words' });
+    await userEvent.click(about);
+    await waitFor(() =>
+      expect(
+        canvas.getByText(
+          'This session has ended. Anything you save against it is kept, and nothing is promised to read it.',
+        ),
+      ).toBeVisible(),
+    );
+  },
+};
+
+function spyScroll() {
+  const calls: (ScrollIntoViewOptions | boolean | undefined)[] = [];
+  const original = Element.prototype.scrollIntoView;
+  const media = window.matchMedia;
+  Element.prototype.scrollIntoView = function scroll(options) {
+    calls.push(options);
+    original.call(this, options);
+  };
+  window.matchMedia = (query: string) =>
+    ({ ...media.call(window, query), matches: query.includes('reduce') }) as MediaQueryList;
+  return {
+    calls,
+    restore: () => {
+      Element.prototype.scrollIntoView = original;
+      window.matchMedia = media;
+    },
+  };
+}
+
+/* The Goal cites an entry on the older record page. The press opens Activity log, reads that page, and lands
+   on the entry with its tint; Escape goes back to the press, and neither move animates under reduced motion. */
+export const CitationLoadsAnOlderEntry: Story = {
+  render: () => <PageExample cites={['e5']} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const scroll = spyScroll();
+    try {
+      const jump = () =>
+        canvas.getByRole('button', {
+          name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
+        });
+      await waitFor(() => expect(jump()).toBeVisible());
+      await waitFor(() =>
+        expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(50),
+      );
+      await expect(canvasElement.querySelector('[data-next-entry-id="e5"]')).toBeNull();
+      const trigger = canvas.getByRole('button', { name: /^(Show|Hide) technical details$/ });
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await userEvent.click(trigger);
+      const tab = canvas.getByRole('tab', { name: 'Activity log', selected: true });
+      const panel = canvas.getByRole('tabpanel', { name: 'Activity log' });
+      await expect(tab).toHaveAttribute('aria-controls', panel.id);
+      await userEvent.click(within(panel).getByRole('button', { name: 'Cited' }));
+      await userEvent.click(trigger);
+      await userEvent.click(jump());
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      await waitFor(() =>
+        expect(within(panel).getByRole('button', { name: 'Cited', pressed: true })).toBeVisible(),
+      );
+      const row = await waitFor(() => {
+        const found = canvasElement.querySelector<HTMLElement>('[data-next-entry-id="e5"]');
+        if (!found) throw new Error('the older page has not arrived');
+        return found;
+      });
+      await waitFor(() => expect(document.activeElement).toBe(row));
+      await expect(row).toHaveAttribute('data-next-cited');
+      await expect(getComputedStyle(row).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+      // Wait for the row to land inside the viewport as the accordion settles.
+      await waitFor(() => {
+        const box = row.getBoundingClientRect();
+        expect(box.bottom).toBeGreaterThan(0);
+        expect(box.top).toBeLessThan(window.innerHeight);
+      });
+      await expect(scroll.calls.at(-1)).toEqual({ behavior: 'instant', block: 'center' });
+      /* Once the entry is held, the finding names it by its number instead of offering to load it, and the
+         way back lands on that number. */
+      const cited = () =>
+        canvas.getByRole('link', {
+          name: /^Show #\d+(\.\d+)? in Activity log for Goal: Synthetic goal$/,
+        });
+      await userEvent.keyboard('{Escape}');
+      await expect(document.activeElement).toBe(cited());
+      await expect(scroll.calls.at(-1)).toEqual({ behavior: 'instant', block: 'center' });
+      // A citation also lands from a filter that would otherwise hide its entry.
+      await userEvent.click(within(panel).getByRole('button', { name: 'You' }));
+      await seeInContext(cited());
+      const reopened = await waitFor(() => {
+        const found = panel.querySelector('[data-next-entry-id="e5"]');
+        if (!found) throw new Error('Waiting for the cited entry');
+        return found;
+      });
+      await waitFor(() => expect(document.activeElement).toBe(reopened));
+      await userEvent.click(
+        within(reopened as HTMLElement).getByRole('button', { name: 'Back to the finding' }),
+      );
+      await expect(document.activeElement).toBe(cited());
+    } finally {
+      scroll.restore();
+    }
+  },
+};
+
+/* The Goal cites an entry no record page returns. The press reads to the record's start, then says so where it
+   would have landed, and focus goes there rather than staying on a control whose answer is elsewhere. */
+export const CitationThatCannotLoadSaysSo: Story = {
+  render: () => <PageExample cites={['ghost']} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const jump = () =>
+      canvas.getByRole('button', {
+        name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
+      });
+    await waitFor(() => expect(jump()).toBeVisible());
+    await userEvent.click(jump());
+    const note = await waitFor(() => {
+      const found = canvasElement.querySelector<HTMLElement>('[data-next-jump-missing]');
+      if (!found) throw new Error('the read has not finished');
+      return found;
+    });
+    await expect(note).toHaveTextContent(
+      'An entry this finding cites could not be loaded: the record read for this session does not list it.',
+    );
+    await expect(note).toHaveAttribute('role', 'status');
+    await waitFor(() => expect(document.activeElement).toBe(note));
+    await expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(100);
+    await userEvent.click(within(note).getByRole('button', { name: 'Back to the finding' }));
+    await expect(document.activeElement).toBe(jump());
+    // Escape on the way back, too, returns to the finding rather than leaving the session page.
+    await userEvent.click(jump());
+    // The press takes the old sentence down and draws its own.
+    const again = await waitFor(() => {
+      const found = canvasElement.querySelector<HTMLElement>('[data-next-jump-missing]');
+      if (!found || document.activeElement !== found) throw new Error('not landed yet');
+      return found;
+    });
+    within(again).getByRole('button', { name: 'Back to the finding' }).focus();
+    await userEvent.keyboard('{Escape}');
+    await expect(document.activeElement).toBe(jump());
+    await expect(
+      canvas.getByRole('heading', { level: 1, name: 'Synthetic layout session' }),
+    ).toBeVisible();
+  },
+};
+
+/* A retained reading: the intent was saved again with a later window, and the Goal cites `e5`, from before
+   that window and on the older record page. The first page already reaches past the window, so Show more says
+   nothing about older entries, yet the press still reads the older page and lands on the entry. */
+export const RetainedReadingCitesBeforeTheWindow: Story = {
+  render: () => <PageExample cites={['e5']} windowStart={G - 30} revised />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('[data-next-entry-id]').length).toBeGreaterThan(0),
+    );
+    const jump = await canvas.findByRole('button', {
+      name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
+    });
+    await expect(canvasElement.querySelector('[data-next-unloaded]')).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-entry-id="e5"]')).toBeNull();
+    await userEvent.click(jump);
+    const row = await waitFor(() => {
+      const found = canvasElement.querySelector<HTMLElement>('[data-next-entry-id="e5"]');
+      if (!found) throw new Error('the older page has not arrived');
+      return found;
+    });
+    await waitFor(() => expect(document.activeElement).toBe(row));
+    await expect(row).toHaveAttribute('data-next-cited');
+    const swatch = document.createElement('span');
+    swatch.style.backgroundColor = 'color-mix(in srgb, var(--accent) 13%, transparent)';
+    swatch.style.color = 'var(--accent)';
+    row.append(swatch);
+    const tint = getComputedStyle(swatch).backgroundColor;
+    const edge = getComputedStyle(swatch).color;
+    swatch.remove();
+    await expect(getComputedStyle(row).backgroundColor).toBe(tint);
+    await expect(getComputedStyle(row).borderLeftColor).toBe(edge);
+    await expect(within(row).getByText('Before reading window')).toBeVisible();
+  },
+};
+
+/* The Goal cites `e5`, on the older page and from before the window the reading itself read. The press loads it,
+   but the reading's own rules set it aside, so no row is marked: the sentence says so and takes focus. */
+export const CitationSetAsideByTheReadingSaysSo: Story = {
+  render: () => <PageExample cites={['e5']} readingWindow={G - 60} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByRole('button', {
+        name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
+      }),
+    );
+    const note = await waitFor(() => {
+      const found = canvasElement.querySelector<HTMLElement>('[data-next-jump-missing]');
+      if (!found) throw new Error('the read has not finished');
+      return found;
+    });
+    await expect(note).toHaveTextContent(
+      /^The entries this finding cites are loaded, but none is marked/,
+    );
+    await waitFor(() => expect(document.activeElement).toBe(note));
+    await expect(canvasElement.querySelector('[data-next-entry-id="e5"]')).not.toBeNull();
+    await expect(canvasElement.querySelector('[data-next-cited]')).toBeNull();
+  },
+};
+
+async function pollWithNewReading(canvasElement: HTMLElement) {
+  const before = log.served;
+  log.readAt = G - 5;
+  await userEvent.click(within(canvasElement).getByRole('button', { name: 'Simulate board poll' }));
+  await waitFor(() => expect(log.served).toBeGreaterThan(before));
+}
+
+/* The press's older page is slow, and a new reading arrives while it is read. When the page finally answers,
+   the press it served belongs to a reading that is gone, so no "could not be loaded" sentence appears. */
+export const SlowReadEndsAfterANewReading: Story = {
+  render: () => <PageExample cites={['ghost']} stallOlder />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const jump = await canvas.findByRole('button', {
+      name: 'Load the cited entries in Activity log for Goal: Synthetic goal',
+    });
+    await userEvent.click(jump);
+    await waitFor(() => expect(log.releaseOlder).not.toBeNull());
+    await pollWithNewReading(canvasElement);
+    log.releaseOlder?.();
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(100),
+    );
+    // Long enough for the ended read's settle to have drawn the sentence, were it going to.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await expect(canvasElement.querySelector('[data-next-jump-missing]')).toBeNull();
+  },
+};
+
+/* The sentence stands, then a new reading arrives: the sentence and the press it answered go with the old
+   reading, and the control it kept drawn goes too, since the record has been read to its start. */
+export const NoteLeavesWithItsReading: Story = {
+  render: () => <PageExample cites={['ghost']} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const name = 'Load the cited entries in Activity log for Goal: Synthetic goal';
+    await userEvent.click(await canvas.findByRole('button', { name }));
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-jump-missing]')).not.toBeNull(),
+    );
+    await pollWithNewReading(canvasElement);
+    await waitFor(() => expect(canvasElement.querySelector('[data-next-jump-missing]')).toBeNull());
+    await expect(canvas.queryByRole('button', { name })).toBeNull();
+  },
+};
+
+/* A question arrives while the page is open: it leads the page, one press sends the exact request and option,
+   and a second press while that one is pending sends nothing. */
+export const QuestionLeadsAndAnswersOnce: Story = {
+  render: () => <PageExample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
+    await waitFor(() =>
+      expect(named(canvasElement)).toEqual([
+        'Goal',
+        'What the session has done',
+        'Drift',
+        'Show technical details',
+      ]),
+    );
+    log.asking = true;
+    await userEvent.click(canvas.getByRole('button', { name: 'Simulate board poll' }));
+    await inOrderTopToBottom(canvasElement, ORDER);
+    const asked = regions(canvasElement)[0] as HTMLElement;
+    await expect(asked).toHaveTextContent('Run the synthetic migration now?');
+    const yes = within(asked).getByRole('button', { name: 'Yes, run it' });
+    await userEvent.click(yes);
+    await waitFor(() => expect(log.answers).toHaveLength(1));
+    await expect(JSON.parse(log.answers[0] ?? '{}')).toEqual({ id: 'q1', index: 0 });
+    await waitFor(() => expect(yes).toHaveAttribute('aria-busy', 'true'));
+    await userEvent.click(yes);
+    await userEvent.click(within(asked).getByRole('button', { name: 'Not yet' }));
+    await expect(log.answers).toHaveLength(1);
+    log.release?.();
+    await waitFor(() => expect(named(canvasElement)[0]).toBe('Goal'));
+    await expect(log.answers).toHaveLength(1);
+  },
+};
+
+/* A question Compass shortened says so under its options, with the length the session sent and how many options
+   were never shown; the cut text still ends in "…", and the longest labels wrap inside the card at phone width. */
+export const ShortenedQuestion: Story = {
+  render: () => <PageExample asking ask={SHORTENED_ASK} />,
+  play: async ({ canvasElement }) => {
+    const asked = await within(canvasElement).findByRole('region', { name: 'Asked you' });
+    for (const width of [1280, 400]) {
+      await atWidth(width, async () => {
+        const question = asked.querySelector('.next-session-ask-question') as HTMLElement;
+        await expect(question.textContent).toHaveLength(2_000);
+        await expect(question.textContent?.endsWith('…')).toBe(true);
+        const notes = [...asked.querySelectorAll<HTMLElement>('[data-next-session-ask-cut]')];
+        await expect(notes.map((note) => note.textContent)).toEqual([
+          'Shortened by Compass: the session sent 2,500 characters.',
+          '2 more options were not shown.',
+        ]);
+        for (const note of notes) await expect(note).toBeVisible();
+        const buttons = within(asked).getAllByRole('button');
+        await expect(buttons).toHaveLength(3);
+        const card = asked.getBoundingClientRect();
+        for (const button of buttons)
+          await expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(card.right + 1);
+        // Below the options, so the reader meets the choice first and the note before leaving it.
+        const options = asked.querySelector('.next-session-answer-options') as HTMLElement;
+        await expect(notes[0]?.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+          options.getBoundingClientRect().bottom,
+        );
+        await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+      });
+    }
+  },
+};
+
+/* A question inside every cap carries no note. */
+export const UnshortenedQuestionHasNoNote: Story = {
+  render: () => <PageExample asking />,
+  play: async ({ canvasElement }) => {
+    const asked = await within(canvasElement).findByRole('region', { name: 'Asked you' });
+    await expect(asked).toHaveTextContent('Run the synthetic migration now?');
+    await expect(asked.querySelector('[data-next-session-ask-cut]')).toBeNull();
+  },
+};
+
+/* A session waiting on you is marked beside its title, not down its page (owner, 2026-10-29): the page is one
+   unpadded column, and an inset stripe on it ran its full height and over the title's first letter. */
+export const WaitingEdgeStaysBesideTheTitle: Story = {
+  render: () => <PageExample gate />,
+  play: async ({ canvasElement }) => {
+    const heading = await within(canvasElement).findByRole('heading', {
+      level: 1,
+      name: 'Synthetic layout session',
+    });
+    const page = canvasElement.querySelector<HTMLElement>('.next-session-detail--blocked');
+    await expect(page).not.toBeNull();
+    await expect(getComputedStyle(page as HTMLElement).boxShadow).toBe('none');
+    const header = heading.closest('header') as HTMLElement;
+    await expect(getComputedStyle(header).borderLeftWidth).toBe('3px');
+    await expect(heading.getBoundingClientRect().left).toBeGreaterThan(
+      header.getBoundingClientRect().left + 10,
+    );
+    const columns = canvasElement.querySelector('.next-session-columns') as HTMLElement;
+    await expect(columns.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      header.getBoundingClientRect().bottom,
+    );
+  },
+};
+
+/* A harness's own gate has no request Compass can show or answer, so it is said on its own: waiting, for how
+   long, what the harness said, and where it is answered. The command back in stays on Attention. */
+export const HarnessGateSaysWhereToAnswer: Story = {
+  render: () => <PageExample gate />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const block = await canvas.findByRole('region', { name: 'Waiting on you' });
+    await expect(block).toHaveTextContent('WAITING ON YOU · 15m');
+    await expect(block).toHaveTextContent('Permission prompt: Bash');
+    await expect(block).toHaveTextContent(WAITING_ANSWER_WHERE);
+    const link = within(block).getByRole('link', { name: 'Needs you' });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('href', '#n=attention');
+    await expect(within(block).queryByRole('button', { name: /Copy/ })).toBeNull();
+    await expect(regions(canvasElement)[0]).toBe(block);
+    // It stands apart from the header above it and the card below it, as the cards stand apart from each other.
+    const box = block.getBoundingClientRect();
+    const above = (block.previousElementSibling as HTMLElement).getBoundingClientRect();
+    const below = (block.nextElementSibling as HTMLElement).getBoundingClientRect();
+    await expect(box.top - above.bottom).toBeGreaterThanOrEqual(16);
+    await expect(below.top - box.bottom).toBeGreaterThanOrEqual(16);
+    await expect(canvas.queryByRole('region', { name: 'Asked you' })).toBeNull();
+    await waitFor(() => expect(document.title).toMatch(/^● Needs you · /));
+    const icon = document.head.querySelector('link[data-next-favicon]');
+    await expect(decodeURIComponent(icon?.getAttribute('href') ?? '')).toContain('fill="#92400e"');
+  },
+};
+
+/* Attention carries a command back in only where the session publishes a token its CLI takes, so the block
+   names Attention for it only then. */
+export const HarnessGateWithNoWayBackNamesNoCommand: Story = {
+  render: () => <PageExample gate resumable={false} />,
+  play: async ({ canvasElement }) => {
+    const block = await within(canvasElement).findByRole('region', { name: 'Waiting on you' });
+    await expect(block).toHaveTextContent(WAITING_ANSWER_WHERE);
+    await expect(within(block).queryByRole('link', { name: 'Needs you' })).toBeNull();
+    await expect(block).not.toHaveTextContent('The command back into it');
+  },
+};
+
+export const FullActivityLinksToGoalHistory: Story = {
+  render: () => <PageExample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByRole('button', { name: /^(Show|Hide) technical details$/ }),
+    );
+    const summary = await canvas.findByText('What it keeps');
+    const history = summary.closest<HTMLElement>('.next-cockpit-departures-kept');
+    if (!history) throw new Error('The history disclosure is missing');
+    const link = within(history).getByRole('link', { name: 'Goal history' });
+    await waitFor(() => expect(link).toBeVisible());
+    await expect(link).toHaveAttribute('href', '#n=intent');
+    await userEvent.click(summary);
+    const description = within(history).getByText(
+      'Goal history keeps what you saved and what was raised against it after the session leaves the board.',
+    );
+    await waitFor(() => expect(description).toBeVisible());
+  },
+};
+
+/* An exact request keeps its own Asked-you block; the waiting block is for the gate Compass cannot answer. */
+export const ExactRequestKeepsItsOwnBlock: Story = {
+  render: () => <PageExample asking />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const asked = await canvas.findByRole('region', { name: 'Asked you' });
+    await expect(asked.querySelector('[data-next-session-wait-note]')).toBeNull();
+    await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
+    await waitFor(() => expect(document.title).toMatch(/^● Needs you · /));
+  },
+};
+
+export const HarnessGateWithExactRequest: Story = {
+  render: () => <PageExample asking gate />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const asked = within(await canvas.findByRole('region', { name: 'Asked you' }));
+    await expect(asked.getByText(String(ASK.question))).toBeVisible();
+    await expect(asked.getByText('Permission prompt: Bash', { exact: false })).toBeVisible();
+    await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
+  },
+};
+
+/* A working session carries no waiting sign anywhere: no edge, no block, and the resting tab. */
+export const WorkingSessionCarriesNoWaitingSign: Story = {
+  render: () => <PageExample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const heading = await canvas.findByRole('heading', {
+      level: 1,
+      name: 'Synthetic layout session',
+    });
+    await expect(getComputedStyle(heading.closest('header') as HTMLElement).borderLeftWidth).toBe(
+      '0px',
+    );
+    await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
+    await waitFor(() => expect(document.title).not.toMatch(/^● Needs you · /));
+    const icon = document.head.querySelector('link[data-next-favicon]');
+    await expect(decodeURIComponent(icon?.getAttribute('href') ?? '')).toContain(
+      'stroke="#2f7d5b"',
+    );
+  },
+};
+
+export const IdleQuestionPrecedesTurnEnd: Story = {
+  render: () => <PageExample idle asking />,
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByRole('heading', {
+      level: 1,
+      name: 'Synthetic layout session',
+    });
+    const activity = canvasElement.querySelector(
+      '[data-next-session-command="activity"]',
+    ) as HTMLElement;
+    await expect(activity).toHaveTextContent(String(ASK['question']));
+    await expect(activity).not.toHaveTextContent('Turn ended');
+    const metadata = canvasElement.querySelector('.next-session-detail-meta') as HTMLElement;
+    await expect(metadata).not.toHaveTextContent(/Turn ended|Run finished/);
+  },
+};
+
+export const EndedWithAnOpenQuestion: Story = {
+  render: () => <PageExample idle ended asking />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const answer = await canvas.findByRole('button', { name: 'Yes, run it' });
+    const status = canvasElement.querySelector('.next-session-state');
+    await expect(status).toBeVisible();
+    await expect(status).toHaveTextContent('State: Ended');
+    await expect(answer).toBeVisible();
+    await expect(answer).toBeEnabled();
+  },
+};
+
+export const HelperActivity: Story = {
+  render: () => {
+    const helpers = sessionSubagents(
+      [
+        { name: 'Review results', active: true, started_at: G - 60 },
+        { name: 'Read documentation', active: false },
+        { name: 'Check types' },
+      ],
+      0,
+      G,
+    );
+    if (!helpers) throw new Error('Expected the synthetic helpers');
+    return <SubagentsView subagents={helpers} />;
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText('1 RUNNING SUBAGENT')).toBeVisible();
+    await expect(canvas.getByRole('img', { name: 'Working' })).toBeVisible();
+    for (const [name, word] of [
+      ['Read documentation', 'Not running'],
+      ['Check types', 'Activity not published'],
+    ]) {
+      const helper = canvas.getByText(name ?? '').closest('[data-next-session-subagent]');
+      await expect(helper).toHaveTextContent(word ?? '');
+      await expect(helper?.querySelector('svg')).toBeNull();
+    }
+  },
+};

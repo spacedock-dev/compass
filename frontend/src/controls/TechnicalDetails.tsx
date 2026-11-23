@@ -73,7 +73,7 @@ export function TechnicalDetails({
               <TabsList
                 aria-label="Technical details"
                 activateOnFocus
-                className="flex flex-wrap gap-x-4 px-0 [@media(max-width:420px)]:flex"
+                className="flex flex-wrap gap-x-4 px-0 [@media(max-width:420px)]:flex [@media(max-width:420px)]:gap-x-4 [@media(max-width:420px)]:gap-y-1 [@media(max-width:420px)]:px-0"
               >
                 {tabs.map((tab) => (
                   <TabsTrigger

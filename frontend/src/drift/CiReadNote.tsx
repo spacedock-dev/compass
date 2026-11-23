@@ -34,6 +34,7 @@ export function CiReadSwitch({ technical = false }: { readonly technical?: boole
   if (!['on', 'off', 'flag-off'].includes(state)) return null;
   const message = ctx.intent.held.requests.get(`ci-read:${model.key}`)?.message ?? '';
   const on = state === 'on';
+  const focusKey = `${technical ? 'technical-ci-read' : 'ci-read'}:${model.key}`;
   return (
     <div
       className={technical ? 'flex flex-col items-start gap-1' : 'next-cockpit-reading-why'}
@@ -57,9 +58,9 @@ export function CiReadSwitch({ technical = false }: { readonly technical?: boole
           busyLabel="Saving…"
           pendingKey={`ci-read:${model.key}`}
           action={on ? 'ci-read-off' : 'ci-read-on'}
-          focusKey={`${technical ? 'technical-ci-read' : 'ci-read'}:${model.key}`}
+          focusKey={focusKey}
           onPress={() => {
-            void ciReadAnswer(ctx, model.identity, !on);
+            void ciReadAnswer(ctx, model.identity, !on, focusKey);
           }}
         />
       )}

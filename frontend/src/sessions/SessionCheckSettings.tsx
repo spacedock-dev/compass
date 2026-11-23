@@ -4,6 +4,7 @@ import { LongHistoryControl } from '../drift/LongHistoryControl';
 import { LongPlanControl } from '../drift/LongPlanControl';
 import { ReadingAllowance } from '../drift/ReadingAllowance';
 import { useDrift } from '../drift/context';
+import { isSampleSession } from '../intent/liveMonitor';
 import { useRunBoard } from '../drift/useRunBoard';
 import { fieldsOf, formatAmount, settingsBody, withUnit } from '../settings/model';
 import { RouteAnchor } from './RouteAnchor';
@@ -51,19 +52,26 @@ function CheckLimits({ visible }: { readonly visible: boolean }) {
 export function SessionCheckSettings({ visible }: { readonly visible: boolean }) {
   const { model } = useDrift();
   const { board } = useRunBoard();
+  const sample = isSampleSession(model.session);
   return (
     <div className="flex max-w-[var(--measure)] flex-col gap-3 pt-3">
       <div>
         <h2 className="m-0 text-value font-semibold">Check settings</h2>
         <p className="m-0 text-label text-muted-foreground">
-          How much of the session a progress check reads. Change these limits in{' '}
-          <RouteAnchor route={{ view: 'settings', project: null, session: null }}>
-            Settings
-          </RouteAnchor>
-          .
+          {sample ? (
+            'Live check settings are unavailable in this view-only sample.'
+          ) : (
+            <>
+              How much of the session a progress check reads. Change these limits in{' '}
+              <RouteAnchor route={{ view: 'settings', project: null, session: null }}>
+                Settings
+              </RouteAnchor>
+              .
+            </>
+          )}
         </p>
       </div>
-      <CheckLimits visible={visible} />
+      {sample ? null : <CheckLimits visible={visible} />}
       <ReadingAllowance route={model.route} />
       <LongPlanControl key={`long:${model.key}`} board={board} />
       <LongHistoryControl key={`long-history:${model.key}`} />

@@ -145,6 +145,12 @@ export const MarksFollowThePage: Story = {
     await expect(
       within(canvasElement).getByRole('button', { name: /^(Show|Hide) technical details$/ }),
     ).toHaveAttribute('aria-expanded', 'false');
+    const panel = await openSessionTechnicalTab('Check settings', canvasElement);
+    await expect(
+      panel.getByText('Live check settings are unavailable in this view-only sample.'),
+    ).toBeVisible();
+    await expect(panel.queryByRole('link', { name: 'Settings' })).toBeNull();
+    await expect(panel.queryByText('The check settings could not be read.')).toBeNull();
   },
 };
 

@@ -80,3 +80,362 @@ For where these files sit and which way their dependencies run, see
 | An open citation in a summary | As an outline chip: the effect is the technical details open state, the Activity log tab and focus, kept as those are, and the "Activity log does not show" sentence a press leaves is kept across board refreshes until the next chip press. On the agent's or the person's words, a cited entry the page does not hold is read for through older record pages by its fact id, with the record's page cap, so that chip either lands or says it could not be loaded. A line that may cite a check or a file, and the lede, get a chip only for an entry the page holds, read nothing, and count the rest as entries Full activity cannot open from here, because a check or file id is not yet the record's. The "does not show" sentence stands in the surface the press came from: the summary, or the outline folded beneath it | `frontend/src/sessions/WhatItDid.tsx`: `WhatItDid` (`open`), `EntryChip`, `MissingLine`; `frontend/src/sessions/SummaryParts.tsx`: `SummaryView`, `Bullet`, `Cites`; `frontend/src/drift/citations.ts`: `entriesHeld`. Only the latest press settles, as for the outline. Each chip's accessible name carries the line it supports. |
 | Technical details open state | Closed on first visit. A press, citation or browser fragment into the panel opens it inline. Board refreshes and remounts preserve the choice for the life of the board tab | `frontend/src/controls/TechnicalDetails.tsx` uses `Disclosure` and `disclosureStore.ts`. Session uses `fullActivityKey`, scoped by project and exact harness and session id, with its existing named trigger focus key. The panel stays mounted so record loading and numbering continue while it is closed. |
 | Long check options open state | Closed until the reader opens it. Board refreshes and remounts restore the expansion for this session for the life of the board tab. Restoration sends no preview request. The reader can refresh the preview explicitly | `frontend/src/drift/LongPlanControl.tsx`: `LongPlanControl` uses the disclosure store with the project, exact session and `long-plan` key. |
+| Technical details selected tab | Starts at the first available tab and keeps the selection through refreshes, disclosure closes and remounts within the same board tab | `frontend/src/controls/kit.ts`: `technicalTabs`, scoped to the disclosure key. Base UI owns keyboard and panel relationships. Session citation presses select Activity log before focusing an entry. |
+| Activity log filter | Starts at All and keeps the choice through refreshes and remounts within the same board tab. Choosing another filter hides loaded rows and shows each match individually. An entry jump keeps the active filter when it includes the target. It selects All when the target becomes available and the active filter hides it | `frontend/src/controls/kit.ts`: `activityLogFilters`; `frontend/src/drift/WorkListView.tsx`; `frontend/src/sessions/fullActivityKey.ts`. The log uses the same project and session scope as the disclosure. |
+| The Activity log target, and the jumps between a summary phase and a departure | A citation press opens the disclosure and selects Activity log. The requested entry is revealed before it receives focus with `preventScroll` and scrolls into view. A newer citation press supersedes a pending one. A summary that lands while the reader edits the goal, an outcome line or a correction moves no focus and replaces no node the edit lives in, so the held-edit rules above apply unchanged. The phase heading and the departure card heading are focus targets for the two jump buttons and are focused only by a press. Each summary phase is a disclosure keyed by project, session and `summary-phase:<place>` that arrives closed, whether or not it holds a departure ([owner, 2026-10-23](design-session-summary.md#amended-2026-10-23-owner-phases-arrive-closed)). Nothing writes the key on first draw, so the first write is the reader's: opening it is kept through every later board, and closing it is kept too. The one other writer is the press on a departure card's "In What the session has done" line, which opens the phase it goes to before focusing its heading. The outline under a saved summary sits in a disclosure keyed by project, session and `summary-outline` | `frontend/src/sessions/fullActivityKey.ts`: `fullActivityKey`; `frontend/src/sessions/SummaryParts.tsx`: `JumpButton`, `DepartureSummaryLine`; `frontend/src/sessions/summaryMarks.ts`: `useSummaryMarks`; `frontend/src/drift/ReadingResult.tsx`: `DepartureCard`; `frontend/src/controls/Disclosure.tsx`. Which phase holds a departure is derived on every render from the current reading and the summary; nothing is stored. |
+| An Activity log row's Source sentence | Closed until the reader presses the row's Source toggle; kept open across redraws, a board refresh and a remount under the disclosure key `entry-source:<entry id>`, scoped by project and the activity list's scope, so it follows the entry and not its place in the list. It is a plain button over the disclosure store rather than a `Disclosure`, because one Base UI popover per row, on a list of hundreds, moved rows after a press had scrolled one into view | `frontend/src/drift/EntrySource.tsx`: `EntryHead`; `frontend/src/controls/disclosureStore.ts`: `disclosureKey`. The open state is read with `useControlledDisclosureState` and written on the press only. |
+| Why a run of hidden summary lines was hidden | Closed until the reader opens it; kept open across redraws and a refreshed summary under the `Why` key `summary-hidden:<phase place>:cites:<cited entry ids>`, so a refreshed summary that shifts its runs does not open a different run's reasons. A run that cites nothing is keyed by its place in the phase, the only thing it can be known by | `frontend/src/sessions/summary.ts`: `hiddenKey`; `frontend/src/sessions/SummaryParts.tsx`: `Hidden`; `frontend/src/drift/Why.tsx`: `Why`. Nothing is stored beyond the disclosure key. |
+| A finding selected in the session result | Kept across board refreshes for this session and reading; entries and numbers resolve again without scrolling. A new reading, a vanished citation, navigation away or reload clears its marks | `frontend/src/drift/DriftProvider.tsx` holds the finding key with the session key and reading time. `WorkListView` reveals its fact ids, marks them with the stored finding words and current numbers, and focuses and scrolls to the first only on the reader's press. The press opens Full activity and, where a cited id is not held, reads older record pages until it is, the record's start or the page cap. The press and its could-not-be-loaded count are kept until the next press, a new reading or another session; a read that ends after a later press began publishes nothing. Nothing is stored. |
+| A Not accurate mark the store did not take | Kept in memory across every redraw for the life of the tab, one per session: after a press whose mark the store refused or could not write, the result's footer says so under the button until the next press. The mark itself is never held here; `aria-pressed` and the sentence beside it are read from the published `annotation_not_accurate` on every render. There is no "what was wrong" choice: it was held here, sent nowhere and outlived the reading, so it was dropped rather than stored. Reload drops the held error | `frontend/src/drift/state.ts`: `createDriftState` (`notAccurate` Set); `frontend/src/drift/actions.ts`: `markNotAccurate`; `frontend/src/drift/MarkedNotice.tsx`: `MarkedNotice`; `frontend/src/drift/ReadingResult.tsx`: `ReadingResult` (reads `ctx.drift.notAccurate`). A press whose mark the store refused or could not write adds the session key to `drift.notAccurate` for the life of the tab, and the result footer says so under the button until the next press; the mark itself (`aria-pressed`) is read from the published `annotation_not_accurate` on every render. |
+| The drift block's save cue | Restored for 30 seconds and then dropped on the next redraw; a keystroke in either field clears a save cue, and only the last 16 keys keep one. Save intent's cue is one for both fields, drawn in the footer under the key `intent` (owner Q6, 2026-10-01). The settle cue that shared the lane went with the "Conflict to settle" buttons (DRC-4682): Keep's answer rides the reading-request row below. The `Discard everything` control shares it twice more under the key `discard`: the armed state a first press stamps, which lapses on the same window so a reader who walked away returns to a disarmed control, and the sentence its outcome earns, which is published as `annotate_discard` rather than read from the page's own cue table | `frontend/src/intent/held.ts`: `createHeld` (`cues`, mark, drop, kind, stampOf, activate, HELD_CUE_LIMIT); `frontend/src/controls/keyedState.ts`: `createKeyedState`, `CUE_TTL_MS`; `frontend/src/intent/cues.ts`: `say`, `markAndSay`; `frontend/src/intent/save.ts`: `pressDiscard`, `disarmDiscard`; `frontend/src/intent/sentences.ts`: `DISCARD_DWELL_MS`; `frontend/src/intent/IntentPanel.tsx` (calls held.activate()). Stamped kinds are held by key (`held:<harness>:<sid>:<intent/discard>`), 30 s TTL, newest 16, never in storage; typing clears a save cue; an armed Discard everything lapses on the same window and a second press inside the 1.2 s dwell, or a double click, re-arms instead of discarding, and the outcome sentence is the server's `annotate_discard`. Differs from the retired page: While the Intent panel is mounted the expiry timer (`held.activate()`) drops a lapsed mark and its announcer guard and notifies, so a lapse does not wait for the next redraw as the row says. |
+| The two live regions the drift block's cues are written into, and the last sentence written to either | Held for the life of the tab. Both nodes are siblings of `<main id="app">` rather than children of it, so nothing that replaces the page's subtree can destroy them, and each exists, empty, before its first message: a region that arrives carrying its text is treated as initial content and skipped. The polite one carries the save, settle (Keep's outcome) and discard-outcome sentences, and an analysis's start ("Analyzing drift") and how it ended; the assertive one carries the armed discard warning alone, because the dwell before a second press is 1.2 seconds and a polite message queues. The guard is one sentence per standing mark, keyed by that mark's own key, and it stops a second report of a mark that is still standing; the sentences are field-independent, so a guard holding one sentence for the page suppressed the second field's save in the ordinary two-field workflow. Keep's guard is dropped at the start of each Keep press, and the region emptied if it still holds that sentence, so a repeated outcome is announced again. A stale Analyze's refusal is written there once, under Keep's key, and is not drawn as a status paragraph inside `#app`. It is dropped with the mark it guards, at every site that drops one, so an arm that lapsed or was dismissed with Escape and is pressed again is warned about again. The assertive region holds its warning only while that arm stands: every site that stops an arm empties it, because the sentence says nothing has been deleted yet and by then the second press may have deleted everything. Emptying is a removal, which `aria-relevant` does not cover, so taking the warning back is silent where writing it was not | `frontend/src/shell/announcer.ts`: `createAnnouncer`, `REGION_IDS`, `ANNOUNCEMENT_LIMIT`; `frontend/src/shell/LiveRegions.tsx`: `LiveRegions`, `Region`, `AnnouncerProvider`; `frontend/src/App.tsx`: `App`; `frontend/src/shell/createShell.ts`: `routeAnnouncement`; `frontend/src/intent/cues.ts`: `say`. The regions are rendered once by `LiveRegions` as siblings of `<main id="app">` and never inside a replaced subtree; React draws no children in them, an effect attaches each node to the announcer, so a region exists empty before its first message. `announce(key, sentence)` keeps the last sentence per standing key (newest 16) to suppress repeats, `forget(key)` drops the guard and retracts the armed warning, and the assertive `alert` region carries the armed discard warning alone. Differs from the retired page: There are five regions, not two: attention, copy, raise, cue (polite) and alert (assertive), with the legacy ids kept (`next-cockpit-cue-status`, `next-cockpit-cue-alert`, and so on). They are mounted once rather than 'ensured on every render'. The per-key guard is bounded at 16, not stated in the row. |
+| Context editor focus, caret and internal scroll | Restored by the named-focus lane; Escape restores the original and cancels, Done completes, and both return focus to Edit | `frontend/src/controls/HumanContextField.tsx`: `HumanContextField` (Reading, Editor); `frontend/src/controls/kit.ts`: `createControls` (memoEditing, startMemoEdit, finishMemoEdit); `frontend/src/controls/DraftField.tsx`: `DraftTextarea`; `frontend/src/controls/fieldMemory.ts`: `createFieldMemory`. The open editor is `controls.memoEditing` (key and fresh flag). A separate map in `createControls` keeps the original and current draft per memo key, including over-limit text, until that key completes with Done or cancels with Escape. Switching editors and remounting preserve both; a reload drops unsaved drafts. Neither is held by the node. The textarea is uncontrolled and persists with its caret, scroll and focus; if remounted, field memory restores selection, scroll and size under `memo:<memoKey>`. Escape in the field or on the Done control restores the original through `memo.write` and closes; pressing Done keeps the edit. Both return focus to the Edit button. |
+| A draft input's internal scroll and resized dimensions, even after focus leaves it | Restored by the input's named key; unfocused caret offsets are restored too. The intent editor's goal box and outcome lines resize vertically (owner Q4, 2026-10-01), and a dragged height survives a redraw here; a line's height follows its index after a remove | `frontend/src/controls/fieldMemory.ts`: `createFieldMemory`; `frontend/src/controls/useFieldMemory.ts`: `useFieldMemory`; `frontend/src/controls/DraftField.tsx`; `frontend/src/intent/HeldTextarea.tsx`; `frontend/src/intent/OutcomeLines.tsx` (per-line key `<key>:<index>`). Selection (even when unfocused), scrollTop/scrollLeft and the dragged width and height are captured under the field's exact key when its node leaves and restored on the mount that replaces it; a line's key follows its index after a remove, and a key from one session never reaches another's field. Differs from the retired page: Bounded at 64 keys, which the row does not state. Native Textarea chrome uses fixed sizing, so neither content sizing nor a fallback height overrides a remembered drag. |
+| The More menu | Restored, including summary focus | `frontend/src/controls/MoreMenu.tsx`: `MoreMenu` (MORE_KEY, focusKey 'more'); `frontend/src/controls/Disclosure.tsx` (variant 'menu'). The menu is a keyed menu-variant `Disclosure` with the global key `more`; its summary is registered as focus key `more`, so open state and summary focus both survive updates and a remount. Unlike a popover, Escape does not dismiss it. |
+| The More menu's copy-briefing result | Kept for the life of the tab with no expiry, so the control keeps reading `Copied` or `Copy unavailable` until the project or session scope changes | `frontend/src/controls/MoreMenu.tsx`: `MoreMenu`; `frontend/src/controls/kit.ts`: `createControls` (`controls.briefing`); `frontend/src/controls/keyedState.ts`: `createKeyedState` (ttlMs null, limit null); `frontend/src/api/identity.ts`: `contextKey`. The result is a `KeyedState` with no TTL and no cap, keyed by `contextKey(projectKey, focus)`, so the button reads 'Copied' or 'Copy unavailable' until the project or session scope changes; nothing deletes it. |
+| Project plan, raw status, earlier Course entries, other directions, and the tier-2 caveat bodies in the drift block and on Sessions | Restored independently by project and selected scope, and on a session page by that session's harness and id, so two sessions of one project do not share an open caveat; the Sessions caveats carry no project. The open state is derived from the store in the markup. Escape, a click outside or focus moving to another control closes the popover variants, including the header's "Why" and the Sessions group caveat, by writing the store | `frontend/src/controls/Disclosure.tsx`: `Disclosure` (variant 'accordion' / 'popover'); `frontend/src/controls/disclosureStore.ts`: `disclosureKey`; `frontend/src/ui/popover.tsx`: `Popover`, `PopoverTrigger`, `PopoverContent`; `frontend/src/controls/popoverEscape.ts`: `installPopoverEscape`; `frontend/src/controls/ControlsProvider.tsx`: `ControlsProvider`; `frontend/src/project/PlanView.tsx`; `frontend/src/project/CoursePanel.tsx`; `frontend/src/project/RecoveryStrip.tsx`; `frontend/src/sessions/SessionsView.tsx`. Each is a keyed Disclosure whose key is project, scope (or harness:sid) and name, so project, scope and session open states are independent and the Sessions caveats carry no project. Popovers are the `variant="popover"` ones; Base UI closes on outside presses; a blur handler on the trigger and popup closes on focus departure. Unless a Select popup owns Escape, the document-level handler installed by ControlsProvider closes all open popovers and returns focus to one trigger. Accordions remain open. Differs from the retired page: Open state follows the subscribed store on every render. Every callback writes the store; the controlled popup has no native toggle queue. |
+| Project-level semantic timeline disclosures, and Console's terminal-registration recipe | Restored independently per project when no session is selected; summary focus restored | `frontend/src/timeline/scope.ts`: `timelineDisclosureKey`, `timelineFocusKey`; `frontend/src/controls/Disclosure.tsx`; `frontend/src/terminal/TerminalSurface.tsx` (terminal-registration disclosure). The disclosures are keyed Disclosures whose key is the project and, only when a session is focused, the session, so the project-scope timeline keeps its own open state; summary focus is registered under `substrate:<scope>\n<name>`. The Console's terminal-registration recipe uses `disclosureKey({ project, scope, name: 'terminal-registration' })`. |
+| A direction action's refusal | Held across polls for the life of the tab, beside the exact question, goal or activity-row control that was pressed. The next press or intent edit clears it. Failure keeps that control's focus; success may focus the Goal or pending outcome editor. Nothing enters browser storage | `frontend/src/intent/held.ts`: `actionFeedback`; `frontend/src/intent/DirectionActionButton.tsx`; `frontend/src/intent/directions.ts`. The existing persistent polite region announces each press's answer. |
+| A Codex unasked-check permission reply | A refusal or unconfirmed reply always answers the reader, including after an unrelated board arrives. A successful reply carries the revision of the collected board whose policy it returns. Its switch, Attention overlay and polite success announcement describe the returned policy and appear only when that revision is newer than the accepted board; an equal or older reply yields to that board even if the follow-up refresh fails. A pre-write board arriving mid-press cannot suppress a later revoke. Replies without a revision fall back to the accepted board generation at dispatch. Reload reads the durable server permission | `frontend/src/drift/UnaskedPermission.tsx`: `change` compares `board_revision` with the accepted revision through `revisionNewer`, falling back to `acceptedCount` only when the reply has no revision; `frontend/src/drift/overlay.ts`: `showReading`, `overlaid`. `compass/skills/compass/compass_runtime/http_api.py`: `_unasked_grant_reply` clears the snapshot and collects behind any in-flight board, returning its policy and revision together. The overlay bridges the interval until the next accepted board. |
+| A reader-requested reading in the drift block | Pending state and the latest response survive redraw and scope changes for the life of the tab. A fresh press replaces the response. Its successful reply replaces the notice, clearing an earlier one when the reply carries none; a pending, lost or refused request keeps the last notice. A notice is non-blocking and names the server disclosure, provider and destinations, with Pause model calls beside it. It is drawn as its own box only while the request it came with runs (`ReadingNotice`, from `model.job`); once the result stands the same held notice is the body of the What is sent disclosure, drawn once, and it lasts there for the life of the tab like any other held notice. Reload drops this local feedback; a running job's notice comes from `reading_jobs`, outranks an earlier held notice and survives reload while the job runs. The server's last per-kind/provider notice record is not session feedback and never reopens a notice on its own. The stored reading and model-call count still come from the server. The same lane carries the answer to a press the page refuses: the control is `aria-disabled` rather than `disabled`, so the click reaches the handler, and the handler writes the refusal sentence here with no pending flag rather than dropping the press silently. A refusal is the one entry that does not survive: it is a state rather than an event, so it is dropped as soon as the reason it names stops holding. Kept, it left "Nothing has been typed for this session" standing under a button the same render had already enabled | `frontend/src/intent/held.ts`: `createHeld` (`requests`, RequestNote); `frontend/src/drift/actions.ts`: `askForReading`, `readingOff`, `readingOn`; `frontend/src/drift/ReadingControl.tsx`; `frontend/src/drift/DriftBody.tsx`. Pending state, the last answer and this tab's last notice (or explicit no-notice answer) sit in `held.requests` per harness and session id for the life of the tab, shared by Analyze and Keep; a duplicate press while pending asks for nothing. A refusal is stored with `refusal: true` and no pending flag, and ReadingControl drops it as soon as its message differs from the reason the card computes now; a server-withheld press keeps an eligibility on the entry that the row's own `reading_eligibility` overrides. A 503 whose body names `annotation-store-busy` or `annotation-store-unavailable` is stored as an answered message and not as a refusal, which ReadingControl would drop as stale on the next render; it is drawn in the card's own `role="status"` line, and the unusable-store one also reads the board at once so the Intent card's unreadable-file notice, when there is one, is drawn at once. |
+| A control's in-flight request | Restored across every redraw: the control is drawn `aria-disabled` and `aria-busy`, with a spinner and its busy label ("Saving…") over its idle label held as an invisible ghost, so its width and its focus stay put. One entry per control. It ends with its answer and the handler's own refresh, at its 15 s bound (the fetch is aborted and the control comes back with a sentence saying Compass did not answer, never "Not saved"), or at a 5 s backstop after that whatever the fetch did. A keystroke never re-arms a pending control. The start is written to the polite region only when the request is still open after 400 ms, and the outcome only once the refresh has drawn it. Reload drops it (owner, 2026-10-02) | `frontend/src/transport/pending.ts`: `createPendingRegistry`, `PENDING_BOUND_MS`, `PENDING_BACKSTOP_MS`, `PENDING_SAY_MS`; `frontend/src/transport/runtime.ts` (`runtime.pending`, store.setPending); `frontend/src/intent/ActionButton.tsx`: `ActionButton`; `frontend/src/store/board.ts` (`pending`); `frontend/src/controls/displayGate.ts`. One registry entry per key, outside the tree; each `start` returns a token carrying its own AbortSignal and `end(key, token)` ends only that entry, so a late handler cannot clear a newer press. A timer aborts at 15 s and a backstop clears the entry 5 s later; the start sentence is announced only if the entry is still open at 400 ms. ActionButton draws `aria-disabled`/`aria-busy` with the spinner over an invisible ghost of the idle label from the displayed `pending` list, and the display gate shows `pending` at once even while a board is held. Differs from the retired page: The key is the `pendingKey` prop (by convention the same string as `focusKey`), not read from `data-next-focus`. The token's `signal` replaces `nextFetchBounded`; announcements go through `announcer.announce('pending:<key>')`. |
+| Whether Analyze can be pressed, as the drawn Drift card last showed it | Held for the life of the tab, one per session, bounded at 16, and only for the card a render draws: an entry the render before did not draw is drawn fresh, taking the board's state and saying nothing. A change no press caused is said once in view (a closing only: an opening is said to the polite region and not drawn), under the result or the button row, for 30 seconds or until the next click inside the card, and to the polite region at most once a minute per session; a flip inside the minute is held and the newest said when it is up, unless the region last said that state already. Opening commits on the render that sees it; closing waits until the inert state has held for two distinct payloads and 10 seconds, so a session pausing between turns never closes it, and a press in that window is answered by the handler's refusal and takes the inert state at once. A pending press on the session freezes it, and a press of Analyze or Keep during a held close takes the inert state at once. The direction question, which draws Keep and Add in Analyze's place, keeps the same entry, line, waiting dot and Why. One page-wide timer each re-renders at the hold while its moment is still ahead, at a settle's `until`, at the line's expiry and at the end of the minute a held flip waits for; a hold whose moment has passed waits for the next payload rather than re-arming (owner, 2026-10-02) | `frontend/src/drift/state.ts`: `createDriftState` (`flips`, rememberFlip, want, applyTimers, nextEpoch); `frontend/src/drift/useRunBoard.ts` (the body counts a pass, the header's re-run control reads at the last epoch); `frontend/src/drift/flip.ts`: `readingFlip`, `acknowledgeFlip`, `flipLine`, `clearFlipLines`, `readingBoard`; `frontend/src/drift/DriftProvider.tsx` (applies timers in an effect). One `Flip` per drawn session in `drift.flips` (newest 16, an entry not drawn on the previous pass is drawn fresh), which holds a closing change for two distinct payloads and ten seconds, shows the line for 30 s or until the next click inside `#next-session-drift`, and speaks to the polite region at most once a minute per session with a held newest. Pending presses freeze it. Differs from the retired page: The four timers (hold, until, line, say) are recorded by `drift.want(...)` during render and armed by `drift.applyTimers()` after commit, so a render React discards arms nothing. |
+| A Cancel on a running analysis | A Cancel in flight reads "Cancelling…" with a spinner and refuses a second press until the server answers (the in-flight lane above); a Cancel that could not be confirmed shows its sentence inside that job's box and leaves Cancel live. Both belong to the one job they named, so neither outlives its box. After the server accepts, the disabled state comes from the published `cancelling` flag, so a reload draws it the same | `frontend/src/drift/state.ts`: `createDriftState` (`cancels`, CancelNote); `frontend/src/drift/actions.ts`: `cancelReading`; `frontend/src/drift/ReadingControl.tsx`. A `CancelNote` {job, pending, failed} per session holds the job id it names; the control reads it only when the job id matches the job drawn, so a stale failure never shows under a newer job and a second press while pending is refused. After the server accepts, the disabled state comes from the published `cancelling` flag. |
+| A running analysis this tab has seen, and whether its box was drawn | Held for the life of the tab, one per session, and dropped when the job leaves `reading_jobs`. "Analyzing drift" is written to the polite region once, when a job this tab had not seen is first drawn, and the outcome once, when a job whose box the last render drew ends: the server's `reading_withheld` sentence, or "The analysis finished. Its result is in the Drift section." for a reading that differs from the one stored when the job was first seen. The first pass after load records what is already running and says nothing, so a reload, a redraw or a phase revision announces nothing again. A job that ends unannounced (its box not drawn, or nothing new stored) drops its guard and empties the polite region if it still holds "Analyzing drift", and a sentence the region already holds is emptied before it is written again, since the same text set twice is not read. The box itself carries no role, because the render rebuilds it on every revision | `frontend/src/drift/state.ts`: `createDriftState` (`jobsSeen`, `isPrimed`, `prime`); `frontend/src/drift/jobs.ts`: `trackJobs`; `frontend/src/drift/DriftProvider.tsx`; `frontend/src/drift/state.ts`: `driftCtxFor`. `jobsSeen` holds, per session, the job id, whether its box was drawn and the stored reading at first sight; the first pass primes silently, a new drawn job announces 'Analyzing drift' once and an ended drawn job announces its outcome once, and a job that ends unannounced forgets its guard and empties the cue region if it still holds the title. Differs from the retired page: `driftCtxFor` also subscribes to the board store and tracks jobs, as undrawn, while no card is mounted; DriftProvider's unmount sets `drawn = false` on every entry. `trackJobs` runs from an effect after the card commits. |
+| The departures the last drawn reading carried, and what the next reading cleared | Held for the life of the tab, one per session and bounded at 16, and never stored. The reading drawn now is noted with its time and the departures it carries (each by its line, its reason and the entries it cited); a later reading that carries fewer, after one this tab drew with some, is named once as clearing the difference, all of them where it carries none, one for one where a departure was replaced by a different one (the same line sharing neither its reason nor a cited entry), and never more than it no longer finds or than now stand ("The departure from the 11:02 reading no longer holds."; "The 2 departures from the 11:02 reading no longer hold."). Where a correction the server recognised as Compass's own words (`copied`) sits in the session between the two readings, the line names the departures that reading no longer finds even while another stands, and says whose they were ("The departure your correction named, from the 11:02 reading, no longer holds."; "your corrections" for more than one). The line stands for as long as that reading stands, and the reading after it takes it down. A reading this tab never drew depart cannot clear, so a reload says nothing, and a reading marked inaccurate or refused by the shape contract is not noted. A departure the standing reading answers with the agent's message alone, or cannot tell about, is not watched here: the server keeps it (`annotation_prior_departures`), the card lists it under the reading as an earlier departure, which a reload and a fresh tab draw the same, and the verdict says it is still listed instead of that it no longer holds (beside a row that cannot tell, "the reading after it shows neither that it ended nor that it stands"); where the same verdict also says another departure of that reading no longer holds, the two read "One departure…" and "Another departure…", so neither is about every departure that reading found. A press on its citation is its own (`prior:<line>`), never the standing row's for that line. Nothing here is the reader's: it is what this tab watched change, kept only so the change is said rather than silent | `frontend/src/drift/state.ts`: `createDriftState` (`readings`, `noteReading`, whose `listed` keys leave the earlier departures the card lists out of the count); `frontend/src/drift/DriftProvider.tsx` (notes the standing reading in the render, idempotent per `read_at`); `frontend/src/drift/ReadingResult.tsx`: `DriftVerdict` draws the line under the verdict sentence; `frontend/src/drift/prior.ts`: `priorDepartures` selects the stored earlier departures the card lists. Differs from the retired page: it had no such line, and a cleared departure left only a changed level. |
+| Observer model request status and notice | Per-session pending and result state survives redraw and scope changes for the life of the tab. The goal notice the last Summarize reply carried is held per context key until the next Summarize reply replaces it (or clears it, when that reply carries none) or a turn-off clears it, so the passive read at the next board revision does not take it away; it is said once through the polite region. Reload drops it. The server owns the durable model-call pause switch. A summary decline this browser stored before the notice ruling is kept: Summarize is withheld behind Turn on summaries until the reader turns them back on | `frontend/src/capacity/ObserverControls.tsx`: `ObserverControls`; `frontend/src/capacity/held.ts`: `heldFor` (`observer` lane), `useConsent`; `frontend/src/transport/context.ts`: `createContextLoader` (`requestObserverSummary`); `frontend/src/store/board.ts` (`observer.requests`, `observer.states`, `observer.notices`, setObserverRequest, setObserverState, setObserverNotice, clearObserverNotices); `frontend/src/store/selectors.ts`: `selectObserverRequest`, `selectObserverOff`. Request, result and notice state sit in the board store keyed by context key, outside the replaceable context entry, so a reader who leaves while it runs finds the result, and a passive read that raced the explicit request cannot overwrite it. A press of Summarize this session sends the focused refresh without a browser Allow step. Pause model calls is drawn whenever model calls are on: inside the notice while one is shown, beside Summarize otherwise. Resume model calls replaces it while paused and changes permission alone. The session-summary switch stays disabled with its paused reason, preserving its own stored answer through pause and resume. `compass.observer-model-consent.v1` is read only for `declined`, which the loader also refuses; Turn on summaries writes `granted`, which gates nothing. |
+| The document scroll offset | Clamped by the browser; focus restoration may move it only when the old target intersected the viewport | No lane of its own. Nothing saves or restores it across a refresh, and a refresh keeps the nodes, so the browser's own clamp governs. Two things write it: while the pointer or focus is on a control inside the session page, `useHoldStill` scrolls by what the control moved when content above it grows or shrinks, and a click or `pointerleave` releases it; and the focus lane's removal path, which passes `preventScroll` when the removed control was wholly outside the viewport and scrolls normally when it intersected; the router scrolls to the top only when the route's identity changes. See [Document scroll](#document-scroll). |
+| A text selection over rendered text | **Not managed** | Nothing; see [Text selection](#text-selection) |
+| A different-port tunnel's action refusal | Kept for the life of the document after a POST receives 403 with `tunnel-port-mismatch`. Refresh and route changes keep it; opening the board on the matching local port creates a new document without it | `frontend/src/api/client.ts` reports only this closed refusal reason to `frontend/src/transport/runtime.ts`; `frontend/src/store/board.ts` owns `tunnelPortMismatch`, `frontend/src/controls/displayGate.ts` publishes it immediately, and `frontend/src/shell/Notices.tsx` renders the fixed instruction. Neither a GET nor an unrelated error creates it, and server-supplied message text is never rendered. |
+| A dismissed update notice | Remembered for that release version across refreshes, remounts and reloads. A newer release still shows. Browser storage holds the newest 32 dismissed versions, with an in-tab fallback if storage is blocked. It never stops requests | `frontend/src/shell/UpdateNotice.tsx`: `UpdateNotice`; `frontend/src/storage/update.ts`: `createUpdateDismissals`; `frontend/src/storage/keys.ts`: `STORAGE_KEYS`. The `compass.update-dismissed.v1` key holds a JSON array of release versions. |
+| The daily update check off switch | Saved in the Compass home across dashboard and daemon restarts; a write refused or unreachable keeps the last saved answer on screen. Board refreshes do not replace it, and reopening Settings reads it again | `frontend/src/settings/SettingsView.tsx`: `SettingsScreen`; `frontend/src/settings/model.ts`: `settingsBody`. The server's `compass-settings.json` owns it, independently of browser notice dismissal. |
+| The Goal explanation | Open state survives board refreshes and remounts for the life of the tab, keyed by project and exact harness:sid | `frontend/src/intent/HowTo.tsx`: `GoalExplanation`; `frontend/src/controls/Disclosure.tsx`: `AccordionDisclosure`. The store name is `intent-howto`, and the trigger registers `intent-howto:<harness:sid>`. The body has the `goal-explanation` target. |
+| Sessions explanations | The filter counts, session history and AI allowance disclosures each keep their open state for the life of the tab | `frontend/src/controls/disclosureStore.ts`: `disclosureKey`; keys `sessions-filter-counts`, `sessions-history-why` and `ai-allowance`. The allowance disclosure stays open when the selected window changes. |
+
+Two rules follow from the table rather than from any one row.
+
+**Hold what a node cannot rebuild.** A draft is the reason: it is a string rather than a boolean, so
+unlike a disclosure key it cannot be rebuilt from anything. In React the uncontrolled native input keeps
+its own text while it persists, and the draft is also held by key for the moment the node goes. The
+replaced page had to read the text off the element that still held it before it assigned, so
+`renderNext` read first and assigned second.
+
+**Key the restored snapshot.** Every restored row above is addressed by a key the render emits
+again: a disclosure key, a section name, a session id, a control's own key. A reference held across
+a refresh can point at a node that no longer exists, and a restore that follows one lands nowhere or, in
+the caret's case, on the wrong element.
+
+The correction editor is the exception. Its native undo transaction and active composition cannot
+be rebuilt from a snapshot. Chrome lost Undo when the same textarea was detached and reinserted,
+and even when it was moved with the atomic `moveBefore` API while continuously connected. Paints
+therefore wait while the edited correction has focus and through a composition. The pause is
+visible; leaving the box draws the latest payload and ends that editor's native history. When a
+pointer gesture leaves it, the paint waits for that gesture's click dispatch. A microtask queued
+on blur swallowed Chrome's first Copy by replacing the pressed button before its click arrived.
+
+Three per-row decisions do not follow from either rule and are recorded here rather than in the
+code, which cites this file instead:
+
+- **Ordinary disclosure and draft restoration lasts for the tab.** Quota consent and tripwire
+  preferences deliberately reach browser storage. Cockpit human context does too: it is saved on
+  each input, so even an unfinished field can return in a fresh tab. Workstream collapse is another
+  stored preference. These are distinct from restoring the current DOM after a redraw.
+- **A draft's caret offset travels with the draft.** Restoring the text without the offset is a
+  worse failure than losing both: the reader carries on typing at the start of their own sentence
+  and cannot see why. The offset is applied by field memory when the replacement node mounts, clamped to
+  the length of the text it holds, so it reaches the node that actually holds the draft rather than
+  whichever node existed when the snapshot was taken.
+- **A sent draft is cleared from the live node as well as from the state.** The inputs are uncontrolled,
+  so the node holds the text itself, and a sender that cleared only the state would leave the sent
+  sentence in the box; senders set the node's value to the empty string before the receipt draws. On the
+  replaced page the same defect came from the other direction: every sender cleared and then called
+  `renderNext`, which read the element the reader had just submitted from before it assigned, and wrote
+  the text back over the cleared value. Measured before the fix: the sent sentence stayed in the box for
+  the life of the tab and a second send recorded it twice.
+
+A terminal monitor can save the page's drafted goal before its first tick. It changes the stored annotation, not the browser's held edit. The [typed monitor guard](design-reading-a-session.md#owner-ruling-2026-11-06-the-skill-pre-approves-its-own-actions-in-claude-code) records admission and concurrent-save rules.
+
+## Disclosure write precedence
+
+The keyed store is the single writer. `createDisclosureStore` publishes a stable snapshot with an
+open flag and the version that published it. Every write advances `version` for that key, even
+when the flag is unchanged; only a changed flag publishes a new snapshot. Repeated publishing
+is idempotent, while a redundant close still supersedes a queued native opening.
+`useControlledDisclosureState` subscribes through `useSyncExternalStore` for Accordion, Collapsible and Popover.
+React derives their `value` or `open` from the snapshot, and their change callbacks write only the store.
+Base UI holds no independent open state. Only menus use `useDisclosureState` to derive
+the native `details` open attribute. Trigger activation writes synchronously,
+before any queued native `toggle` or poll paint, so a poll cannot undo the reader's opening.
+
+Accordion and Collapsible panels use `hiddenUntilFound`. A browser `beforematch` asks their
+controlled callback to open the store key, so revelation survives polls and remounts. After mount,
+`useRevealFragment` re-applies a hash whose target is inside that panel, because client rendering
+follows the browser's first fragment pass. Replay is remembered per disclosure key and hash, so a
+first payload that replaces a loading-scope key can still reveal its target. It replaces the current
+history entry without adding a Back-button stop. Chromium proves both same-document and fresh-load
+fragment navigation. The browser's own find bar cannot be driven by this tooling.
+
+Browser find and same-document fragment navigation may also open a closed native section without a
+summary press. `createDisclosureBinding` observes that native attribute change and retains its
+version until `toggle` arrives. A write notification (`watchWrites`) drains pending native records
+before React writes the newer snapshot. A write with an unchanged flag also reapplies that flag through the
+binding, because React will not rewrite an unchanged `open` prop after the browser changed it.
+This projection reads the store; dismissal handlers still never write the node directly.
+The handler accepts only a differing native state whose captured version still equals the latest
+store version. A newer store write wins over a queued event; a toggle
+caused by the store's own rendered attribute is ignored. Popover dismissal writes the same keyed store; it never writes an attribute on a node.
+
+Sibling accordion disclosures form no exclusive group. Each project/scope/name key is independent,
+and any number may be open together, including two sections in one session. Two sessions in one
+project have distinct scope keys. A trigger registers the caller's `focusKey` on the adopted trigger button or native menu summary with
+`useFocusKey`; no key is inferred from text or interpolated into a selector.
+
+A retained node keeps its focus across redraws. A remount reads the snapshot before insertion and
+arrives open, so there is no opening transition to replay. A trigger press still calls `noteToggle`
+for the 220 ms background paint hold; reduced motion holds nothing. The popover variant scrolls its
+body into view once after an opening press, after two animation frames, and never on a poll or
+remount. The portal mounts inside the app root, retaining its link target floor. The popup remains non-modal
+(the Base UI default); `initialFocus={false}` and `finalFocus={false}` disable automatic focus moves.
+An outside click closes without returning focus and still reaches its destination. A focus departure
+to another page element closes without returning focus; a departure with no related target leaves it
+open. A thin blur handler preserves this rule where Base UI skips a departure after window blur. Escape closes every open popover. Its event target chooses the containing trigger
+or popup; when neither contains it, the first open trigger in document order gets focus. Opening
+another choice in the same card's exclusivity group closes the previous choice in the same store
+write. Both keys get a write version before subscribers run. The caller supplies the group identity
+for its card and scope. The Sessions filter choices share one group. Independent inline
+disclosures keep their own open state.
+The `menu` variant
+keeps its native details semantics and no-Escape contract, pinned by `MoreMenu.test.tsx`.
+
+## Intent log freshness
+
+The retained part of the Intent log has its own route because its rows outlive the live board. Fetching that route on
+every redraw would put up to 256 sessions of retained prose on the refresh loop. Keeping its first
+response forever was the opposite failure: after a discard, an open tab continued to print the
+withdrawn words even though the route already returned a text-free record (DRC-4566).
+
+The dashboard now carries a change token for the complete annotation and departure sources,
+including sessions that have left the board. It carries no retained prose. A changed token removes
+the cached annotation rows immediately; a visible log fetches once, and a hidden log waits until opened. A
+confirmed discard also invalidates the initiating tab before its dashboard refresh finishes.
+Unrelated dashboard revisions do not fetch the log.
+
+The annotation response carries a token for the same inputs its rows used. It can be ahead of the
+dashboard snapshot, so tokens are compared for equality and never ordered. When the dashboard
+catches up to rows already fetched, the page keeps them. A request generation prevents a response
+started before invalidation from restoring old words. Changes arriving during a request coalesce
+until it settles, with a twenty-second request timeout. A failed load shows that the store could not be read, withholds the old rows,
+and allows another attempt on a redraw after twenty seconds rather than retrying on every render.
+
+Board identities are joined to retained records on harness and session id on each render. A
+project label controls the link only. Off/loading/error states withhold annotation evidence but
+leave board rows and their independent sources visible. Cached deterministic evidence changes
+with recollection, without checking a transcript or inventing an observation time. Reading
+counts use retained annotations eligible to hold words, excluding board-only and discard rows.
+
+Other tabs and dashboard instances learn about a discard through their normal data updates. An
+offline or browser-suspended tab cannot learn of a remote change until those updates resume.
+
+In React the behaviour is the same and the seam is different. One log per shell
+(`frontend/src/intent/logStore.ts`, `createIntentLog`) follows the board store, not what the display gate
+is showing, so a changed token withholds withdrawn words at once even while a paint is held behind an open
+list. A log that is not mounted is the hidden log: it fetches nothing until `IntentLog` mounts and asks.
+A retry after a failed load still needs a render to run the effect that asks, as before.
+
+## An open option list
+
+The owner replaced native selects with shadcn Base UI Select on 2026-10-12. The async prompt
+read outlived the click's transient activation, so calling `showPicker()` after loading could
+return to the invitation without opening anything. The popup now opens on the first gesture,
+shows a disabled "Loading your prompts" item, and replaces that item with choices in the same
+popup. An empty read says none of the reader's prompts are in the recent part of the session that is read, and a failed read says so separately; neither is a silent closed menu.
+
+React owns the open state and the existing per-session or per-workflow owner keeps the choice.
+The popup is portalled, scrolls within the available height and drops below the trigger. The
+background paint hold now protects its position rather than compensating for an unrestoreable
+platform list. `choiceOpenIn` reads actual trigger expansion inside the page, including when
+focus is in the portal. A focused closed trigger holds nothing. `installChoiceRelease` observes
+expansion closing or an open trigger leaving the document, and releases the latest board once.
+
+**The bound remains twelve consecutive deferrals** (`MAX_DEFERRED_COMMITS`). After that the
+board paints without re-arming; a manual refresh also paints. React retains the popup and value
+in both cases. Context reads and pending actions still show during the hold, so loading the
+prompts cannot be held behind the popup it fills. Escape closes only the choice before a
+containing popover or the session route. Choice confirmation returns focus to the same trigger.
+
+The inline Sessions Filters panel uses the same cap and single catch-up (owner, 2026-10-29).
+Its trigger carries `data-hold-paint`. While the trigger is expanded, the gate holds background
+paints so the reader's options and counts stay in place. The Sessions story
+`PaintHoldWhileAFilterIsOpen` checks the held options and the catch-up.
+
+`controls-continuity.mjs` measures the open popup's node, value, options and position over five
+polls, one catch-up after choice or Escape, and popup survival through manual and capped paints.
+`PromptSelect.test.tsx` and `intent-parity.mjs` prove loading and arrival in the same popup.
+The gate's existing cap and no-re-arm tests remain, with the probe tests now using a real Select.
+
+## Document scroll
+
+No lane in the page saves and restores it, but three things can write it across a refresh: the browser,
+which clamps it, a focus move, which can scroll a long way, and the session page's hold. On the page that replaced `#app` the focus
+write came from its restore step (`nextRestoreFocus`); in React it can only come from the focus lane's
+removal path below. Only the clamp was measured when this section was first written, which is why it
+used to say the browser owned it outright.
+
+**The session page's hold.** `frontend/src/sessions/useHoldStill.ts` holds no state across a refresh. While the
+pointer or focus is on a control inside the session page it remembers where the control sat, and when content
+above it grows or shrinks it writes the scroll offset by what the control moved, so an outline phase arriving
+above the Drift controls does not slide a button from under the pointer. A click or `pointerleave` releases
+it. It composes with the focus lane's `preventScroll` removal path below, and the
+`HoldsControlUnderPointer` story in `frontend/stories/SessionLayout.stories.tsx` asserts it.
+
+**The clamp.** Measured in Chrome 2026-09-07 against the live dashboard of the page that replaced `#app`,
+driving `renderNext` with real paints on both sides, in every case **with nothing inside `#app` focused**.
+The clamp is the browser's, not the renderer's:
+
+| Before | After | Reader's offset |
+|---|---|---|
+| 7,084px tall, scrolled to 5,000 | 3,207px tall (scroll maximum 2,142) | 2,142 |
+| 4,869px tall, scrolled to 1,200 | 1,065px tall (scroll maximum 0) | 0 |
+| 7,084px tall, scrolled to 1,200 | 3,761px tall (scroll maximum 2,696) | 1,200 |
+
+In every case the offset came back as `min(where the reader was, what the shorter page can hold)`,
+so a save-and-restore in the page would compute the number the browser had already applied.
+
+This is more than a Chrome courtesy and less than a guarantee. CSSOM-View clamps in its scroll
+*setters*; it does not require a re-clamp when the scrolling area shrinks under an offset nobody
+touched. So call it interoperable browser behaviour rather than specified behaviour, and note that
+the three rows above are one engine. They do not license the inference that Firefox and Safari must
+agree; that needs measuring in each.
+
+The earlier suspicion that a shortening render **jumps to the top** does not reproduce. The 1,200 →
+0 row above looks like a jump and is not: the shorter page's scroll maximum is 0, so 0 is the
+clamp, and any restore would arrive at the same place.
+
+**The focus lane on the replaced page, before DRC-4464.** `nextRestoreFocus` called `.focus()` on the element it landed on,
+after the `innerHTML` assignment, without `{preventScroll:true}`, so the browser scrolled that
+element into view. This was the ordinary live lane, not only a raise. Measured in
+headless Chrome 154 against the assembled page with a 60-session payload, at a page height of
+10,833px **before and after**, so no shrink and no clamp are involved:
+
+| Focus snapshot when the render lands | Offset before | Offset after one `refreshNext()` |
+|---|---|---|
+| Nothing focused inside `#app` | 0 | 0 |
+| Row 50's copy-id control, at page-Y 9,153 | 0 | 8,769 |
+
+The second row is an identical payload rendering twice. `focus({preventScroll:true})` as a control
+leaves the offset untouched, which is what identifies the writer. So a reader who has tabbed to a
+control low on the board and then scrolled back up is carried back down by the next revision.
+
+**Decision: use visibility at capture, preserving focus and caret (DRC-4464).** If the old focused
+element's rectangle lies wholly outside the viewport, the restoration target receives
+`preventScroll:true`. If it intersects the viewport, including partly visible controls, restoration
+keeps normal scrolling. The same choice follows a disappearing control to its existing row,
+subject, section or heading fallback; it does not change which fallback is chosen.
+
+React keeps the rule with one removal path instead of eight restoration sites
+(`frontend/src/controls/focusLane.ts`, `createFocusLane`). A persistent node keeps its own focus, so a
+refresh moves nothing. When the focused control is removed, the lane reads in the ref cleanup whether its
+rectangle was wholly outside the viewport, then focuses the same-key replacement, else the control's
+named fallback, passing `{preventScroll: true}` only for a wholly offscreen target. A target that
+intersects the viewport, including a partly visible one, keeps ordinary scrolling, and a plain
+`focusLane.focus(key)` after a press scrolls normally. The router scrolls to the top only when the
+route's identity changes. The pins are `does not scroll to a fallback when the removed control was wholly
+offscreen` and `scrolls normally when the removed control intersected the viewport` in
+`frontend/src/controls/focusLane.test.tsx`, and the controls and shell browser proofs.
+
+This preserves the keyboard reader's place without treating an unrelated live revision as a request
+to return to it. When the reader was using a visible control, keeping normal scrolling lets that
+control remain reachable after project reordering or a change in Attention content. When the reader
+has scrolled away, focus remains parked offscreen so typing and subsequent keyboard navigation
+still start from the retained identity. There is no blanket claim that offscreen focus is better:
+this policy gives the reader's current viewport priority until they resume keyboard interaction.
+
+Comparing scroll positions *since* capture was rejected: a reader can scroll away before the fetch
+finishes, and capture, replacement and restore then run without another await. The positions can
+be equal while the old defect reproduces. Dropping focus was also rejected because it discards the
+keyboard position and the draft's caret along with it.
+
+**Measured before and after, Chrome 154, 2026-09-08.** The policy was verified in a real browser
+against both trees, the page served over loopback because `file://` and `--dump-dom` were both
+unusable here: the headless launch aborted with exit `-6` and, with a budget, hung instead. 60
+sessions, `#n=sessions`, page 6,814px on both sides, payload identical across the refresh:
+
+| arm | before, on `main` | after, with this policy |
+| -- | -- | -- |
+| nothing focused in `#app` | `y: 0 → 0` | `y: 0 → 0` |
+| row 50's copy-id control parked at page-Y 5,471, reader scrolled to top | `y: 0 → 4,932` | **`y: 0 → 0`** |
+| `focus({preventScroll: true})` control | `y: 0` | `y: 0` |
+| plain `focus()` control | `y: 4,932` | `y: 4,932` |
+
+The last two rows are the load-bearing ones. They are identical across the trees, so the browser
+still scrolls a plain `focus()` exactly as before and what changed is which option this code
+passes, not a browser or fixture difference. `document.activeElement` is the same control after
+the revision in both trees, so the fix costs no focus identity. The figures differ from the
+9,153/8,769 pair above because that measurement used a taller fixture; the mechanism is the same.
+
+**What is still not measured.** Focus visibility, subsequent Tab navigation and screen-reader
+behavior under this policy, and Safari and Firefox. The conditional half, that a target
+intersecting the viewport still receives a plain `focus()`, is asserted at the DOM API boundary by
+a unit test over rectangles rather than in a browser, because the two policies diverge behaviorally
+only when the captured target is offscreen, which is the arm measured above. The Node harness that
+exercised the replaced page's eight restoration sites, with its DOM stubs that did not measure
+scrolling, went with that page.
+
+DRC-4446's AC2 stands **deferred rather than verified**. That criterion is the reader's position
+holding across a shortening revision, in a real browser with the live lane running. The clamp arms
+above are a real browser, but they are the arm with nothing focused, and the issue defers AC2 for
+the jump itself. Nothing here has run it.
+
+**The prototype terminal is a separate scroll container.** The document's clamp still governs
+page scrolling. `frontend/src/terminal/terminal.css` uses `overflow:auto` on `.pc-terminal-viewport`, whose
+own scroll position lives in the terminal owner (`frontend/src/terminal/viewport.ts`) and is restored when
+the viewport is attached again. When follow-live is enabled, the restored viewport follows its newest output.
+That state has its own row in the inventory above.
+
+The other overflow forms in the sheets are `overflow:hidden` and `overflow-wrap:anywhere`.
+An Accordion or Collapsible panel clips while it eases open through the `overflow-clip` utility in the
+vendored accordion and collapsible parts, which no sheet declares: clipping is not scrolling, so it has
+no offset to keep.
+The React sheets declare auto scrolling only on the terminal. Native textareas also
+scroll internally; their viewport and user-resized dimensions have a separate inventory row. Adding another scroll
+container requires its own state owner and an inventory update. `text-overflow:ellipsis` is a text
+rendering rule, not a scroll container.
+
+**The session's activity list moves what follows it.** Since DRC-4694 the numbered list sits right
+after CURRENT ACTIVITY, above the workers, the session's facts and HOW IT LANDED. An entry arriving
+on a render can add a context row, so everything after the list moves down by that row
+(measured before pagination at 1440x900: the facts moved from 10 to 99px across one append,
+where the old record at the end of the column moved nothing). The twenty-entry readability cap
+is retired. Record pages append older rows only on Show more, and the newest end is read again when the session's activity changes.
+The list holds keyed run openings but no scroll container, so nothing here restores an offset;
+a reader scrolled below the list sees the
+page shift by a row.
+
+## Text selection
+
+**Deliberately not managed.** On the page that replaced `#app`, a selection made across rendered text was
+destroyed by the redraw: measured in Chrome, a `Range` over a project name returned `"trio/app"` before the
+render and `""` after it. In React a selection inside a node that a refresh leaves alone survives, and
+the sessions browser proof records that (`selectionHeld`), but nothing makes it a guarantee: text that is
+replaced or changed loses its highlight, and the page does nothing about it. No module builds, saves or
+restores a selection, and a test (`never builds a text selection or a range of its own` in
+`frontend/src/shell/Page.test.tsx`) fails if one starts.
+
+Not managed rather than not yet done, for three reasons:
+
+- **There is no key to restore against.** Every other row in the table is addressed by something the
+  render emits again. A selection is a pair of offsets into text nodes that a refresh may replace,
+  so restoring one means re-deriving a position from a synthetic path through the new tree.
+- **Restoring it wrongly is worse than losing it.** The same argument the caret offset records in
+  reverse: a caret put back at the wrong offset leaves the reader typing into the middle of their own
+  sentence and unable to see why. A selection put back over *different* text is a copy of something
+  the reader did not choose, and the clipboard is downstream of it.
+- **The reader's own remedy is shorter than the fix.** A selection is held for seconds before a copy,
+  and the copy is a keystroke. Where a revision does land in between, the visible loss is the
+  highlight rather than any published claim.
+
+The consequence is stated rather than silent: a reader dragging across a long value on a live board
+can lose the highlight to a revision that changes that text, and there is nothing on the page that says so
+before it happens. If that becomes worth fixing, the fix is a row in the table above plus the
+capture-and-restore lane, and the first question it has to answer is the keying problem in the first
+bullet.

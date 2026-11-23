@@ -550,7 +550,7 @@ export function WhatIsSent({
         </p>
         {estimate ? (
           <p className="next-cockpit-reading-why">
-            Estimated prompt size limit for the next check:{' '}
+            Estimated prompt ceiling for this route:{' '}
             {technical ? estimate : disclosureSize(estimate)}.
           </p>
         ) : null}

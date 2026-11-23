@@ -24,6 +24,10 @@ activity rows and their words. The added Evidence tab opens that same Activity l
 numbered citations and does not change the recorded rows. The monitor and master pause left the
 Drift settings header disclosure. The reading's inline What is sent keeps the same producer
 sentences, with byte sizes shown in KB, while the copy in AI use and privacy shows exact bytes.
+The route estimate has its own label and the saved prompt ceiling stays in Check settings.
+Evidence uses the ruled progress level names and puts the annotation store notice, goal
+revision caveat and inaccurate mark next to the stored evidence. The transition copy of the
+departure labels uses sentence case. The recorded answers stay fixed.
 
 
 2026-11-23, Sessions uses sentence case for column, row and goal-source labels. The Sessions

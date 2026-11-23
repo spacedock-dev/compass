@@ -282,6 +282,11 @@ On 2026-11-23, the inline session technical tabs brought the page from 2,405,367
 at `35977ce8` to 2,417,291 bytes, an increase of 11,924 bytes (0.50%). The page bound
 is the measured 2,417,291 bytes. The fixture allowance stays at 250,000 bytes.
 
+On 2026-11-23, the rebased and corrected session technical tabs packaged at 2,418,351
+bytes with Node 26.12.1 and pnpm 12.17.0. The rebased Activity log page at `6f4b1317`
+measures 2,404,243 bytes. This sets the page bound to the measured 2,418,351 bytes, an
+increase of 1,060 bytes over the previous bound. The fixture bound is 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

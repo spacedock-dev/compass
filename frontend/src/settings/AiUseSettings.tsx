@@ -15,6 +15,11 @@ function SummariesSwitch({ paused }: { readonly paused: boolean }) {
   const grant = grantShown(held, parseGrant(data?.['summaries']), Number(data?.generated ?? 0));
   const id = useId();
   if (!grant) return null;
+  if (grant.reason === 'store-unavailable') {
+    return (
+      <p className="m-0 text-label text-muted-foreground">The Summaries setting is unavailable.</p>
+    );
+  }
   return (
     <div className="border-s border-[var(--rule)] ps-4">
       <div className="flex items-center gap-2">

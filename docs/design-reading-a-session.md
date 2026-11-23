@@ -8551,19 +8551,30 @@ under the control where no popover is drawn (its place in the popover is asserte
 
 Amended 2026-11-23 (DRC-5522). **Show technical details** opens at the foot of the
 session. Each tab opens inline. The old names below identify the controls and caveats
-moved from the Drift card or the Activity log. The `MoreIsRetired`, `SharedAiPause`
-and `TechnicalEvidence` stories assert the inventory by role, name or text.
+moved from the Drift card or the Activity log. `MoreIsRetired` shares its tab assertions
+with `TechnicalTabInventory`. `SharedAiPause` and `TechnicalEvidence` exercise the
+shared switch and the stored evidence.
 
 | Previous home or name | Tab | What is there now |
 | -- | -- | -- |
 | What is sent, beside Analyze drift | AI use and privacy | A second What is sent disclosure with exact bytes, the route and recipient, model, remaining daily checks and the pull request read preference. The first copy remains beside the check and displays sizes in KB. |
-| Live monitor, in Drift settings | AI use and privacy | The same per-session switch, with “Checks progress about once a minute while you watch”, Live monitor · Haiku, and the provider, fallback and stop explanations. |
+| Live monitor, in Drift settings | AI use and privacy | The same per-session switch, with "Checks progress about once a minute while you watch", Live monitor · Haiku, and the provider, fallback and stop explanations. |
 | Pause model calls / Resume model calls, in Drift settings | AI use and privacy | Pause all AI use / Resume AI use. It applies to every session and is the same server switch shown in Settings. Summaries stays nested under it in Settings and reads as paused when AI use is paused. |
 | Next Analyze prompt and reading limits | Check settings | Prompt size limit, messages and checks kept, checks and files listed, transcript scanned and the route estimate and caveats. Settings still owns the adjustable values. |
 | Long analysis options and Unfinished long analysis records | Check settings | Long check for very long sessions and Unfinished long checks. Their limits, preview, recovery and discard caveats stay with them. |
 | Reading evidence, What the analysis read and Mark as inaccurate | Evidence | The stored reading's cited entries, interpretation, claims, What the check read and This reading looks wrong. During the stack transition the first layer also shows its evidence. |
 | How it landed, Command-shape reports and Notifications, in Activity log | Reports | Each keeps its sources and caveats. End evidence and who claims it finished stay distinct. |
 | Full activity | Activity log | The numbered session record and its filters. A citation opens this tab at the cited entry. Back to the finding returns to the Evidence tab if the citation was pressed there. |
+
+The privacy summary uses the route's destination for session words. It shows when the
+daily count is unavailable. What is sent labels the route's prompt estimate separately
+from the saved prompt size limit in Check settings. The view-only sample explains why
+live settings are unavailable without asking for them.
+
+Evidence uses the progress level names from the glossary. It carries the annotation
+store's notice when the store cannot be read, the caveat when a goal has changed, and
+the visible inaccurate mark next to Undo. The cited total counts unique IDs in the
+stored check. A citation can open an entry once it is available in the Activity log.
 
 The activity column becomes **Full activity**, collapsed at the foot of the page. It keeps CURRENT
 ACTIVITY, the numbered list newest first, subagents, session facts, the current task, health,

@@ -471,6 +471,7 @@ export async function ciReadAnswer(
   ctx: DriftCtx,
   identity: SessionIdentity | null,
   on: boolean,
+  focusKey?: string,
 ): Promise<void> {
   const { intent, shell } = ctx;
   const key = identity ? compatSessKey(identity) : '';
@@ -488,7 +489,7 @@ export async function ciReadAnswer(
     if (key) intent.held.requests.set(control, { message: CI_SWITCH_FAILED });
   } finally {
     pendingEnd(intent, control, press);
-    requestFocus(ctx, control);
+    requestFocus(ctx, focusKey ?? control);
   }
 }
 

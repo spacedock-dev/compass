@@ -297,6 +297,7 @@ export function SettingsScreen({
         data-next-settings-state="loading"
       >
         <h1>Settings</h1>
+        {aiUse}
         <p className="next-absence">Reading the settings in force.</p>
       </section>
     );
@@ -308,7 +309,8 @@ export function SettingsScreen({
         data-next-settings-state="failed"
       >
         <h1>Settings</h1>
-        <p className="next-absence">The settings could not be read, so none are shown.</p>
+        {aiUse}
+        <p className="next-absence">The prompt limits and update preference could not be read.</p>
         <div className="mt-4">
           <Button
             type="button"

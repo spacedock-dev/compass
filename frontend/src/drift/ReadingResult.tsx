@@ -9,12 +9,14 @@ import { contextKey } from '../api/identity';
 import { useDisplayed } from '../shell/context';
 import { useFocusKey } from '../controls';
 import { ActionButton } from '../intent/ActionButton';
-import { goalCap } from '../intent/annotation';
+import { goalCap, storeUnreadable } from '../intent/annotation';
 import { entryWindow, olderEntriesRemain, type WorkEntry } from '../intent/work';
 import { markNotAccurate } from './actions';
 import { SESSION_GOAL } from '../sessions/intent';
 import { DepartureSummaryLine } from '../sessions/SummaryParts';
 import { useDrift } from './context';
+import { citedIdsOf } from './citations';
+import { GLOSSARY } from '../language/glossary';
 import {
   arrivedLine,
   cantTellReason,
@@ -30,6 +32,7 @@ import {
   earlyLine,
   goalSourceLine,
   LIVE_HIDDEN,
+  resultStale,
   resultState,
   resultStatus,
   resultWhere,
@@ -42,6 +45,7 @@ import {
 import { fmtDur } from './route';
 import { clock } from '../observed';
 import {
+  ANNOTATIONS_OFF,
   LONG_INTERRUPTED,
   LONG_INTERRUPTED_OLDER,
   CLAIM_LEAD,
@@ -86,10 +90,8 @@ import { Why } from './Why';
 /* Accent on a reading would read as "met", a claim about intent from partial evidence. The result keeps
    secondary ink and no colour under any verdict; clay marks a departure and nothing else. */
 
-const LABEL =
-  'm-0 text-label font-semibold uppercase tracking-[.07em] text-[var(--ink-label)] [font-family:var(--mono)]';
-const LABEL_CLAY =
-  'm-0 text-label font-semibold uppercase tracking-[.07em] text-[var(--clay)] [font-family:var(--mono)]';
+const LABEL = 'm-0 text-label font-semibold text-[var(--ink-label)]';
+const LABEL_CLAY = 'm-0 text-label font-semibold text-[var(--clay)]';
 const QUIET = 'm-0 max-w-[var(--measure)] text-body leading-[1.5] text-muted-foreground';
 const NO_DETAIL = 'No explanation was retained for this assessment.';
 
@@ -609,7 +611,7 @@ function ResultFoot({ technical = false }: { readonly technical?: boolean }) {
       {marked && !technical ? null : (
         <>
           {control}
-          <span id={hintId} className="next-visually-hidden">
+          <span id={hintId} className={technical && marked ? QUIET : 'next-visually-hidden'}>
             {marked ? RESULT_MARKED : RESULT_NOT_ACCURATE_HINT}
           </span>
         </>
@@ -644,9 +646,7 @@ function ReadSection({
 }) {
   return (
     <section className="flex flex-col gap-[4px]" data-next-read-section={name}>
-      <h4 className="m-0 text-label font-semibold uppercase tracking-[.07em] text-[var(--ink-label)] [font-family:var(--mono)]">
-        {title}
-      </h4>
+      <h4 className="m-0 text-label font-semibold text-[var(--ink-label)]">{title}</h4>
       {meta ? <p className="next-cockpit-reading-stamp m-0">{meta}</p> : null}
       {children}
     </section>
@@ -788,9 +788,22 @@ function Baseline({
   );
 }
 
+const EVIDENCE_LEVELS = new Map([
+  ['none_or_low', GLOSSARY.onTrack.plain],
+  ['medium', GLOSSARY.slightlyOffCourse.plain],
+  ['high', GLOSSARY.offCourse.plain],
+  ['extreme', GLOSSARY.wayOffCourse.plain],
+]);
+
 export function TechnicalReadingEvidence() {
   const { model } = useDrift();
   const { shape, raw, annotation, entries, source } = model;
+  const unreadable = storeUnreadable(model.payload);
+  if (unreadable || !model.annotate) {
+    return (
+      <p className="m-0 pt-3 text-body text-muted-foreground">{unreadable || ANNOTATIONS_OFF}</p>
+    );
+  }
   if (!shape || shape.malformed || !raw || !annotation) {
     return (
       <p className="m-0 pt-3 text-body text-muted-foreground">
@@ -810,38 +823,47 @@ export function TechnicalReadingEvidence() {
   const claims = refused ? [] : claimsDrawn(shape);
   const coverage = coverageLimits(shape);
   const time = nextNumber(raw['read_at']);
+  const at = time !== null && time > 0 ? `at ${clock(time)}` : '';
   const modelName = stampModel(shape.stamp);
-  const cited = new Set([...rows, ...claims].flatMap((row) => row.citedIds)).size;
-  const level = annotation['not_accurate'] === true ? '' : (model.analysis?.label ?? '');
+  const subject = modelName
+    ? `Reading by ${modelName}`
+    : /^unasked check at \d{2}:\d{2}$/.test(shape.stamp)
+      ? 'Unasked check'
+      : at && 'Check recorded';
+  const cited = citedIdsOf(raw).length;
+  const metadata = [
+    [subject, at].filter(Boolean).join(' '),
+    cited ? `${cited} ${cited === 1 ? 'entry' : 'entries'} cited` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const level = EVIDENCE_LEVELS.get(model.analysis?.level ?? '');
+  const stale = resultStale(shape, raw, annotation, entries);
+  const outcomes = shape.criteria.filter((row) => isOutcomeLine(row.key)).length;
   return (
     <div className="flex max-w-[var(--measure)] flex-col gap-3 pt-3" data-next-technical-evidence>
       <div>
         <h2 className="m-0 text-value font-semibold">
           {level ? `Evidence for “${level}”` : 'Evidence'}
         </h2>
-        {modelName || time || cited ? (
-          <p className="m-0 text-label text-muted-foreground">
-            {[
-              [modelName && `Reading by ${modelName}`, time && `at ${clock(time)}`]
-                .filter(Boolean)
-                .join(' '),
-              cited ? `${cited} ${cited === 1 ? 'entry' : 'entries'} cited` : '',
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </p>
-        ) : null}
+        {metadata ? <p className="m-0 text-label text-muted-foreground">{metadata}</p> : null}
       </div>
+      {stale ? <p className={QUIET}>{stale.head}</p> : null}
       {coverage ? <p className={QUIET}>{coverage}</p> : null}
       {rows.length ? (
         <section className="flex flex-col gap-2">
           <h3 className="m-0 text-body font-semibold">What the record says</h3>
           {rows.map((row) => (
             <div key={row.key} className="flex flex-col gap-1">
+              <h4 className="m-0 text-body font-semibold">{constraintName(row.key, outcomes)}</h4>
               <CitedEntries row={row} technical />
               {row.result === DEPARTURE ? (
                 <>
-                  <h4 className="m-0 text-body font-semibold">Why Compass reads this as drift</h4>
+                  <p className="m-0 text-body font-semibold">
+                    {level
+                      ? `Why Compass reads this as ${level.toLowerCase()}`
+                      : 'Why Compass found a departure'}
+                  </p>
                   <p className="m-0 text-body">{row.detail || NO_DETAIL}</p>
                 </>
               ) : null}

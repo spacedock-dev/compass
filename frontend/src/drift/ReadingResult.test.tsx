@@ -1,5 +1,5 @@
 import { openSessionTechnicalTab } from '../../test/sessionTechnical';
-import { act, screen } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { EXCERPTED_DRIFT, PROMPT_LIMITED_DRIFT } from '../../stories/driftCoverage.scenario';
 import { liveMonitorFor } from '../intent/liveMonitor';
@@ -61,6 +61,61 @@ const stored = (extra: Record<string, unknown> = {}) => ({
   annotation_window_start: 100,
   annotation_reading_count: 1,
   ...extra,
+});
+
+async function evidencePanel() {
+  await openSessionTechnicalTab('Evidence');
+  return within(screen.getByRole('tabpanel', { name: 'Evidence' }));
+}
+
+describe('technical Evidence', () => {
+  it('shows an empty history after a readable annotation lookup', async () => {
+    const page = mountDrift();
+    await page.settle();
+    expect((await evidencePanel()).getByText('No stored check yet.')).toBeVisible();
+  });
+
+  it('shows the annotation store notice when the read was unavailable', async () => {
+    const unreadable = 'Compass could not read compass-annotations.json. Try again later.';
+    const page = mountDrift({ payload: { annotate_unreadable: unreadable } });
+    await page.settle();
+    const evidence = await evidencePanel();
+    expect(evidence.getByText(unreadable)).toBeVisible();
+    expect(evidence.queryByText('No stored check yet.')).toBeNull();
+  });
+
+  it('keeps the caveat when the goal changed after the stored check', async () => {
+    const page = mountDrift({ session: stored(), store: { revision: 4 }, facts: FACTS });
+    await page.settle();
+    const evidence = await evidencePanel();
+    expect(evidence.getByText('Your intent changed after this analysis.')).toBeVisible();
+  });
+
+  it('shows the marked state beside Undo', async () => {
+    const page = mountDrift({ session: stored({ annotation_not_accurate: true }), facts: FACTS });
+    await page.settle();
+    const evidence = await evidencePanel();
+    expect(
+      evidence.getByText(/^Marked inaccurate\./).classList.contains('next-visually-hidden'),
+    ).toBe(false);
+    expect(evidence.getByRole('button', { name: 'Undo' })).toBeVisible();
+  });
+
+  it('counts both stored citations when only one is loaded', async () => {
+    const page = mountDrift({
+      session: stored({
+        annotation_assessment: {
+          ...ASSESSMENT,
+          criteria: { goal: { ...ASSESSMENT.criteria.goal, cites: ['c1', 'older'] } },
+        },
+      }),
+      facts: [FACTS[0]],
+    });
+    await page.settle();
+    const evidence = await evidencePanel();
+    expect(evidence.getByText(/2 entries cited/)).toBeVisible();
+    expect(evidence.getAllByRole('button', { name: /^Show #.* in Activity log/ })).toHaveLength(1);
+  });
 });
 
 describe('a stored reading', () => {

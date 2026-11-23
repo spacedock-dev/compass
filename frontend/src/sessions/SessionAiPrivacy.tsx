@@ -16,15 +16,29 @@ export function SessionAiPrivacy() {
   const policy = isRecord(rawPolicy) ? rawPolicy : null;
   const used = nextNumber(policy?.['used']);
   const limit = nextNumber(policy?.['limit']);
+  const countAvailable =
+    policy?.['reason'] !== 'store-unavailable' &&
+    policy?.['reason'] !== 'run-disabled' &&
+    used !== null &&
+    Number.isSafeInteger(used) &&
+    used >= 0 &&
+    limit !== null &&
+    Number.isSafeInteger(limit) &&
+    limit > 0;
   const sample = isSampleSession(model.session);
   const facts = [
-    ['Sent to', [route?.['destination'], route?.['label']].filter(Boolean).join(' · ')],
+    [
+      'Sent to',
+      [route?.['words_destination'] || route?.['destination'], route?.['label']]
+        .filter(Boolean)
+        .join(' · '),
+    ],
     ['Model', String(route?.['model'] ?? '')],
     [
       'Checks left today',
-      used !== null && limit !== null && limit > 0
+      countAvailable
         ? `${Math.max(0, limit - used)} of ${limit} daily checks`
-        : '',
+        : 'Daily check count unavailable.',
     ],
   ].filter(([, value]) => value);
   return (
