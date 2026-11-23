@@ -837,7 +837,7 @@
     },
     {
       "name": "A dismissed or marked read session",
-      "owner": "DRC-5486",
+      "owner": "DRC-4827",
       "oracles": [
         "frontend/src/attention/Actions.test.tsx",
         "frontend/stories/NeedsYou.stories.tsx",
@@ -869,6 +869,25 @@
       ],
       "contract": "Token invalidation immediately withholds withdrawn rows; visible view fetches once, hidden view waits; stale generations cannot restore words.",
       "disposition": "store-held"
+    },
+    {
+      "name": "Goal history search and group expansion",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/src/intent/GoalHistory.test.tsx",
+        "frontend/stories/GoalHistory.stories.tsx"
+      ],
+      "contract": "Search follows the mounted view. Each expanded group keeps its disclosure state across refresh and navigation in the same tab.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "Phone Menu and session status strip",
+      "owner": "DRC-4824",
+      "oracles": [
+        "frontend/stories/PhoneBoard.stories.tsx"
+      ],
+      "contract": "Menu closes on Escape or route change and restores focus. The browser keeps the status strip scroll offset while the Sessions view is mounted.",
+      "disposition": "stable-identity"
     },
     {
       "name": "The selected quota window",

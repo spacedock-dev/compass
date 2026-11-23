@@ -24,6 +24,16 @@ const board = {
   window_hours: 24,
   ask: true,
   dismiss: true,
+  harnesses: [
+    {
+      key: 'codex',
+      label: 'Codex',
+      reports_needs_input: true,
+      reports_needs_input_when: 'where approvals are enabled',
+      reports_rate: true,
+    },
+    { key: 'droid', label: 'Droid' },
+  ],
   asks: [
     { id: 'question', harness: 'claude', question: 'Proceed?', age_sec: 360 },
     {
@@ -286,6 +296,12 @@ export const ReadableTimes: Story = {
     await expect(canvas.queryByRole('heading', { name: 'Not on this board yet' })).toBeNull();
     await userEvent.click(canvas.getByRole('button', { name: "What Compass can't see" }));
     await waitFor(() => expect(canvas.getByText('Coverage by agent')).toBeVisible());
+    await expect(
+      canvas.getByText('needs-input reporting, where approvals are enabled · token-rate reporting'),
+    ).toBeVisible();
+    await expect(
+      canvas.getByText('Harness does not report blocks · Token rate not reported'),
+    ).toBeVisible();
     await waitFor(() =>
       expect(canvas.getByRole('heading', { name: 'Not on this board yet' })).toBeVisible(),
     );
