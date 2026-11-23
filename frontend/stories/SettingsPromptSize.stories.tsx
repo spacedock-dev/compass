@@ -5,6 +5,7 @@ import { createApiClient } from '../src/api/client';
 import { ControlsProvider } from '../src/controls';
 import { testControls } from '../src/controls/testControls';
 import { SettingsScreen } from '../src/settings/SettingsView';
+import { atPageWidth } from './PageFit';
 import { settled } from './a11y.audit';
 import { auditCalm } from './calm.audit';
 
@@ -43,7 +44,8 @@ type Scenario =
   | 'blocked'
   | 'dynamic'
   | 'tiny'
-  | 'off-stop';
+  | 'off-stop'
+  | 'all-changed';
 const posted: unknown[] = [];
 let finishPost: (() => void) | undefined;
 
@@ -87,6 +89,9 @@ function PromptSizeExample({
     finishPost = undefined;
     const values = Object.fromEntries(LIMITS.map((limit) => [limit.key, limit.default]));
     if (scenario === 'changed') values['analyze_prompt_bytes'] = 1048576;
+    if (scenario === 'all-changed')
+      for (const limit of LIMITS)
+        values[limit.key] = Math.floor((limit.default + limit.maximum) / 2);
     if (scenario === 'off-stop') values['analyze_prompt_bytes'] = 541696;
     return createApiClient({
       fetch: async (_url, init) => {
@@ -123,7 +128,6 @@ function PromptSizeExample({
 const meta = {
   title: 'Views/Settings prompt size',
   component: PromptSizeExample,
-  excludeStories: ['atWidth'],
   args: { scenario: 'recommended', codexBytes: 524288 },
 } satisfies Meta<typeof PromptSizeExample>;
 export default meta;
@@ -330,24 +334,11 @@ export const TheFirstTouchKeepsTheSavedStop: Story = {
   },
 };
 
-export async function atWidth(width: number, check: () => Promise<void>) {
-  const browserPage =
-    '__vitest_browser_runner__' in window ? (await import('vitest/browser')).page : null;
-  const before = { width: window.innerWidth, height: window.innerHeight };
-  if (browserPage) await browserPage.viewport(width, 800);
-  try {
-    if (browserPage) await expect(window.innerWidth).toBe(width);
-    await check();
-  } finally {
-    if (browserPage) await browserPage.viewport(before.width, before.height);
-  }
-}
-
 function fit(width: number): Story {
   return {
-    args: { scenario: 'changed' },
+    args: { scenario: 'all-changed' },
     play: async ({ canvasElement }) => {
-      await atWidth(width, async () => {
+      await atPageWidth(width, async () => {
         const limits = await customize(canvasElement);
         await expect(document.documentElement.scrollWidth).toBe(window.innerWidth);
         for (const element of canvasElement.querySelectorAll(
@@ -359,7 +350,14 @@ function fit(width: number): Story {
         }
         await expect(limits.getByText('16 KB')).toBeVisible();
         await expect(limits.getByText('2,048 KB', { exact: true })).toBeVisible();
-        await expect(limits.getByRole('button', { name: 'Reset Prompt size' })).toBeVisible();
+        const resets = limits.getAllByRole('button', { name: /^Reset (?!all)/ });
+        await expect(resets).toHaveLength(4);
+        for (const reset of resets) {
+          await expect(reset).toBeVisible();
+          const box = reset.getBoundingClientRect();
+          await expect(Math.min(box.height, box.width)).toBeGreaterThanOrEqual(44);
+          await expect(reset.querySelector('svg[data-icon="reset"]')).not.toBeNull();
+        }
         await settled();
         await expect(auditCalm(canvasElement)).toEqual([]);
       });

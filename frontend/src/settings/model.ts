@@ -44,7 +44,8 @@ export interface Field {
 }
 
 const count = new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 });
-export const kilobytes = (bytes: number): string => `${count.format(bytes / 1024)} KB`;
+export const formatAmount = (value: number): string => count.format(value);
+export const kilobytes = (bytes: number): string => `${formatAmount(bytes / 1024)} KB`;
 export function withUnit(field: Field, value: number): string {
   const formatted = count.format(value * field.scale);
   return field.unit ? `${formatted} ${field.unit}` : formatted;

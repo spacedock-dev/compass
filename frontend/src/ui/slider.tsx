@@ -60,6 +60,9 @@ export function Slider({
           onRelease(next);
         }
       }}
+      onPointerDownCapture={() => {
+        key.current = null;
+      }}
       onPointerCancel={onCancel}
       onBlur={() => {
         if (!key.current) return;

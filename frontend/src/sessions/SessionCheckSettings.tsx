@@ -38,9 +38,9 @@ function CheckLimits({ visible }: { readonly visible: boolean }) {
           <dt>{field.key === 'analyze_prompt_bytes' ? 'Prompt size limit' : field.label}</dt>
           <dd className="m-0 font-semibold">
             {field.key === 'analyze_prompt_bytes'
-              ? `${withUnit(field, field.value)} of ${withUnit(field, field.maximum)} allowed (${formatAmount(field.value * field.scale)} bytes)`
+              ? `${withUnit(field, field.value)} of ${withUnit(field, field.maximum)} allowed (${formatAmount(field.value)} bytes)`
               : field.key === 'analyze_scan_megabytes'
-                ? withUnit(field, field.value)
+                ? `${formatAmount(field.value)} MB`
                 : formatAmount(field.value)}
           </dd>
         </div>

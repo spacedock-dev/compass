@@ -209,7 +209,7 @@ export function SettingsLimitsCard({
             </Button>
           </div>
           {prompt ? (
-            <div className="border-b border-solid border-[var(--rule)] pb-3">
+            <div className="[border-block-end:1px_solid_var(--rule)] pb-3">
               <h3 className="m-0 text-label font-semibold">
                 What a progress check sends to the AI
               </h3>
@@ -233,7 +233,7 @@ export function SettingsLimitsCard({
           </div>
         </div>
       </Disclosure>
-      <p role="status" className="m-0 text-label empty:hidden">
+      <p role="status" className="m-0 text-label">
         {outcome}
       </p>
     </Card>
