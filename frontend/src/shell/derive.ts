@@ -1,5 +1,6 @@
 import { payloadSessions } from '../api/bootstrap';
 import type { PayloadData, PayloadSession } from '../api/types';
+import { SHOWN } from '../language/glossary';
 import { noTitleText, pageTitleOf } from '../observed/session';
 import { observedFor } from '../observed/select';
 import type { BoardSnapshot } from '../store/board';
@@ -8,8 +9,6 @@ import type { BoardSnapshot } from '../store/board';
    (`observed/`), never counted a second way: the header, the Sessions fleet facts and the session page all
    stand on one model of one payload, so they cannot disagree about what a running or blocked session is.
    The header-count tests pin them against the legacy cases. */
-
-export const TITLE_NOT_PUBLISHED = 'Title not published';
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -84,7 +83,7 @@ export function findSession(
    the same stand-in for an identifier-only title as the session heading does, so the three agree. */
 export function sessionTitle(session: PayloadSession | null): string {
   const row = session ? (session as unknown as Record<string, unknown>) : null;
-  return (row ? pageTitleOf(row) : '') || (row ? noTitleText(row) : TITLE_NOT_PUBLISHED);
+  return row ? pageTitleOf(row) || noTitleText(row) : SHOWN.titleNotPublished;
 }
 
 /* The two reasons the history store publishes, and nothing else: the field arrives from a file any

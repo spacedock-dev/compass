@@ -150,8 +150,36 @@ Use one first-layer label for each meaning. Older names in this table identify t
 concepts being replaced. The [ruling index](#owner-rulings) records which labels the owner
 explicitly settled and where the decisions apply.
 
+The [glossary module](../frontend/src/language/glossary.ts) holds these rows and the labels
+the board currently shows. The header, breadcrumb, document title and project tabs share
+the displayed labels. In header phrases, `{count}` stands for a number read from the board.
+Session titles and IDs also come from the board or the route. Each view adopts the plain
+wording when its redesign ships. Route tokens still belong to the router.
+
 | Plain word | Replaces | Technical layer shows | Must stay distinct from | Allowed exceptions |
 |---|---|---|---|---|
+| Compass | Keeps current label | Application name | A project or session title | The prefix or suffix in a document title |
+| Primary | Keeps current label | Accessible name for the main navigation | Project tabs | Accessible navigation label |
+| Breadcrumb | Keeps current label | Accessible name for the parent links | Primary navigation | Accessible navigation label |
+| Sessions | Keeps current label | Session list and filters | A single Session page | The sessions slug stays |
+| Projects | Keeps current label | Projects list and grouping evidence | A single Project page | The projects slug stays |
+| Settings | Keeps current label | Saved choices and their owners | A session's own controls | The settings slug stays |
+| Session | Keeps current label | Session identity | A reported session title | Crumb when the session cannot be found. The document title may use its ID |
+| Project cockpit views | Keeps current label | Accessible group name for the project tab strip | Primary navigation | Accessible tab list label |
+| Now | Keeps current label | The project's current evidence | Session activity on the board | Default project tab |
+| Course | Keeps current label | Observed direction changes | A progress level | The course tab slug stays |
+| Decisions | Keeps current label | Recorded project decisions | Current state | The decisions tab slug stays |
+| Console | Keeps current label | Read-only terminal | A place to send a command | The console tab slug stays. The terminal moves to technical details |
+| Session data not published. | Keeps current label | The session collection is missing | A measured zero | Used after a board arrives without session data |
+| Waiting for the first board. | Keeps current label | Initial board read | A measured zero | Used before the first board arrives |
+| ● Needs you · | Keeps current label | Published request or block on the open session | The Needs you navigation destination | Browser tab title prefix |
+| Title not published | Keeps current label | Missing or identifier-only session title | A session ID or a command-only opening | Session heading, breadcrumb and browser tab title |
+| No name: the session opened with a command | Keeps current label | The opening prompt was a harness command | A missing published title | Session heading, breadcrumb and browser tab title |
+| {count} running | Keeps current label | Observed running session count | Observed subagents or an unread board | Released header wording |
+| {count} subagent observed | Keeps current label | One observed subagent | Declared child sessions | Released header wording |
+| {count} subagents observed | Keeps current label | Observed subagent count | Declared child sessions | Released header wording for zero or more than one |
+| {count} reported block | Keeps current label | One session with a reported block or request | Total running sessions | Released header button |
+| {count} reported blocks | Keeps current label | Sessions with reported blocks or requests | Total running sessions | Released header button for more than one |
 | Goal | Intent, Intent and drift | Saved intent, source, revision and lines read | An agent's task or a provisional prompt | The `intent` slug and technical names keep their spelling |
 | What "done" looks like | Expected outcome (optional) | An outcome line and its evidence | The goal itself or proof of completion | Technical fields retain their names |
 | Goal history | Intent log | Saved goal revisions and source | A session's current progress | The `#n=intent` fragment survives |
@@ -159,17 +187,23 @@ explicitly settled and where the decisions apply.
 | Check progress again | Analyze again, Check again | Prior reading and its recency | The first check or an Out of date state | Same label for a current or stale prior reading |
 | Progress check | Drift check | The reading and evidence | Tests and builds run by the agent | Terminal flag `--drift` |
 | This reading looks wrong | Mark as inaccurate | The marked reading and what the mark changed | Editing the goal | Undo is still offered |
-| Update my goal instead | Goal edit alongside feedback | The goal revision | Marking the reading wrong | Opens Goal in edit mode |
+| Update my goal instead | Update intent instead | The goal revision | Marking the reading wrong | Opens Goal in edit mode |
+| Dismiss | No standalone attention-row control | Server dismissal record | Mark as read | Survives Forget |
+| Mark as read | No standalone control | Server dismissal record | Dismiss | Survives Forget |
+| Steer back | Keeps current label | Editable correction and its evidence | Editing the goal | Compass never sends the correction |
+| Use your prompt | Keeps current label | Saved prompts in this session | Editing the goal directly | Stays visible in read mode |
+| Edit goal | Direct editing in the goal field | Goal draft and revision | Adopting a saved prompt | Beside Use your prompt |
+| Your data | No dedicated Settings section | Data kept and settings reset by Forget | AI use settings | The Forget explanation opens here in Settings |
 | Where it went off course | Departure · Goal | Departure, supporting evidence and citations | A warning signal or a proposed correction | Data token `departure` stays |
 | Helpers | Subagents | Recorded subagent activity | Declared child sessions | Technical language may say subagents |
 | Agent | Harness | Harness identity | A particular session | Technical language may say harness |
 | Needs you | Attention | Published request, gate and evidence | Waiting on you, the state and section | `attention` slug and `n` shortcut |
 | Working | WORKING | The source-backed working state | Right now membership | Working now is the card label |
-| Waiting on you | Needs input, exact request or reported gate | The exact request or gate | Needs you, the navigation destination | Gate detail appears on the session page and in Needs you |
+| Waiting on you | Needs input, Needs you now | The exact request or gate | Needs you, the navigation destination | Gate detail appears on the session page and in Needs you |
 | Quiet | Idle | The observed turn-end state | Ended or a scan-only absence | Projects uses No recent activity |
 | Ended | Finished, Finished cleanly | End evidence and any observed outcome | A turn end or proof of success | Ready to wrap up requires a clean end |
-| Worth a look | At-risk signal or dirty end | The underlying warning or end evidence | A session state or progress level | Shows as a flag on a state |
-| Ready to wrap up | Clean-end queue | The observed end and outcome | Worth a look | Needs you badge excludes this section |
+| Worth a look | At risk | The underlying warning or end evidence | A session state or progress level | Shows as a flag on a state |
+| Ready to wrap up | Close the loop | The observed end and outcome | Worth a look | Needs you badge excludes this section |
 | On track | None or low | `none_or_low` | Proof of completion or Can't tell | Session card and header, with meter and Help explaining it |
 | Slightly off course | Medium | `medium` | Off course or a live estimate on a row | Row pill requires a stored departure |
 | Off course | High | `high` | A generic risk signal | Row pill requires a stored departure |
@@ -183,14 +217,33 @@ explicitly settled and where the decisions apply.
 | Pause all AI use | Pause model calls | Shared server pause state | The Summaries switch or Live monitor | `--pause-model-calls` and skill action `pause` |
 | Resume AI use | Resume model calls | Shared server pause state | Starting a check, summary or monitor | Existing terminal flags |
 | Live monitor | Live monitor (kept) | Live monitor · Haiku, scope and cadence | A reader-requested check | Session's technical layer. Settings points there |
-| Your AI allowance | Quota strip | Provider plan quota and measurement | Daily progress-check cap or prompt size limit | Allowance refers only to this plan quota |
+| Your AI allowance | Capacity | Provider plan quota and measurement | Daily progress-check cap or prompt size limit | Allowance refers only to this plan quota |
 | How much a progress check reads | Estimated prompt allowances | Prompt size limits and exact bytes | Your AI allowance | Behind Customize. Slider labels name what they cap in KB |
 | Uses AI | Cost implied by Analyze | The destination, what is sent and its limits | Number of remaining checks | Always beside Check progress |
 | N of 100 daily checks left | Budget count | Rolling cap and when capacity returns | Plan quota | Show at 10 or fewer checks left |
-| How goals work | Goal explainer | Goal sources, adoption and revisions | A separate Help-only explainer | Open in place from Goal. Help links there |
+| How goals work | How Intent and drift works | Goal sources, adoption and revisions | A separate Help-only explainer | Open in place from Goal. Help links there |
 | How progress checks work | Drift explainer | What the reading can and cannot establish | A verdict or account of completed work | Keep the local explanation next to the reading |
 | How project grouping works | Project grouping explanation | Project evidence and folder identity | Session state or agent type | Explains Unnamed folder |
 | How the AI allowance works | Quota explainer | Provider reading, pace and measurement limits | How much a progress check reads | Help and the plan quota card use the same subject |
+| Help | New destination | Links to the canonical explanations | A second Goal explainer | Help ships in a later slice |
+| Project | Keeps current label | Project identity | The Projects destination | Project names come from the board |
+| Working now | Active now | Count of sessions in the Working state | Sessions in the Right now group | Uses the same Working count as the header |
+| Nothing working right now | Running count at zero | Measured Working count of zero | No published board | Header only after the board is read |
+| What Compass can't see | Also at risk, off the session count | Board-level coverage limits | A session count | Stays visible on the first layer |
+| Is it on track? | Drift | Reading evidence and scope | Whether work is complete | Session progress card |
+| Right now | Active now | Published current work and coming-next signals | Count of sessions in the Working state | On Sessions the earlier group names its time window |
+| What's happened so far | Session activity and summary areas | Session history and sources | A goal verdict | Session page section |
+| At a glance | Session facts spread across the page | Published session facts | What the session intends to do | Section title on the Session page |
+| All | Unfiltered Sessions list | Published Sessions population | Working sessions alone | First Sessions tab |
+| Active today | Active | Evidence of recent project activity | A session's Working state | Projects group |
+| No recent activity | Recently observed | Published project activity history | The Quiet session state | Projects group |
+| State not published | Keeps current label | The missing state field | The Quiet session state | Text only |
+| Waiting on child | Keeps current label | The reported child and relationship | Waiting on you | Text only |
+| Read by scanning: no turn end can be observed here | Keeps current label | Collector scope | The Quiet session state | Text only |
+| Show technical details | Separate technical controls | Activity log, AI use, limits and raw evidence | What Compass can't see | Opens in place on the surfaces with technical evidence |
+| AI use | Separate model and quota controls | Model and quota settings | The AI allowance | Names the Settings section |
+| AI use and privacy | Separate model controls and disclosures | Model settings and what is sent | The AI allowance | Names the Session technical tab |
+| Customize | Always-visible prompt limits | Prompt size controls | Your AI allowance | Opens How much a progress check reads |
 
 Check means a Compass progress check on the first layer. Use "tests and builds" for the
 agent's own runs. Allowance belongs to the plan quota. The
@@ -323,9 +376,10 @@ until the owner tags a release, and the owner reviews main in Storybook before e
 ## How it is enforced
 
 The plugin validator checks repository links and heading anchors. The documentation module
-checks the runtime's decision citations and pins the active public wording. Keep the
-glossary's five columns and one label per row for the planned glossary check. Later slices
-use this record's terms in their component and view stories. A play assertion demonstrates
+checks the runtime's decision citations and pins the active public wording. The
+[glossary test](../frontend/src/language/glossary.test.ts) compares all five columns with the
+module in row order. The style guide shows the plain words beside the words they replace.
+Later slices use this record's terms in their component and view stories. A play assertion demonstrates
 what the reader sees and does, including cases where the data is absent. Use synthetic data
 or the anonymized Sample session for those proofs and follow the
 [frontend migration record](design-frontend-migration.md) when an asking test's wording

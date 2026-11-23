@@ -121,6 +121,7 @@ shipped skill body, lives in the `sync-docs` skill at `.claude/skills/sync-docs/
 | `docs/design-runtime-architecture.md` | **Canonical** module map: what each runtime file owns, which way dependencies run, and how config/state/application are held. |
 | `docs/design-reader-state.md` | **Canonical** rule for what survives a board refresh: one row per thing a reader can leave in the page, which React owner keeps it, and — for the two it does not manage — why. The code cites it instead of repeating it. |
 | `docs/design-frontend-migration.md` | The React frontend: its boundaries, the recorded answers it is held to, its deviations from the retired page and why, and the retired measurement method and its recorded figures. `scripts/frontend-migration.json` maps the retired page's parts, surfaces, routes, reader state and browser storage to owners and proofs; `scripts/frontend_inventory.py` checks that each row is owned and names proofs that exist. |
+| `docs/design-calm-compass.md` | The Calm Compass visual and language decisions, including the glossary checked against `frontend/src/language/glossary.ts`. |
 | `docs/design-reading-a-session.md` | **Canonical** record of the four rulings that govern what Compass may say about a session against the words a reader typed: the evidence floor and the reader-requested model overlay, whether an assessment may be stored, that Compass never writes into a session, and the seven-rule shape contract a reading must satisfy. The runtime cites its headings, because three of those rules are built into the producer rather than checked after it. |
 | [docs/design-adapter-packaging.md](docs/design-adapter-packaging.md) | **Canonical** adapter admission and packaging contract: identity normalizers, hook-shaped mappings, and implementation-language boundaries. |
 | `docs/design-sample-session.md` | **Canonical** record of the Sample session (view only): the reserved route, the second shell, the view-only guard, the numbered marks, and what was rejected. |
@@ -424,7 +425,7 @@ answer edits the test that asks for it and records the departure in
 [the frontend migration record](docs/design-frontend-migration.md#held-to-recorded-answers).
 The [Calm Compass record](docs/design-calm-compass.md) gives the reasons for redesign departures.
 
-**Four files are conflict hotspots** because every branch wants a line in them:
+**These files are conflict hotspots** because multiple branches edit them:
 
 - `SKILL.md`'s **Project** bullet. Three branches appending to that one sentence collided. Keep
   `SKILL.md` edits inside the paragraph your feature belongs to.
@@ -433,7 +434,8 @@ The [Calm Compass record](docs/design-calm-compass.md) gives the reasons for red
   read. Leave it alone per branch and stamp it once from `main` after the merges, naming what the
   range actually covers.
 - `config.py`, where every feature adds a threshold. Usually additive, occasionally not.
-- `frontend/src/language/glossary.ts`, where redesign layers add vocabulary. Add rows in your layer's own block.
+- `frontend/src/language/glossary.ts` and [the design glossary](docs/design-calm-compass.md#glossary).
+  Add rows in the layer's own block and keep their order aligned in both files.
 
 **Merges serialize even when builds do not, unless a merge queue serializes them for you.** Check
 which rule `main` has before landing anything:

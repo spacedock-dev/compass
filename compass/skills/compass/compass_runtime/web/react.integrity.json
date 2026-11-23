@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2350203,
+    "bytes": 2350563,
     "file": "react.html",
-    "sha256": "ca47812dba74f0af2b6de6bd1776b0b699efb564a015de45ad434ca08f6ceef7"
+    "sha256": "8792a84894d9aebe1c8475e601c2ca35346604d5696f95d36519a0e606f9eaa1"
   },
   "format": 1,
   "frontend": "react",
@@ -898,6 +898,10 @@
         "sha256": "dee29e01b4243fc3a4bdeb4267c6e997213df1d1fe1f4f32cdf78f8cfa4d1565"
       },
       {
+        "file": "frontend/src/language/glossary.ts",
+        "sha256": "dce349356b441e2e8bd831e3b6334639f50730ea36ec446d7f26dcde14db23d4"
+      },
+      {
         "file": "frontend/src/lib/utils.ts",
         "sha256": "10d67de54d89339af4d220dc5fcbb7706800aaf81d9e19599ab9f40d7729d945"
       },
@@ -967,7 +971,7 @@
       },
       {
         "file": "frontend/src/observed/session.ts",
-        "sha256": "0fb48b800b3f348b8c2df43c3077dee3d9d304540634c1663c0283df348b7319"
+        "sha256": "fc98f7035270d26a19a6cdb57d9c9a4238ffda7ef9e9af1c1401881a0266e621"
       },
       {
         "file": "frontend/src/observed/values.ts",
@@ -1303,11 +1307,11 @@
       },
       {
         "file": "frontend/src/shell/Breadcrumb.tsx",
-        "sha256": "49301a76d386c44c19a4f1ee70f20d6a9d5dc2f9d8a9ae709aedbf57b5ad6d19"
+        "sha256": "51e5cff8795c33398559a6de8738b2a1f690df6b184edf308f24c086c33d6904"
       },
       {
         "file": "frontend/src/shell/Header.tsx",
-        "sha256": "c92eb741482675ca73732d97513a76652c1153aee9a82739eb91b328fb588689"
+        "sha256": "c501c0207f81e08e6835d40cbb6c7a8ec4bb6c7931dcb3af46d5daad0d28b5e0"
       },
       {
         "file": "frontend/src/shell/LiveRegions.tsx",
@@ -1319,11 +1323,11 @@
       },
       {
         "file": "frontend/src/shell/Page.tsx",
-        "sha256": "951f5dd57f2df2f5d8e1529410b3bad0c6107708059e0361677d64c4fad03ee9"
+        "sha256": "b64800ab74145197482e81170b81fc2bcb71deab6539b23aae25be3fd573fb4b"
       },
       {
         "file": "frontend/src/shell/ProjectTabs.tsx",
-        "sha256": "ae707697227b6ce35ed2d5c1168affc9658319f61034572174517902be541774"
+        "sha256": "1d0294425aa5b7709f2dfd4c6efb2a2cda38bf1744a5b60af2d28809d05bd368"
       },
       {
         "file": "frontend/src/shell/RouteLink.tsx",
@@ -1351,11 +1355,11 @@
       },
       {
         "file": "frontend/src/shell/derive.ts",
-        "sha256": "556351da14c75ff55d5f8b3d84bbe4da5ff4e99fd02963405993a51d6f5f5701"
+        "sha256": "c60f2babf31019a05a51ccb572b3627f47e03082b7228323f4949aaad7c71baf"
       },
       {
         "file": "frontend/src/shell/favicon.ts",
-        "sha256": "e8fcc0a45d508c4e0cb9b730f8e84086d015d8e556df575f4a38da6fcf0ade1b"
+        "sha256": "074f3053a7d625b69a4e43e3903fa7a43e813709a9792c4584aa523f2f3fe23d"
       },
       {
         "file": "frontend/src/shell/format.ts",
@@ -1375,7 +1379,7 @@
       },
       {
         "file": "frontend/src/shell/title.ts",
-        "sha256": "ed4f409eccda15f3b9f8a041759662b50c726c911f68dc9f45f884900174709c"
+        "sha256": "3fad98fb7f4dea7d24237540c7f6486ff0606c94f19310f6d2b706e5c95787d4"
       },
       {
         "file": "frontend/src/shell/views.tsx",

@@ -83,6 +83,42 @@ const meta = { title: 'Attention/Project locations', component: Board } satisfie
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+export const ProjectShellLabels: Story = {
+  args: { hash: '#n=project:audits' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const nav = within(canvas.getByRole('navigation', { name: 'Primary' }));
+    await expect(nav.getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Sessions',
+      'Projects',
+      'Attention',
+      'Intent log',
+      'Settings',
+    ]);
+    await expect(nav.getByRole('link', { name: 'Projects', current: 'page' })).toBeVisible();
+    const crumb = within(canvas.getByRole('navigation', { name: 'Breadcrumb' }));
+    await expect(crumb.getByRole('link', { name: 'Projects' })).toHaveAttribute(
+      'href',
+      '#n=projects',
+    );
+    await expect(crumb.getByText('audits')).toHaveAttribute('aria-current', 'page');
+    const tabs = await canvas.findByRole('tablist', { name: 'Project cockpit views' });
+    const triggers = within(tabs).getAllByRole('tab');
+    const labels = triggers.map((tab) =>
+      Array.from(tab.childNodes)
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent)
+        .join(''),
+    );
+    await expect(labels).toEqual(['Now', 'Course', 'Decisions', 'Console']);
+    await expect(within(tabs).getByRole('tab', { name: 'Now', selected: true })).toBeVisible();
+    const course = within(tabs).getByRole('tab', {
+      name: 'CourseNo observed state changes observed',
+    });
+    await expect(within(course).getByText('0')).toBeVisible();
+  },
+};
+
 export const OneMeasuredLocation: Story = {
   play: async ({ canvasElement }) => {
     await within(canvasElement).findByText(/of 9 sessions carry a subject/);

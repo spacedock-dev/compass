@@ -1,5 +1,6 @@
 import { nativeSession } from './native';
 import { nextNumber } from '../api/bootstrap';
+import { SHOWN } from '../language/glossary';
 import { formatDuration } from '../shell/format';
 import { finishedRunAt, goalOf, landingOf, sessionStop, stopRecord, type Landing } from './landing';
 import {
@@ -81,9 +82,8 @@ const TITLE_WIDTH = 120;
 
 /* Why a session has no title. A session whose only prompt was a harness command did publish that prompt;
    Compass declines to name it by a command, so "not published" would say something untrue. */
-export const NO_NAME_COMMAND = 'No name: the session opened with a command';
 export function noTitleText(source: Row): string {
-  return source['first_prompt_control'] === true ? NO_NAME_COMMAND : 'Title not published';
+  return source['first_prompt_control'] === true ? SHOWN.commandOnlyTitle : SHOWN.titleNotPublished;
 }
 
 export function pageTitleOf(source: Row): string {

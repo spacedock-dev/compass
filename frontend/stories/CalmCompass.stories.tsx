@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, within } from 'storybook/test';
 import type { CSSProperties, ReactNode } from 'react';
+import { GLOSSARY } from '../src/language/glossary';
 import { Alert } from '../src/ui/alert';
 import { Button } from '../src/ui/button';
 import { Card } from '../src/ui/card';
@@ -176,10 +177,13 @@ function StatusLanguage() {
           </h3>
           <dl style={{ margin: 0 }}>
             {[
-              ['Working', 'The agent is busy.'],
-              ['Waiting on you', 'The agent needs your answer.'],
-              ['Quiet', 'The agent finished its turn and is waiting for your next message.'],
-              ['Ended', 'The session reported that it ended.'],
+              [GLOSSARY.working.plain, 'The agent is busy.'],
+              [GLOSSARY.waitingOnYou.plain, 'The agent needs your answer.'],
+              [
+                GLOSSARY.quiet.plain,
+                'The agent finished its turn and is waiting for your next message.',
+              ],
+              [GLOSSARY.ended.plain, 'The session reported that it ended.'],
             ].map(([word, description]) => (
               <div
                 key={word}
@@ -202,66 +206,28 @@ function StatusLanguage() {
           </h3>
           <p style={caption}>A row shows a pill when a stored check found a departure.</p>
           <ul role="list" style={sampleList}>
-            {['Slightly off course', 'Off course', 'Way off course'].map((word) => (
-              <li key={word} style={row}>
-                {word}
-              </li>
-            ))}
+            {[GLOSSARY.slightlyOffCourse, GLOSSARY.offCourse, GLOSSARY.wayOffCourse].map(
+              ({ plain }) => (
+                <li key={plain} style={row}>
+                  {plain}
+                </li>
+              ),
+            )}
           </ul>
           <p style={{ ...caption, marginTop: 'var(--sp-3)' }}>
-            No goal yet · Not checked yet · Too early to tell · Can't tell · Goal too vague to check
-            · Out of date
+            {[
+              GLOSSARY.noGoalYet,
+              GLOSSARY.notCheckedYet,
+              GLOSSARY.tooEarlyToTell,
+              GLOSSARY.cantTell,
+              GLOSSARY.goalTooVague,
+              GLOSSARY.outOfDate,
+            ]
+              .map(({ plain }) => plain)
+              .join(' · ')}
           </p>
         </section>
       </div>
-    </Panel>
-  );
-}
-
-function Terminology() {
-  const words = [
-    ['Goal', 'Intent'],
-    ['What “done” looks like', 'Expected outcome (optional)'],
-    ['Check progress / Check progress again', 'Analyze drift / Check again'],
-    ['This reading looks wrong', 'Mark as inaccurate'],
-    ['Where it went off course', 'Departure + Goal'],
-    ['Helpers', 'Subagents'],
-    ['Agent', 'Harness'],
-    ['Needs you', 'Attention'],
-    ['Goal history', 'Intent log'],
-    ['Quiet', 'Idle'],
-    ['Pause all AI use / Resume AI use', 'Pause model calls / Resume model calls'],
-    ['Live monitor', 'Live monitor'],
-    ['Your AI allowance (the plan quota only)', 'Quota strip'],
-    ['How much a progress check reads', 'Estimated prompt allowances'],
-  ];
-  return (
-    <Panel id="calm-terminology" title="Words we use now">
-      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'start' }}>
-        <thead>
-          <tr>
-            <th scope="col" style={{ textAlign: 'start' }}>
-              Now
-            </th>
-            <th scope="col" style={{ textAlign: 'start' }}>
-              Before
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {words.map(([current, previous]) => (
-            <tr key={current}>
-              <th
-                scope="row"
-                style={{ ...row, textAlign: 'start', paddingInlineEnd: 'var(--sp-3)' }}
-              >
-                {current}
-              </th>
-              <td style={{ ...row, color: 'var(--ink2)' }}>{previous}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </Panel>
   );
 }
@@ -276,7 +242,7 @@ function Pieces() {
   return (
     <Panel id="calm-pieces" title="Pieces">
       <div style={buttons}>
-        <Button emphasis="primary">Check progress</Button>
+        <Button emphasis="primary">{GLOSSARY.checkProgress.plain}</Button>
         <Button emphasis="secondary">Edit goal</Button>
         <Button emphasis="quiet">Not now</Button>
       </div>
@@ -285,7 +251,7 @@ function Pieces() {
       </p>
       <div style={buttons}>
         <Button emphasis="primary" disabled>
-          Check progress unavailable
+          {GLOSSARY.checkProgress.plain} unavailable
         </Button>
         <span style={caption}>Disabled</span>
       </div>
@@ -336,7 +302,7 @@ function ReservedExamples() {
         {[
           ['Switch', 'The shared Switch will appear here when it ships.'],
           ['How … works', 'A short explanation opens beside the words it explains.'],
-          ['Show technical details', 'Activity log, AI use, limits and raw evidence.'],
+          [GLOSSARY.showTechnicalDetails.plain, 'Activity log, AI use, limits and raw evidence.'],
           ['Stepped slider', 'Choose how much a progress check reads.'],
           ['Forget everything', 'The explanation opens inline in the Your data card.'],
         ].map(([title, note]) => (
@@ -346,6 +312,36 @@ function ReservedExamples() {
           </section>
         ))}
       </div>
+    </Panel>
+  );
+}
+
+function WordsWeUseNow() {
+  const cell: CSSProperties = { ...row, paddingInlineEnd: 'var(--sp-3)', textAlign: 'left' };
+  return (
+    <Panel id="calm-words" title="Words we use now">
+      <table aria-labelledby="calm-words" style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            <th scope="col" style={{ ...cell, width: '50%' }}>
+              Plain word
+            </th>
+            <th scope="col" style={cell}>
+              Replaces
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(GLOSSARY).map(([key, { plain, replaces }]) => (
+            <tr key={key}>
+              <th scope="row" style={{ ...cell, fontWeight: 650 }}>
+                {plain}
+              </th>
+              <td style={{ ...cell, color: 'var(--ink2)' }}>{replaces}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </Panel>
   );
 }
@@ -376,12 +372,12 @@ function Guide() {
         <TypeSamples />
       </div>
       <StatusLanguage />
-      <RadiusSamples />
       <div style={columns}>
-        <Terminology />
+        <RadiusSamples />
         <Pieces />
       </div>
       <ReservedExamples />
+      <WordsWeUseNow />
     </main>
   );
 }
@@ -463,6 +459,22 @@ export const StyleGuide: Story = {
       await expect(status.queryByText(word, { exact: true })).toBeNull();
     await expect(statusRegion.querySelector('svg, img')).toBeNull();
 
+    const words = within(canvas.getByRole('table', { name: 'Words we use now' }));
+    await expect(words.getByRole('columnheader', { name: 'Plain word' })).toBeVisible();
+    await expect(words.getByRole('columnheader', { name: 'Replaces' })).toBeVisible();
+    for (const [plain, earlier] of [
+      ['Goal', 'Intent, Intent and drift'],
+      ['Helpers', 'Subagents'],
+      ['Needs you', 'Attention'],
+      ['Goal history', 'Intent log'],
+      ['Quiet', 'Idle'],
+      ['Update my goal instead', 'Update intent instead'],
+    ] as const) {
+      const item = within(words.getByRole('row', { name: plain + ' ' + earlier }));
+      await expect(item.getByRole('rowheader', { name: plain })).toBeVisible();
+      await expect(item.getByRole('cell', { name: earlier })).toBeVisible();
+    }
+
     const radiusSamples = canvas.getByRole('region', { name: 'Radii' });
     const corners = radiusSamples.querySelectorAll<HTMLElement>('[data-radius]');
     await expect(corners).toHaveLength(4);
@@ -478,17 +490,6 @@ export const StyleGuide: Story = {
       }
     } finally {
       corner.remove();
-    }
-
-    const words = within(canvas.getByRole('region', { name: 'Words we use now' }));
-    for (const [current, previous] of [
-      ['Goal', 'Intent'],
-      ['Helpers', 'Subagents'],
-      ['Needs you', 'Attention'],
-      ['Quiet', 'Idle'],
-    ]) {
-      const item = words.getByRole('row', { name: `${current} ${previous}` });
-      await expect(item).toBeVisible();
     }
 
     const pieces = within(canvas.getByRole('region', { name: 'Pieces' }));

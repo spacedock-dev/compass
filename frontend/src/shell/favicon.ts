@@ -6,8 +6,6 @@ const icon = (body: string) =>
   // nosemgrep: javascript.lang.security.html-in-template-string
   `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">${body}</svg>`)}`;
 
-export const WAITING_TITLE_PREFIX = '● Needs you · ';
-
 export function showFavicon(doc: Document, waiting: boolean): void {
   // An SVG in a data URL has its own document and cannot inherit the board's CSS properties.
   const palette = doc.defaultView?.getComputedStyle(doc.documentElement);

@@ -1,4 +1,5 @@
 import type { PayloadData } from '../api/types';
+import { SHOWN } from '../language/glossary';
 import type { Route } from '../router/grammar';
 import { SAMPLE_FIXTURE } from '../sample/fixture';
 import { isSampleRoute } from '../sample/ids';
@@ -9,23 +10,15 @@ import { findSession, sessionTitle } from './derive';
    never a made-up name. */
 export function documentTitle(route: Route, data: PayloadData | null): string {
   switch (route.view) {
-    case 'attention':
-      return 'Compass — Attention';
-    case 'projects':
-      return 'Compass — Projects';
-    case 'sessions':
-      return 'Compass — Sessions';
-    case 'intent':
-      return 'Compass — Intent log';
-    case 'settings':
-      return 'Compass — Settings';
     case 'project':
-      return `${route.project} — Compass`;
+      return `${route.project} — ${SHOWN.compass}`;
     case 'session': {
       const board = isSampleRoute(route) ? (SAMPLE_FIXTURE.board as unknown as PayloadData) : data;
       const session = findSession(board, route.project, route.harness, route.session);
-      const title = session ? sessionTitle(session) : String(route.session || 'Session');
-      return `${title} — ${route.project} — Compass`;
+      const title = session ? sessionTitle(session) : String(route.session || SHOWN.session);
+      return `${title} — ${route.project} — ${SHOWN.compass}`;
     }
+    default:
+      return `${SHOWN.compass} — ${SHOWN[route.view]}`;
   }
 }

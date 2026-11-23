@@ -1,10 +1,9 @@
-import { NO_NAME_COMMAND } from '../src/observed/session';
-
 /* A session with no title whose first prompt was a command is not said to have an unpublished title
    (docs/design-frontend-migration.md#held-to-recorded-answers). The recordings still say "Title not published"
    and are never re-recorded, so a differential test restates that one phrase on the recorded side for exactly
    the rows the payload marks `first_prompt_control`, and holds every other word to the recording. */
 const RECORDED = 'Title not published';
+const NO_NAME_COMMAND = 'No name: the session opened with a command';
 
 type Row = Record<string, unknown>;
 

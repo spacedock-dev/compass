@@ -1,10 +1,9 @@
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { useState, type ReactNode } from 'react';
 import { useFocusKey } from '../controls/useFocusKey';
+import { SHOWN } from '../language/glossary';
 import { cockpitTabs, type ProjectRoute, type ProjectTab } from '../router/grammar';
 import { useNavigate, useShell } from './context';
-
-const label = (tab: string): string => (tab ? (tab[0] ?? '').toUpperCase() + tab.slice(1) : 'Work');
 
 /* Every mounted strip takes its own prefix, so two project views on one page never share a tab or panel id.
    A counter rather than `useId`: `useId` is unique only within one React root, and two views mounted into
@@ -42,7 +41,7 @@ function Tab({
       aria-selected={selected}
       tabIndex={selected ? 0 : -1}
     >
-      {label(tab)}
+      {SHOWN[tab]}
       {cue}
     </TabsTrigger>
   );
@@ -80,7 +79,7 @@ export function ProjectTabs({
         render={<nav />}
         className="next-cockpit-tabs"
         role="tablist"
-        aria-label="Project cockpit views"
+        aria-label={SHOWN.projectTabs}
         onKeyDown={(event) => {
           if (event.key !== 'Home' && event.key !== 'End') return;
           if (event.altKey || event.ctrlKey || event.metaKey) return;
