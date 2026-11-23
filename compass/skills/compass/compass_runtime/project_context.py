@@ -675,6 +675,7 @@ def _agent_message_event(
     sid: str,
     *,
     text_cap: int = records.EXTRACT_TEXT_CAP_CHARS,
+    keep_words: bool = True,
 ) -> dict[str, Any] | None:
     """One timestamped top-level assistant text message, as what the agent said.
 
@@ -700,22 +701,23 @@ def _agent_message_event(
     title = _semantic_line(text, min(MAX_SEMANTIC_LINE, config.observer_goal_cap_chars))
     if not title:
         return None
-    full = observer.parse_message_record(record, cap=text_cap)
-    words = records.safe_text(
-        " ".join(records.mask_prose(full["text"] if full else text).split()), text_cap
-    )
     event: dict[str, Any] = {
         "at": at,
         "kind": _AGENT_SAY,
         "phase": "assistant message",
         "title": title,
-        AGENT_WORDS_FIELD: words[:AGENT_WORDS_CAP_CHARS],
         "source": "timestamped top-level assistant text record",
         "harness": harness,
         "sid": sid,
     }
-    if full is not None and len(full["text"]) < text_cap:
-        event[AGENT_WORDS_TOTAL_FIELD] = len(words)
+    if keep_words:
+        full = observer.parse_message_record(record, cap=text_cap)
+        words = records.safe_text(
+            " ".join(records.mask_prose(full["text"] if full else text).split()), text_cap
+        )
+        event[AGENT_WORDS_FIELD] = words[:AGENT_WORDS_CAP_CHARS]
+        if full is not None and len(full["text"]) < text_cap:
+            event[AGENT_WORDS_TOTAL_FIELD] = len(words)
     # Claude spells a record's identity `uuid`. A new fact type has no stored citation to
     # keep, so it joins the id here: two text blocks in one second opening with the same
     # sentence stay two entries.
@@ -7530,6 +7532,11 @@ def _subagent_transcripts(transcript_path: str) -> list[str]:
     ]
 
 
+def stored_child_path(transcript_path: str, path: str) -> bool:
+    """The native child admission used by the focused check tally."""
+    return _admitted_subagent_path(transcript_path, path)
+
+
 def _admitted_subagent_paths(transcript_path: str, supplied: Sequence[str] | None) -> list[str]:
     return (
         _subagent_transcripts(transcript_path)
@@ -7554,6 +7561,126 @@ def _scan_budget(config: RuntimeConfig, max_bytes: int | None = None) -> runtime
 
 def _scan_records(read: runtime_io.TranscriptRead) -> list[dict[str, Any]]:
     return [record for raw in read.lines if (record := _json_dict(raw)) is not None]
+
+
+def _continuous_native_record(records_: list[dict[str, Any]], lines: Sequence[bytes]) -> bool:
+    """A well-formed byte range alone does not prove that no direction was removed."""
+    if len(records_) != len(lines) or not records_ or not _oldest_at(records_):
+        return False
+    seen: set[str] = set()
+    messages = False
+    for row in records_:
+        uid, parent = row.get("uuid"), row.get("parentUuid")
+        if row.get("type") not in {"user", "assistant"}:
+            # Claude can link the next user message to a system record (such
+            # as a compaction boundary) in the same native file.
+            if isinstance(uid, str) and uid:
+                seen.add(uid)
+            continue
+        if (
+            not isinstance(uid, str)
+            or not uid
+            or uid in seen
+            or "parentUuid" not in row
+            or (parent is not None and (not isinstance(parent, str) or parent not in seen))
+        ):
+            return False
+        seen.add(uid)
+        messages = True
+    return messages
+
+
+def stored_evidence(
+    config: RuntimeConfig,
+    path: str,
+    row: Mapping[str, Any],
+    children: Sequence[str],
+    *,
+    deadline: float,
+    admit_workspace: Callable[[str, tuple[str, ...]], bool],
+) -> dict[str, Any] | None:
+    """The focused tally and message fact builders, with positive native coverage.
+
+    Retained directions can veto publication but cannot replace a broken native
+    chain. In particular, an absent history file cannot fill a missing link.
+    """
+    from . import compass_turns  # noqa: PLC0415 - this reader and the turn detector share facts
+
+    sid = str(row["sid"])
+    scan = _live_check_scan(
+        config, path, child_paths=children, deadline=deadline, include_workspace=False
+    )
+    if (
+        scan.unread
+        or scan.parent_failed
+        or scan.horizon is not None
+        or any(read is None or not read.complete for _, read in scan.source_reads)
+        or not all(
+            read is not None and _continuous_native_record(records_, read.lines)
+            for records_, (_, read) in zip(
+                (scan.parent, *scan.children), scan.source_reads, strict=True
+            )
+        )
+    ):
+        return None
+
+    first = _oldest_at(scan.parent)
+    latest = max(
+        (
+            _record_timestamp(record) or 0.0
+            for source in (scan.parent, *scan.children)
+            for record in source
+        ),
+        default=0.0,
+    )
+    opening = records.norm_epoch(row.get("first_prompt_at"))
+    if first is None or (opening and first > opening):
+        return None
+    parent_read = scan.source_reads[0][1]
+    if parent_read is None:
+        return None
+    folders = tuple(
+        dict.fromkeys(
+            cwd
+            for source in (scan.parent, *scan.children)
+            for record in source
+            if isinstance(cwd := record.get("cwd"), str) and os.path.isabs(cwd)
+        )
+    )
+    if not admit_workspace(scan.session_dir, folders) or time.monotonic() >= deadline:
+        return None
+    scan = _with_workspace(config, path, scan, goal_texts_of(row), None)
+    turns, launchers = compass_turns.covered_turns(
+        parent_read.lines, _claude_tool_uses(scan.parent)
+    )
+    tally = _tally_from_scan(scan, compass_calls=launchers)
+    window_start = _assessment_window_start(row)
+    tally.scan.update(
+        window_start=window_start,
+        window_written_paths=sum(
+            write["at"] > 0 and (window_start is None or write["at"] >= window_start)
+            for write in tally.writes.values()
+        ),
+    )
+    events = tally.entries(sid, None, cap=TOOL_REPORT_MAX_ENTRIES)
+    for record in scan.parent:
+        if time.monotonic() >= deadline:
+            return None
+        event = _instruction_event(config, record, "claude", sid) or _agent_message_event(
+            config, record, "claude", sid, keep_words=False
+        )
+        if event is not None:
+            events.append(event)
+    facts = [
+        _semantic_fact_from_event(event, kind, _SEMANTIC_FACT_TYPES[kind], "")
+        for event in events
+        if (kind := event["kind"]) in _SEMANTIC_FACT_TYPES
+    ]
+    return {
+        "semantic": {"facts": compass_turns.mark_facts(facts, "claude", sid, turns)},
+        "sources": {"work": {"tool_reports": [{"harness": "claude", "sid": sid, **tally.scan}]}},
+        "native_through": latest,
+    }
 
 
 def _agent_result_ids(parent: list[dict[str, Any]]) -> tuple[set[str], set[str]]:
@@ -8184,10 +8311,12 @@ def _live_check_scan(
     child_paths: Sequence[str] | None = None,
     goal_texts: Iterable[str] = (),
     remotes: git_status.StampCache | None = None,
+    deadline: float | None = None,
+    include_workspace: bool = True,
 ) -> _CheckScan:
     """Parent-first actual bytes; metadata sorts children without spending B."""
     budget = _scan_budget(config, max_bytes)
-    parent_read = runtime_io.scan_reverse_lines(config, transcript_path, budget)
+    parent_read = runtime_io.scan_reverse_lines(config, transcript_path, budget, deadline=deadline)
     parent = _scan_records(parent_read)
     horizon = None if parent_read.complete else _oldest_at(parent) or _mtime(transcript_path)
     read_from = horizon
@@ -8206,7 +8335,9 @@ def _live_check_scan(
     for path in paths:
         mtime = _mtime(path)
         read = (
-            runtime_io.scan_reverse_lines(config, path, budget, follow_links=False)
+            runtime_io.scan_reverse_lines(
+                config, path, budget, follow_links=False, deadline=deadline
+            )
             if budget.remaining
             else None
         )
@@ -8237,7 +8368,7 @@ def _live_check_scan(
     # unread delegated work did not change files.
     orphan_unread = not parent_read.complete and bool(orphan - complete_ids)
     began_in = _session_directory(config, transcript_path, parent)
-    return _CheckScan(
+    scan = _CheckScan(
         parent,
         children,
         unread,
@@ -8248,8 +8379,24 @@ def _live_check_scan(
         budget,
         tuple(source_reads),
         began_in,
-        _declared_scripts(config, transcript_path, began_in, parent, children),
-        _CiBinding(config, transcript_path, goal_texts, remotes),
+    )
+    return (
+        _with_workspace(config, transcript_path, scan, goal_texts, remotes)
+        if include_workspace
+        else scan
+    )
+
+
+def _with_workspace(
+    config: RuntimeConfig,
+    path: str,
+    scan: _CheckScan,
+    goal_texts: Iterable[str],
+    remotes: git_status.StampCache | None,
+) -> _CheckScan:
+    return scan._replace(
+        declared=_declared_scripts(config, path, scan.session_dir, scan.parent, scan.children),
+        ci_binding=_CiBinding(config, path, goal_texts, remotes),
     )
 
 
@@ -8419,7 +8566,9 @@ def _compass_launcher_calls(scan: _CheckScan) -> frozenset[str]:
     return compass_turns.launcher_calls(scan.source_reads[0][0], _claude_tool_uses(scan.parent))
 
 
-def _tally_from_scan(scan: _CheckScan) -> _ToolReportTally:
+def _tally_from_scan(
+    scan: _CheckScan, *, compass_calls: frozenset[str] | None = None
+) -> _ToolReportTally:
     return _tally_of(
         scan.parent,
         scan.children,
@@ -8431,7 +8580,7 @@ def _tally_from_scan(scan: _CheckScan) -> _ToolReportTally:
         session_dir=scan.session_dir,
         declared=scan.declared,
         ci_binding=scan.ci_binding,
-        compass_calls=_compass_launcher_calls(scan),
+        compass_calls=_compass_launcher_calls(scan) if compass_calls is None else compass_calls,
     )
 
 

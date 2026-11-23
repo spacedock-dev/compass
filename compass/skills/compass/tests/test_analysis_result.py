@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import builtins
 import contextlib
+import dataclasses
 import http.client
 import io
 import json
@@ -21,17 +22,37 @@ import os
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
+from urllib.parse import urlencode
 
-from compass_runtime import aggregate, history, http_api, levels
+from compass_runtime import (
+    aggregate,
+    ci_read,
+    history,
+    http_api,
+    levels,
+    observer,
+    project_context,
+    record_pages,
+    semantic_history,
+    session_progress,
+)
 from compass_runtime import annotations as annotation_store
 from compass_runtime import io as runtime_io
 from compass_runtime import reading as runtime_reading
+from compass_runtime.state import build_runtime_state
 
 from .support import make_server, serve_until_closed
 from .test_claude_checks import SHORT, START
+from .test_copied_corrections import _row
 from .test_live_estimate import GOAL, LINE, _Replay
+from .test_subagent_checks import Subagent
 
 FOCUSED = f"/api/project-context?project=billing&session=claude:{SHORT}"
+
+
+def _progress_path(revision: str, *rows: tuple[str, str, str]) -> str:
+    pairs = [("revision", revision), *(("row", json.dumps(row)) for row in rows)]
+    return "/api/session-progress?" + urlencode(pairs)
 
 
 def _reading(criteria: dict[str, Any], **over: Any) -> dict[str, Any]:
@@ -101,14 +122,22 @@ class _Result(_Replay):
         )
 
     @contextlib.contextmanager
-    def serving(self) -> Any:
-        httpd = make_server(application=self.app())
+    def serving(self, application: aggregate.Application | None = None) -> Any:
+        httpd = make_server(application=application or self.app())
         thread = serve_until_closed(httpd)
         try:
             yield httpd.server_port
         finally:
             httpd.shutdown()
             thread.join(timeout=5)
+
+    def fresh_app(self, **row: Any) -> aggregate.Application:
+        old = self.state
+        self.state = build_runtime_state(self.config, started=self.now)
+        try:
+            return self.app(**row)
+        finally:
+            self.state = old
 
     @staticmethod
     def get(port: int, path: str) -> dict[str, Any]:
@@ -401,7 +430,7 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
                 board = json.loads(app.collect_json(show_all=True)[1])
                 (session,) = board["sessions"]
                 self.assertIsNotNone(session["annotation_assessment"])
-                self.assertNotIn("stored_progress", session)
+                self.assertIsNone(session["stored_progress"])
                 paths = [
                     Path(call.args[0])
                     for opener in (descriptor_open, file_open, path_open)
@@ -458,6 +487,392 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
         self.assertEqual(levels.HIGH, later["level"])
         self.assertIn(levels.REASON_FAILED_CHECK, later["reasons"])
         self.assertNotIn("level", json.dumps(self.entry()))
+
+    def progress(self, port: int) -> dict[str, Any]:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.request("GET", "/api/data")
+            snapshot = conn.getresponse()
+            revision = snapshot.getheader("X-Compass-Revision")
+            row = next(
+                row for row in json.loads(snapshot.read())["sessions"] if row["sid"] == SHORT
+            )
+            self.assertIsNone(row["stored_progress"])
+        finally:
+            conn.close()
+        assert revision is not None
+        answer = self.get(port, _progress_path(revision, ("claude", SHORT, "billing")))
+        self.assertEqual({"revision", "rows"}, set(answer))
+        self.assertEqual(revision, answer["revision"])
+        (progress,) = answer["rows"]
+        self.assertEqual({"harness", "sid", "project", "stored_progress"}, set(progress))
+        self.assertEqual(
+            ("claude", SHORT, "billing"),
+            tuple(progress[k] for k in ("harness", "sid", "project")),
+        )
+        return answer
+
+    def test_retained_direction_loss_cannot_promote_a_stored_departure(self) -> None:
+        self.save_goal(lines=())
+        self.session.prompt("Actually make the unrelated change first.")
+        direction = self.session.rows[-1]
+        self.record(self.departure())
+        app = self.app()
+        project_context.collect(
+            self.config,
+            self.state,
+            app.collect(show_all=False)["sessions"],
+            "billing",
+            now=self.now,
+            focus=("claude", SHORT),
+        )
+        path = Path(semantic_history.store_path(self.config))
+        retained = path.read_bytes()
+        self.assertIn(b"unrelated change first", retained)
+        self.session.rows.remove(direction)
+        self.session.save(self.path)
+        cap = self.config.state_read_cap_bytes
+
+        def assert_withheld() -> None:
+            with self.serving(self.fresh_app()) as port:
+                answer = self.progress(port)
+                (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+            self.assertIsNone(answer["rows"][0]["stored_progress"])
+            self.assertIsNone(view["pill"])
+
+        for content in (retained.ljust(cap), retained.ljust(cap + 1), b'{"projects":{}}', b"{"):
+            with self.subTest(size=len(content)):
+                path.write_bytes(content)
+                assert_withheld()
+        if os.name != "nt" and os.geteuid() != 0:
+            path.write_bytes(retained)
+            path.chmod(0)
+            try:
+                with self.assertRaises(PermissionError):
+                    path.read_bytes()
+                assert_withheld()
+            finally:
+                path.chmod(0o600)
+        path.unlink(missing_ok=True)
+        assert_withheld()
+
+    def test_progress_and_focus_agree_on_first_and_warm_loads(self) -> None:
+        self.save_goal(lines=())
+        for _ in range(141):
+            self.session._entry("assistant", [{"type": "text", "text": "x" * 8192}])
+        self.record(self.departure())
+        self.assertGreater(self.path.stat().st_size, 1024**2)
+        for focus_first in (False, True):
+            with self.subTest(focus_first=focus_first), self.serving(self.fresh_app()) as port:
+                if focus_first:
+                    self.get(port, FOCUSED)
+                for _ in range(2):
+                    mark = self.progress(port)["rows"][0]["stored_progress"]
+                    (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+                    self.assertEqual(levels.MEDIUM, mark)
+                    self.assertEqual(mark, view["pill"]["level"])
+
+    def test_a_second_dashboard_overrule_withdraws_a_warm_result(self) -> None:
+        self.save_goal(lines=())
+        assessment = self.departure()
+        self.record(assessment)
+        with self.serving(self.fresh_app()) as port, self.serving(self.fresh_app()) as other:
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+            status, answer = self.post(
+                other,
+                "/api/annotate",
+                {
+                    "harness": "claude",
+                    "sid": SHORT,
+                    "not_accurate": True,
+                    "read_at": assessment["read_at"],
+                },
+            )
+            self.assertEqual((200, annotation_store.OUTCOME_STORED), (status, answer["outcome"]))
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+            (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+            self.assertIsNone(view["pill"])
+
+    def test_overrule_during_derivation_withdraws_the_answer_before_reply(self) -> None:
+        self.save_goal(lines=())
+        assessment = self.departure()
+        self.record(assessment)
+        derive = session_progress._verdict
+        with self.serving(self.fresh_app()) as port, self.serving(self.fresh_app()) as other:
+
+            def after_derivation(*args: Any) -> Any:
+                verdict = derive(*args)
+                self.assertEqual(levels.MEDIUM, verdict.value)
+                status, answer = self.post(
+                    other,
+                    "/api/annotate",
+                    {
+                        "harness": "claude",
+                        "sid": SHORT,
+                        "not_accurate": True,
+                        "read_at": assessment["read_at"],
+                    },
+                )
+                self.assertEqual(
+                    (200, annotation_store.OUTCOME_STORED), (status, answer["outcome"])
+                )
+                return verdict
+
+            with patch.object(session_progress, "_verdict", side_effect=after_derivation):
+                self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+
+    def test_a_delegated_recheck_during_the_read_cannot_publish_the_failed_level(self) -> None:
+        self.save_goal(lines=())
+        child = Subagent(self.session, "a1b2c3d4")
+        dispatched = self.session.call("Agent", {"prompt": "Run the tests."})
+        child.prompt("Run the tests.")
+        child.bash("pytest", "1 failed", is_error=True)
+        self.session.result(dispatched, "Started.", tool_use_result={"agentId": child.agent_id})
+        path = self.path.with_suffix("") / "subagents" / f"agent-{child.agent_id}.jsonl"
+        child.save(path)
+        cite = next(fact["fact_id"] for fact in self.facts_now() if fact.get("result") == "failed")
+        through = START.timestamp() + self.session.seconds
+        self.record(
+            _reading(
+                {"goal": {"result": runtime_reading.RESULT_DEPARTURE, "cites": [cite]}},
+                window_start=START.timestamp(),
+                revision_read_at=START.timestamp(),
+                read_at=through + 1,
+                evidence_through=through,
+            )
+        )
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual(levels.HIGH, self.progress(port)["rows"][0]["stored_progress"])
+        before = self.path.stat().st_mtime_ns
+        derive = session_progress._verdict
+
+        def after_derivation(*args: Any) -> Any:
+            verdict = derive(*args)
+            self.assertEqual(levels.HIGH, verdict.value)
+            child.bash("pytest", "7 passed")
+            child.save(path)
+            return verdict
+
+        with self.serving(self.fresh_app()) as port:
+            with patch.object(session_progress, "_verdict", side_effect=after_derivation):
+                self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+            self.assertEqual(before, self.path.stat().st_mtime_ns)
+            self.assertNotIn(
+                self.progress(port)["rows"][0]["stored_progress"], session_progress.DEPARTURES
+            )
+            (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+            self.assertIsNone(view["pill"])
+
+    def test_missing_record_page_withholds_both_surfaces(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        with (
+            self.serving(self.fresh_app()) as port,
+            patch.object(
+                record_pages,
+                "read",
+                return_value=record_pages.empty("claude", SHORT, "unavailable"),
+            ),
+        ):
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+            (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+            self.assertIsNone(view["pill"])
+
+    def test_recent_ended_session_with_a_project_peer_uses_the_focused_verdict(self) -> None:
+        self.save_goal(lines=())
+        assessment = self.departure()
+        ended = assessment["read_at"]
+        assessment.update(
+            scope=runtime_reading.SCOPE_FINAL,
+            scope_text=runtime_reading.SCOPE_TEXT[runtime_reading.SCOPE_FINAL],
+            ended_at_read=ended,
+        )
+        self.record(assessment)
+        app = self.fresh_app()
+        parent = _row(state="idle", active=False, ended_at=ended)
+        peer = _row(sid="deadbeef", session="deadbeef")
+        app.harnesses = (
+            dataclasses.replace(app.harnesses[0], collect=lambda *_: [dict(parent), dict(peer)]),
+        )
+        with self.serving(app) as port:
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+            (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+            self.assertEqual(levels.MEDIUM, view["pill"]["level"])
+            terminal = self.get(port, "/api/sessions")
+        row = next(row for row in terminal["sessions"] if row["sid"] == SHORT)
+        self.assertEqual(levels.MEDIUM, row["stored_progress"])
+
+    def test_goal_and_recorded_attempts_have_distinct_absences(self) -> None:
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual("no-goal", self.progress(port)["rows"][0]["stored_progress"])
+            self.save_goal(lines=())
+            self.assertEqual("unchecked", self.progress(port)["rows"][0]["stored_progress"])
+            annotation_store.record_withheld(
+                self.config,
+                self.state,
+                "claude",
+                SHORT,
+                reason=runtime_reading.WITHHELD_LEDGER_EMPTY,
+                spent=False,
+            )
+            self.assertEqual("too-early", self.progress(port)["rows"][0]["stored_progress"])
+
+    def test_progress_warm_hits_do_not_read_evidence_content_or_collect(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.fresh_app()
+        with self.serving(app) as port:
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+            revision, _ = app.collect_json(show_all=False)
+            path = _progress_path(f"{revision[0]:.0f}.{revision[1]}", ("claude", SHORT, "billing"))
+            with (
+                patch.object(app, "collect_json", side_effect=AssertionError("board collection")),
+                patch.object(
+                    project_context, "stored_evidence", side_effect=AssertionError("native content")
+                ),
+                patch.object(
+                    semantic_history, "read_only", side_effect=AssertionError("retained content")
+                ),
+                patch.object(
+                    annotation_store,
+                    "progress_entries",
+                    side_effect=AssertionError("annotation content"),
+                ),
+            ):
+                self.assertEqual(levels.MEDIUM, self.get(port, path)["rows"][0]["stored_progress"])
+
+    def test_cold_progress_only_reads_and_refuses_a_busy_annotation_store(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.fresh_app()
+        revision, _ = app.collect_json(show_all=False)
+        token = http_api.runtime_snapshot.format_revision(revision)
+        endpoint = _progress_path(token, ("claude", SHORT, "billing"))
+        home = Path(self.config.state_home)
+        before = {file.name: file.read_bytes() for file in home.iterdir() if file.is_file()}
+        transcript = self.path.read_bytes()
+        with (
+            self.serving(app) as port,
+            patch.object(app, "collect_json", side_effect=AssertionError("board collection")),
+            patch.object(ci_read, "read", side_effect=AssertionError("CI fetch")),
+            patch.object(observer.CodexGoalModel, "__call__", side_effect=AssertionError("model")),
+        ):
+            with annotation_store.progress_read(self.config) as locked:
+                self.assertTrue(locked)
+                self.assertIsNone(self.get(port, endpoint)["rows"][0]["stored_progress"])
+            self.assertEqual(levels.MEDIUM, self.get(port, endpoint)["rows"][0]["stored_progress"])
+        self.assertEqual(
+            before, {file.name: file.read_bytes() for file in home.iterdir() if file.is_file()}
+        )
+        self.assertEqual(transcript, self.path.read_bytes())
+
+    def test_new_attempt_replacement_revision_and_clear_invalidate_the_warm_verdict(self) -> None:
+        self.save_goal(lines=())
+        assessment = self.departure()
+        self.record(assessment)
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+            annotation_store.record_withheld(
+                self.config,
+                self.state,
+                "claude",
+                SHORT,
+                reason=runtime_reading.WITHHELD_CONTEXT_LIMIT,
+                spent=False,
+            )
+            self.assertIsNone(self.progress(port)["rows"][0]["stored_progress"])
+            self.record({**assessment, "read_at": assessment["read_at"] + 1})
+            self.assertEqual(levels.MEDIUM, self.progress(port)["rows"][0]["stored_progress"])
+            self.save_goal(lines=("The lexer is untouched",))
+            self.assertEqual("out-of-date", self.progress(port)["rows"][0]["stored_progress"])
+            annotation_store.clear(self.config, self.state, "claude", SHORT)
+            self.assertNotIn(
+                self.progress(port)["rows"][0]["stored_progress"], session_progress.DEPARTURES
+            )
+
+    def test_requested_identity_has_to_be_visible_and_use_the_canonical_project(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.fresh_app()
+        visible = _row()
+        hidden = _row(sid="deafbeef", session="deafbeef")
+        app.harnesses = (
+            dataclasses.replace(
+                app.harnesses[0],
+                collect=lambda _config, _state, _now, _hours, show_all: (
+                    [dict(visible), dict(hidden)] if show_all else [dict(visible)]
+                ),
+            ),
+        )
+        token = http_api.runtime_snapshot.format_revision
+        revision, _ = app.collect_json(show_all=False)
+        expanded_revision, _ = app.collect_json(show_all=True)
+        with self.serving(app) as port:
+            wrong = ("claude", SHORT, "a different project")
+            not_visible = ("claude", "deafbeef", "billing")
+            codex = ("codex", SHORT, "billing")
+            rows = self.get(port, _progress_path(token(revision), wrong, not_visible, codex))[
+                "rows"
+            ]
+            self.assertEqual([None, None, None], [row["stored_progress"] for row in rows])
+            self.assertEqual(
+                [], self.get(port, _progress_path(token(expanded_revision), not_visible))["rows"]
+            )
+
+    def test_explicit_goal_unclear_is_published_on_both_surfaces(self) -> None:
+        self.save_goal(lines=())
+        self.record(
+            _reading(
+                {
+                    "goal": {"result": runtime_reading.RESULT_GOAL_UNCLEAR, "cites": []},
+                }
+            )
+        )
+        with self.serving(self.fresh_app()) as port:
+            self.assertEqual("goal-unclear", self.progress(port)["rows"][0]["stored_progress"])
+            (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+            self.assertEqual("goal-unclear", view["stored_progress"])
+            self.assertIsNone(view["pill"])
+
+    def test_raw_snapshots_never_project_progress_for_a_24_session_board(self) -> None:
+        rows = []
+        for index in range(24):
+            sid = f"{index + 1:08x}"
+            row = _row(sid=sid, session=sid)
+            rows.append(row)
+            if index < 12:
+                annotation_store.annotate(
+                    self.config, self.state, "claude", sid, goal=GOAL, now=self.now
+                )
+                annotation_store.record_reading(
+                    self.config,
+                    self.state,
+                    "claude",
+                    sid,
+                    assessment=cast("Any", _reading({"goal": _unverifiable()})),
+                )
+        app = self.fresh_app()
+        app.harnesses = (
+            dataclasses.replace(app.harnesses[0], collect=lambda *_: [dict(row) for row in rows]),
+        )
+        with (
+            patch.object(
+                session_progress, "evaluate", side_effect=AssertionError("progress evaluation")
+            ),
+            patch.object(
+                semantic_history, "read_only", side_effect=AssertionError("retained content")
+            ),
+            patch.object(runtime_io, "open_harness", side_effect=AssertionError("native content")),
+        ):
+            for _ in range(2):
+                board = json.loads(app.collect_json(show_all=False)[1])
+                self.assertEqual(24, len(board["sessions"]))
+                self.assertEqual(
+                    12, sum(bool(row["annotation_assessment"]) for row in board["sessions"])
+                )
+                self.assertTrue(all(row["stored_progress"] is None for row in board["sessions"]))
+                self.now += self.config.collect_memo_sec + 1
 
     def test_a_reading_where_every_line_cannot_tell_never_reads_none_or_low(self) -> None:
         self.save_goal(lines=(LINE, "The lexer is untouched"))

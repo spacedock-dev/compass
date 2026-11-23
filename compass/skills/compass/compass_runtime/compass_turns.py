@@ -112,51 +112,63 @@ def _launcher_ids(record: dict[str, Any], directory: str | None) -> tuple[str, .
 
 
 def _advance(path: str, held: _Read) -> _Read:
+    with os.fdopen(runtime_io.open_harness(path), "rb") as source:
+        source.seek(held.offset)
+        return _advance_lines(held, source, expect_delimiter=True)
+
+
+def _advance_lines(held: _Read, lines: Iterable[bytes], *, expect_delimiter: bool) -> _Read:
     closed, open_at, offset, after = list(held.closed), held.open_at, held.offset, held.after
     skill_dir, launchers = held.skill_dir, dict(held.launchers)
-    with os.fdopen(runtime_io.open_harness(path), "rb") as source:
-        source.seek(offset)
-        for raw in source:
-            if not raw.endswith(b"\n"):
-                break  # a line still being written is read whole next time
-            offset += len(raw)
-            found = _candidate(raw, open_at)
-            if found is None:
-                continue
-            record, at = found
-            if records.compass_command_record(record):
-                if open_at is not None:
-                    closed.append((open_at, at))
-                open_at, after, skill_dir = at, None, None
-            elif open_at is not None and _ends(record, after):
+    for raw in lines:
+        if expect_delimiter and not raw.endswith(b"\n"):
+            break  # a line still being written is read whole next time
+        offset += len(raw)
+        found = _candidate(raw, open_at)
+        if found is None:
+            continue
+        record, at = found
+        if records.compass_command_record(record):
+            if open_at is not None:
                 closed.append((open_at, at))
-                open_at, after, skill_dir = None, None, None
-            if open_at is not None and not record.get("isSidechain"):
-                content = records.message_dict(record).get("content")
-                if (
-                    record.get("type") == "user"
-                    and record.get("isMeta") is True
-                    and record.get("turnCompanion") is True
-                    and not record.get("sourceToolUseID")
-                ):
-                    tags = re.findall(
-                        r"<skill-dir>([^<>\r\n]+)</skill-dir>", records.extract_text(content)
-                    )
-                    # Missing or conflicting publications cannot establish an exemption.
-                    skill_dir = tags[0] if len(tags) == 1 and os.path.isabs(tags[0]) else None
-                else:
-                    launchers.update(
-                        (call_id, skill_dir or "") for call_id in _launcher_ids(record, skill_dir)
-                    )
+            open_at, after, skill_dir = at, None, None
+        elif open_at is not None and _ends(record, after):
+            closed.append((open_at, at))
+            open_at, after, skill_dir = None, None, None
+        if open_at is not None and not record.get("isSidechain"):
+            content = records.message_dict(record).get("content")
             if (
-                open_at is not None
-                and record.get("type") in ("user", "assistant")
-                and not record.get("isSidechain")
+                record.get("type") == "user"
+                and record.get("isMeta") is True
+                and record.get("turnCompanion") is True
+                and not record.get("sourceToolUseID")
             ):
-                after = record["type"]
+                tags = re.findall(
+                    r"<skill-dir>([^<>\r\n]+)</skill-dir>", records.extract_text(content)
+                )
+                # Missing or conflicting publications cannot establish an exemption.
+                skill_dir = tags[0] if len(tags) == 1 and os.path.isabs(tags[0]) else None
+            else:
+                launchers.update(
+                    (call_id, skill_dir or "") for call_id in _launcher_ids(record, skill_dir)
+                )
+        if (
+            open_at is not None
+            and record.get("type") in ("user", "assistant")
+            and not record.get("isSidechain")
+        ):
+            after = record["type"]
     return _Read(
         held.identity, offset, tuple(closed), open_at, after, skill_dir, tuple(launchers.items())
     )
+
+
+def covered_turns(
+    lines: Iterable[bytes], calls: Iterable[Any]
+) -> tuple[tuple[Span, ...], frozenset[str]]:
+    """Interpret the same commands on the version of the native bytes held by a reader."""
+    held = _advance_lines(_Read((0, 0), 0, (), None), lines, expect_delimiter=False)
+    return _spans(held), _identified_launchers(held, calls)
 
 
 def _read(path: str) -> _Read | None:
@@ -186,8 +198,10 @@ def _read(path: str) -> _Read | None:
 def spans(path: str) -> tuple[Span, ...]:
     """Each turn a typed Compass command opened in this transcript, oldest first."""
     held = _read(path)
-    if held is None:
-        return ()
+    return _spans(held) if held is not None else ()
+
+
+def _spans(held: _Read) -> tuple[Span, ...]:
     return (*held.closed, (held.open_at, None)) if held.open_at is not None else held.closed
 
 
@@ -287,7 +301,11 @@ def launcher(command: Any, directory: str | None) -> bool:
 def launcher_calls(path: str, calls: Iterable[Any]) -> frozenset[str]:
     """Parent launcher calls positively inside typed Compass turns; children remain work."""
     held = _read(path)
-    identified = dict(held.launchers) if held else {}
+    return _identified_launchers(held, calls) if held is not None else frozenset()
+
+
+def _identified_launchers(held: _Read, calls: Iterable[Any]) -> frozenset[str]:
+    identified = dict(held.launchers)
     return frozenset(
         call[2]
         for call in calls

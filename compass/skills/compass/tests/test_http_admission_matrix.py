@@ -30,6 +30,7 @@ GET = {
     "/api/observe",
     "/api/project-context",
     "/api/session-record",
+    "/api/session-progress",
     "/api/reading-long-plan",
     "/api/reading-long-history",
     "/api/overlays",

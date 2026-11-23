@@ -82,6 +82,7 @@ _SESSION_FIELDS: Final = (
     "annotation_goal",
     "annotation_goal_source",
     "annotation_assessment",
+    "stored_progress",
     "departures",
     "loop",
     "delegated_launches",

@@ -77,18 +77,43 @@ def _redact_history(value: Any) -> Any:
     return value
 
 
-def _read(config: RuntimeConfig) -> dict[str, Any]:
+def read_only(config: RuntimeConfig) -> tuple[str, dict[str, Any]]:
+    """Distinguish absent and unreadable history without repairing either."""
     try:
         with os.fdopen(
             runtime_io.open_regular(store_path(config), root=str(config.state_home)), "rb"
         ) as handle:
             raw = handle.read(config.state_read_cap_bytes + 1)
         if len(raw) > config.state_read_cap_bytes:
-            return {"v": SCHEMA_VERSION, "projects": {}}
+            return "unavailable", {}
         value = json.loads(raw)
+    except FileNotFoundError:
+        return "missing", {}
     except (OSError, ValueError, RecursionError):
-        return {"v": SCHEMA_VERSION, "projects": {}}
+        return "unavailable", {}
     if not isinstance(value, dict) or not isinstance(value.get("projects"), dict):
+        return "unavailable", {}
+    return "ok", value
+
+
+def retained_events(payload: dict[str, Any], projects: set[str]) -> list[Any] | None:
+    """Canonical and legacy buckets, with malformed coverage held apart from absence."""
+    result: list[Any] = []
+    found = payload.get("projects", {})
+    for project in projects:
+        if project not in found:
+            continue
+        bucket = found[project]
+        events = bucket.get("events") if isinstance(bucket, dict) else None
+        if not isinstance(events, list) or any(not isinstance(event, dict) for event in events):
+            return None
+        result.extend(events)
+    return result
+
+
+def _read(config: RuntimeConfig) -> dict[str, Any]:
+    status, value = read_only(config)
+    if status != "ok":
         return {"v": SCHEMA_VERSION, "projects": {}}
     redacted = dict(_redact_history(value))
     # A read may be the only event after an upgrade; do not leave recognized

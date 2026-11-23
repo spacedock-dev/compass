@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from _thread import LockType
 
     from compass_runtime.config import RuntimeConfig
+    from compass_runtime.session_progress import CachedVerdict
 
 
 class UsageFetchEntry(TypedDict):
@@ -71,6 +72,10 @@ class RuntimeState:
     # Focused drift views only: content digests retain no record bytes, bounded per application.
     drift_view_cache: dict[str, dict[str, Any]] = field(default_factory=dict)
     drift_view_lock: LockType = field(default_factory=threading.Lock)
+    # The read-only progress producer owns the values behind this single-flight lock.
+    progress_lock: LockType = field(default_factory=threading.Lock)
+    progress_annotations: Any = None
+    progress_verdicts: dict[tuple[str, str, str], CachedVerdict] = field(default_factory=dict)
     session_outlines: dict[str, Any] = field(default_factory=dict)
     # Registry exchanges only; each outline slot owns its work outside this lock.
     session_outline_lock: LockType = field(default_factory=threading.Lock)

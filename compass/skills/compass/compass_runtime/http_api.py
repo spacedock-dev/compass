@@ -52,6 +52,7 @@ from compass_runtime import (
     record_pages,
     records,
     session_outline,
+    session_progress,
     settings,
     summary_jobs,
     summary_store,
@@ -1044,7 +1045,7 @@ def _with_levels(
     return {**context, "sources": {**sources, "work": work}}
 
 
-def assemble_project_drift(
+def assemble_project_drift(  # noqa: PLR0913 - the focused handler publishes after its other reads
     application: Any,
     collected: dict[str, Any],
     project: str,
@@ -1054,6 +1055,7 @@ def assemble_project_drift(
     refresh: bool = False,
     model_consent: bool = False,
     lease: Mapping[str, Any] | None = None,
+    publish_progress: bool = True,
 ) -> dict[str, Any]:
     """The page's context assembly, shared with the footer without collecting the board again.
 
@@ -1088,7 +1090,53 @@ def assemble_project_drift(
             else _attach_lease(result, lease)
         )
         result = _with_drift_view(application, result, collected, focus, project, cursor_key)
+        if publish_progress:
+            result = _with_stored_progress(
+                application, result, collected, focus, project, cursor_key
+            )
     return result
+
+
+def _with_stored_progress(
+    application: Any,
+    context: dict[str, Any],
+    collected: dict[str, Any],
+    focus: tuple[str, str],
+    project: str,
+    cursor_key: bytes,
+) -> dict[str, Any]:
+    """Apply the shared current verdict to the focused reading and its pill."""
+    if focus[0] != "claude":
+        return context
+    row = session_progress.matching(collected["sessions"], focus, project)
+    work = context["sources"]["work"]
+    view = work["drift_views"][0]
+    verdict = (
+        session_progress.evaluate(application, collected, [row], cursor_key).get(
+            session_progress.identity(row)
+        )
+        if row is not None
+        else None
+    )
+    value = verdict.value if verdict else None
+    view.update(session_progress.published(value))
+    pill = view.get("pill")
+    if verdict and value in session_progress.DEPARTURES and verdict.work:
+        work.update(copy.deepcopy(verdict.work))
+        view["analysis"] = copy.deepcopy(verdict.analysis)
+        view["pill"] = copy.deepcopy(verdict.pill)
+    elif (
+        pill
+        and pill.get("source") == "analysis"
+        and pill.get("level") in session_progress.DEPARTURES
+    ):
+        view["pill"] = None
+    if value not in session_progress.DEPARTURES and (
+        row is None or session_progress.claims_departure(row)
+    ):
+        work["analysis_levels"] = []
+        view["analysis"] = None
+    return context
 
 
 class FooterMonitorSource:
@@ -2015,6 +2063,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "/api/observe": self._observe,
             "/api/project-context": self._project_context,
             "/api/session-record": self._session_record,
+            "/api/session-progress": self._session_progress,
             "/api/reading-long-plan": self._reading_long_plan,
             "/api/reading-long-history": self._reading_long_history,
         }.get(url.path)
@@ -2176,6 +2225,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             focus,
             self.server.record_cursor_key,
             refresh=refresh,
+            publish_progress=False,
             model_consent=(
                 refresh
                 and parse_qs(url.query).get("observer_model") == ["1"]
@@ -2226,6 +2276,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 result = _with_prompt_choices(
                     application, result, collected["sessions"], focus, project
                 )
+            result = _with_stored_progress(
+                application, result, collected, focus, project, self.server.record_cursor_key
+            )
         # The page shows titles; a reader message whole is for a reading only.
         result = runtime_project_context.for_page(result)
         self._send(
@@ -2291,11 +2344,64 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if not self._loopback_resource_ok() or self._is_document_navigation():
             self.send_error(403)
             return
-        _, body = self.server.application.collect_json(show_all=False)
-        answer = terminal_sessions.list_payload(board_explanations.expand(json.loads(body)))
+        application = self.server.application
+        revision, body = application.collect_json(show_all=False)
+        payload = board_explanations.expand(json.loads(body))
+        answer = terminal_sessions.list_payload(payload)
+        admitted = session_progress.admitted_rows(payload["sessions"])
+        candidates = list(admitted.values())[: session_progress.MAX_ROWS]
+        verdicts = session_progress.evaluate(
+            application, payload, candidates, self.server.record_cursor_key
+        )
+        current = application.snapshot.current((application.config.window_hours, False))
+        if current is not None and current[0] == revision:
+            for row in answer.get("sessions", []):
+                if verdict := verdicts.get(session_progress.identity(row)):
+                    row.update(session_progress.published(verdict.value))
         self._send(
             json.dumps(
                 runtime_project_context.for_page(answer), ensure_ascii=False, separators=(",", ":")
+            ).encode(),
+            "application/json",
+        )
+
+    def _session_progress(self, url: ParseResult) -> None:
+        if not self._loopback_read_ok():
+            self.send_error(403)
+            return
+        application = self.server.application
+        try:
+            request = session_progress.parse(url.query, application.config.ask_project_cap_chars)
+        except (ValueError, RecursionError):
+            self.send_error(400, "invalid board revision or progress batch")
+            return
+        key = (application.config.window_hours, False)
+        current = application.snapshot.current(key)
+        results: list[dict[str, Any]] = []
+        if current is not None and runtime_snapshot.format_revision(current[0]) == request.revision:
+            payload = board_explanations.expand(json.loads(current[1]))
+            admitted = session_progress.admitted_rows(payload["sessions"])
+            rows = [admitted[row] for row in request.rows if row in admitted]
+            verdicts = session_progress.evaluate(
+                application, payload, rows, self.server.record_cursor_key
+            )
+            if application.snapshot.current(key) == current:
+                results = [
+                    {
+                        "harness": harness,
+                        "sid": sid,
+                        "project": project,
+                        **session_progress.published(
+                            verdict.value
+                            if (verdict := verdicts.get((harness, sid, project)))
+                            else None
+                        ),
+                    }
+                    for harness, sid, project in request.rows
+                ]
+        self._send(
+            json.dumps(
+                {"revision": request.revision, "rows": results}, separators=(",", ":")
             ).encode(),
             "application/json",
         )

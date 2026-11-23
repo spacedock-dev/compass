@@ -274,6 +274,12 @@ class Leases:
                 self._end_locked(key, "ended", now)
         return self._state(harness, sid, now)
 
+    def has_holder(self, harness: str, sid: str) -> bool:
+        """Whether a live-only state might stand, without sweeping or renewing its lease."""
+        with self._lock:
+            lease = self._leases.get(f"{harness}:{sid}")
+            return bool(lease and lease.holders)
+
     def terminal_state(self, harness: str, sid: str) -> dict[str, Any]:
         """Lease identity for helper recovery, without the page's model reading."""
         now = self._clock()

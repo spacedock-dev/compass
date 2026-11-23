@@ -204,6 +204,7 @@ def scan_reverse_lines(
     budget: ReadBudget,
     *,
     follow_links: bool = True,
+    deadline: float | None = None,
 ) -> TranscriptRead:
     """Read the newest complete lines, charging each returned binary byte."""
     before = budget.spent
@@ -215,7 +216,9 @@ def scan_reverse_lines(
         with _open_scan_binary(path, follow_links=follow_links) as source:
             byte_end = os.fstat(source.fileno()).st_size
             position = byte_end
-            while position and budget.remaining:
+            while (
+                position and budget.remaining and (deadline is None or time.monotonic() < deadline)
+            ):
                 size = min(config.reverse_chunk_bytes, position, budget.remaining)
                 position -= size
                 source.seek(position)
@@ -413,6 +416,30 @@ def glob_under(root: str, *pattern: str) -> list[str]:
     if not admit_harness_root(root):
         return []
     return sorted(glob.glob(os.path.join(glob.escape(root), *pattern)))
+
+
+def directory_entries(path: str, limit: int) -> list[tuple[str, bool]] | None:
+    """List one directory without granting access or following descendant links."""
+    try:
+        with contextlib.ExitStack() as owned:
+            if os.name == "nt":
+                source: str | int = owned.enter_context(
+                    _windows_directory(path, root=None, create=False)
+                )
+            else:
+                source = _directory_fd(path, follow_links=False)
+                owned.callback(os.close, source)
+            result: list[tuple[str, bool]] = []
+            with os.scandir(source) as entries:
+                for child in entries:
+                    if len(result) >= limit:
+                        return None
+                    result.append((child.name, child.is_dir(follow_symlinks=False)))
+            return sorted(result)
+    except FileNotFoundError:
+        return []
+    except OSError:
+        return None
 
 
 def glob_stores(config: RuntimeConfig, key: str, *pattern: str) -> list[str]:
@@ -952,7 +979,11 @@ _DIRECTORY_REFUSES = frozenset(
 
 @contextlib.contextmanager
 def held_file_lock(
-    path: str | os.PathLike[str], *, wait: float, root: str | None = None
+    path: str | os.PathLike[str],
+    *,
+    wait: float,
+    root: str | None = None,
+    existing_only: bool = False,
 ) -> Iterator[str]:
     """Hold an OS lock on `path` for the block, waiting at most `wait` seconds.
 
@@ -980,16 +1011,23 @@ def held_file_lock(
                 path = os.path.abspath(path)
                 if os.name == "nt":
                     directory = guard.enter_context(
-                        _windows_directory(os.path.dirname(path), root=root, create=True)
+                        _windows_directory(
+                            os.path.dirname(path), root=root, create=not existing_only
+                        )
                     )
                     path = os.path.join(directory, os.path.basename(path))
                 else:
-                    parent = _owner_directory_fd(os.path.dirname(path), root=root)
+                    parent = _owner_directory_fd(
+                        os.path.dirname(path), root=root, create=not existing_only
+                    )
                     guard.callback(os.close, parent)
             if os.path.islink(path):
                 raise OSError(errno.ELOOP, "Refusing a symlink", path)  # noqa: TRY301
             flags = (
-                os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+                os.O_RDWR
+                | (0 if existing_only else os.O_CREAT)
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_NONBLOCK", 0)
             )
             fd = os.open(
                 path if parent is None else os.path.basename(path),
@@ -999,7 +1037,7 @@ def held_file_lock(
             )
         try:
             _check_regular(os.fstat(fd), os.fspath(path))
-            os.fchmod(fd, 0o600) if os.name != "nt" else None
+            os.fchmod(fd, 0o600) if not existing_only and os.name != "nt" else None
         except BaseException:
             os.close(fd)
             raise

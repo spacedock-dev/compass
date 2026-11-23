@@ -115,7 +115,8 @@ def _fact(
             record,
             harness,
             sid,
-            **({} if title_only else {"text_cap": len(raw)}),
+            text_cap=len(raw),
+            keep_words=not title_only,
         )
         kind, fact_type = "agent_say", "agent_message"
     if event is None:

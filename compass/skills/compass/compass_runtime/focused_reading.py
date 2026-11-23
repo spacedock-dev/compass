@@ -211,10 +211,16 @@ def stored_work(
     context: dict[str, Any],
     row: dict[str, Any],
     entry: annotation_store.Annotation | None,
+    *,
+    sources: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    requests = request_sources(application, row, facts_of(context), entry) if entry else []
+    requests = (
+        sources
+        if sources is not None
+        else (request_sources(application, row, facts_of(context), entry) if entry else [])
+    )
     return {
-        "line_requests": line_requests(entry, requests, row),
+        "line_requests": line_requests(entry, list(requests), row),
         "analysis_levels": analysis_levels(
             application,
             context,

@@ -297,7 +297,7 @@ def _read_regular(path: str, limit: int = 1024) -> str | None:
         os.close(descriptor)
 
 
-def _gitdir_of(dot_git: str) -> tuple[str, str] | None:
+def git_dirs(dot_git: str) -> tuple[str, str] | None:
     """The git directory and the common directory a `.git` entry stands for, or None.
 
     A linked worktree's `.git` is a one-line file naming its own directory, whose `commondir`
@@ -327,7 +327,7 @@ def remote_stamp(folder: str) -> tuple[Any, ...] | None:
     """
     current = os.path.abspath(folder)
     while True:
-        found = _gitdir_of(os.path.join(current, ".git"))
+        found = git_dirs(os.path.join(current, ".git"))
         if found is not None:
             break
         parent = os.path.dirname(current)
@@ -600,7 +600,12 @@ def read_committed(
         return None
     # A replace ref can point a blob at another one while `git status` still reads the file as
     # modified, so none of the four reads honours one.
-    environ = {**probe_environment(os.environ), "GIT_NO_REPLACE_OBJECTS": "1"}
+    environ = {
+        **probe_environment(os.environ),
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_NO_LAZY_FETCH": "1",
+        "GIT_ALLOW_PROTOCOL": "",
+    }
     resolved = _executable(environ)
     if resolved is None:
         return None

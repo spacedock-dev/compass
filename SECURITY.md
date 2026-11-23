@@ -314,6 +314,12 @@ The posture rests on two invariants:
    projection, with no observation history or unused row fields. It removes server-only message
    words and has the same loopback, same-origin and document-navigation guards as `/api/session`.
    It reads one published snapshot, makes no model call and never requests a usage fetch.
+   It overlays the same bounded stored-progress result described below after collection.
+   `GET /api/session-progress` is a loopback resource with the same direct-peer, origin and
+   navigation guards. It accepts the current default-window board revision and up to 32 exact
+   harness, session and canonical project tuples. The response contains that revision and the
+   requested identities with one closed `stored_progress` token or null for each. A superseded
+   revision receives an empty list. No caller-supplied filesystem path is used.
    One `GET` reads wider than the rest, and is named here for that reason rather than for the
    count above. `GET /api/annotations` serves the prose you composed, for every session you have
    annotated, including sessions no longer on the board. That is a wider scope than `/api/data`
@@ -5551,6 +5557,14 @@ The `proto/operator-cockpit` branch adds project context and an optional read-on
 `GET /api/project-context` reads bounded transcript and workflow evidence, stores semantic history
 under the configured state directory, and can invoke the installed Codex CLI for a derived goal.
 `GET /api/session-record` uses the same loopback and bounded project/session guards, returns the same redacted message titles as project-context, and exposes no fields or content classes the page could not already read. Each message also carries its fixed number, read from an in-memory index of every message's time and fact id in the transcript (at most 16 transcripts, never written to disk, nothing a person wrote); the index adds no field the page could not derive from the record it already reads, and a read that cannot finish inside its allowance publishes no numbers.
+The progress batch revalidates Claude Code's saved reading with its bounded local parent and
+child transcripts, the annotation store, retained directions and local check declarations.
+It calls no model, starts no CI fetch and writes no history, annotations or harness state.
+Read-only Git checks have network protocols disabled for the committed-file read. Source
+versions and lock admission also apply to cached answers. Overrules or source changes can
+withdraw an answer inside the ordinary board's memo window. Neither the response nor the
+ordinary board's null default carries new evidence, prose or source paths. Progress tokens
+remain outside assessment inputs, hook envelopes and both history stores.
 This is separate from quota fetching and from the session-history switch. The prototype retains
 its own semantic-history store. `--forget` deletes the session-history, session-end and summary
 stores, removes annotation discard records and copied-correction digests, and withdraws model

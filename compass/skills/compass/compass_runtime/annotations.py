@@ -752,7 +752,9 @@ def _store_locks(
                 yield _UNLOCKED
             return
         with runtime_io.held_file_lock(
-            lock_path(config), wait=max(0.0, deadline - time.monotonic())
+            lock_path(config),
+            wait=max(0.0, deadline - time.monotonic()),
+            existing_only=not create_lock,
         ) as held:
             if held == runtime_io.LOCK_BUSY or state is None:
                 yield held
@@ -1741,7 +1743,7 @@ def _envelope(raw: bytes | None, cap: int) -> list[Any] | None:
     return entries if isinstance(entries, list) else None
 
 
-def _read_store(config: RuntimeConfig) -> _Store:
+def _read_store(config: RuntimeConfig, *, strict: bool = False) -> _Store:
     """The file, told apart from no file and from a file this build cannot trust.
 
     Read to a cap with RecursionError caught, for `lifecycle.read_state`'s
@@ -1758,10 +1760,10 @@ def _read_store(config: RuntimeConfig) -> _Store:
             raw = handle.read(cap + 1)
     except (FileNotFoundError, NotADirectoryError):
         # No file, or a state home that cannot hold one: nothing is there to lose.
-        raw = b""
+        return _Store((), (), trusted=True)
     except OSError:
         raw = None
-    if raw == b"":
+    if raw == b"" and not strict:
         return _Store((), (), trusted=True)
     entries = _envelope(raw, cap)
     if entries is None:
@@ -1778,9 +1780,41 @@ def _read_store(config: RuntimeConfig) -> _Store:
         )
         if entry is not None:
             parsed.append(entry)
-        elif _refused_entry(value):
+        elif strict or _refused_entry(value):
             refused.append(value)
+    if strict:
+        # Keep duplicates for the read-side caller to reject. The board's
+        # regular normalization resolves them for display.
+        return _Store(tuple(parsed), tuple(refused), trusted=True)
     return _Store(_bounded(parsed, config.annotation_max_sessions), tuple(refused), trusted=True)
+
+
+@contextlib.contextmanager
+def progress_read(config: RuntimeConfig) -> Iterator[bool]:
+    """Take the existing annotation locks without creating or repairing anything."""
+    with _store_locks(config, None, wait=0.0, make_home=False, create_lock=False) as held:
+        yield held == runtime_io.LOCK_HELD or (
+            held == _UNLOCKED and not os.path.lexists(store_path(config))
+        )
+
+
+def progress_entries(config: RuntimeConfig) -> dict[tuple[str, str], Annotation | None] | None:
+    """Called under progress_read. None for a held-raw or ambiguous identity."""
+    store = _read_store(config, strict=True)
+    if not store.trusted:
+        return None
+    entries: dict[tuple[str, str], Annotation | None] = {}
+    for entry in store.entries:
+        key = (entry["harness"], entry["sid"])
+        entries[key] = None if key in entries else entry
+    for raw in store.kept_raw:
+        if not isinstance(raw, dict):
+            return None
+        key = _key(raw.get("harness"), raw.get("sid"))
+        if not all(key):
+            return None
+        entries[key] = None
+    return entries
 
 
 def _fsync_directory(path: str) -> None:

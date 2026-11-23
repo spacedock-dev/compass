@@ -52,6 +52,7 @@ compass/                           # plugin root: Claude Code, Codex, Antigravit
         │   ├── monitor_store.py    # private control records and persistent OS lock paths
         │   ├── terminal_drift.py   # stdlib-only: --drift, rendered from the server's drift_views, and its press
         │   ├── board_explanations.py # stdlib-only full-board sentence tokens and client resolution
+        │   ├── session_progress.py # versioned read-only stored progress for the loopback batch and focus
         │   ├── terminal_sessions.py # stdlib-only: what --sessions prints, ported from the board's own rules
         │   ├── terminal_summary.py # stdlib-only: stored cited phases and explicit summary requests
         │   ├── terminal_goal.py    # stdlib-only: fresh Intent goal reads and guarded terminal saves
@@ -790,6 +791,9 @@ a fourth when an envelope may write the field, and `history.OBSERVATION_FIELDS` 
 enters session history. Two tests bind it, a constructor set-equality check and a payload
 set-equality check across every harness fixture; the payload half is the one that catches a key
 added after construction, and an undeclared key once left 2,325 tests green without it.
+For `stored_progress`, the owner is `session_progress.published()`. Both ordinary board snapshot
+variants carry only the null default. The batch route and lean terminal projection can overlay the
+validated value after collection.
 
 **A store that compares against `ended_at` attaches after the overlay pass, not before.** Only
 `_apply_overlays` writes that field, so attaching earlier reads `None` on every row. Attaching

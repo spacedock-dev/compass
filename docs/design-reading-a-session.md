@@ -7408,6 +7408,29 @@ messages that may support a Goal departure; limiting the lookup to check rows wo
 legitimate departures. This revalidation reads the published facts and calls no model or output
 grant.
 
+#### Current stored progress for Sessions and Focus
+
+The Calm Compass row uses the exact current stored level, from Slightly off course through Way off
+course. The intermediate "Medium or higher" row wording is retired. A stored result can also
+establish No goal yet, Not checked yet, Too early to tell, Can't tell, Goal too vague to check or
+Out of date. The stored verdict must establish the conditions each phrase describes. For example,
+Can't tell requires a check that found no departure and lacked a check showing the outcome.
+Codex and live-estimate-only rows have an empty progress slot.
+
+Both variants of the board snapshot publish a null `stored_progress` field. The loopback
+`GET /api/session-progress` reads a bounded batch against the current default-window snapshot.
+It uses the same current stored verdict as the focused view. The response carries the board
+revision and each requested row's exact harness, session and canonical project identity with a
+closed progress token or null. The browser can discard a response when its board revision moves.
+
+The verdict needs readable native evidence, including the current child inventory, coverage of
+the direction and evidence windows, and a readable newest record page. A retained direction can
+veto publication. A missing link in the native record stays a gap even after history disappears.
+Current annotation and attempt state comes from the locked store on disk. If any checked source
+generation moves while the answer is being prepared, the producer withholds that answer.
+Reuse is bounded, process-local and outside board collection. The batch makes no model call and
+writes no history. See the [loopback API boundary](../SECURITY.md#operator-cockpit-prototype).
+
 The owner answered two questions from review the same day, and both answers are part of this ruling
 rather than an amendment. A shell command that is neither a check nor read-only, run after any
 check's latest passing run, blocks the live estimate's "None or low" and is never drift (item 1, and DEC-23 item
