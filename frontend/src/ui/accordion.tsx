@@ -38,11 +38,21 @@ export function AccordionTrigger({
     </AccordionPrimitive.Header>
   );
 }
+/* A panel's prose spans the panel. The page-wide `--measure` cap (540px) clamped every sentence inside an
+   opened panel to the left half of a wide card, which the owner rejected on 2026-11-24; resetting the token here
+   reaches every capped rule a panel holds, and popovers, which portal out of the panel, keep the cap. */
+export const disclosurePanelMeasure = '[--measure:100%]';
+
 export function AccordionContent({ className, ...props }: AccordionPrimitive.Panel.Props) {
   return (
     <AccordionPrimitive.Panel
       data-slot="accordion-content"
-      className={cn(disclosureMotion, 'h-[var(--accordion-panel-height)]', className)}
+      className={cn(
+        disclosureMotion,
+        disclosurePanelMeasure,
+        'h-[var(--accordion-panel-height)]',
+        className,
+      )}
       {...props}
     />
   );

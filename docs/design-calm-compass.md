@@ -109,6 +109,13 @@ text. Use 13 px for supporting text, tags and badges. It is the floor. Technical
 can use `ui-monospace` for logs, identifiers and commands. Use sentence case on the first
 layer. Interactive targets are at least 44 px.
 
+Sentences on the page stop at `--measure`, 540 px, about 72 characters at the body step.
+Inside an opened accordion or collapsible panel they span the panel instead: the panel resets
+`--measure` to its own width, so the explanation behind How goals work or What is sent fills the
+card it opens in. The owner asked for this on 2026-11-24, after testing main, because a capped
+panel left the right half of a wide card empty. Popovers draw outside the panel and keep the
+cap.
+
 ## Status language
 
 A session state describes what the session is doing. A progress word describes evidence read
