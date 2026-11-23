@@ -50,14 +50,24 @@ _NON_CONTROL_ROWS = {
 
 
 @cache
-def _retired_names() -> tuple[str, ...]:
+def _glossary_words() -> tuple[tuple[str, str], ...]:
     document = (ROOT / "docs/design-calm-compass.md").read_text()
     glossary = document.split("| Plain word | Replaces |", 1)[1].split("\n\n", 1)[0]
-    words: set[str] = set()
+    rows = []
     for line in glossary.splitlines()[2:]:
         plain, replaces, *_ = (cell.strip() for cell in line.split("|")[1:-1])
-        if plain not in _NON_CONTROL_ROWS:
-            words.update(word.removeprefix("Cost implied by ") for word in replaces.split(", "))
+        rows.append((plain, replaces))
+    return tuple(rows)
+
+
+@cache
+def _retired_names() -> tuple[str, ...]:
+    words = {
+        word.removeprefix("Cost implied by ")
+        for plain, replaces in _glossary_words()
+        if plain not in _NON_CONTROL_ROWS
+        for word in replaces.split(", ")
+    }
     return tuple(sorted(words))
 
 
