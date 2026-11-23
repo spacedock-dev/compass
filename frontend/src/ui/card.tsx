@@ -6,6 +6,7 @@
 import type { ComponentProps } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
+import { SESSION_LIST_WORDS } from '../language/glossary';
 import { RouteLink, type RouteLinkProps } from '../shell/RouteLink';
 import { Button } from './button';
 import { Icon, type IconName } from './icons';
@@ -145,7 +146,9 @@ function SummaryFilterCard({
       onClick={onClick}
     >
       {children}
-      <SummaryCue icon={pressed ? 'check' : 'show-below'}>Show in the list below</SummaryCue>
+      <SummaryCue icon={pressed ? 'check' : 'show-below'}>
+        {SESSION_LIST_WORDS.showBelow}
+      </SummaryCue>
     </Button>
   );
 }

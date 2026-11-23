@@ -157,7 +157,7 @@ describe('the presets and chips', () => {
     expect(preset('Waiting on you').getAttribute('aria-pressed')).toBe('true');
     expect(chips()).toEqual(['State: Waiting on you']);
     expect(result()).toBe(
-      'Showing 1 of 12 sessions. ACTIVE NOW and WORKING above count the whole board. Press Enter to open it.',
+      'Showing 1 of 12 sessions. At a glance counts the whole board. Press Enter to open it.',
     );
     expect(rows()).toBe(1);
     await press(page, preset('Started today'));

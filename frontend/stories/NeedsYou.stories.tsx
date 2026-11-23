@@ -166,7 +166,7 @@ type Story = StoryObj<typeof meta>;
 export const ReadableTimes: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByRole('heading', { name: /Needs you now/ });
+    await canvas.findByRole('heading', { name: /Waiting on you/ });
     const wait = canvasElement.querySelector(
       '[data-next-attention-subject=\'session:["claude","sign-in"]\']',
     );

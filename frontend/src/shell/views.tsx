@@ -23,9 +23,10 @@ import { SessionDetail, SessionsView } from '../sessions';
 import { SettingsView } from '../settings';
 import { PROJECT_SLOTS, ProjectDetail, ProjectsView } from '../project';
 import type { Row } from '../observed';
+import { SHOWN } from '../language/glossary';
 
 const HEADINGS: Readonly<Record<'sessions' | 'projects', string>> = {
-  sessions: 'Session operations',
+  sessions: SHOWN.sessions,
   projects: 'Projects',
 };
 

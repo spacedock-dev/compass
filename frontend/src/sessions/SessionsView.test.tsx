@@ -48,7 +48,7 @@ it('explains the filter counts and published history window in place', async () 
         'Each number beside an option is how many sessions with that value your other filters keep.',
         'Choices inside one filter widen the list; separate filters and the search narrow it.',
         'A session that does not publish a value is counted under its own option, never as zero and never as older.',
-        'Active now and Working above always count the whole board.',
+        'At a glance counts the whole board.',
       ],
     ],
     [
@@ -56,9 +56,9 @@ it('explains the filter counts and published history window in place', async () 
       [
         'Recently observed is not proof the harness process is still open or closed; rows marked Ended reported their own end.',
         'Blocked sessions lead, followed by recorded departures, then working sessions.',
-        'The Active now figure counts active evidence only; a recorded departure adds no active session.',
         'Your first prompt, or your latest where the first is not published, comes from Claude Code or Codex; other harnesses show only your typed words.',
-        'A goal marked from your prompt was adopted by you; showing a prompt alone adopts nothing, and the progress pill names a recorded departure.',
+        'A goal marked from your prompt was adopted by you.',
+        'Compass saves a prompt as a goal when you choose to adopt it.',
       ],
     ],
   ] as const) {
@@ -88,11 +88,7 @@ it('explains what disappears from session history when annotations are off', asy
     board([{ harness: 'claude', sid: 'a', project: 'p', state: 'idle' }], { annotate: false }),
   );
   fireEvent.click(screen.getByRole('button', { name: GLOSSARY.howSessionHistoryWorks.plain }));
-  expect(
-    screen.getByText(
-      'Annotations are off, so goals cannot be typed and progress pills are not shown.',
-    ),
-  ).toBeVisible();
+  expect(screen.getByText('Annotations are off, so goals cannot be typed.')).toBeVisible();
 });
 
 describe('what the screen says when it has nothing to draw', () => {
@@ -113,10 +109,8 @@ describe('what the screen says when it has nothing to draw', () => {
     expect(screen.getByText('No exact session has active evidence right now.')).toBeInTheDocument();
     expect(screen.getByText('No recent-history rows in this payload.')).toBeInTheDocument();
     expect(
-      [...document.querySelectorAll('[data-next-fleet-fact] strong')].map(
-        (node) => node.textContent,
-      ),
-    ).toEqual(['0', '0']);
+      screen.getByText('You have 0 waiting on you, 0 working, 0 quiet and 0 ended on this board.'),
+    ).toBeVisible();
   });
 
   it('names a harness whose store could not be read, so its absence is not read as no sessions', async () => {
@@ -231,11 +225,10 @@ describe('the groups', () => {
     expect(rows('active')).toEqual(['claude/raised']);
     const raised = document.querySelector('article[data-next-session="raised"]');
     expect(raised?.querySelector('[data-variant="progress"]')).toBeNull();
-    // Counted with the cards listed under Active now, and still not called working.
-    expect(document.querySelector('[data-next-fleet-fact="active"] strong')?.textContent).toBe('1');
-    expect(document.querySelector('[data-next-fleet-fact="working"] strong')?.textContent).toBe(
-      '0',
-    );
+    expect(document.querySelector('[data-next-row-drift-level]')).toBeNull();
+    const glance = within(screen.getByRole('region', { name: 'At a glance' }));
+    expect(glance.getByRole('button', { name: /Working now 0/ })).toBeVisible();
+    expect(glance.getByRole('link', { name: /Worth a look 0/ })).toBeVisible();
   });
 
   it('words a session that opened with a command as the page heading does, on its row and its link', async () => {
@@ -298,20 +291,15 @@ describe('the groups', () => {
     'shows no progress copy for a stored %s departure on the first visit',
     async (level, label) => {
       const page = await open(
-        board(
-          [
-            {
-              harness: 'claude',
-              sid: 'read',
-              state: 'working',
-              ...assessed,
-              stored_progress: level,
-            },
-          ],
+        board([
           {
-            annotate: true,
+            harness: 'claude',
+            sid: 'read',
+            state: 'working',
+            ...assessed,
+            stored_progress: level,
           },
-        ),
+        ]),
       );
       const row = document.querySelector<HTMLElement>('article[data-next-session="read"]');
       if (!row) throw new Error('Missing row');
@@ -464,28 +452,6 @@ describe('the groups', () => {
     expect(goal('empty')?.querySelector('a')?.classList.contains('next-absence')).toBe(true);
   });
 
-  it('says no session has been checked while checks are visible and none exists', async () => {
-    await open(
-      board([{ harness: 'claude', sid: 'a', project: 'p', state: 'idle' }], {
-        annotate: true,
-        reading_routes: { claude: { provider: 'claude' } },
-      }),
-    );
-    expect(document.querySelector('[data-next-sessions-orientation]')).toBeInTheDocument();
-    document.body.innerHTML = '';
-    await open(
-      board(
-        [{ harness: 'claude', sid: 'a', project: 'p', state: 'idle', departure_checked: true }],
-        { annotate: true },
-      ),
-    );
-    expect(
-      document
-        .querySelector('[data-next-sessions-orientation]')
-        ?.textContent.match(/No session has been checked/),
-    ).toBeNull();
-  });
-
   it('says who a held request is addressed to', async () => {
     await open(
       board(
@@ -626,67 +592,18 @@ describe('the header counts and the screen are one reading of one payload', () =
 });
 
 describe('the Sessions first step', () => {
-  it.each([
-    { annotate: false, reading_routes: { claude: { provider: 'claude' } } },
-    {
-      annotate: true,
-      annotate_unreadable: 'Store unreadable',
-      reading_routes: { claude: { provider: 'claude' } },
-    },
-    { annotate: true, reading_routes: { claude: { provider: '' } } },
-  ])(
-    'keeps a truthful orientation and history explanation when analysis is unavailable: %j',
-    async (capabilities) => {
-      await open(
-        board([{ harness: 'claude', sid: 'a', project: 'p', state: 'idle' }], capabilities),
-      );
-      const orientation = document.querySelector('[data-next-sessions-orientation]');
-      expect(orientation?.textContent).toBe(
-        'Open a session to see what it is doing and where it stands.',
-      );
-      expect(document.querySelectorAll('.next-operations-header > p')).toHaveLength(1);
-      expect(
-        screen.getByRole('button', { name: GLOSSARY.howSessionHistoryWorks.plain }),
-      ).toBeInTheDocument();
-    },
-  );
-  it('merges the unchecked clause into one orientation paragraph when analysis is available', async () => {
-    await open(
-      board([{ harness: 'claude', sid: 'a', project: 'p', state: 'idle' }], {
-        annotate: true,
-        reading_routes: { claude: { provider: 'claude' } },
-      }),
-    );
-    expect(document.querySelector('[data-next-sessions-orientation]')?.textContent).toBe(
-      'Open a session, set its goal and press Analyze drift to see how far it moved from it. No session has been checked for drift yet; open one to check it.',
-    );
-    expect(document.querySelectorAll('.next-operations-header > p')).toHaveLength(1);
-  });
   it.each([false, true])(
-    'keeps orientation and the history explanation when a checked session exists: %s',
-    async (checked) => {
+    'keeps one summary and the history explanation with annotations set to %s',
+    async (annotate) => {
       await open(
-        board(
-          [
-            {
-              harness: 'claude',
-              sid: 'a',
-              project: 'p',
-              state: 'idle',
-              departure_checked: checked,
-            },
-          ],
-          { annotate: true, reading_routes: { claude: { provider: 'claude' } } },
-        ),
+        board([{ harness: 'claude', sid: 'a', project: 'p', state: 'idle' }], { annotate }),
       );
-      expect(document.querySelector('[data-next-sessions-orientation]')).toBeInTheDocument();
+      const header = screen.getByRole('heading', { name: /^Good /, level: 1 }).parentElement;
+      expect(header?.querySelectorAll('p')).toHaveLength(1);
       expect(
         screen.getByRole('button', { name: GLOSSARY.howSessionHistoryWorks.plain }),
-      ).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'How rows are split' })).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Goal sources' })).toBeNull();
-      expect(document.querySelector('[data-next-fleet-fact="requests"]')).toBeNull();
-      expect(document.querySelector('[data-next-fleet-fact="reported-blocks"]')).toBeNull();
+      ).toBeVisible();
+      expect(screen.queryByRole('region', { name: 'Fleet facts' })).toBeNull();
     },
   );
   it.each(['working', 'idle'])(
@@ -742,4 +659,36 @@ describe('two sessions in two worktrees of one repository', () => {
     // A main checkout publishes no worktree, so no worktree is drawn for it.
     expect(facts('s3')).toBe('PROJECTone/compass');
   });
+});
+
+it('keeps each card preview title and reason together when a title is missing', async () => {
+  await open(
+    board([
+      {
+        harness: 'claude',
+        sid: 'deploy',
+        project: 'ops',
+        state: 'needs_input',
+        state_detail: 'Approve production?',
+      },
+      {
+        harness: 'claude',
+        sid: 'docs',
+        project: 'manual',
+        title: 'Edit handbook',
+        state: 'needs_input',
+        state_detail: 'Choose chapter?',
+      },
+    ]),
+  );
+  const card = screen.getByRole('link', { name: /Waiting on you 2/ });
+  const row = document.querySelector('article[data-next-session="deploy"]');
+  const title = row?.querySelector('.next-operation-route strong')?.textContent?.trim();
+  expect(title).toBeTruthy();
+  const deploy = within(card).getByText('Approve production?');
+  const handbook = within(card).getByText('Choose chapter?');
+  expect(deploy.parentElement?.textContent).toContain(title ?? '');
+  expect(deploy.parentElement?.textContent).not.toContain('Edit handbook');
+  expect(handbook.parentElement?.textContent).toContain('Edit handbook');
+  expect(handbook.parentElement?.textContent).not.toContain('Approve production?');
 });

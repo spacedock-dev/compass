@@ -61,7 +61,7 @@ it('filters for the flag independently from a row’s State', () => {
   const payload = worthALookBoard();
   const selection = attentionSelectionFor(payload);
   const indexed = indexScreen(
-    buildSessionsScreen(payload, observedFor(payload), undefined, selection?.worthALook),
+    buildSessionsScreen(payload, observedFor(payload), undefined, selection),
   );
   const flagged = prepare({ ...EMPTY_FILTERS, worthALookOnly: true }, GENERATED, false);
   const result = applyFilters(indexed, flagged, () => '');
@@ -488,7 +488,7 @@ describe('the guards and sentences', () => {
     expect(resultLine(all, { showAll: false, hours: null })).toBe('12 sessions on this board.');
     const some = run({ query: 'release' }).filtered;
     expect(resultLine(some, { showAll: false, hours: 24 })).toBe(
-      'Showing 2 of 12 sessions. ACTIVE NOW and WORKING above count the whole board.',
+      'Showing 2 of 12 sessions. At a glance counts the whole board.',
     );
     const words = { ...EMPTY_FILTERS, query: 'release' };
     expect(announcement(some, words, EMPTY_FILTERS)).toBe('Showing 2 of 12 sessions.');

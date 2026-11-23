@@ -266,7 +266,8 @@ export const ParentQuestionOutranksChildWait: Story = {
   args: { parentQuestion: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByText('Ship now?');
+    const sessions = within(await canvas.findByRole('region', { name: 'All sessions' }));
+    await expect(await sessions.findByText('Ship now?')).toBeVisible();
     const state = row(canvasElement, 'parent').querySelector('[data-next-row-state]');
     await expect(state).toHaveAccessibleName('Waiting on you');
     await expect(state).not.toHaveTextContent('Waiting on child "Check build"');
@@ -338,7 +339,7 @@ export const GroupingRemainsVisiblyPressed: Story = {
     const driver =
       '__vitest_browser_runner__' in window ? (await import('vitest/browser')).page : null;
     const leave = async () => {
-      if (driver) await driver.getByRole('heading', { name: 'Session operations' }).hover();
+      if (driver) await driver.getByRole('heading', { name: /^Good / }).hover();
       else await userEvent.unhover(toggle);
     };
     const colors = () => {
@@ -363,7 +364,7 @@ export const GroupingRemainsVisiblyPressed: Story = {
 
 export const ParentLinkFromSessionsRowUsesPointer: Story = {
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByText('Check build');
+    await within(canvasElement).findByRole('link', { name: 'Open session Check build' });
     const child = row(canvasElement, 'child');
     const link = within(child).getByRole('link', { name: 'Child of Coordinate release' });
     const driver =
@@ -496,14 +497,13 @@ export const AttentionQuietCoverage: Story = {
     const canvas = within(canvasElement);
     await expect(
       await canvas.findByText(
-        'The other 2: 1 moving · 1 in no counted state; of these, 0 partially read.',
+        '0 waiting on you · 0 worth a look · 0 ready to wrap up. 1 with limited state evidence.',
       ),
     ).toBeVisible();
-    const close = canvasElement.querySelector<HTMLElement>('[data-next-attention-section="close"]');
-    if (!close) throw new Error('Expected the close-the-loop queue');
-    await expect(
-      within(close).getByRole('link', { name: 'Stop observed; git state not measured' }),
-    ).toHaveAttribute('href', '#n=session:rollup:claude:stopped');
+    await expect(canvas.getByRole('status', { name: 'Working sessions' })).toHaveTextContent(
+      '1 session working',
+    );
+    await expect(canvas.queryByRole('heading', { name: /^Ready to wrap up/ })).toBeNull();
   },
 };
 

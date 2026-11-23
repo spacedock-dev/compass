@@ -122,9 +122,8 @@ const OPEN: Observed['open'] = [
   ],
 ];
 
-/* The one reader of a payload. Every figure a view prints is derived here from the rows it renders, never
-   authored: the header, the fleet facts and the groups all stand on the same collection, so they cannot
-   disagree about what a session is. A missing or malformed payload is the empty model, and whether the
+/* The one reader of a payload. The selectors and views count from these same rows. A missing or
+   malformed payload is the empty model, and whether the
    collection was ABSENT is the caller's question, answered from the payload itself. */
 export function observe(input: unknown): Observed {
   const payload = asPayload(input);
@@ -370,12 +369,6 @@ export function observe(input: unknown): Observed {
     risks,
     boardRisks,
     counters: [
-      counter('ACTIVE NOW', active.length, `${String(totals.sessions)} recently observed`),
-      counter(
-        'WORKING',
-        sessions.filter((session) => session.isWorking).length,
-        `${String(needs.length)} waiting on you`,
-      ),
       counter(
         'EXACT REQUESTS',
         totals.exactRequests,

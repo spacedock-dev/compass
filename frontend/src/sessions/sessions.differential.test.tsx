@@ -35,8 +35,6 @@ interface RowSummary {
 }
 
 interface Summary {
-  readonly header: string;
-  readonly fleet: readonly (readonly [string, string])[];
   readonly groups: readonly {
     readonly kind: string;
     readonly header: string;
@@ -73,10 +71,7 @@ function summarize(source: Element | DocumentFragment): Summary {
   source.querySelectorAll('[data-next-row-worth-a-look]').forEach((flag) => flag.remove());
   const root = normalizeDisclosures(source);
   return {
-    header: norm(root.querySelector('.next-operations-header')),
-    fleet: [...root.querySelectorAll('[data-next-fleet-fact]')].map(
-      (node) => [(node as HTMLElement).dataset['nextFleetFact'] ?? '', norm(node)] as const,
-    ),
+    // The old heading and fleet counters were retired. The new summary has its own story and count tests.
     groups: [...root.querySelectorAll('[data-next-operation-group]')].map((group) => ({
       kind: (group as HTMLElement).dataset['nextOperationGroup'] ?? '',
       header: norm(group.querySelector(':scope > header')),
@@ -152,10 +147,6 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
   }
   DEVIATIONS.liveMarks(template.content);
   DEVIATIONS.rowPresentation(template.content, true);
-  const header = template.content.querySelector('.next-operations-header');
-  header?.querySelector(':scope > span')?.remove();
-  // The two board caveats now live with the history explanation, proved in SessionsView.test.
-  header?.querySelectorAll('details').forEach((node) => node.remove());
   const history = template.content.querySelector('[data-next-operation-group="history"] > header');
   history?.querySelectorAll('details').forEach((node) => node.remove());
   const data = payload as Record<string, unknown>;
@@ -169,35 +160,9 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
           ? `Earlier in the last ${String(hours)} ${hours === 1 ? 'hour' : 'hours'}`
           : 'Recently active';
   }
-  const routes = data['reading_routes'];
-  const canAnalyze =
-    data['annotate'] === true &&
-    !data['annotate_unreadable'] &&
-    routes &&
-    typeof routes === 'object' &&
-    Object.values(routes).some((route) => route && typeof route === 'object' && route['provider']);
-  const unchecked = header?.querySelector(':scope > p');
-  const orientation = document.createElement('p');
-  orientation.textContent = canAnalyze
-    ? 'Open a session, set its goal and press Analyze drift to see how far it moved from it.' +
-      (unchecked ? ` ${unchecked.textContent}` : '')
-    : 'Open a session to see what it is doing and where it stands.';
-  unchecked?.remove();
-  header?.querySelector('h1')?.after(orientation);
-  template.content
-    .querySelectorAll('[data-next-fleet-fact="requests"],[data-next-fleet-fact="reported-blocks"]')
-    .forEach((node) => node.remove());
   template.content.querySelectorAll('.next-operation-assignment').forEach((node) => {
     node.textContent = node.textContent?.replace(/^ASSIGNMENT · /, 'Current task · ') ?? '';
   });
-  /* Deviation (2026-10-20, docs/design-frontend-migration.md#sessions-session-detail-the-timeline-and-the-terminal):
-     ACTIVE NOW counts the cards listed under Active now, recorded drift included. The legacy count left drift
-     out, so it read 0 above a listed drift card. */
-  const counted = template.content.querySelectorAll(
-    '[data-next-operation-group="active"] article.next-operation-row',
-  ).length;
-  const active = template.content.querySelector('[data-next-fleet-fact="active"] strong');
-  if (active) active.textContent = String(counted);
   /* Deviation (2026-10-20, docs/design-frontend-migration.md#held-to-recorded-answers): each row leads with
      one state word in place of the SESSION label, NOW · <state> and the QUIET or ENDED tag, and WHERE is the
      project label alone, without "Exact location not published". The state word is compared in

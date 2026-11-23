@@ -16,6 +16,22 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-23, Sessions replaces its operations heading, drift orientation and two fleet counters with
+a greeting, one state summary and the At a glance cards. The Sessions differential masks the old
+heading and fleet block and still compares the groups, rows and links. The observed-model
+differential masks the retired ACTIVE NOW and WORKING counters and still compares exact requests and
+reported blocks. The Sessions browser proof compares the recorded list from the first group and
+asserts the opening separately. Sessions At A Glance covers greeting changes on refresh and
+checks the style of the greeting, summary and actual card labels.
+
+2026-11-23, the Needs you queues use the same session identities as the opening cards and badge.
+An exact request stays in Waiting on you after a reported end and takes precedence over Ready to
+wrap up. A measured label collision is evidence on each affected session's Worth a look row.
+Quota, checkout warnings, unowned requests and location gaps without measured collisions stay
+outside the session count. The view differential checks the new membership and compares details
+for rows that keep their leading signal. It sets aside the old opening brief, queue counts and
+the native wait reason newly shown alongside exact requests. The recordings stay fixed.
+
 2026-11-23, Needs you writes out waiting, end, stop and turn ages using the displayed payload's
 clock. Older observations use the reader's clock or a short date. Absolute starts and scheduled
 resets include the date and year when the payload has no usable clock. Impossible ages are
@@ -100,12 +116,11 @@ flag replaces. The shell tests compare the counted filter and each flag to the s
 and check that repeated copies add no second dirty warning.
 
 2026-11-23, Sessions rows lead with an accessible status tile. The harness follows the
-title. The progress slot is blank. The board data can represent unreadable evidence in
-the same way as a missing goal or check. The differential comparison uses
-`frontend/test/sessionRowDeviation.ts` to set aside the old Drift mark and the state
-presentation. It aligns title and harness order and still compares groups, row order,
-facts and links. The Sessions stories hold placement, contrast, the visible legend and
-the keyboard tooltip. Terminal
+title. The Sessions list drops its progress column. Status Tiles Without Progress checks both desktop row
+templates in Chromium. The differential comparison uses
+`frontend/test/sessionRowDeviation.ts` to set aside the old Drift mark and state presentation. It aligns
+title and harness order and still compares groups, row order, facts and links. The Sessions
+stories hold placement, contrast, the visible legend and the keyboard tooltip. Terminal
 grouping keeps its shared recorded answers. Terminal row wording follows in DRC-5510.
 The row puts the assignment and location notice on separate lines. The status story
 checks the 44 px tooltip target around its 40 px artwork. The browser proof for the Session
