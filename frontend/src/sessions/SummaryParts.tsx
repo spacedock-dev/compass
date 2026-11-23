@@ -485,15 +485,17 @@ function Cites({
   cites,
   cut = 0,
   purpose,
+  quote,
   reads,
   chip,
 }: {
   readonly cites: readonly string[];
   readonly cut?: number;
   readonly purpose: string;
+  readonly quote?: string | undefined;
   /** True when every id is a message id; a set names the ids known to be messages. */
   readonly reads: Reads;
-  readonly chip: (id: string, purpose: string) => ReactNode;
+  readonly chip: (id: string, purpose: string, quote?: string) => ReactNode;
 }) {
   const { model } = useDrift();
   const linked = cites.filter((id) => followable(id, reads, model.byId));
@@ -502,7 +504,7 @@ function Cites({
     <span className="[overflow-wrap:anywhere]" data-next-summary-cites>
       {linked.map((id) => (
         <span key={id} className="ml-1.5">
-          {chip(id, purpose)}
+          {chip(id, purpose, quote)}
         </span>
       ))}
       {cut ? (
@@ -519,23 +521,23 @@ function Bullet({
   chip,
 }: {
   readonly bullet: SummaryBullet;
-  readonly chip: (id: string, purpose: string) => ReactNode;
+  readonly chip: (id: string, purpose: string, quote?: string) => ReactNode;
 }) {
-  const failed = bullet.kind === 'failed';
   const value: Shown =
     'text' in bullet.text
       ? { text: bulletWords(bullet.kind, bullet.text.text), cut: bullet.text.cut }
       : bullet.text;
   return (
     <li
-      className={`text-body [overflow-wrap:anywhere] ${failed ? 'text-destructive' : 'text-foreground'}`}
+      className={'text-body text-foreground [overflow-wrap:anywhere]'}
       data-next-summary-bullet={bullet.kind}
     >
       <ShownText value={value} cited="yes" />
       <Cites
         cites={bullet.cites}
         cut={bullet.citesCut}
-        purpose={`cited for “${spoken(bullet)}”`}
+        purpose="cited for"
+        quote={spoken(bullet)}
         reads={bullet.kind === 'said' || bullet.kind === 'asked'}
         chip={chip}
       />
@@ -570,7 +572,7 @@ function Hidden({
 }: {
   readonly bullets: readonly SummaryBullet[];
   readonly name: string;
-  readonly chip: (id: string, purpose: string) => ReactNode;
+  readonly chip: (id: string, purpose: string, quote?: string) => ReactNode;
 }) {
   const reasons = bullets.map(reasonOf);
   return (
@@ -620,8 +622,8 @@ function Mark({
   const { model } = useDrift();
   const controls = useControls();
   if (!marks.length) return null;
-  const since =
-    before === null ? '' : `, from the ${clock(before)} progress check, before newer work`;
+  const wording = before === null ? 'Off course here' : 'Off course here before newer work';
+  const since = before === null ? '' : `, from the ${clock(before)} progress check`;
   return (
     <span className="contents" data-next-summary-holds={before === null ? '' : 'before-newer-work'}>
       <span className="sr-only">{SUMMARY_HOLDS}</span>
@@ -631,12 +633,10 @@ function Mark({
           key={mark.key}
           target={`departure-head:${model.key}:${mark.key}`}
           label={
-            <span className="rounded-pill bg-[var(--status-waiting-bg)] px-2 py-1">
-              Off course here
-            </span>
+            <span className="rounded-pill bg-[var(--status-waiting-bg)] px-2 py-1">{wording}</span>
           }
-          name={`Off course here: evidence for ${mark.name}${since}`}
-          className="inline-flex min-h-[44px] items-center rounded-control border-0 bg-transparent px-1 text-label font-semibold text-[color:var(--clay)] hover:underline"
+          name={`${wording}: evidence for ${mark.name}${since}`}
+          className="inline-flex min-h-[44px] items-center rounded-control border-0 bg-transparent px-1 text-label font-semibold text-[color:var(--clay)] hover:underline focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-2"
           onJump={(focus) => showEvidence(controls, model.project, model.session, focus)}
         />
       ))}
@@ -655,20 +655,26 @@ const phaseGroup = (project: string, scope: string) =>
 function PhaseHeading({ phase }: { readonly phase: SummaryPhase }) {
   const { model } = useDrift();
   const first = phase.bullets.find((bullet) => 'text' in bullet.text);
-  const times = phase.bullets.flatMap((bullet) =>
-    bullet.cites.flatMap((id) => {
-      const at = model.byId.get(id)?.at;
-      return typeof at === 'number' && Number.isFinite(at) && at > 0 ? [at] : [];
-    }),
-  );
-  const at = formatTimestamp(times.length ? Math.min(...times) : null, model.generated, {
-    style: 'clock',
-  });
+  // A subset of the citations cannot establish the earliest timestamp.
+  const times = phase.bullets.flatMap((bullet) => bullet.cites.map((id) => model.byId.get(id)?.at));
+  const start =
+    times.length &&
+    times.every((at): at is number => typeof at === 'number' && Number.isFinite(at) && at > 0)
+      ? Math.min(...times)
+      : null;
+  const at = formatTimestamp(start, model.generated, { style: 'clock' });
   return (
-    <span className="grid w-full min-w-0 grid-cols-[minmax(5ch,10ch)_minmax(0,1fr)] items-baseline gap-x-3 text-left [overflow-wrap:anywhere]">
-      <span className="text-label font-normal text-muted-foreground">
-        {at?.replace(/^at /, '')}
-      </span>
+    <span
+      className={`grid w-full min-w-0 items-baseline gap-x-3 text-left [overflow-wrap:anywhere] ${at ? 'grid-cols-[auto_minmax(0,1fr)]' : ''}`}
+    >
+      {at ? (
+        <time
+          className="text-label font-normal text-muted-foreground"
+          dateTime={start === null ? undefined : new Date(start * 1000).toISOString()}
+        >
+          {at.replace(/^at /, '')}
+        </time>
+      ) : null}
       <span className="grid min-w-0 gap-1">
         {'text' in phase.title ? (
           <span data-authored data-next-summary-phase-title>
@@ -803,7 +809,7 @@ export function SummaryView({
   chip,
 }: {
   readonly state: SummaryState;
-  readonly chip: (id: string, purpose: string) => ReactNode;
+  readonly chip: (id: string, purpose: string, quote?: string) => ReactNode;
 }) {
   const { model } = useDrift();
   const marks = useSummaryMarks();
@@ -861,7 +867,8 @@ export function SummaryView({
           <ShownText value={lede} cited="yes" subject="opening summary" />
           <Cites
             cites={stored.ledeCites}
-            purpose={`cited for the opening summary${'text' in lede ? ` “${lede.text}”` : ''}`}
+            purpose="cited for the opening summary"
+            quote={'text' in lede ? lede.text : undefined}
             reads={messageIds}
             chip={chip}
           />
@@ -875,6 +882,15 @@ export function SummaryView({
               : 'No opening summary.'}
         </Line>
       )}
+      {stored.blocks.some((block) =>
+        block.phases.some((phase) =>
+          phase.bullets.some((bullet) => bullet.kind === 'failed' && 'text' in bullet.text),
+        ),
+      ) ? (
+        <p className="m-0 text-label text-muted-foreground">
+          Failed means the tool reported a failure.
+        </p>
+      ) : null}
       {stored.blocks.map((block, b) =>
         block.gap ? (
           <p

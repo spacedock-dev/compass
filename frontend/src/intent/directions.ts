@@ -628,7 +628,7 @@ export async function keepIntent(ctx: Ctx, row: Row, projectKey: string): Promis
   const adopt = adoption(draft);
   const annotation = input.annotation;
   const drawnAt = nextNumber(annotation?.['revision']) || 0;
-  const press = pendingStart(ctx, control, 'Keeping…', 'Keeping your intent.');
+  const press = pendingStart(ctx, control, 'Keeping…', 'Keeping your goal.');
   if (!press) return;
   const previousNotice = ctx.held.requests.get(key)?.notice;
   const request = {

@@ -459,7 +459,7 @@ export const ADepartureReadsAsWhatHappened: Story = {
     await expect(box).toBeVisible();
     await expect(box).toHaveAccessibleDescription(CORRECTION_HINT);
     await expect(section?.querySelector('[data-next-steer-from]')).toHaveTextContent(
-      /^Built from your saved intent and the reading at /,
+      /^Built from your saved goal and the reading at /,
     );
     // Updating the goal is a bordered secondary action.
     const update = within(section as HTMLElement).getByRole('button', {

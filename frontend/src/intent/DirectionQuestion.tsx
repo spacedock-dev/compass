@@ -153,10 +153,12 @@ export function DirectionQuestion({ primary = false }: DirectionQuestionProps) {
               data-next-direction-select
               data-next-focus={`direction-pick:${key}`}
               aria-label="Direction"
-              data-authored={Boolean(earliest.summary) || undefined}
-              title={String(earliest.summary || 'Your direction')}
             >
-              <SelectValue />
+              <SelectValue>
+                <span data-authored title={String(earliest.summary || '')}>
+                  {directionLabel(earliest)}
+                </span>
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {pending.map((entry) => (

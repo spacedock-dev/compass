@@ -8,6 +8,7 @@ import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
 import { SAMPLE_FIXTURE, SampleFixtureContext } from '../src/sample/fixture';
 import { SAMPLE_FRAGMENT } from '../src/sample/ids';
+import { formatTimestamp } from '../src/shell/format';
 import { createShell } from '../src/shell/createShell';
 import { createFakeClock, createFakeEnvironment, type FakeClock } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
@@ -104,7 +105,7 @@ async function attributed(summary: HTMLElement) {
     if (kind === 'asked') await expect(words).toMatch(/^You (asked|said)\b/);
     if (kind === 'failed') await expect(words).toMatch(/^Failed(?: as the tool reported)?: /);
     for (const chip of chips) {
-      await expect(chip.getAttribute('aria-label')).toContain(`cited for “${words}”`);
+      await expect(chip).toHaveAccessibleName(expect.stringContaining(`cited for “${words}”`));
       const id = chip.dataset['nextOutlineEntry'] ?? '';
       const entry = document.querySelector<HTMLElement>(
         `[data-next-cockpit-work] [data-next-entry-id="${CSS.escape(id)}"]`,
@@ -150,9 +151,9 @@ export const Ready: Story = {
     await attributed(summary);
     // The model wrote "Reverting the test edit." for a `said` bullet: it is drawn as the agent's words.
     await expect(summary).toHaveTextContent('The agent said: Reverting the test edit.');
-    // A failed bullet takes the failure colour.
+    // The failure stays in the story at the ordinary text colour.
     const failed = summary.querySelector('[data-next-summary-bullet="failed"]') as HTMLElement;
-    await expect(getComputedStyle(failed).color).toBe('rgb(154, 52, 18)');
+    await expect(getComputedStyle(failed).color).toBe('rgb(31, 41, 51)');
     // The outline stays one press away, below the summary.
     await expect(
       within(region).getByRole('button', { name: "Compass's outline of this session" }),
@@ -1377,6 +1378,53 @@ const withCheck = (over: Record<string, unknown> = {}) =>
     ...over,
   });
 
+function noCurrentPhaseMark(
+  answer: string,
+  reason: string,
+  session: Record<string, unknown>,
+  unreadable = false,
+): Story {
+  return {
+    render: () => <SummaryPage summary={withCheck()} session={session} unreadable={unreadable} />,
+    play: async ({ canvasElement }) => {
+      const region = await card(canvasElement);
+      const summary = await summaryOf(region);
+      const progress = within(canvasElement).getByRole('region', { name: 'Is it on track?' });
+      await expect(within(progress).getAllByText(answer, { exact: true })[0]).toBeVisible();
+      if (reason) await expect(progress).toHaveTextContent(reason);
+      await expect(summary.querySelector('[data-next-summary-holds]')).toBeNull();
+      await expect(within(summary).queryByText('Off course here', { exact: true })).toBeNull();
+    },
+  };
+}
+
+export const WithdrawnCheckLeavesNoPhaseMark = noCurrentPhaseMark(
+  'Out of date',
+  'This check was withdrawn.',
+  departureReading(['c3'], {
+    annotation_assessment: {
+      ...departureReading(['c3']).annotation_assessment,
+      scope: 'withdrawn',
+    },
+  }),
+);
+
+export const FailedCheckLeavesNoPhaseMark = noCurrentPhaseMark(
+  "Can't tell",
+  'The latest progress check did not produce a reading.',
+  departureReading(['c3'], {
+    annotation_reading_withheld: 'The progress check failed. No new reading was saved.',
+    annotation_reading_withheld_at: G + 5,
+  }),
+);
+
+export const UnreadableStoreLeavesNoPhaseMark = noCurrentPhaseMark(
+  'The annotation store could not be read.',
+  '',
+  departureReading(['c3']),
+  true,
+);
+
 /* Departure evidence in a phase: the phase is marked and links to the departure card, which links back. */
 export const DepartureMarked: Story = {
   render: () => <SummaryPage summary={withCheck()} session={departureReading(['c3'])} />,
@@ -1398,9 +1446,10 @@ export const DepartureMarked: Story = {
     );
     const technical = within(canvasElement).getByRole('button', { name: 'Show technical details' });
     await expect(technical).toHaveAttribute('aria-expanded', 'false');
-    await userEvent.click(
-      within(marked).getByRole('button', { name: 'Off course here: evidence for Goal' }),
-    );
+    const flag = within(marked).getByRole('button', { name: 'Off course here: evidence for Goal' });
+    flag.focus();
+    await expect(getComputedStyle(flag).outlineWidth).toBe('2px');
+    await userEvent.click(flag);
     const evidence = await within(canvasElement).findByRole('tabpanel', { name: 'Evidence' });
     const departure = evidence.querySelector<HTMLElement>('[data-next-departure="goal"]');
     await waitFor(() => expect(departure?.querySelector('h4')).toHaveFocus());
@@ -1561,9 +1610,9 @@ export const NewWorkKeepsTheMarks: Story = {
     );
     await expect(
       within(marked).getByRole('button', {
-        name: /^Off course here: evidence for Goal, from the \d\d:\d\d progress check, before newer work$/,
+        name: /^Off course here before newer work: evidence for Goal, from the \d\d:\d\d progress check$/,
       }),
-    ).toHaveTextContent('Off course here');
+    ).toHaveTextContent('Off course here before newer work');
     await expect(
       canvasElement.querySelector('[data-next-departure-summary="phase"]'),
     ).toHaveTextContent(`In What's happened so far:${SECOND_PHASE.title}`);
@@ -1605,6 +1654,43 @@ export const InaccurateReadingMarksNothing: Story = {
     );
     await expect(region.querySelector('[data-next-summary-marked]')).toBeNull();
     await expect(canvasElement.querySelector('[data-next-departure-summary]')).toBeNull();
+  },
+};
+
+export const PhaseTimeWaitsForOlderSources: Story = {
+  render: () => (
+    <SummaryPage
+      paged
+      holdOlder
+      summary={storedSummary({
+        blocks: [
+          block('p1', 'p2', 3, [
+            {
+              title: 'One phase across record pages',
+              bullets: [FIRST_PHASE.bullets[0], SECOND_PHASE.bullets[0]],
+            },
+          ]),
+        ],
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const phase = within(summary).getByRole('button', { name: /One phase across record pages/ });
+    const runtime = script.shell?.runtime;
+    if (!runtime) throw new Error('Summary scenario did not mount');
+    const scope = { projectKey: '/demo', focus: { harness: 'claude', sid: 's1' } };
+    const record = () => runtime.store.getSnapshot().records.get('/demo\nclaude:s1');
+    await waitFor(() => {
+      expect(record()?.entries.map((row) => row.fact_id)).toContain('p2');
+      expect(record()?.entries.map((row) => row.fact_id)).not.toContain('p1');
+    });
+    await expect(phase.querySelector('time')).toBeNull();
+    script.releaseOlder?.();
+    await runtime.readMoreRecord(scope);
+    const expected = formatTimestamp(G - 600, G, { style: 'clock' })?.replace(/^at /, '');
+    await waitFor(() => expect(phase.querySelector('time')?.textContent).toBe(expected));
   },
 };
 
@@ -2258,7 +2344,7 @@ export const SavedIntentKeepsEarlierNumbers: Story = {
     });
     await expect(earlier).toHaveTextContent('Source');
     await expect(earlier.hasAttribute('data-next-entry-outside')).toBe(true);
-    await expect(earlier.getAttribute('aria-label')).toContain(OUTSIDE_WINDOW);
+    await expect(earlier).toHaveAccessibleName(expect.stringContaining(OUTSIDE_WINDOW));
     const inside = summary.querySelector<HTMLElement>('[data-next-outline-entry="p2"]');
     await expect(inside?.hasAttribute('data-next-entry-outside')).toBe(false);
     for (const chip of summary.querySelectorAll('[data-next-outline-entry]'))
@@ -2305,10 +2391,10 @@ export const UnnumberedChipsSayWhy: Story = {
       return chip;
     });
     await expect(earlier).toHaveTextContent('Source');
-    await expect(earlier.getAttribute('aria-label')).toContain('before the start of your goal');
+    await expect(earlier).toHaveAccessibleName(/before the start of your goal/);
     const unread = summary.querySelector<HTMLElement>('[data-next-outline-entry="p-unread"]');
     await expect(unread).toHaveTextContent('Source');
-    await expect(unread?.getAttribute('aria-label')).toContain('the page has not read yet');
+    await expect(unread).toHaveAccessibleName(/the page has not read yet/);
     for (const chip of region.querySelectorAll('[data-next-outline-entry]'))
       await expect(chip.textContent).toMatch(/^(Source|See in Activity log)$/);
     for (const width of [1280, 400])
@@ -2614,7 +2700,21 @@ export const ToolFailuresStayInTheStory: Story = {
     await expect(summary.querySelector('[data-next-summary-failures]')).toBeNull();
     await expect(summary.querySelector('[data-next-summary-marked]')).toBeNull();
     // The failed lines are all still said.
-    await expect(summary.querySelectorAll('[data-next-summary-bullet="failed"]')).toHaveLength(3);
+    const first = within(
+      within(summary).getByRole('button', { name: /Running the tests/ }),
+    ).getByText('Failed: pnpm test:stories reported failed, as the tool reported.', {
+      exact: true,
+    });
+    await expect(first).toBeVisible();
+    await expect(
+      within(summary).getByText('Failed means the tool reported a failure.', { exact: true }),
+    ).toBeVisible();
+    const failed = summary.querySelectorAll('[data-next-summary-bullet="failed"]');
+    await expect(failed).toHaveLength(3);
+    for (const row of failed) {
+      await expect(row).toHaveClass('text-foreground');
+      await expect(row).not.toHaveClass('text-destructive');
+    }
   },
 };
 

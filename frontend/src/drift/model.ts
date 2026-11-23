@@ -288,6 +288,8 @@ export function buildModel(input: ModelInput): DriftModel {
   const running = typeof state === 'string' && state !== 'idle' && endedAt(session) === null;
   const pillSoFar =
     Boolean(pill) && (running || (pill?.analysis === true && shape?.scope === 'mid-flight'));
+  const entryCount = numbers.size + numbering.earlier.length;
+  const completeRecord = input.record?.status === 'loaded' && input.record.reachedStart;
   return {
     session,
     payload,
@@ -334,10 +336,9 @@ export function buildModel(input: ModelInput): DriftModel {
     stale,
     latestCheckWithheld,
     pillSoFar,
-    entryCount: read ? numbers.size + numbering.earlier.length : null,
-    /* From the record alone: whether Show more still helps is a question about the intent window, but the
-       count is a floor for as long as any older page is unread, window or none. */
-    entriesPartial: read && input.record?.status === 'loaded' && !input.record.reachedStart,
+    entryCount: completeRecord || entryCount > 0 ? entryCount : null,
+    /* Retained entries still give a floor if the first page or a later page could not be read. */
+    entriesPartial: !completeRecord && entryCount > 0,
     windowCount: read && numbering.earlier.length ? numbers.size : null,
   };
 }

@@ -167,7 +167,7 @@ export const TheDirectionSelectDrawsNoWrapper: Story = {
       return node as HTMLElement;
     });
     // The title names the direction the picker holds, whichever of the two it opens on.
-    await expect(trigger.getAttribute('title')).toMatch(
+    await expect(trigger.querySelector('[data-authored]')?.getAttribute('title')).toMatch(
       /^(Back to my goal: Ship the queue|Also, prune the stylesheets)$/,
     );
     await userEvent.click(trigger);

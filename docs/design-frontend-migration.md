@@ -37,6 +37,19 @@ stay in the expanded story. The separate test-failure badge was removed because 
 does not publish a test-specific outcome field. The Goal editor's save button says Save goal.
 The recorded answers remain the baseline for the comparisons that still apply.
 
+**2026-11-23, Session review fixes.** The story suppresses phase flags for a withdrawn, failed
+or unreadable progress check. A flag from before newer work says so on the button. The first
+phase timestamp waits for the citation times that establish it. Failed results use neutral
+text with a visible legend. At a glance owns token figures and distinguishes a lower bound
+from a complete entry count. The detail comparison omits the old token footer on both sides.
+The Project card shows the sample project name as text. The recorded Needs you comparison
+omits Coming next, which now appears in the session's Right now card. The word comparison
+asks for Goal in the check hint and save feedback, and Agent in the first-layer block report.
+The Storybook word audit checks every mounted Sessions and Session view and keeps exact
+test-only allowances for inherited strings. The Sample story marks quoted labels and repo
+paths as authored. The recorded fixtures stay unchanged.
+
+
 **2026-11-23, session technical tabs.** The retired `sessions__detail` recording puts
 command-shape reports, notifications and How it landed in the activity column. The reader finds
 them under Reports now. The session layout stories assert the tab placement and the existing

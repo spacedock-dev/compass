@@ -199,7 +199,7 @@ export const MissingRecord: Story = {
     await failedPress(
       canvasElement,
       'direction-keep',
-      'That direction could not be verified as later than your intent in the current record. Nothing was settled and no analysis was started.',
+      'That direction could not be verified as later than your goal in the current record. Nothing was settled and no analysis was started.',
     );
   },
 };
@@ -234,7 +234,7 @@ export const TwentyTwoDirections: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Leave it' }));
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-action-feedback]')).toHaveTextContent(
-        'Kept your intent and settled all 22 directions. No analysis was started.',
+        'Kept your goal and settled all 22 directions. No analysis was started.',
       ),
     );
   },
@@ -263,7 +263,7 @@ export const QuotedBeforeAnyPress: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Leave it' }));
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-action-feedback]')).toHaveTextContent(
-        'Kept your intent and settled the direction. No analysis was started.',
+        'Kept your goal and settled the direction. No analysis was started.',
       ),
     );
   },

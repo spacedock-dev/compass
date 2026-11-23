@@ -160,10 +160,19 @@ export function SubagentsView({ subagents }: { readonly subagents: Subagents }) 
             className="flex flex-wrap justify-between gap-x-2 [overflow-wrap:anywhere]"
             data-next-session-subagent={row.index}
           >
-            <span data-authored>
-              {row.name}
-              {row.parent ? ` · ${row.parent}` : ''}
-            </span>
+            {row.name ? (
+              <span data-authored>{row.parent ? `${row.name} · ${row.parent}` : row.name}</span>
+            ) : (
+              <span>
+                Unnamed helper
+                {row.parent ? (
+                  <>
+                    {' '}
+                    · <span data-authored>{row.parent}</span>
+                  </>
+                ) : null}
+              </span>
+            )}
             <span className="text-label text-muted-foreground">
               {row.live === true
                 ? SESSION_ROW_WORDS.working
@@ -222,24 +231,28 @@ export function RightNow({
         </p>
       ) : null}
       {subagents ? <SubagentsView subagents={subagents} /> : null}
-      <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-body">
-        <dt className="text-muted-foreground">Next step</dt>
-        <dd
-          className="m-0 [overflow-wrap:anywhere]"
-          data-authored={observed.nextKnown || undefined}
-        >
-          {observed.nextText}
-        </dd>
-        <dt className="text-muted-foreground">Blocked?</dt>
-        <dd className="m-0 [overflow-wrap:anywhere]">
-          {observed.blockText}
-          {observed.blockNote ? (
-            <span className="block" data-authored={origin.blockNote || undefined}>
-              {observed.blockNote}
-            </span>
-          ) : null}
-        </dd>
-      </dl>
+      {!observed.isEnded ? (
+        <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-body">
+          <dt className="text-muted-foreground">Next step</dt>
+          <dd
+            className="m-0 [overflow-wrap:anywhere]"
+            data-authored={observed.nextKnown || undefined}
+          >
+            {observed.nextText}
+          </dd>
+          <dt className="text-muted-foreground">Blocked?</dt>
+          <dd className="m-0 [overflow-wrap:anywhere]">
+            {observed.blockKnown || gaps.includes('block state')
+              ? observed.blockText
+              : 'This agent does not report blocks'}
+            {observed.blockNote ? (
+              <span className="block" data-authored={origin.blockNote || undefined}>
+                {observed.blockNote}
+              </span>
+            ) : null}
+          </dd>
+        </dl>
+      ) : null}
     </Card>
   );
 }
@@ -271,7 +284,13 @@ export function AtAGlance({ figures }: { readonly figures: ReturnType<typeof ses
   );
 }
 
-export function SessionProject({ project }: { readonly project: string }) {
+export function SessionProject({
+  project,
+  viewOnly,
+}: {
+  readonly project: string;
+  readonly viewOnly: boolean;
+}) {
   return (
     <Card
       as="section"
@@ -284,9 +303,13 @@ export function SessionProject({ project }: { readonly project: string }) {
       </h2>
       {project ? (
         <p className="m-0 [overflow-wrap:anywhere]">
-          <RouteAnchor route={{ view: 'project', project }} className="text-primary">
+          {viewOnly ? (
             <span data-authored>{project}</span>
-          </RouteAnchor>
+          ) : (
+            <RouteAnchor route={{ view: 'project', project }} className="text-primary">
+              <span data-authored>{project}</span>
+            </RouteAnchor>
+          )}
         </p>
       ) : (
         <p className="m-0 text-muted-foreground">Project not published.</p>

@@ -64,12 +64,13 @@ describe('the outline card model', () => {
     const [only] = view.blocks;
     expect(only?.prompt).toBe('Add retry with backoff.');
     // A failing check has its own line, so the sentence does not count it a second time.
-    expect(only?.line).toBe(
+    const line = only?.line.map((part) => (typeof part === 'string' ? part : part.folder)).join('');
+    expect(line).toBe(
       'The agent replied 2 times, ran 3 checks and wrote 4 files in src/webhook and the project root.',
     );
     expect(only?.failures).toEqual([{ factId: 'c1', title: 'pytest tests/test_webhook.py' }]);
     expect(only?.moreFailures).toBe(0);
-    expect(only?.line).not.toMatch(/#|\(\d+\)|messages with|Starts at|Entries/);
+    expect(line).not.toMatch(/#|\(\d+\)|messages with|Starts at|Entries/);
     expect(only).not.toHaveProperty('first');
   });
 

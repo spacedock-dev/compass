@@ -335,7 +335,7 @@ export function sessionSubagents(
     rows: subagents.map((subagent, index) => ({
       index,
       live: subagentActivity(subagent),
-      name: String(field(subagent, 'name') || 'subagent'),
+      name: String(field(subagent, 'name') || '').trim(),
       parent: parentOf(subagent),
       elapsed: durationSince(generated, field(subagent, 'started_at')),
     })),
@@ -353,33 +353,6 @@ export function sessionFigures(session: Row, entries: number | null, partial: bo
       ? []
       : [{ label, value: `${partial ? 'At least ' : ''}${count.toLocaleString('en-US')}` }],
   );
-}
-
-export function compactTokens(value: number): string {
-  if (value < 1000) return Math.round(value).toLocaleString('en-US');
-  return `${String(Math.round(value / 100) / 10)}k`;
-}
-
-export interface Footer {
-  readonly source: 'turn' | 'session';
-  readonly text: string;
-}
-
-/* The turn's tokens while it runs, the session's otherwise, and the other where the preferred one was not
-   published. Nothing where neither was: a zero would be a default and not a count. */
-export function sessionFooter(session: Row): Footer | null {
-  session = nativeSession(session);
-  const sessionTotal = nextNumber(session['session_output_tokens']);
-  const turnTotal = nextNumber(session['turn_output_tokens']);
-  let source: 'turn' | 'session' = session['state'] === 'working' ? 'turn' : 'session';
-  let value = source === 'turn' ? turnTotal : sessionTotal;
-  if (value === null) {
-    source = source === 'turn' ? 'session' : 'turn';
-    value = source === 'turn' ? turnTotal : sessionTotal;
-  }
-  return value === null
-    ? null
-    : { source, text: `${compactTokens(value)} output tokens this ${source}` };
 }
 
 export interface Delivery {

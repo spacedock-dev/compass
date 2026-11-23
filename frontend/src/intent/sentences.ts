@@ -27,7 +27,7 @@ export function directionFailure(action: 'goal' | 'add' | 'keep', reason?: strin
       : reason === 'changed'
         ? 'The session wrote to its record while Compass was reading it. Press again.'
         : reason === 'not_found'
-          ? 'That direction could not be verified as later than your intent in the current record.'
+          ? 'That direction could not be verified as later than your goal in the current record.'
           : 'Compass could not open that direction.';
   const outcome =
     action === 'goal'
@@ -42,7 +42,7 @@ export function directionFailure(action: 'goal' | 'add' | 'keep', reason?: strin
    save has its own sentence, beside its line. */
 export const INTENT_EDITED = 'Save your goal or undo your edit to check progress.';
 export const INTENT_SAVING = 'Saving your goal…';
-export const INTENT_EDITED_ADD = 'Save your intent, or undo your edit, to add this direction.';
+export const INTENT_EDITED_ADD = 'Save your goal, or undo your edit, to add this direction.';
 export const INTENT_CHOSEN_SAID = 'Goal filled from your prompt. Not saved.';
 export const INTENT_MEASURED =
   'Compass checks progress against these words. Edit anything that is off.';
@@ -103,7 +103,7 @@ export const HELD_CUES: Readonly<Record<string, string>> = {
   /* The request was lost, aborted at the bound, or answered with something unreadable: not a refusal, so
      never "Not saved". */
   unconfirmed:
-    'Compass did not answer, so this page cannot tell whether your intent was saved. Your words are still in the box.',
+    'Compass did not answer, so this page cannot tell whether your goal was saved. Your words are still in the box.',
   unchanged: 'Already saved. These words match what is stored, so nothing new was saved.',
   /* The store exists and the server could not read it, so it wrote nothing: writing would keep only what
      it can read and lose every other session's words. The remedy is the file, not a retry. */
@@ -171,7 +171,7 @@ export const ADD_DIRECTION = 'Add as a line';
 export const GOAL_DIRECTION = 'Make it the goal';
 export const RULE_HINT = 'Write the rule, not the moment.';
 export const KEEP_NO_ANALYSIS =
-  'Kept your intent and settled the direction. No analysis was started.';
+  'Kept your goal and settled the direction. No analysis was started.';
 export function keptDirections(count: number): string {
   const sentence = KEEP_NO_ANALYSIS;
   return count === 1
@@ -179,7 +179,7 @@ export function keptDirections(count: number): string {
     : sentence.replace('the direction.', `all ${String(count)} directions.`);
 }
 export const KEEP_REFUSED =
-  'Nothing was settled and no analysis was started: your intent changed since this page was drawn, or the store refused the mark. Review your intent and press again.';
+  'Nothing was settled and no analysis was started: your goal changed since this page was drawn, or the store refused the mark. Review your goal and press again.';
 export const KEEP_READ_FIRST =
   'Nothing was settled yet. Each direction Keep settles is now shown whole. Read it, then press again.';
 export const KEEP_BATCH_LIMIT =
@@ -187,7 +187,7 @@ export const KEEP_BATCH_LIMIT =
 export const KEEP_UNOPENED =
   'Nothing was settled and no analysis was started: Compass could not open the whole text of every direction Keep would settle, so it cannot show you what you would keep. Press again to retry.';
 export const KEEP_UNCONFIRMED =
-  'Could not confirm the press. Refresh to check whether your intent was kept before pressing again.';
+  'Could not confirm the press. Refresh to check whether your goal was kept before pressing again.';
 
 /* The short line a press's answer leaves under its button, with the whole sentence behind an info mark. The
    long answers used to print under the button and move every control around it; the words are the same,
@@ -199,13 +199,13 @@ const FEEDBACK_SHORT: readonly (readonly [RegExp, string])[] = [
   [/^That direction could not be verified/, 'Direction unverified'],
   [/^Compass could not open that direction/, 'Could not open direction'],
   [/^Could not open that direction/, 'Could not open direction'],
-  /* Only the bare settlement is "Intent kept". The same sentence with a reason after it (the reader changed,
+  /* Only the bare settlement is "Goal kept". The same sentence with a reason after it (the reader changed,
      the daily limit, a store that could not be reached) says the reading did not start, and the line says so. */
   [
-    /^Kept your intent and settled (?:the direction|all \d+ directions)\. No analysis was started\.$/,
-    'Intent kept',
+    /^Kept your goal and settled (?:the direction|all \d+ directions)\. No analysis was started\.$/,
+    'Goal kept',
   ],
-  [/^Kept your intent/, 'Kept, not analyzed'],
+  [/^Kept your goal/, 'Kept, not analyzed'],
   [/^Nothing was settled yet/, 'Read each direction, then press again'],
   [/^Keep can open up to/, 'Too many directions to keep at once'],
   [/^Nothing was settled/, 'Nothing was settled'],

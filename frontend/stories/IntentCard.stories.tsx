@@ -525,7 +525,7 @@ export const NotConfirmedStatus: Story = {
     });
     await expect(
       view.getByText(
-        /Compass did not answer, so this page cannot tell whether your intent was saved/,
+        /Compass did not answer, so this page cannot tell whether your goal was saved/,
       ),
     ).toBeVisible();
   },

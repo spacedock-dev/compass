@@ -153,7 +153,6 @@
 .next-session-task{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:44px;padding:9px 8px;border-top:1px solid var(--rule)}
 .next-session-task--pending{color:var(--ink2)}
 .next-session-task-subject{font-size:var(--fs-body);font-weight:500}
-.next-session-footer{padding:20px 0;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label);text-align:right}
 .next-session-detail-empty{margin-top:34px;padding:24px;border:1px solid var(--rule);color:var(--ink2);font-size:var(--fs-body)}
 .next-session-current>strong{font-size:var(--fs-body);font-weight:600}
 .next-session-detail .next-session-absent{color:var(--ink-absence);font-family:var(--sans)}

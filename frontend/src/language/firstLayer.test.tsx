@@ -4,7 +4,7 @@ import states from '../../test/fixtures/client-contract/data-session-states.json
 import focused from '../../test/fixtures/client-contract/data-focused-drift.json';
 import { fragmentForRoute } from '../router/grammar';
 import { mountShell } from '../shell/testing';
-import { firstLayerViolations } from '../../test/firstLayer';
+import { boardCopyViolations, firstLayerViolations } from '../../test/firstLayer';
 import { FIRST_LAYER_RETIREMENTS } from './glossary';
 
 // Add later pages here with their recorded client-contract board and a route that reaches the view.
@@ -17,7 +17,7 @@ it.each([states, focused])(
     expect(
       within(page.container).getByRole('link', { name: 'Sessions', current: 'page' }),
     ).toBeVisible();
-    expect(firstLayerViolations(page.container)).toEqual([]);
+    expect(boardCopyViolations(page.container)).toEqual([]);
     for (const row of data.sessions) {
       if (!row.sid || !row.harness) continue;
       await page.go(
@@ -30,7 +30,7 @@ it.each([states, focused])(
       );
       const article = page.container.querySelector('[data-next-session-detail]');
       expect(article, row.sid).not.toBeNull();
-      expect(firstLayerViolations(page.container), row.sid).toEqual([]);
+      expect(boardCopyViolations(page.container), row.sid).toEqual([]);
     }
   },
 );
@@ -111,4 +111,43 @@ it('applies a retirement added to the glossary rules without a change to the wal
   expect(
     firstLayerViolations(container, [...FIRST_LAYER_RETIREMENTS, /\blegacy action\b/i]),
   ).toEqual(['<button> text "Legacy action"']);
+});
+
+it('catches ruled labels in context, including a phrase split by inline markup', () => {
+  const { container } = render(
+    <>
+      <h3>Not enough recorded yet</h3>
+      <button type="button" aria-label="Session state: Idle" title="Progress level: High">
+        Analyze
+      </button>
+      <input placeholder="Check again to update" />
+      <p>
+        Pause <b>model calls</b>
+      </p>
+      <p>Harness does not report blocks</p>
+      <p>Idle (3)</p>
+      <p>Medium so far</p>
+      <p>No subagents</p>
+      <p>Departure · Goal</p>
+      <p>Active now</p>
+      <p>At risk</p>
+      <p>Not checked yet</p>
+      <p>High contrast</p>
+    </>,
+  );
+  expect(firstLayerViolations(container)).toEqual([
+    '<h3> text "Not enough recorded yet"',
+    '<button> aria-label "Session state: Idle"',
+    '<button> title "Progress level: High"',
+    '<button> text "Analyze"',
+    '<input> placeholder "Check again to update"',
+    '<p> text "Pause model calls"',
+    '<p> text "Harness does not report blocks"',
+    '<p> text "Idle (3)"',
+    '<p> text "Medium so far"',
+    '<p> text "No subagents"',
+    '<p> text "Departure · Goal"',
+    '<p> text "Active now"',
+    '<p> text "At risk"',
+  ]);
 });

@@ -67,12 +67,16 @@ before the summary.
 
 - Goal shows your saved goal and what done looks like. How goals work explains what Compass reads.
 - Is it on track? shows the progress answer and the actions you can take.
-- Right now shows the latest published activity, helpers, next step and whether the session is
-  blocked. At a glance shows the figures Compass has for this session.
+- Right now shows the latest published activity and helpers. Open the session to see its next
+  step and whether it is blocked. When it reports its own end, the current next step and block
+  rows disappear. At a glance shows published figures and labels an incomplete entry count
+  "At least".
 - What's happened so far starts with Compass's outline, made from the record without a model.
   Codex outlines only your messages. A Claude Code summary adds an opening paragraph and short
-  phases. Open one phase at a time. Off course here opens the matching evidence, and Source opens
-  the recorded entry. The card says when source material could not be collected or when a collected
+  phases. Open one phase at a time. Off course here opens the matching evidence. A flag from an
+  earlier check that predates new work says so. A phase shows its earliest cited time once the
+  timestamps are available, and Source opens the recorded entry. A legend explains what a tool
+  failure in the story means. The card says when source material could not be collected or when a collected
   part could not be summarized. Update summary can continue an interrupted message. Older
   summaries made from excerpts offer Summarize again.
 

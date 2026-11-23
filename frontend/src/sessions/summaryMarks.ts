@@ -2,8 +2,9 @@ import { nextNumber } from '../api/bootstrap';
 import { contextKey } from '../api/identity';
 import { parseFocusedSummary, type StoredSummary } from '../api/summary';
 import { useDrift } from '../drift/context';
-import { constraintName, driftAnswer, resultStale } from '../drift/result';
+import { constraintName, driftAnswer } from '../drift/result';
 import { CLAIMS } from '../drift/sentences';
+import { storeUnreadable } from '../intent/annotation';
 import { isOutcomeLine } from '../drift/shape';
 import { useDisplayed } from '../shell/context';
 import { placeDeparture, recordPositions, type Placement } from './summary';
@@ -46,9 +47,17 @@ export function useSummaryMarks(): SummaryMarks {
   const summary = focused?.summary ?? null;
   const { shape, raw, annotation, entries } = model;
   if (!summary || !shape || !raw || !annotation || !model.annotate) return { ...NONE, summary };
-  if (annotation['not_accurate'] === true) return { ...NONE, summary };
-  const stale = resultStale(shape, raw, annotation, entries);
-  if (stale?.superseded) return { ...NONE, summary };
+  if (
+    annotation['not_accurate'] === true ||
+    storeUnreadable(model.payload) ||
+    model.latestCheckWithheld
+  )
+    return { ...NONE, summary };
+  const stale = model.stale;
+  const readAt = nextNumber(raw['read_at']);
+  if (stale && (stale.kind !== 'work' || readAt === null || readAt <= 0)) {
+    return { ...NONE, summary };
+  }
   const answer = driftAnswer(shape, entries, model.source.scan);
   if (answer.kind !== 'departs') return { ...NONE, summary };
   const outcomes = shape.criteria.filter(
@@ -70,7 +79,5 @@ export function useSummaryMarks(): SummaryMarks {
     for (const place of mark.placement.phases)
       phases.set(place, [...(phases.get(place) ?? []), mark]);
   }
-  const readAt = nextNumber(raw['read_at']);
-  /* No stamp for an unreadable time, as the Drift card draws none for it. */
-  return { summary, departures, phases, before: stale && readAt && readAt > 0 ? readAt : null };
+  return { summary, departures, phases, before: stale ? readAt : null };
 }

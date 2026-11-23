@@ -9,6 +9,7 @@ import { Disclosure, RaiseControl, disclosureKey, useFocusKey } from '../control
 import { noTitleText, pageTitleOf, type ObservedSession, type Row } from '../observed';
 import { selectObserved } from '../observed/select';
 import type { SessionRoute } from '../router/grammar';
+import { isSampleRoute } from '../sample/ids';
 import { useDisplayed, useShell } from '../shell/context';
 import type { PayloadData } from '../api/types';
 import { AnswerBlock } from './AnswerBlock';
@@ -51,7 +52,6 @@ import {
   sessionDelivery,
   sessionFacts,
   sessionFigures,
-  sessionFooter,
   sessionHealth,
   sessionMeta,
   turnEndedSentence,
@@ -333,7 +333,6 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
   const health = sessionHealth(session);
   const reports = commandReports(payload, session);
   const delivery = sessionDelivery(session);
-  const footer = sessionFooter(session);
   const asked = sessionInstruction(session, 'asked');
   const factKey = (name: string) => disclosureKey({ project: route.project, scope, name });
   const rightNow = (
@@ -388,7 +387,7 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
           <div className="next-session-column">
             {wide ? rightNow : null}
             <SessionFigures session={session} />
-            <SessionProject project={observed.project} />
+            <SessionProject project={observed.project} viewOnly={isSampleRoute(route)} />
           </div>
           <SessionTechnicalDetails
             project={route.project}
@@ -439,11 +438,6 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
             ) : null}
           </SessionTechnicalDetails>
         </div>
-        {footer ? (
-          <footer className="next-session-footer" data-next-session-tokens={footer.source}>
-            {footer.text}
-          </footer>
-        ) : null}
       </DriftProvider>
     </article>
   );

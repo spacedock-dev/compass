@@ -77,12 +77,12 @@ describe('a Keep that settles but does not analyze', () => {
   it('does not call it plainly kept when a reason follows', () => {
     expect(
       feedbackSummary(
-        'Kept your intent and settled the direction. No analysis was started. The daily reading limit is reached. Try again after 09:00.',
+        'Kept your goal and settled the direction. No analysis was started. The daily reading limit is reached. Try again after 09:00.',
       ),
     ).toBe('Kept, not analyzed');
     expect(
-      feedbackSummary('Kept your intent and settled all 3 directions. No analysis was started.'),
-    ).toBe('Intent kept');
+      feedbackSummary('Kept your goal and settled all 3 directions. No analysis was started.'),
+    ).toBe('Goal kept');
   });
 });
 
@@ -132,7 +132,7 @@ describe('the short line for a press that cannot finish', () => {
     expect(feedbackSummary(WHOLE)).toBe('Direction out of reach');
     expect(
       feedbackSummary(
-        'That direction could not be verified as later than your intent in the current record. Your goal has not changed.',
+        'That direction could not be verified as later than your goal in the current record. Your goal has not changed.',
       ),
     ).toBe('Direction unverified');
     expect(
@@ -141,8 +141,8 @@ describe('the short line for a press that cannot finish', () => {
       ),
     ).toBe('Record changed, press again');
     expect(
-      feedbackSummary('Kept your intent and settled the direction. No analysis was started.'),
-    ).toBe('Intent kept');
+      feedbackSummary('Kept your goal and settled the direction. No analysis was started.'),
+    ).toBe('Goal kept');
   });
 
   it('keeps the first sentence of an answer it does not know, cut at a word when it is long', () => {

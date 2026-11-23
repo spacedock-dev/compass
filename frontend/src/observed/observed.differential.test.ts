@@ -24,7 +24,7 @@ import { delegatedWork, observe, readHint, sessionStop } from './index';
    a source gap, unicode, wrong-typed fields), and a failure names the seed and the first path that
    differs. */
 const legacy = loadLegacySessions();
-const LAST_TURN = 'Reads the session up to its last turn against your intent.';
+const LAST_TURN = 'Reads the session up to its last turn against your goal.';
 const IDLE_ENTRY =
   'Reads the session up to its last recorded entry; its last turn was not recorded as finished.';
 const CASES = 80;
@@ -141,7 +141,7 @@ describe('the helpers a view calls agree with their legacy twins', () => {
          answers). That row's hint is asserted in observed.test.ts; every other row is held to the recording. */
       const stripped = withoutCodexRecordedStop(row) as Record<string, unknown>;
       const hint = readHint(stripped);
-      const recorded = legacy.call('nextObservedReadHint', row);
+      const recorded = legacy.call<string>('nextObservedReadHint', row);
       /* Departure, 2026-11-02: Codex is read at a turn stop, so on a Codex row the hint may name its last turn,
          or its last recorded entry, where the retired page said nothing. Those two sentences are the only
          difference allowed there; every other Codex answer is held to the recording. */
@@ -152,7 +152,7 @@ describe('the helpers a view calls agree with their legacy twins', () => {
       )
         continue;
       if (hint === IDLE_ENTRY) expect(recorded).toBe('');
-      else expect(hint).toBe(recorded);
+      else expect(hint).toBe(recorded.replace('against your intent.', 'against your goal.'));
     }
   });
 

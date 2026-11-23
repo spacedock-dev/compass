@@ -194,7 +194,7 @@ export function AnswerBlock({
         <p className="mt-2.5 mb-0 text-body text-muted-foreground" data-next-session-wait-note>
           {reason ? (
             <span>
-              Harness reports: <span data-authored>{reason}</span>
+              Agent reports: <span data-authored>{reason}</span>
             </span>
           ) : null}
           {unconfirmed ? <span className="block">{UNCONFIRMED_WAIT_NOTE}</span> : null}

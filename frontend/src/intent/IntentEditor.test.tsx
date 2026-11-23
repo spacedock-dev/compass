@@ -289,7 +289,7 @@ describe('Save goal', () => {
     });
     await settle(page);
     expect(footerCue()).toBe(
-      'Compass did not answer, so this page cannot tell whether your intent was saved. Your words are still in the box.',
+      'Compass did not answer, so this page cannot tell whether your goal was saved. Your words are still in the box.',
     );
     expect(goalBox().value).toBe('Edited words');
     expect(page.posts()).toBe(1);

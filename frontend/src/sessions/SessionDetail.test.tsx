@@ -560,7 +560,7 @@ describe('what the page says about what it could not see', () => {
     });
     const text = document.body.textContent ?? '';
     expect(text).toContain('Title not published');
-    expect(text).toContain('Harness does not report blocks');
+    expect(text).toContain('This agent does not report blocks');
     expect(text).toContain('Session facts: No stop or end observed · Git state was not measured');
   });
 
@@ -613,6 +613,13 @@ describe('what the page says about what it could not see', () => {
       'Command shape reported: rm -rf buildBash',
       'Command shape reported: lsBash · 2023-11-14T22:13:20.000Z',
     ]);
+  });
+
+  it('keeps published token figures together in At a glance', async () => {
+    await open(board([{ ...ONE, session_output_tokens: 100, turn_output_tokens: 5 }]));
+    const figures = screen.getByRole('region', { name: 'At a glance' });
+    expect(figures.textContent).toContain('Session output tokens100Turn output tokens5');
+    expect(screen.queryByText(/output tokens this (?:turn|session)/i)).toBeNull();
   });
 
   it('lists helpers with their own state and says how many older ones were left out', async () => {

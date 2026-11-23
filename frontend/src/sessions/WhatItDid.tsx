@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { contextKey } from '../api/identity';
 import { parseOutline } from '../api/outline';
 import { entriesHeld } from '../drift/citations';
@@ -34,17 +34,20 @@ export const OUTSIDE_WINDOW = 'Before the start of your goal; outside the progre
 export function EntryChip({
   id,
   purpose,
+  quote,
   onOpen,
   cite = false,
 }: {
   readonly id: string;
   readonly purpose: string;
+  readonly quote?: string | undefined;
   readonly onOpen: (id: string, n: string | null) => void;
   /** A summary source opens a preview before the jump to Activity log. */
   readonly cite?: boolean;
 }) {
   const drift = useDrift();
   const { model } = drift;
+  const labelId = useId();
   const n = model.labels.get(id) ?? null;
   const outside = model.outside.has(id);
   /* A command is on the page and takes no number, so it is not an older entry the page has yet to read. */
@@ -56,7 +59,9 @@ export function EntryChip({
     : n || command
       ? 'the source'
       : 'an older source the page has not read yet';
-  const label = `Open ${subjectLabel}, ${purpose}, in Activity log${outside ? `. ${OUTSIDE_WINDOW}` : ''}`;
+  const labelStart = `Open ${subjectLabel}, ${purpose}`;
+  const labelEnd = `, in Activity log${outside ? `. ${OUTSIDE_WINDOW}` : ''}`;
+  const label = labelStart + labelEnd;
   const marks = {
     'data-next-outline-entry': id,
     'data-next-cockpit-action': 'finding-jump',
@@ -69,7 +74,8 @@ export function EntryChip({
       id={id}
       plain
       className={tone}
-      aria-label={label}
+      aria-label={quote ? undefined : label}
+      aria-labelledby={quote ? labelId : undefined}
       onJump={() => onOpen(id, n)}
       {...marks}
     >
@@ -89,14 +95,28 @@ export function EntryChip({
       {word}
     </a>
   );
-  if (!outside) return chip;
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger render={chip} />
-        <TooltipContent>{OUTSIDE_WINDOW}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <>
+      {outside ? (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger render={chip} />
+            <TooltipContent>{OUTSIDE_WINDOW}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : (
+        chip
+      )}
+      {quote ? (
+        <span className="sr-only" id={labelId}>
+          {labelStart}
+          {' “'}
+          <span data-authored>{quote}</span>
+          {'”'}
+          {labelEnd}
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -136,9 +156,17 @@ function Block({
           </q>
         )}
       </p>
-      {block.line ? (
+      {block.line.length ? (
         <p className="m-0 text-body text-muted-foreground" data-next-outline-counts>
-          {block.line}
+          {block.line.map((part, index) =>
+            typeof part === 'string' ? (
+              <Fragment key={index}>{part}</Fragment>
+            ) : (
+              <span key={index} data-authored>
+                {part.folder}
+              </span>
+            ),
+          )}
         </p>
       ) : null}
       {block.failures.length ? (
@@ -150,7 +178,8 @@ function Block({
               data-next-outline-failure={failure.factId}
             >
               <span className="[overflow-wrap:anywhere]">
-                {`Failed as the tool reported: ${failure.title || 'a check'}`}
+                Failed as the tool reported:{' '}
+                {failure.title ? <span data-authored>{failure.title}</span> : 'a check'}
               </span>
               {model.byId.has(failure.factId) ? (
                 <EntryChip id={failure.factId} purpose="the failed check" onOpen={onOpen} />
@@ -298,8 +327,8 @@ export function WhatItDid({
             {missing?.from === 'summary' ? <MissingLine missing={missing.what} /> : null}
             <SummaryView
               state={summary}
-              chip={(id, purpose) => (
-                <EntryChip id={id} purpose={purpose} onOpen={open('summary')} cite />
+              chip={(id, purpose, quote) => (
+                <EntryChip id={id} purpose={purpose} quote={quote} onOpen={open('summary')} cite />
               )}
             />
             <Disclosure

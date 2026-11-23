@@ -1229,7 +1229,6 @@
     "|.next-session-facts-more|margin:10px00",
     "|.next-session-facts>div|display:grid;grid-template-columns:120pxminmax(0,1fr);gap:18px;align-items:baseline;padding:10px0;border-bottom:1pxsolidvar(--rule)",
     "|.next-session-facts|margin:20px00",
-    "|.next-session-footer|padding:20px0;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label);text-align:right",
     "|.next-session-heading-row|display:flex;flex-wrap:wrap;justify-content:space-between;align-items:start;gap:var(--sp-3)",
     "|.next-session-health strong|color:var(--ink);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em",
     "|.next-session-health-separator|color:var(--ink2)",

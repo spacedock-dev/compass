@@ -8,6 +8,8 @@ type Columns = readonly [
   exceptions: string,
 ];
 
+type Retirement = 'label' | 'phrase' | RegExp;
+
 interface GlossaryRow<Shown extends string | null> {
   readonly plain: string;
   readonly replaces: string;
@@ -15,6 +17,8 @@ interface GlossaryRow<Shown extends string | null> {
   readonly distinctFrom: string;
   readonly exceptions: string;
   readonly status: 'ruled' | 'open';
+  readonly retirement?: Retirement | undefined;
+  readonly allowed?: RegExp | undefined;
   /** The existing board label. Null means there is no stand-alone label to carry forward. */
   readonly shown: Shown;
 }
@@ -22,12 +26,24 @@ interface GlossaryRow<Shown extends string | null> {
 function ruled<Shown extends string | null>(
   [plain, replaces, technical, distinctFrom, exceptions]: Columns,
   shown: Shown,
+  retirement?: Retirement,
+  allowed?: RegExp,
 ): GlossaryRow<Shown> {
-  return { plain, replaces, technical, distinctFrom, exceptions, status: 'ruled', shown };
+  return {
+    plain,
+    replaces,
+    technical,
+    distinctFrom,
+    exceptions,
+    status: 'ruled',
+    shown,
+    retirement,
+    allowed,
+  };
 }
 
-function kept(columns: Columns): GlossaryRow<string> {
-  return ruled(columns, columns[0]);
+function kept(columns: Columns, retirement?: Retirement, allowed?: RegExp): GlossaryRow<string> {
+  return ruled(columns, columns[0], retirement, allowed);
 }
 
 const how = (subject: string, verb: 'work' | 'works' = 'works'): string =>
@@ -122,13 +138,17 @@ export const ACTIVITY_LOG_FILTER_LABELS = {
 export const GLOSSARY = /* @__PURE__ */ (() =>
   ({
     // Shell and project tabs.
-    compass: kept([
-      SHOWN.compass,
-      'Keeps current label',
-      'Application name',
-      'A project or session title',
-      'The prefix or suffix in a document title',
-    ]),
+    compass: kept(
+      [
+        SHOWN.compass,
+        'Keeps current label',
+        'Application name',
+        'A project or session title',
+        'The prefix or suffix in a document title',
+      ],
+      undefined,
+      /\bClaude Code\b/gi,
+    ),
     primary: kept([
       SHOWN.primary,
       'Keeps current label',
@@ -273,6 +293,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'The `intent` slug and technical names keep their spelling',
       ],
       GOAL_LABEL,
+      /\bintent\b/i,
     ),
     doneLooksLike: ruled(
       [
@@ -283,6 +304,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Technical fields retain their names',
       ],
       'What “done” looks like',
+      'phrase',
     ),
     intent: ruled(
       [
@@ -293,6 +315,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'The `#n=intent` fragment survives',
       ],
       SHOWN.intent,
+      'phrase',
     ),
     checkProgress: ruled(
       [
@@ -303,6 +326,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Existing CLI flags and skill actions',
       ],
       'Check progress',
+      /\bdrift\b|^Analyze(?:\s*[·:]|$)/i,
     ),
     checkProgressAgain: ruled(
       [
@@ -313,6 +337,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Same label for a current or stale prior reading',
       ],
       'Check progress again',
+      /\b(?:Analyze again|Check again(?! to see\b))\b/i,
     ),
     progressCheck: ruled(
       [
@@ -323,21 +348,28 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Terminal flag `--drift`',
       ],
       'Drift level',
+      'phrase',
     ),
-    progressRecords: kept([
-      SESSION_LIST_WORDS.progressRecords,
-      'Drift filter',
-      'Recorded checks and departures',
-      'Progress levels',
-      'Sessions filters',
-    ]),
-    departureRecorded: kept([
-      SESSION_LIST_WORDS.departureRecorded,
-      'Drift recorded',
-      'A recorded departure from the goal',
-      'A progress level or a generic risk',
-      'The saved filter value remains `recorded`',
-    ]),
+    progressRecords: kept(
+      [
+        SESSION_LIST_WORDS.progressRecords,
+        'Drift filter',
+        'Recorded checks and departures',
+        'Progress levels',
+        'Sessions filters',
+      ],
+      'phrase',
+    ),
+    departureRecorded: kept(
+      [
+        SESSION_LIST_WORDS.departureRecorded,
+        'Drift recorded',
+        'A recorded departure from the goal',
+        'A progress level or a generic risk',
+        'The saved filter value remains `recorded`',
+      ],
+      'phrase',
+    ),
     readingLooksWrong: ruled(
       [
         'This reading looks wrong',
@@ -347,6 +379,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Undo is still offered',
       ],
       'This reading looks wrong',
+      'phrase',
     ),
     updateGoalInstead: ruled(
       [
@@ -357,6 +390,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Opens Goal in edit mode',
       ],
       'Update my goal instead',
+      'phrase',
     ),
     dismiss: ruled(
       [
@@ -421,6 +455,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Data token `departure` stays',
       ],
       'Departure · Goal',
+      /\bDeparture\s*·\s*\S/i,
     ),
     helpers: ruled(
       [
@@ -431,6 +466,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Technical language may say subagents',
       ],
       'Subagents',
+      /\bsubagents?\b/i,
     ),
     agent: ruled(
       [
@@ -441,6 +477,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Technical language may say harness',
       ],
       'Harness',
+      /\bharness(?:es)?\b/i,
     ),
     attention: ruled(
       [
@@ -451,6 +488,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         '`attention` slug and `n` shortcut',
       ],
       SHOWN.attention,
+      'label',
     ),
     working: kept([
       SESSION_ROW_WORDS.working,
@@ -459,27 +497,36 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'Right now membership',
       'Working now is the card label',
     ]),
-    waitingOnYou: kept([
-      SESSION_ROW_WORDS.waitingOnYou,
-      'Needs input, Needs you now',
-      'The exact request or gate',
-      'Needs you, the navigation destination',
-      'Gate detail appears on the session page and in Needs you',
-    ]),
-    quiet: kept([
-      SESSION_ROW_WORDS.quiet,
-      'Idle',
-      'The observed turn-end state',
-      'Ended or a scan-only absence',
-      'Projects uses No recent activity',
-    ]),
-    ended: kept([
-      SESSION_ROW_WORDS.ended,
-      'Finished, Finished cleanly',
-      'End evidence and any observed outcome',
-      'A turn end or proof of success',
-      'Ready to wrap up requires a clean end',
-    ]),
+    waitingOnYou: kept(
+      [
+        SESSION_ROW_WORDS.waitingOnYou,
+        'Needs input, Needs you now',
+        'The exact request or gate',
+        'Needs you, the navigation destination',
+        'Gate detail appears on the session page and in Needs you',
+      ],
+      'label',
+    ),
+    quiet: kept(
+      [
+        SESSION_ROW_WORDS.quiet,
+        'Idle',
+        'The observed turn-end state',
+        'Ended or a scan-only absence',
+        'Projects uses No recent activity',
+      ],
+      /^(?:(?:Session )?state:\s*)?(?:Idle|Paused)(?:\s*\(\d+\)|\s*[·:]|$)/i,
+    ),
+    ended: kept(
+      [
+        SESSION_ROW_WORDS.ended,
+        'Finished, Finished cleanly',
+        'End evidence and any observed outcome',
+        'A turn end or proof of success',
+        'Ready to wrap up requires a clean end',
+      ],
+      'label',
+    ),
     worthALook: ruled(
       [
         SESSION_ROW_WORDS.worthALook,
@@ -489,6 +536,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Shows as a flag on a state',
       ],
       'At risk',
+      'label',
     ),
     readyToWrapUp: ruled(
       [
@@ -499,6 +547,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Needs you badge excludes this section',
       ],
       'Close the loop',
+      'label',
     ),
     onTrack: ruled(
       [
@@ -509,6 +558,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Session card and header, with meter and Help explaining it',
       ],
       'On track',
+      /^(?:(?:Progress )?level:\s*)?(?:None or low|Low)(?:\s+so far|\s*[·:]|$)/i,
     ),
     slightlyOffCourse: ruled(
       [
@@ -519,6 +569,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Row pill requires a stored departure',
       ],
       'Slightly off course',
+      'label',
     ),
     offCourse: ruled(
       [
@@ -529,6 +580,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Row pill requires a stored departure',
       ],
       'Off course',
+      'label',
     ),
     wayOffCourse: ruled(
       [
@@ -539,6 +591,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Row pill requires a stored departure',
       ],
       'Way off course',
+      'label',
     ),
     noGoalYet: kept([
       SESSION_ROW_WORDS.noGoalYet,
@@ -547,13 +600,16 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'Not checked yet',
       'Also a Progress check filter chip',
     ]),
-    notCheckedYet: kept([
-      SESSION_ROW_WORDS.notCheckedYet,
-      'Generic Not checked',
-      'No check recorded',
-      'No goal yet or Out of date',
-      'Plain text',
-    ]),
+    notCheckedYet: kept(
+      [
+        SESSION_ROW_WORDS.notCheckedYet,
+        'Generic Not checked',
+        'No check recorded',
+        'No goal yet or Out of date',
+        'Plain text',
+      ],
+      /\bNot checked(?! yet\b)(?:\s*[·:.]|$)/i,
+    ),
     tooEarlyToTell: ruled(
       [
         SESSION_ROW_WORDS.tooEarlyToTell,
@@ -563,6 +619,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Plain text',
       ],
       'Not enough recorded yet',
+      'phrase',
     ),
     cantTell: ruled(
       [
@@ -583,6 +640,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Plain text',
       ],
       'No level: the goal is too vague to analyze against.',
+      'phrase',
     ),
     outOfDate: ruled(
       [
@@ -603,6 +661,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         '`--pause-model-calls` and skill action `pause`',
       ],
       'Pause model calls',
+      'phrase',
     ),
     resumeAi: ruled(
       [
@@ -613,14 +672,18 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Existing terminal flags',
       ],
       'Resume model calls',
+      'phrase',
     ),
-    liveMonitor: kept([
-      'Live monitor',
-      'Live monitor (kept)',
-      'Live monitor · Haiku, scope and cadence',
-      'A reader-requested check',
-      "Session's technical layer. Settings points there",
-    ]),
+    liveMonitor: kept(
+      [
+        'Live monitor',
+        'Live monitor (kept)',
+        'Live monitor · Haiku, scope and cadence',
+        'A reader-requested check',
+        "Session's technical layer. Settings points there",
+      ],
+      /\bLive monitor\s*·\s*Haiku\b/i,
+    ),
     aiAllowance: ruled(
       [
         ALLOWANCE_LABEL,
@@ -630,6 +693,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Allowance refers only to this plan quota',
       ],
       ALLOWANCE_LABEL,
+      'label',
     ),
     progressCheckReadSize: ruled(
       [
@@ -640,6 +704,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Behind Customize. Slider labels name what they cap in KB',
       ],
       'Estimated prompt allowances',
+      'phrase',
     ),
     usesAi: ruled(
       [
@@ -650,6 +715,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Always beside Check progress',
       ],
       'Uses AI',
+      /^Analyze$/i,
     ),
     dailyChecksLeft: ruled(
       [
@@ -670,6 +736,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Open in place from Goal. Help links there',
       ],
       EXPLANATIONS.goals,
+      'phrase',
     ),
     howFilterCountsWork: ruled(
       [
@@ -680,6 +747,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Opens beneath the filters',
       ],
       EXPLANATIONS.filterCounts,
+      'phrase',
     ),
     howSessionHistoryWorks: ruled(
       [
@@ -690,6 +758,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Opens above the earlier rows',
       ],
       EXPLANATIONS.sessionHistory,
+      'label',
     ),
     howProgressChecksWork: ruled(
       [
@@ -700,6 +769,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Keep the local explanation next to the reading',
       ],
       null,
+      'phrase',
     ),
     howProjectGroupingWorks: ruled(
       [
@@ -710,6 +780,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Explains Unnamed folder',
       ],
       null,
+      'label',
     ),
     howAiAllowanceWorks: ruled(
       [
@@ -720,6 +791,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Help and the plan quota card use the same subject',
       ],
       EXPLANATIONS.aiAllowance,
+      'label',
     ),
 
     // Section and disclosure labels.
@@ -749,6 +821,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Uses the same Working count as the header',
       ],
       'Active now',
+      'label',
     ),
     nothingWorking: ruled(
       [
@@ -769,6 +842,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Stays visible on the first layer',
       ],
       'Also at risk, off the session count',
+      /\bAlso at risk, off the session count\b/i,
     ),
     isItOnTrack: ruled(
       [
@@ -779,6 +853,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Session progress card',
       ],
       'Is it on track?',
+      'label',
     ),
     rightNow: ruled(
       [
@@ -789,6 +864,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'On Sessions the earlier group names its time window',
       ],
       'Active now',
+      'label',
     ),
     whatsHappened: ruled(
       [
@@ -829,6 +905,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Projects group',
       ],
       'Active',
+      'label',
     ),
     noRecentActivity: ruled(
       [
@@ -839,6 +916,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Projects group',
       ],
       'Recently observed',
+      'label',
     ),
     stateNotPublished: kept([
       'State not published',
@@ -870,6 +948,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Opens in place on the surfaces with technical evidence',
       ],
       SHOWN.showTechnicalDetails,
+      /\b(?:revision\s+#?\d+|entry\s+(?:id|number|#\d+))\b|\[\d+(?:\.\d+)?\]|\b(?:[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}|(?=[a-f0-9]*[a-f])(?=[a-f0-9]*\d)[a-f0-9]{8,64})\b/i,
     ),
     hideTechnicalDetails: kept([
       SHOWN.hideTechnicalDetails,
@@ -887,6 +966,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Names the technical tab and citation destination',
       ],
       null,
+      'phrase',
     ),
     aiUse: ruled(
       [
@@ -920,43 +1000,29 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ),
   }) as const)();
 
-/* Each pattern records a ruled retirement or allowance for the DOM guard. The
-   display column also describes old layouts and concepts, so it is not tokenized. */
-const firstLayerRules: Partial<
-  Record<keyof typeof GLOSSARY, { retired?: RegExp; allowed?: RegExp }>
-> = {
-  compass: { allowed: /\bClaude Code\b/gi },
-  goal: { retired: /\bintent\b/i },
-  checkProgress: { retired: /\bdrift\b/i },
-  checkProgressAgain: { retired: /^(?:Analyze again|Check again)$/i },
-  readingLooksWrong: { retired: /\bmark as inaccurate\b/i },
-  helpers: { retired: /^(?:\d+ )?(?:running )?subagents?\b/i },
-  quiet: { retired: /^(?:state:\s*)?(?:idle|paused)\s*(?:$|[·:])/i },
-  ended: { retired: /^(?:state:\s*)?finished(?: cleanly)?\s*(?:$|[·:])/i },
-  onTrack: { retired: /^(?:none or low|low)\s*(?:$|[·:])/i },
-  slightlyOffCourse: { retired: /^medium\s*(?:$|[·:])/i },
-  offCourse: { retired: /^high\s*(?:$|[·:])/i },
-  wayOffCourse: { retired: /^extreme\s*(?:$|[·:])/i },
-  notCheckedYet: { retired: /^not checked(?! yet\b)\s*(?:$|[·:.])/i },
-  pauseAi: { retired: /\bpause model calls\b/i },
-  resumeAi: { retired: /\bresume model calls\b/i },
-  liveMonitor: { retired: /\blive monitor\s*·\s*haiku\b/i },
-  showTechnicalDetails: {
-    // A bare pull request number such as #482 is permitted.
-    retired:
-      /\b(?:revision\s+#?\d+|entry\s+(?:id|number|#\d+))\b|\[\d+(?:\.\d+)?\]|\b(?:[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}|(?=[a-f0-9]*[a-f])(?=[a-f0-9]*\d)[a-f0-9]{8,64})\b/i,
-  },
-};
-
-function firstLayerPatterns(kind: 'retired' | 'allowed'): RegExp[] {
-  return Object.entries(firstLayerRules).flatMap(([key, rule]) => {
-    const pattern = rule[kind];
-    return GLOSSARY[key as keyof typeof GLOSSARY].status === 'ruled' && pattern ? [pattern] : [];
+/* Only literal retired labels are compiled from Replaces. Rows that describe
+   an old layout or explain a migration have no retirement. Ambiguous labels
+   match a state or level label without banning their ordinary use in prose. */
+function retiredPatterns(row: GlossaryRow<string | null>): RegExp[] {
+  const { retirement } = row;
+  if (row.status !== 'ruled' || !retirement) return [];
+  if (retirement instanceof RegExp) return [retirement];
+  return row.replaces.split(', ').map((label) => {
+    const words = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (retirement === 'phrase') return new RegExp(`(?<!\\w)${words}(?!\\w)`, 'i');
+    return new RegExp(
+      `^(?:(?:Session )?state:\\s*|(?:Progress )?level:\\s*)?${words}(?:\\s*\\(\\d+\\)|\\s+so far|\\s*[·:]|$)`,
+      'i',
+    );
   });
 }
 
-export const FIRST_LAYER_RETIREMENTS = /* @__PURE__ */ firstLayerPatterns('retired');
-export const FIRST_LAYER_EXCEPTIONS = /* @__PURE__ */ firstLayerPatterns('allowed');
+export const FIRST_LAYER_RETIREMENTS = /* @__PURE__ */ Object.values(GLOSSARY).flatMap(
+  retiredPatterns,
+);
+export const FIRST_LAYER_EXCEPTIONS = /* @__PURE__ */ Object.values(GLOSSARY).flatMap((row) =>
+  row.status === 'ruled' && row.allowed ? [row.allowed] : [],
+);
 
 export const PROGRESS_LEVEL_WORDS = new Map([
   ['none_or_low', GLOSSARY.onTrack.plain],

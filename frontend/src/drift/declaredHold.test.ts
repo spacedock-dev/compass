@@ -11,7 +11,7 @@ import {
 import { boardProgressFromRecordedView, pageView } from './terminalParity.view.test.helper';
 import { buildRegistry, readSemantic } from '../timeline/semantic';
 import { readHint, observe, observeSession, nativeSession, type Row } from '../observed';
-import { sessionFooter, turnEndedSentence } from '../sessions/detail';
+import { sessionFigures, turnEndedSentence } from '../sessions/detail';
 import { notifyEdge } from '../notify/edges';
 import { createNotifyOwner } from '../notify/owner';
 import { workEntries } from '../intent/work';
@@ -65,7 +65,7 @@ it('a serialized display hold retains the server context final result', () => {
   expect(results(heldParent)).toEqual(results(nativeParent));
 });
 
-it('a display hold preserves Analyze scope, completion, footer and last-turn bounds', () => {
+it('a display hold preserves Analyze scope, completion, published figures and last-turn bounds', () => {
   const native = {
     ...nativeParent,
     finished_at: 100,
@@ -83,10 +83,10 @@ it('a display hold preserves Analyze scope, completion, footer and last-turn bou
   };
   expect(readHint(held)).toEqual(readHint(native));
   expect(turnEndedSentence(held)).toEqual(turnEndedSentence(native));
-  expect(sessionFooter(held)).toEqual({
-    source: 'session',
-    text: '100 output tokens this session',
-  });
+  expect(sessionFigures(held, null, false)).toEqual([
+    { label: 'Session output tokens', value: '100' },
+    { label: 'Turn output tokens', value: '5' },
+  ]);
   const entries = workEntries(native, {
     facts: [
       {

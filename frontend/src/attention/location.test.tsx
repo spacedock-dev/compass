@@ -276,7 +276,7 @@ describe('a label is interpreted by measured locations', () => {
     },
   );
 
-  it('a person sees clean ends and tasks separately from shared-label flags', async () => {
+  it('clean ends remain on Needs you and a pending task belongs in its session', async () => {
     const data = locationBoard();
     for (const row of locationRows(data).slice(0, 3)) row['finished_at'] = 1899999999;
     Object.assign(locationRow(data, 3), {
@@ -284,19 +284,22 @@ describe('a label is interpreted by measured locations', () => {
       dirty: false,
       project: 'Clean end',
     });
-    locationRow(data, 4)['tasks'] = [{ status: 'in_progress', subject: 'Inspect the next target' }];
+    locationRow(data, 4)['tasks'] = [{ status: 'pending', subject: 'Inspect the next target' }];
     // Keep a real label warning present while checking it cannot own stops or tasks.
     locationRow(data, 8)['project_key'] = 'path:other';
     const page = mountShell({ hash: '#n=attention', data });
     await page.settle();
     expect(screen.getByRole('heading', { name: 'Ready to wrap up (1)' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Coming next (1)' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Coming next/ })).not.toBeInTheDocument();
     expect(
       document.querySelectorAll('[data-next-attention-section="close"] > ol > li'),
     ).toHaveLength(1);
-    expect(document.querySelector('[data-next-attention-section="next"]')).toHaveTextContent(
-      'Inspect the next target',
+    const task = locationRow(data, 4);
+    await page.go(
+      `#n=session:${encodeURIComponent(String(task['project']))}:${task['harness']}:${task['sid']}`,
     );
-    expect(document.querySelector('.next-attention-brief')).toHaveTextContent('1 ready to wrap up');
+    expect(await screen.findByRole('region', { name: 'Right now' })).toHaveTextContent(
+      'Next stepInspect the next target',
+    );
   });
 });

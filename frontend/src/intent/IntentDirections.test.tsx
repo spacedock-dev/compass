@@ -428,7 +428,7 @@ describe('Leave it', () => {
     await settle(page);
     expect(page.posts('/api/annotate')).toBe(1);
     expect(text('#next-cockpit-cue-status')).toBe(
-      'Kept your intent and settled all 20 directions. No analysis was started.',
+      'Kept your goal and settled all 20 directions. No analysis was started.',
     );
   });
 
@@ -504,7 +504,7 @@ describe('Leave it', () => {
     await press(control('direction-keep'));
     await settle(page);
     expect(text('.next-cockpit-direction-question')).toContain(
-      'Kept your intent and settled all 2 directions. No analysis was started.',
+      'Kept your goal and settled all 2 directions. No analysis was started.',
     );
   });
 
@@ -537,7 +537,7 @@ describe('Leave it', () => {
       expected_revision: 1,
     });
     expect(text('.next-cockpit-direction-question')).toContain(
-      'Kept your intent and settled the direction. No analysis was started.',
+      'Kept your goal and settled the direction. No analysis was started.',
     );
   });
 
@@ -604,7 +604,7 @@ describe('Leave it', () => {
     await settle(page);
     expect(page.allPosts()[1]?.body).toMatchObject({ expected_revision: 1, settle_through: 600 });
     expect(text('.next-cockpit-direction-question')).toContain(
-      'Nothing was settled and no analysis was started: your intent changed since this page was drawn, or the store refused the mark.',
+      'Nothing was settled and no analysis was started: your goal changed since this page was drawn, or the store refused the mark.',
     );
     // A refused Leave it keeps the words it drew, so the next press acts on what is still on screen.
     expect(text('[data-next-cockpit-direction-whole]')).toContain('verify it on a clean');
@@ -712,7 +712,7 @@ describe('a direction press that cannot finish', () => {
     await settle(page);
     const message = button.parentElement?.querySelector('[data-next-action-feedback]');
     expect(message?.textContent).toMatch(
-      /Nothing was settled.*Review your intent and press again\.$/,
+      /Nothing was settled.*Review your goal and press again\.$/,
     );
     expect(document.querySelector('#next-cockpit-cue-status')?.textContent).toBe(
       message?.textContent,
@@ -727,7 +727,7 @@ describe('a direction press that cannot finish', () => {
   for (const [reason, explanation] of [
     [
       'not_found',
-      'That direction could not be verified as later than your intent in the current record.',
+      'That direction could not be verified as later than your goal in the current record.',
     ],
     ['out_of_reach', 'That direction is beyond the part of the record Compass could search.'],
     ['changed', 'The session wrote to its record while Compass was reading it. Press again.'],

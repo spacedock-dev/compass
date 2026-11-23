@@ -41,7 +41,7 @@ export interface BlockView {
   readonly at: string | null;
   readonly opening: boolean;
   /** What the part did, in short sentences. No entry numbers, and no count said twice. */
-  readonly line: string;
+  readonly line: readonly OutlineWords[];
   /** One row per check still failing, newest runs; the count of those not listed follows. */
   readonly failures: readonly { readonly factId: string; readonly title: string }[];
   readonly moreFailures: number;
@@ -153,37 +153,37 @@ export function coverageNotes(coverage: OutlineCoverage | null, more: number): s
   return notes;
 }
 
-const folderName = (folder: string) =>
-  folder === '' || folder === '.' ? 'the project root' : folder;
-const spoken = (items: readonly string[]) =>
-  items.length < 2
-    ? (items[0] ?? '')
-    : `${items.slice(0, -1).join(', ')} and ${items.at(-1) ?? ''}`;
+type OutlineWords = string | { readonly folder: string };
+
+const spoken = (items: readonly OutlineWords[][]): OutlineWords[] =>
+  items.flatMap((item, index) =>
+    index === 0 ? item : [index === items.length - 1 ? ' and ' : ', ', ...item],
+  );
 
 /* What a part did, in short sentences. Checks and files are left out where the harness's are not read, so a zero
    never stands for "not looked at". "Ran N checks" is every check run, a failing one included; the red row under
    the part is that same check, and no failure count is added to the sentence. A failure a later pass followed is
    said as fixed, in the same plain voice as the rest, because a red test written first is the work going as
    planned. One whose fix may lie in work Compass did not read is said as unread, never as still failing. */
-export function blockLine(block: OutlineBlock, coverage: OutlineCoverage | null): string {
+function blockWords(block: OutlineBlock, coverage: OutlineCoverage | null): OutlineWords[] {
   const { counts } = block;
   const replies = coverage?.agentReplies !== 'not_read';
   const work = coverage?.checksAndFiles !== 'not_admitted';
-  const did: string[] = [];
+  const did: OutlineWords[][] = [];
   if (replies && counts.agentMessages)
-    did.push(`replied ${plural(counts.agentMessages, 'time', 'times')}`);
-  if (work && counts.checks) did.push(`ran ${plural(counts.checks, 'check', 'checks')}`);
+    did.push([`replied ${plural(counts.agentMessages, 'time', 'times')}`]);
+  if (work && counts.checks) did.push([`ran ${plural(counts.checks, 'check', 'checks')}`]);
   if (work && counts.files) {
-    const where = block.folders.map((row) => folderName(row.folder));
+    const where = block.folders.map(({ folder }) => [
+      folder === '' || folder === '.' ? 'the project root' : { folder },
+    ]);
     const listed = block.folders.reduce((sum, row) => sum + row.files, 0);
-    did.push(
-      `wrote ${plural(counts.files, 'file', 'files')}${
-        where.length ? `${listed < counts.files ? ', mostly' : ''} in ${spoken(where)}` : ''
-      }`,
-    );
+    did.push([
+      `wrote ${plural(counts.files, 'file', 'files')}`,
+      ...(where.length ? [listed < counts.files ? ', mostly in ' : ' in ', ...spoken(where)] : []),
+    ]);
   }
   const sentences: string[] = [];
-  if (did.length) sentences.push(`The agent ${spoken(did)}.`);
   if (work && counts.checksFixed)
     sentences.push(
       counts.checksFixed === 1
@@ -198,10 +198,19 @@ export function blockLine(block: OutlineBlock, coverage: OutlineCoverage | null)
     );
   if (counts.subagentEntries)
     sentences.push(`Subagents added ${plural(counts.subagentEntries, 'entry', 'entries')}.`);
-  if (!sentences.length && replies && work)
+  if (!did.length && !sentences.length && replies && work)
     sentences.push('No agent work is recorded under this message.');
-  if (sentences.length && block.partial) sentences.push('Counted only as far as Compass read.');
-  return sentences.join(' ');
+  if ((did.length || sentences.length) && block.partial)
+    sentences.push('Counted only as far as Compass read.');
+  const notes = sentences.join(' ');
+  if (!did.length) return notes ? [notes] : [];
+  return ['The agent ', ...spoken(did), '.', ...(notes ? [` ${notes}`] : [])];
+}
+
+export function blockLine(block: OutlineBlock, coverage: OutlineCoverage | null): string {
+  return blockWords(block, coverage)
+    .map((part) => (typeof part === 'string' ? part : part.folder))
+    .join('');
 }
 
 export function outlineView(
@@ -226,7 +235,7 @@ export function outlineView(
         ? clock(block.span.fromAt)
         : null,
     opening: block.opening,
-    line: blockLine(block, outline.coverage),
+    line: blockWords(block, outline.coverage),
     failures: block.failures.map((row) => ({ factId: row.factId, title: row.title })),
     moreFailures: Math.max(0, block.counts.checksFailed - block.failures.length),
   }));

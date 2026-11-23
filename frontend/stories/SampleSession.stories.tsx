@@ -585,3 +585,12 @@ export const IntentIsAGoalAloneAndTheDepartureIsFromIt: Story = {
       await expect(phase).toHaveTextContent('Off course here');
   },
 };
+
+export const ProjectNameHasNoLiveDestination: Story = {
+  render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
+  play: async ({ canvasElement }) => {
+    const project = within(await within(canvasElement).findByRole('region', { name: 'Project' }));
+    await expect(project.getByText('acme/dashboard', { exact: true })).toBeVisible();
+    await expect(project.queryByRole('link')).toBeNull();
+  },
+};

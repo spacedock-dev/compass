@@ -22,7 +22,7 @@ import { harnessLabels } from './rows';
    real shell. The Intent and drift panel is outside the comparison (it is a stated slot here, and a stub
    there), and so is the activity list the panel feeds; everything else on the page is compared as
    text: the header with its state word, identity, measured line and controls, the held request with its
-   answer options, the activity column, the footer, and the attributes the page carries on its root. */
+   answer options, the activity column and the attributes the page carries on its root. */
 
 const legacy = loadLegacyViews();
 const norm = (node: Element | null): string =>
@@ -57,7 +57,7 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
   // The redesigned header, side cards and helper list have their own reader-facing stories.
   // Compare the rest of the recorded page, including the activity and reports behind the disclosure.
   for (const node of copy.querySelectorAll(
-    '.next-session-panel, [data-next-drift-status], .next-session-identity, .next-session-right-now, .next-session-at-a-glance, .next-session-project, [data-next-session-summary], [data-next-session-subagents], .next-session-current-subagents, .next-session-ask-callout',
+    '.next-session-panel, .next-session-footer, [data-next-drift-status], .next-session-identity, .next-session-right-now, .next-session-at-a-glance, .next-session-project, [data-next-session-summary], [data-next-session-subagents], .next-session-current-subagents, .next-session-ask-callout',
   ))
     node.remove();
   maskDetailLifecycle(copy);

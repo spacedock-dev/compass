@@ -781,7 +781,7 @@ try {
         await live.page.waitForSelector('[data-next-answer]');
         await live.page
           .getByRole('region', { name: 'Asked you' })
-          .getByText('Harness reports: waiting on a permission prompt', { exact: true })
+          .getByText('Agent reports: waiting on a permission prompt', { exact: true })
           .waitFor();
         const options = await live.page.locator('[data-next-answer]').allInnerTexts();
         assert.deepEqual(

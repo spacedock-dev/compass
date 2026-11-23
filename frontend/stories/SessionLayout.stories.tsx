@@ -154,6 +154,11 @@ function PageExample({
   annotations = true,
   settingsUnavailable = false,
   summariesUnavailable = false,
+  sessionOverrides = {},
+  recordState = 'ok',
+  olderFails = false,
+  contextFacts = [],
+  reportsBlocks = true,
 }: {
   readonly asking?: boolean;
   /** The exact request published while `asking`. */
@@ -176,6 +181,11 @@ function PageExample({
   readonly settingsUnavailable?: boolean;
   readonly summariesUnavailable?: boolean;
   readonly entries?: readonly Record<string, unknown>[];
+  readonly sessionOverrides?: Record<string, unknown>;
+  readonly recordState?: 'ok' | 'unsupported' | 'unavailable';
+  readonly olderFails?: boolean;
+  readonly contextFacts?: readonly Record<string, unknown>[];
+  readonly reportsBlocks?: boolean;
 }) {
   const [shell] = useState(() => {
     log.answers = [];
@@ -299,7 +309,13 @@ function PageExample({
               },
             },
             harnesses: [
-              { key: 'claude', label: 'Claude Code', reports_rate: true, discovered: true },
+              {
+                key: 'claude',
+                label: 'Claude Code',
+                reports_rate: true,
+                reports_needs_input: reportsBlocks,
+                discovered: true,
+              },
             ],
             ...(log.asking ? { ask: true, asks: [log.ask] } : {}),
             sessions: [
@@ -356,6 +372,7 @@ function PageExample({
                       annotation_assessment: reading(cites, log.readAt, readingWindow, evidence),
                     }
                   : {}),
+                ...sessionOverrides,
               },
             ],
           });
@@ -394,7 +411,7 @@ function PageExample({
         }
         if (url.startsWith('/api/project-context'))
           return json({
-            semantic: { facts: [] },
+            semantic: { facts: contextFacts },
             sources: {
               work: {
                 tool_reports: [],
@@ -428,7 +445,7 @@ function PageExample({
             });
           }
           return json({
-            state: 'ok',
+            state: older && olderFails ? 'unavailable' : recordState,
             session: { harness: 'claude', sid: 's1' },
             entries:
               entries ?? Array.from({ length: 50 }, (_, i) => message((older ? 50 : 100) - i)),
@@ -572,25 +589,48 @@ export const RegionsInOrder: Story = {
       'At a glance',
       'Project',
     ];
-    await atWidth(1100, async () => {
-      const bounds = (name: string) => canvas.getByRole('region', { name }).getBoundingClientRect();
-      const head = header.getBoundingClientRect();
-      const first = bounds('Goal');
-      const right = bounds('Right now');
-      await expect(Math.abs(head.left - first.left)).toBeLessThan(1);
-      await expect(Math.abs(head.right - right.right)).toBeLessThan(1);
-      await expect(first.top).toBeGreaterThanOrEqual(head.bottom);
-      await expect(right.top).toBeGreaterThanOrEqual(head.bottom);
-      await expect(right.left).toBeGreaterThan(first.right);
-      for (const name of expected.slice(4))
-        await expect(Math.abs(bounds(name).left - right.left)).toBeLessThan(1);
-      for (const name of ['Is it on track?', "What's happened so far"])
-        await expect(Math.abs(bounds(name).left - first.left)).toBeLessThan(1);
-    });
-    for (const width of [1099, 375])
-      await atWidth(width, () =>
-        inOrderTopToBottom(canvasElement, [...expected, 'Show technical details']),
-      );
+    const wide = () =>
+      waitFor(async () => {
+        await expect(canvasElement.querySelector('.next-session-columns')).toHaveAttribute(
+          'data-wide',
+          'true',
+        );
+        const bounds = (name: string) =>
+          canvas.getByRole('region', { name }).getBoundingClientRect();
+        const head = header.getBoundingClientRect();
+        const first = bounds('Goal');
+        const right = bounds('Right now');
+        await expect(Math.abs(head.left - first.left)).toBeLessThan(1);
+        await expect(Math.abs(head.right - right.right)).toBeLessThan(1);
+        await expect(first.top).toBeGreaterThanOrEqual(head.bottom);
+        await expect(right.top).toBeGreaterThanOrEqual(head.bottom);
+        await expect(right.left).toBeGreaterThan(first.right);
+        for (const name of expected.slice(4))
+          await expect(Math.abs(bounds(name).left - right.left)).toBeLessThan(1);
+        for (const name of ['Is it on track?', "What's happened so far"])
+          await expect(Math.abs(bounds(name).left - first.left)).toBeLessThan(1);
+      });
+    const narrow = () => inOrderTopToBottom(canvasElement, [...expected, 'Show technical details']);
+    if ('__vitest_browser_runner__' in window) {
+      const { page } = await import('vitest/browser');
+      const before = { width: window.innerWidth, height: window.innerHeight };
+      try {
+        for (const width of [375, 1099]) {
+          await page.viewport(width, 800);
+          await expect(window.innerWidth).toBe(width);
+          await narrow();
+        }
+        await page.viewport(1100, 800);
+        await expect(window.innerWidth).toBe(1100);
+        await wide();
+      } finally {
+        await page.viewport(before.width, before.height);
+      }
+    } else if (window.innerWidth >= 1100) {
+      await wide();
+    } else {
+      await narrow();
+    }
   },
 };
 
@@ -1579,7 +1619,9 @@ export const HarnessGateWithExactRequest: Story = {
     const canvas = within(canvasElement);
     const asked = within(await canvas.findByRole('region', { name: 'Asked you' }));
     await expect(asked.getByText(String(ASK.question))).toBeVisible();
-    await expect(asked.getByText('Permission prompt: Bash', { exact: false })).toBeVisible();
+    await expect(asked.getByText('Permission prompt: Bash', { exact: true })).toBeVisible();
+    await expect(asked.getByText('Agent reports:', { exact: true })).toBeVisible();
+    await expect(asked.queryByText('Harness reports:', { exact: true })).toBeNull();
     await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
   },
 };
@@ -1664,3 +1706,169 @@ export const HelperActivity: Story = {
     }
   },
 };
+
+export const EndedHasNoCurrentNextStep: Story = {
+  render: () => <PageExample ended />,
+  play: async ({ canvasElement }) => {
+    const now = within(await within(canvasElement).findByRole('region', { name: 'Right now' }));
+    await expect(now.getByText('Session reported its own end', { exact: true })).toBeVisible();
+    await expect(now.queryByText('Next step', { exact: true })).toBeNull();
+    await expect(now.queryByText('Write the release notes', { exact: true })).toBeNull();
+    await expect(now.queryByText('No reported block', { exact: true })).toBeNull();
+  },
+};
+
+export const IdentifierOnlyTitle: Story = {
+  render: () => <PageExample sessionOverrides={{ title: 's1', annotation_goal: '' }} />,
+  play: async ({ canvasElement }) => {
+    const title = await within(canvasElement).findByRole('heading', {
+      level: 1,
+      name: 'Title not published',
+    });
+    await expect(title).not.toHaveAttribute('data-authored');
+  },
+};
+
+export const UnnamedHelper: Story = {
+  render: () => <PageExample sessionOverrides={{ subagents: [{ active: true }] }} />,
+  play: async ({ canvasElement }) => {
+    const now = within(await within(canvasElement).findByRole('region', { name: 'Right now' }));
+    await expect(now.getByRole('heading', { name: 'Helpers (1)' })).toBeVisible();
+    await expect(now.getByText('Unnamed helper', { exact: true })).not.toHaveAttribute(
+      'data-authored',
+    );
+    await expect(now.getByText('Working', { exact: true })).toBeVisible();
+    await expect(now.queryByText('subagent', { exact: true })).toBeNull();
+  },
+};
+
+function figuresStory(
+  props: Parameters<typeof PageExample>[0],
+  words: string,
+  absent: string,
+): Story {
+  return {
+    render: () => <PageExample {...props} />,
+    play: async ({ canvasElement }) => {
+      const region = await within(canvasElement).findByRole('region', { name: 'At a glance' });
+      await waitFor(() => expect(region.textContent).toBe(`At a glance${words}`));
+      await expect(within(region).queryByText(absent, { exact: true })).toBeNull();
+    },
+  };
+}
+
+export const FiguresPublished = figuresStory(
+  { entries: [message(1)] },
+  'Recorded entries1',
+  'At least 1',
+);
+export const FiguresMeasuredZero = figuresStory(
+  { entries: [] },
+  'Recorded entries0',
+  'No figures published for this session.',
+);
+export const FiguresPartial = figuresStory({}, 'Recorded entriesAt least 50', '50');
+export const FiguresUnsupported = figuresStory(
+  { recordState: 'unsupported' },
+  'No figures published for this session.',
+  'Recorded entries',
+);
+export const FiguresUnavailable = figuresStory(
+  { recordState: 'unavailable' },
+  'No figures published for this session.',
+  'Recorded entries',
+);
+
+export const FailedOlderPageKeepsFiguresPartial: Story = {
+  render: () => <PageExample olderFails />,
+  play: async ({ canvasElement }) => {
+    const region = await within(canvasElement).findByRole('region', { name: 'At a glance' });
+    await expect(await within(region).findByText('At least 50', { exact: true })).toBeVisible();
+    await openSessionTechnicalTab('Activity log', canvasElement);
+    await userEvent.click(
+      await within(canvasElement).findByRole('button', { name: /^Show \d+ older entries$/ }),
+    );
+    await expect(
+      await within(canvasElement).findByText('Could not read older entries', { exact: true }),
+    ).toBeVisible();
+    await expect(region.textContent).toBe('At a glanceRecorded entriesAt least 50');
+    await expect(within(region).queryByText('50', { exact: true })).toBeNull();
+  },
+};
+
+export const FiguresUnavailableWithRetainedEntry = figuresStory(
+  { recordState: 'unavailable', contextFacts: [message(1)] },
+  'Recorded entriesAt least 1',
+  '1',
+);
+
+export const PublishedTokenFigures = figuresStory(
+  {
+    recordState: 'unsupported',
+    sessionOverrides: { session_output_tokens: 0, turn_output_tokens: 1234 },
+  },
+  'Session output tokens0Turn output tokens1,234',
+  'Recorded entries',
+);
+
+const noActivity = { tasks: undefined, state_detail: undefined };
+function nowStory(
+  props: Parameters<typeof PageExample>[0],
+  words: string,
+  forbidden: readonly string[],
+): Story {
+  return {
+    render: () => <PageExample {...props} />,
+    play: async ({ canvasElement }) => {
+      const region = await within(canvasElement).findByRole('region', { name: 'Right now' });
+      await expect(region.textContent).toBe(`Right now${words}`);
+      for (const word of forbidden)
+        await expect(within(region).queryByText(word, { exact: true })).toBeNull();
+    },
+  };
+}
+
+export const RightNowWithoutActivity = nowStory(
+  { sessionOverrides: noActivity },
+  'Activity not publishedNext stepNo pending step publishedBlocked?No reported block',
+  [
+    'No state published',
+    'Waiting on you',
+    'Block state could not be read',
+    'Write the release notes',
+  ],
+);
+
+export const RightNowWithoutState = nowStory(
+  { sessionOverrides: { ...noActivity, state: undefined } },
+  'No state publishedNext stepNo pending step publishedBlocked?No reported block',
+  [
+    'Activity not published',
+    'Waiting on you',
+    'Block state could not be read',
+    'Write the release notes',
+  ],
+);
+
+export const RightNowWithoutBlockReporting = nowStory(
+  { sessionOverrides: noActivity, reportsBlocks: false },
+  'Activity not publishedNext stepNo pending step publishedBlocked?This agent does not report blocks',
+  [
+    'Harness does not report blocks',
+    'No reported block',
+    'Waiting on you',
+    'Block state could not be read',
+  ],
+);
+
+export const RightNowWithUnreadableBlock = nowStory(
+  { sessionOverrides: { ...noActivity, source_gaps: ['block state'] } },
+  'Activity not publishedSome activity could not be read: block state.Next stepNo pending step publishedBlocked?Block state could not be read',
+  ['No reported block', 'Waiting on you', 'This agent does not report blocks'],
+);
+
+export const RightNowWithReportedBlock = nowStory(
+  { gate: true },
+  'Permission prompt: BashNext stepNo pending step publishedBlocked?Waiting on youPermission prompt: Bash',
+  ['No reported block', 'Block state could not be read', 'Write the release notes'],
+);

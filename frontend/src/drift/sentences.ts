@@ -639,7 +639,7 @@ export const STEER_HARNESSES: readonly string[] = ['claude'];
 /* Over the correction, since it steers from the stored reading, which can be older than the session's latest
    work: the time that reading was read, on the reader's clock (owner, 2026-10-20). */
 export const steerFrom = (at: string): string =>
-  `Built from your saved intent and the reading at ${at}`;
+  `Built from your saved goal and the reading at ${at}`;
 /* Under the Steer back heading, in the design's words. */
 export const STEER_PURPOSE =
   'Compass writes a correction for you to paste into the session. It never types into the session itself.';
