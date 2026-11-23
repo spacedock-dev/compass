@@ -4603,7 +4603,8 @@ JSON: a shape version, a time, the dashboard's process id, the count of the othe
 Needs you queue, sessions waiting on you and pending asks (`null` when no harness that can report a wait was read), the board's names for harnesses that
 cannot report one, a `monitor` boolean, `stored_progress` (a departing level token or `null`),
 `last_end` (`null` or an end reason and time), and `model_calls_paused` (`true`, `false` or `null`
-for unknown). The stored level comes from the published session row. The file holds no title,
+for unknown). The stored level comes from the published session row; the board publishes no stored
+level yet, so `stored_progress` is `null` until it does. The file holds no title,
 path, prompt, session id or tool output.
 
 The dashboard writes only the page-default snapshot, only while it is serving, and never fails a
