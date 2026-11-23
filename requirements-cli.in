@@ -8,7 +8,7 @@
 # pinned and held to its sha256 hashes, and the build installs that with `--no-deps`; its header
 # says how. Regenerate it after any edit here.
 pyinstaller==6.22.3
-pyinstaller-hooks-contrib==2026.9
+pyinstaller-hooks-contrib==2026.10
 altgraph==0.17.5
 macholib==1.16.4; sys_platform == "darwin"
 packaging==26.3
