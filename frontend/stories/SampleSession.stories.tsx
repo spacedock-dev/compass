@@ -26,19 +26,12 @@ type Story = StoryObj<typeof meta>;
 
 type Json = Record<string, unknown>;
 
-function SampleExample({
-  fragment,
-  browserNavigation = false,
-}: {
-  readonly fragment: string;
-  readonly browserNavigation?: boolean;
-}) {
+function SampleExample({ fragment }: { readonly fragment: string }) {
   const [shell] = useState(() => {
     const history = fakeRouterEnvironment(fragment);
-    if (browserNavigation) window.history.replaceState(null, '', fragment);
     return createShell({
       env: createFakeEnvironment({ clock: createFakeClock() }),
-      router: createRouter(browserNavigation ? undefined : history.env),
+      router: createRouter(history.env),
       provider: () => fakeBackend(),
       events: { addEventListener: () => undefined, removeEventListener: () => undefined },
       search: '',
@@ -604,7 +597,7 @@ export const ProjectNameHasNoLiveDestination: Story = {
 };
 
 export const DismissThenOpenFromHelp: Story = {
-  render: () => <SampleExample fragment="#n=sessions" browserNavigation />,
+  render: () => <SampleExample fragment="#n=sessions" />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole('button', { name: 'Not now' }));
@@ -621,6 +614,9 @@ export const DismissThenOpenFromHelp: Story = {
     await userEvent.keyboard('{Escape}');
     await expect(await canvas.findByRole('heading', { name: 'How Compass works' })).toBeVisible();
     await userEvent.click(primary.getByRole('link', { name: 'Sessions' }));
+    await expect(
+      await canvas.findByRole('link', { name: 'Sessions', current: 'page' }),
+    ).toBeVisible();
     await expect(canvas.queryByText('New to Compass?')).toBeNull();
   },
 };
@@ -648,5 +644,7 @@ export const PlainTourWords: Story = {
       GLOSSARY.steerBack.plain,
     ])
       await expect(banner).toHaveTextContent(word);
+    await userEvent.click(within(banner).getByRole('link', { name: 'Back to Sessions' }));
+    await expect(canvas.getByRole('link', { name: 'Sessions', current: 'page' })).toBeVisible();
   },
 };

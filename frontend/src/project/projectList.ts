@@ -79,6 +79,7 @@ export function projectList(payload: Row) {
       rank: rank < 0 ? STATES.length : rank,
       headline,
       limit,
+      location: project.sharedLabelKnown ? project.sharedLabelText : '',
       group:
         rank === 0 || rank === 1 || endedToday(end, now) ? PROJECT_GROUPS[0] : PROJECT_GROUPS[1],
       counts: counts.filter(({ count }) => count > 0),

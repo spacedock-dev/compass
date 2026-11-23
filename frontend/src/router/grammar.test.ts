@@ -104,52 +104,52 @@ describe('every released fragment parses to its route and prints back canonicall
       canonical: '#n=project:recce:console',
     },
     {
-      name: 'a third part that is no tab is a focused session of the project',
+      name: 'a project focus without a tab opens its session',
       fragment: `#n=project:recce:${enc('claude:one')}`,
-      route: { view: 'project', project: 'recce', session: null, focus: 'claude:one' },
-      canonical: `#n=project:recce:${enc('claude:one')}`,
+      route: {
+        view: 'session',
+        project: 'recce',
+        harness: 'claude',
+        session: 'one',
+        from: 'project',
+      },
+      canonical: '#n=session:recce:claude:one&from=project',
     },
     {
-      name: 'a focused session with a tab',
+      name: 'a project focus with a tab opens its session',
       fragment: `#n=project:recce:${enc('claude:one')}:console`,
       route: {
-        view: 'project',
+        view: 'session',
         project: 'recce',
-        session: null,
-        focus: 'claude:one',
-        tab: 'console',
+        harness: 'claude',
+        session: 'one',
+        from: 'project',
       },
-      canonical: `#n=project:recce:${enc('claude:one')}:console`,
+      canonical: '#n=session:recce:claude:one&from=project',
     },
     {
-      name: 'a focused session at Now prints without the tab',
-      fragment: `#n=project:recce:${enc('claude:one')}:now`,
-      route: { view: 'project', project: 'recce', session: null, focus: 'claude:one', tab: 'now' },
-      canonical: `#n=project:recce:${enc('claude:one')}`,
-    },
-    {
-      name: 'a focused session with an unknown fourth part is not a project route',
+      name: 'a project focus with an unknown fourth part still falls back to Sessions',
       fragment: `#n=project:recce:${enc('claude:one')}:nonsense`,
       route: top('sessions'),
       canonical: '#n=sessions',
     },
     {
-      name: 'the retired held-to slug aliases to the exact session',
-      fragment: `#n=project:recce:${enc('claude:one')}:held-to`,
-      route: { view: 'session', project: 'recce', harness: 'claude', session: 'one' },
-      canonical: `#n=session:recce:claude:one`,
-    },
-    {
       name: 'a held-to sid keeps every colon after the first',
       fragment: `#n=project:recce:${enc('codex:a:b')}:held-to`,
-      route: { view: 'session', project: 'recce', harness: 'codex', session: 'a:b' },
-      canonical: `#n=session:recce:codex:${enc('a:b')}`,
+      route: {
+        view: 'session',
+        project: 'recce',
+        harness: 'codex',
+        session: 'a:b',
+        from: 'project',
+      },
+      canonical: `#n=session:recce:codex:${enc('a:b')}&from=project`,
     },
     {
-      name: 'a held-to focus with no harness falls to the id-only session form',
+      name: 'a held-to focus with no harness uses the id-only session form',
       fragment: `#n=project:recce:${enc('loose')}:held-to`,
-      route: { view: 'session', project: 'recce', session: 'loose' },
-      canonical: '#n=session:recce:loose',
+      route: { view: 'session', project: 'recce', session: 'loose', from: 'project' },
+      canonical: '#n=session:recce:loose&from=project',
     },
     {
       name: 'a held-to focus with no sid after the harness is no route at all',
@@ -312,7 +312,7 @@ describe('printing a route', () => {
         focus: 'claude:one',
         tab: 'held-to',
       }),
-    ).toBe('#n=session:recce:claude:one');
+    ).toBe('#n=session:recce:claude:one&from=project');
   });
 
   it('keeps the held-to alias distinct from a focus whose sid is empty', () => {
@@ -324,7 +324,7 @@ describe('printing a route', () => {
         focus: 'codex:',
         tab: 'held-to',
       }),
-    ).toBe('#n=project:recce:codex%3A');
+    ).toBe('#n=sessions');
   });
 
   it('drops a tab the focus does not offer and an origin outside the closed set', () => {
@@ -455,12 +455,41 @@ describe('the port agrees with the legacy grammar', () => {
     expect(generated.length).toBeGreaterThan(500);
     for (const fragment of generated) {
       const legacy = legacyParse(fragment);
+      const printed = legacyPrint(legacy);
       const ported = parseFragment(fragment);
-      // The legacy route is a plain object built inside another realm; compare by value.
-      expect(JSON.parse(JSON.stringify(ported)), fragment).toEqual(
-        JSON.parse(JSON.stringify(legacy)),
-      );
-      expect(fragmentForRoute(ported), fragment).toBe(legacyPrint(legacy));
+      // The redesign routes the retired project scopes to their own session pages.
+      const old = JSON.parse(JSON.stringify(legacy)) as RouteInput;
+      const focus = old.focus;
+      const oldHeldTo = old.view === 'session' && fragment.startsWith('#n=project:');
+      if (oldHeldTo) {
+        expect(ported, fragment).toEqual({ ...old, from: 'project' });
+      } else if (old.view === 'project' && focus) {
+        const colon = focus.indexOf(':');
+        const session = colon > 0 ? focus.slice(colon + 1) : focus;
+        expect(ported, fragment).toEqual(
+          session
+            ? {
+                view: 'session',
+                project: old.project,
+                session,
+                from: 'project',
+                ...(colon > 0 ? { harness: focus.slice(0, colon) } : {}),
+              }
+            : { view: 'sessions', project: null, session: null },
+        );
+      } else {
+        expect(ported, fragment).toEqual(old);
+        expect(fragmentForRoute(ported), fragment).toBe(printed);
+      }
     }
   });
+});
+
+it.each([
+  ['#n=project:recce:claude%3Aone', '#n=session:recce:claude:one&from=project'],
+  ['#n=project:recce:codex%3Aa%3Ab:course', '#n=session:recce:codex:a%3Ab&from=project'],
+  ['#n=project:recce:loose:console', '#n=session:recce:loose&from=project'],
+  ['#n=project:recce:claude%3Aone:held-to', '#n=session:recce:claude:one&from=project'],
+])('opens the session named by the old bookmark %s', (old, replacement) => {
+  expect(canonicalFragment(old)).toBe(replacement);
 });

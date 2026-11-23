@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
-import { expect, within } from 'storybook/test';
+import { expect, userEvent, within } from 'storybook/test';
 import { App } from '../src/App';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
@@ -82,5 +82,20 @@ export const Project: Story = {
     });
     await expect(canvas.getByRole('button', { name: 'Copy a status update' })).toBeVisible();
     await expect(canvas.queryByText(/All projects.*subagents observed/)).toBeNull();
+  },
+};
+
+export const OldProjectSessionBookmark: Story = {
+  args: { fragment: '#n=project:acme%2Fdashboard:claude%3Aactive:course' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole('heading', { name: 'Check the build' })).toBeVisible();
+    const crumb = within(canvas.getByRole('navigation', { name: 'Breadcrumb' }));
+    await expect(crumb.getByRole('link', { name: 'acme/dashboard' })).toHaveAttribute(
+      'href',
+      '#n=project:acme%2Fdashboard',
+    );
+    await userEvent.click(crumb.getByRole('link', { name: 'acme/dashboard' }));
+    await expect(await canvas.findByRole('heading', { name: 'acme/dashboard' })).toBeVisible();
   },
 };

@@ -1,8 +1,7 @@
-import { buttonVariants } from '../ui/button';
+import { RouteLink } from './RouteLink';
 import { Icon } from '../ui/icons';
 import { SHOWN } from '../language/glossary';
-import { cn } from '../lib/utils';
-import { fragmentForRoute, sessionHome, type Route } from '../router/grammar';
+import { sessionHome, type Route } from '../router/grammar';
 import type { PayloadData } from '../api/types';
 import { SAMPLE_FIXTURE } from '../sample/fixture';
 import { isSampleRoute } from '../sample/ids';
@@ -20,13 +19,9 @@ export function Breadcrumb({ route }: { readonly route: Route }) {
   const data = useDisplayed((snapshot) => snapshot.data);
   if (route.view !== 'project' && route.view !== 'session') return null;
   const projects = (
-    <a
-      data-slot="button-link"
-      className={cn('next-crumb', buttonVariants({ variant: 'native' }))}
-      href="#n=projects"
-    >
+    <RouteLink className="next-crumb" route={{ view: 'projects' }}>
       {SHOWN.projects}
-    </a>
+    </RouteLink>
   );
   const separator = (
     <Icon name="caret-right" className="next-breadcrumb-current-separator shrink-0" />
@@ -62,13 +57,9 @@ export function Breadcrumb({ route }: { readonly route: Route }) {
     if (home !== 'projects') {
       trail = (
         <>
-          <a
-            data-slot="button-link"
-            className={cn('next-crumb', buttonVariants({ variant: 'native' }))}
-            href={`#n=${home}`}
-          >
+          <RouteLink className="next-crumb" route={{ view: home }}>
             {SHOWN[home]}
-          </a>
+          </RouteLink>
           {current}
         </>
       );
@@ -84,13 +75,9 @@ export function Breadcrumb({ route }: { readonly route: Route }) {
         <>
           {projects}
           <Icon name="caret-right" />
-          <a
-            data-slot="button-link"
-            className={cn('next-crumb', buttonVariants({ variant: 'native' }))}
-            href={fragmentForRoute({ view: 'project', project: route.project })}
-          >
+          <RouteLink className="next-crumb" route={{ view: 'project', project: route.project }}>
             <span data-authored>{route.project}</span>
-          </a>
+          </RouteLink>
           {current}
         </>
       );

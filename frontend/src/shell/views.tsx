@@ -1,10 +1,7 @@
 import { Help } from '../help/Help';
 import { SampleInvite } from '../sample/SampleInvite';
-import { buttonVariants } from '../ui/button';
 import { payloadSessions } from '../api/bootstrap';
-import { compatSessKey } from '../api/identity';
 import {
-  fragmentForRoute,
   type ProjectRoute,
   type Route,
   type SessionRoute,
@@ -207,32 +204,6 @@ function ProjectView({ route }: { readonly route: ProjectRoute }) {
         <RouteLink route={{ view: 'projects', project: null, session: null }}>
           View all projects
         </RouteLink>
-      </section>
-    );
-  }
-  /* A focus is the exact compatibility key of one session of this project. One the board no longer holds
-     is stated, with the way back to the project root, rather than silently showing the whole project. */
-  if (route.focus && !members.some((row) => compatSessKey(row) === route.focus)) {
-    return (
-      <section
-        className="next-cockpit-stale-session"
-        data-next-view-body="project"
-        data-next-cockpit-stale-session
-      >
-        <span>SESSION FILTER</span>
-        <h1>Session filter is outside this payload window</h1>
-        <p>{route.focus}</p>
-        <a
-          data-slot="button-link"
-          className={buttonVariants({ variant: 'native' })}
-          href={fragmentForRoute({
-            view: 'project',
-            project: route.project,
-            tab: route.tab ?? 'now',
-          })}
-        >
-          View project root
-        </a>
       </section>
     );
   }

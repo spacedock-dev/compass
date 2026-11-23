@@ -7,6 +7,7 @@ import { useFocusKey } from '../controls/useFocusKey';
 import { cn } from '../lib/utils';
 import { SHOWN } from '../language/glossary';
 import { sessionHome, type Route, type TopLevelView } from '../router/grammar';
+import { RouteLink } from './RouteLink';
 import { useDisplayed, useShell } from './context';
 
 const PRIMARY = ['sessions', 'projects', 'attention', 'intent', 'settings', 'help'] as const;
@@ -32,16 +33,12 @@ function PrimaryNavigation({
   return (
     <nav aria-label={SHOWN.primary} className="flex flex-wrap items-center gap-x-1">
       {PRIMARY.map((view) => (
-        <a
-          data-slot="button-link"
-          className={cn(
-            buttonVariants({ variant: 'native' }),
-            'gap-2 rounded-card px-3 text-body font-medium text-foreground no-underline hover:bg-muted aria-[current=page]:bg-[var(--status-ended-bg)] aria-[current=page]:font-semibold aria-[current=page]:text-[var(--status-ended-ink)] forced-colors:aria-[current=page]:underline',
-          )}
+        <RouteLink
+          className="gap-2 rounded-card px-3 text-body font-medium text-foreground no-underline hover:bg-muted aria-[current=page]:bg-[var(--status-ended-bg)] aria-[current=page]:font-semibold aria-[current=page]:text-[var(--status-ended-ink)] forced-colors:aria-[current=page]:underline"
           key={view}
           ref={view === here ? currentRef : undefined}
-          href={`#n=${view}`}
-          aria-current={view === here ? 'page' : undefined}
+          route={{ view }}
+          current={view === here}
         >
           {SHOWN[view]}
           {view === 'attention' && needsCount > 0 ? (
@@ -52,7 +49,7 @@ function PrimaryNavigation({
               </span>
             </>
           ) : null}
-        </a>
+        </RouteLink>
       ))}
     </nav>
   );

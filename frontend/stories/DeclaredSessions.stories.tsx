@@ -443,28 +443,14 @@ export const PromptFirstTitleIsAChildWait: Story = {
   },
 };
 
-export const ProjectChildWaitAndMore: Story = {
+export const ProjectChildWait: Story = {
   args: { hash: '#n=project:demo' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const more = await canvas.findByLabelText('More');
-    await expect(more).toBeVisible();
-    await expect(more.querySelector('svg[data-icon="caret-down"]')).toBeVisible();
-    await expect(getComputedStyle(more, '::after').content).toBe('none');
-    const parent = canvasElement.querySelector('[data-next-going-on="parent"]');
-    await expect(parent).toHaveTextContent('Waiting on child "Check build"');
-    await expect(parent?.querySelector('[data-icon="working"]')).toBeNull();
-    const scope = canvasElement.querySelector('[data-next-cockpit-scope="claude:parent"]');
-    await expect(scope).toHaveTextContent('Waiting on child "Check build"');
-    await expect(scope?.querySelector('[data-icon="working"]')).toBeNull();
-    if (!scope) throw new Error('Expected the parent scope');
-    await userEvent.click(scope);
-    const focused = canvasElement.querySelector('[data-next-cockpit-viewing-session]');
-    await waitFor(() =>
-      expect(
-        focused ?? canvasElement.querySelector('[data-next-cockpit-viewing-session]'),
-      ).toHaveTextContent('Waiting on child "Check build"'),
-    );
+    const sessions = within(await canvas.findByRole('region', { name: 'Sessions' }));
+    const parent = within(sessions.getByRole('link', { name: /Coordinate release/ }));
+    await expect(parent.getByText('Waiting on child "Check build"')).toBeVisible();
+    await expect(parent.queryByRole('img', { name: 'Working' })).toBeNull();
   },
 };
 
@@ -521,10 +507,10 @@ export const ProjectDisplayedStateRollup: Story = {
     await expect(within(project).getByRole('img', { name: '1 working' })).toBeVisible();
     await expect(within(project).getByText('4 sessions')).toBeVisible();
     await userEvent.click(project);
-    const parent = canvasElement.querySelector<HTMLElement>('[data-next-going-on="parent"]');
-    if (!parent) throw new Error('Expected the parent activity row');
-    await expect(within(parent).getByText('Waiting on child "Check build"')).toBeVisible();
-    await expect(within(parent).queryByRole('img')).toBeNull();
+    const sessions = within(await canvas.findByRole('region', { name: 'Sessions' }));
+    const parent = within(sessions.getByRole('link', { name: /Coordinate release/ }));
+    await expect(parent.getByText('Waiting on child "Check build"')).toBeVisible();
+    await expect(parent.queryByRole('img')).toBeNull();
   },
 };
 
@@ -532,7 +518,10 @@ export const PlanEntityStatus: Story = {
   args: { hash: '#n=project:demo', plan: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Show project plan' }));
+    await userEvent.click(await canvas.findByRole('button', { name: 'Show technical details' }));
+    const plan = canvas.getByRole('button', { name: 'Show project plan' });
+    await waitFor(() => expect(plan).toBeVisible());
+    await userEvent.click(plan);
     for (const [slug, state] of [
       ['alpha', 'Live'],
       ['beta', 'Pending'],

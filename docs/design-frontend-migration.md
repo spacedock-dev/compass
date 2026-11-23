@@ -16,6 +16,11 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+On 2026-11-23 legacy project focus fragments began opening the exact Session page, including
+the older `held-to` alias. A focus with no harness uses the ID-only session form. The return
+origin is the project. The grammar differential applies this departure to recorded project
+focus answers. Unfocused project slugs and unrelated session links still compare directly.
+
 On 2026-11-23 the project page moved the recovery strip and its workflow evidence, stage
 conditions, steering and the terminal into Show technical details. The differential still
 compares the recovery evidence and the Timeline facts and links. The project scope rail, Overview

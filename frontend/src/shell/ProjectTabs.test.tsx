@@ -35,11 +35,11 @@ describe('the project tab strip', () => {
     expect(screen.getByRole('tablist').getAttribute('aria-label')).toBe('Project views');
   });
 
-  it('selects the tab the route names, and keeps a focused session across tab changes', async () => {
-    const page = await open('#n=project:alpha%2Fapp:claude%3Ashared-sid:console');
+  it('selects the tab the route names and keeps the project across tab changes', async () => {
+    const page = await open('#n=project:alpha%2Fapp:console');
     expect(tab('Usage and alerts').getAttribute('aria-selected')).toBe('true');
     fireEvent.click(tab('Timeline'));
-    expect(hash(page)).toBe('#n=project:alpha%2Fapp:claude%3Ashared-sid:course');
+    expect(hash(page)).toBe('#n=project:alpha%2Fapp:course');
   });
 
   it('wraps over the strip with the arrow keys and puts focus on the tab it selects', async () => {

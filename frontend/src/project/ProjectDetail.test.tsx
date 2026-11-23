@@ -48,36 +48,6 @@ describe('a project page asks for nothing it was not pressed for', () => {
     await page.poll({ ...(CALM?.board as object), generated: 1010 });
     expect(page.contextReads()).toHaveLength(2);
   });
-
-  it('makes the focused read only for the tabs that draw it, and never for an unfocused session', async () => {
-    const project = 'wait/app';
-    const focused = hash(project, ':claude%3Aa:course');
-    const page = mountProject({
-      hash: focused,
-      data: WAITING?.board,
-      contexts: { [`${project}\n`]: WAITING?.context, [`${project}\nclaude:a`]: WAITING?.context },
-    });
-    await page.settle();
-    expect(page.contextReads().map((read) => decodeURIComponent(read.url))).toEqual([
-      '/api/project-context?project=wait/app',
-      '/api/project-context?project=wait/app&session=claude:a',
-    ]);
-  });
-});
-
-describe('a focused session on the Now tab', () => {
-  it('reads only the project’s own context: the focused read belongs to the tabs that draw it', async () => {
-    const project = 'wait/app';
-    const page = mountProject({
-      hash: hash(project, ':claude%3Aa'),
-      data: WAITING?.board,
-      contexts: { [`${project}\n`]: WAITING?.context, [`${project}\nclaude:a`]: WAITING?.context },
-    });
-    await page.settle();
-    expect(page.contextReads().map((read) => decodeURIComponent(read.url))).toEqual([
-      '/api/project-context?project=wait/app',
-    ]);
-  });
 });
 
 describe('the recovery strip', () => {
@@ -349,38 +319,6 @@ describe('the workstream panel', () => {
 });
 
 describe('disclosures keep their state by project and scope', () => {
-  it('does not open at one scope what the reader opened at another', async () => {
-    const page = mountProject({
-      hash: hash('wait/app'),
-      data: WAITING?.board,
-      contexts: { 'wait/app\n': WAITING?.context },
-    });
-    await page.settle();
-    fireEvent.click(screen.getByText('Evidence · attention sources'));
-    act(() =>
-      page.router.navigate({ view: 'project', project: 'wait/app', focus: 'claude:a', tab: null }),
-    );
-    await page.settle();
-    expect(
-      (
-        screen
-          .getByText('Evidence · attention sources')
-          .closest('[data-slot=accordion]') as HTMLElement
-      ).hasAttribute('data-open'),
-    ).toBe(false);
-    act(() =>
-      page.router.navigate({ view: 'project', project: 'wait/app', focus: null, tab: null }),
-    );
-    await page.settle();
-    expect(
-      (
-        screen
-          .getByText('Evidence · attention sources')
-          .closest('[data-slot=accordion]') as HTMLElement
-      ).hasAttribute('data-open'),
-    ).toBe(true);
-  });
-
   it('keeps an opened plan open across a tab change and a poll, and does not open the same one elsewhere', async () => {
     const page = open(PLAN as never);
     await page.settle();
@@ -509,28 +447,18 @@ describe('project instruction and authority evidence', () => {
     expect(card?.textContent).toContain('Fix COMMAND parsing new');
     expect(card?.textContent).not.toContain('Fix COMMAND parsing old');
   });
-  it('does not claim an undated instruction is latest and labels saved words separately', async () => {
+  it('does not call an undated project instruction the latest', async () => {
     const page = mountProject({
-      hash: '#n=project:p:claude%3Aa',
+      hash: '#n=project:p',
       data: {
         generated: 1000,
-        sessions: [
-          {
-            ...session('a', null, 900),
-            annotation_goal: 'Save COMMAND exactly',
-            annotation_line_1: 'Keep STATED GOAL quoted',
-            annotation_revision: 1,
-          },
-        ],
+        sessions: [session('a', null, 900)],
       },
     });
     await page.settle();
-    const card = document.querySelector('.next-project-goal');
-    expect(card?.querySelector('h2')?.textContent).toBe('Published instruction');
-    expect(card?.textContent).toContain('Your saved words');
-    expect(card?.textContent).toContain('Save COMMAND exactly');
-    expect(card?.textContent).toContain('Your saved words · expected outcome · line 1');
-    expect(card?.textContent).toContain('Keep STATED GOAL quoted');
+    const work = within(screen.getByRole('region', { name: 'Working on' }));
+    expect(work.queryByText(/latest instruction/i)).toBeNull();
+    expect(work.getByText('From a published instruction.')).toBeVisible();
   });
   it.each(['pending', 'complete', 'needed'])(
     'uses plain authority states on an ordinary project: %s',

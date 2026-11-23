@@ -38,6 +38,7 @@ function ProjectRow({ row }: { readonly row: ProjectListRow }) {
               {row.limit}
             </span>
           ) : null}
+          {row.location ? <span>{row.location}</span> : null}
         </span>
         <span className="project-list-chips">
           {row.counts.map(({ word, count }) => {

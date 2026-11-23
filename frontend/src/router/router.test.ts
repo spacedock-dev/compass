@@ -7,7 +7,10 @@ describe('the router starts from the address and canonicalises it without adding
     ['', '#n=sessions'],
     ['#n=bogus', '#n=sessions'],
     ['#n=session:recce:claude:one&from=elsewhere', '#n=session:recce:claude:one'],
-    [`#n=project:recce:${encodeURIComponent('claude:one')}:held-to`, '#n=session:recce:claude:one'],
+    [
+      `#n=project:recce:${encodeURIComponent('claude:one')}:held-to`,
+      '#n=session:recce:claude:one&from=project',
+    ],
     ['#n=session:%E0%A4%A:claude:one', '#n=sessions'],
   ])('%s becomes %s by replacement', (typed, canonical) => {
     const fake = fakeEnvironment(typed);

@@ -127,18 +127,6 @@ made in another tab. The annotation store keeps at most 256 records and sixteen 
 discard records are evicted before retained words, then oldest first. These limits do not apply
 to board-only rows. A present session without a project links to its own page, which has no
 project to return to.
-Each project opens its cockpit:
-a left **Scope** rail selects the project or one exact session. Each row leads with the session
-title, with its harness, state and age as a caption beneath; a row whose title was never published says
-so in place of the title rather than falling back to an id. Where two sessions of one harness would
-otherwise render identically, the row carries the session key so you are not picking blind. A
-persistent briefing shows
-**Where this project stands**, with **Current task**, **Running now**, **Needs you** and
-**Latest result**. **Latest instruction** selects by instruction time, with its source and the
-reason when no instruction is available. Without instruction times, the card says
-**Published instruction**. **Your saved words** labels saved words and expected outcome rows. Needs you keeps a project session
-waiting on you visible above the tabs, with raise and copy-resume controls where supported.
-
 **Overview** shows what the project is working on, what is running, and whether anything needs
 you. The session list opens each session's own page. Ended sessions with uncommitted work appear
 under **Worth a look**, and clean ends appear under **Ready to wrap up**. **Timeline** shows
@@ -201,17 +189,19 @@ the board no longer holds names that session and says it is not in the current p
 
 The route lives in the URL fragment: `#n=sessions`, `#n=projects`, `#n=attention` (Needs you),
 `#n=intent` (Goal history), `#n=settings`, `#n=help`,
-`#n=project:<encoded-project>` with the selected session and then the open tab appended when either
-is set, or the full project, harness, and session identity for session
-detail, where the project part is empty for a session that published no project label. A project link that ends in the retired `held-to` tab opens that session's page. Reload, pasted links, and browser back therefore preserve the selected view. Old fragments
-that belonged to the retired dashboard normalize to Sessions, as the bare URL does. Open the dashboard at its bare URL;
+`#n=project:<encoded-project>` with an optional tab suffix, or a session route containing the
+project, harness and session ID. The project part is empty for a session that published no project
+label. A bookmarked project link that named a session opens that session's own page, including
+links with the retired `held-to` suffix. The breadcrumb and Escape both lead back to its project.
+Old focus links with only a session ID use the ID-only route. Reload and browser Back preserve the
+selected view. Other unrecognized fragments open Sessions. Open the dashboard at its bare URL;
 the retired `next` query is no longer a dashboard route.
 
 The header shows how many sessions are Working across the board, including on project pages.
 The **Needs you** badge counts sessions that are Waiting on you or Worth a look. A reported block
 and an exact request for the same session count once. Keyboard shortcuts `n`, `p`, and `s` open
 Needs you, Projects, and Sessions unless focus is in a form control or Meta, Control, or Alt is held.
-A session opens under the tab it was opened from (Sessions for a pasted link), and its breadcrumb
+A session opens under the tab it came from, including Help for the example. A pasted session link without an origin opens under Sessions. Its breadcrumb
 starts there. `Escape` returns from a session to that breadcrumb's last link and otherwise to
 Sessions, under the same focus and modifier rules. Inside a tripwire draft it cancels the draft.
 

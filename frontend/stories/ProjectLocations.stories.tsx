@@ -109,6 +109,7 @@ export const ProjectShellLabels: Story = {
       'Needs you',
       'Goal history',
       'Settings',
+      'Help',
     ]);
     await expect(nav.getByRole('link', { name: 'Projects', current: 'page' })).toBeVisible();
     const crumb = within(canvas.getByRole('navigation', { name: 'Breadcrumb' }));

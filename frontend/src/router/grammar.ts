@@ -109,15 +109,15 @@ function decode(value: string): string | null {
   }
 }
 
-/* The session a retired Held to link meant. The focus is `harness:sid` and a sid may itself carry a
-   colon, so only the first one splits. Null when that leaves no session id (`codex:`), so the
-   caller falls through rather than building a route no session can match. `at <= 0` also covers a
-   leading colon, which leaves the whole focus as an id-only session, as the legacy page does. */
-function heldToSessionRoute(project: string, focus: string): SessionRoute | null {
+/* Old project focus bookmarks encode harness and id as one part. Only the first colon
+   separates them. A leading colon belongs to an id-only bookmark. */
+function projectFocusSession(project: string, focus: string): SessionRoute | null {
   const at = focus.indexOf(':');
-  if (at <= 0) return focus ? { view: 'session', project, session: focus } : null;
+  if (at <= 0) return focus ? { view: 'session', project, session: focus, from: 'project' } : null;
   const session = focus.slice(at + 1);
-  return session ? { view: 'session', project, harness: focus.slice(0, at), session } : null;
+  return session
+    ? { view: 'session', project, harness: focus.slice(0, at), session, from: 'project' }
+    : null;
 }
 
 function sessionRouteFromToken(token: string): SessionRoute | null {
@@ -152,17 +152,14 @@ function pathRouteFromToken(token: string): Route {
     const project = decode(parts[1] ?? '');
     const value = decode(parts[2] ?? '');
     if (project && isTab(value)) return { view: 'project', project, session: null, tab: value };
-    if (project && value) return { view: 'project', project, session: null, focus: value };
+    if (project && value) return projectFocusSession(project, value) ?? LANDING;
   }
   if (parts.length === 4 && parts[0] === 'project') {
     const project = decode(parts[1] ?? '');
     const focus = decode(parts[2] ?? '');
     const tab = decode(parts[3] ?? '');
-    const held =
-      project && focus && tab === RETIRED_SESSION_TAB ? heldToSessionRoute(project, focus) : null;
-    if (held) return held;
-    if (project && focus && isTab(tab))
-      return { view: 'project', project, session: null, focus, tab };
+    if (project && focus && (tab === RETIRED_SESSION_TAB || isTab(tab)))
+      return projectFocusSession(project, focus) ?? LANDING;
   }
   /* Sessions is the landing view, so the bare URL and every fragment that parses as nothing land
      there. */
@@ -198,22 +195,13 @@ export function fragmentForRoute(route: RouteInput | null | undefined): string {
     const explain = route.from === 'help' && route.explain === 'goal' ? '&explain=goal' : '';
     return body + from + explain;
   }
-  const held =
-    route &&
-    route.view === 'project' &&
-    route.project &&
-    route.focus &&
-    route.tab === RETIRED_SESSION_TAB
-      ? heldToSessionRoute(route.project, String(route.focus))
-      : null;
-  if (held) return fragmentForRoute(held);
   if (route && route.view === 'project' && route.project) {
-    const focus = route.focus ? `:${encodeURIComponent(route.focus)}` : '';
-    const tab =
-      isTab(route.tab) && cockpitTabs(route.focus).includes(route.tab) && route.tab !== 'now'
-        ? `:${encodeURIComponent(route.tab)}`
-        : '';
-    return `#n=project:${encodeURIComponent(route.project)}${focus}${tab}`;
+    if (route.focus) {
+      const session = projectFocusSession(route.project, route.focus);
+      return session ? fragmentForRoute(session) : '#n=sessions';
+    }
+    const tab = isTab(route.tab) && route.tab !== 'now' ? `:${route.tab}` : '';
+    return `#n=project:${encodeURIComponent(route.project)}${tab}`;
   }
   if (route && isTopLevel(route.view)) return `#n=${route.view}`;
   return '#n=sessions';

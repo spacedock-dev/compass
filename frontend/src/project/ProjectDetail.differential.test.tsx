@@ -273,6 +273,14 @@ describe('the project page reads as the legacy page does, over generated boards'
         projectInstructionHeading(board, label, focus),
       );
 
+      // The old focused cockpit now opens the exact Session page, covered by the route
+      // and shell proofs. Keep querying the old fixture for coverage and compare the
+      // recovery and Timeline only where the URL still names a project page.
+      for (const [name, pattern] of REACH)
+        if (pattern.test(`${legacy.strip} ${legacy.panel} ${legacy.scopeTree}`))
+          reach[name] = (reach[name] ?? 0) + 1;
+      if (focus) continue;
+
       const contexts: Record<string, unknown> = {};
       if (variant === 'ready' && context) contexts[`${stable}\n`] = context;
       if (variant !== 'ready' && variant !== 'absent') {
@@ -305,9 +313,6 @@ describe('the project page reads as the legacy page does, over generated boards'
       const mine = summarize(article, tab);
       page.unmount();
       compared += 1;
-      for (const [name, pattern] of REACH)
-        if (pattern.test(`${legacy.strip} ${legacy.panel} ${legacy.scopeTree}`))
-          reach[name] = (reach[name] ?? 0) + 1;
       const expected = comparableProject(legacy, tab);
       const actual = comparableProject(mine, tab);
       for (const key of Object.keys(expected) as (keyof typeof expected)[]) {

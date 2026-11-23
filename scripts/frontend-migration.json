@@ -653,7 +653,7 @@
         "frontend/src/shell/ProjectTabs.test.tsx",
         "frontend/e2e/shell-routing.mjs"
       ],
-      "contract": "#n=project:<encoded project> preserves identity and defaults to Now."
+      "contract": "#n=project:<encoded project> preserves identity and defaults to Overview."
     },
     {
       "name": "project-tabs",
@@ -662,7 +662,7 @@
         "frontend/src/shell/ProjectTabs.test.tsx",
         "frontend/e2e/shell-routing.mjs"
       ],
-      "contract": "#n=project:<encoded project>:course|decisions|console preserves tab, panel and keyboard wrap; Now is the canonical default."
+      "contract": "#n=project:<encoded project>:course|decisions|console preserves tab, panel and keyboard wrap; Overview is the canonical default with the now slug."
     },
     {
       "name": "project-exact-session-focus",
@@ -671,7 +671,7 @@
         "frontend/src/shell/Views.test.tsx",
         "frontend/e2e/shell-routing.mjs"
       ],
-      "contract": "#n=project:<encoded project>:<encoded harness:sid>[:tab] preserves exact focused session, distinct project scope and stale-focus explanation."
+      "contract": "#n=project:<encoded project>:<encoded harness:sid>[:tab] aliases to the exact session page with a project origin. A bare focus ID takes the id-only session form."
     },
     {
       "name": "session-exact-harness-and-id",
@@ -707,7 +707,7 @@
         "frontend/src/router/grammar.test.ts",
         "frontend/e2e/shell-routing.mjs"
       ],
-      "contract": "#n=project:<project>:<encoded harness:sid>:held-to aliases to exact session detail rather than treating the retired slug as focus."
+      "contract": "#n=project:<project>:<encoded harness:sid>:held-to aliases to exact session detail with the project origin."
     },
     {
       "name": "malformed-encoding-and-empty-project",
@@ -716,7 +716,7 @@
         "frontend/src/shell/Views.test.tsx",
         "frontend/e2e/shell-routing.mjs"
       ],
-      "contract": "Malformed percent encoding never names the valid empty-project session, and absent focused sessions remain bounded."
+      "contract": "Malformed percent encoding never names the valid empty-project session, and absent focused sessions report the same missing session as an exact link."
     },
     {
       "name": "absolute-session-permalink-query",
@@ -996,14 +996,14 @@
       "disposition": "store-held"
     },
     {
-      "name": "Cockpit scope and selected tab",
+      "name": "Project tab and session origin",
       "owner": "DRC-4823",
       "oracles": [
         "frontend/src/router/router.test.ts",
         "frontend/src/shell/ProjectTabs.test.tsx",
         "frontend/e2e/project-parity.mjs"
       ],
-      "contract": "Preserve fragment scope/tab/history and session origin; retired held-to becomes exact session route, not a tab/fallback session.",
+      "contract": "Preserve the project tab and session origin through browser history. Old project focus bookmarks lead to the session's own page.",
       "disposition": "store-held"
     },
     {
