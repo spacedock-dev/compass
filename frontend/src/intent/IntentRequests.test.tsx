@@ -2,7 +2,7 @@ import { openSelect } from '../../test/select';
 import { act, fireEvent } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { json } from './testing';
-import { board, control, goalBox, mountSession, text, type } from './panel.testing';
+import { editGoal, board, control, goalBox, mountSession, text, type } from './panel.testing';
 
 /* Nothing here starts a write, a notification, a clipboard action or a model reading from a mount, a second
    mount under StrictMode, a poll, a reconnect, a retry or a route change. The counts are requests the
@@ -101,6 +101,7 @@ describe('the Intent surfaces start nothing on their own', () => {
     });
     await page.settle();
     await page.settle();
+    editGoal();
     type(goalBox(), 'Edited goal');
     const save = control('held-save') as Element;
     await act(async () => {

@@ -1078,52 +1078,24 @@ export const MoreIsRetired: Story = {
       if (!both[0] || !both[1]) throw new Error('cards not drawn yet');
       return both as [HTMLElement, HTMLElement];
     });
-    /* The card's own row keeps the reading start; Clear, the measured sentence, About these saved words,
-       Discard everything and Later directions sit behind one quiet menu, which floats inside the page. */
-    await expect(
-      await within(intent).findByRole('button', { name: /^Saved · reads from/ }),
-    ).toBeVisible();
-    await expect(within(intent).queryByRole('button', { name: 'Clear' })).toBeNull();
-    await userEvent.click(
-      await within(intent).findByRole('button', { name: 'More about these words' }),
-    );
-    const inIntent = within(canvasElement);
-    await waitFor(async () =>
-      expect(await inIntent.findByRole('button', { name: 'Clear' })).toBeVisible(),
-    );
-    await expect(inIntent.getByText(INTENT_MEASURED)).toBeVisible();
-    await expect(
-      await inIntent.findByRole('button', { name: 'About these saved words' }),
-    ).toBeVisible();
-    // The offer's summary; the press it opens is the second control of that name.
-    await waitFor(() =>
-      expect(inIntent.getAllByRole('button', { name: 'Discard everything' })[0]).toHaveAttribute(
-        'aria-expanded',
-        'false',
-      ),
-    );
-    await expect(
-      await inIntent.findByRole('button', { name: /^Later directions: / }),
-    ).toBeVisible();
-    await expect(await inIntent.findByRole('button', { name: 'How goals work' })).toBeVisible();
-    // Behind their summaries: the saved stamp's definition and binding key, the binding sentence, and the
-    // limit under Later directions.
-    await userEvent.click(
-      await within(intent).findByRole('button', { name: /^Saved · reads from/ }),
-    );
-    await waitFor(() => expect(inIntent.getByText('Each save is kept on its own.')).toBeVisible());
-    await expect(intent.querySelector('.next-cockpit-held-bound')).toHaveTextContent(/s1/);
-    // Pressing the stamp moves focus out of the menu, which closes it; the menu opens again for the rest.
-    const more = await within(intent).findByRole('button', { name: 'More about these words' });
-    if (more.getAttribute('aria-expanded') !== 'true') await userEvent.click(more);
-    await userEvent.click(await inIntent.findByRole('button', { name: 'About these saved words' }));
-    await waitFor(() =>
-      expect(inIntent.getByText('These words are bound to claude:s1.')).toBeVisible(),
-    );
-    await userEvent.click(await inIntent.findByRole('button', { name: /^Later directions: / }));
+    const inIntent = within(intent);
+    await expect(inIntent.queryByRole('button', { name: 'More about these words' })).toBeNull();
+    await expect(inIntent.queryByRole('button', { name: 'Clear' })).toBeNull();
+    await userEvent.click(inIntent.getByRole('button', { name: 'How goals work' }));
+    await waitFor(() => expect(inIntent.getByText(INTENT_MEASURED)).toBeVisible());
+    await expect(inIntent.getByText(/^Reads from /)).toBeVisible();
+    await expect(inIntent.getByText('These words are bound to claude:s1.')).toBeVisible();
+    await expect(inIntent.getByText(/Each save is kept on its own/)).toBeVisible();
+    await userEvent.click(inIntent.getByRole('button', { name: 'Edit goal' }));
+    await expect(inIntent.getByRole('button', { name: 'Clear' })).toBeVisible();
+    await expect(inIntent.getByRole('button', { name: 'Discard everything' })).toBeVisible();
+    await userEvent.click(inIntent.getByRole('button', { name: /^Later directions: / }));
     await waitFor(() =>
       expect(inIntent.getByText(/^Nothing here decides whether it changes/)).toBeVisible(),
     );
+    await expect(
+      intent.querySelector('[data-slot="popover-content"] [data-slot="popover-content"]'),
+    ).toBeNull();
     const inDrift = within(drift);
     const head = drift.querySelector('header') as HTMLElement;
     await expect(await within(head).findByText(DRIFT_SUBTITLE)).toBeVisible();
@@ -1144,21 +1116,13 @@ export const MoreIsRetired: Story = {
   },
 };
 
-/* An ended session: the note that nothing is promised to read what is saved sits in About these saved words. */
 export const MoreIsRetiredForAnEndedSession: Story = {
   render: () => <PageExample ended />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
-    await userEvent.click(await canvas.findByRole('button', { name: 'More about these words' }));
-    const about = await canvas.findByRole('button', { name: 'About these saved words' });
-    await userEvent.click(about);
+    await userEvent.click(await canvas.findByRole('button', { name: 'How goals work' }));
     await waitFor(() =>
-      expect(
-        canvas.getByText(
-          'This session has ended. Anything you save against it is kept, and nothing is promised to read it.',
-        ),
-      ).toBeVisible(),
+      expect(canvas.getByText(/^This session has ended. What you save now/)).toBeVisible(),
     );
   },
 };

@@ -71,7 +71,7 @@ describe('the "Use your prompt" menu', () => {
       routes: { '/api/project-context': menu },
     });
     await settle(page);
-    expect(text('[data-next-cockpit-goal-source]')).toMatch(/^You typed this · saved/);
+    expect(text('[data-next-cockpit-goal-source]')).toMatch(/^You wrote this · saved/);
     expect(select().textContent).toBe('Use your prompt');
     expect(select().getAttribute('aria-label')).toBe('Use your prompt');
   });

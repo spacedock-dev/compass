@@ -177,6 +177,7 @@ describe('a reader paging a session record', () => {
     await openActivity();
     more().focus();
     await press(more());
+    await press(screen.getByRole('button', { name: 'Edit goal' }));
     const goal = document.querySelector<HTMLTextAreaElement>(
       'textarea[data-next-cockpit-held-kind="goal"]',
     );

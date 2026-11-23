@@ -1,4 +1,4 @@
-import { act, fireEvent } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { CLAUDE_SETTINGS_LOOK } from '../drift/sentences';
 import { POLICY, ROUTE } from '../drift/testing';
@@ -372,7 +372,7 @@ describe('what a found goal does not outrank', () => {
     await page.poll(data({}, { goal: 'My own goal', revision: 1 }));
     await page.release('/api/goal/find', json(FOUND));
     await settle(page);
-    expect(goalBox().value).toBe('My own goal');
+    expect(screen.getByText('My own goal')).toBeVisible();
     expect(mark()).toBeNull();
     expect(cites()).toEqual([]);
   });

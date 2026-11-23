@@ -5,6 +5,7 @@ import { clock } from '../observed';
 import { openPendingDirection } from './api';
 import { json } from './testing';
 import {
+  editGoal,
   board,
   control,
   goalBox,
@@ -304,6 +305,7 @@ describe('Add as a line', () => {
     await settle(page);
     await press(control('direction-add'));
     await settle(page);
+    editGoal();
     type(goalBox(), 'Edited goal');
     // No "save first" refusal beside the line: the one Save intent carries both.
     expect(text('#next-cockpit-direction-why')).toBe('');
@@ -544,6 +546,7 @@ describe('Leave it', () => {
       routes: { '/api/project-context': record(...ONE) },
     });
     await settle(page);
+    editGoal();
     type(goalBox(), 'Edited goal');
     await press(control('direction-keep'));
     expect(presses(page)).toEqual([]);
@@ -713,6 +716,7 @@ describe('a direction press that cannot finish', () => {
       message?.textContent,
     );
     expect(document.activeElement).toBe(button);
+    editGoal();
     type(goalBox(), 'An edited goal');
     await settle(page);
     expect(button.parentElement?.querySelector('[data-next-action-feedback]')).toBeNull();
@@ -754,6 +758,7 @@ describe('a direction press that cannot finish', () => {
           'polite',
         );
         expect(document.activeElement).toBe(button);
+        editGoal();
         expect(goalBox().value).toBe(SAVED.goal);
         expect(document.querySelector('[data-next-cockpit-direction-key]')).toBeNull();
         await page.poll(board(SAVED_AT, SAVED));

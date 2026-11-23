@@ -44,7 +44,8 @@ export const INTENT_EDITED = 'Save your intent, or undo your edit, to analyze dr
 export const INTENT_SAVING = 'Saving your intent…';
 export const INTENT_EDITED_ADD = 'Save your intent, or undo your edit, to add this direction.';
 export const INTENT_CHOSEN_SAID = 'Goal filled from your prompt. Not saved.';
-export const INTENT_MEASURED = 'Drift is measured against these. Edit anything that is off.';
+export const INTENT_MEASURED =
+  'Compass checks progress against these words. Edit anything that is off.';
 export const INTENT_DETECTED_SAID = 'Goal filled from your /goal. Not saved.';
 /* A goal found in the reader's prompts is a draft like a /goal, and says where it came from in its own words. */
 export const INTENT_FOUND_SAID = 'Goal found in your prompts. Not saved.';

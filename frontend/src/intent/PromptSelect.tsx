@@ -23,7 +23,7 @@ const PROMPT_SHOWN = 140;
    the chosen prompt shows in the goal and its source line. The popup opens before the async read, because a
    request made after that read loses the click's user activation, and stays the same popup while the
    prompts load and across board revisions. */
-export function PromptSelect() {
+export function PromptSelect({ compact = false }: { readonly compact?: boolean }) {
   const { ctx, input, session, projectKey } = usePanel();
   const menu = promptMenu(input);
   const stated = sessionGoalCandidate(session);
@@ -54,7 +54,9 @@ export function PromptSelect() {
     </div>
   );
   return (
-    <div className="next-intent-prompt-pick ms-auto flex min-w-0 max-w-full w-[18rem] max-[760px]:w-full">
+    <div
+      className={`next-intent-prompt-pick flex min-w-0 max-w-full ${compact ? '' : 'ms-auto w-[18rem] max-[760px]:w-full'}`}
+    >
       <Popover
         open={open}
         onOpenChange={(next) => {

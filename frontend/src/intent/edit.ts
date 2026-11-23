@@ -48,6 +48,7 @@ function sayWhenOver(
    words), and so does the footer's save mark. */
 export function typeGoal(ctx: Ctx, input: DraftInput, raw: string): string {
   const key = goalKey(input.session);
+  ctx.held.editingGoals.add(key);
   const value = scrub(raw);
   const baseline = goalBaseline(input);
   const before = ctx.held.goals.has(key) ? (ctx.held.goals.get(key) ?? baseline) : baseline;
@@ -74,6 +75,7 @@ export function typeGoal(ctx: Ctx, input: DraftInput, raw: string): string {
 export function typeLine(ctx: Ctx, input: DraftInput, index: number, raw: string): string {
   const { held, session, annotation } = input;
   held.clearActionFeedback(compatSessKey(session));
+  held.editingGoals.add(goalKey(session));
   const key = linesKey(session);
   const value = scrub(raw);
   const draft = linesDraft(held, session, annotation);
@@ -141,6 +143,7 @@ export function escapeLines(ctx: Ctx, input: DraftInput): boolean {
 /* A new empty outcome line, focused, or the six-line refusal said in place. */
 export function addLine(ctx: Ctx, input: DraftInput): void {
   const { held, session, annotation } = input;
+  held.editingGoals.add(goalKey(session));
   held.clearActionFeedback(compatSessKey(session));
   const key = linesKey(session);
   const draft = linesDraft(held, session, annotation);
@@ -221,6 +224,7 @@ export function choosePrompt(
   const key = goalKey(input.session);
   ctx.held.clearActionFeedback(compatSessKey(input.session));
   ctx.held.cleared.delete(key);
+  ctx.held.editingGoals.add(key);
   ctx.held.chosen.set(key, { factId: found.factId, text: found.text, at: found.at });
   ctx.held.goals.delete(key);
   ctx.held.drop(key);
@@ -238,6 +242,7 @@ export function takeDetectedGoal(ctx: Ctx, input: DraftInput): void {
   const key = goalKey(input.session);
   ctx.held.clearActionFeedback(compatSessKey(input.session));
   ctx.held.cleared.delete(key);
+  ctx.held.editingGoals.add(key);
   ctx.held.chosen.set(key, {
     factId: '',
     text: found.text,
@@ -265,4 +270,10 @@ export function pickDirection(ctx: Ctx, session: Row, factId: string): void {
   ctx.held.clearActionFeedback(compatSessKey(session));
   ctx.held.picks.set(compatSessKey(session), factId);
   ctx.held.notify();
+}
+
+export function openGoalEditor(ctx: Ctx, session: Row): void {
+  const key = goalKey(session);
+  ctx.held.editingGoals.add(key);
+  ctx.held.requestFocus(key);
 }

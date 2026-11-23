@@ -122,6 +122,7 @@ describe('the sample session', () => {
 
   it('holds every press that would edit, save or run, and says why', async () => {
     await mountSample();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit goal' }));
     const remove = [...document.querySelectorAll('button')].find(
       (button) => button.getAttribute('aria-label')?.startsWith('Remove') === true,
     ) as HTMLElement;
@@ -147,6 +148,7 @@ describe('the sample session', () => {
 
   it('holds a press on Clear in the Intent card, and lets the outline open', async () => {
     await mountSample();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit goal' }));
     expect(document.querySelector('[data-next-session-more]')).toBeNull();
     const clear = document.querySelector(
       '[data-next-cockpit-action="held-clear"]',

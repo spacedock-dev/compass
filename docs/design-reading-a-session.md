@@ -8484,9 +8484,9 @@ that, and Full activity is collapsed at the foot of the page.) The switch's acce
 | Sessions breadcrumb | First view | First view |
 | Project link | First view | First view |
 | No terminal to raise: Why | First view | Blocked only |
-| How Intent and drift works | First view | The Intent card's More menu |
+| How Intent and drift works | First view | The Goal editor, beside Save |
 | Use your prompt | First view | First view |
-| Clear | First view | The Intent card's More menu |
+| Clear | First view | The Goal editor, beside Save |
 | Remove line 1 | First view | First view |
 | + Add a line | First view | First view |
 | Undo changes | First view | First view, inert until there is something to undo |
@@ -8543,15 +8543,15 @@ under the control where no popover is drawn (its place in the popover is asserte
 | Live monitor switch | Control | Drift settings in the Drift card's heading ([the one-state amendment](#amended-2026-10-21-the-drift-card-has-one-state-at-a-time)) |
 | "How far the session has moved from the goal" | Sentence | The Drift card's heading, under the title |
 | "Shows a level after every turn, from checks and file paths, with no model call. The level shows here and in the header." (Claude Code, annotations on) | Limit | Drift settings, under the switch, as its description |
-| About these saved words (the ended-session note and the binding sentence) | Disclosure and limits | The Intent card, under the save |
-| What became of discarded words | Sentences | The Intent card, under the save |
-| Discard everything, and its armed confirmation | Control and warning | The Intent card, under the save |
+| About these saved words (the ended-session note and the binding sentence) | Disclosure and limits | The Goal card, in How goals work |
+| What became of discarded words | Sentences | The Goal card, beside the explainer |
+| Discard everything, and its armed confirmation | Control and warning | The Goal editor, with inline confirmation |
 | Delegated work, and the "still running?" check | Limit | Not on the Drift card (amended 2026-10-21): it was a bookkeeping fact about subagents tied to no line of the reading, and the reader had no action to take on it |
 | Pause model calls | Control | Drift settings, and the "What is sent" disclosure beside what it stops; Resume model calls beside Drift settings while paused; under the control where no disclosure is drawn (a running analysis, no reader, the consent step, a route with no disclosure) |
-| Saved · reads from, with its revision line, "Each save is a revision." and the binding key | Disclosure | The Intent card, beside its More menu |
-| "Drift is measured against these. Edit anything that is off." | Sentence | The Intent card, under the save |
-| Clear | Control | The Intent card's More menu |
-| Later directions: unknown, none or settled, with "Nothing here decides…" | Disclosure and limit | The Intent card, last |
+| Saved · reads from, with its revision line, "Each save is a revision." and the binding key | Disclosure | The Goal card, in How goals work |
+| What Compass checks against | Sentence | The Goal card, in How goals work |
+| Clear | Control | The Goal editor, beside Save |
+| Later directions: unknown, none or settled, with "Nothing here decides…" | Disclosure and limit | The Goal card, after How goals work |
 
 #### Where the session technical details went
 

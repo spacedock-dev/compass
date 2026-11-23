@@ -1,7 +1,7 @@
 import { compatSessKey } from '../api/identity';
 import { nextNumber } from '../api/bootstrap';
 import { Disclosure, disclosureKey } from '../controls';
-import { durationSince, endedAt } from '../observed';
+import { durationSince } from '../observed';
 import { ActionButton } from './ActionButton';
 import { annotationLines, discardAccount } from './annotation';
 import { heldSentence, publishedDiscard } from './cues';
@@ -185,64 +185,22 @@ export function ArmedDiscard() {
   );
 }
 
-function DiscardBlock({ view }: { readonly view: DiscardView }) {
-  const { ctx, session } = usePanel();
-  const key = discardKey(session);
-  const name = useKey('held-discard');
-  const { offer, armed, why } = view;
-  // While armed, the question is the card's (`ArmedDiscard`), so the menu holds no second copy of it.
-  if (!offer || armed) return null;
-  return (
-    <div className="next-cockpit-held-discard">
-      <Disclosure
-        disclosureKey={name}
-        summary="Discard everything"
-        className="next-cockpit-held-discard-offer"
-      >
-        {why ? <p className="next-cockpit-held-absent">{why}</p> : null}
-        <ActionButton
-          weight="secondary"
-          tone="muted"
-          label="Discard everything"
-          busyLabel="Discarding…"
-          pendingKey={key}
-          action="held-discard"
-          focusKey={key}
-          onPress={(detail) => pressDiscard(ctx, session, detail)}
-        />
-      </Disclosure>
-    </div>
-  );
-}
-
-/* The ended note and the binding stay in the document but behind one summary: neither is the next thing to
-   do. The discard account stays in view, because it says what became of the reader's words. */
-export function Caveats() {
+export function DiscardOffer() {
   const panel = usePanel();
-  const { input, session } = panel;
-  const key = useKey('held-saved-about');
-  const annotation = input.annotation;
-  const ended = endedAt(session) !== null;
-  const binding =
-    annotation?.['binding_why'] && (annotation['goal'] || annotationLines(annotation).length)
-      ? String(annotation['binding_why'])
-      : '';
-  const discard = discardView(panel);
-  if (!(ended || binding) && !discard?.offer) return null;
+  const { ctx, session } = panel;
+  const key = discardKey(session);
+  const view = discardView(panel);
+  if (!view?.offer || view.armed) return null;
   return (
-    <div className="next-session-drift-caveats">
-      {ended || binding ? (
-        <Disclosure disclosureKey={key} summary="About these saved words">
-          {ended ? (
-            <p className="next-cockpit-held-absent">
-              This session has ended. Anything you save against it is kept, and nothing is promised
-              to read it.
-            </p>
-          ) : null}
-          {binding ? <p className="next-cockpit-held-absent">{binding}</p> : null}
-        </Disclosure>
-      ) : null}
-      {discard?.offer ? <DiscardBlock view={discard} /> : null}
-    </div>
+    <ActionButton
+      weight="secondary"
+      tone="muted"
+      label="Discard everything"
+      busyLabel="Discarding…"
+      pendingKey={key}
+      action="held-discard"
+      focusKey={key}
+      onPress={(detail) => pressDiscard(ctx, session, detail)}
+    />
   );
 }

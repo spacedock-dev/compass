@@ -528,7 +528,7 @@ function focusMoreIfStillAdrift(ctx: Ctx, row: Row, key: string): void {
      when the reply is handled, and the story for a refused discard fails without this clause. */
   const confirm = ctx.shell.controls.focusLane.element(key);
   const parked = !active || active === document.body || active === confirm;
-  if (parked) requestFocus(driftCtxFor(ctx.shell), `intent-menu:${compatSessKey(row)}`);
+  if (parked) requestFocus(driftCtxFor(ctx.shell), discardKey(row));
 }
 
 async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity): Promise<void> {

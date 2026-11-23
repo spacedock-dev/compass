@@ -3,7 +3,17 @@ import { describe, expect, it } from 'vitest';
 import { clock } from '../observed';
 import { trimToRule } from './annotation';
 import { json } from './testing';
-import { board, control, goalBox, inert, mountSession, stored, text, type } from './panel.testing';
+import {
+  editGoal,
+  board,
+  control,
+  goalBox,
+  inert,
+  mountSession,
+  stored,
+  text,
+  type,
+} from './panel.testing';
 
 /* A later direction is quoted, with its time, where the reader chooses what to do with it, and each choice
    acts on its first press. Add as a line and Make it the goal start from the rule in the message rather than
@@ -98,6 +108,7 @@ describe('Leave it names the revision on screen', () => {
       },
     });
     await settle(page);
+    editGoal();
     type(goalBox(), 'v2');
     await press(control('held-save'));
     await settle(page);

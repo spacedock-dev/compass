@@ -39,8 +39,9 @@ flowchart LR
 
 A check goes like this:
 
-1. On the session's page, write the goal you are holding the session to in the Goal card. You can
-   add up to six expected outcome lines: what should be true when the work is done.
+1. Open the Goal card to read the saved goal and what done looks like. Press Edit goal to
+   change the words, or Use your prompt to start with a message from the session. You can
+   save up to six expected outcome lines.
 2. Press Check progress. This sends the session's content to a model (see
    [what can leave your machine](#what-can-leave-your-machine)).
 3. The Drift card shows a level: None or low, Medium, High or Extreme. When the record cannot support

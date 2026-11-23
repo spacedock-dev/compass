@@ -255,6 +255,7 @@ export const NoButtonOnceAGoalIsSaved: Story = {
   },
   play: async ({ canvasElement }) => {
     const card = await intentCard(canvasElement);
+    await userEvent.click(within(card).getByRole('button', { name: 'Edit goal' }));
     await within(card).findByRole('textbox', { name: 'Goal' });
     await expect(within(card).queryByRole('button', { name: 'Find goal' })).toBeNull();
   },

@@ -53,11 +53,8 @@ describe('the words on the Intent card', () => {
     page.state.data = withRecorded(page.state.data as object);
     await page.poll(page.state.data);
     const card = () => document.querySelector('.next-cockpit-held') as Element;
-    const more = screen.getByRole('button', { name: 'More about these words' });
-    fireEvent.click(more);
-    const menu = readerFacing(
-      document.getElementById(more.getAttribute('aria-controls') ?? '') as Element,
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Edit goal' }));
+    const menu = readerFacing(card());
     expect(menu.join(' ')).toContain('Discard everything');
     for (const string of menu) expect(string).not.toMatch(BOOKKEEPING);
     await act(async () => {
@@ -96,7 +93,7 @@ describe('the words on the Intent card', () => {
     const card = document.querySelector('.next-cockpit-held');
     expect(card).not.toBeNull();
     const strings = readerFacing(card as Element);
-    expect(strings.length).toBeGreaterThan(5);
+    expect(strings).toContain('Ship the queue worker');
     for (const string of strings) expect(string).not.toMatch(BOOKKEEPING);
   });
 });
