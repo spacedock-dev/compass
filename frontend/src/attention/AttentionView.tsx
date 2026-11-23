@@ -185,7 +185,7 @@ function Board({
       </Card>
       {observed.sessions.length || !collection ? null : (
         <p className="next-attention-empty">
-          {`No sessions in this ${model.windowHours == null ? 'payload' : `${String(model.windowHours)}h payload`}`}
+          {`No sessions in this ${model.windowHours == null ? 'payload' : `${String(model.windowHours)}-hour payload`}`}
         </p>
       )}
       <section className="next-attention-section" data-next-attention-section="risk">

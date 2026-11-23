@@ -2,6 +2,7 @@ import { nextNumber } from '../api/bootstrap';
 import { payloadSessionRows, records, type Row } from '../observed';
 import { asPayload } from '../observed/values';
 import type { RouteInput } from '../router/grammar';
+import { formatTimestamp } from '../shell/format';
 
 /* The board's command-shape reports: commands a Claude Code or Codex after-tool hook saw run, matched
    against a shape the run was told to watch for. Attention keeps the whole section, because here the
@@ -45,15 +46,15 @@ export function boardReports(input: unknown): BoardReports {
       // A stamp that is no date prints nothing: the page this ports throws on one, which would blank the
       // whole Attention view for one malformed report.
       const stamp = nextNumber(report['timestamp']);
-      const date = stamp === null ? null : new Date(stamp * 1000);
-      const when = date && !Number.isNaN(date.getTime()) ? ` · ${date.toISOString()}` : '';
-      const source = `${String(report['harness'])} · ${String(report['sid'])} · ${String(report['tool_name'])}${when}`;
-      const copy = copies.get(source) ?? 0;
-      copies.set(source, copy + 1);
+      const when = formatTimestamp(stamp, payload['generated']);
+      const origin = `${String(report['harness'])} · ${String(report['sid'])} · ${String(report['tool_name'])}`;
+      const identity = `${origin}\u0000${String(stamp)}`;
+      const copy = copies.get(identity) ?? 0;
+      copies.set(identity, copy + 1);
       return {
-        key: `${source}\u0000${String(copy)}`,
+        key: `${identity}\u0000${String(copy)}`,
         text: `Command shape reported: ${String(report['label'])}`,
-        source,
+        source: when ? `${origin} · ${when}` : origin,
         route: owner
           ? {
               view: 'session',

@@ -223,7 +223,8 @@ Filters and grouping last across board refreshes and trips into a session; reloa
 The Projects list and each project's summary count Working, Waiting on you, Ended and Quiet from
 the state shown on each member's row. A parent waiting on its child or an idle session without an
 observed turn end contributes to `in no counted state`. Needs you also requires an observed turn
-end to count a session as Quiet.
+end to count a session as Quiet. Needs you and Sessions spell out elapsed times from the
+displayed board update, so a wait ages when the next board arrives.
 
 A quiet Codex rollout can still be working while a shell-capable call has no matching output.
 Within an open turn, an unanswered `exec`, `exec_command`, `shell_command` or `write_stdin` reads

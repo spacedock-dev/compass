@@ -1,8 +1,8 @@
 import { nextNumber } from '../api/bootstrap';
-import { durationSince, isRecord, promptCopied, type Row } from '../observed';
+import { type BoardRisk, delegatedWork, isRecord, promptCopied, type Row } from '../observed';
 import { UNCONFIRMED_WAIT_NOTE } from '../observed/session';
 import type { RouteInput } from '../router/grammar';
-import { formatDuration } from '../shell/format';
+import { expandDurationUnits, formatDurationWords, formatTimestamp } from '../shell/format';
 import {
   type AttentionModel,
   type Signal,
@@ -122,7 +122,7 @@ export function subjectOutcome(subject: Subject, model: AttentionModel): Outcome
   return { label: 'IDENTITY', text: identityText(subject, model) };
 }
 
-function attributionNow(detail: Signal['detail']): string {
+function attributionNow(detail: Signal['detail'], generated: number | null): string {
   if (detail.ask && detail.owner) {
     const askProject = text(detail.ask['project']);
     const ownerProject = text(detail.owner['project']);
@@ -131,7 +131,8 @@ function attributionNow(detail: Signal['detail']): string {
   const readings: string[] = [];
   if (detail.state) readings.push(`state: ${detail.state}`);
   if (detail.active === true) readings.push('active: true');
-  if (detail.finishedAt != null) readings.push(`stop observed: ${String(detail.finishedAt)}`);
+  const stop = formatTimestamp(detail.finishedAt, generated);
+  if (stop) readings.push(`stop observed ${stop}`);
   if (detail.dirty != null) readings.push(`dirty: ${String(detail.dirty)}`);
   if (detail.changed != null) readings.push(`changed entries: ${String(detail.changed)}`);
   return readings.length ? `Sources disagree · ${readings.join(' · ')}` : 'Sources disagree';
@@ -170,12 +171,14 @@ function signalNow(signal: Signal, subject: Subject, model: AttentionModel): Now
     if (session?.['wait_unconfirmed']) {
       return {
         text: sentence,
-        note: UNCONFIRMED_WAIT_NOTE,
+        note: expandDurationUnits(UNCONFIRMED_WAIT_NOTE),
       };
     }
     return { text: sentence, note: '' };
   }
-  if (signal.kind === 'attribution') return { text: attributionNow(detail), note: '' };
+  if (signal.kind === 'attribution') {
+    return { text: attributionNow(detail, model.generated), note: '' };
+  }
   if (signal.kind === 'loop') {
     const tool = text(detail.tool).trim();
     // The count said out loud is the turn total wherever it is bigger, because the peak run
@@ -208,10 +211,16 @@ function signalNow(signal: Signal, subject: Subject, model: AttentionModel): Now
     const turn = session['turn'];
     const elapsed =
       isRecord(turn) && typeof turn['elapsed_h'] === 'string' ? turn['elapsed_h'].trim() : '';
-    return { text: elapsed ? `${state} · ${elapsed} elapsed` : state, note: '' };
+    return {
+      text: elapsed ? `${state} · ${expandDurationUnits(elapsed)} elapsed` : state,
+      note: '',
+    };
   }
   if (signal.kind === 'quiet-launch') {
-    return { text: text(detail.text), note: 'Recorded activity only; not a process check.' };
+    return {
+      text: delegatedAttentionText(detail.session, model.generated),
+      note: 'Recorded activity only; not a process check.',
+    };
   }
   if (signal.kind === 'collision' || signal.kind === 'checkout') {
     return {
@@ -223,10 +232,10 @@ function signalNow(signal: Signal, subject: Subject, model: AttentionModel): Now
   if (signal.kind.startsWith('end-')) {
     /* The age of the END and never of the stop: they are different moments, and an ended row usually
        carries no stop at all. */
-    const since = durationSince(model.generated, detail.endedAt);
+    const since = formatTimestamp(detail.endedAt, model.generated, { style: 'same-day-relative' });
     const sentence = closeText(signal.kind, detail);
     return {
-      text: since ? `${sentence} · ended ${since} ago` : sentence,
+      text: since ? `${sentence} · ended ${since}` : sentence,
       note: 'This session id reported its own end',
     };
   }
@@ -260,16 +269,13 @@ export function subjectNow(subject: Subject, model: AttentionModel): NowRow[] {
   return rows;
 }
 
-function checkpointText(subject: Subject): string {
+function checkpointText(subject: Subject, generated: number | null): string {
   const checkpoint = subject.checkpoint;
   if (!checkpoint) return '';
   const task = text(checkpoint.activeForm || checkpoint.subject).trim();
   if (task) return task;
-  if (typeof checkpoint.resetAt === 'number' && Number.isFinite(checkpoint.resetAt)) {
-    const instant = new Date(checkpoint.resetAt * 1000);
-    return Number.isNaN(instant.getTime()) ? '' : `Reset at ${instant.toISOString()}`;
-  }
-  return '';
+  const reset = formatTimestamp(checkpoint.resetAt, generated, { style: 'clock' });
+  return reset ? `Reset ${reset}` : '';
 }
 
 export function checkpointRows(subject: Subject, model: AttentionModel): string[] {
@@ -283,7 +289,7 @@ export function checkpointRows(subject: Subject, model: AttentionModel): string[
     rows.push(attribution ? `${attribution}: ${label}` : label);
   }
   if (rows.length) return rows;
-  const checkpoint = checkpointText(subject);
+  const checkpoint = checkpointText(subject, model.generated);
   return checkpoint ? [checkpoint] : [];
 }
 
@@ -294,9 +300,24 @@ export function subjectSource(subject: Subject, model: AttentionModel): string {
   const parts: string[] = [];
   if (subject.responsibility) parts.push(subject.responsibility);
   parts.push(harnessLabel(model, harness));
-  const age = subjectAge(subject, model.generated);
-  if (age !== null) parts.push(formatDuration(age) as string);
+  if (subject.section === 'needs') {
+    const age = formatDurationWords(subjectAge(subject, model.generated));
+    if (age) parts.push(`waiting ${age}`);
+  }
+  if (subject.section === 'close') {
+    const stop = formatTimestamp(subject.signals[0]?.detail.finishedAt, model.generated);
+    if (stop) parts.push(`stop observed ${stop}`);
+  }
   return parts.join(' · ');
+}
+
+export function riskSourceText(risk: BoardRisk): string {
+  const age = formatDurationWords(risk.waitAge);
+  return `source · ${risk.src}${age ? ` · waiting ${age}` : ''}`;
+}
+
+export function delegatedAttentionText(session: Row | undefined, generated: number | null): string {
+  return delegatedWork(session, generated, (stamp) => formatTimestamp(stamp, generated)).text;
 }
 
 /* The session a subject opens, or the Sessions list when the subject names none exactly. A display id is

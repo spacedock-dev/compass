@@ -59,6 +59,7 @@ export const SHOWN = {
   nothingWorking: 'Nothing working right now',
   attention: 'Needs you',
   intent: 'Goal history',
+  showTechnicalDetails: 'Show technical details',
 } as const;
 
 export const SESSION_ROW_WORDS = {
@@ -817,13 +818,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ]),
     showTechnicalDetails: ruled(
       [
-        'Show technical details',
+        SHOWN.showTechnicalDetails,
         'Separate technical controls',
         'Activity log, AI use, limits and raw evidence',
         "What Compass can't see",
         'Opens in place on the surfaces with technical evidence',
       ],
-      null,
+      SHOWN.showTechnicalDetails,
     ),
     aiUse: ruled(
       [

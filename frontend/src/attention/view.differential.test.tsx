@@ -6,6 +6,12 @@ import { genPayload } from '../observed/generate.test.helper';
 import { mountShell } from '../shell/testing';
 import { expansionFor } from './expansion';
 import { loadLegacyAttention } from './legacy.test.helper';
+import {
+  maskQuotaDuration,
+  maskReportTime,
+  maskSourceTime,
+  maskTimePhrases,
+} from './timing.test.helper';
 
 /* The Attention screen, held to the legacy page by what a reader can read. The legacy `nextAttentionView`
    runs unchanged over a generated payload, and this screen renders the same payload in the real shell;
@@ -103,6 +109,19 @@ function summarize(root: ParentNode): Summary {
           );
         }
       }
+      const source = content.querySelector(
+        '[data-next-attention-part="source"] > span:last-child',
+      )?.firstChild;
+      if (source?.nodeType === Node.TEXT_NODE)
+        source.textContent = maskSourceTime(source.textContent ?? '');
+      if (article.dataset['nextBoardRisk'] === 'ask') {
+        const source = content.querySelector('.next-attention-risk-source > span:last-child');
+        if (source) source.textContent = maskSourceTime(norm(source));
+      }
+      if (article.dataset['nextAttentionKind'] === 'quota') {
+        const next = content.querySelector('.next-attention-risk-next');
+        if (next) next.textContent = maskQuotaDuration(norm(next));
+      }
       return {
         hidden: li.hasAttribute('hidden'),
         subject: article.dataset['nextAttentionSubject'] ?? '',
@@ -110,7 +129,7 @@ function summarize(root: ParentNode): Summary {
         kind: article.dataset['nextAttentionKind'] ?? '',
         tone: article.dataset['tone'] ?? '',
         board: article.dataset['nextBoardRisk'] ?? '',
-        text: norm(content),
+        text: maskTimePhrases(norm(content)),
         links: links(article),
         buttons: [...article.querySelectorAll('button')].map((button) =>
           button.getAttribute('aria-label'),
@@ -119,11 +138,19 @@ function summarize(root: ParentNode): Summary {
     }),
   });
   const reports = attention.querySelector('[data-next-command-reports]');
+  const reportsText = reports?.cloneNode(true) as HTMLElement | undefined;
+  for (const source of reportsText?.querySelectorAll('.next-attention-risk-source') ?? []) {
+    source.textContent = maskReportTime(norm(source));
+  }
   const projectsLink = attention.querySelector('.next-attention-projects-link');
   return {
     heading: norm(attention.querySelector('.next-attention-heading')),
     brief: omitAttentionQuietSubtotals(norm(attention.querySelector('.next-attention-brief > p'))),
-    empty: norm(attention.querySelector('.next-attention-empty')) || null,
+    empty:
+      norm(attention.querySelector('.next-attention-empty')).replace(
+        /^(No sessions in this [\d.-]+)h payload$/,
+        '$1-hour payload',
+      ) || null,
     coverageRows: [...attention.querySelectorAll('[data-next-coverage-harness]')].map(
       (row) =>
         `${row.getAttribute('data-next-coverage-harness')}|${norm(row)}|${[...row.querySelectorAll('[data-known]')].map((square) => square.getAttribute('data-known')).join(',')}`,
@@ -138,7 +165,7 @@ function summarize(root: ParentNode): Summary {
     sections: [...attention.querySelectorAll('section[data-next-attention-section]')]
       .filter((element) => element.getAttribute('data-next-attention-section') !== 'open')
       .map(section),
-    reports: norm(reports),
+    reports: norm(reportsText ?? null),
     reportLinks: reports ? links(reports) : [],
     open: [...attention.querySelectorAll('[data-next-open]')].map((row) => norm(row)),
   };

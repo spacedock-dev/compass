@@ -281,8 +281,8 @@ const RowView = memo(function RowView({
     <ObservedFact
       kind="now"
       label={nowKind}
-      text={session.nowText}
-      known={session.nowKnown}
+      text={session.nowWords}
+      known={session.nowWordsKnown}
       note={row.endedSince}
     />
   );

@@ -228,15 +228,45 @@ describe('a label is interpreted by measured locations', () => {
       const page = mountShell({ hash: '#n=attention', data });
       await page.settle();
       const card = document.querySelector('[data-next-board-risk="collision"]') as HTMLElement;
-      const stamp = started > 0 ? new Date(started * 1000).toISOString() : 'not published';
       const link = within(card).getByRole('link', {
-        name: `Title not published · No worktree published · claude:audit-1 · Start time ${stamp}`,
+        name: /Title not published · No worktree published · claude:audit-1 · Start time/,
       });
       expect(link).toHaveAttribute('href', '#n=session:audits:claude:audit-1');
+      expect(link).toHaveTextContent(started > 0 ? /Start time at \d/ : 'Start time not published');
       expect(within(card).getByRole('link', { name: /Audit 0/ })).toHaveTextContent(
-        'Start time 2030-03-17T17:30:00.000Z',
+        /Start time at \d/,
       );
+      expect(card).not.toHaveTextContent(/\d{4}-\d{2}-\d{2}T/);
       expect(link).not.toHaveTextContent('1970-01-01');
+    },
+  );
+
+  it.each([true, false])(
+    'shows distinct published member start times with a board clock: %s',
+    async (hasClock) => {
+      const data = locationBoard(2);
+      locationRow(data, 1)['project_key'] = 'path:other';
+      const starts = [new Date(2026, 10, 23, 9), new Date(2026, 10, 23, 10)];
+      for (const [index, start] of starts.entries()) {
+        locationRow(data, index)['started_at'] = start.getTime() / 1000;
+      }
+      if (hasClock) data['generated'] = new Date(2026, 10, 23, 12).getTime() / 1000;
+      else delete data['generated'];
+      const page = mountShell({ hash: '#n=attention', data });
+      await page.settle();
+      const card = document.querySelector('[data-next-board-risk="collision"]') as HTMLElement;
+      for (const [index, start] of starts.entries()) {
+        const date = start.toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+        const time = start.toLocaleTimeString(undefined, { timeStyle: 'short' });
+        const words = hasClock ? `at ${time}` : `on ${date} at ${time}`;
+        expect(
+          within(card).getByRole('link', { name: new RegExp(`Audit ${index} ·`) }),
+        ).toHaveTextContent(`Start time ${words}`);
+      }
     },
   );
 

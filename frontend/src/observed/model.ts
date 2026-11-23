@@ -205,7 +205,10 @@ export function observe(input: unknown): Observed {
     } else {
       const delegated = delegatedWork(source, generated);
       if (delegated.risky)
-        risks.push(sessionRisk(session, 'quiet-launch', 'Quiet delegated launch', delegated.text));
+        risks.push({
+          ...sessionRisk(session, 'quiet-launch', 'Quiet delegated launch', delegated.text),
+          delegatedSession: source,
+        });
     }
   });
   const riskKeys = new Set(
@@ -243,6 +246,7 @@ export function observe(input: unknown): Observed {
     boardRisks.push({
       scope: 'board',
       kind: 'ask',
+      waitAge: nextNumber(ask['age_sec']),
       title: 'Exact request without an identified session',
       identity: trimmed(ask['id']) || 'Request identity not published',
       src: trimmed(ask['harness']) || 'Harness not published',

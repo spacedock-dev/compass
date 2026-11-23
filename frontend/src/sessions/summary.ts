@@ -11,6 +11,7 @@ import type {
 import { CUE_TTL_MS } from '../controls/keyedState';
 import { CLAUDE_SETTINGS_LOOK } from '../drift/sentences';
 import { clock } from '../observed';
+import { formatSize } from '../shell/format';
 
 /* What the What the session has done card says about a summary. Every reason token the server can publish is
    worded once, in `SUMMARY_REASONS`, as `drift/route.ts` words a reading's: a refusal, a stop and a stored
@@ -145,7 +146,8 @@ function tooLarge({ largest }: ReasonContext): string {
   if (!largest || !largest.windows)
     return 'This session is larger than one summary may read. Nothing was sent.';
   const minutes = Math.max(1, Math.round(largest.seconds / 60));
-  return `This session is larger than one summary may read: at most ${plural(largest.windows, 'part', 'parts')} of ${String(Math.round(largest.windowBytes / 1024))} KiB, ${plural(largest.calls, 'model call', 'model calls')} and ${plural(minutes, 'minute', 'minutes')}. Nothing was sent.`;
+  const size = largest.windowBytes > 0 ? formatSize(largest.windowBytes) : null;
+  return `This session is larger than one summary may read: at most ${plural(largest.windows, 'part', 'parts')}${size ? ` of ${size}` : ''}, ${plural(largest.calls, 'model call', 'model calls')} and ${plural(minutes, 'minute', 'minutes')}. Nothing was sent.`;
 }
 
 export function reasonSentence(reason: string, context: ReasonContext): string {

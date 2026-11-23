@@ -49,7 +49,7 @@ function Board({
   readonly annotate?: boolean;
   readonly showAll?: boolean;
   readonly rowExamples?: boolean;
-  readonly flagBoard?: 'mixed' | 'empty' | 'failed';
+  readonly flagBoard?: 'mixed' | 'empty' | 'failed' | 'future-end';
   readonly hash?: string;
 }) {
   const [shell] = useState(() => {
@@ -89,7 +89,27 @@ function Board({
                             },
                           ],
                         }
-                      : sessionsSearchPayload({ ...live }),
+                      : flagBoard === 'future-end'
+                        ? {
+                            generated: GENERATED,
+                            sessions: [
+                              {
+                                harness: 'claude',
+                                sid: 'future',
+                                title: 'Future-dated end',
+                                project: 'p',
+                                ended_at: GENERATED + 60,
+                              },
+                              {
+                                harness: 'claude',
+                                sid: 'recent',
+                                title: 'Recently ended',
+                                project: 'p',
+                                ended_at: GENERATED - 60,
+                              },
+                            ],
+                          }
+                        : sessionsSearchPayload({ ...live }),
               )
             : json({}),
         ),
@@ -113,6 +133,22 @@ const meta = {
 } satisfies Meta<typeof Board>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+export const ReportedEndWithoutAge: Story = {
+  args: { flagBoard: 'future-end' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const future = (
+      await canvas.findByRole('link', { name: 'Open session Future-dated end' })
+    ).closest('article');
+    if (!future) throw new Error('Missing the future-dated end row');
+    const row = within(future);
+    await expect(row.getByRole('img', { name: 'Ended' })).toBeVisible();
+    await expect(row.getByText('Session reported its own end')).toBeVisible();
+    await expect(row.queryByText(/ended \d+ .* ago/)).toBeNull();
+    await expect(canvas.getByText('ended 1 minute ago')).toBeVisible();
+  },
+};
 
 export const WorthALook: Story = {
   args: { flagBoard: 'mixed' },

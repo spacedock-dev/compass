@@ -759,6 +759,18 @@ describe('the open of a finished session', () => {
   });
 });
 
+it('describes the published summary refusal in KB', () => {
+  expect(
+    reasonSentence('planned_bytes', {
+      grant: null,
+      harness: 'Claude Code',
+      largest: { windows: 32, windowBytes: 16384, calls: 37, seconds: 600 },
+    }),
+  ).toBe(
+    'This session is larger than one summary may read: at most 32 parts of 16 KB, 37 model calls and 10 minutes. Nothing was sent.',
+  );
+});
+
 describe('the focused summary plan before a start', () => {
   const plan = (extra: Record<string, unknown> = {}) =>
     parseFocusedSummary({

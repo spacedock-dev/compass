@@ -63,7 +63,7 @@ describe('before a board, and without one', () => {
   it('says an empty collection is empty, in the payload window it was read over', async () => {
     await open({ generated: 1, window_hours: 24, sessions: [], harnesses: [] });
     expect(document.querySelector('.next-attention-empty')?.textContent).toBe(
-      'No sessions in this 24h payload',
+      'No sessions in this 24-hour payload',
     );
   });
 });
@@ -153,7 +153,7 @@ describe('the four queues', () => {
       (node) => node.textContent ?? '',
     );
     // The oldest question is first, and the age is the payload's own clock against the published age.
-    expect(ages[0]).toContain('8m');
+    expect(ages[0]).toContain('waiting 8 minutes');
     const board = [...document.querySelectorAll('[data-next-board-risk]')].map(
       (node) => node.getAttribute('data-next-board-risk') ?? '',
     );
@@ -222,6 +222,111 @@ describe('a session in two queues', () => {
     // The At risk section holds the row, and the queues nested beneath it do not hold it again.
     expect(where).toEqual(['risk']);
     expect(section('close').textContent).not.toContain('ended-1');
+  });
+});
+
+describe('published times on the board', () => {
+  const generated = new Date(2026, 10, 23, 12).getTime() / 1000;
+  const session = { project: 'P', harness: 'claude' };
+
+  it('keeps the launch totals from the row that reported them when another row shares its ID', async () => {
+    await open({
+      generated,
+      sessions: [
+        { ...session, sid: 't', state: 'needs_input' },
+        {
+          ...session,
+          sid: 't',
+          state: 'idle',
+          delegated_launches: 2,
+          delegated_unpaired: 1,
+          delegated_quiet_since: generated - 3600,
+          delegated_latest_launch_at: generated - 360,
+        },
+      ],
+    });
+    const observation = document.querySelector(
+      '[data-next-attention-kind="quiet-launch"] .next-attention-risk-observation > p',
+    );
+    expect(observation?.textContent).toContain('2 recorded launches');
+    expect(observation?.textContent).toContain(
+      "1 of this session's launches has no recorded completion",
+    );
+    expect(observation?.textContent).toContain('Latest launch 6 minutes ago');
+  });
+
+  it('shows how long an unowned request has waited even without the board clock', async () => {
+    await open({
+      sessions: [],
+      ask: true,
+      asks: [{ id: 'gate', harness: 'claude', question: 'Proceed?', age_sec: 360 }],
+    });
+    expect(document.querySelector('[data-next-board-risk="ask"]')?.textContent).toContain(
+      'source · claude · waiting 6 minutes',
+    );
+  });
+
+  it.each([
+    [0, generated],
+    [generated, 1e100],
+    [generated, generated + 86400],
+  ])('withholds unusable wait and end ages against %s for %s', async (clock, stamp) => {
+    await open({
+      generated: clock,
+      sessions: [
+        { ...session, sid: 'wait', state: 'needs_input', blocked_since: stamp },
+        { ...session, sid: 'end', ended_at: stamp, finished_at: stamp, dirty: false },
+      ],
+    });
+    expect(section('needs').textContent).toContain('Needs-input state reported');
+    expect(section('needs').textContent).not.toMatch(/waiting \d/);
+    expect(section('close').textContent).toContain('This session id reported its own end');
+    expect(section('close').textContent).not.toMatch(/· ended (?:\d|on |at )/);
+  });
+
+  it('shows the quota countdown and a scheduled reset in the reader’s time zone', async () => {
+    const reset = new Date(2026, 10, 23, 13, 6);
+    const resetAt = reset.getTime() / 1000;
+    await open({
+      generated,
+      sessions: [],
+      usage: [
+        {
+          state: 'ok',
+          harness: 'claude',
+          fiveH: { pct: 95, resetAt, windowSec: 18000 },
+          models: [{ pct: 95, label: 'fast', resetAt }],
+        },
+      ],
+    });
+    expect(screen.getByText('1 hour 6 minutes')).toBeInTheDocument();
+    expect(
+      screen.getByText(`Reset at ${reset.toLocaleTimeString(undefined, { timeStyle: 'short' })}`),
+    ).toBeInTheDocument();
+  });
+
+  it('shows a published reset date and clock even when there is no board clock', async () => {
+    const reset = new Date(2026, 10, 23, 13);
+    await open({
+      sessions: [],
+      usage: [
+        {
+          state: 'ok',
+          harness: 'claude',
+          models: [{ pct: 95, label: 'fast', resetAt: reset.getTime() / 1000 }],
+        },
+      ],
+    });
+    const date = reset.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    expect(
+      screen.getByText(
+        `Reset on ${date} at ${reset.toLocaleTimeString(undefined, { timeStyle: 'short' })}`,
+      ),
+    ).toBeInTheDocument();
   });
 });
 
@@ -304,6 +409,7 @@ describe('the command-shape reports', () => {
     const links = [...reports.querySelectorAll('h3 a')].map((link) => link.getAttribute('href'));
     expect(links).toHaveLength(1);
     expect(reports.textContent).toContain('Command shape reported: git push --force');
+    expect(reports.textContent).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
     expect(reports.textContent).toContain('A shape match does not prove the action succeeded.');
   });
 

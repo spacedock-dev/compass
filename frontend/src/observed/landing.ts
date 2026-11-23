@@ -28,7 +28,11 @@ const QUIET_AFTER_SECONDS = 1800;
 /* `now` is the payload's clock, or null where it published none, which reads every launch as not yet
    quiet: `quiet <= null` is `quiet <= 0` in the legacy page, so a missing clock never manufactures a
    quiet period. */
-export function delegatedWork(session: Row | null | undefined, now: number | null): DelegatedWork {
+export function delegatedWork(
+  session: Row | null | undefined,
+  now: number | null,
+  formatTime: (stamp: number) => string | null = clock,
+): DelegatedWork {
   const count = session?.['delegated_launches'];
   const unpaired = session?.['delegated_unpaired'];
   const visibility = String(session?.['delegated_visibility'] || 'not-recorded');
@@ -54,9 +58,11 @@ export function delegatedWork(session: Row | null | undefined, now: number | nul
   const limit = ['partial', 'unattributed', 'not-recorded'].includes(visibility)
     ? ' Compass cannot see all work this session started.'
     : '';
+  const launchTime = latest > 0 ? formatTime(latest) : null;
+  const activityTime = activity > 0 ? formatTime(activity) : null;
   const times =
-    (latest > 0 ? ` Latest launch ${clock(latest)}.` : '') +
-    (activity > 0 ? ` Last recorded activity ${clock(activity)}.` : '');
+    (launchTime ? ` Latest launch ${launchTime}.` : '') +
+    (activityTime ? ` Last recorded activity ${activityTime}.` : '');
   const quietText =
     risky && age !== null
       ? ` Nothing recorded for ${String(Math.floor(age / 60))} minutes. A server left running can also show here.`

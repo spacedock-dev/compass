@@ -2,6 +2,7 @@ import { restateRecordedLocationNotes } from '../../test/location_departure';
 import { disclosureReadings, normalizeDisclosures } from '../../test/disclosures';
 import { withoutCodexRecordedStops } from '../../test/codexRecordedStop';
 import { describe, expect, it } from 'vitest';
+import { payloadSessionRows, sessionKey } from '../observed';
 import { genPayload } from '../observed/generate.test.helper';
 import { loadLegacyViews } from '../observed/legacy.test.helper';
 import { mountShell } from '../shell/testing';
@@ -10,7 +11,6 @@ import { projectRecordedRowOpener } from '../../test/recordedCommandOpener';
 import { maskRevisionWords } from '../../test/revisionWordDeviation';
 import { maskSessionRowPresentation } from '../../test/sessionRowDeviation';
 import { attentionSelectionFor } from '../attention/select';
-import { sessionKey } from '../observed';
 
 /* The Sessions screen, held to the legacy page by what a reader can read. The legacy `nextSessionsView`
    runs unchanged over a generated payload and this screen renders the same payload in the real shell;
@@ -87,6 +87,25 @@ function summarize(source: Element | DocumentFragment): Summary {
       rows: [...group.querySelectorAll('article.next-operation-row')].map((row) => {
         const route = row.querySelector('a.next-operation-route');
         const data = (row as HTMLElement).dataset;
+        const now = row.querySelector('[data-next-operation-fact="now"]');
+        for (const value of now?.querySelectorAll('strong, em') ?? []) {
+          // The recorded page used compact units only in these generated Now labels.
+          if (/^(?:last active|run finished|ended) /.test(value.textContent ?? '')) {
+            value.textContent =
+              value.textContent?.replace(
+                / ([\d]+[smhd](?: \d+[mh])?|\d+ (?:seconds?|minutes?|hours?|days?)(?: \d+ (?:minutes?|hours?))?) ago$/,
+                ' <duration> ago',
+              ) ?? '';
+          }
+        }
+        const caution = row.querySelector('[data-next-operation-fact="blocked"] em');
+        if (
+          caution?.textContent ===
+          'Unconfirmed: no positive observation in 5m; prompt may still be standing'
+        ) {
+          caution.textContent =
+            'Unconfirmed: no positive observation in 5 minutes; prompt may still be standing';
+        }
         return {
           harness: data['nextHarness'] ?? '',
           sid: data['nextSession'] ?? '',
@@ -201,6 +220,38 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
     value.textContent = project;
     node.append(label, value);
   });
+  // The retired page clamped future observations to zero. Project just those recorded ages.
+  const generated = data['generated'];
+  if (typeof generated === 'number') {
+    const sources = new Map(payloadSessionRows(data).map((source) => [sessionKey(source), source]));
+    for (const row of template.content.querySelectorAll<HTMLElement>(
+      'article.next-operation-row',
+    )) {
+      const source = sources.get(
+        sessionKey({
+          harness: row.dataset['nextHarness'],
+          sid: row.dataset['nextSession'],
+        }),
+      );
+      const at = source?.['last_activity'];
+      const end = source?.['ended_at'];
+      const values = row.querySelectorAll('[data-next-operation-fact="now"] :is(strong, em)');
+      for (const value of values) {
+        if (value.textContent === 'ended 0s ago' && typeof end === 'number' && end > generated) {
+          value.remove();
+        }
+        if (
+          value.textContent === 'last active 0s ago' &&
+          typeof at === 'number' &&
+          at > generated
+        ) {
+          value.textContent = String(source?.['state_detail'] ?? '').trim()
+            ? 'quiet'
+            : 'Activity not published';
+        }
+      }
+    }
+  }
   return summarize(template.content);
 }
 
