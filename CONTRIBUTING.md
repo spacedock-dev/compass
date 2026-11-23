@@ -65,7 +65,8 @@ when a reason has no fixture or no exported story or a phase is reworded. It doe
 set `COMPASS_TEST_PYTHON` to name one. Add the story with the reason.
 
 After changing a component or view, update its story. Run `pnpm build:storybook`, then
-`pnpm test:stories`. The tests run in pinned Chromium with one worker, fail on console and page
+`pnpm test:stories`. The tests run in pinned Chromium with one worker, in three shards that each
+start a fresh browser, and a failing shard stops the run. They fail on console and page
 errors or external requests, and check the static and development manager and preview offline.
 The development smoke uses native local WebSockets. A separate ordering test holds the page's main
 thread until the server receives the socket handshake; the Playwright socket bridge cannot complete

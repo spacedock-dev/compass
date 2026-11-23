@@ -1,8 +1,8 @@
 # The sample session
 
-The Session page can open one example session, view only, so a new reader can see what Compass and
-Intent and drift show before running an agent of their own. Open it from the line above the Sessions
-list ("See a sample session"), or at `#n=session:acme%2Fdashboard:claude:sample`. The page's numbered
+The Session page can open one example session, view only, so a new reader can see what a goal and a
+progress check show before running an agent of their own. Choose See an example above the Sessions
+list or in Help, or go to `#n=session:acme%2Fdashboard:claude:sample`. The page's numbered
 (i) marks give a short tour. [The design record](../docs/design-sample-session.md) owns the decisions.
 
 This directory holds the session it was made from, `milestone-session.jsonl`. The page itself ships a
@@ -110,8 +110,8 @@ It is an illustration, not a byte-for-byte record. These are the parts that are 
     that reason. It found a departure on the goal, with its one-sentence explanation, and a second row
     about what the agent claimed: the agent said the milestone's build work was done and merged, and
     the record shows a blocker and a pull request still behind main. That row is not a departure from
-    the goal, so the Drift card shows departures from the goal alone, and the drift level reads Medium
-    from the two rows together. Two presses at the very start made no reading: the isolated server's
+    the goal, so Is it on track? shows departures from the goal alone, and the level reads Slightly off
+    course from the two rows together. Two presses at the very start made no reading: the isolated server's
     wrapper had not passed the account name the signed-in Claude Code needs, so the program answered
     "not logged in" before any model call. The correction quotes the goal's explanation and the
     claim's.
@@ -147,7 +147,7 @@ It is an illustration, not a byte-for-byte record. These are the parts that are 
   which quotes two of them. The summary of 2026-10-23 was made from the rewritten transcript, so its
   numbers needed no rewrite. `scripts/tests/test_sample_session_files.py` fails when a quoted
   pull request number matches one in this repository's commit subjects.
-- **Numbers inside quoted speech are the original session's.** Full activity numbers the sample's own
+- **Numbers inside quoted speech are the original session's.** Activity log numbers the sample's own
   record, and an entry a summary line or a finding cites is a link to that number. Text the session
   quotes was written against the live board of its day, so a "#9" inside a quoted message or a
   summary line that repeats one ("citing the failing run at #9") counts that board's entries, not the
@@ -245,6 +245,6 @@ names a commit there is regenerated, and `--verify` fails if any token in the ou
    then `pnpm build`. The capture reads every record page back to the start and stores the older ones
    under `older`. `pnpm test` fails if the page or the fixture is over its bound.
 
-The drift level reads Medium, from the goal departure and the contradicted claim the reading found. The live estimate, from
+The level reads Slightly off course, from the goal departure and the contradicted claim the reading found. The live estimate, from
 checks and file paths alone, has too little recorded after the person's last message to read a level
 of its own.
