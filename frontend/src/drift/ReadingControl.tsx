@@ -43,7 +43,7 @@ import { noticeContentParts, noticeLabel, sessionNotice } from './notice';
    this machine. Each state is drawn from the payload and the reader's held state alone, and nothing here
    sends a request: a press does, through `actions.ts`. */
 
-export const REFUSED_ID = 'next-cockpit-reading-refused';
+const REFUSED_ID = 'next-cockpit-reading-refused';
 export const DISCLOSURE_ID = 'next-cockpit-reading-disclosure';
 
 export { DisclosureParts } from './ModelNotice';
@@ -311,6 +311,7 @@ export function ReadingControl({
           {off ? <p className="next-cockpit-reading-why">{READINGS_OFF}</p> : null}
         </div>
         {said(answered === noReader ? '' : answered)}
+        {model.latestCheckWithheld ? <ReadingOutcome unless={noReader} /> : null}
       </>
     );
   }

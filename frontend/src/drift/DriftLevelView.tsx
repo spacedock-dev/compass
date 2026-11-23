@@ -9,13 +9,7 @@ import { annotationLines, storeUnreadable } from '../intent/annotation';
 import { intentUnsaved } from '../intent/derive';
 import { useDrift } from './context';
 import { analysisRow, meterSegments, readingStored, type Signals } from './level';
-import {
-  driftAnswer,
-  earlyReadingSeconds,
-  resultStale,
-  verdictNamesLevel,
-  verdictShape,
-} from './result';
+import { driftAnswer, earlyReadingSeconds, verdictNamesLevel, verdictShape } from './result';
 import { routeRefusal } from './route';
 import {
   HARNESS_LIMIT,
@@ -27,6 +21,7 @@ import {
   LIVE_MONITOR_LINE,
   LIVE_SAVE,
   NUDGE,
+  UNKNOWN_KEY,
 } from './sentences';
 import { EvidenceList } from './Evidence';
 import { MarkedNotice } from './MarkedNotice';
@@ -250,63 +245,88 @@ export function DriftLevelView() {
 }
 
 function absence(model: ReturnType<typeof useDrift>['model']) {
-  const { annotation, raw, shape, entries, source, analysis } = model;
-  if (raw && shape && annotation) {
-    const stale = resultStale(shape, raw, annotation, entries);
-    if (stale)
-      return [GLOSSARY.outOfDate.plain, 'This check describes earlier work or an earlier goal.'];
-    if (!shape.malformed) {
-      const answer = driftAnswer(shape, entries, source.scan);
-      if (answer.kind === 'goal-unclear')
-        return [GLOSSARY.goalTooVague.plain, 'Give the goal a specific outcome Compass can check.'];
-      const early = earlyReadingSeconds(answer, shape, raw, entries);
-      const published = analysisRow(model.input.contexts, model.projectKey, model.session);
-      const shortRecord =
-        shape.scope !== 'final' &&
-        analysis?.level === 'not_enough' &&
-        published?.['level'] === 'not_enough' &&
-        Array.isArray(published['reasons']) &&
-        published['reasons'].includes('outcome-not-reached');
-      if (early !== null || shortRecord)
-        return [
-          GLOSSARY.tooEarlyToTell.plain,
-          early === null
-            ? 'The record has too little work to check progress yet.'
-            : `The check covered only the first ${formatDurationWords(early)} of the session.`,
-        ];
-    }
+  const { annotation, raw, shape, entries, source, analysis, estimate, stale } = model;
+  if (stale) {
+    return [
+      GLOSSARY.outOfDate.plain,
+      stale.kind === 'withdrawn'
+        ? stale.head
+        : 'This check describes earlier work or an earlier goal.',
+    ];
+  }
+  if (model.latestCheckWithheld)
+    return [GLOSSARY.cantTell.plain, 'The latest progress check did not produce a reading.'];
+  if (raw && shape) {
+    if (shape.malformed) return [GLOSSARY.cantTell.plain, UNKNOWN_KEY];
+    const answer = driftAnswer(shape, entries, source.scan);
+    // The cited finding itself is the answer when a supported level is unavailable.
+    if (answer.kind === 'departs') return null;
+    if (answer.kind === 'goal-unclear')
+      return [GLOSSARY.goalTooVague.plain, 'Give the goal a specific outcome Compass can check.'];
+    const early = earlyReadingSeconds(answer, shape, raw, entries);
+    const published = analysisRow(model.input.contexts, model.projectKey, model.session);
+    const shortRecord =
+      shape.scope !== 'final' &&
+      analysis?.level === 'not_enough' &&
+      published?.['level'] === 'not_enough' &&
+      Array.isArray(published['reasons']) &&
+      published['reasons'].includes('outcome-not-reached');
+    if (early !== null || shortRecord)
+      return [
+        GLOSSARY.tooEarlyToTell.plain,
+        early === null
+          ? 'The record has too little work to check progress yet.'
+          : `The check covered only the first ${formatDurationWords(early)} of the session.`,
+      ];
     return [
       GLOSSARY.cantTell.plain,
       'The record did not give Compass enough evidence to place the work on the scale.',
     ];
   }
-  if (annotation?.['reading_refused'] === true)
+  if (!annotation)
+    return [
+      GLOSSARY.cantTell.plain,
+      'Compass could not tell whether this session has a saved goal.',
+    ];
+  if (annotation['reading_refused'] === true)
     return [GLOSSARY.cantTell.plain, 'Compass could not read the saved check.'];
-  if (
-    !String(annotation?.['goal'] ?? '').trim() &&
-    !annotationLines(annotation).length &&
-    !model.draft
-  )
+  if (!String(annotation['goal'] ?? '').trim() && !annotationLines(annotation).length)
     return [GLOSSARY.noGoalYet.plain, 'Give Compass a goal to check progress against.'];
-  return [GLOSSARY.notCheckedYet.plain, 'Compass has no saved progress check for this goal.'];
+  if (estimate && 'level' in estimate && estimate.level === 'not_enough')
+    return [
+      GLOSSARY.tooEarlyToTell.plain,
+      estimate.monitor
+        ? 'The Live monitor had too little recorded work to check progress.'
+        : 'The record has too little work to estimate progress yet.',
+    ];
+  return [
+    GLOSSARY.notCheckedYet.plain,
+    model.liveOn
+      ? 'The Live monitor has not completed a check yet.'
+      : 'Compass has no saved progress check for this goal.',
+  ];
+}
+
+export function SessionProgressLevel() {
+  const { model } = useDrift();
+  const word = PROGRESS_LEVEL_WORDS.get(model.pill?.level ?? '');
+  if (!word) return null;
+  return (
+    <span className="text-label font-semibold" data-next-session-progress>
+      {word}
+      {model.pillSoFar ? ' so far' : ''}
+    </span>
+  );
 }
 
 export function ProgressAnswer({ focus }: { readonly focus: boolean }) {
   const { ctx, model } = useDrift();
-  const { annotation, shape, raw, entries, harness } = model;
+  const { annotation, raw, stale, pill: level } = model;
   const ref = useFocusKey<HTMLDivElement>(
     ctx.shell.controls.focusLane,
     focus ? `reading:${model.key}` : null,
   );
-  const stale = raw && shape && annotation ? resultStale(shape, raw, annotation, entries) : null;
   const marked = annotation?.['not_accurate'] === true && readingStored(annotation);
-  const shown =
-    harness === 'codex' || model.drafted || stale || marked
-      ? null
-      : raw
-        ? model.analysis
-        : model.estimate;
-  const level = shown && 'level' in shown ? shown : null;
   const word = PROGRESS_LEVEL_WORDS.get(level?.level ?? '');
   const readAt = raw?.['read_at'];
   const time =
@@ -315,7 +335,7 @@ export function ProgressAnswer({ focus }: { readonly focus: boolean }) {
       : formatTimestamp(readAt, model.generated);
   const unreadable = storeUnreadable(model.payload);
   if (model.job && !raw && !unreadable) return null;
-  const [status, why] = absence(model);
+  const missing = !level ? absence(model) : null;
   const detail = level?.analysis
     ? level.line
     : level?.monitor
@@ -365,19 +385,19 @@ export function ProgressAnswer({ focus }: { readonly focus: boolean }) {
             {detail}
           </p>
         </div>
-      ) : (
+      ) : missing ? (
         <div className="grid gap-0.5 text-muted-foreground" data-next-progress-absence>
           <p
             className="m-0 text-value font-semibold"
             {...(stale ? { 'data-next-result-stale': stale.kind } : {})}
           >
-            {status}
+            {missing[0]}
           </p>
           <p className="m-0 text-label">
-            <span className="font-semibold">How this works</span> · {why}
+            <span className="font-semibold">How this works</span> · {missing[1]}
           </p>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

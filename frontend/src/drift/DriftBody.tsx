@@ -11,13 +11,12 @@ import { ReadingResult, ResultFoot } from './ReadingResult';
 import { routeRefusal } from './route';
 import { steerFrom } from './sentences';
 import { SteerBox, SteerButton, SteerSection, UpdateGoalButton } from './SteerBack';
-import { resultStale } from './result';
 import { useFollowCorrection } from './useFollowCorrection';
 import { useRunBoard } from './useRunBoard';
 
 export function DriftBody({ primary }: { readonly primary: boolean }) {
   const { ctx, model } = useDrift();
-  const { session, payload, annotation, key, annotate, shape, raw, job } = model;
+  const { session, payload, annotation, key, annotate, shape, raw, job, stale } = model;
   const { board, refusal } = useRunBoard(true);
   const offered = steerOffer({
     session,
@@ -27,10 +26,11 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
     annotate,
     drafted: model.drafted,
   });
-  const stale =
-    raw && shape && annotation ? resultStale(shape, raw, annotation, model.entries) : null;
-  const steerable = offered?.departed && model.harness !== 'codex' ? offered : null;
-  useFollowCorrection(steerable !== null);
+  const steerable = Boolean(offered?.departed && (!stale || stale.kind === 'work'));
+  const historical = Boolean(stale) || model.latestCheckWithheld;
+  const held = ctx.drift.corrections.get(key);
+  const keepEdited = Boolean(held?.open && held.edited);
+  useFollowCorrection(steerable);
   const readAt = nextNumber(raw?.['read_at']);
   const from =
     steerable && readAt !== null && readAt > 0
@@ -44,7 +44,7 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
           session,
           annotation,
           shape,
-          offer: offered,
+          offer: null,
           canRetry: !routeRefusal(payload, session),
         })
       : '';
@@ -62,21 +62,24 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
           : {})}
       >
         <ProgressAnswer focus={Boolean(readable && !job && !stale && !model.unsettled)} />
-        {readable && !stale ? <ReadingResult /> : null}
-        {readable || steerable ? (
+        {readable && (!stale || (stale.kind === 'work' && steerable)) ? (
+          <ReadingResult historical={historical} />
+        ) : null}
+        {readable || steerable || keepEdited ? (
           <SteerSection
+            hasCorrection={steerable || keepEdited}
             buttons={
               <div className="flex flex-wrap items-center gap-2">
                 {steerable ? (
                   <>
-                    <SteerButton primary={primary && !model.unsettled} />
+                    <SteerButton primary={primary && !model.unsettled && !historical} />
                     <UpdateGoalButton />
                   </>
                 ) : null}
                 {feedback}
               </div>
             }
-            box={steerable ? <SteerBox from={from} /> : null}
+            box={steerable || keepEdited ? <SteerBox from={from} canRecompose={steerable} /> : null}
           />
         ) : null}
       </div>

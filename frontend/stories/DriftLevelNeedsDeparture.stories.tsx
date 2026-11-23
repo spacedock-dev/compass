@@ -9,6 +9,8 @@ import {
   fact,
   failedCheck,
   passedCheck,
+  leaseScenario,
+  leaseState,
   readingScenario,
   type Scenario,
 } from './drift.scenario';
@@ -228,6 +230,9 @@ export const ADepartureKeepsItsLevelWhileTheSessionWorks: Story = {
       ),
     );
     await expect(within(progress).getByText(/^Checked .* against your goal$/)).toBeVisible();
+    await expect(canvasElement.querySelector('.next-session-detail-header')).toHaveTextContent(
+      'Slightly off course so far',
+    );
     const drift = await evidencePanel(canvasElement);
     const verdict = await verdictOf(drift);
     await expect(verdict).toHaveTextContent(/^Medium: 1 departure/);
@@ -374,27 +379,54 @@ export const AnEmptyVerdictEarlyInASessionSaysItIsEarly: Story = {
   },
 };
 
+const ABSENCE_WORDS = [
+  'No goal yet',
+  'Not checked yet',
+  'Too early to tell',
+  "Can't tell",
+  'Goal too vague to check',
+  'Out of date',
+];
+
+async function progressCard(canvasElement: HTMLElement) {
+  return within(canvasElement).findByRole('region', { name: 'Is it on track?' });
+}
+
+async function expectNoLevel(progress: HTMLElement) {
+  await expect(
+    progress.querySelector('[data-next-drift-pill], .next-session-drift-meter'),
+  ).toBeNull();
+}
+
+async function expectAbsence(progress: HTMLElement, label: string, reason: RegExp) {
+  const card = within(progress);
+  const word = await card.findByText(label, { exact: true });
+  const absence = word.closest('[data-next-progress-absence]') as HTMLElement;
+  await expect(absence).not.toBeNull();
+  await expect(within(absence).getByText('How this works')).toBeVisible();
+  await expect(absence).toHaveTextContent(reason);
+  await expect(absence.querySelector('svg')).toBeNull();
+  for (const other of ABSENCE_WORDS.filter((value) => value !== label)) {
+    await expect(card.queryByText(other, { exact: true })).toBeNull();
+  }
+  await expect(card.queryByText('On track', { exact: true })).toBeNull();
+  await expectNoLevel(progress);
+}
+
 function absenceStory(
+  name: string,
   value: Scenario,
   label: string,
   reason: RegExp,
   check = 'Check progress again',
 ): Story {
   return {
+    name,
     ...scenario(value),
     play: async ({ canvasElement }) => {
-      const view = within(canvasElement);
-      const progress = await view.findByRole('region', { name: 'Is it on track?' });
+      const progress = await progressCard(canvasElement);
+      await expectAbsence(progress, label, reason);
       const card = within(progress);
-      const word = await card.findByText(label, { exact: true });
-      const absence = word.closest('[data-next-progress-absence]');
-      await expect(absence).not.toBeNull();
-      await expect(within(absence as HTMLElement).getByText('How this works')).toBeVisible();
-      await expect(absence).toHaveTextContent(reason);
-      await expect(absence?.querySelector('svg')).toBeNull();
-      await expect(progress.querySelector('[data-next-drift-pill]')).toBeNull();
-      await expect(progress.querySelector('.next-session-drift-meter')).toBeNull();
-      await expect(card.queryByText('On track')).toBeNull();
       const button = card.getByRole('button', { name: check });
       await expect(button.querySelector('svg[data-icon="check-progress"]')).not.toBeNull();
       await expect(card.getByText(/^Uses AI/)).toBeVisible();
@@ -403,24 +435,105 @@ function absenceStory(
   };
 }
 
-export const NoGoalYet = absenceStory(
+function currentLevelStory(
+  name: string,
+  level: string,
+  word: string,
+  session: Record<string, unknown>,
+  facts: readonly unknown[],
+): Story {
+  return {
+    name,
+    ...scenario({ session, facts, work: { analysis_levels: [analysisRow('claude', level)] } }),
+    play: async ({ canvasElement }) => {
+      const progress = await progressCard(canvasElement);
+      const card = within(progress);
+      const pill = await waitFor(() => {
+        const node = progress.querySelector('[data-next-drift-pill]');
+        expect(node).not.toBeNull();
+        return node;
+      });
+      await expect(pill?.textContent).toBe(word);
+      await expect(progress.querySelectorAll('[data-next-drift-pill]')).toHaveLength(1);
+      await expect(
+        progress.querySelector('.next-session-drift-scale [data-current]'),
+      ).toHaveTextContent(word);
+      await expect(progress.querySelectorAll('.next-session-drift-meter > span')).toHaveLength(4);
+      for (const absent of ABSENCE_WORDS) {
+        await expect(card.queryByText(absent, { exact: true })).toBeNull();
+      }
+      await expect(card.getByText(/^Checked .* against your goal$/)).toBeVisible();
+      const header = canvasElement.querySelector('.next-session-detail-header');
+      await expect(header).toHaveTextContent(word);
+      if (level === 'none_or_low') {
+        await expect(card.getByText('No departure found in what Compass read')).toBeVisible();
+        await expect(card.queryByText('Where it went off course')).toBeNull();
+      } else {
+        await expect(card.getByText(/^Compass found 1 departure/)).toBeVisible();
+        await expect(card.queryByText('No departure found in what Compass read')).toBeNull();
+      }
+    },
+  };
+}
+
+const CURRENT_DEPARTURE = { ...READ({ goal: DEPARTS }), state: 'idle' };
+
+export const Progress01OnTrack = currentLevelStory(
+  '01 · On track',
+  'none_or_low',
+  'On track',
+  {
+    ...READ({ goal: { ...CONSISTENT, clause: 'Ship the queue' }, line_1: CONSISTENT }),
+    state: 'idle',
+  },
+  [PERSON, PASSED],
+);
+
+export const Progress02SlightlyOffCourse = currentLevelStory(
+  '02 · Slightly off course',
+  'medium',
+  'Slightly off course',
+  CURRENT_DEPARTURE,
+  [PERSON, FAILED],
+);
+
+export const Progress03OffCourse = currentLevelStory(
+  '03 · Off course',
+  'high',
+  'Off course',
+  CURRENT_DEPARTURE,
+  [PERSON, FAILED],
+);
+
+export const Progress04WayOffCourse = currentLevelStory(
+  '04 · Way off course',
+  'extreme',
+  'Way off course',
+  CURRENT_DEPARTURE,
+  [PERSON, FAILED],
+);
+
+export const Progress05NoGoalYet = absenceStory(
+  '05 · No goal yet',
   {
     unsaved: true,
-    session: { first_prompt: '', first_prompt_at: null, latest_prompt: '', latest_prompt_at: null },
+    session: { annotation_goal: '', annotation_goal_why: 'No goal typed for this session.' },
   },
   'No goal yet',
   /Give Compass a goal/,
   'Check progress',
 );
 
-export const NotCheckedYet = absenceStory(
+export const Progress06NotCheckedYet = absenceStory(
+  '06 · Not checked yet',
   {},
   'Not checked yet',
   /no saved progress check/,
   'Check progress',
 );
 
-export const TooEarlyToTell = absenceStory(
+export const Progress07TooEarlyToTell = absenceStory(
+  '07 · Too early to tell',
   {
     session: READ({ goal: CANT_TELL, line_1: CANT_TELL }),
     facts: [fact('u-short', 850, { type: 'user_message', by: 'person:me' })],
@@ -429,7 +542,8 @@ export const TooEarlyToTell = absenceStory(
   /first 2 minutes/,
 );
 
-export const CantTell = absenceStory(
+export const Progress08CantTell = absenceStory(
+  "08 · Can't tell",
   {
     session: READ({ goal: { ...CANT_TELL, clause: 'Ship the queue' }, line_1: CANT_TELL }),
     facts: [PERSON, AGENT],
@@ -438,7 +552,8 @@ export const CantTell = absenceStory(
   /enough evidence/,
 );
 
-export const GoalTooVagueToCheck = absenceStory(
+export const Progress09GoalTooVagueToCheck = absenceStory(
+  '09 · Goal too vague to check',
   {
     session: READ({
       goal: {
@@ -453,7 +568,8 @@ export const GoalTooVagueToCheck = absenceStory(
   /specific outcome/,
 );
 
-export const OutOfDate = absenceStory(
+export const Progress10OutOfDate = absenceStory(
+  '10 · Out of date',
   {
     session: { ...READ({ goal: DEPARTS }), annotation_revision: 4 },
     facts: [FAILED],
@@ -461,3 +577,127 @@ export const OutOfDate = absenceStory(
   'Out of date',
   /earlier work or an earlier goal/,
 );
+
+export const Progress11Withdrawn: Story = {
+  name: '11 · Withdrawn',
+  ...scenario({
+    session: READ({ goal: DEPARTS }, 'withdrawn'),
+    facts: [PERSON, FAILED],
+    work: { analysis_levels: [analysisRow('claude', 'medium')] },
+  }),
+  play: async ({ canvasElement }) => {
+    const progress = await progressCard(canvasElement);
+    const card = within(progress);
+    await expectAbsence(progress, 'Out of date', /This check was withdrawn/);
+    await expect(card.queryByText(/^Checked .* against your goal$/)).toBeNull();
+    await expect(card.queryByText('What the earlier check found')).toBeNull();
+    await expect(card.queryByRole('button', { name: 'Steer back' })).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-session-progress]')).toBeNull();
+    await expect(card.getByRole('button', { name: 'Check progress again' })).toBeVisible();
+  },
+};
+
+export const Progress12CodexDeparture: Story = {
+  name: '12 · Codex departure',
+  ...scenario({
+    harness: 'codex',
+    session: { ...READ({ goal: DEPARTS }), annotation_line_1: '' },
+    facts: [failedCheck('c1', 500, 'codex')],
+    work: { analysis_levels: [analysisRow('codex', 'medium')] },
+  }),
+  play: async ({ canvasElement }) => {
+    const progress = await progressCard(canvasElement);
+    const card = within(progress);
+    await expect(await card.findByText(/^Compass found 1 departure/)).toBeVisible();
+    await expectNoLevel(progress);
+    await expect(progress.querySelector('[data-next-progress-absence]')).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-session-progress]')).toBeNull();
+    await expect(card.queryByRole('button', { name: 'Steer back' })).toBeNull();
+  },
+};
+
+export const Progress13NewerCheckFailed: Story = {
+  name: '13 · A newer check failed',
+  ...scenario({
+    session: {
+      ...READ({ goal: DEPARTS }),
+      annotation_reading_withheld: 'The progress check failed. No new reading was saved.',
+      annotation_reading_withheld_at: 1050,
+    },
+    facts: [PERSON, FAILED],
+    work: { analysis_levels: [analysisRow('claude', 'medium')] },
+  }),
+  play: async ({ canvasElement }) => {
+    const progress = await progressCard(canvasElement);
+    const card = within(progress);
+    await expectAbsence(
+      progress,
+      "Can't tell",
+      /The latest progress check did not produce a reading/,
+    );
+    await expect(card.getByText(/The progress check failed/)).toBeVisible();
+    await expect(card.getByText('What the earlier check found')).toBeVisible();
+    await expect(card.queryByText('Where it went off course')).toBeNull();
+    await expect(card.queryByText(/^Checked .* against your goal$/)).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-session-progress]')).toBeNull();
+    await expect(card.getByRole('button', { name: 'Check progress again' })).toBeVisible();
+  },
+};
+
+const MONITOR_ABSTAINED = {
+  level: 'not_enough',
+  model_level: 'not_enough',
+  floor_applied: false,
+  reason: 'Too little work was recorded.',
+  cites: [],
+  fallback: 'not_enough',
+  source: 'Live monitor · Haiku',
+  checked_at: 1090,
+};
+
+function monitorStory(name: string, run: boolean): Story {
+  return {
+    name,
+    ...scenario({ lease: leaseScenario(leaseState({ level: run ? MONITOR_ABSTAINED : null })) }),
+    play: async ({ canvasElement }) => {
+      const progress = await progressCard(canvasElement);
+      const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+      const monitor = await privacy.findByRole('switch', { name: 'Live monitor' });
+      await userEvent.click(monitor);
+      await waitFor(() => expect(monitor).toBeChecked());
+      if (run) {
+        await expectAbsence(
+          progress,
+          'Too early to tell',
+          /The Live monitor had too little recorded work/,
+        );
+      } else {
+        await expectAbsence(
+          progress,
+          'Not checked yet',
+          /The Live monitor has not completed a check yet/,
+        );
+      }
+      await expect(within(progress).getByRole('button', { name: 'Check progress' })).toBeVisible();
+    },
+  };
+}
+
+export const Progress14LiveMonitorRan = monitorStory('14 · Live monitor ran', true);
+export const Progress15LiveMonitorHasNotRun = monitorStory('15 · Live monitor has not run', false);
+
+export const AMidFlightReadingStaysProvisionalAfterTheSessionGoesQuiet: Story = {
+  ...scenario({
+    session: { ...READ({ goal: DEPARTS }, 'mid-flight'), state: 'idle' },
+    facts: [PERSON, FAILED],
+    work: { analysis_levels: [analysisRow('claude', 'medium')] },
+  }),
+  play: async ({ canvasElement }) => {
+    const progress = await progressCard(canvasElement);
+    const header = canvasElement.querySelector('.next-session-detail-header');
+    await expect(
+      await within(progress).findByText(/^So far, Compass found 1 departure/),
+    ).toBeVisible();
+    await expect(header).toHaveTextContent('Slightly off course so far');
+  },
+};

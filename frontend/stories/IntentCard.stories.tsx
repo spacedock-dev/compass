@@ -276,7 +276,7 @@ export const TypedSourceAndSavedStatus: Story = {
     await enterGoalEditor(view);
     await expect(view.getByText(GOAL_HINT)).toBeVisible();
     await expect(outcomesTrigger(view)).toHaveTextContent(
-      'Expected outcome (optional) · up to 6 lines',
+      'What “done” looks like (optional) · up to 6 lines',
     );
     await expect(outcomesTrigger(view)).toHaveAttribute('aria-expanded', 'false');
     const goal = view.getByRole('textbox', { name: 'Goal' });
@@ -738,7 +738,7 @@ export const PromptMenuPick: Story = {
     );
     await expect(
       view.getByText(
-        'Drafted from the prompt you chose · not saved · Shortened here; Analyze reads the whole prompt',
+        'Drafted from the prompt you chose · not saved · Shown as an excerpt. A progress check can read up to the first 1,000 characters of the original prompt',
       ),
     ).toBeVisible();
   },
@@ -867,10 +867,7 @@ export const TypedWordsStayThroughSlowSave: Story = {
     await userEvent.clear(goal);
     await userEvent.type(goal, 'Keep the parser pure and small');
     await openOutcomes(view);
-    await userEvent.type(
-      view.getByRole('textbox', { name: 'Expected outcome line 1' }),
-      'Tests pass',
-    );
+    await userEvent.type(view.getByRole('textbox', { name: 'Done line 1' }), 'Tests pass');
     let release: () => void = () => undefined;
     (window as unknown as { __holdIntentData?: Promise<void> }).__holdIntentData =
       new Promise<void>((resolve) => {
@@ -887,9 +884,7 @@ export const TypedWordsStayThroughSlowSave: Story = {
       await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
         'Keep the parser pure and small',
       );
-      await expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).toHaveValue(
-        'Tests pass',
-      );
+      await expect(view.getByRole('textbox', { name: 'Done line 1' })).toHaveValue('Tests pass');
     } catch (failure) {
       // A held fetch left pending by a failed assertion would hang the next story on this page.
       release();
@@ -961,7 +956,7 @@ export const AdoptedPromptStaysThroughSlowSave: Story = {
 
 /* The Expected outcome accordion's trigger, by the name a reader hears. */
 const outcomesTrigger = (view: ReturnType<typeof within>) =>
-  view.getByRole('button', { name: /^Expected outcome \(optional\)/ });
+  view.getByRole('button', { name: /^What “done” looks like \(optional\)/ });
 
 /* Opens the accordion the way a reader does, for a story that types a line into it. */
 async function openOutcomes(view: ReturnType<typeof within>) {
@@ -990,7 +985,7 @@ async function controlsTogether(card: HTMLElement, outcomes: 'open' | 'closed') 
   );
   const trigger = outcomesTrigger(view);
   await expect(trigger).toBeVisible();
-  await expect(trigger).toHaveTextContent('Expected outcome (optional) · up to 6 lines');
+  await expect(trigger).toHaveTextContent('What “done” looks like (optional) · up to 6 lines');
   await expect(trigger).toHaveAttribute('aria-expanded', outcomes === 'open' ? 'true' : 'false');
   const add = card.querySelector('[data-next-cockpit-action="held-line-add"]') as HTMLElement;
   if (outcomes === 'open') {
@@ -1215,7 +1210,7 @@ export const StateGoalDetectedCut: Story = {
     // The excerpt is what the box holds, and the line says it was cut rather than passing it off as whole.
     await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue(DETECTED_GOAL);
     await expect(goalSource(card)).toMatch(
-      / · Shortened to fit 1,000 characters; Analyze reads this shortened goal$/,
+      / · Shortened to fit 1,000 characters\. A progress check reads this shortened goal$/,
     );
   },
 };
@@ -1417,7 +1412,7 @@ export const StateGoalClearedStaysSaidAfterAPromptIsChosen: Story = {
     );
     await waitFor(async () => {
       await expect(goalSource(card)).toBe(
-        'Drafted from the prompt you chose · not saved · Shortened here; Analyze reads the whole prompt',
+        'Drafted from the prompt you chose · not saved · Shown as an excerpt. A progress check can read up to the first 1,000 characters of the original prompt',
       );
     });
     await expect(endedNote(card)).toHaveTextContent(
@@ -1935,7 +1930,7 @@ export const OutcomeAccordionClosedWithNoLines: Story = {
     const trigger = outcomesTrigger(view);
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await expect(view.getByRole('textbox', { name: 'Goal' })).toBeVisible();
-    await expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).not.toBeVisible();
+    await expect(view.getByRole('textbox', { name: 'Done line 1' })).not.toBeVisible();
   },
 };
 
@@ -1959,7 +1954,7 @@ export const OutcomeAccordionOpenOverSavedLines: Story = {
     const view = within(card);
     await enterGoalEditor(view);
     await expect(outcomesTrigger(view)).toHaveAttribute('aria-expanded', 'true');
-    await expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).toHaveValue(
+    await expect(view.getByRole('textbox', { name: 'Done line 1' })).toHaveValue(
       'All parser unit tests pass',
     );
     // A reader who closes it keeps it closed over a board refresh.
@@ -1979,13 +1974,10 @@ export const AddingALineInsideTheAccordionSaves: Story = {
     const card = await within(canvasElement).findByRole('region', { name: 'Goal' });
     const view = within(card);
     await openOutcomes(view);
-    await userEvent.type(
-      view.getByRole('textbox', { name: 'Expected outcome line 1' }),
-      'Tests pass',
-    );
+    await userEvent.type(view.getByRole('textbox', { name: 'Done line 1' }), 'Tests pass');
     await userEvent.click(view.getByRole('button', { name: '+ Add a line' }));
     await userEvent.type(
-      await view.findByRole('textbox', { name: 'Expected outcome line 2' }),
+      await view.findByRole('textbox', { name: 'Done line 2' }),
       'Benchmarks run',
     );
     await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
@@ -2037,7 +2029,7 @@ export const OverCapLineBlocksSave: Story = {
     const view = within(card);
     await enterGoalEditor(view);
     await openOutcomes(view);
-    const box = view.getByRole('textbox', { name: 'Expected outcome line 1' });
+    const box = view.getByRole('textbox', { name: 'Done line 1' });
     await userEvent.click(box);
     await userEvent.clear(box);
     await userEvent.paste('l'.repeat(900));
@@ -2068,11 +2060,9 @@ export const OverCapLineBlocksSave: Story = {
     box.focus();
     await userEvent.keyboard('{Escape}');
     await waitFor(() =>
-      expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).toHaveValue(
-        'Saved line',
-      ),
+      expect(view.getByRole('textbox', { name: 'Done line 1' })).toHaveValue('Saved line'),
     );
-    await expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).toHaveFocus();
+    await expect(view.getByRole('textbox', { name: 'Done line 1' })).toHaveFocus();
     await expect(view.getByText('10 / 800')).toHaveAttribute('data-over', 'false');
     await expect(view.queryByText(/^Line 1 is /)).toBeNull();
   },
@@ -2104,7 +2094,7 @@ export const RefusedSaveShowsReason: Story = {
     const view = within(card);
     await enterGoalEditor(view);
     await openOutcomes(view);
-    const box = view.getByRole('textbox', { name: 'Expected outcome line 1' });
+    const box = view.getByRole('textbox', { name: 'Done line 1' });
     await userEvent.clear(box);
     await userEvent.type(box, 'Changed line');
     await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
@@ -2143,7 +2133,13 @@ export const OverCapGoalBlocksSave: Story = {
 export const ReadSavedGoalOnEndedSession: Story = {
   args: {
     setup: {
+      prompts: [],
+      facts: [],
       session: {
+        first_prompt: '',
+        first_prompt_at: null,
+        latest_prompt: '',
+        latest_prompt_at: null,
         state: 'ended',
         ended_at: 1_760_000_900,
         annotation_goal: 'Keep the parser small and pure',
@@ -2160,9 +2156,20 @@ export const ReadSavedGoalOnEndedSession: Story = {
     await expect(goal.getByText(/You wrote this · saved at/)).toBeVisible();
     await expect(goal.getByText('Keep the parser small and pure')).toBeVisible();
     await expect(goal.getByText('All parser unit tests pass')).toBeVisible();
-    await expect(goal.getByRole('button', { name: 'Use your prompt' })).toBeVisible();
+    const prompt = goal.getByRole('button', { name: 'Use your prompt' });
+    const edit = goal.getByRole('button', { name: 'Edit goal' });
+    await expect(prompt).toBeVisible();
+    await expect(prompt.closest('header')).toBe(edit.closest('header'));
     await expect(goal.queryByRole('textbox')).toBeNull();
+    await expect(goal.getByRole('heading', { name: 'What “done” looks like' })).toBeVisible();
+    await userEvent.click(prompt);
+    const dialog = within(canvasElement.ownerDocument.body);
+    await waitFor(() =>
+      expect(dialog.getByRole('option', { name: /^No usable prompts were found/ })).toBeVisible(),
+    );
+    await userEvent.keyboard('{Escape}');
     await userEvent.click(goal.getByRole('button', { name: 'Edit goal' }));
     await expect(goal.getByRole('textbox', { name: 'Goal' })).toHaveFocus();
+    await expect(goal.getByRole('button', { name: /^What “done” looks like/ })).toBeVisible();
   },
 };

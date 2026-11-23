@@ -21,7 +21,7 @@ import { markNotAccurate } from './actions';
 import { SESSION_GOAL } from '../sessions/intent';
 import { DepartureSummaryLine } from '../sessions/SummaryParts';
 import { useDrift } from './context';
-import { citedIdsOf } from './citations';
+import { citedIdsOf, citesOf } from './citations';
 import { GLOSSARY, PROGRESS_LEVEL_WORDS } from '../language/glossary';
 import {
   arrivedLine,
@@ -776,7 +776,7 @@ function Baseline({
   );
 }
 
-export function ReadingResult() {
+export function ReadingResult({ historical = false }: { readonly historical?: boolean }) {
   const { ctx, model } = useDrift();
   const { annotation, shape, raw, entries, source } = model;
   if (!shape || shape.malformed || !raw || !annotation || annotation['not_accurate'] === true)
@@ -784,7 +784,7 @@ export function ReadingResult() {
   const answer = driftAnswer(shape, entries, source.scan);
   if (answer.kind !== 'departs') return null;
   const [first] = answer.departures;
-  const ids = new Set(answer.departures.flatMap((row) => row.citedIds));
+  const ids = new Set(answer.departures.flatMap((row) => citesOf(raw, row.key)));
   if (!first || ids.size === 0) return null;
   const text = verdictLine({
     answer,
@@ -795,9 +795,12 @@ export function ReadingResult() {
   });
   const openEvidence = () => {
     showEvidence(ctx.shell.controls, model.project, model.session, () => {
-      const cite = first.citedIds[0];
-      const selector = `[data-next-finding="${CSS.escape(first.key)}"][data-next-cite="${CSS.escape(cite ?? '')}"]`;
-      document.querySelector<HTMLElement>(`[data-next-technical-evidence] ${selector}`)?.focus();
+      const finding = `[data-next-technical-evidence] [data-next-finding="${CSS.escape(first.key)}"]`;
+      const available = document.querySelector<HTMLElement>(
+        `${finding}[data-next-cite]:not([data-next-cite=""])`,
+      );
+      const load = document.querySelector<HTMLElement>(`${finding}[data-next-cite=""]`);
+      (available ?? load)?.focus();
     });
   };
   return (
@@ -806,7 +809,9 @@ export function ReadingResult() {
         className="mx-4 grid gap-1 rounded-card border border-[var(--rule)] bg-[var(--color-danger-outline-hover)] p-4"
         data-next-progress-finding
       >
-        <h3 className="m-0 text-body font-semibold">{GLOSSARY.whereOffCourse.plain}</h3>
+        <h3 className="m-0 text-body font-semibold">
+          {historical ? 'What the earlier check found' : GLOSSARY.whereOffCourse.plain}
+        </h3>
         <p className="m-0 text-body" data-next-progress-summary>
           {text}
         </p>

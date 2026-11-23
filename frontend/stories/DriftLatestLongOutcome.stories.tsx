@@ -87,7 +87,9 @@ export const PartialFindingsLeaveUnknownsExplicit: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const progress = within(await canvas.findByRole('region', { name: 'Is it on track?' }));
-    await expect(await progress.findByText("Can't tell", { exact: true })).toBeVisible();
+    await expect(await progress.findByText(/Compass found 1 departure/)).toBeVisible();
+    await expect(progress.queryByText("Can't tell", { exact: true })).toBeNull();
+    await expect(progress.queryByText('On track', { exact: true })).toBeNull();
     const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
     await expect(evidence.getByText(/Long analysis saved a partial result\./)).toBeVisible();
     await expect(evidence.getByText('Reserved call accounting is unknown.')).toBeVisible();

@@ -8,6 +8,7 @@ import {
   check,
   contextRoute,
   fact,
+  driftBoard,
   json,
   jumpTo,
   LEASE_ROUTE,
@@ -67,6 +68,43 @@ async function evidencePanel() {
   await openSessionTechnicalTab('Evidence');
   return within(screen.getByRole('tabpanel', { name: 'Evidence' }));
 }
+
+describe('the progress answer without a level', () => {
+  it('explains when the session did not publish its saved goal', async () => {
+    const board = driftBoard();
+    const oldRow = Object.fromEntries(
+      Object.entries(board.sessions[0] ?? {}).filter(
+        ([key]) => !key.startsWith('annotation_') && !key.startsWith('first_prompt'),
+      ),
+    );
+    const page = mountDrift({ payload: { sessions: [oldRow] } });
+    await page.settle();
+    expect(textOf('[data-next-progress-absence]')).toMatch(
+      /^Can't tell.*Compass could not tell whether this session has a saved goal/,
+    );
+    expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
+  });
+
+  it('shows no goal yet when the first prompt is still a suggestion', async () => {
+    const page = mountDrift({ store: { goal: '', lines: [], revision: 0 } });
+    await page.settle();
+    expect(screen.getByText(/Drafted from your first prompt · not saved/)).toBeVisible();
+    expect(textOf('[data-next-progress-absence]')).toMatch(/^No goal yet.*Give Compass a goal/);
+    expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
+  });
+
+  it('explains a reading shape this version cannot interpret', async () => {
+    const page = mountDrift({
+      session: stored({ annotation_assessment: { ...ASSESSMENT, future_field: true } }),
+      facts: FACTS,
+    });
+    await page.settle();
+    expect(textOf('[data-next-progress-absence]')).toMatch(
+      /^Can't tell.*This board cannot read the reading it was given/,
+    );
+    expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
+  });
+});
 
 describe('technical Evidence', () => {
   it('shows an empty history after a readable annotation lookup', async () => {

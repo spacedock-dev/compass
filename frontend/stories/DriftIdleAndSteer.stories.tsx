@@ -347,3 +347,25 @@ export const AFailedAnalysisNamesItsCause: Story = {
     );
   },
 };
+
+export const AnOutOfDateCheckShowsTheEarlierFindingBesideSteering: Story = {
+  ...scenario({
+    session: { ...IDLE, annotation_assessment: IDLE_READING, annotation_reading_count: 1 },
+    facts: [SAID, fact('m2', 950, { type: 'agent_message', by: 'agent' })],
+  }),
+  play: async ({ canvasElement }) => {
+    const progress = within(
+      await within(canvasElement).findByRole('region', { name: 'Is it on track?' }),
+    );
+    await expect(await progress.findByText('Out of date', { exact: true })).toBeVisible();
+    await expect(
+      progress.getByRole('heading', { name: 'What the earlier check found' }),
+    ).toBeVisible();
+    await expect(progress.getByText(/^So far, Compass found 1 departure/)).toBeVisible();
+    await expect(progress.getByRole('button', { name: 'Steer back' })).toHaveAttribute(
+      'data-variant',
+      'default',
+    );
+    await expect(progress.getByRole('button', { name: 'Check progress again' })).toBeVisible();
+  },
+};

@@ -90,7 +90,7 @@ export const ACompassSkillActionAddsNothingToTheGoal: Story = {
     const drift = await driftOf(canvasElement);
     // The server published no message for the command, so nothing asks to add it.
     await expect(published.facts.map((row) => row.summary)).not.toContain(`${COMMAND} sessions`);
-    await expect(drift).not.toHaveTextContent(/message adds:/);
+    await expect(drift).not.toHaveTextContent(/sent this message later/);
     await expect(drift).not.toHaveTextContent(/messages after your goal/);
     await expect(drift.querySelector('[data-next-cockpit-direction-question]')).toBeNull();
     // Activity log still lists what the agent repeated, as the agent's.

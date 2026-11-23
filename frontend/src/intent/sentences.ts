@@ -74,13 +74,13 @@ export const FIND_GOAL_TITLE = (label: string): string =>
   `Sends the prompts you typed in this session to ${label} to look for a goal. Nothing is sent until you press.`;
 /* Appended to a source line whose words were cut; `cap` is the box's own limit, never a literal. */
 export const goalCut = (cap: number): string =>
-  ` · Shortened to fit ${cap.toLocaleString('en-US')} characters; Analyze reads this shortened goal`;
-export const EXCERPT_READ_WHOLE = ' · Shortened here; Analyze reads the whole prompt';
+  ` · Shortened to fit ${cap.toLocaleString('en-US')} characters. A progress check reads this shortened goal`;
 /* `reading.LEDGER_WORDS_CAP_CHARS`, copied rather than fetched; `test_reader_words.py` holds the two equal.
    The ruled wording (docs/design-frontend-migration.md, 2026-10-13 departures): "up to" read as a limit that
    had bitten, so the sentence says it is how every prompt is read. */
 export const ANALYZE_PROMPT_CAP_CHARS = 1_000;
 export const ANALYZE_READS_PROMPT = `A progress check reads at most the first ${ANALYZE_PROMPT_CAP_CHARS.toLocaleString('en-US')} characters of any prompt.`;
+export const EXCERPT_READ_WHOLE = ` · Shown as an excerpt. A progress check can read up to the first ${ANALYZE_PROMPT_CAP_CHARS.toLocaleString('en-US')} characters of the original prompt`;
 export const GOAL_HINT =
   "Write what should be true when this session is done. Compass checks the session's work against it and never writes into the session.";
 
@@ -89,7 +89,7 @@ export const GOAL_HINT =
    instead. Said only beside a confirmed save on an ended session. The goal box shows the same sentence, so
    the short form, which reads as "nothing can be read", is not used. */
 export const ENDED_CAVEAT =
-  'This session has ended. What you save now is kept, but Analyze will not check the session against it. Analyze still uses the intent you saved before the session ended, or a goal taken from one of your prompts.';
+  'This session has ended. Compass keeps goals you save now for reference. A progress check uses the goal you saved before the session ended or a goal taken from one of your prompts.';
 
 /* What the last save attempt is still worth saying. `persisted:false` is its own cue and not a success: the
    annotation is then held only in this process, and the next collection reloads the store from disk and

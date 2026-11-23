@@ -25,6 +25,7 @@ import {
   ReadingCapBanner,
   WorkListView,
 } from '../drift';
+import { SessionProgressLevel } from '../drift/DriftLevelView';
 import { DriftSlot } from './DriftSlot';
 import { SessionTechnicalDetails } from './SessionTechnicalDetails';
 import { WhatItDid } from './WhatItDid';
@@ -270,6 +271,7 @@ function Header({
             hasOpenRequest={observed.askKnown}
           />
         ) : null}
+        <SessionProgressLevel />
         <Controls session={session} observed={observed} route={route} />
       </div>
       {limit && status !== 'Waiting on child' ? (

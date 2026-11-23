@@ -69,7 +69,10 @@ const analyzeButton = (card: HTMLElement) => findButton(card, /^Check progress$/
 const steerBack = (card: HTMLElement) => findButton(card, 'Steer back');
 
 export const SentAndSettingsStayInFlow: Story = {
-  ...scenario({ unsaved: true }),
+  ...scenario({
+    unsaved: true,
+    session: { annotation_goal_why: 'No goal typed for this session.' },
+  }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
     const inCard = within(card);
@@ -78,7 +81,7 @@ export const SentAndSettingsStayInFlow: Story = {
     });
     await analyzeButton(card);
     const title = inCard.getByRole('heading', { name: 'Is it on track?' });
-    const answer = await inCard.findByText('Not checked yet');
+    const answer = await inCard.findByText('No goal yet');
     const answerOffset = () =>
       answer.getBoundingClientRect().top - title.getBoundingClientRect().top;
     const before = answerOffset();
@@ -343,9 +346,10 @@ export const StaleResult: Story = {
     await userEvent.click(evidence.getByRole('button', { name: 'What the check read' }));
     const arrived = await evidence.findByText('1 check, 1 message arrived since this analysis.');
     await waitFor(() => expect(arrived).toBeVisible());
-    // The departure still stands, so Steer back stays the one primary and Check progress again is the quiet way to
-    // read the new work.
-    await expect(primaries(canvasElement)).toEqual([await steerBack(card)]);
+    await expect(
+      within(card).getByRole('heading', { name: 'What the earlier check found' }),
+    ).toBeVisible();
+    await expect(await steerBack(card)).toHaveAttribute('data-variant', 'default');
     await neverDone(card);
     await neverRetired(canvasElement);
   },
@@ -706,7 +710,7 @@ export const ReadingsOffWithARunningJobAndAnOpenDirection: Story = {
     const card = await drawn(canvasElement);
     await within(card).findByText(JOB_TITLE);
     await expect(
-      await within(card).findByText(/message adds:|messages after your goal/),
+      await within(card).findByText(/sent this message later|messages after your goal/),
     ).toBeVisible();
     // One box and one Cancel: the off state does not draw a second job box beside the question.
     await expect(within(card).getAllByText(JOB_TITLE)).toHaveLength(1);

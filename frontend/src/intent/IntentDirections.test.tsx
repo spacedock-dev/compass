@@ -63,7 +63,9 @@ describe('the question before the press', () => {
       routes: { '/api/project-context': record(...ONE) },
     });
     await settle(page);
-    expect(text('.next-cockpit-direction-said')).toBe(`Your ${clock(600)} message adds:`);
+    expect(text('.next-cockpit-direction-said')).toBe(
+      `You sent this message later, at ${clock(600)}.`,
+    );
     expect(text('[data-next-cockpit-direction-whole]')).toContain('Do it the careful way');
     expect(
       [...document.querySelectorAll('.next-cockpit-reading-ask button')].map((b) => b.textContent),

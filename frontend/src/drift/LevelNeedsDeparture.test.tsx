@@ -1,4 +1,4 @@
-import { act } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { contextKey } from '../api/identity';
 import { annotationOf } from '../intent/annotation';
@@ -7,6 +7,7 @@ import type { ContextEntry } from '../store/board';
 import { mountSessions } from '../sessions/testing';
 import { analysisLevel } from './level';
 import { readingShape } from './shape';
+import { textOf } from './testing';
 
 /* A level above None or low stands only on a departure the reading shows. The analysis level, the header
    pill and the card are one derivation, so a reading that found nothing against the intent cannot draw
@@ -195,28 +196,68 @@ describe('the header pill and the card', () => {
     expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
     expect(document.querySelector('[data-next-drift-level]')).toBeNull();
     expect(document.body.textContent).not.toContain('From the progress check at');
+    expect(textOf('.next-session-detail-header')).not.toContain('Slightly off course');
   });
 
-  it('say "so far" while the session runs, and drop it once the session is idle', async () => {
+  it.each(['claude', 'pi', 'codex'])(
+    'shows a cited %s departure without claiming the evidence was insufficient',
+    async (harness) => {
+      await open([DEPARTS, CANT_TELL], '', { harness });
+      const card = within(screen.getByRole('region', { name: 'Is it on track?' }));
+      expect(card.getByText(/Compass found 1 departure/)).toBeVisible();
+      expect(card.queryByText("Can't tell", { exact: true })).toBeNull();
+      expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
+    },
+  );
+
+  it('explains a failed newer progress check without presenting the earlier level as current', async () => {
+    await open([DEPARTS, CANT_TELL], 'medium', {
+      annotation_reading_withheld: 'The progress check failed. No new reading was saved.',
+      annotation_reading_withheld_at: NOW - 120,
+    });
+    const card = within(screen.getByRole('region', { name: 'Is it on track?' }));
+    expect(card.getByText("Can't tell", { exact: true })).toBeVisible();
+    expect(card.getByText(/The latest progress check did not produce a reading/)).toBeVisible();
+    expect(card.getByText(/The progress check failed/)).toBeVisible();
+    expect(card.getByText('What the earlier check found')).toBeVisible();
+    expect(card.queryByText(/Checked .* against your goal/)).toBeNull();
+    expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
+    expect(textOf('.next-session-detail-header')).not.toContain('Slightly off course');
+  });
+
+  it('shows a withdrawn check as out of date, with its own explanation', async () => {
+    await open([DEPARTS, CANT_TELL], 'medium', {
+      annotation_assessment: { ...assessment([DEPARTS, CANT_TELL]), scope: 'withdrawn' },
+    });
+    const card = within(screen.getByRole('region', { name: 'Is it on track?' }));
+    expect(card.getByText('Out of date')).toBeVisible();
+    expect(card.getByText(/This check was withdrawn/)).toBeVisible();
+    expect(card.queryByText(/Checked .* against your goal/)).toBeNull();
+    expect(textOf('.next-session-detail-header')).not.toContain('Slightly off course');
+    expect(card.queryByText('Where it went off course')).toBeNull();
+    expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
+  });
+
+  it('says so far in the header while the session works', async () => {
     await open([DEPARTS, CANT_TELL], 'medium', { state: 'working' });
-    expect(document.querySelector('[data-next-drift-pill]')?.textContent).toBe(
-      'Slightly off course',
-    );
+    const header = textOf('.next-session-detail-header');
+    expect(header).toContain('Slightly off course so far');
   });
 
-  it('say "so far" for a reading of a running turn, though the session has since gone idle', async () => {
+  it('keeps so far in the header and summary for a mid-flight reading after the session goes quiet', async () => {
     await open([DEPARTS, CANT_TELL], 'medium', {
       annotation_assessment: { ...assessment([DEPARTS, CANT_TELL]), scope: 'mid-flight' },
     });
-    expect(document.querySelector('[data-next-drift-pill]')?.textContent).toBe(
-      'Slightly off course',
-    );
+    const header = textOf('.next-session-detail-header');
+    expect(header).toContain('Slightly off course so far');
+    expect(textOf('[data-next-progress-summary]')).toMatch(/^So far, Compass found/);
   });
 
-  it('say no "so far" over a reading of a finished turn on an idle session', async () => {
+  it('shows the level without so far in the header and summary after a finished turn', async () => {
     await open([DEPARTS, CANT_TELL], 'medium');
-    expect(document.querySelector('[data-next-drift-pill]')?.textContent).toBe(
-      'Slightly off course',
-    );
+    const header = textOf('.next-session-detail-header');
+    expect(header).toContain('Slightly off course');
+    expect(header).not.toContain('so far');
+    expect(textOf('[data-next-progress-summary]')).not.toMatch(/^So far, Compass found/);
   });
 });

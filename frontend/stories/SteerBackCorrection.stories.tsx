@@ -100,6 +100,42 @@ async function noOpeningLine(box: HTMLTextAreaElement) {
   }
 }
 
+export const ADepartingDoneLineSuppliesTheStarter: Story = {
+  ...scenario({
+    session: session(
+      { line_1: departs(['c1'], LINE_WHY, 'Tests pass') },
+      {
+        annotation_goal: '',
+        annotation_line_2: '',
+        first_prompt: '',
+        first_prompt_at: null,
+        latest_prompt: '',
+        latest_prompt_at: null,
+      },
+    ),
+    facts: [PERSON, FAILED],
+    clipboard: true,
+    correction: {
+      ok: true,
+      starter:
+        '"Tests pass" is the outcome I asked for. Please address what went off course and work toward that outcome.',
+      parts: ['Where it stands against what I expect:\n- Tests pass: departed at 00:08'],
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const field = await openBox(canvasElement);
+    const starter =
+      '"Tests pass" is the outcome I asked for. Please address what went off course and work toward that outcome.';
+    await expect(field).toHaveValue(starter);
+    await userEvent.type(field, ' Start with the parser tests.');
+    await expect(field).toHaveValue(`${starter} Start with the parser tests.`);
+    await userEvent.click(canvas.getByRole('button', { name: 'Copy message' }));
+    await expect(await canvas.findByRole('button', { name: 'Copied' })).toBeVisible();
+    await expect(canvas.getByText(CORRECTION_HINT)).toBeVisible();
+  },
+};
+
 export const TwoDeparturesEachExplained: Story = {
   ...scenario({
     session: session({

@@ -24,8 +24,8 @@ export const LocalDepartureWithoutGlobalReassurance: Story = {
   play: async ({ canvasElement }) => {
     const root = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     const progress = within(root);
-    await expect(await progress.findByText("Can't tell", { exact: true })).toBeVisible();
     await expect(await progress.findByText(/Compass found 1 departure/)).toBeVisible();
+    await expect(progress.queryByText("Can't tell", { exact: true })).toBeNull();
     await expect(progress.queryByText('On track', { exact: true })).toBeNull();
     await expect(root.textContent).not.toMatch(/Nothing departs|All.*consistent/);
     await expect(progress.queryByText(PARTIAL_WHY)).toBeNull();

@@ -1,5 +1,5 @@
 import { openSessionTechnicalTab } from '../../test/sessionTechnical';
-import { screen } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { check, driftBoard, fact, json, mountDrift, openActivity, press, textOf } from './testing';
 
@@ -59,6 +59,33 @@ const recordBody = (extra: Record<string, unknown> = {}) => ({
 const unloaded = () => document.querySelector('[data-next-unloaded]');
 
 describe('a reading that cites an entry the page does not list', () => {
+  it('counts distinct stored citations and focuses an available quote when the first is unloaded', async () => {
+    const reading = {
+      ...ASSESSMENT,
+      criteria: {
+        goal: {
+          ...ASSESSMENT.criteria.goal,
+          result: 'departure',
+          cites: ['early', 'c1', 'c1'],
+        },
+      },
+    };
+    const page = mountDrift({
+      session: { ...session, annotation_assessment: reading },
+      store: { revision: 1, goal: 'Keep the connection working' },
+      facts: [check('c1', 500, 'failed', { result_source: 'failed flag' })],
+      routes: { [path]: () => json(recordBody()) },
+    });
+    await page.settle();
+    const card = within(screen.getByRole('region', { name: 'Is it on track?' }));
+    await press(card.getByRole('button', { name: 'See the 2 quotes behind this' }));
+    const evidence = within(screen.getByRole('tabpanel', { name: 'Evidence' }));
+    const quote = evidence.getByRole('link', { name: /Activity log for Goal/ });
+    await waitFor(() => expect(document.activeElement).toBe(quote));
+    expect(evidence.getByText(/2 entries cited/)).toBeVisible();
+    expect(unloaded()).not.toBeNull();
+  });
+
   it('says so, points at Show more, and stops saying it once the reader loads the entry', async () => {
     const page = mountDrift({
       session,

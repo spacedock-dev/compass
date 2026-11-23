@@ -1447,7 +1447,7 @@ export const ProgressBeforeEvidence: Story = {
   ...scenario({
     session: stored(
       reading({
-        goal: { ...GOAL_DEPARTS, cites: ['c1', 'c1'] },
+        goal: { ...GOAL_DEPARTS, cites: ['unloaded', 'c1', 'c1'] },
         line_1: { ...GOAL_DEPARTS, cites: ['c2'], clause: 'Tests pass' },
       }),
     ),
@@ -1489,7 +1489,7 @@ export const ProgressBeforeEvidence: Story = {
       'aria-expanded',
       'false',
     );
-    const quotes = first.getByRole('button', { name: 'See the 2 quotes behind this' });
+    const quotes = first.getByRole('button', { name: 'See the 3 quotes behind this' });
     await expect(quotes).toHaveStyle({
       backgroundColor: 'rgba(0, 0, 0, 0)',
       textDecorationLine: 'underline',

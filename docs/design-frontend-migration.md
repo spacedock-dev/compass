@@ -813,6 +813,13 @@ explanations, and the editor holds Clear and Discard everything. The Intent edit
 annotation readers still compare the underlying drafts and stored fields. Mounted tests that
 exercise the editor enter it first. Recorded answers are unchanged.
 
+2026-11-23, the progress card and header withhold stale levels and keep any stored assessment
+in charge of the answer. A live estimate cannot fill the slot left by an unlevelled assessment.
+The terminal parity test projects those two board rules onto its recorded views. The terminal
+fixtures and recorded golden answers remain intact. The Goal editor and read view share the
+done-lines label, and the later-direction question reports the date of the message instead of
+interpreting it. The mounted tests and browser stories use the revised wording.
+
 The Intent card's redesign of 2026-10-19 departs from the recorded editor in four places, and nothing is
 re-recorded. The draft marks' dashed "from your prompt" badge and its excerpt cue became one plain source line
 beside the count, "From your prompt · first|latest|HH:MM · not saved." with the cap sentence the 2026-10-13

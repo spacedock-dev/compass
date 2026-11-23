@@ -8484,7 +8484,7 @@ that, and Full activity is collapsed at the foot of the page.) The switch's acce
 | Sessions breadcrumb | First view | First view |
 | Project link | First view | First view |
 | No terminal to raise: Why | First view | Blocked only |
-| How Intent and drift works | First view | The Goal editor, beside Save |
+| How Intent and drift works | First view | How goals work, in the Goal card in read and edit modes |
 | Use your prompt | First view | First view |
 | Clear | First view | The Goal editor, beside Save |
 | Remove line 1 | First view | First view |
@@ -8543,7 +8543,7 @@ under the control where no popover is drawn (its place in the popover is asserte
 | Live monitor switch | Control | Drift settings in the Drift card's heading ([the one-state amendment](#amended-2026-10-21-the-drift-card-has-one-state-at-a-time)) |
 | "How far the session has moved from the goal" | Sentence | The Drift card's heading, under the title |
 | "Shows a level after every turn, from checks and file paths, with no model call. The level shows here and in the header." (Claude Code, annotations on) | Limit | Drift settings, under the switch, as its description |
-| About these saved words (the ended-session note and the binding sentence) | Disclosure and limits | The Goal card, in How goals work |
+| About these saved words (the ended-session note and the binding sentence) | Disclosure and limits | How goals work, in the Goal card in read and edit modes |
 | What became of discarded words | Sentences | The Goal card, beside the explainer |
 | Discard everything, and its armed confirmation | Control and warning | The Goal editor, with inline confirmation |
 | Delegated work, and the "still running?" check | Limit | Not on the Drift card (amended 2026-10-21): it was a bookkeeping fact about subagents tied to no line of the reading, and the reader had no action to take on it |
@@ -8618,6 +8618,27 @@ Steer back stays editable and keeps "Compass never sends this for you". Use your
 stays visible beside Edit goal in read mode. The direction question stays on Is it on
 track? with Add as a line, Make it the goal and Leave it. Its presentation goes through
 Storybook sign-off.
+
+### The Goal and progress cards, 2026-11-23
+
+The card and session header share the eligible progress level. The header says "so far" for a
+working session or a reading of work in progress. A mid-flight reading keeps that distinction
+after the session goes quiet. A stale or withdrawn reading draws no current level. A newer check
+that produces no reading also leaves the earlier level out, and any finding still shown is
+identified as coming from the earlier check. A cited departure can stand on its own without a
+level, including on Codex. A completed Live monitor check with too little evidence says Too
+early to tell. An enabled monitor that has yet to complete a check says Not checked yet.
+
+A past finding can support a secondary Steer back action if the check still applies to the saved
+goal. A changed goal withholds that action. An edited correction stays open for copying across
+either change. The two-sentence correction starter uses the first departing saved line when no
+goal is saved. The structured correction remains available to existing callers.
+
+The Evidence shortcut counts distinct stored citations for the visible findings. It focuses the
+first citation it can show. The requirement for a resolvable citation still applies before a
+departure can appear. The direction question dates the later message and quotes it for the
+reader to interpret. How goals work opens in either Goal mode, and the read-mode prompt picker
+can explain an empty or unreadable record.
 
 ### Amended 2026-10-19 (owner): each departure is a card
 

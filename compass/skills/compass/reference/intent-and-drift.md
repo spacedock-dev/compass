@@ -14,14 +14,14 @@ counts until anything in it writes again; a subagent write counts. Marks live in
 
 ## Recording what a session should achieve
 
-You can record a goal and an expected outcome against one session, in your own words. The
-expected outcome starts with one optional empty line and holds up to six lines, each at most 800
-characters. The goal is a three-row box of at most 1,000, so a prompt you choose as the goal fits whole. Both are optional and set independently, and saving one
-leaves the other alone. Open the session's page: the fields are the first thing in its drift
-block, for a session with or without a project. The how-to beside Intent says what an analysis
-reads and that Compass never writes into the session. Each box shows how many of its characters (1,000 for the goal, 800 for a line)
-you have used as you type, and a hint under the goal box says what to write there. A paste past the limit stays in the box. The counter marks it as over, a sentence names the limit, and Save intent waits until the text fits. The Goal card shows the saved reads-from line beside its status word. Open `More` for `Clear`, or `How goals work` for the explanation in the card.
-The Expected outcome sits in an accordion under the Goal, labelled "Expected outcome (optional) · up to 6 lines" and closed until it has something to show: it opens by itself over saved lines, a line being edited, a pending later direction, or a departure that cites a line, and a close you make holds until one of those arises again. Inside it each outcome line has `Remove`, and `Add a line` sits under the list; Add adds another until there are six, where it stays
+Open the Goal card to read your saved goal and what done looks like. Use your prompt opens beside
+Edit goal, even if Compass has yet to find a prompt. The picker explains when it finds none or
+the record cannot be read. How goals work describes what a check reads and the limits that apply.
+
+Edit goal opens the fields. The goal holds up to 1,000 characters and the checklist holds up to six
+lines of 800 characters each. The two can be saved independently. The counters show how much you
+have typed. A paste past the limit stays in the box, and Save intent waits until the text fits.
+Clear lives in the editor. The checklist is labelled `What “done” looks like (optional)` and closed until it has something to show: it opens by itself over saved lines, a line being edited, a pending later direction, or a departure that cites a line, and a close you make holds until one of those arises again. Inside it each outcome line has `Remove`, and `Add a line` sits under the list; Add adds another until there are six, where it stays
 on the page, refuses a seventh and says why (replace or merge a line instead). `Save intent` stays
 visible and saves the drafted goal or your edits. `Undo changes` is drawn beside it, inert until there is a goal edit or prompt
 choice to undo. The list saves as a whole, and Escape puts the stored words back. Each saved line shows where it came from: typed, or added from an entry. A
@@ -343,9 +343,11 @@ A withdrawn claim draws no row. Steer back is offered only with a departure from
 Short titles and bare URLs are not quoted in the correction. Times are your local clock, the
 correction names no Compass entry number, and a departure cited at one of the agent's messages
 quotes that message's first sentence ("where you said …"). On the session page, Steer back
-starts with a short editable message naming your goal. Copy message copies what you see.
-Compass never sends it for you. Where a mark or a reading of earlier words withholds it,
-the card says why. The quotes link opens Evidence at the first cited entry. What the check
+starts with a short editable message naming your goal or, when only lines are saved, the first
+line the check found a departure from. Copy message copies what you see. Compass never sends
+it for you. Where a mark or a reading of earlier words withholds it, the card says why. The
+quotes link counts distinct stored citations for the departures and opens Evidence at the first
+available quote. What the check
 read includes the written files grouped by folder. The
 card header offers Check progress again for current and stale readings. The control stays visible
 where a press is temporarily unavailable. Evidence holds the request count.

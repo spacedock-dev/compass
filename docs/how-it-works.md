@@ -35,19 +35,23 @@ flowchart LR
 A check goes like this:
 
 1. Open the Goal card to read the saved goal and what done looks like. Press Edit goal to
-   change the words, or Use your prompt to start with a message from the session. You can
-   save up to six expected outcome lines.
+   change the words, or Use your prompt to start with a message from the session. The prompt
+   picker says when it finds no usable prompts or cannot read them. You can save up to six
+   lines describing what done looks like.
 2. Press Check progress. This sends the session's content to a model (see
    [what can leave your machine](#what-can-leave-your-machine)).
 3. Is it on track? shows On track, Slightly off course, Off course or Way off course when
    the record supports a level. On track means Compass found no departure in what it read.
-   If there is no level, the card says why. Codex checks show their findings without a
-   level. The quotes link opens Evidence at the first cited entry.
-4. When Steer back is available, it opens an editable message based on your goal. Copy
-   message and paste it into the session yourself. Compass never sends it for you.
-5. Once a reading is saved, the button reads Check progress again. New work or a changed goal
-   can put the reading out of date. Uses AI stays beside the check. When 10 or fewer of
-   the daily checks remain, it also shows the count.
+   If Compass found a departure but has no level, the card shows the finding. Codex checks
+   always use that approach for departures. The quotes link counts the entries cited by the
+   finding and opens Evidence, with focus on the first available quote.
+4. When Steer back is available, it opens an editable message based on your goal or a saved
+   line describing what done looks like. Use Copy message and paste it into the session
+   yourself. Compass never sends it for you.
+5. Once a reading is saved, the button reads Check progress again. New work, a changed goal
+   or a withdrawn reading can put the check out of date. If a newer check fails to produce a
+   reading, the card identifies any finding it shows from the earlier check. Uses AI stays
+   beside the check and shows the remaining count when 10 or fewer daily checks are left.
 
 Read a level as an account of the evidence, not a verdict you can rely on: the reader's accuracy
 check has not passed. A citation such as `[41]` lets you see the evidence for yourself. Hover over it

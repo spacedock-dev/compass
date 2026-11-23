@@ -91,8 +91,9 @@ describe('the Intent how-to', () => {
       await openHowTo(page);
       const popup = explanation() as HTMLElement;
       expect(popup.textContent?.trim().split(/\s+/).length).toBeLessThanOrEqual(150);
-      expect(popup.textContent).toContain('1. Give the goal.');
-      expect(popup.textContent).toContain('Expected outcome is optional.');
+      expect(popup.textContent).toContain(
+        '1. Give the goal and, if useful, describe what done looks like.',
+      );
       expect(popup.textContent).not.toContain('a level needs one');
       // Where a detected goal comes from, and that it stands until the reader edits it.
       expect(popup.textContent).toContain(

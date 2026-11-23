@@ -129,7 +129,7 @@ describe('a /goal over a session with no saved goal', () => {
     await settle(page);
     expect(goalBox().value).toBe(excerpt);
     expect(source()).toMatch(
-      / · Shortened to fit 1,000 characters; Analyze reads this shortened goal$/,
+      / · Shortened to fit 1,000 characters\. A progress check reads this shortened goal$/,
     );
   });
 
@@ -142,7 +142,7 @@ describe('a /goal over a session with no saved goal', () => {
     });
     await settle(page);
     expect(source()).toMatch(
-      / · saved(?: at .*?)? · Shortened to fit 1,000 characters; Analyze reads this shortened goal$/,
+      / · saved(?: at .*?)? · Shortened to fit 1,000 characters\. A progress check reads this shortened goal$/,
     );
   });
 

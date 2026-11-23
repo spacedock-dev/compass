@@ -66,7 +66,7 @@ export const AWrappedDirectionIsQuotedWithoutItsWrapper: Story = {
   }),
   play: async ({ canvasElement }) => {
     const drift = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
-    await within(drift).findByText(/^Your \d\d:\d\d message adds:$/);
+    await within(drift).findByText(/^You sent this message later, at \d\d:\d\d\.$/);
     await expect(drift.textContent).not.toMatch(WRAPPER);
     const whole = await waitFor(() => {
       const node = drift.querySelector<HTMLElement>('[data-next-cockpit-direction-whole]');

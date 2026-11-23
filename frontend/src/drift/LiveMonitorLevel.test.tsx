@@ -246,7 +246,7 @@ describe('the level the monitor draws', () => {
     expect(source()).not.toMatch(/Live monitor/);
   });
 
-  it('keeps Not enough recorded yet off the pill, as for the estimate', async () => {
+  it('says it is too early when the Live monitor completed a check without enough evidence', async () => {
     await open({
       work: {
         live_levels: [ESTIMATE('none_or_low')],
@@ -254,6 +254,9 @@ describe('the level the monitor draws', () => {
       },
     });
     expect(pill()).toBeNull();
+    const answer = textOf('[data-next-progress-absence]');
+    expect(answer).toMatch(/^Too early to tell/);
+    expect(answer).toContain('The Live monitor had too little recorded work to check progress.');
   });
 });
 

@@ -91,7 +91,7 @@ describe('the first view of a session', () => {
     await settle(page);
     expect(lineBoxes()).toHaveLength(1);
     expect(text('.next-cockpit-held-lines [data-slot="accordion-trigger"]')).toBe(
-      'Expected outcome (optional) · up to 6 lines',
+      'What “done” looks like (optional) · up to 6 lines',
     );
     // Drawn before the reader types, as the design has them.
     expect(control('held-line-add')).not.toBeNull();
@@ -124,12 +124,27 @@ describe('the first view of a session', () => {
     expect(control('held-undo')?.getAttribute('aria-disabled')).toBe('true');
   });
 
+  it('explains shortened prompt provenance in saved Goal read mode', async () => {
+    const page = mountDrift({
+      store: {
+        goal: 'Ship the queue…',
+        goal_source: 'first-prompt',
+        goal_source_at: 100,
+      },
+    });
+    await settle(page);
+    expect(text('[data-next-cockpit-goal-source]')).toContain(
+      'Shown as an excerpt. A progress check can read up to the first 1,000 characters of the original prompt',
+    );
+    expect(screen.getByRole('button', { name: 'Edit goal' })).toBeVisible();
+  });
+
   it('warns beside the goal before typing on an ended session', async () => {
     const page = mountSession({ session: { ended_at: 999 } });
     await settle(page);
     fireEvent.click(screen.getByRole('button', { name: 'How goals work' }));
     expect(text('[data-next-ended-goal]')).toContain(
-      'This session has ended. What you save now is kept, but Analyze will not check the session against it. Analyze still uses the intent you saved before the session ended, or a goal taken from one of your prompts.',
+      'This session has ended. Compass keeps goals you save now for reference. A progress check uses the goal you saved before the session ended or a goal taken from one of your prompts.',
     );
     expect(goalBox().value).toBe('Ship the queue worker');
   });
@@ -149,7 +164,7 @@ describe('the first view of a session', () => {
     expect(control('reading-ask')).not.toBeNull();
     expect(control('reading-ask')?.getAttribute('aria-disabled')).not.toBe('true');
     expect(text('[data-next-ended-goal]')).toContain(
-      'Analyze still uses the intent you saved before the session ended',
+      'A progress check uses the goal you saved before the session ended',
     );
     expect(text('[data-next-ended-goal]')).not.toContain('can only read');
   });

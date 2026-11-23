@@ -62,8 +62,8 @@ export function GoalExplanation() {
         className="grid max-w-[var(--measure)] gap-2 text-body text-muted-foreground"
       >
         <p>
-          1. Give the goal. Expected outcome is optional. Compass uses /goal until edited, or drafts
-          from your first prompt.
+          1. Give the goal and, if useful, describe what done looks like. Compass uses /goal until
+          edited, or drafts from your first prompt.
         </p>
         <p>2. A progress check uses AI and counts against a daily cap.</p>
         <p>3. To steer back, copy a correction.</p>

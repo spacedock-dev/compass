@@ -39,6 +39,18 @@ describe('Analyze closing and opening', () => {
     );
   });
 
+  it('names the goal when progress closes after a late save', async () => {
+    const page = mountDrift();
+    await page.settle();
+    const late = { ok: false, reason: 'revision-after-end', sentence: 'Saved after end.' };
+    await page.poll(board(late, 1100));
+    await page.advance(11_000);
+    await page.poll(board(late, 1120));
+    const expected = 'Check progress closed because the goal was saved after the session ended.';
+    expect(change()).toBe(expected);
+    expect(cue()).toBe(expected);
+  });
+
   it('does not close on the clock alone: the hold waits for a second payload as well', async () => {
     const page = mountDrift({});
     await page.settle();

@@ -1085,6 +1085,8 @@ export const MoreIsRetired: Story = {
     await expect(inIntent.queryByRole('button', { name: 'More about these words' })).toBeNull();
     await expect(inIntent.queryByRole('button', { name: 'Clear' })).toBeNull();
     const how = inIntent.getByRole('button', { name: 'How goals work' });
+    await expect(inIntent.getByRole('button', { name: 'Edit goal' })).toBeVisible();
+    await expect(inIntent.queryByRole('button', { name: 'Save intent' })).toBeNull();
     await userEvent.click(how);
     await waitFor(async () => {
       await expect(inIntent.getByText(INTENT_MEASURED)).toBeVisible();
@@ -1123,7 +1125,9 @@ export const MoreIsRetiredForAnEndedSession: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole('button', { name: 'How goals work' }));
     await waitFor(() =>
-      expect(canvas.getByText(/^This session has ended. What you save now/)).toBeVisible(),
+      expect(
+        canvas.getByText(/^This session has ended. Compass keeps goals you save now/),
+      ).toBeVisible(),
     );
   },
 };

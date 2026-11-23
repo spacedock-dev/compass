@@ -260,7 +260,7 @@ export const SavingOnAnEndedSessionRepeatsTheCaveat: Story = {
   play: async ({ canvasElement }) => {
     const footer = await saveTyped(canvasElement);
     await expect(footer.querySelector('.next-cockpit-held-cue')).toHaveTextContent(
-      'Saved. This session has ended. What you save now is kept, but Analyze will not check the session against it. Analyze still uses the intent you saved before the session ended, or a goal taken from one of your prompts.',
+      'Saved. This session has ended. Compass keeps goals you save now for reference. A progress check uses the goal you saved before the session ended or a goal taken from one of your prompts.',
     );
   },
 };

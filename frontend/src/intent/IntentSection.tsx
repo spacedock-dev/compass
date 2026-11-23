@@ -7,7 +7,7 @@ import { Icon } from '../ui/icons';
 import { formatTimestamp } from '../shell/format';
 import { FindGoalNote } from './FindGoal';
 import { endedAt } from '../observed';
-import { GOAL_LABEL } from '../language/glossary';
+import { GLOSSARY, GOAL_LABEL } from '../language/glossary';
 import { useDisplayed } from '../shell/context';
 import { ActionButton } from './ActionButton';
 import { annotationDiscarded, discardStamp, heldCap, storeUnreadable } from './annotation';
@@ -148,7 +148,7 @@ function SavedGoal({ goal }: { readonly goal: string }) {
       <p className="wrap-anywhere text-value font-bold">{goal}</p>
       {lines.length ? (
         <div>
-          <h3 className="text-body font-semibold">What “done” looks like</h3>
+          <h3 className="text-body font-semibold">{GLOSSARY.doneLooksLike.shown}</h3>
           <ul className="mt-1 grid gap-1">
             {lines.map((line, index) => (
               <li key={index} className="flex items-start gap-2 wrap-anywhere">
@@ -227,7 +227,7 @@ export function IntentSection({ editable }: { readonly editable: boolean }) {
                 focusKey={`${key}:edit`}
                 onPress={() => openGoalEditor(ctx, session)}
               />
-              <PromptSelect compact />
+              <PromptSelect compact offerWithoutCandidates />
             </>
           ) : null}
         </span>

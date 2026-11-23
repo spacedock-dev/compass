@@ -244,6 +244,26 @@ class TemplateTest(unittest.TestCase):
             compose()["starter"],
         )
 
+    def test_the_board_starter_names_the_departing_done_line_without_a_goal(self) -> None:
+        row = session_row(
+            annotation_goal="",
+            annotation_line_1=L2,
+            annotation_line_2=f"{L1}.",
+            annotation_line_3="",
+            annotation_assessment=reading(
+                line_1=row_of(UNVERIFIABLE, clause=L2),
+                line_2=row_of(DEPARTED, ("c-fail",), clause=L1),
+            ),
+        )
+        answer = compose(row)
+        self.assertIs(True, answer["ok"])
+        self.assertEqual(
+            '"The parser tests pass" is the outcome I asked for. '
+            "Please address what went off course and work toward that outcome.",
+            answer.get("starter"),
+        )
+        self.assertIn(f"- {L1}: departed at T110{{c-fail}}", rendered(answer["parts"]))
+
     def test_a_placeholder_carries_the_fact_id_and_nothing_else(self) -> None:
         for part in compose()["parts"]:
             if not isinstance(part, str):

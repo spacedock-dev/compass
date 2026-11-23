@@ -1,6 +1,6 @@
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../ui/select';
 import { Label } from '../ui/label';
-import { useEffect } from 'react';
+import { useEffect, useId } from 'react';
 import { compatSessKey } from '../api/identity';
 import { useFocusKey } from '../controls';
 import { datedClock } from '../observed/values';
@@ -22,7 +22,7 @@ import { ADD_DIRECTION, DIRECTION_CLIPPED, KEEP } from './sentences';
 import { entryNumbers, type WorkEntry } from './work';
 import { usePanel } from './useIntent';
 
-/* The question before the press: "Your 11:05 message adds: ...", with the message quoted whole, asked beside
+/* The question dates and quotes the whole message, asked beside
    the expected outcome so the answer has one home and is asked before a reading is spent. Each choice acts on
    its first press, because the words each acts on are drawn here before any press (`loadWholes`): Add as a
    line and Make it the goal open the rule in it for review, and Leave it settles what is shown. Analyze drift
@@ -31,7 +31,6 @@ import { usePanel } from './useIntent';
    which the reader settles. A direction is named by the time it was said, never by an entry number the
    reader has not been shown. */
 
-const REFUSED_ID = 'next-cockpit-reading-refused';
 /* A direction in the picker: the time it was said, then its words. Never a number: the entry number is the
    record's own bookkeeping and shows the reader nothing they said. */
 function directionLabel(entry: WorkEntry): string {
@@ -95,6 +94,7 @@ interface DirectionQuestionProps {
 export function DirectionQuestion({ primary = false }: DirectionQuestionProps) {
   const { ctx, input, session, source, payload, projectKey } = usePanel();
   const key = compatSessKey(session);
+  const refusalId = useId();
   const pending = directionsOpen(input, source);
   const count = pending.length;
   // The whole texts go once no direction is open, as the legacy question dropped them.
@@ -125,10 +125,10 @@ export function DirectionQuestion({ primary = false }: DirectionQuestionProps) {
   const earliest = directionSelected(ctx.held, session, pending);
   if (!earliest) return null;
   const n = numbers.get(String(earliest.id || ''));
-  const described = edited ? REFUSED_ID : '';
+  const described = edited ? refusalId : '';
   const said =
     count === 1
-      ? `Your ${datedClock(Number(earliest.at) || 0, ctx.shell.clock.now() / 1000)} message adds:`
+      ? `You sent this message later, at ${datedClock(Number(earliest.at) || 0, ctx.shell.clock.now() / 1000)}.`
       : `You sent ${String(count)} messages after your goal. Choose one to add or make the goal, or leave them all:`;
 
   return (
@@ -137,10 +137,7 @@ export function DirectionQuestion({ primary = false }: DirectionQuestionProps) {
       data-next-cockpit-direction-question
     >
       <h3 className="m-0 text-body font-semibold">Is this part of your goal?</h3>
-      <p className="m-0 text-body text-muted-foreground">
-        Later in the session you asked for something your goal does not mention.
-      </p>
-      <p className="next-cockpit-direction-said next-visually-hidden">{said}</p>
+      <p className="next-cockpit-direction-said text-muted-foreground">{said}</p>
       {count > 1 ? (
         <Label className="next-direction-select">
           {'Direction '}
@@ -203,7 +200,7 @@ export function DirectionQuestion({ primary = false }: DirectionQuestionProps) {
         />
       </div>
       {edited ? (
-        <p className="next-cockpit-reading-why" id={REFUSED_ID}>
+        <p className="next-cockpit-reading-why" id={refusalId}>
           {reason}
         </p>
       ) : null}

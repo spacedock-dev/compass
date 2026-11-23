@@ -75,11 +75,27 @@ describe('a later direction is quoted where it is settled', () => {
   it('quotes the whole message under its time before any press, beside the three choices', async () => {
     const page = mount();
     await settle(page);
-    expect(text('.next-cockpit-direction-said')).toContain(`Your ${clock(600)} message adds:`);
+    expect(text('.next-cockpit-direction-said')).toContain(
+      `You sent this message later, at ${clock(600)}.`,
+    );
     expect(text('[data-next-cockpit-direction-whole]')).toContain(WHOLE);
     expect(
       [...document.querySelectorAll('.next-cockpit-reading-ask button')].map((b) => b.textContent),
     ).toEqual(['Add as a line', 'Make it the goal', 'Leave it']);
+  });
+
+  it('dates a message that repeats the saved goal without claiming it adds something', async () => {
+    const page = mount({
+      '/api/project-context': record(fact('f1', 600, SAVED.goal)),
+      '/api/direction': () =>
+        json({ ok: true, results: [{ ok: true, text: SAVED.goal, clipped: false }] }),
+    });
+    await settle(page);
+    expect(text('.next-cockpit-direction-said')).toBe(
+      `You sent this message later, at ${clock(600)}.`,
+    );
+    expect(text('[data-next-cockpit-direction-whole]')).toContain(SAVED.goal);
+    expect(text('[data-next-cockpit-direction-question]')).not.toContain('does not mention');
   });
 
   it('settles on the first press of Leave it, with the words already on screen', async () => {

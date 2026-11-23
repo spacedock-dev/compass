@@ -204,7 +204,7 @@ describe('Save intent', () => {
     await settle(page);
     expect(footerCue()).toBe(
       caveat
-        ? 'Saved. This session has ended. What you save now is kept, but Analyze will not check the session against it. Analyze still uses the intent you saved before the session ended, or a goal taken from one of your prompts.'
+        ? 'Saved. This session has ended. Compass keeps goals you save now for reference. A progress check uses the goal you saved before the session ended or a goal taken from one of your prompts.'
         : 'Saved.',
     );
   });
@@ -543,7 +543,7 @@ describe('the header status and source line after a prompt adoption', () => {
     });
     await settle(page);
     expect(text('[data-next-cockpit-goal-source]')).toBe(
-      'From your first prompt · saved · Shortened here; Analyze reads the whole prompt',
+      'From your first prompt · saved · Shown as an excerpt. A progress check can read up to the first 1,000 characters of the original prompt',
     );
   });
 

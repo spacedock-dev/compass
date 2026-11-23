@@ -2,7 +2,8 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, within, waitFor } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { App } from '../src/App';
-import { healthyRoute } from './drift.scenario';
+import { DriftScenario, fact, healthyRoute } from './drift.scenario';
+import { clock } from '../src/observed';
 import { createShell } from '../src/shell/createShell';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
@@ -379,5 +380,39 @@ export const PhoneDirectionAndPendingLine: Story = {
     } finally {
       if (browserPage) await browserPage.viewport(before.width, before.height);
     }
+  },
+};
+
+export const ARepeatedGoalRemainsAQuestion: Story = {
+  render: () => (
+    <DriftScenario
+      scenario={{
+        facts: [
+          fact('repeat', 1005, {
+            type: 'user_message',
+            by: 'person:me',
+            summary: 'Ship the queue',
+          }),
+        ],
+        directionText: 'Ship the queue',
+      }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const progress = within(await canvas.findByRole('region', { name: 'Is it on track?' }));
+    await expect(
+      await progress.findByRole('heading', { name: 'Is this part of your goal?' }),
+    ).toBeVisible();
+    await expect(
+      progress.getByText(`You sent this message later, at ${clock(1005)}.`),
+    ).toBeVisible();
+    await expect(progress.getByText('Ship the queue', { exact: true })).toBeVisible();
+    await expect(progress.queryByText(/your goal does not mention/)).toBeNull();
+    await expect(
+      within(canvas.getByRole('region', { name: 'Goal' })).queryByRole('heading', {
+        name: 'Is this part of your goal?',
+      }),
+    ).toBeNull();
   },
 };

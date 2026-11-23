@@ -7,7 +7,14 @@ import { Icon } from '../ui/icons';
 import { Popover, PopoverContent } from '../ui/popover';
 import { useFocusKey } from '../controls';
 import { sessionGoalCandidate } from '../sessions/intent';
-import { goalKey, promptClip, promptMenu, promptChoices, SESSION_GOAL } from './derive';
+import {
+  goalKey,
+  promptClip,
+  promptMenu,
+  promptChoices,
+  SESSION_GOAL,
+  supportsPromptChoices,
+} from './derive';
 import { choosePrompt } from './edit';
 import { closePromptMenu, loadPromptChoices } from './prompts';
 import { usePanel } from './useIntent';
@@ -24,7 +31,13 @@ const PROMPT_SHOWN = 140;
    the chosen prompt shows in the goal and its source line. The popup opens before the async read, because a
    request made after that read loses the click's user activation, and stays the same popup while the
    prompts load and across board revisions. */
-export function PromptSelect({ compact = false }: { readonly compact?: boolean }) {
+export function PromptSelect({
+  compact = false,
+  offerWithoutCandidates = false,
+}: {
+  readonly compact?: boolean;
+  readonly offerWithoutCandidates?: boolean;
+}) {
   const { ctx, input, session, projectKey } = usePanel();
   const menu = promptMenu(input);
   const stated = sessionGoalCandidate(session);
@@ -34,6 +47,7 @@ export function PromptSelect({ compact = false }: { readonly compact?: boolean }
       (choice) => [choice.factId, choice.text] as const,
     ),
   ]);
+  const supported = supportsPromptChoices(session);
   const bounded = ctx.held.prompts.get(compatSessKey(session))?.bounded;
   /* One label whatever the box holds: the face used to change to "Replace with your prompt", which made the
      control read as two. */
@@ -42,7 +56,7 @@ export function PromptSelect({ compact = false }: { readonly compact?: boolean }
   const focusKey = `${goalKey(session)}:prompt`;
   const ref = useFocusKey<HTMLButtonElement>(ctx.shell.controls.focusLane, focusKey);
   // A last offer disappearing must state the absence in the popup the reader already opened.
-  if (!menu.visible && !open) return null;
+  if (!menu.visible && !open && !offerWithoutCandidates) return null;
   const absent = (value: string, text: string) => (
     <div
       role="option"
@@ -62,8 +76,8 @@ export function PromptSelect({ compact = false }: { readonly compact?: boolean }
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
-          if (next) void loadPromptChoices(ctx, input, projectKey);
-          else closePromptMenu(ctx, session);
+          if (next && supported) void loadPromptChoices(ctx, input, projectKey);
+          if (!next) closePromptMenu(ctx, session);
         }}
       >
         <PopoverPrimitive.Trigger
@@ -144,7 +158,7 @@ export function PromptSelect({ compact = false }: { readonly compact?: boolean }
                       </button>
                     );
                   })
-                : absent('__empty', menu.failed ? EMPTY_FAILED : EMPTY_NONE)}
+                : absent('__empty', menu.failed || !supported ? EMPTY_FAILED : EMPTY_NONE)}
           </div>
         </PopoverContent>
       </Popover>

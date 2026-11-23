@@ -480,7 +480,7 @@ export function resultWork(
 }
 
 export interface Stale {
-  readonly kind: 'intent' | 'work';
+  readonly kind: 'intent' | 'work' | 'withdrawn';
   readonly head: string;
   /** The revision sentence, only where the words changed. */
   readonly superseded: string;
@@ -498,6 +498,14 @@ export function resultStale(
   annotation: Annotation | null | undefined,
   all: readonly WorkEntry[],
 ): Stale | null {
+  if (shape.scope === 'withdrawn') {
+    return {
+      kind: 'withdrawn',
+      head: 'This check was withdrawn.',
+      superseded: '',
+      before: null,
+    };
+  }
   /* Compass's answer to a command the reader typed is not work the reading could have read. */
   const entries = all.filter((entry) => entry.compassTurn !== true);
   const current = nextNumber(annotation?.['revision']);

@@ -36,6 +36,54 @@ function mountSteer(extra: Record<string, unknown> = {}) {
 }
 
 describe('Steer back', () => {
+  it('gives the feedback-only controls no dangling accessible names', async () => {
+    const page = mountSteer({
+      session: {
+        ...session,
+        annotation_assessment: {
+          ...ASSESSMENT,
+          criteria: {
+            goal: {
+              result: 'not verifiable from available evidence',
+              cites: [],
+              detail: '',
+              clause: 'Ship the queue',
+            },
+          },
+        },
+      },
+    });
+    await page.settle();
+    expect(byAction('steer-back')).toBeNull();
+    expect(byAction('not-accurate')).not.toBeNull();
+    const progress = document.querySelector('[data-next-drift-body]');
+    for (const node of progress?.querySelectorAll('[aria-labelledby]') ?? []) {
+      for (const id of node.getAttribute('aria-labelledby')?.split(/\s+/) ?? []) {
+        expect(document.getElementById(id)).not.toBeNull();
+      }
+    }
+  });
+
+  it('keeps an open edited correction when the saved goal changes', async () => {
+    const page = mountSteer();
+    await page.settle();
+    await press(byAction('steer-back'));
+    await page.settle();
+    const field = box();
+    if (!field) throw new Error('No correction editor');
+    await act(async () => {
+      fireEvent.input(field, { target: { value: 'My edited correction.' } });
+      field.blur();
+    });
+    await page.poll({ ...driftBoard({ session, store: { revision: 4 } }), generated: 1300 });
+    await page.settle();
+    expect(byAction('steer-back')).toBeNull();
+    expect(box()).toBe(field);
+    expect(box()?.value).toBe('My edited correction.');
+    expect(textOf('[data-next-correction-older]')).toContain('older');
+    expect(byAction('correction-recompose')).toBeNull();
+  });
+
   it('opens the goal editor from the progress card without writing', async () => {
     const page = mountSteer();
     await page.settle();
@@ -135,6 +183,47 @@ describe('Steer back', () => {
       fireEvent.input(field);
     });
     expect(textOf('[data-next-correction-cue]')).toBe('Copy message');
+  });
+
+  it('opens, edits and copies the starter for a session with only a saved done line', async () => {
+    const starter =
+      '"Tests pass" is the outcome I asked for. Please address what went off course and work toward that outcome.';
+    const page = mountSteer({
+      store: { goal: '', lines: ['Tests pass'] },
+      session: {
+        ...session,
+        first_prompt: '',
+        first_prompt_at: null,
+        annotation_assessment: {
+          ...ASSESSMENT,
+          criteria: {
+            line_1: {
+              result: 'departure',
+              cites: ['c1'],
+              detail: 'It stopped.',
+              clause: 'Tests pass',
+            },
+          },
+        },
+      },
+      routes: {
+        '/api/correction': () => json({ ok: true, starter, parts: PARTS }),
+        '/api/correction/copied': () => json({ ok: true }),
+      },
+    });
+    await page.settle();
+    await press(byAction('steer-back'));
+    await page.settle();
+    const field = box();
+    if (!field) throw new Error('No correction editor');
+    expect(field.value).toBe(starter);
+    const edited = `${starter} Start with the parser tests.`;
+    await act(async () => {
+      fireEvent.input(field, { target: { value: edited } });
+    });
+    await press(byAction('correction-copy'));
+    await page.settle();
+    expect(page.written).toEqual([edited]);
   });
 
   it('writes one copy for one press however it is pressed', async () => {

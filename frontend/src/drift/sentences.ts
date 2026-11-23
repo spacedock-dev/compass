@@ -603,7 +603,7 @@ export const FLIP_OPEN_ENDED = 'Check progress is open: the session ended.';
    which did not stop. */
 export const FLIP_CLOSED = 'Check progress closed: the session went quiet.';
 export const FLIP_CLOSED_REVISION =
-  'Check progress closed: your intent was saved after the session ended.';
+  'Check progress closed because the goal was saved after the session ended.';
 
 export const WORK_HARNESSES: readonly string[] = ['claude', 'codex', 'pi'];
 export const WORK_READ_FROM = 'Compass reads work results from Claude Code, Codex and Pi only.';

@@ -80,7 +80,15 @@ function correctionRows(text: string): number {
   return Math.min(CORRECTION_ROWS_MAX, Math.max(CORRECTION_ROWS_MIN, text.split('\n').length + 1));
 }
 
-function CorrectionBox({ held, from }: { readonly held: HeldCorrection; readonly from: string }) {
+function CorrectionBox({
+  held,
+  from,
+  canRecompose,
+}: {
+  readonly held: HeldCorrection;
+  readonly from: string;
+  readonly canRecompose: boolean;
+}) {
   const { ctx, model } = useDrift();
   const { key, identity } = model;
   const draft = correctionDraft(held);
@@ -136,7 +144,7 @@ function CorrectionBox({ held, from }: { readonly held: HeldCorrection; readonly
   );
   const label =
     held.cue === 'copied' ? 'Copied' : held.cue === 'failed' ? 'Copy unavailable' : 'Copy message';
-  const stale = Boolean(held.stale);
+  const stale = Boolean(held.stale) || !canRecompose;
   return (
     <Card
       variant="steer-box"
@@ -191,17 +199,19 @@ function CorrectionBox({ held, from }: { readonly held: HeldCorrection; readonly
             <p className="next-cockpit-reading-why" data-next-correction-older>
               {CORRECTION_OLDER}
             </p>
-            <Button
-              type="button"
-              data-next-cockpit-action="correction-recompose"
-              data-next-focus={`correction-recompose:${key}`}
-              onClick={(event) => {
-                event.preventDefault();
-                if (identity) void recomposeCorrection(ctx, identity);
-              }}
-            >
-              Recompose
-            </Button>
+            {canRecompose ? (
+              <Button
+                type="button"
+                data-next-cockpit-action="correction-recompose"
+                data-next-focus={`correction-recompose:${key}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  if (identity) void recomposeCorrection(ctx, identity);
+                }}
+              >
+                Recompose
+              </Button>
+            ) : null}
           </>
         ) : null}
         <p
@@ -228,7 +238,13 @@ function CorrectionBox({ held, from }: { readonly held: HeldCorrection; readonly
 
 /* The design's steer box with Copy-only wording: "Edit this if you like, then paste it into the session", beside what it was built from, and the
    hint the issue gives in place of the Send hint. Copy's label is its cue, the More menu's "Copied" and "Copy unavailable". */
-export function SteerBox({ from = '' }: { readonly from?: string }): ReactNode {
+export function SteerBox({
+  from = '',
+  canRecompose = true,
+}: {
+  readonly from?: string;
+  readonly canRecompose?: boolean;
+}): ReactNode {
   const { ctx, model } = useDrift();
   const held = ctx.drift.corrections.get(model.key);
   if (!held || !held.open || held.pending) return null;
@@ -240,7 +256,7 @@ export function SteerBox({ from = '' }: { readonly from?: string }): ReactNode {
     );
   }
   if (!Array.isArray(held.parts)) return null;
-  return <CorrectionBox held={held} from={from} />;
+  return <CorrectionBox held={held} from={from} canRecompose={canRecompose} />;
 }
 
 /* Steer back as the design draws it, a section of its own after the departures it steers from: a heading, one
@@ -249,15 +265,21 @@ export function SteerBox({ from = '' }: { readonly from?: string }): ReactNode {
 export function SteerSection({
   buttons,
   box,
+  hasCorrection,
 }: {
   readonly buttons: ReactNode;
   readonly box: ReactNode;
+  readonly hasCorrection: boolean;
 }): ReactNode {
   const { model } = useDrift();
   const head = `steer-back-head:${model.key}`;
   return (
-    <section className="flex flex-col gap-2.5 px-4" aria-labelledby={head} data-next-steer-section>
-      {box ? (
+    <section
+      className="flex flex-col gap-2.5 px-4"
+      aria-labelledby={hasCorrection ? head : undefined}
+      data-next-steer-section
+    >
+      {hasCorrection ? (
         <h3 id={head} className="next-visually-hidden">
           Steer back
         </h3>

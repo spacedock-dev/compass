@@ -282,7 +282,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'The goal itself or proof of completion',
         'Technical fields retain their names',
       ],
-      'Expected outcome (optional)',
+      'What “done” looks like',
     ),
     intent: ruled(
       [
