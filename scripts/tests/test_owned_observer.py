@@ -613,7 +613,7 @@ class TheReportNamesEachRowTest(unittest.TestCase):
             for line in security.splitlines()
             if line.startswith(f"| {observe_journey.ROW_PRESS} |")
         )
-        self.assertIn("Pause model calls", row.split("|")[3])
+        self.assertIn("Pause all AI use", row.split("|")[3])
 
     def test_the_shapes_report_carries_no_argument_path_or_name(self) -> None:
         trace = [
