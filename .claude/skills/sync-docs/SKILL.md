@@ -471,11 +471,13 @@ minutes, a Python version. Stale counts are this repository's most common drift.
    fi
 
    # f. Product words: run this command from the repository root with the pinned Node version.
-   #    Default: report new occurrences on the branch, including staged and untracked docs.
-   #    Set PRODUCT_WORDS_SCOPE=--all for a full inventory, or set it to a scratch file's path.
-   python3 - "${PRODUCT_WORDS_SCOPE:---branch}" <<'PY'
+   #    For a PR, use the default branch scan. It includes staged and untracked docs.
+   #    For periodic or release reconciliation, prefix the invocation with PRODUCT_WORDS_SCOPE=--all.
+   #    To check a scratch copy, use PRODUCT_WORDS_SCOPE with the file's path instead.
+   python3 - "${PRODUCT_WORDS_SCOPE:-}" <<'PY'
    from collections import Counter
    import json
+   import os
    from pathlib import Path
    import re
    import subprocess
@@ -492,25 +494,94 @@ minutes, a Python version. Stale counts are this repository's most common drift.
         "console.log(JSON.stringify(GLOSSARY));"],
        cwd=ROOT, text=True, encoding="utf-8",
    ))
-   # These rows use former labels in Replaces. Other rows describe migrations
-   # in prose, or name state and progress values rather than controls.
-   control_rows = """
-   goal doneLooksLike intent checkProgress checkProgressAgain progressCheck
-   progressRecords departureRecorded readingLooksWrong updateGoalInstead attention
-   pauseAi resumeAi aiAllowance progressCheckReadSize howGoalsWork howFilterCountsWork
-   howSessionHistoryWorks howProgressChecksWork howProjectGroupingWorks howAiAllowanceWorks
-   isItOnTrack activityLog
-   """.split()
-   labels = {
-       label for key in control_rows for label in glossary[key]["replaces"].split(", ")
-       if label != glossary[key]["plain"]
-   }
-   longest_first = sorted(labels, key=lambda name: (-len(name), name))
-   alternatives = "|".join(map(re.escape, longest_first))
-   retired = re.compile(rf"(?<![\w-])(?:{alternatives})(?![\w-])")
-   parenthetical = re.compile(rf"""\(\s*([`"']?)(?:{alternatives})\1\s*\)""")
+   # Replaces mixes old labels with descriptions of what changed.
+   migration_notes = set("""\
+   Keeps current label
+   Names the pill for assistive technology
+   Singular Working count
+   Plural Working count
+   No standalone attention-row control
+   No standalone control
+   Direct editing in the goal field
+   No dedicated Settings section
+   Goal-only reading with no level
+   Stale or withdrawn reading
+   Cost implied by Analyze
+   Budget count
+   New destination
+   Running count at zero
+   Session activity and summary areas
+   Session facts spread across the page
+   Unfiltered Sessions list
+   Separate technical controls
+   Keeps the same subject as Show technical details
+   Separate model and quota controls
+   Separate model controls and disclosures
+   Always-visible prompt limits""".splitlines())
+   current = {row["plain"] for row in glossary.values()}
+   replacements = {}
+   for row in glossary.values():
+       former = row["replaces"]
+       if former in migration_notes or former == f'{row["plain"]} (kept)':
+           continue
+       # A shipped literal can itself have a comma. The lists in Replaces
+       # introduce each additional label with a capital letter.
+       labels = [former] if former == row.get("shown") else re.split(r", (?=[A-Z])", former)
+       for label in labels:
+           label = label.removeprefix("Generic ")
+           if label and label not in current:
+               replacements.setdefault(label, set()).add(row["plain"])
 
-   scope = sys.argv[1]
+   def alternatives(labels):
+       longest_first = sorted(labels, key=lambda name: (-len(name), name))
+       return "|".join(re.escape(name).replace(r"\ ", r"\s+") for name in longest_first)
+
+   names = re.compile(rf"(?<![\w-])(?:{alternatives(current | replacements.keys())})(?![\w-])")
+   parenthetical = re.compile(rf"""\s+\(\s*(?P<quote>["']?)(?P<old>{alternatives(replacements)})(?P=quote)\s*\)""")
+   heading = re.compile(r"^ {0,3}#{1,6}(?:\s|$)")
+   block_start = re.compile(r"^\s*(?:[-*+]\s|\d+[.)]\s|\||`{3,}|~{3,})")
+   inline_markup = re.compile(r"(?<!\w)(\*{1,3}|_{1,3}|`+)(?=\S)(.+?)(?<=\S)\1(?!\w)", re.S)
+
+   def blocks(lines):
+       start = 0
+       for index, line in enumerate(lines):
+           if not line.strip() or heading.match(line) or block_start.match(line):
+               if start < index:
+                   yield start, lines[start:index]
+               start = index
+               if not line.strip() or heading.match(line):
+                   if line.strip():
+                       yield index, [line]
+                   start = index + 1
+       if start < len(lines):
+           yield start, lines[start:]
+
+   def occurrences(lines):
+       seen = set()
+       for start, block in blocks(lines):
+           is_heading = heading.match(block[0])
+           if is_heading:
+               seen.clear()
+           visible = inline_markup.sub(r"\2", "\n".join(block))
+           exempt = None
+           for word in names.finditer(visible):
+               label = " ".join(word.group().split())
+               if label in current:
+                   if label not in seen and not is_heading:
+                       pair = parenthetical.match(visible, word.end())
+                       if pair and label in replacements.get(" ".join(pair["old"].split()), ()):
+                           exempt = pair.span("old")
+                       seen.add(label)
+               elif word.span() != exempt:
+                   first = start + visible.count("\n", 0, word.start())
+                   last = start + visible.count("\n", 0, word.end())
+                   yield first, (label, *lines[first:last + 1])
+
+   scope = os.environ.get("PRODUCT_WORDS_SCOPE") or sys.argv[1] or "--branch"
+   scope_name = {
+       "--branch": "branch: new occurrences against the merge base",
+       "--all": "full inventory",
+   }.get(scope, "scratch file")
    base = git("merge-base", "origin/main", "HEAD").strip() if scope == "--branch" else None
    if scope in {"--all", "--branch"}:
        untracked = git("ls-files", "-z", "--others", "--exclude-standard")
@@ -536,24 +607,28 @@ minutes, a Python version. Stale counts are this repository's most common drift.
            if subprocess.run(
                ["git", "cat-file", "-e", source], cwd=ROOT, capture_output=True, check=False
            ).returncode == 0:
-               previous.update(git("show", source).splitlines())
-       for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-           if previous[line]:
-               previous[line] -= 1
-           elif retired.search(parenthetical.sub("", line)):
-               print(f"{display}:{number}:{line}")
-               found = True
+               previous.update(match for _, match in occurrences(git("show", source).splitlines()))
+       lines = path.read_text(encoding="utf-8").splitlines()
+       findings = set()
+       for index, match in occurrences(lines):
+           if previous[match]:
+               previous[match] -= 1
+           else:
+               findings.add(index)
+       for index in sorted(findings):
+           print(f"{display}:{index + 1}:{lines[index]}")
+           found = True
    if found:
-       print("PRODUCT WORD DRIFT: review the lines above")
+       print(f"PRODUCT WORD DRIFT ({scope_name}): review the lines above")
    else:
-       print("product words clean")
+       print(f"product words clean ({scope_name})")
    sys.exit(int(found))
    PY
    ```
-   Review exact matches in context. The scan can also find an anchored heading or an ordinary
-   use of a word that once named a control. Leave the heading intact and use the glossary
-   wording in nearby prose. The branch scan compares occurrences with the merge base, so an
-   unchanged match appears only in the full inventory.
+   Review the matches in context. The scan can also find an anchored heading or an ordinary
+   use of a retired label. Leave the heading intact and use the glossary wording in nearby prose.
+   The branch scan reports new occurrences against the merge base. During a periodic or release
+   reconciliation, the full inventory also reports inherited matches.
 
    **Then decide whether you owe the full gate, by who authors the PR:**
    - **Pre-PR-gate run** — checks a to f are enough. The suite in `AGENTS.md` § Pre-PR Checks ran on

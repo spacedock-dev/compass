@@ -53,6 +53,12 @@ reader knows the walk was considered rather than forgotten.
 
 Never review on the port the operator is already using. Pick a spare one, and stop what you start.
 
+In both modes, use the page's dated owner rulings to resolve differences with its After artboard.
+For example, the [Forget ruling](../../../docs/design-calm-compass.md#drc-5488-owner-ruling-2026-11-22)
+calls for an inline explanation in Your data and a retention list checked against the runtime.
+Verify the explanation there, including that typed goals, readings, dismissals and read choices
+are kept.
+
 ## Mode 1: before development
 
 ### 1. Name the promise you are about to touch
@@ -93,9 +99,9 @@ is disclosed. Walk the stages the issue touches, and the whole set only when the
 whole page.
 
 Start with technical details closed and quote the first-layer text in your report. Compare the
-answer, action and absences with the page's After artboard. Then open Show technical details
-where the page offers it. Check the same artboard and make sure the evidence, limits and actions
-assigned there are still available.
+answer, action and absences with the page's dated owner rulings. Use its After artboard for
+details the rulings leave open. Then open Show technical details where the page offers it.
+Use the same sources to check that the evidence, limits and actions assigned there are available.
 
 Read the rendered text, never the source. Two issues filed off a
 code-reading pass in this repository stated the user-visible claim wrongly: one asserted the page
@@ -160,9 +166,10 @@ review after the PR opens means green, blocked, fixed, green again.
 ### 1. Re-walk what you walked before
 
 Use the same stages and absences. With technical details closed, quote the first-layer text
-and compare it with the acceptance text and the page's After artboard. Then open Show technical
-details where offered and check against the artboard that the evidence, limits and actions
-are still available. Record what changed and any answer that used to read correctly.
+and compare it with the acceptance text and the page's dated owner rulings. Use its After
+artboard for details the rulings leave open. Then open Show technical details where offered
+and use the same sources to check that the evidence, limits and actions are still available.
+Record what changed and any answer that used to read correctly.
 
 ### 2. Compare against the merge base, not against your memory
 
@@ -197,17 +204,15 @@ Check the failures previous reviews found and the boundaries the redesign depend
   coverage line counts it as reporting, truthfully, while its silence reads as an all-clear.
 - **Agreement between the number and the words around it.** A sentence picked its verb from a count
   in one place and hardcoded it in the next, so every count but one read wrongly.
-- **A plain word that makes a stronger claim.** On track on a row suggests a verdict where only a
-  stored departure of Slightly off course or worse earns a pill. Giving a state to a row whose agent
-  never published one also invents evidence. Keep its State not published line.
-- **Jargon in the server's sentence or the accessible name.** A plain heading can sit above an old
-  label read from the server or heard by a screen-reader user. Read both channels as well as the
-  visible controls.
-- **A technical value on the first layer.** An epoch, ID, entry number or byte size makes the reader
-  interpret raw evidence before getting the answer. Check its placement with details closed and
-  confirm the exact value is available after opening them.
-- **Two pages naming the same state differently.** Follow the same session through Sessions,
-  Project, Needs you and its Session page. A different word makes a reader think the state changed.
+- Check that a row's progress pill requires a stored departure of Slightly off course or worse.
+  For missing state, expect State not published on an event-capable row. A scan-only row explains
+  what scanning can observe.
+- Read server-supplied sentences and accessible names as well as visible controls. A heading
+  can use the current words while a sentence from the server or an accessible name uses an old label.
+- Close technical details and look for any epoch, ID, entry number or byte size that reaches the
+  first layer. Open details to confirm the exact value is still available.
+- Follow the same session through Sessions, Project, Needs you and its Session page. Keep its
+  state word consistent so a change of page reads as the same state.
 
 ### 4. Hold the tests to behaviour
 

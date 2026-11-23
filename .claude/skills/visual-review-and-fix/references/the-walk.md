@@ -16,7 +16,7 @@ Sessions is the entry. The fragment is the address:
 - `#n=sessions` (Sessions) shows the session list and its filters. It also opens when the address
   has no route.
 - `#n=projects` (Projects) shows projects and links to their sessions. Keep it in the navigation
-  even when no project is selected.
+  with any project count. With one project, check that the single-project note appears.
 - `#n=attention` (Needs you) shows Waiting on you, Worth a look, Ready to wrap up and What Compass
   can't see. Follow a row title to its Session page.
 - `#n=intent` (Goal history) shows recorded goal changes.
@@ -55,7 +55,8 @@ Sessions legend to read the state tiles and the Worth a look flag.
 - An agent Compass discovered without sessions to show. Its filter entry still shows that it
   was discovered and has no sessions in view.
 - A row whose agent publishes no title, no location or no activity. Look for each absence in
-  words, including State not published when the state is missing.
+  words. Compare an event-capable row with no published state, which says State not published,
+  with a scan-only row, which says Read by scanning: no turn end can be observed here.
 - Sessions sharing a display label. They collide into one identity row, which is correct, and the
   count beside it must match the payload.
 
@@ -110,8 +111,10 @@ and Cursor.
 > your quota in one place across vendors, with each window's budget shown against its own clock, so
 > you can see whether there is room before you start rather than partway through.
 
-**On screen:** Your AI allowance. Read the fill, the clock tick, the pace, when the budget ends
-and when the window resets. The earliest budget end determines the row order.
+**On screen:** Your AI allowance. With the explanation closed, read the fill, the clock tick when
+measured and the reset sentence for the selected window. When several windows are available,
+check the window choices, ordered by earliest projected budget end. Open How the AI allowance works
+to read Pace, Reset time, Window, Source and Projected budget end for the selected window.
 
 **This is the stage where this product has failed most often.** Force all of these:
 
@@ -135,19 +138,22 @@ and when the window resets. The earliest budget end determines the row order.
 > ends leaving uncommitted changes says so.
 
 **On screen:** the Ended state and any outcome evidence. Check Needs you for a clean end in
-Ready to wrap up and a dirty end in Worth a look. Open the session's technical details to
-read the underlying git evidence when it is available.
+Ready to wrap up and a dirty end in Worth a look. Check the promise that finished-but-unread work
+is flagged. Look for published read status. If the page cannot establish it, record that evidence
+limit and the gap against the promise. Open the session's technical details to read the underlying
+git evidence when it is available.
 
 **Force these absences:**
 
 - A session that went quiet without reporting. Compare it with a session at its prompt whose
-  evidence is identical. Both show the same text. If neither published a state, both show
-  State not published.
+  evidence is identical. Both show the same text. On event-capable rows with no published state,
+  expect State not published.
 - A session that published an end. Check that it leaves the Working count and shows Ended.
   Follow a clean end to Ready to wrap up and a dirty one to Worth a look. Read the section
   headings on the page and hold the documented names to them.
-- An agent whose activity Compass can only scan, and a run under `--no-events`. Check that the row
-  states the limit when Compass cannot observe an end.
+- An agent whose activity Compass can only scan, and a run under `--no-events`. The scan-only row
+  says Read by scanning: no turn end can be observed here. For an event-capable agent run with
+  events disabled, check for the absence of an end mark.
 - A session whose git state was not measured, one measured clean and one measured dirty.
   Look for a distinct sentence in each case.
 
