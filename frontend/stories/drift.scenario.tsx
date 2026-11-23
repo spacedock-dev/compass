@@ -259,6 +259,47 @@ const POLICY = {
   limit: 100,
 };
 
+/* A story's recorders are shared with its play function, so each mount empties them before the fake
+   server writes. Kept outside the component, where Biome's React Compiler rule would read this as
+   mutating a prop during render. */
+function resetRecorders(scenario: Scenario): void {
+  scenario.ciPosts?.splice(0);
+  if (scenario.reading) scenario.reading.posts.length = 0;
+  if (scenario.longPlan) scenario.longPlan.gets = 0;
+  if (scenario.goalAdoption) scenario.goalAdoption.posts.length = 0;
+  if (scenario.longHistory) {
+    scenario.longHistory.gets = 0;
+    scenario.longHistory.posts.length = 0;
+  }
+  if (scenario.readingStoreRefusal) scenario.readingStoreRefusal.posts = 0;
+}
+
+/* Hands a story the controls it asked for: the ones its scenario carries a slot for. */
+function bindControls(
+  scenario: Scenario,
+  controls: {
+    readonly advance: (ms: number) => void;
+    readonly hide: () => void;
+    readonly show: () => void;
+    readonly back: () => void;
+    readonly go: (fragment: string) => void;
+    readonly refresh: () => Promise<void>;
+    readonly finish: () => Promise<void>;
+  },
+): void {
+  if (scenario.clock) scenario.clock.advance = controls.advance;
+  if (scenario.tab) {
+    scenario.tab.hide = controls.hide;
+    scenario.tab.show = controls.show;
+  }
+  if (scenario.nav) {
+    scenario.nav.back = controls.back;
+    scenario.nav.go = controls.go;
+  }
+  if (scenario.board) scenario.board.refresh = controls.refresh;
+  if (scenario.reading) scenario.reading.finish = controls.finish;
+}
+
 function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
   const [shell] = useState(() => {
     const harness = scenario.harness ?? 'claude';
@@ -281,18 +322,10 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
        which a press cannot lift. */
     let ciRead = String(scenario.route?.['ci_read'] ?? 'on');
     const ciPosts = scenario.ciPosts;
-    if (ciPosts) ciPosts.length = 0;
+    resetRecorders(scenario);
     let reading = scenario.payload?.['reading'] ?? POLICY;
-    if (scenario.reading) scenario.reading.posts.length = 0;
-    if (scenario.longPlan) scenario.longPlan.gets = 0;
-    if (scenario.goalAdoption) scenario.goalAdoption.posts.length = 0;
     let adoptedGoal: Record<string, unknown> | null = null;
-    if (scenario.longHistory) {
-      scenario.longHistory.gets = 0;
-      scenario.longHistory.posts.length = 0;
-    }
     let afterRefusal: Record<string, unknown> = {};
-    if (scenario.readingStoreRefusal) scenario.readingStoreRefusal.posts = 0;
     const shell = createShell({
       env,
       router: createRouter(history.env),
@@ -484,30 +517,26 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
         return json({});
       },
     });
-    if (scenario.clock) scenario.clock.advance = (ms) => clock.advance(ms);
-    if (scenario.tab) {
-      scenario.tab.hide = () => env.fireHidden();
-      scenario.tab.show = () => env.fireVisible();
-    }
-    if (scenario.nav) {
-      scenario.nav.back = () => {
+    bindControls(scenario, {
+      advance: (ms) => clock.advance(ms),
+      hide: () => env.fireHidden(),
+      show: () => env.fireVisible(),
+      back: () => {
         history.back();
         history.flush();
-      };
-      scenario.nav.go = (fragment) => {
+      },
+      go: (fragment) => {
         history.type(fragment);
         history.flush();
-      };
-    }
-    if (scenario.board)
-      scenario.board.refresh = async () => {
+      },
+      refresh: async () => {
         await shell.runtime.refresh({ manual: true });
-      };
-    if (scenario.reading)
-      scenario.reading.finish = async () => {
+      },
+      finish: async () => {
         job = null;
         await shell.runtime.refresh({ manual: true });
-      };
+      },
+    });
     return shell;
   });
   useEffect(
