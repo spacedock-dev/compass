@@ -1,229 +1,175 @@
-import { Icon } from '../ui/icons';
-import { Card } from '../ui/card';
-import { Button } from '../ui/button';
-import type { ReactNode } from 'react';
-import { useMemo } from 'react';
-import type { ObservedProject } from '../observed';
-import { goalFocusFor } from '../sessions/heldState';
-import { useShell } from '../shell/context';
-import { selectObserved } from '../observed/select';
+import { type CSSProperties, type ReactNode, useMemo, useState } from 'react';
+import { asPayload } from '../observed/values';
+import { Disclosure } from '../controls';
+import { TechnicalDetails } from '../controls/TechnicalDetails';
+import { RouteLink } from '../shell/RouteLink';
+import { stageData } from '../steering/stage';
 import { useDisplayed } from '../shell/context';
-import { projectMembers } from './activity';
-import { ProjectSessionLimit, ProjectSessionStatus, Value } from './parts';
-import { routeToken, useRouteTarget } from './routing';
-import type { ObservedSession } from '../observed';
+import { Button } from '../ui/button';
+import { Icon, SESSION_STATE_ICONS } from '../ui/icons';
+import { Input } from '../ui/input';
+import { StatusLegend } from '../ui/status-legend';
+import { StatusTile } from '../ui/status-tile';
+import { GLOSSARY, SESSION_ROW_WORDS, SHOWN } from '../language/glossary';
+import { PROJECT_GROUPS, projectList, type ProjectListRow } from './projectList';
+
 import './project.css';
 
-/* The Projects list: every project the board publishes a label for, split into the ones with something
-   going on (a session working, or waiting on the reader) and the rest, which stay reachable by identity
-   while their operational claims lapse. A project is the sessions that publish one label, exactly as
-   published: two spellings of one directory are two rows and each says so. Ported from `next-projects.js`.
-   Every count in a sentence is derived from the rows the row draws. */
+const INITIAL_RECENT = 3;
+type State = keyof typeof SESSION_STATE_ICONS;
 
-/* A member line's key is its harness and sid, so the button keeps its node, and with it keyboard focus, when a
-   refresh re-ranks the members. A board can publish one pair twice (the generated boards do), and only the
-   repeats take an occurrence number: an index on every key remounted each line below a newcomer. */
-function memberKeys(sessions: readonly ObservedSession[]): (readonly [string, ObservedSession])[] {
-  const seen = new Map<string, number>();
-  return sessions.map((session) => {
-    const identity = `${session.harness}\u0000${session.sid}`;
-    const repeat = seen.get(identity) ?? 0;
-    seen.set(identity, repeat + 1);
-    return [repeat ? `${identity}\u0000${String(repeat)}` : identity, session] as const;
-  });
-}
+const stateLimitsAuthored = (limit: string) => limit.startsWith('Waiting on child');
 
-function MemberLine({
-  session,
-  project,
-}: {
-  readonly session: ObservedSession;
-  readonly project: string;
-}) {
-  const route = {
-    view: 'session',
-    project,
-    harness: session.harness,
-    session: session.sid,
-  } as const;
-  const target = useRouteTarget(route);
-  const { controls } = useShell();
+function ProjectRow({ row }: { readonly row: ProjectListRow }) {
+  const hasState = Object.hasOwn(SESSION_STATE_ICONS, row.state);
   return (
-    <Button
-      variant="native"
-      type="button"
-      className="next-project-session"
-      data-next-project-session=""
-      data-next-harness={session.harness}
-      data-next-session={session.sid}
-      data-next-route={routeToken(route)}
-      data-next-focus={routeToken(route)}
-      onClick={(event) => {
-        goalFocusFor(controls).request({ harness: session.harness, sid: session.sid });
-        target.onClick(event);
-      }}
-    >
-      <span>
-        <ProjectSessionStatus session={session} />
-      </span>
-      <span className="next-project-session-harness">{session.harness}</span>
-      <Value
-        text={session.titleText}
-        known={session.titleKnown}
-        className="next-project-session-title"
-      />
-      <Value text={session.nowText} known={session.nowKnown} className="next-project-session-now" />
-      <Value
-        text={session.nextText}
-        known={session.nextKnown}
-        className="next-project-session-next"
-      />
-      <ProjectSessionLimit session={session} />
-    </Button>
-  );
-}
-
-function ProjectRow({
-  project,
-  history,
-}: {
-  readonly project: ObservedProject;
-  readonly history: boolean;
-}) {
-  const route = { view: 'project', project: project.key, session: null } as const;
-  const target = useRouteTarget(route);
-  const members = history ? null : projectMembers(project.sessions, project.risky);
-  const identity = <strong className="next-project-name">{project.key}</strong>;
-  const count = <div className="next-project-summary">{project.countLine}</div>;
-  return (
-    <Card
-      as="article"
-      variant="project-row"
-      className={`next-project-row next-project-tone--${project.tone}${history ? ' next-project-row--history' : ''}`}
-      data-next-project-row=""
-      data-next-project={project.key}
-      data-next-route={routeToken(route)}
-      data-next-focus={routeToken(route)}
-      role="link"
-      tabIndex={0}
-      {...(history ? { 'data-next-project-history': 'true' } : {})}
-      onClick={target.onClick}
-      onKeyDown={target.onKeyDown}
-    >
-      {members ? (
-        <>
-          <div className="next-project-project">
-            {identity}
-            <Value
-              text={project.scopeText}
-              known={project.scopeKnown}
-              className="next-project-scope"
-            />
-            {count}
-            {project.sharedLabelKnown ? (
-              <div className="next-project-collision">{project.sharedLabelText}</div>
-            ) : null}
-          </div>
-          <div className="next-project-sessions" aria-label="Observed sessions">
-            {memberKeys(members.shown).map(([key, session]) => (
-              <MemberLine key={key} session={session} project={project.key} />
-            ))}
-            {members.hidden ? (
-              <Button
-                variant="native"
-                type="button"
-                className="next-project-more"
-                data-next-project-more=""
-                data-next-route={routeToken(route)}
-                data-next-focus={routeToken(route)}
-                onClick={target.onClick}
-              >
-                {`${String(members.hidden)} other ${members.hidden === 1 ? 'session' : 'sessions'}`}
-              </Button>
-            ) : null}
-          </div>
-        </>
-      ) : (
-        <>
-          {identity}
-          {count}
-        </>
-      )}
-      <Icon name="caret-right" className="next-project-chevron shrink-0" />
-    </Card>
-  );
-}
-
-function Group({
-  kind,
-  title,
-  description,
-  projects,
-  empty,
-}: {
-  readonly kind: 'active' | 'history';
-  readonly title: string;
-  readonly description: string;
-  readonly projects: readonly ObservedProject[];
-  readonly empty: string;
-}) {
-  return (
-    <section
-      className={`next-project-group next-project-group--${kind}`}
-      data-next-project-group={kind}
-    >
-      <header>
-        <h2>{title}</h2>
-        <p>{description}</p>
-      </header>
-      <div className="next-projects-brief">
-        {projects.length ? (
-          projects.map((project, index) => (
-            // Two projects cannot share a label, but a malformed board could repeat one, and React needs two keys.
-            <ProjectRow
-              key={`${project.key}#${String(index)}`}
-              project={project}
-              history={kind === 'history'}
-            />
-          ))
+    <li className="project-list-item" data-next-project={row.key}>
+      <RouteLink
+        route={row.key ? { view: 'project', project: row.key } : { view: 'sessions' }}
+        className="project-list-row"
+      >
+        {hasState ? (
+          <StatusTile state={row.state as State} focusable={false} />
         ) : (
-          <p className="next-projects-empty">{empty}</p>
+          <span className="project-list-no-icon" />
         )}
-      </div>
-    </section>
+        <span className="project-list-identity">
+          <strong data-authored>{row.name}</strong>
+          {row.headline ? (
+            <span>
+              {row.headlineIsEarlier ? 'Earlier instruction: ' : null}
+              <span data-authored>{row.headline}</span>
+            </span>
+          ) : null}
+          {row.limits.map((limit) => (
+            <span key={limit} data-authored={stateLimitsAuthored(limit) || undefined}>
+              {limit}
+            </span>
+          ))}
+          {row.location ? <span>{row.location}</span> : null}
+        </span>
+        <span className="project-list-chips">
+          {row.counts.map(({ word, count }) => {
+            const flag = word === SESSION_ROW_WORDS.worthALook;
+            return (
+              <span
+                key={word}
+                role="img"
+                aria-label={`${String(count)} ${word.toLowerCase()}`}
+                className="project-list-chip"
+                data-project-count={flag ? 'flag' : SESSION_STATE_ICONS[word]}
+              >
+                <Icon name={flag ? 'worth-a-look' : SESSION_STATE_ICONS[word]} size={14} />
+                {count}
+              </span>
+            );
+          })}
+        </span>
+        <span className="project-list-meta">
+          <span>{row.sessions === 1 ? '1 session' : `${String(row.sessions)} sessions`}</span>
+          {row.time ? <span className="project-list-time">{row.time}</span> : null}
+        </span>
+        <Icon name="caret-right" className="project-list-chevron" />
+      </RouteLink>
+    </li>
   );
 }
 
-/** What the steering step draws above the list: the stage conditions waiting on the reader. */
 export interface ProjectsViewProps {
   readonly conditions?: ReactNode;
 }
 
 export function ProjectsView({ conditions = null }: ProjectsViewProps) {
-  const model = useDisplayed(selectObserved);
-  const { active, rest } = useMemo(
-    () => ({ active: model.activeProjects, rest: model.restProjects }),
-    [model],
+  const data = useDisplayed((snapshot) => snapshot.data);
+  const rows = useMemo(() => projectList(asPayload(data)), [data]);
+  const [query, setQuery] = useState('');
+  const [expanded, setExpanded] = useState(false);
+  const needle = rows.length > 6 ? query.trim().toLowerCase() : '';
+  const matches = rows.filter((row) =>
+    `${row.name} ${row.headline}`.toLowerCase().includes(needle),
+  );
+  const lines = matches.reduce(
+    (max, row) =>
+      Math.max(
+        max,
+        1 + Number(Boolean(row.headline)) + row.limits.length + Number(Boolean(row.location)),
+      ),
+    1,
   );
   return (
-    <section className="next-projects" data-next-view-body="projects">
-      <h1>Projects</h1>
-      {conditions}
-      <p className="next-projects-note">sessions grouped by the label their harness publishes</p>
-      <Group
-        kind="active"
-        title="Active"
-        description="blocked on you ranks first · only source-backed sessions contribute claims"
-        projects={active}
-        empty="No project has active session evidence right now."
-      />
-      <Group
-        kind="history"
-        title="Recently observed"
-        description="identity stays reachable; operational claims lapse"
-        projects={rest}
-        empty="No recently observed project history in this payload."
-      />
+    <section className="next-projects projects-list" data-next-view-body="projects">
+      <header>
+        <h1 className="text-hero font-extrabold">{SHOWN.projects}</h1>
+        <p>Sessions grouped by the folders their agents report.</p>
+      </header>
+      {rows.length === 1 ? (
+        <div className="project-list-single">
+          <p>The board shows one project label. You can see these sessions together on Sessions.</p>
+          <RouteLink route={{ view: 'sessions' }}>Go to Sessions</RouteLink>
+        </div>
+      ) : null}
+      {rows.length > 6 ? (
+        <Input
+          type="search"
+          aria-label="Search projects"
+          placeholder="Search projects"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      ) : null}
+      <div className="project-list-board" style={{ '--project-row-lines': lines } as CSSProperties}>
+        <StatusLegend />
+        {matches.length ? (
+          PROJECT_GROUPS.map((group, index) => {
+            const grouped = matches.filter((row) => row.group === group);
+            const hidden = index === 1 ? Math.max(0, grouped.length - INITIAL_RECENT) : 0;
+            const visible = hidden && !expanded ? grouped.slice(0, INITIAL_RECENT) : grouped;
+            const id = index === 0 ? 'projects-active' : 'projects-recent';
+            return grouped.length ? (
+              <section key={group} aria-labelledby={id}>
+                <h2 id={id}>
+                  {group} · {grouped.length}
+                </h2>
+                <ul aria-labelledby={id}>
+                  {visible.map((row) => (
+                    <ProjectRow key={row.key} row={row} />
+                  ))}
+                </ul>
+                {hidden ? (
+                  <Button
+                    emphasis="quiet"
+                    type="button"
+                    aria-expanded={expanded}
+                    className="project-list-more"
+                    onClick={() => setExpanded(!expanded)}
+                  >
+                    {expanded ? 'Show fewer' : `Show ${String(hidden)} more`}
+                  </Button>
+                ) : null}
+              </section>
+            ) : null;
+          })
+        ) : (
+          <p className="project-list-empty">
+            {rows.length ? 'No project matches.' : 'No projects in the current board.'}
+          </p>
+        )}
+      </div>
+      <Disclosure
+        disclosureKey="projects:grouping"
+        summary={GLOSSARY.howProjectGroupingWorks.plain}
+        explanation
+      >
+        <p>
+          Each project uses the folder label its agents report. Sessions without a label appear
+          together under Unnamed folder.
+        </p>
+      </Disclosure>
+      {conditions && stageData(data).enabled ? (
+        <TechnicalDetails disclosureKey="projects:conditions" caption="Stage conditions">
+          {conditions}
+        </TechnicalDetails>
+      ) : null}
     </section>
   );
 }

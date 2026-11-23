@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { blockedBackend } from '../../test/storage_backends';
+import { blockedBackend, fakeBackend } from '../../test/storage_backends';
 import { memoKey, STORAGE_KEYS } from '../storage';
 import { scenarios } from './generate.test.helper';
 import { mountProject } from './testing';
@@ -30,7 +30,7 @@ describe('a project page asks for nothing it was not pressed for', () => {
   it('sends no POST and writes no clipboard on mount, under StrictMode, on a poll or on a tab change', async () => {
     const page = open(WAITING as never);
     await page.settle();
-    fireEvent.click(screen.getByRole('tab', { name: /Course/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Timeline/ }));
     await page.settle();
     fireEvent.click(screen.getByRole('tab', { name: /Decisions/ }));
     await page.poll(WAITING?.board);
@@ -47,36 +47,6 @@ describe('a project page asks for nothing it was not pressed for', () => {
     expect(page.contextReads()).toHaveLength(1);
     await page.poll({ ...(CALM?.board as object), generated: 1010 });
     expect(page.contextReads()).toHaveLength(2);
-  });
-
-  it('makes the focused read only for the tabs that draw it, and never for an unfocused session', async () => {
-    const project = 'wait/app';
-    const focused = hash(project, ':claude%3Aa:course');
-    const page = mountProject({
-      hash: focused,
-      data: WAITING?.board,
-      contexts: { [`${project}\n`]: WAITING?.context, [`${project}\nclaude:a`]: WAITING?.context },
-    });
-    await page.settle();
-    expect(page.contextReads().map((read) => decodeURIComponent(read.url))).toEqual([
-      '/api/project-context?project=wait/app',
-      '/api/project-context?project=wait/app&session=claude:a',
-    ]);
-  });
-});
-
-describe('a focused session on the Now tab', () => {
-  it('reads only the project’s own context: the focused read belongs to the tabs that draw it', async () => {
-    const project = 'wait/app';
-    const page = mountProject({
-      hash: hash(project, ':claude%3Aa'),
-      data: WAITING?.board,
-      contexts: { [`${project}\n`]: WAITING?.context, [`${project}\nclaude:a`]: WAITING?.context },
-    });
-    await page.settle();
-    expect(page.contextReads().map((read) => decodeURIComponent(read.url))).toEqual([
-      '/api/project-context?project=wait/app',
-    ]);
   });
 });
 
@@ -154,9 +124,8 @@ describe('the Copy briefing control', () => {
     const page = open(WAITING as never);
     await page.settle();
     expect(page.written).toEqual([]);
-    fireEvent.click(screen.getByLabelText('More'));
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Copy briefing' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Copy a status update' }));
       await page.settle();
     });
     expect(page.written).toHaveLength(1);
@@ -169,9 +138,8 @@ describe('the Copy briefing control', () => {
     const key = memoKey('wait/app', null, 'outcome');
     const page = open(WAITING as never, '', { storage: { [key]: 'Land the queue' } });
     await page.settle();
-    fireEvent.click(screen.getByLabelText('More'));
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Copy briefing' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Copy a status update' }));
       await page.settle();
     });
     expect(page.written[0]).toContain('Outcome (browser-local): Land the queue');
@@ -180,128 +148,45 @@ describe('the Copy briefing control', () => {
 });
 
 describe('the human context notes', () => {
-  /* A project whose context read failed: no task is known and the attention scan is unavailable, so the
-     briefing is incomplete and the strip itself carries the offer. */
-  async function opened(options: Parameters<typeof mountProject>[0] = {}) {
+  it('saves as you type and restores the notes when the page loads again', async () => {
+    const page = open(CALM as never);
+    await page.settle();
+    const box = screen.getByRole('textbox', { name: 'Your notes' }) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: 'Land the queue' } });
+    expect(box.value).toBe('Land the queue');
+    expect(screen.queryByRole('button', { name: /Save note/ })).toBeNull();
+    const storageBackend = page.backend;
+    page.unmount();
+    const next = mountProject({ hash: '#n=project:calm%2Fapp', data: CALM?.board, storageBackend });
+    await next.settle();
+    expect((screen.getByRole('textbox', { name: 'Your notes' }) as HTMLTextAreaElement).value).toBe(
+      'Land the queue',
+    );
+  });
+
+  it('reports a failed write and keeps the note while browser storage is blocked', async () => {
     const page = mountProject({
-      hash: hash('calm/app'),
+      hash: '#n=project:calm%2Fapp',
       data: CALM?.board,
-      contexts: {},
-      ...options,
+      storageBackend: { ...fakeBackend(), ...blockedBackend() },
     });
     await page.settle();
-    return page;
-  }
-
-  it('offers the notes in the strip where the briefing is incomplete, and in the menu where it is complete', async () => {
-    const page = await opened();
-    expect(screen.getByText('+ Add human context · this browser')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('More'));
-    expect(screen.queryByRole('button', { name: 'Add human context' })).toBeNull();
-    page.unmount();
-    // A known task and a finished scan: the strip is quiet and the menu carries the offer instead.
-    const complete = open(WAITING as never);
-    await complete.settle();
-    expect(screen.queryByText('+ Add human context · this browser')).toBeNull();
-    fireEvent.click(screen.getByLabelText('More'));
-    expect(screen.getByRole('button', { name: 'Add human context' })).toBeTruthy();
-  });
-
-  it('saves on every input to the released key, shows both notes, and reads them back after a reload', async () => {
-    const page = await opened();
-    fireEvent.click(screen.getByText('+ Add human context · this browser'));
-    await page.settle();
-    const box = screen.getByPlaceholderText(
-      'What result should this scope achieve?',
-    ) as HTMLTextAreaElement;
-    expect(document.activeElement).toBe(box);
-    fireEvent.input(box, { target: { value: 'Land the queue' } });
-    const key = memoKey('calm/app', null, 'outcome');
-    expect(page.backend.data.get(key)).toBe('Land the queue');
-    expect(screen.getByText('Saved in this browser')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
-    await page.settle();
-    expect(screen.getByText('OPTIONAL HUMAN NOTE · THIS BROWSER')).toBeTruthy();
-    expect(screen.getByText('Land the queue')).toBeTruthy();
-    expect(screen.getAllByText('Not set')).toHaveLength(1);
-    page.unmount();
-    // A reload: a new document over the same storage.
-    const again = await opened({ storageBackend: page.backend });
-    expect(screen.getByText('Land the queue')).toBeTruthy();
-    void again;
-  });
-
-  it('keeps the words in the tab and says storage is unavailable when the browser refuses it', async () => {
-    const page = await opened({ storageBackend: blockedBackend() as never });
-    fireEvent.click(screen.getByText('+ Add human context · this browser'));
-    await page.settle();
-    const box = screen.getByPlaceholderText(
-      'What result should this scope achieve?',
-    ) as HTMLTextAreaElement;
-    fireEvent.input(box, { target: { value: 'kept anyway' } });
-    expect(screen.getByText('Browser storage unavailable')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
-    await page.settle();
-    expect(screen.getByText('kept anyway')).toBeTruthy();
-  });
-
-  it('keeps a long memo and refuses an over-limit paste without replacing its saved words', async () => {
-    const page = await opened();
-    fireEvent.click(screen.getByText('+ Add human context · this browser'));
-    await page.settle();
-    const box = screen.getByPlaceholderText(
-      'What result should this scope achieve?',
-    ) as HTMLTextAreaElement;
-    fireEvent.input(box, { target: { value: 'x'.repeat(700) } });
-    expect(box.value).toHaveLength(700);
-    expect(page.backend.data.get(memoKey('calm/app', null, 'outcome'))).toHaveLength(700);
-    fireEvent.input(box, { target: { value: 'x'.repeat(2100) } });
-    expect(box.value).toHaveLength(2100);
-    expect(page.backend.data.get(memoKey('calm/app', null, 'outcome'))).toHaveLength(700);
-    expect(screen.getByText('2100 characters; the limit is 2000.')).toBeVisible();
-    expect((screen.getByRole('button', { name: 'Done' }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it('is not offered at a focused session, where the strip draws no note', async () => {
-    const page = mountProject({
-      hash: hash('wait/app', ':claude%3Aa'),
-      data: WAITING?.board,
-      contexts: { 'wait/app\n': WAITING?.context },
-    });
-    await page.settle();
-    expect(screen.queryByText('+ Add human context · this browser')).toBeNull();
-    expect(screen.queryByText('OPTIONAL HUMAN NOTE · THIS BROWSER')).toBeNull();
+    const box = screen.getByRole('textbox', { name: 'Your notes' }) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: 'kept anyway' } });
+    expect(box.value).toBe('kept anyway');
+    expect(
+      screen.getByText('Browser storage is unavailable. These notes are held in this tab.'),
+    ).toBeVisible();
   });
 });
 
-describe('the scopes', () => {
-  it('draws the project root and each exact session as different scopes, and keeps the tab on a change', async () => {
-    const page = open(WAITING as never, ':course');
+describe('the terminal session picker', () => {
+  it('opens technical details in place and keeps the project route', async () => {
+    const page = open(CALM as never);
     await page.settle();
-    const tree = screen.getByRole('navigation', { name: 'Project scope' });
-    const links = within(tree).getAllByRole('link');
-    expect(links.map((link) => link.getAttribute('data-scope-kind'))).toEqual([
-      'project',
-      'session',
-      'session',
-    ]);
-    expect(links[0]?.getAttribute('aria-current')).toBe('page');
-    expect(links[1]?.getAttribute('href')).toBe('#n=project:wait%2Fapp:claude%3Aa:course');
-    fireEvent.click(links[1] as HTMLElement);
-    await page.settle();
-    expect(page.router.getRoute()).toMatchObject({
-      view: 'project',
-      focus: 'claude:a',
-      tab: 'course',
-    });
-    const focused = within(screen.getByRole('navigation', { name: 'Project scope' })).getAllByRole(
-      'link',
-    );
-    expect(focused[1]?.getAttribute('aria-current')).toBe('page');
-    expect(focused[0]?.hasAttribute('aria-current')).toBe(false);
-    expect(document.querySelector('[data-next-cockpit-viewing-session]')?.textContent).toBe(
-      'Viewing session · Claude Code · Waiting on you',
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Show technical details' }));
+    expect(screen.getByText('Read-only terminal', { exact: true })).toBeVisible();
+    expect(page.router.getRoute().view).toBe('project');
   });
 });
 
@@ -338,6 +223,23 @@ describe('Course', () => {
     // Ten state changes and three more episodes: the oldest gather behind a disclosure with their count.
     expect(screen.getByText(/\d+ Earlier/)).toBeTruthy();
     expect(screen.getByText('Other directions (1)')).toBeTruthy();
+  });
+
+  it('keeps timeline entries visible and reveals their sources with the project technical control', async () => {
+    const page = open(COURSE as never, ':course');
+    await page.settle();
+    const timeline = within(screen.getByRole('region', { name: 'Timeline' }));
+    expect(timeline.getAllByText('EXACT STATE CHANGE').at(-1)).toBeVisible();
+    expect(
+      timeline.queryAllByRole('button', { name: 'Evidence · source and confidence' }),
+    ).toHaveLength(0);
+    expect(timeline.queryByText('workflow state', { exact: true })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show technical details' }));
+    expect(timeline.getAllByText('EXACT STATE CHANGE').at(-1)).toBeVisible();
+    expect(timeline.getAllByText('workflow state', { exact: true }).at(-1)).toBeVisible();
+    expect(timeline.getByText('s5', { exact: true })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Hide technical details' }));
+    expect(timeline.queryByText('s5', { exact: true })).toBeNull();
   });
 
   it('says it is loading while the read is in flight and unavailable once it failed, never "no changes"', async () => {
@@ -434,46 +336,14 @@ describe('the workstream panel', () => {
 });
 
 describe('disclosures keep their state by project and scope', () => {
-  it('does not open at one scope what the reader opened at another', async () => {
-    const page = mountProject({
-      hash: hash('wait/app'),
-      data: WAITING?.board,
-      contexts: { 'wait/app\n': WAITING?.context },
-    });
-    await page.settle();
-    fireEvent.click(screen.getByText('Evidence · attention sources'));
-    act(() =>
-      page.router.navigate({ view: 'project', project: 'wait/app', focus: 'claude:a', tab: null }),
-    );
-    await page.settle();
-    expect(
-      (
-        screen
-          .getByText('Evidence · attention sources')
-          .closest('[data-slot=accordion]') as HTMLElement
-      ).hasAttribute('data-open'),
-    ).toBe(false);
-    act(() =>
-      page.router.navigate({ view: 'project', project: 'wait/app', focus: null, tab: null }),
-    );
-    await page.settle();
-    expect(
-      (
-        screen
-          .getByText('Evidence · attention sources')
-          .closest('[data-slot=accordion]') as HTMLElement
-      ).hasAttribute('data-open'),
-    ).toBe(true);
-  });
-
   it('keeps an opened plan open across a tab change and a poll, and does not open the same one elsewhere', async () => {
     const page = open(PLAN as never);
     await page.settle();
     const summary = screen.getByText('Show project plan');
     fireEvent.click(summary);
-    fireEvent.click(screen.getByRole('tab', { name: /Course/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Timeline/ }));
     await page.settle();
-    fireEvent.click(screen.getByRole('tab', { name: /Now/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Overview/ }));
     await page.settle();
     expect(
       (
@@ -519,40 +389,27 @@ describe('plain project words', () => {
     expect(within(strip).getByText('Needs you')).toBeInTheDocument();
     expect(within(strip).getByText('Latest result')).toBeInTheDocument();
     expect(within(strip).getByText('Published instruction')).toBeInTheDocument();
-    const waiting = strip.querySelector('[data-next-cockpit-waiting]');
-    expect(waiting?.textContent).toContain('Approve the plan?');
+    expect(strip.querySelector('[data-next-cockpit-waiting]')?.textContent).toContain(
+      'Approve the plan?',
+    );
+    const waiting = screen.getByRole('region', { name: 'Needs you' });
     expect(
       (waiting?.compareDocumentPosition(screen.getByRole('tablist')) ?? 0) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
-  it('opens each project member at its Intent heading in one press', async () => {
+  it('opens the project from its row on Projects', async () => {
     const page = mountProject({
       hash: '#n=projects',
       data: {
         generated: 1000,
-        annotate: true,
-        sessions: [
-          {
-            harness: 'claude',
-            sid: 'a',
-            project: 'p',
-            state: 'working',
-            first_prompt: 'Ship the queue',
-            first_prompt_at: 100,
-          },
-        ],
+        sessions: [{ harness: 'claude', sid: 'a', project: 'p', state: 'working' }],
       },
     });
     await page.settle();
-    fireEvent.click(document.querySelector('[data-next-project-session]') as Element);
+    fireEvent.click(screen.getByText('p', { selector: 'strong' }));
     await page.settle();
-    expect(page.router.getRoute()).toMatchObject({
-      view: 'session',
-      session: 'a',
-      from: 'projects',
-    });
-    expect(document.activeElement?.id).toBe('next-session-intent-heading');
+    expect(page.router.getRoute()).toMatchObject({ view: 'project', project: 'p' });
   });
 });
 
@@ -607,28 +464,18 @@ describe('project instruction and authority evidence', () => {
     expect(card?.textContent).toContain('Fix COMMAND parsing new');
     expect(card?.textContent).not.toContain('Fix COMMAND parsing old');
   });
-  it('does not claim an undated instruction is latest and labels saved words separately', async () => {
+  it('does not call an undated project instruction the latest', async () => {
     const page = mountProject({
-      hash: '#n=project:p:claude%3Aa',
+      hash: '#n=project:p',
       data: {
         generated: 1000,
-        sessions: [
-          {
-            ...session('a', null, 900),
-            annotation_goal: 'Save COMMAND exactly',
-            annotation_line_1: 'Keep STATED GOAL quoted',
-            annotation_revision: 1,
-          },
-        ],
+        sessions: [session('a', null, 900)],
       },
     });
     await page.settle();
-    const card = document.querySelector('.next-project-goal');
-    expect(card?.querySelector('h2')?.textContent).toBe('Published instruction');
-    expect(card?.textContent).toContain('Your saved words');
-    expect(card?.textContent).toContain('Save COMMAND exactly');
-    expect(card?.textContent).toContain('Your saved words · expected outcome · line 1');
-    expect(card?.textContent).toContain('Keep STATED GOAL quoted');
+    const work = within(screen.getByRole('region', { name: 'Working on' }));
+    expect(work.queryByText(/latest instruction/i)).toBeNull();
+    expect(work.getByText('From a published instruction.')).toBeVisible();
   });
   it.each(['pending', 'complete', 'needed'])(
     'uses plain authority states on an ordinary project: %s',

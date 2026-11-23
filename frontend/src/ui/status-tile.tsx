@@ -12,16 +12,18 @@ const TINTS = {
 export function StatusTile({
   state,
   live = false,
+  focusable = true,
 }: {
   readonly state: keyof typeof SESSION_STATE_ICONS;
   readonly live?: boolean;
+  readonly focusable?: boolean;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger
         render={<span />}
         role="img"
-        tabIndex={0}
+        tabIndex={focusable ? 0 : undefined}
         aria-label={state}
         data-next-row-state={state}
         className="relative z-[1] -m-0.5 inline-flex size-11 shrink-0 items-center justify-center [font-family:var(--sans)] normal-case outline-offset-2 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring"

@@ -57,9 +57,31 @@ describe('the Console rail agrees with the legacy page', () => {
         }
         restateLiveOpener(mine);
         // The waiting rail clamps a question to three lines, where the retired page drew it whole: see
-        // docs/design-frontend-migration.md#held-to-recorded-answers (2026-11-12). Only that class departs.
-        for (const question of mine.querySelectorAll('.next-rail-question'))
+        // docs/design-frontend-migration.md#held-to-recorded-answers (2026-11-12 and 2026-11-23).
+        for (const question of mine.querySelectorAll('.next-rail-question')) {
           question.classList.remove('line-clamp-3');
+          question.removeAttribute('data-authored');
+        }
+        for (const title of mine.querySelectorAll('.next-rail-wait-heading a > span'))
+          title.replaceWith(...title.childNodes);
+        for (const [panel, label] of [
+          ['delegation', 'Time agents worked on their own'],
+          ['waiting', 'Waiting on you'],
+          ['capacity', 'Your AI allowance'],
+          ['tripwires', 'Tripwires'],
+        ] as const) {
+          const heading = theirs.querySelector(`[data-next-rail-panel="${panel}"] header h2`);
+          if (heading) heading.textContent = label;
+        }
+        const allowance = theirs.querySelector('[data-next-rail-panel="capacity"]');
+        const caption = allowance?.querySelector('header .next-rail-meta');
+        if (caption) caption.textContent = 'Each plan window resets on its own schedule';
+        for (const reason of allowance?.querySelectorAll(':scope > .next-rail-reason') ?? []) {
+          if (reason.textContent === 'No quota windows published.')
+            reason.textContent = 'No plan usage has been reported yet.';
+          else if (reason.textContent === 'No vendor window has been read for this harness.')
+            reason.remove();
+        }
         const found = firstShapeDifference(shape(theirs), shape(mine));
         if (found)
           failures.push(`seed ${String(seed)} project ${JSON.stringify(project)}: ${found}`);

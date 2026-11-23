@@ -141,7 +141,7 @@ describe('the capacity panel', () => {
         usage={() => <p>consent slot</p>}
       />,
     );
-    expect(screen.getByText('No quota windows published.')).toBeInTheDocument();
+    expect(screen.getByText('No plan usage has been reported yet.')).toBeInTheDocument();
     expect(screen.getByText('consent slot')).toBeInTheDocument();
   });
 });

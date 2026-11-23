@@ -9,7 +9,7 @@ import { createFakeClock, createFakeEnvironment } from '../src/transport/testing
 import { headerBoard } from '../test/headerBoard';
 import { fakeBackend } from '../test/storage_backends';
 
-function HeaderExample({ fragment }: { readonly fragment: string }) {
+export function HeaderExample({ fragment }: { readonly fragment: string }) {
   const [shell] = useState(() => {
     const backend = fakeBackend();
     const clock = createFakeClock();
@@ -54,7 +54,7 @@ export const Sessions: Story = {
     const pill = canvas.getByRole('status', { name: 'Working sessions' });
     await expect(pill).toHaveTextContent('2 sessions working');
     const nav = within(canvas.getByRole('navigation', { name: 'Primary' }));
-    const linkNames = ['Sessions', 'Projects', 'Needs you 3', 'Goal history', 'Settings'];
+    const linkNames = ['Sessions', 'Projects', 'Needs you 3', 'Goal history', 'Settings', 'Help'];
     await expect(nav.getAllByRole('link')).toEqual(
       linkNames.map((name) => nav.getByRole('link', { name })),
     );
@@ -72,7 +72,7 @@ export const Project: Story = {
   args: { fragment: '#n=project:acme%2Fdashboard' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByText('2 sessions working');
+    await canvas.findByRole('button', { name: 'Copy a status update' });
     await expect(canvas.getByRole('status', { name: 'Working sessions' })).toHaveTextContent(
       '2 sessions working',
     );
@@ -80,9 +80,22 @@ export const Project: Story = {
     await expect(nav.getByRole('link', { name: 'Projects', current: 'page' })).toHaveStyle({
       backgroundColor: 'rgb(230, 242, 236)',
     });
-    await userEvent.click(canvas.getByText('More', { selector: 'summary' }));
-    await expect(canvas.getByRole('button', { name: 'Copy briefing' })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: 'Copy a status update' })).toBeVisible();
     await expect(canvas.queryByText(/All projects.*subagents observed/)).toBeNull();
-    await userEvent.click(canvas.getByText('More', { selector: 'summary' }));
+  },
+};
+
+export const OldProjectSessionBookmark: Story = {
+  args: { fragment: '#n=project:acme%2Fdashboard:claude%3Aactive:course' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole('heading', { name: 'Check the build' })).toBeVisible();
+    const crumb = within(canvas.getByRole('navigation', { name: 'Breadcrumb' }));
+    await expect(crumb.getByRole('link', { name: 'acme/dashboard' })).toHaveAttribute(
+      'href',
+      '#n=project:acme%2Fdashboard',
+    );
+    await userEvent.click(crumb.getByRole('link', { name: 'acme/dashboard' }));
+    await expect(await canvas.findByRole('heading', { name: 'acme/dashboard' })).toBeVisible();
   },
 };

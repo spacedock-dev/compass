@@ -10,10 +10,10 @@ import { field, isRecord } from './raw';
    and one that was read and did not come back. Ported from `next-cockpit.js`. */
 
 const LEDES: Readonly<Record<ProjectTab, string>> = {
-  now: 'Now: what is running in this project this minute, and how sessions here have ended.',
-  course: 'Course: direction changes Compass observed in the session record.',
-  decisions: 'Decisions: rulings found in the record, and what each one has been spent on.',
-  console: 'Console: the read-only terminal of one selected session, and the controls for it.',
+  now: 'Sessions and recent results for this project.',
+  course: 'Direction changes Compass observed in the session record.',
+  decisions: 'Decisions Compass found in the session record.',
+  console: 'Usage and alerts for this project.',
 };
 
 /* Now is the one tab whose scope does not narrow with the selection, so a reader who has just picked a

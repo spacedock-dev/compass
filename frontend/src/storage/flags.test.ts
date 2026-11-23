@@ -65,6 +65,7 @@ describe('workstream collapse family (compass.next.workstream.collapsed)', () =>
 describe('the persisted keys', () => {
   it('are spelled exactly as released', () => {
     expect(STORAGE_KEYS).toEqual({
+      sampleInvite: 'compass.sample-invite-dismissed.v1',
       updateDismissed: 'compass.update-dismissed.v1',
       memoPrefix: 'compass.cockpit.memo.v2:',
       graphMode: 'compass.next.graph.mode',

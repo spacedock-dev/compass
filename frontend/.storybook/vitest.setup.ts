@@ -59,8 +59,8 @@ afterEach(async ({ task }) => {
 
 afterEach(async () => {
   await settled();
-  const board = document.querySelector(
-    '[data-next-view-body="sessions"], [data-next-session-detail]',
+  const surfaces = document.querySelectorAll(
+    '[data-next-view-body="sessions"], [data-next-session-detail], [data-next-view-body="help"], [data-next-view-body="projects"], [data-next-view-body="project"], [data-sample-invite]',
   );
-  if (board) expect(boardCopyViolations(board)).toEqual([]);
+  for (const surface of surfaces) expect(boardCopyViolations(surface)).toEqual([]);
 });

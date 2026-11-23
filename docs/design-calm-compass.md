@@ -180,11 +180,11 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Projects | Keeps current label | Projects list and grouping evidence | A single Project page | The projects slug stays |
 | Settings | Keeps current label | Saved choices and their owners | A session's own controls | The settings slug stays |
 | Session | Keeps current label | Session identity | A reported session title | Crumb when the session cannot be found. The document title may use its ID |
-| Project cockpit views | Keeps current label | Accessible group name for the project tab strip | Primary navigation | Accessible tab list label |
-| Now | Keeps current label | The project's current evidence | Session activity on the board | Default project tab |
-| Course | Keeps current label | Observed direction changes | A progress level | The course tab slug stays |
+| Project views | Project cockpit views | Accessible group name for the project tab strip | Primary navigation | Accessible tab list label |
+| Overview | Now | The project's current evidence | Session activity on the board | Default project tab |
+| Timeline | Course | Observed direction changes | A progress level | The course tab slug stays |
 | Decisions | Keeps current label | Recorded project decisions | Current state | The decisions tab slug stays |
-| Console | Keeps current label | Read-only terminal | A place to send a command | The console tab slug stays. The terminal moves to technical details |
+| Usage and alerts | Console | Project capacity and alerts | Read-only terminal | The console tab slug stays. The terminal moves to technical details |
 | Session data not published. | Keeps current label | The session collection is missing | A measured zero | Used after a board arrives without session data |
 | Waiting for the first board. | Keeps current label | Initial board read | A measured zero | Used before the first board arrives |
 | ● Needs you · | Keeps current label | Published request or block on the open session | The Needs you navigation destination | Browser tab title prefix |
@@ -242,7 +242,7 @@ wording when its redesign ships. Route tokens still belong to the router.
 | How progress checks work | Drift explainer | What the reading can and cannot establish | A verdict or account of completed work | Keep the local explanation next to the reading |
 | How project grouping works | Project grouping explanation | Project evidence and folder identity | Session state or agent type | Explains Unnamed folder |
 | How the AI allowance works | Quota explainer | Provider reading, pace and measurement limits | How much a progress check reads | Help and the plan quota card use the same subject |
-| Help | New destination | Links to the canonical explanations | A second Goal explainer | Help ships in a later slice |
+| Help | New destination | Links to the canonical explanations | A second Goal explainer | Last in the primary navigation |
 | Project | Keeps current label | Project identity | The Projects destination | Project names come from the board |
 | Working now | Active now | Count of sessions in the Working state | Sessions in the Right now group | Uses the same Working count as the header |
 | Nothing working right now | Running count at zero | Measured Working count of zero | No published board | Header only after the board is read |
@@ -384,6 +384,11 @@ bounds the change to NUI-16. The terminal follows the same terms when its slice 
    chose the inline explanation with the existing terminal command.
 
 ## Open questions
+
+**Projects grouping proposal, 2026-11-23.** A project belongs to Active today when a session is
+Waiting on you or Working, or has a reported end on the displayed board's local calendar day.
+The other projects appear under No recent activity. An absent end time supplies no evidence for
+Active today. The grouping rule is awaiting owner review in Storybook.
 
 The Needs you rename is closed. The Projects rule that distinguishes Active today from
 No recent activity still needs sign-off on the grouping logic in Storybook. The pending

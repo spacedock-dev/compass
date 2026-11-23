@@ -16,6 +16,39 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+On 2026-11-23 legacy project focus fragments began opening the exact Session page, including
+the older `held-to` alias. A focus with no harness uses the ID-only session form. The return
+origin is the project. The grammar differential applies this departure to recorded project
+focus answers. Unfocused project slugs and unrelated session links still compare directly.
+
+On 2026-11-23 the project page moved the recovery strip and its workflow evidence, stage
+conditions, steering and the terminal into Show technical details. The differential still
+compares the recovery evidence and the Timeline facts and links. The project scope rail, Overview
+layout and the labels Overview, Timeline, Decisions and Usage and alerts are checked in their new
+surfaces. Copy a status update uses the existing briefing. Your notes writes to the project's
+browser memo. The terminal brief, Timeline model and recordings keep their contracts.
+The fix round keeps the raw source, confidence, fact and contributor values in the Timeline
+comparison. It opens the shared technical control for that comparison and drops the retired
+per-entry evidence trigger from the recorded markup. The recovery-strip comparison omits the
+memo editor markup. The Overview notes story checks that the outcome memo has one editor and
+survives a reload. The separate focus memo stays in technical details.
+
+On 2026-11-23 Projects adopted uniform links, measured state chips and a shared legend. Its
+differential keeps the recorded named projects and destinations across both groups. The new
+grouping, order, expansion, headings and row copy are asserted in the Projects stories and
+list model tests. Session rows with an exact identity open from the project page. Duplicate reports of one
+identity count once, and an unlinked row still counts. A pending request takes precedence in
+the project counts, while published clean or dirty end evidence remains in the Overview.
+Projects and Overview use the instruction from working sessions when one was published and
+label earlier instructions when shown. The recordings are unchanged.
+
+On 2026-11-23 the Decisions filter label became Current work. Its stored choice and event
+selection kept their existing contract. Usage and alerts uses sentence-case headings and
+keeps one absence sentence for plan usage. The rail differential compares its recorded
+measurements and actions after applying these wording changes and unwrapping the markup
+that identifies recorded titles and questions. Usage and alerts copies the same command
+or ID, with the raw value omitted from the control's accessible name and tooltip.
+
 2026-11-23. The page offers Check progress and Check progress again with Uses AI at the
 13 px supporting-text size. The route comparison projects those control names and the goal
 wording onto recorded refusals. The browser comparison renames the recorded progress action and

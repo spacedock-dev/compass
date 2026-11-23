@@ -2,7 +2,7 @@ import { Button } from '../ui/button';
 import type { GraphMode } from '../storage';
 
 const CHOICES: readonly { readonly mode: GraphMode; readonly label: string }[] = [
-  { mode: 'active', label: 'Active' },
+  { mode: 'active', label: 'Current work' },
   { mode: 'all', label: 'All events' },
   { mode: 'decisions', label: 'Decisions' },
 ];

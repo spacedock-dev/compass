@@ -17,7 +17,7 @@ import { disclosureKey } from './disclosureStore';
 import type { World } from './galleryWorld';
 import { HumanContextField } from './HumanContextField';
 import { useControls } from './kit';
-import { MoreMenu } from './MoreMenu';
+import { CopyStatusUpdate } from './CopyStatusUpdate';
 import { RaiseControl } from './RaiseControl';
 import { useChoiceRelease } from './useChoiceRelease';
 import { useDisplayedSelector } from './useDisplayed';
@@ -280,12 +280,11 @@ export function GalleryBoard({ world }: { world: World }) {
 
       <GalleryCollapsible />
 
-      <section aria-label="Project menu">
-        <MoreMenu
+      <section aria-label="Project update">
+        <CopyStatusUpdate
           projectKey={project}
           focus={null}
           briefingText={() => `Briefing for ${project}`}
-          addHumanContext={{ memoKey: memoKey(project, null, 'outcome') }}
         />
       </section>
 

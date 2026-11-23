@@ -57,7 +57,7 @@ describe('the Decisions tab', () => {
     expect(document.querySelector('[data-next-cockpit-decision-summary]')?.textContent).toBe(
       'Decision application · pending 1 · unknown 1 · consumed/applied 2',
     );
-    expect(screen.getByText('RECORDED DECISIONS')).toBeInTheDocument();
+    expect(screen.getByText('Recorded decisions')).toBeInTheDocument();
     expect(document.querySelectorAll('.pc-graph-row').length).toBeGreaterThan(0);
   });
 

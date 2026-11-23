@@ -1,4 +1,4 @@
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { BOARD, mountShell } from './testing';
 
@@ -20,7 +20,7 @@ describe('every top-level view is drawn by its own screen', () => {
   it('draws the Projects list and a project page themselves, with a stated slot only where the steering step is still to come', async () => {
     await open('#n=projects');
     expect(document.querySelector('[data-next-placeholder]')).toBeNull();
-    expect(document.querySelectorAll('article.next-project-row').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('a.project-list-row').length).toBeGreaterThan(0);
     await open('#n=project:alpha%2Fapp');
     expect(document.querySelector('article.next-project-detail')).not.toBeNull();
     expect(document.querySelector('[data-next-placeholder]')).toBeNull();
@@ -87,24 +87,31 @@ describe('a project route', () => {
     expect(page.router.getRoute().view).toBe('projects');
   });
 
-  it('states a stale session filter and links to the project root, keeping the tab', async () => {
-    const page = await open('#n=project:alpha%2Fapp:claude%3Agone:course');
-    expect(screen.getByText('Session filter is outside this payload window')).toBeInTheDocument();
-    expect(screen.getByText('claude:gone')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'View project root' }).getAttribute('href')).toBe(
-      '#n=project:alpha%2Fapp:course',
+  it('opens an older focused project link as an exact session and returns to the project', async () => {
+    const page = await open('#n=project:alpha%2Fapp:codex%3Ashared-sid:course');
+    expect(page.router.getRoute()).toMatchObject({
+      view: 'session',
+      project: 'alpha/app',
+      harness: 'codex',
+      session: 'shared-sid',
+      from: 'project',
+    });
+    expect(screen.getByRole('heading', { name: 'Alpha shared codex' })).toBeVisible();
+    const crumb = within(screen.getByRole('navigation', { name: 'Breadcrumb' }));
+    expect(crumb.getByRole('link', { name: 'alpha/app' }).getAttribute('href')).toBe(
+      '#n=project:alpha%2Fapp',
     );
-    fireEvent.click(screen.getByRole('link', { name: 'View project root' }));
+    fireEvent.keyDown(window, { key: 'Escape' });
     await page.settle();
     expect(page.router.getRoute()).toMatchObject({ view: 'project', project: 'alpha/app' });
   });
 
-  it('matches a focused session by its exact key, the sid under the other harness being another session', async () => {
-    const held = await open('#n=project:alpha%2Fapp:codex%3Ashared-sid');
-    expect(screen.queryByText('Session filter is outside this payload window')).toBeNull();
-    held.unmount();
+  it('names an old focus the board no longer holds as a missing session', async () => {
     await open('#n=project:beta%2Fapi:codex%3Ashared-sid');
-    expect(screen.getByText('Session filter is outside this payload window')).toBeInTheDocument();
+    expect(screen.getByText('This session is not in the current payload.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'beta/api' }).getAttribute('href')).toBe(
+      '#n=project:beta%2Fapi',
+    );
   });
 
   it('keeps an empty-project sid’s project route out of reach, since an empty project is not a project', async () => {

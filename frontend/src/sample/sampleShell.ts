@@ -4,6 +4,8 @@ import { createShell } from '../shell/createShell';
 import type { Shell } from '../shell/context';
 import { SAMPLE_FIXTURE, type SampleFixture } from './fixture';
 import { createSampleBackend } from './memoryBackend';
+import { disclosureKey } from '../controls/disclosureStore';
+import { SAMPLE_HARNESS, SAMPLE_PROJECT, SAMPLE_SID } from './ids';
 import { createSampleFetch } from './sampleFetch';
 
 /* A stream that is open and never says anything: the sample has no server to push, and a stream that
@@ -30,8 +32,12 @@ function sampleClock(fixture: SampleFixture): () => number {
    server and in-memory storage, so it cannot read, write or poll anything the page is showing. It speaks
    through the page's live regions and navigates with the page's router, which are the two things a reader
    of the sample shares with the rest of the page. */
-export function createSampleShell(page: Shell, fixture: SampleFixture = SAMPLE_FIXTURE): Shell {
-  return createShell({
+export function createSampleShell(
+  page: Shell,
+  fixture: SampleFixture = SAMPLE_FIXTURE,
+  explainGoal = false,
+): Shell {
+  const shell = createShell({
     env: createBrowserEnvironment({
       window,
       document,
@@ -47,4 +53,15 @@ export function createSampleShell(page: Shell, fixture: SampleFixture = SAMPLE_F
     announcer: page.announcer,
     host: { reload: () => undefined },
   });
+  if (explainGoal) {
+    shell.controls.disclosures.set(
+      disclosureKey({
+        project: SAMPLE_PROJECT,
+        scope: `${SAMPLE_HARNESS}:${SAMPLE_SID}`,
+        name: 'intent-howto',
+      }),
+      true,
+    );
+  }
+  return shell;
 }

@@ -62,7 +62,7 @@ describe('the first-layer glossary', () => {
 
   it('rejects a rendered record-only row with leading indentation', () => {
     const extra = '| Extra control | old | detail | separate | none |';
-    const mutated = design.replace(/^(?=\| Project cockpit views \|)/m, `  ${extra}\n`);
+    const mutated = design.replace(/^(?=\| Project views \|)/m, `  ${extra}\n`);
     expect(designColumns(mutated)).not.toEqual(moduleColumns);
   });
 
@@ -158,6 +158,7 @@ describe('the labels the shell shows today', () => {
       attention: 'Test requests',
       intent: 'Test goal archive',
       settings: 'Test preferences',
+      help: 'Test guide',
       session: 'Test missing session',
       projectTabs: 'Test project views',
       now: 'Test current activity',

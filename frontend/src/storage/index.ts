@@ -11,6 +11,7 @@ import { createGoalStore, type GoalStore } from './goal';
 import { createGraphModeStore, type GraphModeStore } from './graphMode';
 import { createGuardrailStore, type GuardrailStore } from './guardrails';
 import { createUpdateDismissals, type UpdateDismissals } from './update';
+import { createSampleInviteDismissal } from './sampleInvite';
 import { STORAGE_KEYS } from './keys';
 import { createLeaseStore, type LeaseStore } from './lease';
 import { createMemoStore, type MemoStore } from './memo';
@@ -52,6 +53,7 @@ export type { UsageCounts, UsageStore } from './usage';
 export { decodeUsage, USAGE_COUNT_MAX, USAGE_LOAD_LIMIT } from './usage';
 
 export interface LegacyStorage {
+  readonly sampleInvite: ReturnType<typeof createSampleInviteDismissal>;
   readonly updateDismissals: UpdateDismissals;
   readonly memo: MemoStore;
   readonly graphMode: GraphModeStore;
@@ -73,6 +75,7 @@ export interface LegacyStorage {
 export function createLegacyStorage(provider: BackendProvider = browserBackend): LegacyStorage {
   const access = storageAccess(provider);
   return {
+    sampleInvite: createSampleInviteDismissal(access),
     updateDismissals: createUpdateDismissals(access),
     memo: createMemoStore(access),
     graphMode: createGraphModeStore(access),

@@ -1,9 +1,7 @@
+import { Help } from '../help/Help';
 import { SampleInvite } from '../sample/SampleInvite';
-import { buttonVariants } from '../ui/button';
 import { payloadSessions } from '../api/bootstrap';
-import { compatSessKey } from '../api/identity';
 import {
-  fragmentForRoute,
   type ProjectRoute,
   type Route,
   type SessionRoute,
@@ -109,6 +107,7 @@ function TopLevelView({ route }: { readonly route: TopLevelRoute }) {
   if (route.view === 'intent') return <IntentLog />;
   /* Settings reads its own route, not the board, so it draws whether or not a payload has arrived. */
   if (route.view === 'settings') return <SettingsView />;
+  if (route.view === 'help') return <Help />;
   /* Attention states its own absences as well: before the first board it names what it waits for, and a
      board that published no session collection says that rather than drawing a queue of zeros. */
   return <AttentionView />;
@@ -208,32 +207,6 @@ function ProjectView({ route }: { readonly route: ProjectRoute }) {
       </section>
     );
   }
-  /* A focus is the exact compatibility key of one session of this project. One the board no longer holds
-     is stated, with the way back to the project root, rather than silently showing the whole project. */
-  if (route.focus && !members.some((row) => compatSessKey(row) === route.focus)) {
-    return (
-      <section
-        className="next-cockpit-stale-session"
-        data-next-view-body="project"
-        data-next-cockpit-stale-session
-      >
-        <span>SESSION FILTER</span>
-        <h1>Session filter is outside this payload window</h1>
-        <p>{route.focus}</p>
-        <a
-          data-slot="button-link"
-          className={buttonVariants({ variant: 'native' })}
-          href={fragmentForRoute({
-            view: 'project',
-            project: route.project,
-            tab: route.tab ?? 'now',
-          })}
-        >
-          View project root
-        </a>
-      </section>
-    );
-  }
   return <ProjectDetail route={route} slots={PROJECT_SLOTS} />;
 }
 
@@ -242,7 +215,7 @@ export function RoutedView({ route }: { readonly route: Route }) {
     case 'session':
       /* The sample reads its own shell, so it never depends on, or touches, the board this page is polling. */
       return isSampleRoute(route) ? (
-        <SampleSession>
+        <SampleSession key={route.explain} explainGoal={route.explain === 'goal'}>
           <SessionView route={route} />
         </SampleSession>
       ) : (

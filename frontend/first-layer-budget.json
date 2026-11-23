@@ -6,7 +6,7 @@
       "tracking": 3
     },
     "frontend/src/delegation/delegation.css": {
-      "tracking": 3
+      "tracking": 2
     },
     "frontend/src/drift/ActivityHead.tsx": {
       "monospace": 1,
@@ -34,9 +34,9 @@
       "monospace": 1
     },
     "frontend/src/project/project.css": {
-      "monospace": 17,
+      "monospace": 14,
       "uppercase": 1,
-      "tracking": 15
+      "tracking": 13
     },
     "frontend/src/sessions/sessions.css": {
       "monospace": 16,
@@ -47,8 +47,7 @@
       "monospace": 4
     },
     "frontend/src/steering/steering.css": {
-      "monospace": 1,
-      "tracking": 2
+      "tracking": 1
     },
     "frontend/src/styles/shell.css": {
       "monospace": 2,
@@ -59,8 +58,8 @@
       "tracking": 1
     },
     "frontend/src/timeline/timeline.css": {
-      "monospace": 2,
-      "tracking": 3
+      "monospace": 1,
+      "tracking": 2
     },
     "frontend/src/ui/badge.tsx": {
       "monospace": 2,
@@ -73,10 +72,12 @@
       "monospace": 1
     }
   },
+
   "technical": {
     "frontend/src/drift/WorkListView.tsx": "Activity log row text is under the technical details panel.",
     "frontend/src/terminal/terminal.css": "Styles terminal output, identities and attach commands."
   },
+
   "stories": [
     "accessibility--attention-at-1280-zoomed-200",
     "accessibility--attention-at-160",
@@ -87,11 +88,6 @@
     "accessibility--focus-in-the-steer-back-box",
     "accessibility--focus-on-a-stale-result",
     "accessibility--focus-while-analyzing",
-    "accessibility--projects-at-1280-zoomed-200",
-    "accessibility--projects-at-160",
-    "accessibility--projects-at-188",
-    "accessibility--projects-at-320",
-    "accessibility--projects-at-375",
     "accessibility--quota-pace-tick-contrast",
     "accessibility--session-result-at-1280-zoomed-200",
     "accessibility--session-result-at-160",
@@ -101,7 +97,6 @@
     "attention-project-locations--missing-checkout-evidence",
     "attention-project-locations--mixed-measured-and-inferred",
     "attention-project-locations--one-measured-location",
-    "attention-project-locations--project-shell-labels",
     "attention-project-locations--repeated-identity-has-no-orphan-card",
     "attention-project-locations--repeated-session-does-not-invent-sharing",
     "attention-project-locations--repeated-unknown-counts-once-beside-measured-session",
@@ -480,6 +475,7 @@
     "intent-wording-at-the-edges-of-a-reading--how-to-says-what-a-reading-can-settle-and-how-far-to-trust-it",
     "intent-wording-at-the-edges-of-a-reading--saving-on-a-live-session-says-only-that-it-saved",
     "intent-wording-at-the-edges-of-a-reading--saving-on-an-ended-session-repeats-the-caveat",
+
     "sample-session-page--banner-says-how-to-reach-the-page",
     "sample-session-page--cancel-summary-is-held",
     "sample-session-page--delete-summary-is-held",
@@ -519,11 +515,6 @@
     "sessions-declared-children-and-groups--parent-page-keeps-a-childs-exact-question",
     "sessions-declared-children-and-groups--parent-page-names-children-and-their-state",
     "sessions-declared-children-and-groups--parent-question-outranks-child-wait",
-    "sessions-declared-children-and-groups--plan-entity-status",
-    "sessions-declared-children-and-groups--project-child-wait-and-more",
-    "sessions-declared-children-and-groups--project-displayed-state-rollup",
-    "sessions-declared-children-and-groups--projects-member-alignment",
-    "sessions-declared-children-and-groups--projects-quiet-rollup",
     "sessions-declared-children-and-groups--prompt-first-title-is-a-child-wait",
     "sessions-declared-children-and-groups--unmatched-child-page",
     "sessions-declared-hold-preserves-reading--completed-reading-and-final-result",
@@ -537,7 +528,7 @@
     "sessions-named-by-its-goal--session-page-names-the-held-goal",
     "sessions-named-by-its-goal--session-without-goal-keeps-its-name",
     "sessions-named-by-its-goal--untitled-waiting-session",
-    "sessions-search-and-filters--project-activity-icons",
+
     "sessions-what-the-session-has-done--a-fixed-red-test-is-not-a-failure",
     "sessions-what-the-session-has-done--an-opening-failure-before-the-gap-is-unknown",
     "sessions-what-the-session-has-done--annotations-off",
@@ -634,7 +625,7 @@
     "sessions-what-the-session-has-done-summary--working",
     "sessions-what-the-session-has-done-summary--working-over-a-saved-summary",
     "sessions-worktree-rows--header-names-the-worktree",
-    "shell-header--project",
+
     "steering-local-notes-and-limits--ambiguous-tripwire-refreshes",
     "steering-local-notes-and-limits--note-keeps-over-limit-text",
     "steering-local-notes-and-limits--older-notes-are-not-kept",

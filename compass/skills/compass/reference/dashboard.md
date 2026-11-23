@@ -9,7 +9,7 @@ Return to [start, status and stop](../SKILL.md#start).
 Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
 goal and press `Analyze drift`. The Goal card's `How goals work` disclosure explains the steps, the
 reading's limits and what a goal with no expected outcome line is read against.
-New to it? `See a sample session (view only)`, above the Sessions list, opens an anonymized session
+New to it? `See an example`, above the Sessions list or on Help, opens an anonymized session
 that drifted, with a stored summary of what it did, its stored reading, the correction Compass
 composed and numbered (i) marks that explain each part. It is static page data: nothing in it is saved, sent or run.
 
@@ -17,7 +17,7 @@ Compass is an agnostic agent cartography and visualization tool: a local web das
 
 Store locations are resolved per platform, and the documented relocation variables are honored: `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME` (the CLI creates `.gemini` inside it; relocates the Antigravity store with it), `COPILOT_HOME`, `PI_CODING_AGENT_DIR`, and `PI_CODING_AGENT_SESSION_DIR`. When one is set it is authoritative — no fallback to the default location. Run `--diagnose` to see every path searched.
 
-Data sources (read-only; a reader-started model call can send session content through an installed Claude Code or Codex CLI. Analyze drift runs on your press, Codex goal summaries on `Summarize this session` in Console, and a Claude Code session summary when you open a finished session, press `Summarize` or `Update summary`, or invoke a spending `summary` action; each tells you once what is sent and where, again if the destination or content tier changes. Pause all AI use or `--no-observer-model` stops them, and `Turn off summaries` stops session summaries alone. The Live monitor, with its switch on, adds a Claude Code call to Haiku about once a minute while you view a session or a terminal holder keeps it on, tells you once what it sends, and stops under the same two. Unasked drift checks remain a separate opt-in. All parsing is defensive — a broken harness store is skipped, never fatal):
+Data sources (read-only; a reader-started model call can send session content through an installed Claude Code or Codex CLI. Check progress runs on your press, Codex goal summaries on `Summarize this session` in project technical details, and a Claude Code session summary when you open an ended session, press `Summarize` or `Update summary`, or invoke a spending `summary` action; each tells you once what is sent and where, again if the destination or content tier changes. Pause all AI use or `--no-observer-model` stops them, and `Turn off summaries` stops session summaries alone. The Live monitor, with its switch on, adds a Claude Code call to Haiku about once a minute while you view a session or a terminal holder keeps it on, tells you once what it sends, and stops under the same two. Unasked drift checks remain a separate opt-in. All parsing is defensive — a broken harness store is skipped, never fatal):
 - `~/.claude/projects/*/<session>.jsonl` — Claude transcript tails: session discovery (a file holding only generated-title, agent-name or PR-link records is not a session), titles, token usage, pending AskUserQuestion detection and the text of the question it is asking
 - Claude subagents, two generations: modern harnesses write each subagent as a top-level `~/.claude/projects/*/<uuid>.jsonl` whose records carry `agentName` + `teamName: "session-<parent prefix>"` — these fold into the parent session (named pill, its own start and elapsed, freshness, output rate) and never appear as standalone sessions. A teammate dispatched into its own pane stays on that row once it goes quiet, marked as no longer running rather than dropped, and its own subagents are walked and listed beside it, each attributed to the teammate that spawned it; legacy `<session-uuid>/subagents/agent-*.jsonl` + `.meta.json` files are still recognized (fresh mtime = running, and one the lead ran itself stays listed as no longer running once quiet, on the same display window as a teammate), including the `subagents/workflows/<run-id>/` directory a workflow fan-out nests its agents in. A bare `agentName` from a top-level `--agent` launch has no parent relation and remains a standalone session; `agentSetting`, not `agentName`, supplies any Spacedock role. Agent writes count as parent activity in their own right, so a session parked on a long background workflow reads Working
 - Spacedock workflows: a Claude session launched by Spacedock carries an `agentSetting` of `spacedock:first-officer` or `spacedock:ensign` in its first transcript records, which is how its role badge appears. Pi and Codex write no such setting, so a supported boot result earns a first-officer badge instead, and never an ensign one. Codex also accepts the captured fulfilled-result wrapper only when its integer exit code is zero and its output is one complete boot JSON object. A first officer also records its `spacedock status --boot` output — counted only when it arrives as command output, never as ordinary conversation text — which names each workflow directory and each entity-state directory absolutely. The ordered stage list comes from the workflow `README.md` frontmatter, and each entity's current stage from the `status` in its own state-file frontmatter; boot's `dispatchable` list is only a snapshot of what was ready to move at boot, so it fills in behind the state directory rather than standing in for it. Those two kinds of frontmatter are the only project files the stage-strip reader reads; the cockpit's separate project-context prototype also reads bounded dispatch and workflow evidence — see the repository's SECURITY.md for the contract, and `--no-spacedock` to disable it
@@ -127,42 +127,18 @@ made in another tab. The annotation store keeps at most 256 records and sixteen 
 discard records are evicted before retained words, then oldest first. These limits do not apply
 to board-only rows. A present session without a project links to its own page, which has no
 project to return to.
-Each project opens its cockpit:
-a left **Scope** rail selects the project or one exact session. Each row leads with the session
-title, with its harness, state and age as a caption beneath; a row whose title was never published says
-so in place of the title rather than falling back to an id. Where two sessions of one harness would
-otherwise render identically, the row carries the session key so you are not picking blind. A
-persistent briefing shows
-**Where this project stands**, with **Current task**, **Running now**, **Needs you** and
-**Latest result**. **Latest instruction** selects by instruction time, with its source and the
-reason when no instruction is available. Without instruction times, the card says
-**Published instruction**. **Your saved words** labels saved words and expected outcome rows. Needs you keeps a project session
-waiting on you visible above the tabs, with raise and copy-resume controls where supported.
+**Overview** shows what the project is working on, what is running, and whether anything needs
+you. Rows with a session link open their own page. The end results show uncommitted work under
+**Worth a look** and clean ends under **Ready to wrap up**, including ends with a pending request.
+**Timeline** shows observed changes and completed tasks. Open **Show technical details** to see
+the source and confidence alongside Timeline entries. **Decisions** shows recorded decisions. **Usage and alerts**
+shows project usage and alerts. **Show technical details** holds the workflow evidence, steering,
+stage alerts and read-only terminal. **Copy a status update** copies the existing briefing.
+**Your notes** saves as you type in this browser and never writes to a session.
 
-**Now** pairs current activity with observed session endings, their outcome glyphs and git readings,
-plus workflow evidence. **Course** holds observed state changes, semantic history, and completed
-tasks. **Decisions** shows recorded decisions and their application state; it does not approve
-them. **Console** leads with the operations rail, Delegation, Waiting on you, Capacity and
-Tripwires, and keeps how the server was started in one disclosure beneath it, holding the selected
-session's optional read-only terminal, the observer-model controls and the status line. The summary
-names the state of both capabilities. A capability that is on renders expanded and outside the
-disclosure, so nothing you can act on is behind a click. What you typed for a session, and
-everything read against it, lives on that session's own page (below), not on a tab here.
-The **Your note (this tab only)** box, browser-local human context and old
-tripwire notes do not instruct an agent and remain inert. The first-officer gloss appears with a
-first-officer session or enabled stage source; stage alerts require an enabled stage source.
-
-Each tab names its own panel in a line beneath the strip, because two of the four open onto a
-heading that does not repeat the label. Course and Decisions also carry a cue on the tab
-itself: the number of observed state changes or decisions. A cue reads `…` while
-the record is still loading and `·` where nothing published the figure, and those two are never the
-same claim as a zero. Every cue is spelled out for a screen reader beside its mark.
-
-The composer for a note to yourself sits in the project header, above the tabs, rather than inside
-Tripwires. It is the same control wherever you reach it, and it still writes nothing into a session.
-
-Stage alerts are separate typed controls in Course and Projects. Save one declared
-stage per exact workflow; the first current entity observed entering it trips the condition once.
+Stage alerts are available through **Show technical details** on a project or on Projects. Save
+one declared stage per exact workflow. The first observed entry to that stage trips the
+condition once.
 First sight, restart and evidence gaps establish a baseline rather than an entry. The card reports
 the current coverage and unavailable sources. Rearm permits another alert; saving the unchanged
 stage preserves its latch. Projects retains Remove when no source session remains. Up to 64 rules
@@ -213,18 +189,20 @@ With no outcome line, Compass reads your goal's end state; a goal too vague to r
 the board no longer holds names that session and says it is not in the current payload.
 
 The route lives in the URL fragment: `#n=sessions`, `#n=projects`, `#n=attention` (Needs you),
-`#n=intent` (Goal history), `#n=settings`,
-`#n=project:<encoded-project>` with the selected session and then the open tab appended when either
-is set, or the full project, harness, and session identity for session
-detail, where the project part is empty for a session that published no project label. A project link that ends in the retired `held-to` tab opens that session's page. Reload, pasted links, and browser back therefore preserve the selected view. Old fragments
-that belonged to the retired dashboard normalize to Sessions, as the bare URL does. Open the dashboard at its bare URL;
+`#n=intent` (Goal history), `#n=settings`, `#n=help`,
+`#n=project:<encoded-project>` with an optional tab suffix, or a session route containing the
+project, harness and session ID. The project part is empty for a session that published no project
+label. A bookmarked project link that named a session opens that session's own page, including
+links with the retired `held-to` suffix. The breadcrumb and Escape both lead back to its project.
+Old focus links with only a session ID use the ID-only route. Reload and browser Back preserve the
+selected view. Other unrecognized fragments open Sessions. Open the dashboard at its bare URL;
 the retired `next` query is no longer a dashboard route.
 
 The header shows how many sessions are Working across the board, including on project pages.
 The **Needs you** badge counts sessions that are Waiting on you or Worth a look. A reported block
 and an exact request for the same session count once. Keyboard shortcuts `n`, `p`, and `s` open
 Needs you, Projects, and Sessions unless focus is in a form control or Meta, Control, or Alt is held.
-A session opens under the tab it was opened from (Sessions for a pasted link), and its breadcrumb
+A session opens under the tab it came from, including Help for the example. A pasted session link without an origin opens under Sessions. Its breadcrumb
 starts there. `Escape` returns from a session to that breadcrumb's last link and otherwise to
 Sessions, under the same focus and modifier rules. Inside a tripwire draft it cancels the draft.
 

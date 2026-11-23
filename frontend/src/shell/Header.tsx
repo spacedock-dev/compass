@@ -2,18 +2,15 @@ import { buttonVariants } from '../ui/button';
 import { Icon } from '../ui/icons';
 import { AttentionAnnouncer } from '../attention';
 import { selectAttentionSelection } from '../attention/select';
-import { MoreMenu } from '../controls/MoreMenu';
 import { NotificationControl } from '../notify';
 import { useFocusKey } from '../controls/useFocusKey';
-import { splitSessKey, stableProjectKey } from '../api/identity';
-import { payloadSessions } from '../api/bootstrap';
 import { cn } from '../lib/utils';
 import { SHOWN } from '../language/glossary';
 import { sessionHome, type Route, type TopLevelView } from '../router/grammar';
+import { RouteLink } from './RouteLink';
 import { useDisplayed, useShell } from './context';
-import { useProjectBriefing } from './projectBriefing';
 
-const PRIMARY = ['sessions', 'projects', 'attention', 'intent', 'settings'] as const;
+const PRIMARY = ['sessions', 'projects', 'attention', 'intent', 'settings', 'help'] as const;
 
 /* The view a route sits under: a session sits under the view it was opened from, a project under Projects. */
 function currentView(route: Route): TopLevelView {
@@ -36,16 +33,12 @@ function PrimaryNavigation({
   return (
     <nav aria-label={SHOWN.primary} className="flex flex-wrap items-center gap-x-1">
       {PRIMARY.map((view) => (
-        <a
-          data-slot="button-link"
-          className={cn(
-            buttonVariants({ variant: 'native' }),
-            'gap-2 rounded-card px-3 text-body font-medium text-foreground no-underline hover:bg-muted aria-[current=page]:bg-[var(--status-ended-bg)] aria-[current=page]:font-semibold aria-[current=page]:text-[var(--status-ended-ink)] forced-colors:aria-[current=page]:underline',
-          )}
+        <RouteLink
+          className="gap-2 rounded-card px-3 text-body font-medium text-foreground no-underline hover:bg-muted aria-[current=page]:bg-[var(--status-ended-bg)] aria-[current=page]:font-semibold aria-[current=page]:text-[var(--status-ended-ink)] forced-colors:aria-[current=page]:underline"
           key={view}
           ref={view === here ? currentRef : undefined}
-          href={`#n=${view}`}
-          aria-current={view === here ? 'page' : undefined}
+          route={{ view }}
+          current={view === here}
         >
           {SHOWN[view]}
           {view === 'attention' && needsCount > 0 ? (
@@ -56,7 +49,7 @@ function PrimaryNavigation({
               </span>
             </>
           ) : null}
-        </a>
+        </RouteLink>
       ))}
     </nav>
   );
@@ -100,23 +93,6 @@ function WorkingPill({
   );
 }
 
-function ProjectMore({ route }: { readonly route: Extract<Route, { view: 'project' }> }) {
-  const data = useDisplayed((snapshot) => snapshot.data);
-  const briefing = useProjectBriefing(route);
-  const rows = payloadSessions(data).rows.filter(
-    (row) => String(row.project ?? '') === route.project,
-  );
-  const projectKey = stableProjectKey({ label: route.project, sessions: rows });
-  return (
-    <MoreMenu
-      projectKey={projectKey}
-      focus={route.focus ? splitSessKey(route.focus) : null}
-      briefingText={briefing.briefingText}
-      {...(briefing.addHumanContext ? { addHumanContext: briefing.addHumanContext } : {})}
-    />
-  );
-}
-
 export function Header({ route }: { readonly route: Route }) {
   const selection = useDisplayed(selectAttentionSelection);
   const counts = selection?.counts;
@@ -139,7 +115,6 @@ export function Header({ route }: { readonly route: Route }) {
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <NotificationControl />
-        {route.view === 'project' && selection ? <ProjectMore route={route} /> : null}
         <WorkingPill count={counts?.working} unread={unread} />
       </div>
       <AttentionAnnouncer />

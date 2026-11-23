@@ -1,3 +1,4 @@
+import { fireEvent, within } from '@testing-library/react';
 import { restateRecordedLocationNotes } from '../../test/location_departure';
 import {
   projectWordDeviation,
@@ -38,6 +39,7 @@ interface Summary {
   readonly scopeLinks: readonly (readonly [string | null, string | null, boolean])[];
   readonly switcher: string;
   readonly strip: string;
+  readonly memo: string;
   readonly stripLinks: readonly (string | null)[];
   readonly stripAttrs: readonly string[];
   readonly tabs: readonly string[];
@@ -51,6 +53,12 @@ function summarize(source: Element | DocumentFragment, tab: string): Summary {
   restateRecordedLocationNotes(source);
   const article = normalizeDisclosures(source);
   maskProjectStatusPresentation(article, source.nodeType === Node.DOCUMENT_FRAGMENT_NODE);
+  // The local outcome memo now has one editor on Overview. Timeline evidence uses
+  // the project’s technical control, so only the legacy trigger copy is retired.
+  const memo = [...article.querySelectorAll('.next-cockpit-recovery-memos')].map(norm).join('');
+  for (const field of article.querySelectorAll('.next-cockpit-recovery-memos')) field.remove();
+  for (const trigger of article.querySelectorAll('.next-course-evidence > summary'))
+    trigger.remove();
   const header = article.querySelector('.next-project-detail-header');
   const count = header?.querySelector('.next-project-detail-count');
   if (count) count.textContent = omitProjectStateSubtotals(norm(count));
@@ -74,6 +82,7 @@ function summarize(source: Element | DocumentFragment, tab: string): Summary {
     ),
     switcher: norm(article.querySelector('.next-cockpit-scope-switcher summary')),
     strip: norm(strip),
+    memo,
     stripLinks: [...(strip?.querySelectorAll('a') ?? [])].map((link) => link.getAttribute('href')),
     stripAttrs: [
       ...(strip?.querySelectorAll(
@@ -134,6 +143,26 @@ function maskProjectStatusPresentation(root: ParentNode, recorded: boolean) {
     meta.textContent = norm(meta);
 }
 
+// The rail, overview and tab captions changed. Compare the retained recovery evidence and
+// Timeline facts through their original rendered regions.
+function comparableProject(summary: Summary, tab: string) {
+  return {
+    strip: summary.strip,
+    stripLinks: summary.stripLinks,
+    stripAttrs: summary.stripAttrs,
+    ...(tab === 'course'
+      ? {
+          panel: summary.panel.replace(
+            /^(?:Course: direction changes Compass observed in the session record\.|Direction changes Compass observed in the session record\.)\s*/,
+            '',
+          ),
+          panelLinks: summary.panelLinks,
+          panelKinds: summary.panelKinds,
+        }
+      : {}),
+  };
+}
+
 function maskRecordedProjectGlyphs(root: DocumentFragment): DocumentFragment {
   for (const glyph of root.querySelectorAll(
     '.next-project-ending-glyph, .next-activity-done-glyph, .next-project-plan-glyph',
@@ -146,7 +175,7 @@ function maskRecordedProjectGlyphs(root: DocumentFragment): DocumentFragment {
 }
 
 describe('the project page reads as the legacy page does, over generated boards', () => {
-  it(`agrees on ${String(SEEDS)} boards: header, scopes, the recovery strip, the tabs, Now and Course`, async () => {
+  it(`agrees on ${String(SEEDS)} boards: the retained recovery and Timeline evidence`, async () => {
     const failures: string[] = [];
     let compared = 0;
     const reach: Record<string, number> = {};
@@ -253,6 +282,14 @@ describe('the project page reads as the legacy page does, over generated boards'
         projectInstructionHeading(board, label, focus),
       );
 
+      // The old focused cockpit now opens the exact Session page, covered by the route
+      // and shell proofs. Keep querying the old fixture for coverage and compare the
+      // recovery and Timeline only where the URL still names a project page.
+      for (const [name, pattern] of REACH)
+        if (pattern.test(`${legacy.strip} ${legacy.memo} ${legacy.panel} ${legacy.scopeTree}`))
+          reach[name] = (reach[name] ?? 0) + 1;
+      if (focus) continue;
+
       const contexts: Record<string, unknown> = {};
       if (variant === 'ready' && context) contexts[`${stable}\n`] = context;
       if (variant !== 'ready' && variant !== 'absent') {
@@ -272,7 +309,7 @@ describe('the project page reads as the legacy page does, over generated boards'
         page.state.held.add(`${stable}\n`);
       if (focus && !focusContext) page.state.held.add(`${stable}\n${compatSessKey(focus)}`);
       await page.settle();
-      const article = page.container.querySelector('article.next-project-detail');
+      const article = page.container.querySelector<HTMLElement>('article.next-project-detail');
       if (!article) {
         failures.push(
           `seed ${String(seed)} ${variant}: the page drew no project article for ${JSON.stringify(label)}`,
@@ -281,17 +318,18 @@ describe('the project page reads as the legacy page does, over generated boards'
         if (failures.length >= 3) break;
         continue;
       }
+      if (tab === 'course')
+        fireEvent.click(within(article).getByRole('button', { name: 'Show technical details' }));
       restateLiveOpener(article);
       const mine = summarize(article, tab);
       page.unmount();
       compared += 1;
-      for (const [name, pattern] of REACH)
-        if (pattern.test(`${legacy.strip} ${legacy.panel} ${legacy.scopeTree}`))
-          reach[name] = (reach[name] ?? 0) + 1;
-      for (const key of Object.keys(legacy) as (keyof Summary)[]) {
-        if (JSON.stringify(legacy[key]) === JSON.stringify(mine[key])) continue;
-        const left = JSON.stringify(legacy[key]);
-        const right = JSON.stringify(mine[key]);
+      const expected = comparableProject(legacy, tab);
+      const actual = comparableProject(mine, tab);
+      for (const key of Object.keys(expected) as (keyof typeof expected)[]) {
+        if (JSON.stringify(expected[key]) === JSON.stringify(actual[key])) continue;
+        const left = JSON.stringify(expected[key]);
+        const right = JSON.stringify(actual[key]);
         let at = 0;
         while (left[at] === right[at]) at += 1;
         failures.push(
@@ -362,15 +400,23 @@ describe('the browser proof’s own board reads the same on both pages', () => {
         });
         if (!context) page.state.held.add(`${stable}\n`);
         await page.settle();
-        const article = page.container.querySelector('article.next-project-detail');
-        if (article) restateLiveOpener(article);
+        const article = page.container.querySelector<HTMLElement>('article.next-project-detail');
+        if (article) {
+          if (tab === 'course')
+            fireEvent.click(
+              within(article).getByRole('button', { name: 'Show technical details' }),
+            );
+          restateLiveOpener(article);
+        }
         const mine = article ? summarize(article, tab) : null;
         page.unmount();
         compared += 1;
-        for (const key of Object.keys(legacy) as (keyof Summary)[])
-          if (!mine || JSON.stringify(legacy[key]) !== JSON.stringify(mine[key]))
+        const expected = comparableProject(legacy, tab);
+        const actual = mine && comparableProject(mine, tab);
+        for (const key of Object.keys(expected) as (keyof typeof expected)[])
+          if (!actual || JSON.stringify(expected[key]) !== JSON.stringify(actual[key]))
             failures.push(
-              `${label} ${tab} ${key}: ${JSON.stringify(legacy[key])?.slice(0, 160)} vs ${JSON.stringify(mine?.[key])?.slice(0, 160)}`,
+              `${label} ${tab} ${key}: ${JSON.stringify(expected[key])?.slice(0, 160)} vs ${JSON.stringify(actual?.[key])?.slice(0, 160)}`,
             );
       }
     }

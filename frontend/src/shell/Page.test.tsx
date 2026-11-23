@@ -21,7 +21,7 @@ const current = () => primary().getByRole('link', { current: 'page' });
 const working = () => screen.getByRole('status', { name: 'Working sessions' });
 
 describe('the primary navigation', () => {
-  it('lists the five views in order with their plain labels, each a real link', async () => {
+  it('lists the six views in order with their plain labels, each a real link', async () => {
     const page = mountShell({ data: headerBoard() });
     await page.settle();
     const links = primary().getAllByRole('link');
@@ -31,6 +31,7 @@ describe('the primary navigation', () => {
       '#n=attention',
       '#n=intent',
       '#n=settings',
+      '#n=help',
     ]);
     expect(primary().getByRole('link', { name: 'Needs you 3' })).toBe(links[2]);
     expect(primary().getByRole('link', { name: 'Goal history' })).toBe(links[3]);
@@ -44,6 +45,7 @@ describe('the primary navigation', () => {
     ['#n=projects', 'Projects'],
     ['#n=intent', 'Goal history'],
     ['#n=settings', 'Settings'],
+    ['#n=help', 'Help'],
     ['#n=project:alpha%2Fapp', 'Projects'],
     ['#n=project:alpha%2Fapp:course', 'Projects'],
     ['#n=session:alpha%2Fapp:claude:shared-sid', 'Sessions'],
@@ -189,6 +191,7 @@ describe('the document title is one per view and does not move while the board r
     ['#n=projects', 'Compass — Projects'],
     ['#n=intent', 'Compass — Goal history'],
     ['#n=settings', 'Compass — Settings'],
+    ['#n=help', 'Compass — Help'],
     ['#n=project:alpha%2Fapp', 'alpha/app — Compass'],
     ['#n=session:alpha%2Fapp:claude:shared-sid', 'Alpha shared claude — alpha/app — Compass'],
     // This fixture session waits on you, so its tab says so first.
@@ -307,12 +310,12 @@ describe('the header counts come from the displayed board', () => {
     expect(primary().getByRole('link', { name: 'Needs you' })).toBeVisible();
   });
 
-  it('keeps project More actions available without a duplicate fleet count', async () => {
-    const page = mountShell({ hash: '#n=project:alpha%2Fapp', data: BOARD });
+  it('shows a copy action on the project without a duplicate fleet count or More menu', async () => {
+    const page = mountShell({ hash: '#n=project:acme%2Fdashboard', data: headerBoard() });
     await page.settle();
-    expect(working().textContent).toBe('2 sessions working');
-    expect(screen.getByText('More', { selector: 'summary' })).toBeVisible();
-    expect(screen.queryByText(/subagents? observed/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Copy a status update' })).toBeVisible();
+    expect(screen.queryByLabelText('More')).toBeNull();
+    expect(screen.getAllByRole('status', { name: 'Working sessions' })).toHaveLength(1);
   });
 });
 
@@ -535,4 +538,21 @@ describe('the page is React’s alone and starts nothing on its own', () => {
     walk(root);
     expect(offenders).toEqual([]);
   });
+});
+
+it('opens the only Goal explainer through Help and returns to Help', async () => {
+  const view = mountShell({ hash: '#n=help', data: BOARD });
+  await view.settle();
+  expect(screen.getByRole('heading', { name: 'How Compass works' })).toBeVisible();
+  const sentence = /Give the goal and, if useful/;
+  expect(screen.queryByText(sentence)).toBeNull();
+  const link = screen.getByRole('link', { name: 'How goals work' });
+  expect(link.getAttribute('href')).toBe(SAMPLE_FRAGMENT + '&from=help&explain=goal');
+  await view.go(link.getAttribute('href') ?? '');
+  expect(await screen.findByText(sentence)).toBeVisible();
+  expect(screen.getAllByText(sentence)).toHaveLength(1);
+  const crumb = within(screen.getByRole('navigation', { name: 'Breadcrumb' }));
+  expect(crumb.getByRole('link', { name: 'Help' }).getAttribute('href')).toBe('#n=help');
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.getByRole('heading', { name: 'How Compass works' })).toBeVisible();
 });

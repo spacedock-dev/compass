@@ -32,6 +32,7 @@ export interface ProjectConsoleProps {
   readonly observer?: ReactNode;
   /** The usage disclosure and switch inside the capacity panel. The capacity step supplies them. */
   readonly usage?: (windows: boolean) => ReactNode;
+  readonly view?: 'usage' | 'technical';
 }
 
 type Reading = boolean | null | 'per-session';
@@ -57,12 +58,13 @@ export function ProjectConsole({
   focus,
   observer,
   usage,
+  view,
 }: ProjectConsoleProps) {
   const { runtime } = useShell();
   const snapshot = useDisplayed((current) => current);
   const model = selectObserved(snapshot);
   const observed = model.projects.find((candidate) => candidate.key === project);
-  const identity = focus ? exactIdentity(focus) : null;
+  const identity = focus && view !== 'usage' ? exactIdentity(focus) : null;
   const focusHarness = identity?.harness ?? null;
   const focusSid = identity?.sid ?? null;
   const revision = nextFiniteNumber(snapshot.data?.generated);
@@ -100,40 +102,16 @@ export function ProjectConsole({
   const members = payloadSessions(snapshot.data).rows.filter(
     (row) => String(row.project ?? '') === project,
   ) as unknown as readonly Row[];
-  const only = members.length === 1 ? members[0] : undefined;
+  const only = members.length === 1 ? exactIdentity(members[0]) : null;
   const surface = identity ? <TerminalSurface project={project} identity={identity} /> : null;
   const scopeKey = focus ? compatSessKey(focus) : null;
 
-  return (
+  const rail = (
     <>
-      <header className="next-cockpit-scope next-cockpit-scope--evidence">
-        <ScopeCue scope={scope} detail={scope.kind === 'session' ? scope.detail : undefined} />
-        <strong>CONSOLE</strong>
-      </header>
-      {focus ? null : (
-        <p className="next-cockpit-empty">
-          Select one exact session to open its read-only console.
-          {only ? (
-            <>
-              {' '}
-              <RouteLink
-                route={{
-                  view: 'project',
-                  project,
-                  focus: compatSessKey(only),
-                  tab: 'console',
-                }}
-              >
-                Open this session’s console
-              </RouteLink>
-            </>
-          ) : null}
-        </p>
-      )}
       {observed ? (
         <aside className="next-project-detail-rail" data-next-project-rail>
           <DelegationPanel figure={figure} />
-          <WaitingPanel project={observed} />
+          <WaitingPanel project={observed} exposeCopyValue={view !== 'usage'} />
           <CapacityPanel
             payload={(snapshot.data ?? {}) as Row}
             model={model}
@@ -144,6 +122,38 @@ export function ProjectConsole({
       ) : (
         <p className="next-absence">This project is not in the current payload.</p>
       )}
+    </>
+  );
+  if (view === 'usage') return rail;
+
+  return (
+    <>
+      <header className="next-cockpit-scope next-cockpit-scope--evidence">
+        <ScopeCue scope={scope} detail={scope.kind === 'session' ? scope.detail : undefined} />
+        <strong>{view === 'technical' ? 'Read-only terminal' : 'CONSOLE'}</strong>
+      </header>
+      {focus ? null : (
+        <p className="next-cockpit-empty">
+          Select one exact session to open its read-only console.
+          {only && view !== 'technical' ? (
+            <>
+              {' '}
+              <RouteLink
+                route={{
+                  view: 'session',
+                  project,
+                  harness: only.harness,
+                  session: only.sid,
+                  from: 'project',
+                }}
+              >
+                Open this session
+              </RouteLink>
+            </>
+          ) : null}
+        </p>
+      )}
+      {view !== 'technical' ? rail : null}
       {terminal === true ? surface : null}
       {observerReading === true ? observer : null}
       <Disclosure

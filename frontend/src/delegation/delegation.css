@@ -3,34 +3,34 @@
    Python dashboard stays the rollback. */
 .next-project-detail-rail{width:356px;max-width:100%;min-width:0;border-left:1px solid var(--rule);background:var(--sunk);display:flex;flex-direction:column}
 .next-rail-header{display:flex;align-items:baseline;gap:9px}
-.next-rail-header h2{margin:0;color:var(--ink-label);font:600 var(--fs-label) var(--mono);letter-spacing:.07em}
-.next-rail-meta{margin-left:auto;color:var(--ink2);font:var(--fs-label) var(--mono);text-align:right}
+.next-rail-header h2{margin:0;color:var(--ink-label);font:600 var(--fs-label) var(--sans)}
+.next-rail-meta{margin-left:auto;color:var(--ink2);font:var(--fs-label) var(--sans);text-align:right}
 .next-rail-meta--sentence{font:var(--fs-label) var(--sans)}
 .next-rail-meta--amber{color:var(--amber)}
 .next-project-detail-rail .next-rail-reason{margin:0;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-body);line-height:1.5}
 .next-delegation-figure{display:flex;gap:9px;align-items:baseline}
-.next-delegation-figure>strong{color:var(--accent);font:700 var(--fs-head)/1 var(--mono);letter-spacing:-.02em}
+.next-delegation-figure>strong{color:var(--accent);font:700 var(--fs-head)/1 var(--sans);letter-spacing:-.02em}
 .next-delegation-caption{margin:0;color:var(--ink2);font-size:var(--fs-body);font-weight:500;line-height:1.55;max-width:var(--measure)}
 .next-delegation progress{display:block;width:100%;height:5px;border:0;border-radius:var(--r-control);overflow:hidden;background:var(--rule);accent-color:var(--accent-dim)}
 .next-delegation progress::-webkit-progress-bar{background:var(--rule)}
 .next-delegation progress::-webkit-progress-value{background:var(--accent-dim)}
 .next-delegation progress::-moz-progress-bar{background:var(--accent-dim)}
-.next-delegation-metrics{display:flex;flex-wrap:wrap;gap:4px 9px;color:var(--ink2);font:var(--fs-label)/1.5 var(--mono)}
+.next-delegation-metrics{display:flex;flex-wrap:wrap;gap:4px 9px;color:var(--ink2);font:var(--fs-label)/1.5 var(--sans)}
 .next-delegation-withheld{display:flex;flex-direction:column;gap:6px;color:var(--ink2)}
-.next-delegation-withheld strong{font:700 var(--fs-value) var(--mono)}
+.next-delegation-withheld strong{font:700 var(--fs-value) var(--sans)}
 .next-delegation-withheld strong[data-next-absent]{font-family:var(--sans)}
 
-.next-delegation-trend{color:var(--ink2);font:var(--fs-label) var(--mono)}
+.next-delegation-trend{color:var(--ink2);font:var(--fs-label) var(--sans)}
 .next-rail-wait-heading{display:flex;align-items:baseline;gap:9px}
 .next-rail-wait-heading a{min-width:0;color:var(--ink);font-size:var(--fs-body);font-weight:500;line-height:1.55;overflow-wrap:anywhere;text-decoration:none}
 .next-rail-wait-heading a:hover{text-decoration:underline}
-.next-rail-wait-duration{margin-left:auto;flex-shrink:0;color:var(--amber);font:700 var(--fs-label) var(--mono)}
+.next-rail-wait-duration{margin-left:auto;flex-shrink:0;color:var(--amber);font:700 var(--fs-label) var(--sans)}
 .next-rail-question{margin:0;color:var(--ink2);font-size:var(--fs-body);font-weight:500;line-height:1.55;overflow-wrap:anywhere}
 .next-rail-wait-controls{display:flex;flex-wrap:wrap;gap:7px;padding-top:2px}
 /* Waiting-card padding is owned by Button's contextual recipe; this sheet keeps placement. */
 .next-rail-wait-controls button{margin-top:0}
 .next-rail-capacity-window{display:flex;flex-direction:column;gap:6px}
-.next-rail-capacity-heading{display:flex;align-items:baseline;gap:8px;color:var(--ink2);font:var(--fs-label) var(--mono)}
+.next-rail-capacity-heading{display:flex;align-items:baseline;gap:8px;color:var(--ink2);font:var(--fs-label) var(--sans)}
 .next-rail-capacity-heading b,.next-rail-capacity-heading strong{color:var(--ink)}
 .next-rail-capacity-heading strong{margin-left:auto;font-variant-numeric:tabular-nums}
 .next-rail-capacity-heading .next-rail-used--amber,.next-rail-pace--hot{color:var(--amber)}
@@ -41,7 +41,7 @@
 .next-rail-capacity-fill--amber{background:var(--amber)}
 .next-rail-capacity-fill--unknown{background:var(--ink3)}
 .next-rail-capacity-tick{position:absolute;top:-2px;bottom:-2px;width:1.5px;background:var(--ink2);outline:1px solid var(--panel)}
-.next-rail-capacity-caption{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;color:var(--ink2);font:var(--fs-label) var(--mono)}
+.next-rail-capacity-caption{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;color:var(--ink2);font:var(--fs-label) var(--sans)}
 .next-project-detail-rail .next-usage-consent{margin:0}
 .next-project-detail-rail .next-usage-consent-note{font-family:var(--sans);font-size:var(--fs-label)}
 .next-project-detail-rail .next-usage-switch{margin:0;font-size:var(--fs-label)}

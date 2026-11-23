@@ -15,11 +15,12 @@ export const STEERING_SLOTS: ProjectSlots = {
   decisions: ({ project, projectKey, focus }) => (
     <ProjectDecisions project={project} projectKey={projectKey} focus={focus} />
   ),
-  console: ({ project, projectKey, focus }) => (
+  console: ({ project, projectKey, focus }, view) => (
     <ProjectConsole
       project={project}
       projectKey={projectKey}
       focus={focus}
+      {...(view ? { view } : {})}
       usage={(windows) => <RailUsage windows={windows} />}
       observer={<ObserverControls projectKey={projectKey} focus={focus} />}
     />

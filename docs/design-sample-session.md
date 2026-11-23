@@ -72,7 +72,7 @@ The route is `#n=session:acme%2Fdashboard:claude:sample`, an ordinary session ro
 project and session id. `sample` is not a shape any real session id takes, so it cannot collide with
 one. `RoutedView` in `frontend/src/shell/views.tsx` wraps the real `SessionView` for that route and
 for no other, so the page a reader sees is the page every session gets, with the same components, the
-same wording and the same layout. A reader finds it from a line above the Sessions list, and by link.
+same wording and the same layout. A reader opens it from See an example above the Sessions list or on Help. Not now hides the Sessions invitation in this browser. The Help entry remains available.
 The new sample kept the route, the project label and the id, so a link to the first sample opens this
 one.
 
@@ -166,6 +166,19 @@ sample was captured:
   base64-encoded, so a fixture byte costs about four thirds of a page byte, and the step from the first
   sample's 75,130 bytes to the bound is at most about 233 KB of page, which leaves the rest of the
   400 KiB to the code that ships beside it.
+
+The Help and Projects layer measured 2,423,571 bytes for the packaged page on 2026-11-23,
+up 8,312 bytes from its starting page of 2,415,259 bytes. The page bound rises once from
+2,418,919 to the measured 2,423,571 bytes. The fixture bound stays at 250,000 bytes.
+
+The same day's review fixes added 2,608 bytes for measured project states and end outcomes,
+one project notes editor, the shared Timeline evidence control and the narrow Projects layout.
+The new measured page bound is 2,426,179 bytes. The example fixture is unchanged.
+
+With the session story and first-layer guard underneath, Help and Projects package to
+2,430,667 bytes on Node 26.10.0 and pnpm 12.17.0. That is 10,964 bytes above the session
+story's measured page. The bound follows the measured combined page, and the fixture bound
+stays at 250,000 bytes.
 
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement

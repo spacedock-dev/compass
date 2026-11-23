@@ -286,3 +286,18 @@ summary,
   }
 }
 }
+
+.help-row{display:flex;align-items:center;gap:12px;padding:12px 24px;border-top:1px solid var(--rule)}
+.help-row dd{margin:0;color:var(--ink2)}
+.help-row dt{flex:0 0 190px;font-weight:600}
+.help-icon[data-help-icon="working"]{color:var(--status-working-ink);background:var(--status-working-bg)}
+.help-icon[data-help-icon="waiting"]{color:var(--status-waiting-ink);background:var(--status-waiting-bg)}
+.help-icon[data-help-icon="quiet"]{color:var(--status-quiet-ink);background:var(--status-quiet-bg)}
+.help-icon[data-help-icon="ended"]{color:var(--status-ended-ink);background:var(--status-ended-bg)}
+.help-icon[data-help-icon="worth-a-look"]{color:var(--worth-a-look)}
+.help-level{color:var(--status-ended-ink)}
+.help-level[data-level="1"]{color:var(--progress-slightly-off-course)}
+.help-level[data-level="2"]{color:white;background:var(--progress-off-course)}
+.help-level[data-level="3"]{color:white;background:var(--progress-way-off-course)}
+.help-absence dt{color:var(--ink2)}
+@media(max-width:540px){.help-row:has(dt){display:grid;gap:4px}}

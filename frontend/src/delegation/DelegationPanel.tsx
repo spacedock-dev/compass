@@ -59,7 +59,7 @@ export function DelegationPanel({ figure }: { readonly figure: DelegationFigure 
       data-next-delegation
       data-next-rail-panel="delegation"
     >
-      <RailHeader label="DELEGATION" note={figure.windowText} />
+      <RailHeader label="Time agents worked on their own" note={figure.windowText} />
       {body}
     </Card>
   );

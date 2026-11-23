@@ -192,7 +192,7 @@ exposes it to your network with no password, so read that section before you use
 
 [How Compass works](docs/how-it-works.md) walks through a drift check on the sample session, lists
 what can leave your machine and how to stop it, and explains the dashboard's tabs. To see a finished
-drift check first, open "See a sample session (view only)" above the Sessions list.
+drift check first, open "See an example" above the Sessions list or on Help.
 
 The [skill body](compass/skills/compass/SKILL.md) holds terminal actions and start, status and stop.
 Its bundled references cover [data sources and session states](compass/skills/compass/reference/dashboard.md),

@@ -133,7 +133,9 @@ describe('a label is interpreted by measured locations', () => {
     sessions.unmount();
     const project = mountProject({ hash: '#n=project:audits', data });
     await project.settle();
-    expect(document.querySelector('.next-project-detail-collision')?.textContent).toBe(expected);
+    const heading = screen.getByRole('heading', { name: 'audits' });
+    const header = heading.closest('header') as HTMLElement;
+    expect(within(header).getByText(expected)).toBeVisible();
   });
 
   it('a person sees unknown locations even when fallback keys differ', async () => {

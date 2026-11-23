@@ -1,20 +1,33 @@
 import { use, useEffect, useRef, useState, type ReactNode } from 'react';
+import { GLOSSARY } from '../language/glossary';
 import { ControlsProvider } from '../controls/ControlsProvider';
 import { Card } from '../ui/card';
 import { RouteLink } from '../shell/RouteLink';
-import { ShellContext, useShell } from '../shell/context';
+import { ShellContext, useDisplayed, useRoute, useShell } from '../shell/context';
 import { useBoardRuntime } from '../transport/hooks';
 import { SampleFixtureContext } from './fixture';
 import { TourContext } from './tourContext';
 import { createSampleShell } from './sampleShell';
 import { TOUR } from './tour';
+import { SAMPLE_HARNESS, SAMPLE_SID } from './ids';
 import { ViewOnly } from './ViewOnly';
 import { heldPosition, type HeldAt } from './held';
 
 const HELD_SENTENCE = 'View only: this sample cannot be edited, saved or run.';
 const HELD_MS = 5000;
 
+function FocusGoalExplanation() {
+  const { controls } = useShell();
+  const loaded = useDisplayed((snapshot) => snapshot.data !== null);
+  useEffect(() => {
+    if (loaded) controls.focusLane.focus(`intent-howto:${SAMPLE_HARNESS}:${SAMPLE_SID}`);
+  }, [controls, loaded]);
+  return null;
+}
+
 function Banner() {
+  const route = useRoute();
+  const fromHelp = route.view === 'session' && route.from === 'help';
   return (
     <Card
       as="section"
@@ -25,15 +38,14 @@ function Banner() {
     >
       <p className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <strong className="text-foreground">Sample session (view only)</strong>
-        <RouteLink className="ml-3" route={{ view: 'sessions', project: null, session: null }}>
-          Back to Sessions
+        <RouteLink className="ml-3" route={{ view: fromHelp ? 'help' : 'sessions' }}>
+          {fromHelp ? 'Back to Help' : 'Back to Sessions'}
         </RouteLink>
       </p>
       <p className="m-0 text-muted-foreground">
-        This is a real Claude Code session, anonymized and cut to about ninety minutes: an agent
-        working through a milestone. It shows the goal that was set, the summary of what the agent
-        did, and the one place it departed from that goal. Nothing here is saved, sent or run. Hover
-        or press the numbered (i) marks for a short tour.
+        This example shows about ninety minutes from a longer Claude Code session. Open its{' '}
+        {GLOSSARY.goal.plain}, read what the agent did and see where the work went off course.
+        Nothing here is saved, sent or run. Open the numbered marks for a short tour.
       </p>
       <div className="flex flex-col gap-1">
         <p className="m-0 text-foreground">To get this page for your own session:</p>
@@ -47,10 +59,10 @@ function Banner() {
             press Find goal, or let Compass pick up a goal you set with /goal in Claude Code, Codex
             or Antigravity.
           </li>
-          <li>Press Check progress.</li>
+          <li>Press {GLOSSARY.checkProgress.plain}.</li>
           <li>
-            Read where the session departed from the goal. Press Steer back if you want a correction
-            to paste into the session.
+            Read where the session departed from the goal. Press {GLOSSARY.steerBack.plain} if you
+            want a correction to paste into the session.
           </li>
         </ol>
       </div>
@@ -93,10 +105,16 @@ function Held({ at }: { readonly at: HeldAt | null }) {
 
 /* The sample session, drawn by the page's own Session view over a shell of its own. Its board, its context
    and its record come from the fixture and nothing it does is written anywhere. */
-export function SampleSession({ children }: { readonly children: ReactNode }) {
+export function SampleSession({
+  children,
+  explainGoal = false,
+}: {
+  readonly children: ReactNode;
+  readonly explainGoal?: boolean;
+}) {
   const page = useShell();
   const fixture = use(SampleFixtureContext);
-  const [shell] = useState(() => createSampleShell(page, fixture));
+  const [shell] = useState(() => createSampleShell(page, fixture, explainGoal));
   const [held, setHeld] = useState<HeldAt | null>(null);
   const box = useRef<HTMLElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -125,6 +143,7 @@ export function SampleSession({ children }: { readonly children: ReactNode }) {
           <section ref={box} className="relative" data-sample-session>
             <Banner />
             <ViewOnly onHeld={onHeld}>{children}</ViewOnly>
+            {explainGoal ? <FocusGoalExplanation /> : null}
             <Held at={held} />
           </section>
         </TourContext>

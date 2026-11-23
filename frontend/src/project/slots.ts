@@ -29,7 +29,7 @@ export interface ProjectSlots {
   /** The Decisions tab's body: the decision summary and the semantic timeline. */
   readonly decisions?: (context: ProjectSlotContext) => ReactNode;
   /** The Console tab's body: the operating rail, the terminal and the setup disclosure. */
-  readonly console?: (context: ProjectSlotContext) => ReactNode;
+  readonly console?: (context: ProjectSlotContext, view?: 'usage' | 'technical') => ReactNode;
   /** The stage conditions above the Projects list: every workflow, as that page shows them. */
   readonly projectsConditions?: () => ReactNode;
 }
