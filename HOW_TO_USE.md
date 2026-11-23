@@ -87,13 +87,13 @@ opening the dashboard:
 | Claude Code | `/compass:compass summaries off` | Turn summaries off for every session; refused while model calls are paused |
 | Claude Code | `/compass:compass monitor on` | Hold this session's Live monitor without a browser tab; can spend on checks and save a drafted goal |
 | Claude Code | `/compass:compass monitor off` | Stop this terminal holder; browser holders keep running |
-| Claude Code | `/compass:compass pause` | Pause the running dashboard's model calls; Resume stays on the board |
+| Claude Code | `/compass:compass pause` | Pause the running dashboard's model calls; Resume AI use stays on the board |
 | Codex | `$compass sessions`, `$compass sessions waiting` | The same. Not measured on Codex |
 | Codex | `$compass drift`, `$compass drift again` | This session's drift reading as its session page shows it: line states and departures, with no level and no correction |
 
 Above any rows, the output carries a line saying the rows are what other sessions said about themselves, shown as data. An empty answer carries none.
 
-In Claude Code, the command you typed and the agent's answer to it stay in Full activity but are
+In Claude Code, the command you typed and the agent's answer to it stay in Activity log but are
 left out of what a reading, the Live monitor and a summary read. In Codex, a typed `$compass` action
 is not counted as a message you sent or offered as a goal, but the agent's answer to it stays evidence.
 
@@ -101,7 +101,7 @@ is not counted as a message you sent or offered as a goal, but the agent's answe
 reading, a line says it is Compass's reading of this session, written by a model, shown as data. A
 stored reading costs nothing. With none, `drift` asks for one, and `drift again` asks for a new one,
 under the [spend rule in SECURITY.md](SECURITY.md#drift-commands-and-typed-consent): each is one
-Analyze press against the page's daily limit, Pause all AI use stops it, and the marked skill
+progress check against the page's daily limit, Pause all AI use stops it, and the marked skill
 path needs your typed command once. That rule also states the accepted local-process exposure
 and the measured `/loop` refusal and unmeasured cron limit. Inside the session the command stops about 100 seconds
 after it starts; a longer reading keeps running, and typing `/compass:compass drift` again collects it without spending. The
@@ -111,7 +111,7 @@ with the local-process limits stated there. Nothing about later messages is sett
 session page. With no dashboard running, `drift` starts one and its answer says so. Typed inside
 another tool's session, such as Codex started from Claude Code, where both tools' session ids are set, it refuses and reads nothing. On Claude Code 2.1.318 on macOS, headless (`claude -p`) with `--setting-sources local` and the plugin loaded by `--plugin-dir`, both `drift` and `drift again` ran with no permission prompt (`permission_denials` empty); both runs refused before any press, because the fresh session was not yet on the board.
 
-A goal stays with the session it was saved on, including across `/clear`: the conversation after it has a new session id. To read another session's drift, open that session's page and press Analyze drift, or run `--drift --session claude:ID` in your own terminal using [that session's id](HOW_TO_USE_TERMINAL.md#find-a-sessions-id).
+A goal stays with the session it was saved on, including across `/clear`: the conversation after it has a new session id. To check another session's progress, open that session's page and press Check progress, or run `--drift --session claude:ID` in your own terminal using [that session's id](HOW_TO_USE_TERMINAL.md#find-a-sessions-id).
 
 `summary` spends only when no summary is stored. `summary update` and `summary again` authorize
 only their own operation; each in-session spend needs the matching typed command once. Closed action
@@ -407,7 +407,7 @@ from the first section, then paste the resolved path into the snippet.
 Claude Code's hooks go in `~/.claude/settings.json`. Antigravity's status line goes in its own
 settings file. Both are yours to edit; the plugin does not write either.
 
-Analyze drift reads a Claude Code session's last turn once Claude Code records it finishing, which
+Check progress reads a Claude Code session's last turn once Claude Code records it finishing, which
 it does when Stop hooks are registered (the plugin registers them), whichever board you view. An
 idle Claude Code session whose last turn has no recorded finish, such as an interrupted turn, is
 read up to its last recorded entry instead, and the result says so. A Codex session is read the same
@@ -454,7 +454,7 @@ reads `COMPASS_HOME` (default `~/.compass`) and `COMPASS_PORT` (default 4553).
 It reads the run's capability from the state file and sends only to 127.0.0.1.
 
 After a normal model turn has persisted the session, an extension's select, confirm, input,
-editor or custom prompt appears in Attention. Answering or canceling it clears the wait.
+editor or custom prompt appears in Needs you. Answering or canceling it clears the wait.
 The adapter never answers a prompt. Stock project trust and prompts before persistence are
 outside this coverage; other Pi versions need their own evidence. Without an effective event
 reading, the session reports block state as unavailable. A dashboard restart loses a standing
@@ -475,7 +475,7 @@ cp "$SKILL/opencode_plugin.js" .opencode/plugin/compass.js
 
 Start Compass, then start a fresh OpenCode session. The adapter observes the passive
 `permission.asked` / `permission.replied` pair; answer in OpenCode. A standing parent-session
-permission appears in Attention and clears after its last outstanding request is answered.
+permission appears in Needs you and clears after its last outstanding request is answered.
 The default dashboard port is 4553. For a different local port, start OpenCode with
 `COMPASS_PORT=48679 opencode`; set `COMPASS_HOME` in both processes if using a different state
 home. No URL or remote destination can be configured.
@@ -609,42 +609,49 @@ the process removes its own on the way out.
 
 ## Analyze a session
 
-To analyze drift, press **Analyze drift** on the session page. It runs on your press and tells
-you once what is sent and where. With no saved goal, the check adopts the goal drafted from your first
+Press **Check progress** (Analyze drift) in the session header. Before you press it, **What is sent**
+in the **Is it on track?** card is one click away. It shows what would go to the reader and where,
+and can name the receiver in its label. The first check runs on your press and shows a notice
+about what was sent and where.
+
+With no saved goal, the check adopts the goal drafted from your first
 permitted Claude Code or Codex prompt, or from your latest prompt where no first prompt with a time
-is published. **Use your prompt** beside the goal lists up to five of your own prompts from the
+is published. **Use your prompt** on the **Goal** card lists up to five of your own prompts from the
 session; choosing one fills the goal box without saving it, and **Save intent** saves it. You
-can also type your own goal. A line above the box says where the words came from ("Drafted from your first prompt", then "Your edit of your first prompt" once you change them),
-and words you type over them say "You typed this". **Find goal**, beside it, shows while no goal is saved and the session set no `/goal`. On your
-press it sends the prompts you typed in that session to the same reader Analyze would use, counts
+can also press **Edit goal** and type your own. A line above the box says where the words came from ("Drafted from your first prompt", then "Your edit of your first prompt" once you change them),
+and words you type over them say "You typed this". **Find goal** on the **Goal** card shows while no goal is saved and the session set no `/goal`. On your
+press it sends the prompts you typed in that session to the same reader Check progress would use, counts
 against the same daily limit, and does nothing while model calls are paused. If your own words
 state a clear end state it fills the box, marked **Goal detected**, with the prompts it quotes
-linked to their entries in Full activity and the quoted words listed beneath. Otherwise it says no clear goal was found and leaves the
-box as it was. Nothing is saved until you press **Save intent**. An unavailable prompt time means you must type a goal instead. The notice is remembered
+linked to their entries in **Activity log**, under **Show technical details**. The quoted words are
+listed beneath. If Compass finds no clear goal, it says so and leaves the box as it was. Nothing
+is saved until you press **Save intent**. An unavailable prompt time means you must type a goal
+instead. The notice is remembered
 across tabs and restarts and shown again if the destination or content tier changes. Where Compass
 cannot name the destination (always on Windows and for a Codex base URL), a move between unnamed
 destinations cannot be detected.
-When a session that ran with `/goal` ends on Claude Code's own "goal met" verdict, or a Codex session's agent marks its goal complete, the Drift card says so as the harness's claim, with the time and, for Claude Code, the reason it gave. Once you analyze, Compass checks that claim against the files it wrote and the checks it ran, and says whether the record agrees, disputes it or cannot confirm it. A file the claim names that a later command deleted or moved away is a dispute, and the card names the file and the time. When the reason puts text in quotes that a check Compass recorded printed, the card names that check by its number, and still says it could not confirm the claim: output that holds a phrase is not a pass. Compass looks only at the last lines of a check that ran alone in its call, never at an `echo` or a file you read, and a quoted name of a remote CI job is left to the pull request's own checks. The claim never changes the drift level and never counts as a passing check.
-When Claude Code gives up on a `/goal` it judged unreachable, the goal is over, and the Drift card says so as the harness's claim with the time and the reason it gave. Compass has not checked that claim, and it changes no level. Above the Goal field, the Goal card says what became of an earlier `/goal` (replaced, met or given up, with the time) and, when you cleared it, "Your /goal was cleared" with the time. It never repeats the earlier goal's words, and it stays quiet while Compass is offering your newer `/goal`.
+When a session that ran with `/goal` ends on Claude Code's own "goal met" verdict, or a Codex session's agent marks its goal complete, the **Is it on track?** card says so as the harness's claim, with the time and, for Claude Code, the reason it gave. After a progress check, Compass compares that claim against the files it wrote and the checks it ran, and says whether the record agrees, disputes it or cannot confirm it. A file the claim names that a later command deleted or moved away is a dispute, and the card names the file and the time. When the reason puts text in quotes that a check Compass recorded printed, the card names that check by its number, and still says it could not confirm the claim: output that holds a phrase is not a pass. Compass looks only at the last lines of a check that ran alone in its call, never at an `echo` or a file you read, and a quoted name of a remote CI job is left to the pull request's own checks. The claim never changes the progress level and never counts as a passing check.
+When Claude Code gives up on a `/goal` it judged unreachable, the goal is over, and the **Is it on track?** card says so as the harness's claim with the time and the reason it gave. Compass has not checked that claim, and it changes no level. Above the Goal field, the Goal card says what became of an earlier `/goal` (replaced, met or given up, with the time) and, when you cleared it, "Your /goal was cleared" with the time. It never repeats the earlier goal's words, and it stays quiet while Compass is offering your newer `/goal`.
 
 Use **Pause all AI use** in **Settings** or under **Show technical details**, **AI use and privacy** on a session page. Both controls apply to every session. Use **Resume AI use** to resume. Settings keeps the **Summaries** switch below it. While AI use is paused, Summaries is disabled and resumes with its saved preference. These controls also work with `--no-annotations`. A Claude Code session is read by Claude
 Code when `claude` is on the dashboard's PATH, and by Codex when it is not; every other session is
-read by Codex, or by Claude Code on a machine without Codex. Checks spend the capacity of whichever
-reads. **What is sent**, under the button and, once there is a result, in the card's footer, opens a short list naming it, and with neither installed that reason takes
-the button's place and says no analysis can run. Pause all AI use stops readings and goal
-summaries and session summaries until **Resume AI use**. Compass stops sending session text
+read by Codex, or by Claude Code on a machine without Codex. The check draws from the reader's
+AI allowance. Once the result is available, look in the footer of **Is it on track?** for **What is
+sent**. If neither CLI is installed, the button's place explains why no check can run. Pause all
+AI use stops readings, goal summaries and session summaries until **Resume AI use**. Compass stops sending session text
 to Claude Code or Codex, so it uses none of your tokens, and stays paused until you resume.
-An off saved before an upgrade stays paused. **Turn off summaries** stops session summaries alone;
-while paused, that control stays disabled with "Model calls are paused" beside it. Pause and Resume
-keep its saved answer, so summaries resume exactly as you left them. **Delete summary** takes two presses,
+An off saved before an upgrade stays paused. On **What's happened so far**, **Turn off summaries**
+stops session summaries alone. While AI use is paused, that control stays disabled with "Model calls
+are paused" beside it. Pausing and resuming AI use keep its saved answer, so summaries resume
+exactly as you left them. On the same card, **Delete summary** takes two presses,
 says what it removes before the second, and reports the deletion with its time; it removes one
 session's saved summary, but it lasts until that finished session is opened again: opening it makes
 a new summary and sends its text once more, unless summaries are turned off or model calls are paused.
 For a native Claude Code session that needs several prompts, open **Check settings** under **Show technical details**, then **Long check for very long sessions**.
-Review the route, saved intent and limits, then press **Start long analysis**. Opening the preview
+Review the route, saved goal and limits, then press **Start long analysis**. Opening the preview
 reads no transcript bodies, fetches no CI checks and reserves no calls. Its source size and
-allowance are estimates; Start checks them again. Ordinary **Analyze drift** remains a separate
-one-call action. Each reserved call in a long analysis counts against the same daily allowance.
+prompt limit are estimates. Starting rechecks them. **Check progress** remains a separate
+one-call action. Each reserved call in a long analysis counts against the same daily limit.
 The plan allows at most 16 evidence calls and one final reconciliation call, but progress and
 accounting report what actually ran, not that maximum.
 
@@ -659,19 +666,21 @@ an all-clear for the session. Refresh the preview before another explicit Start.
 [long-analysis limits and data handling](SECURITY.md#long-analysis) describe what may be sent
 more than once and what remains unknown.
 
-Open **Unfinished long checks** to inspect this session's recovery metadata, including
-while model calls are paused. **Refresh recovery records** reads it again; neither action starts
-recovery or resumes analysis. A recorded state does not prove whether its process is alive.
+Under **Show technical details**, open **Check settings** and **Unfinished long checks** to inspect
+this session's recovery metadata, even while AI use is paused. **Refresh recovery records** reads it
+again. Neither action starts recovery or resumes analysis. A recorded state does not prove whether
+its process is alive.
 **Check and discard superseded record** asks the server to verify eligibility again. It removes
 only an eligible recovery marker, never stops a model or refunds calls. An unconfirmed response
 stays uncertain and does not retry. **Analysis cleanup unconfirmed** means the long job remains
 blocked, with the previous reading visible; it is not a completed analysis or permission to
 start another one.
 
-Analyze allows 100 attempts in a rolling
-twenty-four hours and says when capacity becomes available again. Codex goal summaries need no
-startup flag: press **Summarize this session** in Console, and the first one shows its own one-time
-notice.
+**Check progress** allows 100 attempts in a rolling twenty-four hours and says when more checks
+become available. The session header shows "N of 100 daily checks left" only when 10 or fewer
+remain. For a Codex goal summary, open **Show technical details** on the project page, select the
+session and press **Summarize this session**. The first summary shows its own one-time notice.
+It needs no startup flag.
 
 A Claude Code reading includes its checks by default where Compass can name the destination: the
 command, result, last 180 characters of output, written paths, every other command as its masked line
@@ -681,13 +690,14 @@ number of a pull request the session created and the names of skills it used. Th
 nothing in this release; they will be removed in a later release. Pause all AI use or
 `--no-observer-model` stops these calls.
 
-The Live monitor repeats on a cadence while you view the session. With its switch on, a Claude Code session page asks
+On a Claude Code session, open **Show technical details**, then **AI use and privacy**, to
+find the **Live monitor** switch. With its switch on, a Claude Code session page asks
 Haiku through your Claude Code about once a minute while the page is open and its tab is visible, and it
 stops when you turn it off, leave, hide the tab for good, or the session ends. After 20 minutes it asks
 whether you still want it, and turns itself off if nobody answers within 10. It uses `claude-haiku-5-5`
 unless you start the dashboard with `--claude-monitor-model` and another explicit Haiku ID. Turning it on
 again after a reload is yours to do: nothing about it is remembered. Its limits are its own, apart from
-Analyze's 100 attempts.
+the 100 attempts for **Check progress**.
 
 `spacedock-compass --monitor --session claude:ID` turns the same monitor on from another terminal,
 with no page open. Use the full id from the session's `Resume:` line in `--sessions`. It needs no
@@ -696,6 +706,9 @@ typed command and adds no turn to the watched session. Stop it with
 start. It checks only after new work and asks no 20-minute question.
 [The terminal guide](HOW_TO_USE_TERMINAL.md#keep-the-live-monitor-on-without-a-browser-claude-code)
 has the procedure; [MANUAL.md](MANUAL.md) lists what else ends it.
+
+In **Settings**, go to **Your data** and choose **Forget everything** to see what `--forget` deletes
+and keeps. **Copy** copies the commands to stop the dashboard and run the cleanup yourself.
 
 `--forget` also stores model calls as paused and session summaries as off, without resetting
 either rolling spend budget. Readings and goal summaries wait for **Resume AI use**, and
@@ -753,8 +766,8 @@ fallback. The Codex paragraph below covers the Codex reader. Before each call, C
 Claude Code settings your organization manages. If those settings could send the call somewhere Compass cannot name, or run a command of their own, Compass
 does not start it, and nothing is sent or charged for it. Find goal and the Live monitor say so
 beside their control, a summary says so on its card, and `--summary` and `--monitor` say so in the
-terminal. An unasked check skips without a note, because nothing was spent. Analyze runs a stricter
-form of the same check and says so in its own words.
+terminal. An unasked check skips without a note, because nothing was spent. Check progress applies a stricter
+form of the same policy and says so in its own words.
 
 To find the setting:
 
@@ -810,14 +823,14 @@ so check each.
 If the setting is yours to change, change it and press again. Compass reads these files before every
 call, so a changed file needs no restart. A changed `CLAUDE_CONFIG_DIR` or
 `CLAUDE_CODE_MANAGED_SETTINGS_PATH` reaches Compass only after you restart the dashboard from a
-shell that has it. Turn the Live monitor on again yourself. If your organization manages the
+shell that has it. Turn the Live monitor on again in the session's **AI use and privacy** tab under **Show technical details**. If your organization manages the
 setting, it is doing what they set it up to do, so ask whoever manages it. Compass does not run
 these checks around it.
 
 ## Alert once on a workflow stage
 
-Open a project's Course tab, find Workflow stage conditions, choose a declared stage and press
-Save. The first observation establishes a baseline. A later observed entry into the selected stage
+On the project page, open **Show technical details**, find the workflow stage conditions, choose
+a declared stage and press **Save**. The first observation establishes a baseline. A later observed entry into the selected stage
 trips the condition once. Already being at that stage does not trigger it, and an observation gap
 does not imply a crossing.
 
@@ -828,7 +841,7 @@ service's response. A service accepting an attempt does not prove a banner appea
 
 ## Read a GitLab merge request's pipeline
 
-Pressing Analyze drift reads one merge request's pipeline through your own `glab`, when your goal names the
+Pressing Check progress reads one merge request's pipeline through your own `glab`, when your goal names the
 merge request by its `https://HOST/GROUP/.../PROJECT/-/merge_requests/N` URL. No session record binds a
 merge request, so a goal without the URL reads nothing from GitLab. Three things about your `glab`
 setup decide whether the read happens. This procedure was not run against a live GitLab server: the read is
@@ -857,7 +870,8 @@ built from GitLab's documented answers, and the first press on your own host is 
    anchor can be merged into another's. So does a file that holds a control character other than tab, CR and LF, or a
    line separator such as U+2028, because glab and Compass could disagree on where a line ends. The card says the host is not configured.
 
-`--no-ci-read` and the page's switch turn the read off. [SECURITY.md](SECURITY.md#pull-request-ci-reads) lists
+Use `--no-ci-read` or switch off **Read pull request status** in **Settings** to stop the read.
+[SECURITY.md](SECURITY.md#pull-request-ci-reads) lists
 every bound the read keeps, the 60 second deadline over the whole GitLab read among them.
 
 ## Turn a feature off
@@ -873,7 +887,7 @@ Each flag belongs to the dashboard process, so changing one means restarting.
 | `--no-spacedock` | Reading Spacedock workflow state out of a project; saved stage conditions remain readable but suspended |
 | `--no-tripwires` | Workflow stage conditions and every read or write of their saved store |
 | `--no-git` | The end-of-session git probe and the read of a project's check scripts. No git command runs inside any repository |
-| `--no-ci-read` | Reading a pull request's or merge request's CI checks from GitHub or GitLab when you press Analyze drift. No `gh` or `glab` command runs, and the page's switch for it is held off |
+| `--no-ci-read` | Reading a pull request's or merge request's CI checks from GitHub or GitLab when you press Check progress. No `gh` or `glab` command runs, and Read pull request status in Settings is held off |
 | `--no-history` | The local history of what the server observed. Nothing is written, and an existing store is not read back |
 | `--no-annotations` | Saved goals, expected outcome lines, readings and local group labels. Nothing is shown or saved, and the page offers no field |
 | `--no-focus` | Raising a session's terminal. No focus command runs, no terminal identity is recorded, and the page is offered no raise control. `--no-events` turns it off as well |
@@ -888,7 +902,7 @@ Start the dashboard with `--claude-reading-model claude-sonnet-5` to select the 
 The default requests `claude-sonnet-5-5`. Use an explicit Sonnet or Opus generation 5 or later ID;
 floating aliases such as `sonnet` are refused. An account that cannot use the chosen model gets a
 failed reading, without a retry on another model. A daemon respawn keeps your selection.
-The disclosure beside **Analyze drift** names the selected Claude model.
+**What is sent** in **Is it on track?** names the selected Claude model.
 [SECURITY.md](SECURITY.md#amended-2026-10-05-claude-reading-model-baseline) owns the admission policy.
 
 ### Move the history's two bounds
@@ -916,8 +930,10 @@ numbers. The request carries the vendor's own token and nothing else, behind a f
 session content is sent.
 
 Choose Turn off quota reading in Your AI allowance at the foot of Sessions to stop
-credential-backed fetches from this browser. Fresh Codex disk readings and Antigravity receipts
-can still appear. Turn on quota reading resumes fetching without a restart.
+credential-backed fetches from this browser. You can also use **Turn off plan usage** under
+**Show my AI allowance** in Settings. Both controls save the same browser choice. Fresh Codex
+disk readings and Antigravity receipts can still appear. **Turn on quota reading** in Sessions
+or **Allow plan usage** in Settings resumes fetching without a restart.
 `--no-usage` disables credential-backed reads for a whole run.
 [SECURITY.md](SECURITY.md#usage-quota-reads-the-quota-fetcher) owns the contract, including what is
 sent, what comes back, and what is never touched.
