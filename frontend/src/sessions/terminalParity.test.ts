@@ -101,6 +101,9 @@ describe('the board against the terminal listing', () => {
       ...recorded,
       active: idleOnBoard(recorded.active),
       history: idleOnBoard(recorded.history),
+      unreported: recorded.unreported.map((line) =>
+        line.replace(/: Harness does not report blocks$/, ': Waits not reported'),
+      ),
     });
   });
 

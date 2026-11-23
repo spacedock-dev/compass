@@ -81,7 +81,7 @@ it.each([
   if (disclosure) {
     const trigger = view.getByRole('button', { name: disclosure });
     fireEvent.click(trigger);
-    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(boardCopyViolations(page.container)).toEqual([]);
   }
 });
