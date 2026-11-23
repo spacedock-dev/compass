@@ -50,6 +50,10 @@ export function normaliseSessionRecord(record, evidence = {}) {
   };
   const retract = (value, key = '', path = []) => {
     if (typeof value === 'string') {
+      if (['buttons', 'controls'].includes(key))
+        return value.replace(/^(Analyze drift|Analyze again|Check again)$/, (name) =>
+          name === 'Analyze drift' ? 'Check progress' : 'Check progress again',
+        );
       const sessionHeader =
         key === 'header' &&
         path.length === 1 &&
@@ -90,12 +94,17 @@ export function normaliseSessionRecord(record, evidence = {}) {
           value = value.replace(/^ASSIGNMENT/, 'Current task');
         value = value.replace(
           "Last turn isn't recorded as finished. Run another turn to open Analyze.",
-          'Analyze opens while this session runs.',
+          'Check progress opens while this session runs.',
         );
         // The retired page printed "N of 10 left today" under every reading; the React page prints the budget only
         // at the cap (`readingCap` in frontend/src/drift/route.ts), and ReadingResult.test.tsx holds that under the
         // cap it is not mentioned anywhere. Only the recorded side loses it, and only under the cap.
-        if (driftCard) value = value.replace(/\d+ of \d+ left today/g, '');
+        if (driftCard)
+          value = value
+            .replace(/\d+ of \d+ left today/g, '')
+            .replaceAll('Analyze drift', 'Check progressUses AI')
+            .replace(/(?:Analyze again|Check again)/g, 'Check progress againUses AI')
+            .replaceAll('Analyze opens while', 'Check progress opens while');
         if (driftCard)
           value = value
             .replace(
@@ -187,7 +196,7 @@ export function normaliseSessionRecord(record, evidence = {}) {
       !evidence.annotate_unreadable &&
       Object.values(evidence.reading_routes || {}).some((route) => route?.provider);
     const sentence = available
-      ? 'Open a session, set its goal and press Analyze drift to see how far it moved from it.'
+      ? 'Open a session, set its goal and press Check progress to see how far it moved from it.'
       : 'Open a session to see what it is doing and where it stands.';
     const unchecked = 'No session has been checked for drift yet; open one to check it.';
     result.header = result.header.replace(

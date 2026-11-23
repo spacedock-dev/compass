@@ -302,7 +302,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Live monitor, tests and builds',
         'Existing CLI flags and skill actions',
       ],
-      'Analyze drift',
+      'Check progress',
     ),
     checkProgressAgain: ruled(
       [
@@ -312,7 +312,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'The first check or an Out of date state',
         'Same label for a current or stale prior reading',
       ],
-      'Analyze again',
+      'Check progress again',
     ),
     progressCheck: ruled(
       [
@@ -649,7 +649,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
         'Number of remaining checks',
         'Always beside Check progress',
       ],
-      null,
+      'Uses AI',
     ),
     dailyChecksLeft: ruled(
       [

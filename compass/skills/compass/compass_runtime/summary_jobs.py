@@ -23,6 +23,7 @@ from . import (
     reading_jobs,
     reading_policy,
     reading_route,
+    records,
     rooted_path,
     session_source,
     session_summary,
@@ -31,6 +32,7 @@ from . import (
     supervise,
 )
 from . import state as runtime_state
+from .config import SESSION_SUMMARY_WINDOW_BYTES
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -152,8 +154,9 @@ def disclosure(destination: str) -> str:
     # command output" left room to read that file reads or fetched pages are sent.
     return (
         f"Sends to {destination or 'a destination Compass cannot name'} through your "
-        "Claude Code, at most 16 KiB at a time: your messages, text relayed in your turn, "
-        "the agent's replies, check names with their result (failed, passed or not "
+        f"Claude Code, at most {records.size_in_kb(SESSION_SUMMARY_WINDOW_BYTES)} at a time: "
+        "your messages, text relayed in your turn, "
+        "the agent's replies, test and build names with their result (failed, passed or not "
         "recorded), and the paths of files written. Titles of earlier parts go along as "
         "context, and the entries a summary cites are sent again for its opening line. "
         "Long messages can continue across parts within the job limits. "

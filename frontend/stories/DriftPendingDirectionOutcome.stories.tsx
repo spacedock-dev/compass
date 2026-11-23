@@ -27,11 +27,12 @@ const ROUTE = routeOf('claude', {
   fallback: false,
 });
 const REFUSED_UNSENT =
-  "Nothing was sent to the model, and no Analyze attempt was counted. The assembled prompt exceeds this route's estimated allowance. Lower Prompt size in Settings or choose a route with a larger context window.";
+  "Nothing was sent to the model, and no progress check was counted. The assembled prompt exceeds this route's estimated context limit. Lower the Prompt size limit or choose a route with a larger context window.";
 const CANCELLED_UNSENT =
-  'The analysis was cancelled before anything was sent. Nothing was sent or spent.';
+  'The progress check was cancelled before anything was sent. Nothing was sent or spent.';
 const FAILED =
-  'Analyze failed: Claude Code said it is not logged in. Nothing was saved. Fix that, then press Analyze drift again.';
+  'The progress check failed: Claude Code said it is not logged in. Nothing was saved. Fix that, then press Check progress.';
+const FAILED_AGAIN = FAILED.replace('Check progress.', 'Check progress again.');
 const PENDING = [
   failedCheck('c1', 500),
   fact('u2', 1050, { type: 'user_message', by: 'person:me', summary: 'Use a different queue' }),
@@ -46,11 +47,7 @@ const held = (): Held => ({ board: {}, reading: readingScenario([]) });
 const outcomes = (card: HTMLElement) => card.querySelectorAll('p.next-cockpit-reading-outcome');
 
 /* The same words once in the card, an ordinary paragraph, and the pending decision untouched. */
-const standsOnce = async (
-  card: HTMLElement,
-  text: string,
-  press: string | RegExp = 'Analyze drift',
-) => {
+const standsOnce = async (card: HTMLElement, text: string, press = 'Check progress') => {
   const paragraphs = outcomes(card);
   await expect(paragraphs).toHaveLength(1);
   await expect(paragraphs[0]).toBeVisible();
@@ -62,6 +59,7 @@ const standsOnce = async (
   await expect(within(card).getByRole('button', { name: 'Make it the goal' })).toBeVisible();
   await expect(within(card).getByRole('button', { name: 'Leave it' })).toBeVisible();
   await expect(within(card).getByRole('button', { name: press })).toBeVisible();
+  await expect(within(card).getByText('Uses AI', { exact: true })).toBeVisible();
 };
 
 const unsent = held();
@@ -167,7 +165,7 @@ export const AFailedAttemptKeepsTheEarlierAssessmentReadable: Story = {
       session: {
         annotation_assessment: DEPARTURE_READING,
         annotation_reading_count: 2,
-        annotation_reading_withheld: FAILED,
+        annotation_reading_withheld: FAILED_AGAIN,
         annotation_reading_withheld_at: 1100,
       },
     },
@@ -175,13 +173,13 @@ export const AFailedAttemptKeepsTheEarlierAssessmentReadable: Story = {
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
     await waitFor(() => expect(outcomes(card)).toHaveLength(1));
-    await standsOnce(card, FAILED, /again/i);
+    await standsOnce(card, FAILED_AGAIN, 'Check progress again');
     await expect(card.querySelector('[data-next-result]')).not.toBeNull();
     await expect(await within(card).findByText('It stopped running the tests.')).toBeVisible();
     if (!retained.board.refresh) throw new Error('the board refresh seam was not mounted');
     await retained.board.refresh();
     await waitFor(() => expect(outcomes(card)).toHaveLength(1));
-    await standsOnce(card, FAILED, /again/i);
+    await standsOnce(card, FAILED_AGAIN, 'Check progress again');
     await expect(await within(card).findByText('It stopped running the tests.')).toBeVisible();
     await expect(retained.reading.posts).toHaveLength(0);
   },

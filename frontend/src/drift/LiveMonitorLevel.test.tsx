@@ -155,7 +155,7 @@ describe('the level the monitor draws', () => {
     expect(pill()).toBe('High');
     expect(source()).toBe('');
     expect(detail()).toMatch(/Haiku check of the latest turns/);
-    expect(detail()).not.toMatch(/Reads checks and file paths/);
+    expect(detail()).not.toMatch(/reads test and build results and file paths/);
     expect(document.querySelector('[data-next-live-reason-line]')?.textContent).toBe(
       'The latest turns wrote outside the saved folders.',
     );
@@ -190,7 +190,7 @@ describe('the level the monitor draws', () => {
     });
     expect(pill()).toBe('Medium');
     expect(source()).toMatch(/^Live estimate/);
-    expect(detail()).toMatch(/Reads checks and file paths/);
+    expect(detail()).toMatch(/reads test and build results and file paths/);
     expect(document.querySelector('[data-next-live-reason-line]')).toBeNull();
   });
 

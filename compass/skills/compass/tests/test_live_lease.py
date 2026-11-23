@@ -187,7 +187,7 @@ class AStartedLease(Rig):
     def test_it_carries_what_is_sent_and_where_for_the_page_to_show(self) -> None:
         state = self.start()["state"]
         self.assertEqual("api.anthropic.com", state["destination"])
-        for phrase in ("Haiku", "api.anthropic.com", "once a minute", "Pause model calls"):
+        for phrase in ("Haiku", "api.anthropic.com", "once a minute", "Pause all AI use"):
             self.assertIn(phrase, state["disclosure"])
 
     def test_it_says_nothing_of_what_is_sent_while_off(self) -> None:

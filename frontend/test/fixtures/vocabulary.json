@@ -235,6 +235,10 @@
     "claim-contradicted",
     "claim-not-shown"
   ],
+  "levelSources": {
+    "analysis": "From the progress check at {time}: each line of your goal against the tests, builds and messages it cited.",
+    "live": "Live estimate: reads test and build results and file paths, not what your goal says."
+  },
   "maxOutcomeLines": 6,
   "promptChosen": "chosen-prompt",
   "promptSources": [

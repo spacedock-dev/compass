@@ -130,17 +130,18 @@ class SummaryDisclosureTest(unittest.TestCase):
         text = summary_jobs.disclosure("Anthropic")
         for fact in (
             "Sends to Anthropic through your Claude Code",
-            "16 KiB",
+            "at most 16 KB at a time",
             "your messages",
             "text relayed in your turn",
             "the agent's replies",
-            "check names with their result (failed, passed or not recorded)",
+            "test and build names with their result (failed, passed or not recorded)",
             "the paths of files written",
             "Titles of earlier parts go along as context",
             "sent again for its opening line",
+            "Long messages can continue across parts within the job limits.",
             "redacted",
             "No command, file or other tool output is sent",
-            "Turn off summaries stops these calls",
+            "Turn off summaries stops these calls; Turn summaries on restores them.",
         ):
             self.assertIn(fact, text)
         # The usability review read these as jargon.

@@ -583,14 +583,14 @@ export const SCOPE =
   'What it reads is the evidence on this page: the observed record in this session’s activity, except entries marked as Compass’s answer, and the goal and output you saved, and nothing else. It does not read a diff, a file, a test or a deliverable, replies from git, gh or connected tools, or your screen.';
 
 export const PRESS_LINES: Readonly<Record<string, string>> = {
-  'idle-unknown': 'Analyze opens while this session runs.',
-  unobservable: 'This harness sends no events, so Analyze opens only while it runs.',
-  'turn-stop': 'Analyze opens while a turn runs or once the session ends.',
+  'idle-unknown': 'Check progress opens while this session runs.',
+  unobservable: 'This harness sends no events, so Check progress opens only while it runs.',
+  'turn-stop': 'Check progress opens while a turn runs or once the session ends.',
   settling: 'Ready in a few seconds.',
   'stop-settling': 'Ready in a few seconds.',
-  'revision-after-end': 'Your intent was saved after this session ended.',
+  'revision-after-end': 'Your goal was saved after this session ended.',
 };
-export const PRESS_EVENTS = 'Analyze opens while this session runs or once it ends.';
+export const PRESS_EVENTS = 'Check progress opens while this session runs or once it ends.';
 /* The disclosure under a refused Analyze, which holds the server's whole sentence. Its old name, "Why it can't
    read", answered a question the reader had not asked; the reader wants to know why the button is off. */
 export const WHY_OFF = 'Why Analyze is off';
@@ -679,8 +679,11 @@ export const LIVE_LEVEL_NAMES: Readonly<Record<string, string>> = {
   not_enough: 'Not enough recorded yet',
 };
 export const LEVEL_SCALE: readonly string[] = ['none_or_low', 'medium', 'high', 'extreme'];
-export const LIVE_LINE =
-  'Reads checks and file paths, not what your intent says. Files written by shell commands, such as a build, are not seen.';
+export const LIVE_SOURCE_LINE =
+  'Live estimate: reads test and build results and file paths, not what your goal says.';
+export const LIVE_LINE = `${LIVE_SOURCE_LINE} Files written by shell commands, such as a build, are not seen.`;
+export const analysisSourceLine = (time: string): string =>
+  `From the progress check at ${time}: each line of your goal against the tests, builds and messages it cited.`;
 /* What the switch does, in the monitor notice's words: a model call, how often, to whom, and what it falls back
    to. The server's own "What is sent" sentence, naming the destination, stands beside it while the monitor
    is on. */
@@ -762,10 +765,6 @@ export const STORE_BUSY_PRESS =
 export const STORE_UNREADABLE_PRESS =
   'Compass could not use the file that holds what you typed, so nothing was started or spent.';
 export const NOTICE_SENT = 'This request sends:';
-/* The re-run control in the Drift card's header, from the first reading on: Check again over a reading that
-   new work or a changed intent left behind, Analyze again over a current one. */
-export const RERUN_STALE = 'Check again';
-export const RERUN_CURRENT = 'Analyze again';
 export const NOTICE_WORDS = "The session's words, without the agent's messages.";
 export const NOTICE_WORDS_AND_MESSAGES = "The session's words and the agent's messages.";
 export const READINGS_OFF_CONSOLE = 'Model calls are paused. Nothing is sent until you resume.';

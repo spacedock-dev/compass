@@ -120,7 +120,7 @@ export const leaseState = (over: Record<string, unknown> = {}): Record<string, u
   model: 'claude-haiku-5-5',
   destination: 'api.anthropic.com',
   disclosure:
-    'Sends to api.anthropic.com through your Claude Code, to Haiku, about once a minute while Live monitor is on.',
+    "Sends to api.anthropic.com through your Claude Code, to Haiku, about once a minute while Live monitor is on and you are viewing this session: your saved goal, and your recent messages, the agent's replies, the commands of tests and builds with their result, every other command's line with its exit status, and the paths of files written. Recent turns are sent again in later checks, and again each time Live monitor is turned off and on. Everything is redacted first. No file or tool output is sent. Pause all AI use stops it. It turns itself off after a while unless you say you still want it.",
   interval_sec: 60,
   now: 1100,
   ...over,

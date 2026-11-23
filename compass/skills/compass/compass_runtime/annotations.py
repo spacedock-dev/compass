@@ -145,7 +145,7 @@ DIRECTION_TEXT_CAP_CHARS = 2000
 DIRECTION_UNAVAILABLE = (
     "Compass could not open that direction from the session's record, so nothing was added. "
     "The part of the record it reads may no longer reach back to it, or it may not be later "
-    "than your intent. Type the line yourself instead."
+    "than your goal. Type the line yourself instead."
 )
 
 # What discarding a whole annotation is, and what it is not (DRC-4561).
@@ -1532,6 +1532,17 @@ def _withheld(value: Any) -> str:
     return value if isinstance(value, str) and value in reading.WITHHELD.values() else ""
 
 
+def _published_withheld(entry: Annotation | None) -> str:
+    if not entry:
+        return ""
+    sentence = entry.get("withheld", "")
+    if not entry.get("assessment"):
+        return sentence
+    if "Check progress to try again" in sentence:
+        return sentence.replace("Check progress to try again", "Check progress again")
+    return sentence.replace("Check progress", "Check progress again")
+
+
 def _last_written(entry: Annotation) -> float:
     """When anything was last written to this entry, as far as the entry can say.
 
@@ -2195,7 +2206,7 @@ def published(entry: Annotation | None, *, binding_why: str = BINDING_EXACT) -> 
             is not None
             else {}
         ),
-        "reading_withheld": entry.get("withheld", "") if entry else "",
+        "reading_withheld": _published_withheld(entry),
         # When that reason was written, or None: no reason, or one stored
         # before the time was kept. A number and no prose.
         "reading_withheld_at": (

@@ -1160,7 +1160,7 @@ class SpendTest(unittest.TestCase):
 
 
 DYNAMIC_POLICY = (
-    "Nothing was sent to the model, and no Analyze attempt was counted. "
+    "Nothing was sent to the model, and no progress check was counted. "
     "This route uses managed policy that can change at launch. "
     "Use a route whose context and model-switching controls Compass can check locally."
 )
@@ -1618,7 +1618,8 @@ class RefusalTest(unittest.TestCase):
     def test_a_press_the_board_withholds(self) -> None:
         row = a_row(reading_eligibility={"ok": False, "reason": "turn-stop", "until": None})
         self.refuse(
-            FakeBoard(a_payload(row)), "Analyze opens while a turn runs or once the session ends."
+            FakeBoard(a_payload(row)),
+            "Check progress opens while a turn runs or once the session ends.",
         )
 
     def test_a_press_withheld_for_a_reason_with_only_the_server_s_sentence(self) -> None:

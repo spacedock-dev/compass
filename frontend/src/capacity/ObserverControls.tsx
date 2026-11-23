@@ -1,3 +1,4 @@
+import { GLOSSARY } from '../language/glossary';
 import { Alert } from '../ui/alert';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
@@ -137,8 +138,8 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
           ? 'Resuming…'
           : 'Pausing…'
         : off
-          ? 'Resume model calls'
-          : 'Pause model calls'}
+          ? GLOSSARY.resumeAi.plain
+          : GLOSSARY.pauseAi.plain}
     </Button>
   );
   const shownNotice = notice && !off ? notice : null;

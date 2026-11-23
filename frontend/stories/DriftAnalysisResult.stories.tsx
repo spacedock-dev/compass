@@ -169,10 +169,9 @@ export const PausedResultStillOffersResume: Story = {
     const resume = await within(root).findByRole('button', { name: 'Resume AI use' });
     await expect(resume).toBeVisible();
     await expect(within(root).getAllByRole('button', { name: 'Resume AI use' })).toHaveLength(1);
-    await expect(within(root).getByRole('button', { name: 'Analyze again' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
+    await expect(
+      within(root).getByRole('button', { name: 'Check progress again' }),
+    ).toHaveAttribute('aria-disabled', 'true');
   },
 };
 
@@ -227,7 +226,7 @@ export const MarkAsInaccurateSaysWhatItDoes: Story = {
     mark.scrollIntoView({ block: 'center' });
     const before = row.getBoundingClientRect().top;
     await userEvent.click(mark);
-    // After: one message, at the top where the level was, with Undo and Analyze again beside it.
+    // After: one message, at the top where the level was, with Undo and Check progress again beside it.
     await waitFor(() => expect(row).toHaveAttribute('data-next-result-mark', 'marked'));
     const notice = await waitFor(() => {
       const node = drift.querySelector<HTMLElement>('[data-next-drift-marked]');
@@ -240,7 +239,9 @@ export const MarkAsInaccurateSaysWhatItDoes: Story = {
     await expect(within(row).queryByRole('button', { name: RESULT_UNMARK })).toBeNull();
     await expect(drift.textContent?.split(RESULT_MARKED).length).toBe(2);
     const undo = within(notice).getByRole('button', { name: RESULT_UNMARK });
-    await expect(within(notice).getByRole('button', { name: 'Analyze again' })).toBeVisible();
+    await expect(
+      within(notice).getByRole('button', { name: 'Check progress again' }),
+    ).toBeVisible();
     // The level and Steer back left the column above; the foot stayed where the press was.
     await expect(Math.abs(row.getBoundingClientRect().top - before)).toBeLessThan(4);
     await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
@@ -271,7 +272,9 @@ export const MarkedInaccurate: Story = {
     });
     await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
     await expect(within(notice).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
-    await expect(within(notice).getByRole('button', { name: 'Analyze again' })).toBeVisible();
+    await expect(
+      within(notice).getByRole('button', { name: 'Check progress again' }),
+    ).toBeVisible();
     // The verdicts stay readable and are set aside: drawn grey, and under the one message. Grey rather than
     // faded, because a faded clay label fell to 2.8:1 and the accessibility audit holds every text to 4.5:1.
     const disowned = drift.querySelector<HTMLElement>('[data-next-disowned]');
@@ -285,7 +288,7 @@ export const MarkedInaccurate: Story = {
 };
 
 /* The Live monitor is the reader's opt-in switch, and a live estimate must not take the marked reading's slot:
-   with it on and a live level row published, the message, Undo and Analyze again still stand. */
+   with it on and a live level row published, the message, Undo and Check progress again still stand. */
 export const MarkedInaccurateWithTheLiveMonitorOn: Story = {
   ...scenario({
     ...RESULT,
@@ -320,7 +323,9 @@ export const MarkedInaccurateWithTheLiveMonitorOn: Story = {
     });
     await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
     await expect(within(notice).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
-    await expect(within(notice).getByRole('button', { name: 'Analyze again' })).toBeVisible();
+    await expect(
+      within(notice).getByRole('button', { name: 'Check progress again' }),
+    ).toBeVisible();
     await expect(drift.querySelector('[data-next-disowned]')).not.toBeNull();
   },
 };

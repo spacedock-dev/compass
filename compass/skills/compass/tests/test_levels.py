@@ -315,7 +315,10 @@ class OwnAccountOnlyTest(unittest.TestCase):
         got = levels.live_level(PASSING, intent("Works on a phone"))
         self.assertEqual(got.level, levels.NONE_OR_LOW)
         self.assertIn(levels.REASON_FLOOR_MET, got.reasons)
-        self.assertEqual(got.source_line, levels.LIVE_SOURCE_LINE)
+        self.assertEqual(
+            "Live estimate: reads test and build results and file paths, not what your goal says.",
+            got.source_line,
+        )
 
     def test_an_outcome_line_on_the_agents_account_reads_not_enough(self) -> None:
         got = analyze(
@@ -334,7 +337,11 @@ class OwnAccountOnlyTest(unittest.TestCase):
     def test_the_goal_may_rest_on_the_sessions_own_account(self) -> None:
         got = analyze(SUPPORTED, PASSING)
         self.assertEqual(got.level, levels.NONE_OR_LOW)
-        self.assertEqual(got.source_line, levels.ANALYSIS_SOURCE_LINE)
+        self.assertEqual(
+            "From the progress check at 14:52: each line of your goal against the tests, builds "
+            "and messages it cited.",
+            got.source_line.format(time="14:52"),
+        )
         self.assertEqual(got.computed_at, SAVE + 600)
 
 

@@ -432,7 +432,7 @@ class ATerminalReaderStartsWithTheirIntent(LeaseRoute):
         self.assertIn("checks after new work in this session, at most about once a minute", text)
         self.assertIn("spacedock-compass --monitor --off --session claude:" + SID, text)
         self.assertIn("/compass:compass monitor off in the session", text)
-        self.assertIn("Pause model calls stops it.", text)
+        self.assertIn("Pause all AI use stops it.", text)
         self.assertNotIn("terminal holder", text)
         self.assertNotIn("heartbeats", text)
         self.assertNotIn("no confirmation question", text)

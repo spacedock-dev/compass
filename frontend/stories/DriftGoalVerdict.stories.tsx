@@ -356,7 +356,7 @@ export const ClaimNewerThanTheReading: Story = {
 export const NoNoteWithoutAMetVerdict: Story = {
   ...scenario({ session: { session_goal: GOAL } }),
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByRole('button', { name: 'Analyze drift' });
+    await within(canvasElement).findByRole('button', { name: 'Check progress' });
     await expect(canvasElement.querySelector('[data-next-goal-verdict]')).toBeNull();
   },
 };

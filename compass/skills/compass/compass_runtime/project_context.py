@@ -13751,6 +13751,18 @@ def _kept_message_reach(
     return {"tail_truncated": not reached.reach.reached, "tail_start": reached.reach.earliest}
 
 
+def observer_disclosure() -> str:
+    return (
+        "A focused refresh sends redacted transcript excerpts and workflow stage through "
+        f"Codex to {reading_route.destination('codex') or 'an unnamed destination'} "
+        "for a goal summary. Each prompt is capped "
+        f"at {records.size_in_kb(observer.OBSERVER_MODEL_MAX_PROMPT_BYTES)}, with a 60-second "
+        "timeout "
+        "and one call in flight per session. A focused refresh can include up to three "
+        "active child sessions. Pause all AI use or --no-observer-model stops these calls."
+    )
+
+
 def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the focus it belongs to
     config: RuntimeConfig,
     state: RuntimeState,
@@ -13962,14 +13974,7 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
                 {},
             ),
             "max_prompt_bytes": observer.OBSERVER_MODEL_MAX_PROMPT_BYTES,
-            "disclosure": (
-                "A focused refresh sends redacted transcript excerpts and workflow stage through "
-                f"Codex to {reading_route.destination('codex') or 'an unnamed destination'} "
-                "for a goal summary. Each prompt is capped "
-                "at 16 KiB, with a 60-second timeout "
-                "and one call in flight per session. A focused refresh can include up to three "
-                "active child sessions. Pause model calls or --no-observer-model stops these calls."
-            ),
+            "disclosure": observer_disclosure(),
         },
         "project": project,
         "focus": {

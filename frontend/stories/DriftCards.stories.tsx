@@ -1218,7 +1218,7 @@ export const NoReaderKeepsTheCards: Story = {
       'It stopped running the tests.',
       'Goal',
     );
-    await expect(within(drift).queryByRole('button', { name: /^Analyze/ })).toBeNull();
+    await expect(within(drift).queryByRole('button', { name: /^Check progress/ })).toBeNull();
     const steer = await within(drift).findByRole('button', { name: 'Steer back' });
     await expect(primaries(canvasElement)).toEqual([steer]);
     await neverDone(shown);

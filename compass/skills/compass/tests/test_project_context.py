@@ -656,7 +656,18 @@ class ProjectContextTest(unittest.TestCase):
         )
         self.assertNotIn("notice", again["observer_model"])
         self.assertNotIn("?", on["observer_model"]["disclosure"])
-        self.assertIn("Pause model calls", on["observer_model"]["disclosure"])
+        for phrase in (
+            "redacted transcript excerpts and workflow stage through Codex",
+            "for a goal summary",
+            (
+                "Each prompt is capped at 16 KB, with a 60-second timeout and one call in "
+                "flight per session."
+            ),
+            "up to three active child sessions",
+            "Pause all AI use or --no-observer-model stops these calls.",
+        ):
+            self.assertIn(phrase, on["observer_model"]["disclosure"])
+        self.assertEqual(16_384, on["observer_model"]["max_prompt_bytes"])
 
     def test_a_childs_goal_call_publishes_the_notice_it_recorded(self) -> None:
         # The child is observed before its parent, so its call is the one that

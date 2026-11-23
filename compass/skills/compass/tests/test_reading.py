@@ -1399,7 +1399,7 @@ class WhetherAPressCouldReadIsSaidBeforeThePress(unittest.TestCase):
         for reason in (reading.WITHHELD_SETTLING, reading.WITHHELD_STOP_SETTLING):
             with self.subTest(reason=reason):
                 self.assertIn(
-                    "Analyze opens by itself in a few seconds.",
+                    "Check progress opens by itself in a few seconds.",
                     reading.withheld_sentence(reason, {"harness": "claude"}),
                 )
 
@@ -2217,7 +2217,7 @@ class WhatAClaudeCodeReadingCostsAndProduces(unittest.TestCase):
                 self.assertEqual(reading.WITHHELD_CLAUDE_LOGIN, why)
                 self.assertTrue(spent)
                 sentence = reading.WITHHELD[why]
-                self.assertTrue(sentence.startswith("Analyze failed: Claude Code said"))
+                self.assertTrue(sentence.startswith("The progress check failed: Claude Code said"))
                 for leaked in ("INJECTED-STDERR", "/Users/", "/login"):
                     self.assertNotIn(leaked, sentence)
 
@@ -2228,7 +2228,9 @@ class WhatAClaudeCodeReadingCostsAndProduces(unittest.TestCase):
             with self.subTest(label=label):
                 key = "exception_kind" if label == "timeout" else "reason"
                 self.assertEqual(token, reading.claude_failure({key: label}))
-                self.assertTrue(reading.WITHHELD[token].startswith("Analyze failed: Claude Code"))
+                self.assertTrue(
+                    reading.WITHHELD[token].startswith("The progress check failed: Claude Code")
+                )
         for nothing in ({}, {"reason": "unknown"}, {"reason": "planted words"}):
             self.assertEqual(reading.WITHHELD_CLAUDE_FAILED, reading.claude_failure(nothing))
         self.assertEqual(reading.WITHHELD_MODEL_FAILED, reading.claude_failure(None))

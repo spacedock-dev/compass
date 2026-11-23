@@ -7335,11 +7335,11 @@ Six sub-questions were ruled the same day, each as recommended.
    estimate: the latest run of every check has a recorded result and passed, nothing was written
    after that pass, no shell command that is neither a check nor on DEC-23's read-only list ran
    after that pass, and, where the saved intent names folders, every write is inside them; it says
-   it read checks and file paths, not what the intent says. For an analysis: every outcome line is
-   `consistent` on a tool-reported check under DEC-23 item 8, with no departure, and the Goal may
-   rest on the session's own account; it says "From the analysis at <time>: each line of your intent
-   against the checks and messages it cited." For both: no failed check, and no unsettled later
-   direction. A later direction blocks "None or low", and so, for the live estimate, does such a
+   it read test and build results and file paths, not what the goal says. For an analysis: every
+   outcome line is `consistent` on a tool-reported check under DEC-23 item 8, with no departure.
+   The Goal may rest on the session's own account. It says "From the progress check at <time>: each
+   line of your goal against the tests, builds and messages it cited." For both: no failed check,
+   and no unsettled later direction. A later direction blocks "None or low", and so, for the live estimate, does such a
    shell command; neither is ever counted as drift. A check with no recorded result, and a pass
    before a later write, never count toward it. With too little evidence the level reads "Not
    enough recorded yet", never "None or low". Zero is too little: the live estimate needs at least

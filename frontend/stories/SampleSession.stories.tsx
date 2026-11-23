@@ -547,7 +547,7 @@ export const BannerSaysHowToReachThePage: Story = {
     await expect(steps).toHaveLength(4);
     await expect(steps[0]).toHaveTextContent('Open a session from Sessions');
     await expect(steps[1]).toHaveTextContent('Set its goal');
-    await expect(steps[2]).toHaveTextContent('Analyze drift');
+    await expect(steps[2]).toHaveTextContent('Check progress');
     await expect(steps[3]).toHaveTextContent('Steer back');
     await expect(canvasElement.querySelector('[data-sample-banner]')).not.toHaveTextContent(
       /outcome/i,

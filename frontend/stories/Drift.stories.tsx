@@ -65,7 +65,7 @@ async function drawn(canvasElement: HTMLElement): Promise<HTMLElement> {
 }
 
 /* The controls load with the facts, after the card itself: a story waits for the one it asserts. */
-const analyzeButton = (card: HTMLElement) => findButton(card, /^Analyze drift$/);
+const analyzeButton = (card: HTMLElement) => findButton(card, /^Check progress$/);
 const steerBack = (card: HTMLElement) => findButton(card, 'Steer back');
 
 export const SentAndSettingsStayInFlow: Story = {
@@ -148,7 +148,7 @@ export const IdleWithAnEditedDraft: Story = {
     const goal = await within(canvasElement).findByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ', then verify');
     await within(card).findByText(INTENT_EDITED);
-    const analyze = button(card, /^Analyze drift$/);
+    const analyze = button(card, /^Check progress$/);
     await expect(analyze).toHaveAttribute('aria-disabled', 'true');
     await expect(primaries(canvasElement)).toEqual([analyze]);
     await neverRetired(canvasElement);
@@ -187,6 +187,9 @@ export const LiveMonitorAtHigh: Story = {
     await expect(level).toHaveTextContent(
       new RegExp(`^${LIVE_LEVEL_NAMES['high']}Live estimate · \\d\\d:\\d\\d`),
     );
+    await expect(level).toHaveTextContent(
+      'Live estimate: reads test and build results and file paths, not what your goal says.',
+    );
     await within(level).findByRole('heading', { name: 'Recorded signals' });
     await expect(level).toHaveTextContent(/pytest -q failed .* ago at #\d+/);
     await expect(level).toHaveTextContent('Result time not recorded.');
@@ -222,7 +225,7 @@ export const Analyzing: Story = {
     await expect(steps[1]).toHaveAttribute('aria-current', 'step');
     await expect(within(box).getByText(JOB_NOTE_SO_FAR)).toBeVisible();
     await expect(button(card, 'Cancel')).toBeVisible();
-    await expect(within(card).queryByRole('button', { name: /^Analyze/ })).toBeNull();
+    await expect(within(card).queryByRole('button', { name: /^Check progress/ })).toBeNull();
     await noCheckMark(box);
     // The running analysis is the card's state, not a press to make: nothing on the page asks for one.
     await expect(primaries(canvasElement)).toHaveLength(0);
@@ -260,7 +263,9 @@ export const ResultUnderADeparture: Story = {
       new RegExp(`^${LIVE_LEVEL_NAMES['high']}: `),
     );
     await expect(level).toHaveTextContent(/^Analysis/);
-    await expect(level).toHaveTextContent(/Intent against cited checks and messages\./);
+    await expect(level).toHaveTextContent(
+      /From the progress check at .* each line of your goal against the tests, builds and messages it cited\./,
+    );
     await expect(level).not.toHaveTextContent(/last run/);
     /* The level's reason is said under What the analysis read, with the rest of what it read, not between
        the meter and the answer (usability review, 2026-10-20). */
@@ -288,9 +293,9 @@ export const ResultUnderADeparture: Story = {
     await expect(button(card, 'Update intent instead')).toBeVisible();
     await expect(primaries(canvasElement)).toEqual([steer]);
     // One run control, in the head, from the first reading on.
-    await expect(within(card).getAllByRole('button', { name: /^Analyze/ })).toHaveLength(1);
+    await expect(within(card).getAllByRole('button', { name: /^Check progress/ })).toHaveLength(1);
     await expect(
-      button(card.querySelector('header') as HTMLElement, 'Analyze again'),
+      button(card.querySelector('header') as HTMLElement, 'Check progress again'),
     ).toBeVisible();
     await neverDone(result);
     await neverRetired(canvasElement);
@@ -322,15 +327,13 @@ export const StaleResult: Story = {
     await expect(stale).toBeVisible();
     const head = card.querySelector('header') as HTMLElement;
     await expect(head.contains(stale)).toBe(true);
-    const again = within(head).getByRole('button', { name: 'Check again' });
-    await expect(within(card).getAllByRole('button', { name: /^(Analyze|Check again)/ })).toEqual([
-      again,
-    ]);
+    const again = within(head).getByRole('button', { name: 'Check progress again' });
+    await expect(within(card).getAllByRole('button', { name: /^Check progress/ })).toEqual([again]);
     // Said inside the reading's folded account, so it is in the page and not in view.
     await expect(
       within(card).getByText('1 check, 1 message arrived since this analysis.'),
     ).toBeInTheDocument();
-    // The departure still stands, so Steer back stays the one primary and Analyze again is the quiet way to
+    // The departure still stands, so Steer back stays the one primary and Check progress again is the quiet way to
     // read the new work.
     await expect(primaries(canvasElement)).toEqual([await steerBack(card)]);
     await neverDone(card);
@@ -344,8 +347,8 @@ export const StaleResult: Story = {
 async function noReaderStory(canvasElement: HTMLElement, card: HTMLElement, reason: string) {
   const note = REASON_CASES[reason]?.note as string;
   await expect(await within(card).findByText(note)).toBeVisible();
-  await expect(within(card).queryByRole('button', { name: /^Analyze/ })).toBeNull();
-  await expect(card).not.toHaveTextContent('Analyze drift');
+  await expect(within(card).queryByRole('button', { name: /^Check progress/ })).toBeNull();
+  await expect(card).not.toHaveTextContent('Check progress');
   // A failed check alone offers no Steer back: it waits for a departure from the intent.
   await expect(within(card).queryByRole('button', { name: 'Steer back' })).toBeNull();
   await expect(primaries(canvasElement)).toHaveLength(0);
@@ -654,7 +657,7 @@ export const ModelCallsPausedUntilResume: Story = {
     ).toBeVisible();
     /* Analyze stays in its place, refused; Resume is the Drift card head's alone (usability review,
        2026-10-20). */
-    await expect(within(card).getByRole('button', { name: 'Analyze drift' })).toHaveAttribute(
+    await expect(within(card).getByRole('button', { name: 'Check progress' })).toHaveAttribute(
       'aria-disabled',
       'true',
     );
@@ -668,7 +671,7 @@ export const ModelCallsPausedUntilResume: Story = {
     await expect(offReading.posts).toHaveLength(0);
     await userEvent.click(on);
     await waitFor(() =>
-      expect(within(card).getByRole('button', { name: 'Analyze drift' })).not.toHaveAttribute(
+      expect(within(card).getByRole('button', { name: 'Check progress' })).not.toHaveAttribute(
         'aria-disabled',
         'true',
       ),

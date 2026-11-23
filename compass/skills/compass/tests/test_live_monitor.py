@@ -1004,7 +1004,7 @@ class TheNoticeAndTheProvenance(Case):
         assert first.notice is not None
         self.assertEqual(("monitor", "claude"), (first.notice["kind"], first.notice["provider"]))
         self.assertIn("api.anthropic.com", first.disclosure)
-        self.assertIn("Pause model calls", first.disclosure)
+        self.assertIn("Pause all AI use", first.disclosure)
         self.grow()
         self.assertIsNone(self.tick(NOW + 60, runner=runner).notice)
 
@@ -1014,12 +1014,12 @@ class TheNoticeAndTheProvenance(Case):
             "Haiku",
             "api.anthropic.com",
             "once a minute",
-            "commands of checks with their result",
+            "commands of tests and builds with their result",
             "paths of files written",
             "sent again",
             "turned off and on",
             "redacted",
-            "Pause model calls",
+            "Pause all AI use",
         ):
             self.assertIn(phrase, text)
         self.assertNotIn("No command", text)
@@ -1027,7 +1027,7 @@ class TheNoticeAndTheProvenance(Case):
 
     def test_the_disclosure_has_a_phrase_for_every_kind_of_row_it_sends(self) -> None:
         phrases = {
-            "check": "commands of checks with their result",
+            "check": "commands of tests and builds with their result",
             "write": "paths of files written",
             "command": "every other command's line with its exit status",
         }
@@ -1063,7 +1063,13 @@ class TheNoticeAndTheProvenance(Case):
         self.assertIn("I changed the tokenizer.", sent)
         assert first.notice is not None
         self.assertEqual("", first.notice["tool_output"])
-        self.assertNotIn("commands of checks", first.disclosure)
+        self.assertNotIn("commands of tests and builds", first.disclosure)
+        self.assertIn(
+            "Test and build results and file paths are not sent, because Compass cannot name "
+            "where they would go.",
+            first.disclosure,
+        )
+        self.assertIn("Pause all AI use stops it.", first.disclosure)
 
     def test_each_tick_records_the_model_it_asked_for(self) -> None:
         self.begin()

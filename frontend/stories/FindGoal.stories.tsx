@@ -323,7 +323,7 @@ export const AFoundGoalWithItsCitations: Story = {
   },
 };
 
-/* A found goal is the working goal, as a /goal is: Analyze drift is not refused over it, Undo has nothing to
+/* A found goal is the working goal, as a /goal is: Check progress is not refused over it, Undo has nothing to
    undo, and the press stores the found words as typed words and then reads, adopting nothing. */
 export const AFoundGoalIsAnalyzedWithoutASaveFirst: Story = {
   play: async ({ canvasElement }) => {
@@ -331,7 +331,7 @@ export const AFoundGoalIsAnalyzedWithoutASaveFirst: Story = {
     const view = within(card);
     await userEvent.click(await view.findByRole('button', { name: 'Find goal' }));
     await waitFor(() => expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(GOAL));
-    const analyze = await within(canvasElement).findByRole('button', { name: 'Analyze drift' });
+    const analyze = await within(canvasElement).findByRole('button', { name: 'Check progress' });
     await waitFor(() => expect(analyze).not.toHaveAttribute('aria-disabled', 'true'));
     await expect(analyze).not.toBeDisabled();
     await expect(canvasElement).not.toHaveTextContent('Save your intent, or undo your edit');

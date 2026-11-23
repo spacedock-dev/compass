@@ -47,7 +47,7 @@ function Banner() {
             press Find goal, or let Compass pick up a goal you set with /goal in Claude Code, Codex
             or Antigravity.
           </li>
-          <li>Press Analyze drift.</li>
+          <li>Press Check progress.</li>
           <li>
             Read where the session departed from the goal. Press Steer back if you want a correction
             to paste into the session.

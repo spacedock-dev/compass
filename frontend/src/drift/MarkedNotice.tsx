@@ -3,7 +3,8 @@ import { ActionButton } from '../intent/ActionButton';
 import { markNotAccurate } from './actions';
 import { useDrift } from './context';
 import { RunPress } from './ReadingControl';
-import { RERUN_CURRENT, RESULT_MARK_UNSAVED, RESULT_MARKED, RESULT_UNMARK } from './sentences';
+import { GLOSSARY } from '../language/glossary';
+import { RESULT_MARK_UNSAVED, RESULT_MARKED, RESULT_UNMARK } from './sentences';
 import { useRunBoard } from './useRunBoard';
 
 /* What stands where the level was once the reader has marked a reading inaccurate: the one message that says
@@ -41,7 +42,7 @@ export function MarkedNotice() {
         <RunPress
           board={board}
           weight="quiet"
-          label={RERUN_CURRENT}
+          label={GLOSSARY.checkProgressAgain.shown}
           focusKey={`reading-again-marked:${key}`}
           fallbackKey={`reading:${key}`}
           blocked={Boolean(model.job)}

@@ -1,5 +1,6 @@
 import { LatestLongOutcome } from './LatestLongOutcome';
 import type { ReactNode } from 'react';
+import { GLOSSARY } from '../language/glossary';
 import { UnaskedPermission } from './UnaskedPermission';
 import { DirectionQuestion } from '../intent/DirectionQuestion';
 import { nextNumber } from '../api/bootstrap';
@@ -242,7 +243,7 @@ function QuestionWithAnalysis({
           <RunPress
             board={board}
             weight="secondary"
-            label="Analyze drift"
+            label={GLOSSARY.checkProgress.shown}
             focusKey={`reading:${model.key}`}
           />
         )

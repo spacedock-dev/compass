@@ -47,10 +47,12 @@ SOURCE_LIVE = "live"
 SOURCE_ANALYSIS = "analysis"
 # Each source's own line (the ruling's items 1 and 6). The live line is the live
 # estimate's alone; the analysis line carries its time, which the page formats.
-LIVE_SOURCE_LINE = "Live estimate: reads checks and file paths, not what your intent says."
+LIVE_SOURCE_LINE = (
+    "Live estimate: reads test and build results and file paths, not what your goal says."
+)
 ANALYSIS_SOURCE_LINE = (
-    "From the analysis at {time}: each line of your intent against the checks and messages"
-    " it cited."
+    "From the progress check at {time}: each line of your goal against the tests, builds and"
+    " messages it cited."
 )
 
 # Why a level is what it is: a closed token set, so a page maps each to a

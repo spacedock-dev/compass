@@ -29,8 +29,6 @@ import {
   JOB_NOTE_SO_FAR,
   JOB_TITLE,
   JOB_TITLE_AGAIN,
-  RERUN_CURRENT,
-  RERUN_STALE,
   READINGS_OFF,
   MODEL_PAUSE_EXPLANATION,
   LONG_INTERRUPTED,
@@ -351,7 +349,7 @@ export function ReadingControl({
     <RunPress
       board={board}
       weight={primary ? 'primary' : 'secondary'}
-      label="Analyze drift"
+      label={GLOSSARY.checkProgress.shown}
       focusKey={`reading:${key}`}
     />
   );
@@ -596,45 +594,47 @@ export function RunPress({
   const described = describedBy ?? (off || reason ? REFUSED_ID : disclosure ? DISCLOSURE_ID : '');
   const pressWeight = weight === 'primary' && (!provider || inert || off) ? 'secondary' : weight;
   return (
-    <ActionButton
-      weight={pressWeight}
-      label={label}
-      busyLabel="Starting…"
-      pendingKey={`reading:${key}`}
-      inert={!enabled}
-      describes={described}
-      action="reading-ask"
-      focusKey={focusKey}
-      fallbackKey={fallbackKey ?? focusKey}
-      onPress={() => {
-        /* A press on an Analyze the board refused opens its "Why Analyze is off", so the press shows the
-           reason rather than nothing: the short line beside it was already drawn. */
-        if (!off && inert && pressed) {
-          ctx.shell.controls.disclosures.set(
-            disclosureKey({ project: model.project, scope: key, name: `reading-why:${key}` }),
-            true,
-          );
-        }
-        if (off || blocked) return;
-        if (identity) {
-          void askForReading(ctx, identity, {
-            route,
-            revision: nextNumber(annotation?.['revision']) || 0,
-          });
-        }
-      }}
-    />
+    <>
+      <ActionButton
+        weight={pressWeight}
+        label={label}
+        busyLabel="Starting…"
+        pendingKey={`reading:${key}`}
+        inert={!enabled}
+        describes={described}
+        action="reading-ask"
+        focusKey={focusKey}
+        fallbackKey={fallbackKey ?? focusKey}
+        onPress={() => {
+          /* A press on an Analyze the board refused opens its "Why Analyze is off", so the press shows the
+             reason rather than nothing: the short line beside it was already drawn. */
+          if (!off && inert && pressed) {
+            ctx.shell.controls.disclosures.set(
+              disclosureKey({ project: model.project, scope: key, name: `reading-why:${key}` }),
+              true,
+            );
+          }
+          if (off || blocked) return;
+          if (identity) {
+            void askForReading(ctx, identity, {
+              route,
+              revision: nextNumber(annotation?.['revision']) || 0,
+            });
+          }
+        }}
+      />
+      <span className="text-meta text-muted-foreground">{GLOSSARY.usesAi.shown}</span>
+    </>
   );
 }
 
-/* The re-run control in the Drift card's header, from the first reading on and in every state a reading can
-   be in: Check again over one that new work or a changed intent left behind, Analyze again over a current one.
+/* The re-run control in the Drift card's header uses the same label over a current or stale reading.
    Inert, never gone, where a press cannot run: calls paused, an analysis running (Cancel is that state's
    control), an unsaved edit, or a later direction's question, which owns the one run path while it stands
    ([DEC-27](../../../docs/design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)).
    Not drawn with no reader on this machine, where an inert press has nothing to refuse
    ([NUI-18](../../../docs/design-next-ui.md#nui-18-one-control-primitive-and-an-inert-control-stays-on-the-page)). */
-export function RerunControl({ board, stale }: { readonly board: Board; readonly stale: boolean }) {
+export function RerunControl({ board }: { readonly board: Board }) {
   const { model } = useDrift();
   if (model.annotate && routeRefusal(model.payload, model.session)) return null;
   const key = model.key;
@@ -643,7 +643,7 @@ export function RerunControl({ board, stale }: { readonly board: Board; readonly
       <RunPress
         board={board}
         weight="quiet"
-        label={stale ? RERUN_STALE : RERUN_CURRENT}
+        label={GLOSSARY.checkProgressAgain.shown}
         focusKey={`reading-again:${key}`}
         fallbackKey={`reading:${key}`}
         blocked={Boolean(model.job)}

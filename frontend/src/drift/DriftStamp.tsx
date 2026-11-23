@@ -41,7 +41,7 @@ export function DriftStamp() {
               : stale.head}
           </p>
         ) : null}
-        <RerunControl board={board} stale={Boolean(stale)} />
+        <RerunControl board={board} />
       </div>
       {stale?.superseded ? (
         <p className="m-0 max-w-[var(--measure)] text-label text-muted-foreground">

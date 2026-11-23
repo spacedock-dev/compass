@@ -17,7 +17,7 @@ import {
 /* The Drift card and the Sessions row after the 2026-10-20 usability review
    (docs/design-reading-a-session.md#amended-2026-10-20-the-answer-first-and-what-quotes-the-entry). Each story
    is one finding: the answer first in one sentence, What quoting the entry, the level always first, the
-   stale banner naming the message it predates with Check again beside it, Evidence's heading and local
+   stale banner naming the message it predates with Check progress again beside it, Evidence's heading and local
    times, Pause model calls in the card's head, the count's honest name, a Copied cue that lapses, and the
    Sessions row's one state word and drift level. */
 
@@ -171,7 +171,7 @@ export const TheLevelStaysFirstOverALaterDirection: Story = {
   },
 };
 
-/* Finding 14: new work with no message from the reader: Check again stands beside the marker in the card's
+/* Finding 14: new work with no message from the reader: Check progress again stands beside the marker in the card's
    head, the one run control on the card. */
 export const CheckAgainBesideTheStaleBanner: Story = {
   ...scenario({
@@ -191,10 +191,10 @@ export const CheckAgainBesideTheStaleBanner: Story = {
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
-    const again = within(headOf(drift)).getByRole('button', { name: 'Check again' });
+    const again = within(headOf(drift)).getByRole('button', { name: 'Check progress again' });
     await expect(again).toBeVisible();
     await expect(headOf(drift).contains(stale)).toBe(true);
-    await expect(within(drift).getAllByRole('button', { name: /^(Analyze|Check again)/ })).toEqual([
+    await expect(within(drift).getAllByRole('button', { name: /^Check progress/ })).toEqual([
       again,
     ]);
   },

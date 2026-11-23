@@ -62,9 +62,11 @@ export const AnalyzeOpensOnAnIdleSessionWithNoRecordedFinish: Story = {
   ...scenario({ session: IDLE }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const analyze = await canvas.findByRole('button', { name: 'Analyze drift' });
+    const analyze = await canvas.findByRole('button', { name: 'Check progress' });
     await expect(analyze).not.toHaveAttribute('aria-disabled');
-    await expect(canvasElement.textContent).not.toContain('Analyze opens while this session runs.');
+    await expect(canvasElement.textContent).not.toContain(
+      'Check progress opens while this session runs.',
+    );
     await expect(canvasElement.textContent).not.toContain(WHY_OFF);
     // Before the press, it says what it will read, as a running session's does.
     await expect(
@@ -120,7 +122,7 @@ export const AnalyzeOpensOnAStoppedCodexSession: Story = {
   ...scenario({ harness: 'codex', session: CODEX_STOPPED }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const analyze = await canvas.findByRole('button', { name: 'Analyze drift' });
+    const analyze = await canvas.findByRole('button', { name: 'Check progress' });
     await expect(analyze).not.toHaveAttribute('aria-disabled');
     await expect(canvasElement.textContent).not.toContain(CODEX_REFUSED);
     await expect(canvasElement.textContent).not.toContain(WHY_OFF);
@@ -134,7 +136,7 @@ export const AnalyzeOpensOnAnIdleCodexSessionWithNoRecordedFinish: Story = {
   ...scenario({ harness: 'codex', session: IDLE }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const analyze = await canvas.findByRole('button', { name: 'Analyze drift' });
+    const analyze = await canvas.findByRole('button', { name: 'Check progress' });
     await expect(analyze).not.toHaveAttribute('aria-disabled');
     await expect(canvasElement.textContent).not.toContain(CODEX_REFUSED);
     await expect(
@@ -181,7 +183,7 @@ function refusal(
     }),
     play: async ({ canvasElement }) => {
       const canvas = within(canvasElement);
-      const analyze = await canvas.findByRole('button', { name: 'Analyze drift' });
+      const analyze = await canvas.findByRole('button', { name: 'Check progress' });
       await expect(analyze).toHaveAttribute('aria-disabled', 'true');
       await expect(await canvas.findByText(line)).toBeVisible();
       await expect(canvas.getByText(sentence)).not.toBeVisible();
@@ -195,17 +197,17 @@ function refusal(
 export const RefusedTurnStopElsewhere = refusal(
   'antigravity',
   'turn-stop',
-  'Analyze opens while a turn runs or once the session ends.',
+  'Check progress opens while a turn runs or once the session ends.',
 );
 export const RefusedUnobservable = refusal(
   'antigravity',
   'unobservable',
-  'This harness sends no events, so Analyze opens only while it runs.',
+  'This harness sends no events, so Check progress opens only while it runs.',
 );
 export const RefusedIntentAfterEnd = refusal(
   'claude',
   'revision-after-end',
-  'Your intent was saved after this session ended.',
+  'Your goal was saved after this session ended.',
   { ended_at: 950 },
 );
 
@@ -291,7 +293,7 @@ export const SteerBackOffForAnEarlierIntent: Story = {
 /* The server's sentence for a Claude Code call that reported it is signed out
    (`reading.WITHHELD_CLAUDE_LOGIN`), stored as the last analysis's outcome. */
 const LOGIN =
-  'Analyze failed: Claude Code said it is not logged in. Nothing was saved. Fix that, then press Analyze drift again.';
+  'The progress check failed: Claude Code said it is not logged in. Nothing was saved. Fix that, then press Check progress.';
 
 export const AFailedAnalysisNamesItsCause: Story = {
   ...scenario({
@@ -306,7 +308,7 @@ export const AFailedAnalysisNamesItsCause: Story = {
     const canvas = within(canvasElement);
     await expect(await canvas.findByText(new RegExp(`^Last analysis.*${LOGIN}$`))).toBeVisible();
     await expect(canvasElement.textContent).not.toContain('a fresh press is the only retry');
-    await expect(canvas.getByRole('button', { name: 'Analyze drift' })).not.toHaveAttribute(
+    await expect(canvas.getByRole('button', { name: 'Check progress' })).not.toHaveAttribute(
       'aria-disabled',
     );
   },

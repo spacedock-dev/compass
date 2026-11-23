@@ -202,14 +202,14 @@ CANCEL_LOST: Final = "Could not confirm the cancel; the session page shows wheth
 
 # `drift/sentences.ts` PRESS_LINES: the line beside an inert Analyze, per published reason.
 PRESS_LINES: Final[dict[str, str]] = {
-    "idle-unknown": "Analyze opens while this session runs.",
-    "unobservable": "This harness sends no events, so Analyze opens only while it runs.",
-    "turn-stop": "Analyze opens while a turn runs or once the session ends.",
+    "idle-unknown": "Check progress opens while this session runs.",
+    "unobservable": "This harness sends no events, so Check progress opens only while it runs.",
+    "turn-stop": "Check progress opens while a turn runs or once the session ends.",
     "settling": "Ready in a few seconds.",
     "stop-settling": "Ready in a few seconds.",
-    "revision-after-end": "Your intent was saved after this session ended.",
+    "revision-after-end": "Your goal was saved after this session ended.",
 }
-PRESS_EVENTS: Final = "Analyze opens while this session runs or once it ends."
+PRESS_EVENTS: Final = "Check progress opens while this session runs or once it ends."
 
 # `drift/sentences.ts` LIVE_LEVEL_NAMES.
 LEVEL_NAMES: Final[dict[str, str]] = {

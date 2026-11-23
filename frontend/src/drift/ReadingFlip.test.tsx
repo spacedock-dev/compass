@@ -34,7 +34,9 @@ describe('Analyze closing and opening', () => {
     expect(inert()).toBe(true);
     expect(change()).toBe('Analyze closed: the session went quiet.');
     expect(cue()).toBe('Analyze closed: the session went quiet.');
-    expect(textOf('#next-cockpit-reading-refused')).toBe('Analyze opens while this session runs.');
+    expect(textOf('#next-cockpit-reading-refused')).toBe(
+      'Check progress opens while this session runs.',
+    );
   });
 
   it('does not close on the clock alone: the hold waits for a second payload as well', async () => {
@@ -89,7 +91,7 @@ describe('Analyze closing and opening', () => {
     await press(byAction('reading-ask'));
     expect(readingPosts(page)).toEqual([]);
     expect(textOf('#next-cockpit-reading-refused')).toContain(
-      'Analyze opens while this session runs',
+      'Check progress opens while this session runs',
     );
     // The press learned the board's state, so the card shows it without a change line.
     expect(inert()).toBe(true);

@@ -16,6 +16,15 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+**2026-11-23, progress-check control and server messages.** First and repeat checks are
+labelled Check progress and Check progress again, with Uses AI beside them. The route
+comparison projects the new control and goal words onto the recorded refusals. The level
+comparison keeps the recorded time and checks the new source sentence. The browser
+comparison projects the new labels onto the old controls. The source lines still say whether
+the level came from a progress check or a live estimate. What is sent uses whole KB for the
+goal and session summary limits, and the Live monitor names test and build results in both
+destination cases. The contract captures follow the server. Golden recordings stay intact.
+
 **2026-11-23, session technical tabs.** The retired `sessions__detail` recording puts
 command-shape reports, notifications and How it landed in the activity column. The reader finds
 them under Reports now. The session layout stories assert the tab placement and the existing

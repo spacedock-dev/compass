@@ -429,7 +429,7 @@ try {
 
   await step('no reading: Analyze is offered, with what is sent one click away', async () => {
     const state = await compare('no reading', (g) => claude(g));
-    assert.ok(state.buttons.some(([label]) => label === 'Analyze drift'));
+    assert.ok(state.buttons.some(([label]) => label === 'Check progress'));
     assert.match(state.text, /What is sent/);
     return state.buttons.map(([label]) => label);
   });
@@ -525,7 +525,7 @@ try {
       }),
     );
     assert.match(state.text, /No claude binary was found\./);
-    assert.ok(!state.buttons.some(([label]) => label === 'Analyze drift'));
+    assert.ok(!state.buttons.some(([label]) => label === 'Check progress'));
   });
 
   const JOB = (g, extra = {}) => ({
@@ -584,7 +584,7 @@ try {
       // Sorted as a copy: a golden observation is the stored value itself, and sorting it would change the recording.
       assert.deepEqual([...state.resultStates].sort(), ['consistent', 'departs']);
       assert.ok(state.entries.length >= 2);
-      assert.ok(!state.buttons.some(([label]) => label === 'Analyze again'));
+      assert.ok(!state.buttons.some(([label]) => label === 'Check progress again'));
       assert.equal(await react.page.locator('[data-next-cockpit-action="reading-ask"]').count(), 0);
       return state.resultStates;
     },
@@ -861,7 +861,7 @@ try {
         { skip: REWORKED },
       );
       assert.ok(state.buttons.some(([label]) => label === 'Keep my intent and analyze'));
-      assert.ok(!state.buttons.some(([label]) => label === 'Analyze drift'));
+      assert.ok(!state.buttons.some(([label]) => label === 'Check progress'));
       const owed = await compare(
         'question, an Allow owed',
         (g) =>
@@ -926,7 +926,7 @@ try {
       const after = golden.observe('consent: after Not now');
       const again = norm(await read(react));
       assert.deepEqual(again, after);
-      assert.ok(after.buttons.some(([label]) => label === 'Analyze drift'));
+      assert.ok(after.buttons.some(([label]) => label === 'Check progress'));
     },
   );
 
@@ -1023,7 +1023,7 @@ try {
       ...recorded,
       text: recorded.text.replace(
         'Reads checks and file paths, not what your intent says.',
-        'Reads checks and file paths, not what your intent says. Files written by shell commands, such as a build, are not seen.',
+        'Live estimate: reads test and build results and file paths, not what your goal says. Files written by shell commands, such as a build, are not seen.',
       ),
     };
     assert.deepEqual(mine, old, 'the live estimate differs from the recording');

@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ASSESSMENT_KEYS, RESULT_SUBJECTS } from '../drift/shape';
 import {
+  analysisSourceLine,
   BLOCKER_LINES,
   CORRECTION_CAP,
   CRITERION_KEYS,
@@ -33,6 +34,7 @@ import {
   GOAL_VERDICT_QUOTED_WHY,
   GOAL_VERDICT_REMOVAL_WHYS,
   GOAL_VERDICT_WHY,
+  LIVE_SOURCE_LINE,
   REASON_LINES,
   RESULTS,
   SCOPE_TEXT_IDLE,
@@ -109,6 +111,7 @@ interface Vocabulary {
   readonly turnStopHarnesses: string[];
   readonly scopeTextMidFlightIdle: string;
   readonly correctionCapChars: number;
+  readonly levelSources: { readonly live: string; readonly analysis: string };
   readonly levelReasons: string[];
   readonly annotationFields: string[];
   readonly unsafeChars: { readonly codePoints: [number, number][] };
@@ -258,6 +261,13 @@ describe('the words beside a check', () => {
       `Agent · check · ${vocabulary.checkNotRecorded}`,
     );
   });
+});
+
+it('explains where each level came from in the producer’s words', () => {
+  expect(LIVE_SOURCE_LINE).toBe(vocabulary.levelSources.live);
+  expect(analysisSourceLine('14:52')).toBe(
+    vocabulary.levelSources.analysis.replace('{time}', '14:52'),
+  );
 });
 
 describe('the goal and the annotation', () => {

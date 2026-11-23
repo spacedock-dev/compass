@@ -122,9 +122,10 @@ export const OnWithTheHaikuLevel: Story = {
     const level = card.querySelector('[data-next-drift-level]') as HTMLElement;
     await expect(level).not.toHaveTextContent('Live monitor · Haiku');
     await expect(within(document.body).getByText('Live monitor · Haiku')).toBeVisible();
-    await expect(document.querySelector('[data-next-live-sent]')).toHaveTextContent(
-      'api.anthropic.com',
-    );
+    const sent = document.querySelector('[data-next-live-sent]');
+    await expect(sent).toHaveTextContent('api.anthropic.com');
+    await expect(sent).toHaveTextContent('the commands of tests and builds with their result');
+    await expect(sent).toHaveTextContent('Pause all AI use stops it.');
   },
 };
 

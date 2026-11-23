@@ -1134,7 +1134,7 @@ export const MoreIsRetired: Story = {
     await expect(inDrift.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
     await expect(inDrift.queryByRole('button', { name: 'Drift settings' })).toBeNull();
     await expect(inDrift.queryByText(/^Delegated work:/)).toBeNull();
-    await expect(inDrift.getByRole('button', { name: 'Analyze drift' })).toBeVisible();
+    await expect(inDrift.getByRole('button', { name: 'Check progress' })).toBeVisible();
     await userEvent.click(inDrift.getByRole('button', { name: 'What is sent' }));
     await waitFor(() =>
       expect(inDrift.getByText('Estimated prompt ceiling for this route: 512 KB.')).toBeVisible(),
