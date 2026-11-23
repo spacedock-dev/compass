@@ -68,15 +68,23 @@ function withoutHistory(input: Record<string, unknown>): Record<string, unknown>
   };
 }
 
+// Usage and alerts combines the two recorded quota absences into one reader-facing sentence.
+function recordedObservation(payload: unknown): Record<string, unknown> {
+  const {
+    capacityEmptyNoteKnown: _noteKnown,
+    capacityEmptyNoteText: _noteText,
+    ...recorded
+  } = legacy.call<Record<string, unknown>>('nextObserved', payload, {});
+  return withoutHistory({ ...recorded, capacityEmptyText: 'No plan usage has been reported yet.' });
+}
+
 describe('nextObserved and observe agree over generated payloads', () => {
   it(`agrees on all ${String(SEEDS)} seeds`, () => {
     const failures: string[] = [];
     for (let seed = 1; seed <= SEEDS; seed += 1) {
       const payload = genPayload(seed);
       const old = projectRecordedCommandOpener(
-        instructionSourceDeviation(
-          withoutHistory(legacy.call<Record<string, unknown>>('nextObserved', payload, {})),
-        ),
+        instructionSourceDeviation(recordedObservation(payload)),
         payload,
       );
       const mine = withoutHistory(
@@ -101,7 +109,7 @@ describe('nextObserved and observe agree over generated payloads', () => {
       { sessions: 'x' },
       { sessions: [null] },
     ]) {
-      const old = withoutHistory(legacy.call<Record<string, unknown>>('nextObserved', payload, {}));
+      const old = recordedObservation(payload);
       const mine = withoutHistory(observe(payload) as unknown as Record<string, unknown>);
       expect(firstDifference(canonical(old), canonical(mine))).toBeNull();
     }
@@ -261,12 +269,7 @@ function firstSession(model: Record<string, unknown>): Record<string, unknown> {
 
 describe('the harness can fail: a perturbed answer is reported at the path that changed', () => {
   const payload = genPayload(richSeed());
-  const old = canonical(
-    projectRecordedCommandOpener(
-      withoutHistory(legacy.call<Record<string, unknown>>('nextObserved', payload, {})),
-      payload,
-    ),
-  );
+  const old = canonical(projectRecordedCommandOpener(recordedObservation(payload), payload));
   const mine = () =>
     JSON.parse(
       JSON.stringify(withoutHistory(observe(payload) as unknown as Record<string, unknown>)),
