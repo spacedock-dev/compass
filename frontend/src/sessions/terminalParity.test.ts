@@ -81,7 +81,7 @@ function boardView(payload: Row, root: HTMLElement, needsYou: HTMLElement) {
 }
 
 function sessionRow(root: HTMLElement, harness: string, sid: string) {
-  const row = [...root.querySelectorAll('article[data-next-session]')].find(
+  const row = [...root.querySelectorAll<HTMLElement>('article[data-next-session]')].find(
     (node) =>
       node.getAttribute('data-next-harness') === harness &&
       node.getAttribute('data-next-session') === sid,

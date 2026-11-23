@@ -1039,11 +1039,7 @@ def _coverage(payload: Mapping[str, Any], seen: list[_Seen]) -> tuple[str, list[
         label = printable(_trimmed(row.get("label")) or _text(row.get("key") or "")) or (
             "Harness not published"
         )
-        reason = (
-            "Harness source could not be read"
-            if row.get("error")
-            else "Waits not reported"
-        )
+        reason = "Harness source could not be read" if row.get("error") else "Waits not reported"
         unreported.append(f"{label}: {reason}")
     return gates, unreported
 
