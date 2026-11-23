@@ -14,8 +14,8 @@ Sessions list or in Help. Not now hides the invitation above the list.
 
 A session goes off course when an agent's work moves away from what you asked for. It might
 change files you wanted left alone, stop short, or say it finished when its own record shows
-otherwise. Compass calls this drift. Check progress compares your goal with the messages, tests
-and commands the session recorded and the files it wrote.
+otherwise. Check progress compares your goal with the messages, tests and commands the session
+recorded and the files it wrote.
 
 In the sample session, the agent reported the milestone 97.3% complete and later found a
 blocker. The reader then said an issue was still open. Is it on track? shows Slightly off
@@ -132,7 +132,7 @@ Code session, turning on the Live monitor, or setting an endpoint URL.
 |---|---|---|---|
 | Quota reading | On by default | Your login token to your vendor, so the page can show quota windows. No session content. The Anthropic login covers any harness signed in to the same Claude subscription; Cursor is read on macOS only. | The switch in the page, or `--no-usage` |
 | Model calls | When you press a button that needs one, open a finished Claude Code session, or turn on the Live monitor | Session content, through the Claude Code or Codex CLI already on your machine, signed in as you | Pause all AI use, or `--no-observer-model` |
-| CI checks | When you press Check progress on a session tied to a pull request (or a GitLab merge request your goal names by its URL, on a host `glab` already knows), in a session whose folder is known | The repository and the pull request number, or the branch name, through your own `gh` or `glab`. The checks it reads go on to the reading model. Where GitHub names the required checks, only those count. | Read pull request status in Settings, `--no-ci-read`, or anything that stops model calls |
+| CI checks | When you press Check progress on a session tied to a pull request (or a GitLab merge request your goal names by its URL, on a host `glab` already knows), in a session whose folder is known | The repository and the pull request number, or the branch name, through your own `gh` or `glab`. The checks it reads go on to the reading model. Where GitHub names the required checks, only those count. | Switch off Read pull request status in Settings, run with `--no-ci-read`, or stop model calls |
 | Release lookup | On by default; after server start and at most once per UTC day per Compass home | Only a `compass/<version> (<os>; <arch>[; ci][; internal])` User-Agent beyond urllib's standard headers to spacedock.md, with no query string. The route counts the lookup itself from its headers. The site counts checks in PostHog without an IP and in Plausible with the caller's IP and user agent; CI-marked checks are not counted. Plausible stores neither and derives approximate location from the address. No identifier or session content. | Switch off Look for new versions once a day in Settings, or run with `--no-update-check` |
 | Reach nudges | Only after you set an endpoint URL | Counts only, such as how many sessions are waiting on you, to the endpoint you set | Leave the URL unset, or `--no-reach` |
 

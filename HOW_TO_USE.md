@@ -616,16 +616,18 @@ about what was sent and where.
 
 With no saved goal, the check adopts the goal drafted from your first
 permitted Claude Code or Codex prompt, or from your latest prompt where no first prompt with a time
-is published. **Use your prompt** on the **Goal** card lists up to five of your own prompts from the
-session; choosing one fills the goal box without saving it, and **Save intent** saves it. You
-can also press **Edit goal** and type your own. A line above the box says where the words came from ("Drafted from your first prompt", then "Your edit of your first prompt" once you change them),
+is published. Type in the open field on the **Goal** card, or open **Use your prompt** and choose
+from up to five of your own prompts in this session. Your choice fills the field.
+Press **Save goal** to save the words.
+To change a saved goal, press **Edit goal**. A line above the box says where the words came from
+("Drafted from your first prompt", then "Your edit of your first prompt" once you change them),
 and words you type over them say "You typed this". **Find goal** on the **Goal** card shows while no goal is saved and the session set no `/goal`. On your
 press it sends the prompts you typed in that session to the same reader Check progress would use, counts
 against the same daily limit, and does nothing while model calls are paused. If your own words
 state a clear end state it fills the box, marked **Goal detected**, with the prompts it quotes
 linked to their entries in **Activity log**, under **Show technical details**. The quoted words are
 listed beneath. If Compass finds no clear goal, it says so and leaves the box as it was. Nothing
-is saved until you press **Save intent**. An unavailable prompt time means you must type a goal
+is saved until you press **Save goal**. An unavailable prompt time means you must type a goal
 instead. The notice is remembered
 across tabs and restarts and shown again if the destination or content tier changes. Where Compass
 cannot name the destination (always on Windows and for a Codex base URL), a move between unnamed
@@ -930,10 +932,10 @@ numbers. The request carries the vendor's own token and nothing else, behind a f
 session content is sent.
 
 Choose Turn off quota reading in Your AI allowance at the foot of Sessions to stop
-credential-backed fetches from this browser. You can also use **Turn off plan usage** under
+credential-backed fetches from this browser. You can also use **Turn off** under
 **Show my AI allowance** in Settings. Both controls save the same browser choice. Fresh Codex
 disk readings and Antigravity receipts can still appear. **Turn on quota reading** in Sessions
-or **Allow plan usage** in Settings resumes fetching without a restart.
+or **Allow** under **Show my AI allowance** in Settings resumes fetching without a restart.
 `--no-usage` disables credential-backed reads for a whole run.
 [SECURITY.md](SECURITY.md#usage-quota-reads-the-quota-fetcher) owns the contract, including what is
 sent, what comes back, and what is never touched.

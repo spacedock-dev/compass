@@ -60,11 +60,12 @@ the active-versus-recent split that shipped with the session operations board in
 
 From any shell, `spacedock-compass --sessions` lists the running sessions, with recent ones under
 their own heading, and `--sessions waiting` lists only what waits on you. It reads the board's own
-snapshot and uses the board's own groups and words, so it says what the board says and no more: no
-progress level on any row, a duration only where the board states one, "Stop observed" and never
-"unread", and a re-entry command only for Claude Code and Codex sessions that publish an id. It
-needs the dashboard running, and says so and exits non-zero when it is not. It prints nothing the
-board would not. The [manual](../MANUAL.md#starting-and-inspecting-an-instance) has the options.
+snapshot and uses the board's own groups and words. A row shows a progress level only for a
+validated stored departure. It shows a duration only where the board states one, "Stop observed"
+and never "unread", and a re-entry command only for Claude Code and Codex sessions that publish
+an id. It needs the dashboard running, and says so and exits non-zero when it is not. It prints
+nothing the board would not. The [manual](../MANUAL.md#starting-and-inspecting-an-instance) has
+the options.
 
 Inside a Claude Code session, `/compass:compass sessions` and `/compass:compass sessions waiting`
 print the same list into that session, where the agent can read it too. The skill pre-approves
@@ -285,8 +286,9 @@ sessions are waiting on you. It counts by the same rule as the board's Needs you
 the board draws as a risk row does not. The number is left out when nothing could be measured and is
 never shown as zero, and a harness that cannot report a wait is named on the line instead of being
 counted as quiet. It needs the dashboard running and reads a small file the dashboard writes, so it
-can be about a minute behind. It shows the page's progress level while the Live monitor is on for that
-session, and says when no level is available yet. `spacedock-compass --monitor` turns the monitor on
+can be about a minute behind. It shows a progress level only for a validated stored departure.
+Otherwise it may show why a level is unavailable or leave the level out. The footer can separately
+say the Live monitor is on. `spacedock-compass --monitor` turns the monitor on
 for the session you run it in, or the session page does. [How to add it](../HOW_TO_USE.md#show-waiting-sessions-and-quota-in-the-claude-code-status-line)
 to a status line you already have.
 
