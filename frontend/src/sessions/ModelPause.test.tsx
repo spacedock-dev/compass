@@ -49,9 +49,7 @@ it('links paused progress and the unsaved direction choice to their own reasons'
     expect(document.querySelectorAll(`[id="${id}"]`)).toHaveLength(1);
     return document.getElementById(id)?.textContent;
   };
-  expect(reasonFor('Check progress')).toBe(
-    'Model calls are paused. Nothing is sent until you resume.',
-  );
+  expect(reasonFor('Check progress')).toBe('AI use is paused. Nothing is sent until you resume.');
   expect(reasonFor('Leave it')).toBe('Save your goal or undo your edit to check progress.');
 });
 

@@ -963,8 +963,8 @@ What the line says, and when it says nothing:
   `spacedock-compass --monitor --session claude:ID` from another terminal. A short reason such as
   `monitor off: session ended` can appear for five minutes after it stops. Turning the monitor
   off yourself is silent.
-- `N waiting` counts the needs on the board's Attention queue other than the session the line is in: other
-  sessions that are waiting on you, and questions a session has put to you through the ask lane. It is left
+- `N waiting` counts other sessions waiting on you and pending questions in the Needs you queue.
+  The count leaves out the session showing the status line. It is left
   out when the count is zero, when the dashboard is not running, or when the file is more than a minute old.
   While nothing is collecting, the dashboard restamps a file whose content has not changed every 15 seconds,
   so a state that changes only with the passing of time is not seen until the next event or collection.

@@ -185,8 +185,10 @@ from future ends and quiet observations. The observed model comparison projects 
 age and delegated-launch source fields that Needs you uses. The board's
 [`terminalParity.test.ts`](../frontend/src/sessions/terminalParity.test.ts) and the terminal's
 [`test_terminal_sessions.py`](../compass/skills/compass/tests/test_terminal_sessions.py) read
-the same hand-updated parity fixtures, including the unowned question age and unusable
-observations. The [`recordedSessionStatus`](../frontend/test/recordedSessionStatus.ts) projection
+the same parity fixtures, including the unowned question age and unusable observations.
+The Sessions parity test records state and progress pills from mounted rows and reads wait coverage
+from the open Needs you disclosure. Its candidate generator records those answers from the board.
+The [`recordedSessionStatus`](../frontend/test/recordedSessionStatus.ts) projection
 sets aside the Sessions-only Now field and compares the wait caution in its written-out
 spelling. The recorded answers remain unchanged.
 

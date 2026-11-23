@@ -524,6 +524,7 @@ DOC_VOCABULARY_FILES = (
     "docs/promise-map.md",
     "COMPATIBILITY.md",
     "HOW_TO_USE.md",
+    "HOW_TO_USE_TERMINAL.md",
     "MANUAL.md",
     "SECURITY.md",
     "compass/skills/compass/SKILL.md",
@@ -588,17 +589,6 @@ _DOC_LABEL_TYPE = (
 _DOC_LABEL_BEFORE = re.compile(rf"\b{_DOC_LABEL_TYPE}(?:\s+is)?\s*$", re.IGNORECASE)
 _DOC_LABEL_AFTER = re.compile(rf"^\s+{_DOC_LABEL_TYPE}\b", re.IGNORECASE)
 _DOC_LABEL_END = re.compile(r"""^\s*(?:$|[.,;:!?'"\])|]|\b(?:in|on|to|under)\b)""")
-# DRC-5510 owns these terminal descriptions. Keep checking the surrounding prose.
-_DOC_PENDING_TERMINAL_WORDS = {
-    "HOW_TO_USE.md": (
-        "Resume\n  model calls on the board clears it on the next footer refresh.",
-        "counts the needs on the board's Attention queue other than the session the line is in:",
-    ),
-    "MANUAL.md": (
-        "other needs on the Attention queue (sessions waiting on you and pending asks)",
-        "groups and words: **Active now** (working, waiting on you,",
-    ),
-}
 
 
 def _label_alternatives(labels: set[str]) -> str:
@@ -757,6 +747,7 @@ class DocumentVocabularyTest(unittest.TestCase):
                 "docs/promise-map.md",
                 "COMPATIBILITY.md",
                 "HOW_TO_USE.md",
+                "HOW_TO_USE_TERMINAL.md",
                 "MANUAL.md",
                 "SECURITY.md",
             },
@@ -872,11 +863,22 @@ class DocumentVocabularyTest(unittest.TestCase):
             with self.subTest(file=relative):
                 document = (root / relative).read_text(encoding="utf-8")
                 self.assertNotRegex(document, PUBLIC_TRACKER_TOKENS)
-                prose = document
-                for literal in _DOC_PENDING_TERMINAL_WORDS.get(relative, ()):
-                    prose = prose.replace(literal, re.sub(r"[^\n]", " ", literal), 1)
+                if relative == _DASHBOARD_REFERENCE:
+                    # The old Needs you view still ships this heading. Its own redesign
+                    # updates the bundled reference and removes this occurrence.
+                    heading = "Also at risk, off the session count"
+                    view = (root / "frontend/src/attention/AttentionView.tsx").read_text(
+                        encoding="utf-8"
+                    )
+                    if f">{heading}</Heading>" in view:
+                        old = "\n## Needs you\n\nThe Needs you brief counts"
+                        start = document.find(old)
+                        legacy = f"**{heading}** holds quota pressure,"
+                        if start != -1:
+                            prefix, section = document[:start], document[start:]
+                            document = prefix + section.replace(legacy, " " * len(legacy), 1)
                 errors = _document_vocabulary_errors(
-                    prose, allow_board_glossary=relative == _DASHBOARD_REFERENCE
+                    document, allow_board_glossary=relative == _DASHBOARD_REFERENCE
                 )
                 self.assertFalse(errors, "\n".join(f"{relative}:{error}" for error in errors))
 
@@ -893,6 +895,7 @@ class DocumentVocabularyTest(unittest.TestCase):
             "Pause all AI use",
             "Resume AI use",
             "print a session's progress check",
+            "list the sessions running now and those that ended lately",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, flat)
