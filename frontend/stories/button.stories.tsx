@@ -3,6 +3,7 @@ import { expect, userEvent, within } from 'storybook/test';
 import { useState } from 'react';
 import { Button } from '../src/ui/button';
 import { contrastOf, rgbOf } from './a11y.audit';
+import { settledRect } from './settled-layout';
 const meta = { title: 'UI/Button', component: Button } satisfies Meta<typeof Button>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -357,7 +358,7 @@ export const Pending: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const button = canvas.getByRole('button', { name: 'Save' });
-    const width = button.getBoundingClientRect().width;
+    const { width } = await settledRect(button);
     await userEvent.click(button);
     await expect(button).toHaveAccessibleName('Saving…');
     await expect(button).toHaveAttribute('aria-busy', 'true');
@@ -367,7 +368,7 @@ export const Pending: Story = {
       color: 'rgb(255, 255, 255)',
     });
     await expect(button).toHaveFocus();
-    await expect(button.getBoundingClientRect().width).toBe(width);
+    await expect((await settledRect(button)).width).toBe(width);
     await userEvent.keyboard('{Enter} ');
     await userEvent.click(button);
     await expect(canvas.getByRole('status')).toHaveTextContent('1 request');

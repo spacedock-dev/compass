@@ -22,6 +22,7 @@ import {
   written,
   type Scenario,
 } from './drift.scenario';
+import { settledRect } from './settled-layout';
 
 /* The parts of a stored analysis a reader tunes most: the spent-budget banner, the Mark as inaccurate control
    and what it changes, and the What the check read panel. Each story mounts the real session page over a
@@ -230,7 +231,7 @@ export const MarkAsInaccurateSaysWhatItDoes: Story = {
     const mark = within(row).getByRole('button', { name: RESULT_NOT_ACCURATE });
     await document.fonts.ready;
     mark.scrollIntoView({ behavior: 'instant', block: 'center' });
-    const before = row.getBoundingClientRect().top;
+    const before = (await settledRect(row)).top;
     await userEvent.click(mark);
     // After: one message, at the top where the level was, with Undo and Check progress again beside it.
     await waitFor(() => expect(row).toHaveAttribute('data-next-result-mark', 'marked'));
@@ -247,7 +248,7 @@ export const MarkAsInaccurateSaysWhatItDoes: Story = {
     const undo = within(notice).getByRole('button', { name: RESULT_UNMARK });
     await expect(within(drift).getByRole('button', { name: 'Check progress again' })).toBeVisible();
     // The level and Steer back left the column above; the foot stayed where the press was.
-    await waitFor(() => expect(Math.abs(row.getBoundingClientRect().top - before)).toBeLessThan(4));
+    await expect(Math.abs((await settledRect(row)).top - before)).toBeLessThan(4);
     await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
     await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
     await userEvent.click(undo);

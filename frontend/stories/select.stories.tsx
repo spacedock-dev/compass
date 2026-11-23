@@ -3,6 +3,7 @@ import { expect, userEvent, within, waitFor } from 'storybook/test';
 import { useState } from 'react';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../src/ui/select';
 import { contrastOf, rgbOf } from './a11y.audit';
+import { settledRect } from './settled-layout';
 
 const meta = { title: 'UI/Select', component: SelectTrigger } satisfies Meta<typeof SelectTrigger>;
 export default meta;
@@ -89,7 +90,7 @@ export const Loading: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const trigger = canvas.getByRole('combobox');
-    const width = trigger.getBoundingClientRect().width;
+    const { width } = await settledRect(trigger);
     await userEvent.click(trigger);
     const page = within(canvasElement.ownerDocument.body);
     await expect(await page.findByRole('option', { name: 'Loading your prompts' })).toHaveAttribute(
@@ -102,7 +103,7 @@ export const Loading: Story = {
     await expect(await page.findByRole('option', { name: 'Short choice' })).toBeVisible();
     await expect(trigger).toHaveAttribute('aria-expanded', 'true');
     await expect(trigger).toHaveAttribute('aria-busy', 'false');
-    await expect(trigger.getBoundingClientRect().width).toBe(width);
+    await expect((await settledRect(trigger)).width).toBe(width);
     await userEvent.click(page.getByRole('option', { name: 'Short choice' }));
     await waitFor(() => expect(trigger).toHaveTextContent('Short choice'));
   },

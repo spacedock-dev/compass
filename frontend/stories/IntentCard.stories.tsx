@@ -10,6 +10,7 @@ import { fakeRouterEnvironment } from '../src/router/testing';
 import { createShell } from '../src/shell/createShell';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
+import { settledRect } from './settled-layout';
 
 /* The session route for the harness a story's session names, Claude Code unless it says otherwise. */
 const sessionRoute = (harness: string) => `#n=session:alpha%2Fapp:${harness}:s1`;
@@ -244,19 +245,6 @@ async function enterGoalEditor(view: ReturnType<typeof within>) {
 }
 
 type Story = StoryObj<typeof meta>;
-
-/** The element's box once it has held the same position for two animation frames. */
-async function settledRect(element: Element): Promise<DOMRect> {
-  const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  let last = element.getBoundingClientRect();
-  for (let steady = 0, tries = 0; steady < 2 && tries < 60; tries += 1) {
-    await frame();
-    const next = element.getBoundingClientRect();
-    steady = next.top === last.top && next.left === last.left ? steady + 1 : 0;
-    last = next;
-  }
-  return last;
-}
 
 export const TypedSourceAndSavedStatus: Story = {
   args: {
@@ -1795,9 +1783,7 @@ export const ArmedDiscardStaysVisibleAndInPlace: Story = {
         __updateIntentSession: (patch: Record<string, unknown>) => Promise<void>;
       }
     ).__updateIntentSession({});
-    const after = (
-      await quiet.findByRole('button', { name: 'Confirm discard' })
-    ).getBoundingClientRect();
+    const after = await settledRect(await quiet.findByRole('button', { name: 'Confirm discard' }));
     await expect(Math.abs(after.top - before.top)).toBeLessThan(2);
     await expect(Math.abs(after.left - before.left)).toBeLessThan(2);
     await expect(warning).toBeVisible();
