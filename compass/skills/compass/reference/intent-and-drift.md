@@ -242,9 +242,10 @@ pill. It never appears on a Sessions row, raises no notification, and never feed
 Drift marks show departures already on record, from a
 reader-requested reading or the optional unasked lane. With nothing typed the block says there is nothing to read against; with the observer
 model off it gives that reason; otherwise it states what a reading may and may not read and offers
-the ordinary one-call control, `Analyze drift`. When it cannot run it stays on the page, refuses the press, and
-names one next step, and a press on it opens "Why Analyze is off" with the whole reason, except where no reader is available on this machine: then the reason stands
-where the control would be. An acceptance of each provider's checks enables that control (the
+the ordinary one-call control, Check progress. A saved reading offers Check progress again.
+A refused press opens "Why the progress check is off" with the whole reason. When no reader is
+available on this machine, the reason stands in place of the control. An acceptance of each
+provider's checks enables that control (the
 captain's of Codex's case review on 2026-09-14; the owner's of Claude Code on 2026-10-02, after its
 scored runs failed): a
 Claude Code session is read by Claude Code when `claude` is on PATH and by Codex otherwise, and the

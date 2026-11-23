@@ -1312,13 +1312,19 @@ class WhetherAPressCouldReadIsSaidBeforeThePress(unittest.TestCase):
     ]
 
     def _press(
-        self, row: dict[str, Any], *, now: float | None = None, revisions: Any = None
+        self,
+        row: dict[str, Any],
+        *,
+        now: float | None = None,
+        revisions: Any = None,
+        has_reading: bool = False,
     ) -> Any:
         return reading.press_eligibility(
             row,
             self.REVISIONS if revisions is None else revisions,
             now=self.END + 60.0 if now is None else now,
             settle_sec=8.0,
+            has_reading=has_reading,
         )
 
     def test_an_idle_claude_code_session_with_no_recorded_finish_can_be_pressed(self) -> None:
@@ -1402,6 +1408,34 @@ class WhetherAPressCouldReadIsSaidBeforeThePress(unittest.TestCase):
                     "Check progress opens by itself in a few seconds.",
                     reading.withheld_sentence(reason, {"harness": "claude"}),
                 )
+
+    def test_press_explanations_name_the_first_or_repeat_control_when_they_name_one(self) -> None:
+        idle = {"state": "idle", "harness": "antigravity"}
+        cases = (
+            (
+                {"state": "idle", "harness": "claude", "ended_at": self.END},
+                "settling",
+                "opens by itself",
+            ),
+            (
+                {"state": "idle", "harness": "claude", "finished_at": self.END},
+                "stop-settling",
+                "opens by itself",
+            ),
+            ({**idle, "acquisition": "event"}, "idle-unknown", "opens while the session works"),
+            ({**idle, "acquisition": "scan-only"}, "unobservable", "A reading can run only"),
+            ({**idle, "finished_at": self.END}, "turn-stop", "Compass reads this harness only"),
+        )
+        for row, reason, phrase in cases:
+            for has_reading, button in ((False, "Check progress"), (True, "Check progress again")):
+                with self.subTest(reason=reason, button=button):
+                    answer = self._press(row, now=self.END + 3.0, has_reading=has_reading)
+                    self.assertEqual(reason, answer["reason"])
+                    if phrase.startswith("opens"):
+                        self.assertIn(f"{button} {phrase}", answer["sentence"])
+                    else:
+                        self.assertIn(phrase, answer["sentence"])
+                        self.assertNotIn("Check progress", answer["sentence"])
 
     def test_a_claude_session_whose_turn_stopped_can_be_read(self) -> None:
         row = {"harness": "claude", "state": "idle", "finished_at": self.END}

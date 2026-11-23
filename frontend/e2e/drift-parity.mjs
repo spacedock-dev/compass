@@ -577,15 +577,31 @@ try {
   await step(
     'a stored result: the answer, each line by the list’s number, where the work went',
     async () => {
-      // The card's text and buttons are not compared: the mark, its undo and the "What the analysis read" disclosure
-      // were reworked after this recording (commit 4f6512bb). ReadingResult.test.tsx holds the result's states.
-      const state = await compare('stored result', (g) => stored(g), { skip: REWORKED });
-      assert.match(state.text, /Departs from your intent1 departure/);
+      // The result, Activity log and session header now have their own stories.
+      // Compare the retained verdict states and entry identities from the recording.
+      const state = await compare('stored result', (g) => stored(g), {
+        skip: [...REWORKED, 'work', 'meta'],
+      });
+      const verdict = react.page.locator('[data-next-drift-verdict]');
+      assert.ok(await verdict.isVisible());
+      assert.match(
+        await verdict.textContent(),
+        /^1 departure, at a failed check at \d{2}:\d{2}\.$/,
+      );
       // Sorted as a copy: a golden observation is the stored value itself, and sorting it would change the recording.
       assert.deepEqual([...state.resultStates].sort(), ['consistent', 'departs']);
       assert.ok(state.entries.length >= 2);
-      assert.ok(!state.buttons.some(([label]) => label === 'Check progress again'));
-      assert.equal(await react.page.locator('[data-next-cockpit-action="reading-ask"]').count(), 0);
+      const rerun = state.buttons.filter(([, action]) => action === 'reading-ask');
+      assert.deepEqual(
+        rerun.map(([label]) => label),
+        ['Check progress again'],
+      );
+      const control = react.page.getByRole('button', { name: 'Check progress again', exact: true });
+      assert.equal(await control.count(), 1);
+      assert.ok(await control.isVisible());
+      const cost = control.locator('xpath=following-sibling::*[1]');
+      assert.equal(await cost.textContent(), 'Uses AI');
+      assert.ok(await cost.isVisible());
       return state.resultStates;
     },
   );

@@ -1,4 +1,5 @@
 import { nextNumber } from '../api/bootstrap';
+import { GLOSSARY } from '../language/glossary';
 import { clock, isRecord, type Row } from '../observed';
 import type { DriftLevel } from './level';
 import { CLAUDE_SETTINGS_LOOK, LIVE_LEVEL_NAMES } from './sentences';
@@ -121,8 +122,7 @@ export function monitorLevel(lease: LeaseState): DriftLevel | null {
 export const END_NOTES: Readonly<Record<Exclude<EndReason, 'stopped'>, string>> = {
   ended: 'Live monitor turned off: the session ended, so there is nothing live to monitor.',
   left: 'Live monitor turned off: this page stopped checking in (for example, the computer slept), so no more model calls were made.',
-  paused:
-    'Live monitor turned off: model calls are paused. Resume model calls, then turn it on again.',
+  paused: `Live monitor turned off: model calls are paused. ${GLOSSARY.resumeAi.plain}, then turn it on again.`,
   unanswered:
     'Live monitor turned off: no answer after {minutes}, so no more model calls were made.',
   declined: 'Live monitor turned off, as you asked.',

@@ -1622,6 +1622,17 @@ class RefusalTest(unittest.TestCase):
             "Check progress opens while a turn runs or once the session ends.",
         )
 
+    def test_a_repeat_press_the_board_withholds_names_the_repeat_control(self) -> None:
+        row = a_row(
+            annotation_assessment=dict(ASSESSMENT),
+            reading_eligibility={"ok": False, "reason": "turn-stop", "until": None},
+        )
+        self.refuse(
+            FakeBoard(a_payload(row)),
+            "Check progress again opens while a turn runs or once the session ends.",
+            again=True,
+        )
+
     def test_a_press_withheld_for_a_reason_with_only_the_server_s_sentence(self) -> None:
         row = a_row(
             reading_eligibility={

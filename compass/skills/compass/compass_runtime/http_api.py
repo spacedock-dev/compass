@@ -5128,6 +5128,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             entry["revisions"],
             now=application.clock(),
             settle_sec=application.config.reading_settle_sec,
+            has_reading=bool(entry.get("assessment")),
         )
         reason = answer["reason"]
         if reason is None:

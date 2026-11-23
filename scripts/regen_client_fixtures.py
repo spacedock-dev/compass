@@ -2648,6 +2648,9 @@ def vocabulary() -> dict[str, Any]:
         "checkListedByReader": reading.CHECK_LISTED_BY_READER,
         "checkNotRecordedReasons": dict(runtime_project_context.CHECK_NOT_RECORDED_REASONS),
         "results": list(reading.RESULTS),
+        "longWithheld": {
+            reason: reading.WITHHELD[reason] for reason in reading.LONG_WITHHELD_REASONS
+        },
         "promptSources": list(reading.PROMPT_SOURCES),
         "promptChosen": reading.PROMPT_CHOSEN,
         "sessionGoal": reading.SESSION_GOAL,

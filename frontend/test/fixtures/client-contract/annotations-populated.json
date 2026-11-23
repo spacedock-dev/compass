@@ -51,6 +51,7 @@
           "reading_refused": false,
           "reading_withheld": "",
           "reading_withheld_at": null,
+          "reading_withheld_reason": "",
           "revision": 2,
           "revision_count": 2,
           "settled_at": null,
@@ -64,7 +65,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "1267",
+      "Content-Length": "1296",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json"
     },

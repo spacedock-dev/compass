@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { datedClock } from '../observed/values';
 import { byAction, check, fact, json, mountDrift, textOf } from './testing';
-import { STEER_OFF_MARKED, STEER_OFF_OLDER } from './sentences';
+import { STEER_OFF_MARKED } from './sentences';
 import { readerTimeZone, readerUtcOffset } from './correction';
 
 /* Owner, 2026-10-20: Steer back stays beside the departures it steers from, labelled with the check's time,
@@ -81,12 +81,30 @@ describe('Steer back from a check', () => {
     expect(textOf('[data-next-steer-off]')).toBe(STEER_OFF_MARKED);
   });
 
-  it('says why beside the departures when the analysis read an earlier version of the intent', async () => {
+  it('names the available retry when Steer back cannot use an earlier version of the goal', async () => {
     const page = mount({ session: saidSession, store: { revision: 4 }, facts: SAID });
     await page.settle();
     await page.settle();
     expect(byAction('steer-back')).toBeNull();
-    expect(textOf('[data-next-steer-off]')).toBe(STEER_OFF_OLDER);
+    const retry = byAction('reading-ask');
+    expect(retry?.textContent).toBe('Check progress again');
+    expect(textOf('[data-next-steer-off]')).toBe(
+      `Steer back is off because this progress check read an earlier version of your goal. ${retry?.textContent} to steer back from it.`,
+    );
+  });
+
+  it('explains the earlier goal without directing the reader to a missing retry', async () => {
+    const page = mount({
+      session: saidSession,
+      store: { revision: 4 },
+      facts: SAID,
+      payload: { reading_routes: { claude: { provider: '', note: 'No reader is available.' } } },
+    });
+    await page.settle();
+    expect(byAction('reading-ask')).toBeNull();
+    expect(textOf('[data-next-steer-off]')).toBe(
+      'Steer back is off because this progress check read an earlier version of your goal.',
+    );
   });
 
   it('sends the reader’s zone with the composition request', async () => {

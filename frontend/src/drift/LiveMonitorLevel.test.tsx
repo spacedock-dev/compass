@@ -4,7 +4,18 @@ import { act } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { liveMonitorFor } from '../intent/liveMonitor';
 import { monitorLease } from '../intent/panel.testing';
-import { check, contextRoute, fact, json, LEASE_ROUTE, mountDrift, SESSION_HASH } from './testing';
+import {
+  check,
+  contextRoute,
+  driftBoard,
+  fact,
+  json,
+  LEASE_ROUTE,
+  mountDrift,
+  POLICY,
+  SESSION_HASH,
+  textOf,
+} from './testing';
 
 /* The level a Haiku check earned replaces the checks-and-paths estimate in the card and the header pill,
    labelled as the monitor's; an Analyze reading outranks it; and the estimate shows whenever the monitor
@@ -286,6 +297,17 @@ describe('the estimate after the monitor ends', () => {
     await endedBy(reason);
     expect(pill()).toBe('Medium');
     expect(source()).toMatch(/^Live estimate/);
+  });
+
+  it('names the switch a reader can use to resume AI after the monitor stops', async () => {
+    const page = await endedBy('paused');
+    await page.poll(driftBoard({ payload: { reading: { ...POLICY, off: true, consent: false } } }));
+    await page.settle();
+    const resume = screen.getByRole('switch', { name: 'Resume AI use' });
+    expect(resume).toBeVisible();
+    expect(textOf('[data-next-live-note]')).toBe(
+      'Live monitor turned off: model calls are paused. Resume AI use, then turn it on again.',
+    );
   });
 
   it.each(['declined', 'unanswered', 'left', 'ended'])(

@@ -2,6 +2,12 @@ import assert from 'node:assert/strict';
 import { goldenFor, jsonSafe, normalise } from './golden.mjs';
 import { recordedLocationNotes } from './location-deviations.mjs';
 
+const CHECK_LABELS = new Map([
+  ['Analyze drift', 'Check progress'],
+  ['Analyze again', 'Check progress again'],
+  ['Check again', 'Check progress again'],
+]);
+
 /* DEC-27's retracted controls and relocated explanation change only the recorded
    side. React observations retain every control and word, so regressions fail. */
 export function sessionDeviations(proof, payload = () => ({})) {
@@ -24,6 +30,9 @@ export function sessionDeviations(proof, payload = () => ({})) {
 
 export function normaliseSessionRecord(record, evidence = {}) {
   record = recordedLocationNotes(record, evidence);
+  const recordedCheck = record?.buttons?.find(
+    (item) => Array.isArray(item) && item[1] === 'reading-ask' && CHECK_LABELS.has(item[0]),
+  )?.[0];
   const words = new Set();
   const collect = (value) => {
     if (
@@ -50,10 +59,6 @@ export function normaliseSessionRecord(record, evidence = {}) {
   };
   const retract = (value, key = '', path = []) => {
     if (typeof value === 'string') {
-      if (['buttons', 'controls'].includes(key))
-        return value.replace(/^(Analyze drift|Analyze again|Check again)$/, (name) =>
-          name === 'Analyze drift' ? 'Check progress' : 'Check progress again',
-        );
       const sessionHeader =
         key === 'header' &&
         path.length === 1 &&
@@ -92,19 +97,18 @@ export function normaliseSessionRecord(record, evidence = {}) {
           value = value.replace(/ASSIGNMENT · /, 'Current task · ');
         if (path.includes('parts') && path.includes('.next-session-evidence'))
           value = value.replace(/^ASSIGNMENT/, 'Current task');
-        value = value.replace(
-          "Last turn isn't recorded as finished. Run another turn to open Analyze.",
-          'Check progress opens while this session runs.',
-        );
         // The retired page printed "N of 10 left today" under every reading; the React page prints the budget only
         // at the cap (`readingCap` in frontend/src/drift/route.ts), and ReadingResult.test.tsx holds that under the
         // cap it is not mentioned anywhere. Only the recorded side loses it, and only under the cap.
-        if (driftCard)
-          value = value
-            .replace(/\d+ of \d+ left today/g, '')
-            .replaceAll('Analyze drift', 'Check progressUses AI')
-            .replace(/(?:Analyze again|Check again)/g, 'Check progress againUses AI')
-            .replaceAll('Analyze opens while', 'Check progress opens while');
+        if (driftCard) value = value.replace(/\d+ of \d+ left today/g, '');
+        if (driftCard && recordedCheck) {
+          // The recording flattens the card. The recorded action identifies the label,
+          // and the adjacent request count or store notice locates the actual control.
+          const slot = new RegExp(
+            `${recordedCheck}(?=(?:\\d+ model requests?){2} recorded for this session\\.|Annotations are off for this run\\.)`,
+          );
+          value = value.replace(slot, `${CHECK_LABELS.get(recordedCheck)}Uses AI`);
+        }
         if (driftCard)
           value = value
             .replace(
@@ -159,26 +163,17 @@ export function normaliseSessionRecord(record, evidence = {}) {
               ['Copy ID', 'Copy link', 'Copy command'].includes(item[0])
             ),
         )
-        .map((item) =>
-          retract(item, key, [
+        .map((item) => {
+          if (key === 'buttons' && Array.isArray(item) && item[1] === 'reading-ask') {
+            const [label, ...fields] = item;
+            return [CHECK_LABELS.get(label) ?? label, ...fields];
+          }
+          return retract(item, key, [
             ...path,
             ...(Array.isArray(item) && typeof item[0] === 'string' ? [item[0]] : []),
-          ]),
-        );
+          ]);
+        });
     if (value && typeof value === 'object') {
-      if (
-        value === record &&
-        Array.isArray(value.resultStates) &&
-        value.resultStates.length &&
-        !value.stale?.length &&
-        typeof value.text === 'string' &&
-        Array.isArray(value.buttons)
-      )
-        value = {
-          ...value,
-          text: value.text.replace('Analyze again', ''),
-          buttons: value.buttons.filter(([label]) => label !== 'Analyze again'),
-        };
       return Object.fromEntries(
         Object.entries(value).map(([name, item]) => [
           name,

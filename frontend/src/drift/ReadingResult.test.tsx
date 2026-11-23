@@ -119,6 +119,23 @@ describe('technical Evidence', () => {
 });
 
 describe('a stored reading', () => {
+  it('offers the retry named by a failure when the earlier reading has no saved time', async () => {
+    const failure = 'The progress check failed. Nothing was saved. Press Check progress again.';
+    const page = mountDrift({
+      session: stored({
+        annotation_assessment: { ...ASSESSMENT, read_at: null },
+        annotation_reading_withheld: failure,
+      }),
+      facts: FACTS,
+    });
+    await page.settle();
+    expect(screen.getByText(failure, { exact: false })).toBeVisible();
+    const retry = screen.getByRole('button', { name: 'Check progress again' });
+    expect(retry).toBeVisible();
+    expect(retry.nextElementSibling?.textContent).toBe('Uses AI');
+    expect(document.querySelector('[data-next-drift-stamp]')).toBeNull();
+  });
+
   it("says the answer, then each line by the list's own number, and never a check mark", async () => {
     const page = mountDrift({ session: stored(), facts: FACTS });
     await page.settle();

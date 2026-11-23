@@ -1543,6 +1543,13 @@ def _published_withheld(entry: Annotation | None) -> str:
     return sentence.replace("Check progress", "Check progress again")
 
 
+# The store validates and migrates its sentences on load. Publish the closed long
+# outcome separately so clients can render it without interpreting display copy.
+_LONG_WITHHELD_REASON = {
+    reading.WITHHELD[reason]: reason for reason in reading.LONG_WITHHELD_REASONS
+}
+
+
 def _last_written(entry: Annotation) -> float:
     """When anything was last written to this entry, as far as the entry can say.
 
@@ -2207,6 +2214,9 @@ def published(entry: Annotation | None, *, binding_why: str = BINDING_EXACT) -> 
             else {}
         ),
         "reading_withheld": _published_withheld(entry),
+        "reading_withheld_reason": _LONG_WITHHELD_REASON.get(entry.get("withheld", ""), "")
+        if entry
+        else "",
         # When that reason was written, or None: no reason, or one stored
         # before the time was kept. A number and no prose.
         "reading_withheld_at": (

@@ -755,6 +755,7 @@ WITHHELD_DISCARDED = "discarded"
 WITHHELD_INTERRUPTED = "interrupted"
 WITHHELD_LONG_INTERRUPTED = "long-interrupted"
 WITHHELD_LONG_INCOMPLETE = "long-incomplete"
+LONG_WITHHELD_REASONS = (WITHHELD_LONG_INTERRUPTED, WITHHELD_LONG_INCOMPLETE)
 WITHHELD_LONG_CONTEXT_CHANGED = "long-context-changed"
 WITHHELD_LONG_INTENT_CHANGED = "long-intent-changed"
 WITHHELD_LONG_PERMISSION_CHANGED = "long-permission-changed"
@@ -2933,7 +2934,7 @@ PRESS_WITHHELD = (
 )
 
 
-# The press-time "Why Analyze is off" sentences that differ from the job-time
+# The press-time explanations that differ from the job-time
 # `WITHHELD` default (owner, 2026-10-02): each says what opens a reading, or
 # what the reader can do, and none promises an end Compass may never see. The
 # page cannot link `HOW_TO_USE.md`, which the installed plugin does not ship,
@@ -2946,8 +2947,7 @@ _IDLE_UNREACHED = (
     f"({_HOW_TO_LIVE})."
 )
 _IDLE_REACHED = (
-    "Events from this session reach this board, but no session end has been observed. Check "
-    "progress "
+    "Events from this session reach this board, but no session end has been observed. {control} "
     "opens while the session works, or once its end is observed."
 )
 _PRESS_SENTENCES = {
@@ -2960,26 +2960,28 @@ _PRESS_SENTENCES = {
         "can run only while the session is working."
     ),
     WITHHELD_SETTLING: (
-        "This session ended moments ago and its record is still settling. Check progress opens by "
+        "This session ended moments ago and its record is still settling. {control} opens by "
         "itself in a few seconds."
     ),
     WITHHELD_STOP_SETTLING: (
-        "This session completed its turn moments ago and its record is still settling. Check "
-        "progress "
+        "This session completed its turn moments ago and its record is still settling. {control} "
         "opens by itself in a few seconds."
     ),
 }
 
 
-def withheld_sentence(reason: str, row: Mapping[str, Any]) -> str:
+def withheld_sentence(reason: str, row: Mapping[str, Any], *, has_reading: bool = False) -> str:
     """The sentence a press withheld for `reason` is answered with, for this row's harness.
 
     `WITHHELD[reason]` stays the job-time and stored sentence; this is the
     press-time one the board publishes and the reading route answers with.
     """
     if reason == WITHHELD_IDLE_UNKNOWN and str(row.get("harness") or ""):
-        return _IDLE_REACHED if row.get("acquisition") == "event" else _IDLE_UNREACHED
-    return _PRESS_SENTENCES.get(reason) or WITHHELD[reason]
+        sentence = _IDLE_REACHED if row.get("acquisition") == "event" else _IDLE_UNREACHED
+    else:
+        sentence = _PRESS_SENTENCES.get(reason) or WITHHELD[reason]
+    control = "Check progress again" if has_reading else "Check progress"
+    return sentence.replace("{control}", control)
 
 
 class Eligibility(TypedDict):
@@ -3003,6 +3005,7 @@ def press_eligibility(
     *,
     now: float,
     settle_sec: float,
+    has_reading: bool = False,
 ) -> Eligibility:
     """The press-time half of `_readable`, on the arguments the reading route passes it.
 
@@ -3033,7 +3036,7 @@ def press_eligibility(
         "ok": False,
         "reason": withheld,
         "until": until,
-        "sentence": withheld_sentence(withheld, row),
+        "sentence": withheld_sentence(withheld, row, has_reading=has_reading),
     }
 
 

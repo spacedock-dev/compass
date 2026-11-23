@@ -200,16 +200,16 @@ CANCELLED: Final = (
 CANCEL_LATE: Final = "The reading had already ended, so there was nothing to cancel."
 CANCEL_LOST: Final = "Could not confirm the cancel; the session page shows whether it is running."
 
-# `drift/sentences.ts` PRESS_LINES: the line beside an inert Analyze, per published reason.
+# `drift/sentences.ts` PRESS_LINES: the line beside an inert progress check, per reason.
 PRESS_LINES: Final[dict[str, str]] = {
-    "idle-unknown": "Check progress opens while this session runs.",
-    "unobservable": "This harness sends no events, so Check progress opens only while it runs.",
-    "turn-stop": "Check progress opens while a turn runs or once the session ends.",
+    "idle-unknown": "{control} opens while this session runs.",
+    "unobservable": "This harness sends no events, so {control} opens only while it runs.",
+    "turn-stop": "{control} opens while a turn runs or once the session ends.",
     "settling": "Ready in a few seconds.",
     "stop-settling": "Ready in a few seconds.",
     "revision-after-end": "Your goal was saved after this session ended.",
 }
-PRESS_EVENTS: Final = "Check progress opens while this session runs or once it ends."
+PRESS_EVENTS: Final = "{control} opens while this session runs or once it ends."
 
 # `drift/sentences.ts` LIVE_LEVEL_NAMES.
 LEVEL_NAMES: Final[dict[str, str]] = {
@@ -660,9 +660,15 @@ def _route_refusal(route: Mapping[str, Any] | None) -> str:
 
 def _press_line(row: Mapping[str, Any], held: Mapping[str, Any]) -> str:
     reason = str(held.get("reason"))
-    if reason == "idle-unknown" and row.get("acquisition") == "event":
-        return PRESS_EVENTS
-    return PRESS_LINES.get(reason) or _text(held.get("sentence"))
+    template = (
+        PRESS_EVENTS
+        if reason == "idle-unknown" and row.get("acquisition") == "event"
+        else PRESS_LINES.get(reason)
+    )
+    if template is None:
+        return _text(held.get("sentence"))
+    control = "Check progress again" if _rec(row.get("annotation_assessment")) else "Check progress"
+    return template.format(control=control)
 
 
 def _withheld(row: Mapping[str, Any], now: float) -> Mapping[str, Any] | None:

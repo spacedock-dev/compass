@@ -139,23 +139,30 @@ describe('the header pill and the card', () => {
     reasons: ['pass-then-write'],
     cites: [],
   };
-  const context = (level: string) => ({
-    semantic: { facts: [SAID] },
-    sources: { work: { tool_reports: [], analysis_levels: [row(level)], live_levels: [live] } },
+  const context = (level: string, harness: string) => ({
+    semantic: { facts: [{ ...SAID, source_session: { ...SAID.source_session, harness } }] },
+    sources: {
+      work: {
+        tool_reports: [],
+        analysis_levels: [{ ...row(level), harness }],
+        live_levels: [live],
+      },
+    },
   });
   const open = async (
     results: readonly string[],
     level: string,
     session: Record<string, unknown> = {},
   ) => {
+    const harness = session['harness'] ?? SESSION.harness;
     const page = mountSessions({
-      hash: '#n=session:p:claude:read',
+      hash: `#n=session:p:${String(harness)}:read`,
       data: {
         generated: NOW,
         annotate: true,
         sessions: [{ ...SESSION, annotation_assessment: assessment(results), ...session }],
       },
-      context: context(level),
+      context: context(level, String(harness)),
     });
     await act(async () => {
       await page.settle();
@@ -173,6 +180,19 @@ describe('the header pill and the card', () => {
   it('draw the level of a reading that departs', async () => {
     await open([DEPARTS, CANT_TELL], 'medium');
     expect(document.querySelector('[data-next-drift-pill] strong')?.textContent).toBe('Medium');
+    expect(document.querySelector('[data-next-drift-level]')?.textContent).toContain(
+      'From the progress check at',
+    );
+  });
+
+  it('keeps the Codex departure reading visible without a level, pill or source', async () => {
+    await open([DEPARTS, CANT_TELL], 'medium', { harness: 'codex' });
+    expect(
+      document.querySelector('[data-next-result-goal]')?.getAttribute('data-next-result-state'),
+    ).toBe('departs');
+    expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
+    expect(document.querySelector('[data-next-drift-level]')).toBeNull();
+    expect(document.body.textContent).not.toContain('From the progress check at');
   });
 
   it('say "so far" while the session runs, and drop it once the session is idle', async () => {

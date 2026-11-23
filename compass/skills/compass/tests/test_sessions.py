@@ -169,6 +169,7 @@ DECLARED_SESSION_FIELDS = frozenset(
         "annotation_assessment",
         "annotation_reading_count",
         "annotation_reading_withheld",
+        "annotation_reading_withheld_reason",
         "annotation_reading_withheld_at",
         "reading_eligibility",
         "annotation_reading_refused",

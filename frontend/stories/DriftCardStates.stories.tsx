@@ -63,6 +63,32 @@ async function readingDrawn(card: HTMLElement): Promise<HTMLElement> {
 const sentButtons = (card: HTMLElement) =>
   within(card).queryAllByRole('button', { name: /^What is sent/ });
 
+const undatedFailure = 'The progress check failed. Nothing was saved. Press Check progress again.';
+export const UndatedReadingOffersRetryAfterFailure: Story = {
+  ...scenario({
+    session: {
+      ...STORED_READING,
+      annotation_line_1: '',
+      annotation_assessment: {
+        ...DEPARTURE_READING,
+        read_at: null,
+        criteria: { goal: DEPARTURE_READING.criteria.goal },
+      },
+      annotation_reading_withheld: undatedFailure,
+    },
+    facts: READ_FACTS,
+  }),
+  play: async ({ canvasElement }) => {
+    const card = await drawn(canvasElement);
+    await readingDrawn(card);
+    await expect(within(card).getByText(undatedFailure, { exact: false })).toBeVisible();
+    const retry = within(card).getByRole('button', { name: 'Check progress again' });
+    await expect(retry).toBeVisible();
+    await expect(retry.nextElementSibling).toHaveTextContent('Uses AI');
+    await expect(card.querySelector('[data-next-drift-stamp]')).toBeNull();
+  },
+};
+
 /* Empty: a heading, one sentence and Check progress. The monitor, the pause and the counter are not in the
    body, nothing says "Not checked yet" over an empty four-step bar, and Steer back waits for a departure. */
 export const Empty: Story = {

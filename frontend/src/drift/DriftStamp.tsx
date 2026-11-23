@@ -17,7 +17,6 @@ export function DriftStamp() {
   const { board } = useRunBoard();
   if (!annotate || !raw || !shape || shape.malformed || !annotation) return null;
   const line = lastRunLine(shape.stamp, nextNumber(raw['read_at']));
-  if (!line) return null;
   const stale = resultStale(shape, raw, annotation, entries);
   return (
     <div
@@ -25,12 +24,14 @@ export function DriftStamp() {
       data-next-drift-status
     >
       <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 max-[760px]:justify-start">
-        <p
-          className="m-0 text-label text-[var(--ink-label)] [font-family:var(--mono)]"
-          data-next-drift-stamp
-        >
-          {line}
-        </p>
+        {line ? (
+          <p
+            className="m-0 text-label text-[var(--ink-label)] [font-family:var(--mono)]"
+            data-next-drift-stamp
+          >
+            {line}
+          </p>
+        ) : null}
         {stale ? (
           <p
             className="m-0 text-label font-semibold text-[var(--amber)] [font-family:var(--mono)]"

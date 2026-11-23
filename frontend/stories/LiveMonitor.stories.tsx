@@ -234,7 +234,14 @@ export const TurnedOffBecauseModelCallsWerePaused: Story = {
     lease.state = leaseState({ on: false, last_end: { reason: 'paused', at: 1200 }, now: 9000 });
     lease.beat = 'gone';
     args.scenario.clock?.advance?.(20_000);
-    await waitFor(() => expect(note()).toHaveTextContent(/model calls are paused/));
+    await expect(
+      within(document.body).getByRole('switch', { name: 'Resume AI use' }),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(note()).toHaveTextContent(
+        'Live monitor turned off: model calls are paused. Resume AI use, then turn it on again.',
+      ),
+    );
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await waitFor(() => expect(toggle).toHaveAttribute('aria-disabled', 'true'));
     await expect(document.querySelector('[data-next-live-reason]')).toHaveTextContent(

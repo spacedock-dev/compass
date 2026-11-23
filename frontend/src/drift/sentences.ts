@@ -157,12 +157,13 @@ export const CLAIM_UNCITED =
    a stored reason never overrides a result derived from evidence the page holds. */
 export const LONG_RECONCILIATION_COVERAGE =
   'Some agent messages could not fit the final comparison. This line cannot be judged from that partial comparison.';
-/* Exact closed backend recovery sentence; ordinary withheld prose remains server-owned. */
+/* Saved long diagnostics use the same outcome wording as the server's withheld result. */
 export const LONG_INTERRUPTED =
-  'Compass stopped before this analysis outcome was saved. No new result is shown. Any recorded calls remain counted, and a fresh press is the only retry.';
-export const LONG_INTERRUPTED_OLDER = 'Earlier reading, saved before the interrupted analysis.';
+  'Compass stopped before this progress check outcome was saved. No new result is shown. Any recorded calls remain counted, and a fresh press is the only retry.';
+export const LONG_INTERRUPTED_OLDER =
+  'Earlier reading, saved before the interrupted progress check.';
 export const LONG_INCOMPLETE =
-  'Long analysis could not cover the saved work well enough to produce a new result. Any recorded calls remain counted, and a fresh press is the only retry.';
+  'The long progress check could not cover the saved work well enough to produce a new result. Any recorded calls remain counted, and a fresh press is the only retry.';
 export const LONG_WITHHELD = {
   'long-incomplete': LONG_INCOMPLETE,
   'long-interrupted': LONG_INTERRUPTED,
@@ -583,17 +584,15 @@ export const SCOPE =
   'What it reads is the evidence on this page: the observed record in this session’s activity, except entries marked as Compass’s answer, and the goal and output you saved, and nothing else. It does not read a diff, a file, a test or a deliverable, replies from git, gh or connected tools, or your screen.';
 
 export const PRESS_LINES: Readonly<Record<string, string>> = {
-  'idle-unknown': 'Check progress opens while this session runs.',
-  unobservable: 'This harness sends no events, so Check progress opens only while it runs.',
-  'turn-stop': 'Check progress opens while a turn runs or once the session ends.',
+  'idle-unknown': '{control} opens while this session runs.',
+  unobservable: 'This harness sends no events, so {control} opens only while it runs.',
+  'turn-stop': '{control} opens while a turn runs or once the session ends.',
   settling: 'Ready in a few seconds.',
   'stop-settling': 'Ready in a few seconds.',
   'revision-after-end': 'Your goal was saved after this session ended.',
 };
-export const PRESS_EVENTS = 'Check progress opens while this session runs or once it ends.';
-/* The disclosure under a refused Analyze, which holds the server's whole sentence. Its old name, "Why it can't
-   read", answered a question the reader had not asked; the reader wants to know why the button is off. */
-export const WHY_OFF = 'Why Analyze is off';
+export const PRESS_EVENTS = '{control} opens while this session runs or once it ends.';
+export const WHY_OFF = 'Why the progress check is off';
 
 export const FLIP_HOLD_MS = 10_000;
 export const FLIP_SAY_EVERY_MS = 60_000;
@@ -649,7 +648,7 @@ export const STEER_PURPOSE =
    correction. With a failed check still offering one, the line says the departures are left out of it. */
 export const STEER_OFF_MARKED = 'Steer back is off because you marked this analysis inaccurate.';
 export const STEER_OFF_OLDER =
-  'Steer back is off because this analysis read an earlier version of your intent. Analyze again to steer back from it.';
+  'Steer back is off because this progress check read an earlier version of your goal.';
 export const STEER_LEAVES_MARKED =
   'Steer back leaves these departures out because you marked this analysis inaccurate.';
 export const STEER_LEAVES_OLDER =

@@ -162,6 +162,11 @@ describe('the route and unchanged refusals read as the legacy page reads them', 
         annotation,
       };
       const route = readingRoute(payload as never, session as never);
+      const assessment = session['annotation_assessment'];
+      const control =
+        assessment && typeof assessment === 'object' && !Array.isArray(assessment)
+          ? 'Check progress again'
+          : 'Check progress';
       /* Deviation: the spent budget is worded as the session page's banner words it, with the reset as a
          local time rather than a full date. */
       const policy = payload['reading'] as Record<string, unknown> | null | undefined;
@@ -190,8 +195,8 @@ describe('the route and unchanged refusals read as the legacy page reads them', 
                     .replace(
                       "Last turn isn't recorded as finished. Run another turn to open Analyze.",
                       session['acquisition'] === 'event'
-                        ? 'Check progress opens while this session runs or once it ends.'
-                        : 'Check progress opens while this session runs.',
+                        ? `${control} opens while this session runs or once it ends.`
+                        : `${control} opens while this session runs.`,
                     )
                     /* Deviation (owner, 2026-11-02): Codex has no line of its own either, since a Codex
                        session is read at a turn stop and up to its last entry; a stale token falls to the
@@ -200,14 +205,14 @@ describe('the route and unchanged refusals read as the legacy page reads them', 
                       'Codex sessions can be analyzed only while a turn is running.',
                       eligibility(session as never, answered, Date.now())?.['reason'] ===
                         'turn-stop'
-                        ? 'Check progress opens while a turn runs or once the session ends.'
+                        ? `${control} opens while a turn runs or once the session ends.`
                         : session['acquisition'] === 'event'
-                          ? 'Check progress opens while this session runs or once it ends.'
-                          : 'Check progress opens while this session runs.',
+                          ? `${control} opens while this session runs or once it ends.`
+                          : `${control} opens while this session runs.`,
                     )
                     // The control and the saved goal use the session page's labels.
-                    .replace('Analyze opens while', 'Check progress opens while')
-                    .replace('so Analyze opens only while', 'so Check progress opens only while')
+                    .replace('Analyze opens while', `${control} opens while`)
+                    .replace('so Analyze opens only while', `so ${control} opens only while`)
                     .replace(
                       'Your intent was saved after this session ended.',
                       'Your goal was saved after this session ended.',

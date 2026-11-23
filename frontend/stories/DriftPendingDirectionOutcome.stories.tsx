@@ -58,8 +58,12 @@ const standsOnce = async (card: HTMLElement, text: string, press = 'Check progre
   await expect(within(card).getByRole('button', { name: 'Add as a line' })).toBeVisible();
   await expect(within(card).getByRole('button', { name: 'Make it the goal' })).toBeVisible();
   await expect(within(card).getByRole('button', { name: 'Leave it' })).toBeVisible();
-  await expect(within(card).getByRole('button', { name: press })).toBeVisible();
-  await expect(within(card).getByText('Uses AI', { exact: true })).toBeVisible();
+  const control = within(card).getByRole('button', { name: press });
+  await expect(control).toBeVisible();
+  const note = within(card).getByText('Uses AI', { exact: true });
+  await expect(note).toBeVisible();
+  await expect(control.nextElementSibling).toBe(note);
+  await expect(getComputedStyle(note).fontSize).toBe('13px');
 };
 
 const unsent = held();

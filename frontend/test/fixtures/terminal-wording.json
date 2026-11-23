@@ -109,14 +109,14 @@
   },
   "drift": {
     "press": {
-      "idle-unknown": "Check progress opens while this session runs.",
-      "unobservable": "This harness sends no events, so Check progress opens only while it runs.",
-      "turn-stop": "Check progress opens while a turn runs or once the session ends.",
+      "idle-unknown": "{control} opens while this session runs.",
+      "unobservable": "This harness sends no events, so {control} opens only while it runs.",
+      "turn-stop": "{control} opens while a turn runs or once the session ends.",
       "settling": "Ready in a few seconds.",
       "stop-settling": "Ready in a few seconds.",
       "revision-after-end": "Your goal was saved after this session ended."
     },
-    "pressEvents": "Check progress opens while this session runs or once it ends.",
+    "pressEvents": "{control} opens while this session runs or once it ends.",
     "levels": {
       "none_or_low": "None or low",
       "medium": "Medium",

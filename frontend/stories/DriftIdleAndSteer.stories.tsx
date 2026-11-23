@@ -2,12 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { clock, datedClock } from '../src/observed/values';
 import { readerUtcOffset } from '../src/drift/correction';
-import {
-  SCOPE_TEXT_IDLE,
-  STEER_OFF_MARKED,
-  STEER_OFF_OLDER,
-  WHY_OFF,
-} from '../src/drift/sentences';
+import { SCOPE_TEXT_IDLE, STEER_OFF_MARKED, WHY_OFF } from '../src/drift/sentences';
 import {
   DEPARTURE_READING,
   DriftScenario,
@@ -164,14 +159,15 @@ export const AStoredCodexLastTurnReadingLabelsTheTurn: Story = {
 };
 
 /* Each refusal the board can still publish says the condition that holds, and a press reveals the server's
-   whole sentence under Why Analyze is off. */
+   whole sentence under Why the progress check is off. */
 function refusal(
   harness: NonNullable<Scenario['harness']>,
   reason: string,
   line: string,
   extra: Record<string, unknown> = {},
+  sentence = `The server's own account of ${reason}.`,
 ): Story {
-  const sentence = `The server's own account of ${reason}.`;
+  const label = extra['annotation_assessment'] ? 'Check progress again' : 'Check progress';
   return {
     ...scenario({
       harness,
@@ -183,7 +179,7 @@ function refusal(
     }),
     play: async ({ canvasElement }) => {
       const canvas = within(canvasElement);
-      const analyze = await canvas.findByRole('button', { name: 'Check progress' });
+      const analyze = await canvas.findByRole('button', { name: label });
       await expect(analyze).toHaveAttribute('aria-disabled', 'true');
       await expect(await canvas.findByText(line)).toBeVisible();
       await expect(canvas.getByText(sentence)).not.toBeVisible();
@@ -209,6 +205,27 @@ export const RefusedIntentAfterEnd = refusal(
   'revision-after-end',
   'Your goal was saved after this session ended.',
   { ended_at: 950 },
+);
+export const FirstCheckWaitsForSessionEndToSettle = refusal(
+  'claude',
+  'settling',
+  'Ready in a few seconds.',
+  { ended_at: 999, annotation_line_1: '' },
+  'This session ended moments ago and its record is still settling. Check progress opens by itself in a few seconds.',
+);
+export const RepeatCheckWaitsForTheTurnToSettle = refusal(
+  'claude',
+  'stop-settling',
+  'Ready in a few seconds.',
+  { ...STORED_READING, finished_at: 999, annotation_line_1: '' },
+  'This session completed its turn moments ago and its record is still settling. Check progress again opens by itself in a few seconds.',
+);
+export const RepeatCheckWaitsForAnObservedEvent = refusal(
+  'antigravity',
+  'idle-unknown',
+  'Check progress again opens while this session runs or once it ends.',
+  { ...STORED_READING, acquisition: 'event', annotation_line_1: '' },
+  'Events from this session reach this board, but no session end has been observed. Check progress again opens while the session works, or once its end is observed.',
 );
 
 const correctionPosts: Record<string, unknown>[] = [];
@@ -285,7 +302,13 @@ export const SteerBackOffForAnEarlierIntent: Story = {
   }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(await canvas.findByText(STEER_OFF_OLDER)).toBeVisible();
+    const retry = await canvas.findByRole('button', { name: 'Check progress again' });
+    await expect(retry).toBeVisible();
+    await expect(
+      await canvas.findByText(
+        `Steer back is off because this progress check read an earlier version of your goal. ${retry.textContent} to steer back from it.`,
+      ),
+    ).toBeVisible();
     await expect(canvas.queryByRole('button', { name: 'Steer back' })).toBeNull();
   },
 };

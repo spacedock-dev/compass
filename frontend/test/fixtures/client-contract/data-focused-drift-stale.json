@@ -207,6 +207,7 @@
           "annotation_reading_refused": false,
           "annotation_reading_withheld": "",
           "annotation_reading_withheld_at": null,
+          "annotation_reading_withheld_reason": "",
           "annotation_revision": 2,
           "annotation_revision_count": 2,
           "annotation_settled_at": null,
@@ -366,7 +367,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "15092",
+      "Content-Length": "15134",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"

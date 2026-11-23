@@ -31,7 +31,6 @@ import {
   JOB_TITLE_AGAIN,
   READINGS_OFF,
   MODEL_PAUSE_EXPLANATION,
-  LONG_INTERRUPTED,
   WHY_OFF,
 } from './sentences';
 import { Why } from './Why';
@@ -64,7 +63,7 @@ export function ReadingCount({ count }: { readonly count: number }) {
 export function ReadingOutcome({ unless = '' }: { readonly unless?: string }) {
   const { model } = useDrift();
   const stored = String(model.annotation?.['reading_withheld'] || '');
-  const long = stored === LONG_INTERRUPTED;
+  const long = model.session['annotation_reading_withheld_reason'] === 'long-interrupted';
   if (!stored || stored === unless) return null;
   const age = withheldAge(model.annotation, model.generated);
   return (
@@ -606,7 +605,7 @@ export function RunPress({
         focusKey={focusKey}
         fallbackKey={fallbackKey ?? focusKey}
         onPress={() => {
-          /* A press on an Analyze the board refused opens its "Why Analyze is off", so the press shows the
+          /* A press on a refused progress check opens its explanation, so the press shows the
              reason rather than nothing: the short line beside it was already drawn. */
           if (!off && inert && pressed) {
             ctx.shell.controls.disclosures.set(
@@ -623,7 +622,7 @@ export function RunPress({
           }
         }}
       />
-      <span className="text-meta text-muted-foreground">{GLOSSARY.usesAi.shown}</span>
+      <span className="text-label text-muted-foreground">{GLOSSARY.usesAi.shown}</span>
     </>
   );
 }

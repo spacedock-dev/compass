@@ -33,7 +33,7 @@ import {
   type SteerSlot,
 } from './ReadingControl';
 import { DriftVerdict, ReadingResult } from './ReadingResult';
-import { readingsOff } from './route';
+import { readingsOff, routeRefusal } from './route';
 import {
   absenceAttr,
   READINGS_OFF,
@@ -130,7 +130,13 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
       <ReadingResult
         question={control}
         slotted={slotted}
-        steerOff={steerWithheld({ session, annotation, shape, offer })}
+        steerOff={steerWithheld({
+          session,
+          annotation,
+          shape,
+          offer,
+          canRetry: !routeRefusal(payload, session),
+        })}
         again={(steer) => (
           <ReadingControl board={board} primary={false} again steer={steer} refusalOf={refusal} />
         )}

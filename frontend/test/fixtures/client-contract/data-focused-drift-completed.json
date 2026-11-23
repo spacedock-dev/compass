@@ -218,6 +218,7 @@
           "annotation_reading_refused": false,
           "annotation_reading_withheld": "",
           "annotation_reading_withheld_at": null,
+          "annotation_reading_withheld_reason": "",
           "annotation_revision": null,
           "annotation_revision_count": 0,
           "annotation_settled_at": null,
@@ -400,6 +401,7 @@
           "annotation_reading_refused": false,
           "annotation_reading_withheld": "",
           "annotation_reading_withheld_at": null,
+          "annotation_reading_withheld_reason": "",
           "annotation_revision": 1,
           "annotation_revision_count": 1,
           "annotation_settled_at": null,
@@ -559,7 +561,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "20145",
+      "Content-Length": "20229",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"

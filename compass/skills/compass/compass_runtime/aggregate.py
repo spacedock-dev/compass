@@ -692,7 +692,11 @@ def _attach_annotations(
         entry = annotation_store.find(entries, row.get("harness"), sid)
         if now is not None:
             row["reading_eligibility"] = reading.press_eligibility(
-                row, entry["revisions"] if entry else (), now=now, settle_sec=settle_sec
+                row,
+                entry["revisions"] if entry else (),
+                now=now,
+                settle_sec=settle_sec,
+                has_reading=bool(entry and entry.get("assessment")),
             )
         published = annotation_store.published(
             entry,

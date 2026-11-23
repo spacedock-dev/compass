@@ -1961,6 +1961,37 @@ class AReadingIsKeptBesideTheWordsItReadTest(unittest.TestCase):
                 )
                 self.assertEqual(expected.format(button), self._published()["reading_withheld"])
 
+    def test_a_saved_long_outcome_publishes_its_reason_separately_from_the_sentence(self) -> None:
+        for reason in (
+            runtime_reading.WITHHELD_LONG_INTERRUPTED,
+            runtime_reading.WITHHELD_LONG_INCOMPLETE,
+        ):
+            with self.subTest(reason=reason):
+                annotation_store.record_withheld(
+                    self.config, self.state, "claude", "s1", reason=reason, spent=True
+                )
+                self.assertEqual(reason, self._published().get("reading_withheld_reason"))
+                self.assertEqual(
+                    runtime_reading.WITHHELD[reason], self._published()["reading_withheld"]
+                )
+
+        path = Path(annotation_store.store_path(self.config))
+        saved = json.loads(path.read_text())
+        saved["entries"][0]["withheld"] = next(
+            sentence
+            for sentence, reason in runtime_reading.LEGACY_WITHHELD.items()
+            if reason == runtime_reading.WITHHELD_LONG_INTERRUPTED
+        )
+        path.write_text(json.dumps(saved))
+        self.assertEqual(
+            runtime_reading.WITHHELD_LONG_INTERRUPTED,
+            self._published().get("reading_withheld_reason"),
+        )
+        annotation_store.record_reading(
+            self.config, self.state, "claude", "s1", assessment=self._assessment()
+        )
+        self.assertEqual("", self._published().get("reading_withheld_reason"))
+
     def test_an_old_saved_failure_still_explains_what_to_press(self) -> None:
         path = Path(annotation_store.store_path(self.config))
         stored = json.loads(path.read_text())

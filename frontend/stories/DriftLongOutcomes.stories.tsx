@@ -33,6 +33,7 @@ export const LocalDepartureWithoutGlobalReassurance: Story = {
 const interrupted = {
   ...session,
   annotation_reading_withheld: LONG_INTERRUPTED_SENTENCE,
+  annotation_reading_withheld_reason: 'long-interrupted',
   annotation_reading_withheld_at: 1001,
 };
 export const RestartKeepsTheEarlierReadingVisiblyOlder: Story = {

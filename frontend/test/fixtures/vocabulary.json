@@ -35,6 +35,7 @@
     "reading_refused",
     "reading_withheld",
     "reading_withheld_at",
+    "reading_withheld_reason",
     "revision",
     "revision_count",
     "settled_at",
@@ -238,6 +239,10 @@
   "levelSources": {
     "analysis": "From the progress check at {time}: each line of your goal against the tests, builds and messages it cited.",
     "live": "Live estimate: reads test and build results and file paths, not what your goal says."
+  },
+  "longWithheld": {
+    "long-incomplete": "The long progress check could not cover the saved work well enough to produce a new result. Any recorded calls remain counted, and a fresh press is the only retry.",
+    "long-interrupted": "Compass stopped before this progress check outcome was saved. No new result is shown. Any recorded calls remain counted, and a fresh press is the only retry."
   },
   "maxOutcomeLines": 6,
   "promptChosen": "chosen-prompt",

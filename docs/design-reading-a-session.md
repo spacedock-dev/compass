@@ -5042,6 +5042,12 @@ such a session: it is read up to its last recorded entry, the way a running sess
   refuses one. Every line the board can still publish states the condition that holds, a press on a
   refused Analyze opens its disclosure, and the disclosure is named "Why Analyze is off".
 
+On 2026-11-23, the disclosure became "Why the progress check is off". The short line and full
+explanation use the control's name where they refer to it. With a saved reading, that name is
+"Check progress again", even when the saved reading has no recorded time.
+An interrupted long check publishes its outcome token alongside its message. The page uses
+the token to mark an earlier reading even when the interruption has no diagnostic.
+
 #### Amended 2026-11-02 (owner): Codex's recorded turn finish is a turn stop
 
 A headless Codex run whose validated rollout stop stands reads "run finished" on Sessions and the

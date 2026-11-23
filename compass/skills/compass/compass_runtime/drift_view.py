@@ -1874,7 +1874,9 @@ def derive(
     lease = lease_state(context)
     live_on = bool(lease and lease["on"])
     analysis = (
-        analysis_level(session, parts.annotation, parts.shape, context) if parts.annotate else None
+        analysis_level(session, parts.annotation, parts.shape, context)
+        if parts.annotate and parts.harness != "codex"
+        else None
     )
     estimate = live_estimate(
         live_on=live_on,
