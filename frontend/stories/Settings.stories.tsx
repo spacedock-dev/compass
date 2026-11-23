@@ -801,7 +801,7 @@ export const BrowserSettingsInitialFailure: Story = {
 export const NotificationPermissionPending: Story = {
   args: { hold: 'permission' },
   play: async ({ canvas }) => {
-    const allow = await canvas.findByRole('button', { name: 'Allow', exact: true });
+    const allow = await canvas.findByRole('button', { name: /^Allow$/ });
     await userEvent.click(allow);
     await expect(canvas.getByText('Waiting for your browser’s permission.')).toBeVisible();
     await expect(allow).toHaveAttribute('aria-busy', 'true');
@@ -817,7 +817,7 @@ export const NotificationPermissionPending: Story = {
 export const NotificationPermissionDismissed: Story = {
   args: { permissionAnswer: 'default' },
   play: async ({ canvas }) => {
-    const allow = await canvas.findByRole('button', { name: 'Allow', exact: true });
+    const allow = await canvas.findByRole('button', { name: /^Allow$/ });
     await userEvent.click(allow);
     await expect(permissionPrompts).toBe(1);
     await expect(canvas.getByText(NOT_ASKED)).toBeVisible();
