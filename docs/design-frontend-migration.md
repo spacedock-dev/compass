@@ -16,6 +16,12 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+Departure (2026-11-23): Needs you starts with Waiting on you, Worth a look and Ready to
+wrap up. The view differential checks their membership against the board selector and
+masks the replaced layouts, headings and action wording. The unchanged coverage, reports
+and independent risk evidence retain their recorded answers. Coming next belongs on the
+session page. Dismiss and Mark as read both use the server dismissals store.
+
 Settings adds an inline Your data explanation. Its Copy button copies the terminal commands for
 the dashboard's listening port. The operation still runs in the terminal.
 

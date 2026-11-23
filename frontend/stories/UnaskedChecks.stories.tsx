@@ -124,7 +124,7 @@ export const FlagOffOnAttention: Story = {
   args: { scenario: scenario({ initialView: 'attention', payload: { unasked: false } }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByText('OBSERVED', { exact: true });
+    await canvas.findByRole('button', { name: "What Compass can't see" });
     await expect(
       canvas.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
     ).toBeNull();
@@ -222,7 +222,10 @@ export const AttentionPointsToTheToggle: Story = {
       name: 'Unasked checks waiting for permission',
     });
     await expectCueLinkColour(cue);
-    await expect(cue).toHaveTextContent('Allow Codex to run unasked checks');
+    await expect(cue).toHaveTextContent(
+      'use “Allow Codex to run unasked checks” in its “Is it on track?” card.',
+    );
+    await expect(cue).not.toHaveTextContent('Drift card');
     await userEvent.click(within(cue).getByRole('link', { name: 'Synthetic session' }));
     await expect(await canvas.findByRole('switch', { name: off })).toHaveAttribute(
       'aria-checked',
@@ -287,7 +290,7 @@ export const UnreadableSessionIsAbsentFromAttention: Story = {
   args: { scenario: { ...unreadable(), initialView: 'attention' } },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByText('OBSERVED', { exact: true });
+    await canvas.findByRole('button', { name: "What Compass can't see" });
     await expect(
       canvas.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
     ).toBeNull();

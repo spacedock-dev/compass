@@ -231,52 +231,31 @@ The terminal session and project lists use the same group, parent and waiting wo
 
 ## Needs you
 
-The Needs you brief counts **Waiting on you**, **Worth a look** and **Ready to wrap up**.
-**Also at risk, off the session count** holds quota pressure, location gaps, concurrent checkout
-warnings and requests whose session ownership is not established.
-**Not on this board yet** names the capabilities no source supports. Coverage details describe
-which harnesses and observations Compass could read.
+**Waiting on you** puts native waits and exact requests first. A session that reports both
+counts once. Open session shows the request and the harness's reason. Answer a native prompt
+in its terminal. A question registered through `ask_operator` offers its response buttons
+on the session page. Unanswered questions expire, and `--no-ask` disables that lane.
 
-**Waiting on you** combines native harness gates with questions registered through `ask_operator`.
-Both reasons can appear on the same row and session page, and the session counts once. An open exact request keeps the session in this queue
-even if it reported an end.
-Native permission prompts, plan approvals, and harness questions must still be answered in that
-session's terminal; Compass does not mark them answered on the session's behalf. A Claude Code or
-Codex row therefore carries a control that copies the command that harness's own CLI takes to
-re-enter that session, so reaching the terminal is a paste rather than a hunt. The other eight
-harnesses publish no session id their CLI would accept, and their rows show no control rather than a
-guessed command. Where Compass can reach the terminal a session is running in, the row carries a
-second control that raises it, so the hunt across tabs ends in a click rather than a paste. That
-reach is narrow: macOS, tmux, a session that started while this dashboard has been up, and exactly
-one terminal attached to it. Rows outside it carry no raise control at all, and the queue's coverage
-details say how far the feature reached rather than repeating the absence on every row. A raise
-changes what that terminal displays; it does not bring the window in front of other applications,
-and nothing is ever typed into the session. The item leaves when the harness publishes evidence that the wait ended. A
-question registered through `ask_operator` has answer buttons in the session detail. Choosing
-one returns that option to the waiting agent. Free-form replies are not
-accepted, unanswered questions expire, and `--no-ask` disables this lane.
+**Worth a look** lists sessions with repeated tool failures, long turns, quiet launches,
+conflicting source evidence, a measured shared label, or uncommitted work at an observed end.
+Open the session to investigate, or Dismiss the row. Show technical details holds the evidence
+behind each warning. The Needs you badge counts these sessions and those waiting on you.
 
-**Worth a look** names detected failed-tool loops, long-running turns, quiet launches, uncommitted
-work at a reported end, conflicting source evidence and labels shared across measured locations.
-Waiting on the reader takes precedence. When a label spans multiple measured locations, each
-measured member has its own exact session link. The warning also reports how many locations
-Compass could not measure. Sessions in one measured
-directory or repository need no label warning. A multi-location sentence counts only measured
-sessions, followed by a separate count of unknown locations. A missing Claude worktree layout
-keeps its label and worktree name but counts as unknown. Worktree names are display text.
-Two non-ended sessions working or waiting with measured evidence of the same checkout get a
-concurrent-session warning; a matching name alone cannot establish that evidence.
-Each warning links its members by title, worktree, id and start time, without rendering raw checkout
-paths or identity keys. Missing titles and start times are stated as not published.
-It never absorbs their stops, ends or tasks. A quiet row is never promoted into proof that nothing is waiting. Claude, Codex, Copilot, Cursor, OpenCode and Pi have wait-reporting paths; the coverage detail names
-conditions. OpenCode covers parent permissions with its project adapter; Pi covers persisted-session
-extension UI prompts on 0.85.1. Neither proves installation or reconstructs a wait after restart.
+**Ready to wrap up** lists observed ends with clean git state after exact requests have cleared.
+Mark as read records that you have seen a row. Show more expands beyond the first three rows.
+Marks and dismissals stay until the session records new activity and survive `--forget`. Undo
+restores a row. A stop alone leaves a session available for another turn, and a later lifecycle
+event can clear an end. Upcoming work appears in Right now on the session page.
 
-**Ready to wrap up** lists sessions that reported an end and clean git state after any exact
-request has cleared. A stop leaves the session available for another turn. A session end conveys
-no readership, remote commit or termination cause. Later lifecycle activity for the same id can
-clear an end mark. Stop followed by SessionEnd still reads ended. A late SessionEnd after resumed
-activity also reads ended because hooks cannot identify which process sent it.
+An end establishes neither who read the work, whether it was committed remotely, nor why it
+ended. A SessionEnd after a stop still reads ended. A late SessionEnd after resumed activity
+also reads ended because hooks cannot identify which process sent it.
+
+Open **What Compass can't see** for coverage by agent and the evidence missing from the board.
+**Other warnings** includes quota pressure, concurrent checkout warnings, location gaps and
+requests whose owner is unknown. A matching display label alone cannot prove a shared checkout.
+Command reports show observed command shapes. **Not on this board yet** lists what the available
+sources cannot support.
 
 ## Usage and rate limits
 

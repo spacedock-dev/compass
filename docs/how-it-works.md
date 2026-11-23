@@ -183,7 +183,7 @@ even on a project page.
 |---|---|---|
 | Sessions | `s` | Every session, with active work above recent history. Each active session shows where it is, what it is doing now, what it does next and whether it is blocked. Clicking a goal opens that session at its Goal card. |
 | Projects | `p` | Sessions grouped by project. Each project has a page with a briefing and the views Overview, Timeline, Decisions and Usage and alerts. |
-| Needs you | `n` | Requests, reported blocks and risks. The badge counts Waiting on you and Worth a look. |
+| Needs you | `n` | Waiting on you comes first, followed by Worth a look and Ready to wrap up. The badge counts the first two queues. Open What Compass can't see for coverage and its limits. |
 | Goal history | none | Every session on the board, plus the goals Compass has kept, each labeled with where it came from. |
 | Settings | none | AI use controls, browser notifications, progress check limits, and what Forget everything deletes and keeps. Changes save as you make them. |
 | Help | none | How Compass works, See an example, the icon legend, progress check terms and common questions. |

@@ -468,11 +468,8 @@ export const AttentionQuietCoverage: Story = {
   args: { hash: '#n=attention', board: projectStatusBoard },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(
-      await canvas.findByText(
-        '0 waiting on you · 0 worth a look · 0 ready to wrap up. 1 with limited state evidence.',
-      ),
-    ).toBeVisible();
+    await userEvent.click(await canvas.findByRole('button', { name: "What Compass can't see" }));
+    await waitFor(() => expect(canvas.getByText('1 with limited state evidence.')).toBeVisible());
     await expect(canvas.getByRole('status', { name: 'Working sessions' })).toHaveTextContent(
       '1 session working',
     );

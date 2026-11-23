@@ -14,6 +14,7 @@ import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
 import { createShell } from '../src/shell/createShell';
 import { createFakeEnvironment } from '../src/transport/testing';
+import { atPageWidth } from './PageFit';
 import { fakeBackend } from '../test/storage_backends';
 
 const generated = new Date(2026, 10, 23, 12).getTime() / 1000;
@@ -22,7 +23,17 @@ const board = {
   generated,
   window_hours: 24,
   ask: true,
-  asks: [{ id: 'question', harness: 'claude', question: 'Proceed?', age_sec: 360 }],
+  dismiss: true,
+  asks: [
+    { id: 'question', harness: 'claude', question: 'Proceed?', age_sec: 360 },
+    {
+      id: 'make-change',
+      harness: 'claude',
+      session_id: 'sign-in',
+      question: 'Repeat the test?',
+      age_sec: 360,
+    },
+  ],
   usage: [
     {
       harness: 'claude',
@@ -93,7 +104,23 @@ const board = {
       delegated_quiet_since: generated - 3600,
       delegated_latest_launch_at: generated - 360,
     },
-    { ...claude, sid: 'untimed', state: 'needs_input', state_detail: 'Awaiting confirmation' },
+    {
+      ...claude,
+      sid: 'untimed',
+      harness: 'codex',
+      title: 'Check the deployment',
+      state: 'needs_input',
+      state_detail: 'Awaiting confirmation',
+    },
+    ...['Review the guide', 'Check the screenshots', 'Update the release notes'].map(
+      (title, index) => ({
+        ...claude,
+        sid: `clean-${index}`,
+        title,
+        ended_at: generated - 120,
+        dirty: false,
+      }),
+    ),
     {
       ...claude,
       sid: 'long',
@@ -112,6 +139,7 @@ const withoutClock = {
     sid: `checkout-${index + 1}`,
     title: `Checkout ${index + 1}`,
     project_key: `path:checkout-${index + 1}`,
+    project_identity_source: 'working directory path',
     started_at: time.getTime() / 1000,
   })),
   usage: [
@@ -133,10 +161,19 @@ function absoluteTime(time: Date) {
   return `on ${date} at ${clock}`;
 }
 
-function Example({ missingClock = false }: { readonly missingClock?: boolean }) {
+function Example({
+  missingClock = false,
+  canDismiss = true,
+  onRefresh,
+}: {
+  readonly missingClock?: boolean;
+  readonly canDismiss?: boolean;
+  readonly onRefresh?: (refresh: () => Promise<void>) => void;
+}) {
   const [shell] = useState(() => {
     const backend = fakeBackend();
-    return createShell({
+    let revision = 0;
+    const shell = createShell({
       env: createFakeEnvironment(),
       router: createRouter(fakeRouterEnvironment('#n=attention').env),
       provider: () => backend,
@@ -147,12 +184,21 @@ function Example({ missingClock = false }: { readonly missingClock?: boolean }) 
         Promise.resolve(
           new Response(
             url.startsWith('/api/data')
-              ? JSON.stringify(missingClock ? withoutClock : board)
-              : '{}',
+              ? JSON.stringify(missingClock ? withoutClock : { ...board, dismiss: canDismiss })
+              : '{"ok":true,"persisted":true}',
+            { headers: { 'X-Compass-Revision': `9.${++revision}` } },
           ),
         ),
     });
+    return shell;
   });
+  useEffect(
+    () =>
+      onRefresh?.(async () => {
+        await shell.runtime.refresh();
+      }),
+    [onRefresh, shell],
+  );
   useEffect(
     () => () => {
       shell.runtime.dispose();
@@ -171,42 +217,57 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+function lane(canvasElement: HTMLElement, name: string) {
+  const section = canvasElement.querySelector<HTMLElement>(
+    `[data-next-attention-section="${name}"]`,
+  );
+  if (!section) throw new Error(`Missing ${name} section`);
+  return within(section);
+}
+
+export const QueuesAndBadge: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('heading', { name: 'Waiting on you (2)' });
+    const headings = canvas.getAllByRole('heading', { level: 2 });
+    await expect(headings.slice(0, 3).map((node) => node.textContent)).toEqual([
+      'Waiting on you (2)',
+      'Worth a look (4)',
+      'Ready to wrap up (5)',
+    ]);
+    const waiting = lane(canvasElement, 'needs');
+    const flagged = lane(canvasElement, 'risk');
+    const ready = lane(canvasElement, 'close');
+    await expect(waiting.getAllByRole('img', { name: 'Waiting on you' })).toHaveLength(2);
+    await expect(flagged.getAllByRole('img', { name: 'Worth a look' })).toHaveLength(4);
+    await expect(ready.getAllByRole('img', { name: 'Ended' })).toHaveLength(3);
+    await expect(ready.getByRole('button', { name: 'Show 2 more' })).toBeVisible();
+    await expect(canvas.getByRole('link', { name: 'Needs you 6' })).toBeVisible();
+    for (const row of canvasElement.querySelectorAll('.next-attention-session')) {
+      await expect(row.textContent).not.toMatch(/\bfinished\b/i);
+    }
+  },
+};
+
 export const ReadableTimes: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByRole('heading', { name: /Waiting on you/ });
-    const wait = canvasElement.querySelector(
-      '[data-next-attention-subject=\'session:["claude","sign-in"]\']',
-    );
-    await expect(wait).toHaveTextContent('Waiting for command approval');
-    await expect(wait).toHaveTextContent('waiting 6 minutes');
-    await expect(wait).toHaveTextContent('in 5 minutes');
-    const untimed = canvasElement.querySelector(
-      '[data-next-attention-subject=\'session:["claude","untimed"]\']',
-    );
-    await expect(untimed).toHaveTextContent('Awaiting confirmation');
-    await expect(untimed).not.toHaveTextContent(/waiting \d/);
-    await expect(canvas.getByText(/ended 25 minutes ago/)).toBeVisible();
-    await expect(canvas.getByText(/ended 2 hours ago/)).toBeVisible();
-    await expect(canvas.getByText(/ended 4 minutes ago/)).toBeVisible();
-    await expect(canvas.getByText(/Sources disagree .*stop observed at/)).toBeVisible();
+    await canvas.findByText('Waiting for command approval');
+    await expect(lane(canvasElement, 'needs').getByText(/waiting 6 minutes/)).toBeVisible();
+    await expect(canvas.getByText('Awaiting confirmation')).toBeVisible();
+    await expect(canvas.getByText(/Ended 25 minutes ago/)).toBeVisible();
     await expect(canvas.getByText(/1 hour 10 minutes into turn/)).toBeVisible();
     await expect(canvas.getByText('1 hour 6 minutes')).toBeVisible();
-    const reset = new Date((generated + 3960) * 1000).toLocaleTimeString(undefined, {
-      timeStyle: 'short',
-    });
-    await expect(canvas.getByText(`Reset at ${reset}`)).toBeVisible();
-    const launch = canvasElement.querySelector(
-      '[data-next-attention-kind="quiet-launch"] .next-attention-risk-observation > p',
+    await expect(canvas.queryByRole('heading', { name: 'Not on this board yet' })).toBeNull();
+    await userEvent.click(canvas.getByRole('button', { name: "What Compass can't see" }));
+    await waitFor(() => expect(canvas.getByText('Coverage by agent')).toBeVisible());
+    await waitFor(() =>
+      expect(canvas.getByRole('heading', { name: 'Not on this board yet' })).toBeVisible(),
     );
-    await expect(launch).toHaveTextContent('2 recorded launches');
-    await expect(launch).toHaveTextContent('Latest launch 6 minutes ago');
-    await expect(canvas.getByText('source · claude · waiting 6 minutes')).toBeVisible();
-    const report = canvas.getByText(/Bash · 4 minutes ago/);
-    await expect(report).toBeVisible();
-    await expect(getComputedStyle(report).fontFamily).toMatch(/\bInter\b/i);
-    const view = canvasElement.querySelector<HTMLElement>('[data-next-view-body="attention"]');
-    await expect(view?.innerText).not.toMatch(/\b(?:\d{10}|\d{4}-\d{2}-\d{2}T|KiB|\d+[smhd]\b)/);
+    await expect(
+      canvas.getByText('A shape match does not prove the action succeeded.'),
+    ).toBeVisible();
+    await expect(canvas.getByText(/Bash · 4 minutes ago/)).toBeVisible();
   },
 };
 
@@ -215,9 +276,17 @@ export const AbsoluteTimesWithoutBoardClock: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByText(`Reset ${absoluteTime(absoluteReset)}`);
+    const cards = lane(canvasElement, 'risk');
+    const controls = cards.getAllByRole('button', { name: 'Show technical details' });
     for (const [index, time] of absoluteTimes.entries()) {
-      const member = canvas.getByRole('link', { name: new RegExp(`Checkout ${index + 1} ·`) });
-      await expect(member).toHaveTextContent(`Start time ${absoluteTime(time)}`);
+      const control = controls[index];
+      if (!control) throw new Error('Missing location evidence');
+      await userEvent.click(control);
+      await waitFor(() =>
+        expect(
+          cards.getByText(new RegExp(`Checkout ${index + 1}.*Start time ${absoluteTime(time)}`)),
+        ).toBeVisible(),
+      );
     }
   },
 };
@@ -392,3 +461,90 @@ export const HeaderTracksTheCurrentPageAndBoard: Story = {
     await waitFor(() => expect(pill).toHaveTextContent(SHOWN.nothingWorking));
   },
 };
+
+export const DismissAndUndo: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('heading', { name: /Worth a look/ });
+    const article = canvas
+      .getByRole('heading', { name: 'Review pull request #482' })
+      .closest('article');
+    if (!article) throw new Error('Missing the flagged session');
+    const row = within(article);
+    await expect(
+      row.getByText('Worth a look: Ended with uncommitted work (2 changed entries)'),
+    ).toBeVisible();
+    await userEvent.click(row.getByRole('button', { name: 'Show technical details' }));
+    await expect(row.getByRole('button', { name: 'Hide technical details' })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: "What Compass can't see" })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    await userEvent.click(row.getByRole('button', { name: 'Dismiss' }));
+    await expect(
+      (await canvas.findAllByText('Dismissed.')).find((node) =>
+        node.closest('[data-next-dismiss-receipt]'),
+      ),
+    ).toBeVisible();
+    await userEvent.click(canvas.getByRole('button', { name: 'Undo' }));
+    await expect(
+      (await canvas.findAllByText('Restored.')).find((node) =>
+        node.closest('[data-next-dismiss-receipt]'),
+      ),
+    ).toBeVisible();
+  },
+};
+
+export const DismissalsOff: Story = {
+  args: { canDismiss: false },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('heading', { name: /Worth a look/ });
+    await expect(canvas.queryByRole('button', { name: 'Dismiss' })).toBeNull();
+    await expect(canvas.queryByRole('button', { name: 'Mark as read' })).toBeNull();
+  },
+};
+
+export const WrapUpStaysOpen: Story = {
+  play: async ({ canvasElement, mount }) => {
+    let refresh: (() => Promise<void>) | undefined;
+    await mount(
+      <Example
+        onRefresh={(run) => {
+          refresh = run;
+        }}
+      />,
+    );
+    const canvas = within(canvasElement);
+    await canvas.findByRole('heading', { name: /Ready to wrap up/ });
+    const section = lane(canvasElement, 'close');
+    await expect(section.getAllByRole('listitem')).toHaveLength(3);
+    await userEvent.click(section.getByRole('button', { name: 'Show 2 more' }));
+    await expect(section.getAllByRole('listitem')).toHaveLength(5);
+    if (!refresh) throw new Error('Missing the board refresh');
+    await refresh();
+    await expect(section.getByRole('button', { name: 'Show fewer (hide 2)' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    await expect(section.getAllByRole('listitem')).toHaveLength(5);
+  },
+};
+
+function fit(width: number): Story {
+  return {
+    play: ({ canvasElement }) =>
+      atPageWidth(width, async () => {
+        const canvas = within(canvasElement);
+        await canvas.findByRole('heading', { name: 'Waiting on you (2)' });
+        await userEvent.click(canvas.getByRole('button', { name: "What Compass can't see" }));
+        await waitFor(() =>
+          expect(canvas.getByRole('heading', { name: 'Not on this board yet' })).toBeVisible(),
+        );
+      }),
+  };
+}
+
+export const Fits390 = fit(390);
+export const Fits375 = fit(375);
+export const Fits320 = fit(320);

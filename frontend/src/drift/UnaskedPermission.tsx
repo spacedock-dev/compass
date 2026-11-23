@@ -262,7 +262,7 @@ export function UnaskedAttentionCue({ payload }: { readonly payload: Row }) {
           Compass is set to check these sessions against the goal you typed while you are away, and
           Codex runs those checks. Codex needs your permission first, so{' '}
           {never ? 'none of them has been checked yet.' : 'they are not being checked now.'} Open a
-          session below and use “Allow Codex to run unasked checks” in its Drift card.
+          session below and use “Allow Codex to run unasked checks” in its “Is it on track?” card.
         </p>
       )}
       {refusal ? <p>{refusal}</p> : null}

@@ -1,138 +1,210 @@
 import { Card } from '../ui/card';
-import { CopyControl, RaiseControl, resumeCommand } from '../controls';
-import type { BoardRisk, Row } from '../observed';
-import { expandDurationUnits, formatTimestamp } from '../shell/format';
+import { CopyControl, RaiseControl, resumeCommand, useControls } from '../controls';
+import { TechnicalDetails } from '../controls/TechnicalDetails';
+import { Button } from '../ui/button';
+import { Icon } from '../ui/icons';
+import { StatusTile } from '../ui/status-tile';
+import { endedAt, sessionKey, type BoardRisk, type ObservedSession } from '../observed';
+import { expandDurationUnits, formatDurationWords, formatTimestamp } from '../shell/format';
 import { AttentionLink } from './AttentionLink';
-import type { AttentionModel, Subject } from './model';
+import { subjectAge, type AttentionModel, type Subject } from './model';
 import { riskRow } from './subjects';
 import {
-  checkpointRows,
   delegatedAttentionText,
   riskSourceText,
   inputNow,
-  subjectNow,
   subjectOutcome,
-  subjectSource,
-  subjectRoute,
-  subjectTitle,
+  subjectNow,
+  harnessLabel,
 } from './text';
+import { WorthALookFlag } from './WorthALookFlag';
 
-/* The way back into a waiting session, drawn on the gate queue's rows only. Every section here names a
-   session, so the controls would render on all four, and a small affordance on every row is furniture
-   rather than an affordance. This one answers "it is waiting on me, get me there", which is the question
-   only NEEDS YOU NOW asks. The copy is reversible and always works; the raise is neither, and a reader who
-   has only the raise has lost the affordance that cannot fail, so it comes after the copy and never in
-   place of it. Both name the exact harness and sid this row drew. */
-function GateControls({ session }: { readonly session: Row | null }) {
-  if (!session) return null;
-  const harness = String(session['harness'] || '');
-  const sid = String(session['sid'] || '');
-  const command = resumeCommand(harness, String(session['resume_id'] || ''));
+function WaitingEvidence({
+  row,
+  subject,
+  model,
+}: {
+  readonly row: ObservedSession;
+  readonly subject: Subject;
+  readonly model: AttentionModel;
+}) {
+  const { focus } = useControls();
+  const command = resumeCommand(row.harness, String(row.resume_id ?? ''));
+  const canRaise = Boolean(focus && row.focusable === true);
+  const signals = subjectNow(
+    {
+      ...subject,
+      signals: subject.signals.filter(
+        ({ kind }) => kind !== 'ask' && kind !== 'input' && kind !== 'task',
+      ),
+    },
+    model,
+  );
+  if (!command && !canRaise && !signals.length) return null;
   return (
-    <span className="next-attention-controls">
-      {command ? <CopyControl kind="command" harness={harness} sid={sid} value={command} /> : null}
-      <RaiseControl
-        harness={harness.trim()}
-        sid={sid.trim()}
-        focusable={session['focusable'] === true}
-      />
-    </span>
+    <TechnicalDetails disclosureKey={`attention-wait:${sessionKey(row)}`}>
+      {signals.map((signal, index) => (
+        <p key={index}>
+          {signal.text}
+          {signal.note ? ` · ${signal.note}` : ''}
+        </p>
+      ))}
+      <div className="next-attention-actions">
+        {command ? (
+          <CopyControl kind="command" harness={row.harness} sid={row.sid} value={command} />
+        ) : null}
+        {canRaise ? <RaiseControl harness={row.harness} sid={row.sid} focusable /> : null}
+      </div>
+    </TechnicalDetails>
   );
 }
 
-function NowValues({
-  rows,
-  className,
-}: {
-  readonly rows: readonly { readonly text: string; readonly note: string }[];
-  readonly className: string;
-}) {
-  // The rows of one subject are an ordered list of readings, and two can be the same sentence, so the
-  // position is their identity.
-  return rows.map((row, index) => (
-    <span key={index} className={className}>
-      {row.text}
-      {row.note ? <small>{row.note}</small> : null}
-    </span>
-  ));
-}
-
-/* A subject of the queues below At risk: why it is here, what outcome it serves, what is observed now,
-   what is next and where the claim came from. Hidden rows stay in the document, as they do on the legacy
-   page, so a reader's find and a screen reader's list both count what the heading counts. */
-export function SubjectItem({
-  subject,
+export function SessionItem({
+  row,
+  section,
   model,
   hidden,
+  subject,
+  risk,
+  reason,
+  onMark,
 }: {
-  readonly subject: Subject;
+  readonly row: ObservedSession;
+  readonly section: 'needs' | 'risk' | 'close';
   readonly model: AttentionModel;
   readonly hidden: boolean;
+  readonly subject?: Subject | undefined;
+  readonly risk?: BoardRisk;
+  readonly reason?: string;
+  readonly onMark?: (() => void) | undefined;
 }) {
-  const { title, secondary } = subjectTitle(subject);
-  const outcome = subjectOutcome(subject, model);
-  const hasNativeWait =
-    subject.section === 'needs' &&
-    subject.asks.length > 0 &&
-    subject.session?.['state'] === 'needs_input' &&
-    !subject.signals.some(({ kind }) => kind === 'input');
-  const now = subjectNow(subject, model);
-  const nativeWait = hasNativeWait ? inputNow(subject.session) : null;
-  const checkpoints = checkpointRows(subject, model);
+  const key = sessionKey(row);
+  const route = {
+    view: 'session',
+    project: row.project,
+    harness: row.harness,
+    session: row.sid,
+  } as const;
+  const time = formatTimestamp(
+    row.isEnded ? endedAt(subject?.session ?? {}) : row.lastActivityAt,
+    model.generated,
+    { style: 'same-day-relative' },
+  );
+  const wait = row.isNeeds && subject ? inputNow(subject.session) : null;
+  const age = subject && formatDurationWords(subjectAge(subject, model.generated));
+  const evidence = risk ? riskRow(risk, model, false, subject) : null;
+  const shortRisk = risk?.nowText === reason;
+  const member =
+    risk?.kind === 'collision'
+      ? subject?.sessions.find((source) => sessionKey(source) === key)
+      : undefined;
+  const started =
+    member && formatTimestamp(member['started_at'], model.generated, { style: 'clock' });
+  const outcome = subject && subjectOutcome(subject, model);
   return (
-    <li {...(hidden ? { hidden: true } : {})}>
-      <Card
-        as="article"
-        variant="attention-item"
-        className="next-attention-item next-attention-item--legacy"
-        data-next-attention-subject={subject.key}
-        data-next-subject-key={subject.key}
-        data-next-attention-kind={subject.primaryKind}
+    <li hidden={hidden}>
+      <article
+        className="next-attention-session"
+        data-next-attention-subject={key}
+        data-next-subject-key={key}
+        data-next-attention-kind={risk?.kind ?? subject?.primaryKind ?? section}
       >
-        <h3 className="next-attention-why" data-next-attention-part="why">
-          <AttentionLink
-            route={subjectRoute(subject)}
-            focusKey={`attention:subject:${subject.key}`}
-            fallback={`attention:section:${subject.section}`}
+        {section === 'risk' ? (
+          <span
+            role="img"
+            aria-label="Worth a look"
+            className="grid size-10 shrink-0 place-items-center rounded-status-tile bg-[var(--status-waiting-bg)] text-[var(--worth-a-look)]"
           >
-            {`${title}${secondary}`}
-          </AttentionLink>
-        </h3>
-        <p className="next-attention-part" data-next-attention-part="outcome">
-          <span className="next-attention-label">{outcome.label}</span>
-          <span>{outcome.text}</span>
-        </p>
-        <div className="next-attention-part" data-next-attention-part="now">
-          <span className="next-attention-label">NOW</span>
-          <span>
-            <NowValues rows={now} className="next-attention-now-value" />
-            {nativeWait ? (
-              <span className="next-attention-now-value" data-next-native-wait>
-                {nativeWait.text}
-                {nativeWait.note ? <small>{nativeWait.note}</small> : null}
-              </span>
-            ) : null}
+            <Icon name="worth-a-look" size={20} />
           </span>
-        </div>
-        {checkpoints.length ? (
-          <p className="next-attention-part" data-next-attention-part="next">
-            <span className="next-attention-label">NEXT</span>
-            <span>
-              <NowValues
-                rows={checkpoints.map((text) => ({ text, note: '' }))}
-                className="next-attention-now-value"
-              />
+        ) : (
+          <StatusTile state={section === 'needs' ? 'Waiting on you' : 'Ended'} focusable={false} />
+        )}
+        <div className="next-attention-session-body">
+          <h3 data-authored>{row.titleText}</h3>
+          <p className="next-attention-session-meta" data-next-attention-part="source">
+            <span data-authored>
+              {harnessLabel(model, row.harness)}
+              {row.project ? ` · ${row.project}` : ''}
             </span>
+            {section === 'needs' && age
+              ? ` · waiting ${age}`
+              : time
+                ? ` · ${row.isEnded ? 'Ended' : 'Last active'} ${time}`
+                : section === 'close'
+                  ? ' · Ended'
+                  : ''}
           </p>
+          {section === 'needs' ? (
+            <div className="next-attention-reason">
+              {row.askKnown ? <p data-authored>{row.askText}</p> : null}
+              {wait && wait.text !== row.askText ? (
+                <p data-authored={wait.text !== 'Needs-input state reported' || undefined}>
+                  {wait.text === 'Needs-input state reported'
+                    ? 'The agent is waiting for your input.'
+                    : wait.text}
+                </p>
+              ) : null}
+              {wait?.note ? <p>{wait.note}</p> : null}
+            </div>
+          ) : null}
+          {section === 'risk' && reason ? (
+            <div className="next-attention-reason next-attention-risk-observation">
+              <WorthALookFlag reason={reason} />
+              {risk && !shortRisk ? (
+                <p data-authored>
+                  {risk.delegatedSession
+                    ? delegatedAttentionText(risk.delegatedSession, model.generated)
+                    : risk.kind === 'long-turn'
+                      ? expandDurationUnits(risk.nowText)
+                      : risk.nowText}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        <div className="next-attention-actions">
+          <AttentionLink
+            route={route}
+            focusKey={`attention:subject:${key}`}
+            fallback={`attention:section:${section}`}
+          >
+            Open session
+          </AttentionLink>
+          {onMark ? (
+            <Button type="button" variant="quiet" onClick={onMark}>
+              {section === 'close' ? 'Mark as read' : 'Dismiss'}
+            </Button>
+          ) : null}
+        </div>
+        {section === 'needs' && subject ? (
+          <div className="next-attention-evidence">
+            <WaitingEvidence row={row} subject={subject} model={model} />
+          </div>
         ) : null}
-        <p className="next-attention-part" data-next-attention-part="source">
-          <span className="next-attention-label">SOURCE</span>
-          <span>
-            {subjectSource(subject, model)}
-            {subject.section === 'needs' ? <GateControls session={subject.session} /> : null}
-          </span>
-        </p>
-      </Card>
+        {evidence && risk ? (
+          <div className="next-attention-evidence">
+            <TechnicalDetails disclosureKey={`attention-risk:${key}`}>
+              <p>{risk.identity}</p>
+              {member ? (
+                <p>{`${row.titleText} · ${String(member['worktree'] || 'No worktree published')} · ${row.harness}:${row.sid} · Start time ${started ?? 'not published'}`}</p>
+              ) : null}
+              {outcome?.label === 'OUTCOME' ? <p>{outcome.text}</p> : null}
+              <p>{riskSourceText(risk)}</p>
+              <p>{risk.nowText}</p>
+              {evidence.signals.map((signal, index) => (
+                <p key={index}>
+                  {signal.text}
+                  {signal.note ? ` · ${signal.note}` : ''}
+                </p>
+              ))}
+              {(risk.nextKnown ? [risk.nextText] : evidence.checkpoints).map((text, index) => (
+                <p key={index}>{text}</p>
+              ))}
+            </TechnicalDetails>
+          </div>
+        ) : null}
+      </article>
     </li>
   );
 }
@@ -151,7 +223,7 @@ export function RiskItem({
   readonly index: number;
   readonly model: AttentionModel;
   readonly board?: boolean;
-  readonly retained?: Subject;
+  readonly retained?: Subject | undefined;
 }) {
   const row = riskRow(risk, model, board, retained);
   const outcome = row.subject ? subjectOutcome(row.subject, model) : null;
@@ -177,7 +249,7 @@ export function RiskItem({
       >
         <span className="next-attention-index">{index + 1}</span>
         <div className="next-attention-risk-identity">
-          <h3>
+          <h3 data-authored>
             <AttentionLink
               route={row.route}
               focusKey={`attention:subject:${row.key}`}
@@ -186,13 +258,13 @@ export function RiskItem({
               {risk.title}
             </AttentionLink>
           </h3>
-          <span>{risk.identity}</span>
+          <span data-authored>{risk.identity}</span>
           {outcome?.label === 'OUTCOME' ? (
             <p className="next-attention-risk-assignment">{outcome.text}</p>
           ) : null}
         </div>
         <div className="next-attention-risk-observation">
-          <p>{observation}</p>
+          <p data-authored>{observation}</p>
           {row.subject?.kind === 'collision' ? (
             <ul>
               {row.subject.sessions.map((session) => {
@@ -202,7 +274,7 @@ export function RiskItem({
                   formatTimestamp(session['started_at'], model.generated, { style: 'clock' }) ??
                   'not published';
                 return (
-                  <li key={JSON.stringify([harness, sid])}>
+                  <li key={JSON.stringify([harness, sid])} data-authored>
                     <AttentionLink
                       route={{
                         view: 'session',
@@ -242,7 +314,6 @@ export function RiskItem({
             ))
           )}
           <span>{riskSourceText(risk)}</span>
-          {row.subject?.section === 'needs' ? <GateControls session={row.subject.session} /> : null}
         </div>
       </Card>
     </li>

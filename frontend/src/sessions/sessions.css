@@ -94,25 +94,6 @@
   .next-operation-row[data-next-operation-history="true"] .next-operation-fact[data-next-operation-fact="where"]{grid-column:1/-1}
 }
 
-/* ===== Command reports on the session page ===== */
-
-.next-attention-section{min-width:0;margin-top:24px}
-.next-attention-section-heading{margin-bottom:10px}
-.next-attention-section-heading h2:after{content:"";flex:1;min-width:20px;height:1px;background:var(--rule)}
-.next-attention-section-heading h2{display:flex;flex:1;gap:12px;align-items:center;margin:0;font-size:var(--fs-body);font-weight:600}
-.next-attention-section>h2{margin:0 0 10px;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
-.next-attention-section>ol{display:grid;gap:10px;margin:0;padding:0;list-style:none}
-.next-attention-section>ol>li[hidden]{display:none}
-.next-attention-risk-identity h3{margin:0 0 5px;font-size:var(--fs-body);font-weight:600;line-height:1.4}
-.next-attention-risk-identity>span,.next-attention-risk-source{color:var(--ink2);font-size:var(--fs-label);line-height:1.5}
-.next-attention-risk-assignment{margin:5px 0 0;color:var(--ink2);font-size:var(--fs-body);font-weight:500;line-height:1.55;max-width:var(--measure)}
-.next-attention-risk-identity a,.next-attention-why a{display:flex;align-items:center;color:var(--ink);text-decoration-color:var(--line);text-underline-offset:4px}
-.next-attention-risk-observation p{margin:0;color:var(--ink2);font-size:var(--fs-body);line-height:1.5}
-.next-attention-risk-detail{display:grid;gap:5px;margin-top:5px;color:var(--ink2);font-size:var(--fs-body);font-weight:500;line-height:1.55}
-.next-attention-risk-detail small{display:block;font-size:inherit}
-.next-attention-risk-source{display:grid;gap:5px}
-.next-attention-risk-next{color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label)}
-
 /* ===== SESSION ===== */
 .next-session-detail{--mono:var(--sans);margin:12px 0 0;padding:0 0 34px;box-shadow:none}
 .next-session-panel{display:flex;flex-direction:column;gap:var(--sp-5);min-width:0}

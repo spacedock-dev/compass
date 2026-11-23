@@ -1,20 +1,18 @@
 import { SESSION_ROW_WORDS, SHOWN } from '../language/glossary';
 import { UnaskedAttentionCue } from '../drift/UnaskedPermission';
-import { Card } from '../ui/card';
 import { Button } from '../ui/button';
-import { useMemo } from 'react';
-import { useControls } from '../controls';
+import { useMemo, useState, type ReactNode } from 'react';
+import { Disclosure, useControls } from '../controls';
 import { useFocusKey } from '../controls/useFocusKey';
 import { selectObserved } from '../observed/select';
-import { sessionKey, type Observed } from '../observed';
+import { sessionKey, type Observed, type ObservedSession } from '../observed';
 import { sessionRisk } from '../observed/project';
-import { formatTimestamp } from '../shell/format';
-import { useDisplayed } from '../shell/context';
+import { useDisplayed, useShell } from '../shell/context';
 import { selectDataStatus } from '../store/selectors';
 import { RouteAnchor } from '../sessions';
 import { CommandReportsSection, CoverageBlock } from './Coverage';
-import { RiskItem, SubjectItem } from './Items';
-import { type AttentionModel, type Section, type Subject } from './model';
+import { RiskItem, SessionItem } from './Items';
+import type { AttentionModel } from './model';
 import { boardReports } from './reports';
 import { selectAttention, selectAttentionSelection, type AttentionSelection } from './select';
 import { riskSubject, modelQuotaRisk } from './subjects';
@@ -50,13 +48,15 @@ function Heading({ section, children }: { readonly section: string; readonly chi
 function QueueSection({
   section,
   title,
-  subjects,
-  model,
+  size,
+  children,
+  aside,
 }: {
-  readonly section: Section;
+  readonly section: 'needs' | 'risk' | 'close';
   readonly title: string;
-  readonly subjects: readonly Subject[];
-  readonly model: AttentionModel;
+  readonly size: number;
+  readonly children: (expanded: boolean) => ReactNode;
+  readonly aside?: ReactNode;
 }) {
   const controls = useControls();
   const expansion = useExpansion(controls);
@@ -67,23 +67,15 @@ function QueueSection({
       fallback: `attention:section:${section}`,
     },
   );
-  if (!subjects.length) return null;
+  if (!size && section !== 'risk') return null;
   const expanded = expansion.has(section);
-  const remainder = Math.max(0, subjects.length - INITIAL_SECTION_SIZE);
+  const remainder = section === 'risk' ? 0 : Math.max(0, size - INITIAL_SECTION_SIZE);
   const listId = `next-attention-${section}-list`;
   return (
     <section className="next-attention-section" data-next-attention-section={section}>
-      <Heading section={section}>{`${title} (${String(subjects.length)})`}</Heading>
-      <ol id={listId}>
-        {subjects.map((subject, index) => (
-          <SubjectItem
-            key={subject.key}
-            subject={subject}
-            model={model}
-            hidden={!expanded && index >= INITIAL_SECTION_SIZE}
-          />
-        ))}
-      </ol>
+      <Heading section={section}>{`${title} (${String(size)})`}</Heading>
+      <ol id={listId}>{children(expanded)}</ol>
+      {aside}
       {remainder ? (
         <Button
           variant="native"
@@ -118,7 +110,6 @@ function Title() {
       <h1 ref={ref} tabIndex={-1}>
         {SHOWN.attention}
       </h1>
-      <p>what is observed, and what the board could not see</p>
     </header>
   );
 }
@@ -133,7 +124,35 @@ function Board({
   readonly selection: AttentionSelection | null;
 }) {
   const data = useDisplayed((snapshot) => snapshot.data);
+  const { runtime, controls } = useShell();
   const reports = useMemo(() => boardReports(data), [data]);
+  const [action, setAction] = useState<{
+    readonly identity: { readonly harness: string; readonly sid: string };
+    readonly text: string;
+    readonly canUndo: boolean;
+  } | null>(null);
+
+  async function mark(row: Pick<ObservedSession, 'harness' | 'sid'>, text: string, undo = false) {
+    const identity = { harness: row.harness, sid: row.sid };
+    const key = 'attention:dismiss';
+    const token = runtime.pending.start(key, 'Saving…');
+    if (!token) return;
+    try {
+      const result = await runtime.client.postDismiss(
+        undo ? { ...identity, clear: false } : identity,
+      );
+      const saved = result.kind === 'ok' && result.body?.ok === true;
+      const message = saved
+        ? `${text}.${result.body?.persisted === false ? ' This change is saved for this run only.' : ''}`
+        : 'Compass could not save that change.';
+      setAction({ identity, text: message, canUndo: saved && !undo });
+      controls.announce(key, message);
+      if (saved) void runtime.refresh();
+    } finally {
+      runtime.pending.end(key, token);
+    }
+  }
+
   const offCountKeys = new Set(selection?.offCountRisks.map((subject) => subject.key));
   const sourceRisks = new Map(
     observed.risks.map((risk) => [sessionKey({ harness: risk.harness, sid: risk.sid }), risk]),
@@ -143,159 +162,188 @@ function Board({
       .filter((subject) => subject.primaryKind === 'collision' && !offCountKeys.has(subject.key))
       .flatMap((subject) => subject.sessions.map((row) => [sessionKey(row), subject] as const)),
   );
+  const subjects = new Map(
+    [...model.risk, ...model.needs, ...model.close].map((subject) => [subject.key, subject]),
+  );
+  const needs = selection?.waitingOnYou ?? [];
+  const waitingOrder = new Map(model.needs.map(({ key }, index) => [key, index]));
+  const waiting = [...needs].sort(
+    (a, b) =>
+      (waitingOrder.get(sessionKey(a)) ?? Infinity) - (waitingOrder.get(sessionKey(b)) ?? Infinity),
+  );
   const risks = [...(selection?.worthALook ?? [])].map(([session, reason]) => {
     const key = sessionKey(session);
     const source = sourceRisks.get(key);
-    const collision = collisions.get(key);
-    if (!collision) return source ?? sessionRisk(session, 'risk', session.titleText, reason);
-    const warning = collision.signals[0]?.detail.text;
-    if (source && reason !== 'Shared project label') return source;
-    const member = collision.sessions.find((row) => sessionKey(row) === key);
-    const started = formatTimestamp(member?.['started_at'], model.generated, { style: 'clock' });
-    const title = `${session.titleKnown ? session.titleText : 'Title not published'} · ${String(member?.['worktree'] || 'No worktree published')} · ${session.harness}:${session.sid} · Start time ${started ?? 'not published'}`;
-    const risk = sessionRisk(
-      session,
-      'collision',
-      title,
-      [reason, warning].filter(Boolean).join(' · '),
-    );
-    return { ...risk, src: 'Published project location evidence' };
+    const collision = reason === 'Shared project label' ? collisions.get(key) : undefined;
+    const risk = collision
+      ? sessionRisk(
+          session,
+          'collision',
+          session.titleText,
+          collision.signals[0]?.detail.text ?? reason,
+        )
+      : (source ?? sessionRisk(session, 'risk', session.titleText, reason));
+    return { session, reason, risk, subject: collision ?? subjects.get(key) };
   });
+  const ready = selection?.readyToWrapUp ?? [];
   const boardRisks = observed.boardRisks.filter((risk) => {
+    if (risk.kind === 'quota') return false;
     if (!selection || risk.kind !== 'collision') return true;
     const subject = riskSubject(risk, model);
     return !subject || offCountKeys.has(subject.key);
   });
-  const modelQuotas = model.risk.filter(
+  const windows = observed.boardRisks.filter((risk) => risk.kind === 'quota');
+  const notices = (selection?.worthALookNotices ?? model.risk).filter(
     (subject) => subject.kind === 'quota' && subject.identity?.project.startsWith('model:'),
   );
+  const quota = [...windows, ...notices.map((subject) => modelQuotaRisk(subject, model))];
   const boardKeys = occurrences(boardRisks.map((risk) => `${risk.kind}\u0000${risk.identity}`));
-  const waitingKeys = new Set(selection?.waitingOnYou.map(sessionKey));
-  const needs = model.needs.filter((subject) => waitingKeys.has(subject.key));
-  const subjects = new Map(
-    [...model.needs, ...model.risk, ...model.close].map((subject) => [subject.key, subject]),
-  );
-  const close = (selection?.readyToWrapUp ?? []).flatMap((row): Subject[] => {
-    const subject = subjects.get(sessionKey(row));
-    const signal = subject?.signals.find(({ kind }) => kind === 'end-clean');
-    return subject && signal
-      ? [{ ...subject, section: 'close', primaryKind: signal.kind, signals: [signal] }]
-      : [];
-  });
+  const dismiss = data?.dismiss === true;
   return (
     <section className="next-attention" data-next-view-body="attention">
       <Title />
-      {data ? <UnaskedAttentionCue payload={data as unknown as Record<string, unknown>} /> : null}
-      {selection ? (
-        <section
-          className="mt-6 grid grid-cols-2 divide-x divide-[var(--rule)] border-y border-[var(--rule)]"
-          aria-label="Request and block facts"
-        >
-          {observed.counters.map((counter, index) => (
-            <section
-              className="grid min-w-0 gap-1.5 px-2 py-1.5 min-[621px]:px-[18px] min-[621px]:py-[15px]"
-              key={counter.label}
-              data-next-fleet-fact={index === 0 ? 'requests' : 'reported-blocks'}
-            >
-              <span className="text-label font-semibold">{counter.label}</span>
-              <strong className="text-value font-semibold min-[621px]:text-hero">
-                {counter.value}
-              </strong>
-              <small className="text-body leading-[1.55] text-muted-foreground">
-                {counter.noteText}
-              </small>
-            </section>
-          ))}
-        </section>
-      ) : null}
-      <Card variant="attention-brief" className="next-attention-brief">
-        <p>
-          <span className="next-attention-brief-label">OBSERVED</span>
-          {selection?.counts ? (
-            <span>
-              {`${selection.counts.waitingOnYou} waiting on you · ${selection.counts.worthALook} worth a look · ${selection.counts.readyToWrapUp} ready to wrap up.`}
-              {selection.limitedStateCount
-                ? ` ${selection.limitedStateCount} with limited state evidence.`
-                : ''}
-            </span>
-          ) : (
-            <span className="next-absence">
-              {selection
-                ? 'Session counts are unavailable because the sources could not be read.'
-                : 'The board published no session collection.'}
-            </span>
-          )}
+      {!selection ? (
+        <p className="next-absence">The board published no session collection.</p>
+      ) : !selection.counts ? (
+        <p className="next-absence">
+          Session counts are unavailable because the sources could not be read.
         </p>
-        <CoverageBlock model={model} observed={observed} />
-        <RouteAnchor
-          route={{ view: 'projects', project: null, session: null }}
-          className="next-attention-projects-link"
-        >
-          View all projects
-        </RouteAnchor>
-      </Card>
-      {observed.sessions.length || !selection ? null : (
+      ) : null}
+      {observed.sessions.length || !selection?.counts ? null : (
         <p className="next-attention-empty">
           {`No sessions in this ${model.windowHours == null ? 'payload' : `${String(model.windowHours)}-hour payload`}`}
         </p>
       )}
-      <section className="next-attention-section" data-next-attention-section="risk">
-        <div className="next-attention-section-heading">
-          <Heading section="risk">{`${SESSION_ROW_WORDS.worthALook} (${risks.length})`}</Heading>
-          <p>{`${String(risks.length)} of ${String(selection?.sessionCount ?? 0)} sessions`}</p>
+      {action ? (
+        <div className="next-attention-actions" data-next-dismiss-receipt>
+          <p>{action.text}</p>
+          {action.canUndo && dismiss ? (
+            <Button type="button" onClick={() => void mark(action.identity, 'Restored', true)}>
+              Undo
+            </Button>
+          ) : null}
         </div>
-        <ol>
-          {risks.map((risk, index) => (
-            <RiskItem
-              key={sessionKey({ harness: risk.harness, sid: risk.sid })}
-              risk={risk}
-              index={index}
+      ) : null}
+      <QueueSection section="needs" title={SESSION_ROW_WORDS.waitingOnYou} size={waiting.length}>
+        {(expanded) =>
+          waiting.map((row, index) => (
+            <SessionItem
+              key={sessionKey(row)}
+              row={row}
+              section="needs"
               model={model}
+              hidden={!expanded && index >= INITIAL_SECTION_SIZE}
+              subject={subjects.get(sessionKey(row))}
             />
-          ))}
-        </ol>
+          ))
+        }
+      </QueueSection>
+      {selection?.counts ? (
         <QueueSection
-          section="needs"
-          title={SESSION_ROW_WORDS.waitingOnYou}
-          subjects={needs}
-          model={model}
-        />
-        <QueueSection section="close" title="Ready to wrap up" subjects={close} model={model} />
-      </section>
-      <section className="next-attention-section" data-next-attention-section="board-risk">
-        <div className="next-attention-section-heading">
-          <Heading section="board-risk">Also at risk, off the session count</Heading>
-        </div>
-        <ol>
-          {boardRisks.map((risk, index) => (
-            <RiskItem key={boardKeys[index]} risk={risk} index={index} model={model} board />
-          ))}
-          {modelQuotas.map((subject, index) => (
-            <RiskItem
-              key={subject.key}
-              risk={modelQuotaRisk(subject, model)}
-              index={boardRisks.length + index}
+          section="risk"
+          title={SESSION_ROW_WORDS.worthALook}
+          size={risks.length}
+          aside={
+            quota.length ? (
+              <ul className="next-attention-notices" aria-label="Quota notices">
+                {quota.map((risk, index) => (
+                  <RiskItem
+                    key={`${risk.identity}:${index}`}
+                    risk={risk}
+                    index={index}
+                    model={model}
+                    board
+                    retained={notices[index - windows.length]}
+                  />
+                ))}
+              </ul>
+            ) : null
+          }
+        >
+          {() =>
+            risks.map(({ session, reason, risk, subject }) => (
+              <SessionItem
+                key={sessionKey(session)}
+                row={session}
+                section="risk"
+                model={model}
+                hidden={false}
+                subject={subject}
+                risk={risk}
+                reason={reason}
+                onMark={dismiss ? () => void mark(session, 'Dismissed') : undefined}
+              />
+            ))
+          }
+        </QueueSection>
+      ) : null}
+      <QueueSection section="close" title="Ready to wrap up" size={ready.length}>
+        {(expanded) =>
+          ready.map((row, index) => (
+            <SessionItem
+              key={sessionKey(row)}
+              row={row}
+              section="close"
               model={model}
-              board
-              retained={subject}
+              hidden={!expanded && index >= INITIAL_SECTION_SIZE}
+              subject={subjects.get(sessionKey(row))}
+              onMark={dismiss ? () => void mark(row, 'Marked as read') : undefined}
             />
-          ))}
-        </ol>
-      </section>
-      <CommandReportsSection reports={reports} />
-      <section className="next-attention-section" data-next-attention-section="open">
-        <div className="next-attention-section-heading">
-          <Heading section="open">Not on this board yet</Heading>
+          ))
+        }
+      </QueueSection>
+      {data ? <UnaskedAttentionCue payload={data as unknown as Record<string, unknown>} /> : null}
+      <Disclosure
+        className="next-attention-limits"
+        disclosureKey="attention:what-compass-cannot-see"
+        headerProps={{ render: <h2 /> }}
+        summary="What Compass can't see"
+        searchable={false}
+      >
+        <div className="next-attention-brief">
+          <CoverageBlock model={model} observed={observed} />
+          {selection &&
+            observed.counters.map((counter, index) => (
+              <p
+                key={counter.label}
+                data-next-fleet-fact={index === 0 ? 'requests' : 'reported-blocks'}
+              >
+                {counter.noteText}.
+              </p>
+            ))}
+          {selection?.limitedStateCount ? (
+            <p>{`${selection.limitedStateCount} with limited state evidence.`}</p>
+          ) : null}
+          <RouteAnchor
+            route={{ view: 'projects', project: null, session: null }}
+            className="next-attention-projects-link"
+          >
+            View all projects
+          </RouteAnchor>
         </div>
-        <ul className="next-attention-open">
-          {observed.open.map(([key, name, note]) => (
-            <li key={key} data-next-open={key}>
-              <strong>{name}</strong>
-              <p>{note}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
+        {boardRisks.length ? (
+          <section className="next-attention-section" data-next-attention-section="board-risk">
+            <Heading section="board-risk">Other warnings</Heading>
+            <ol>
+              {boardRisks.map((risk, index) => (
+                <RiskItem key={boardKeys[index]} risk={risk} index={index} model={model} board />
+              ))}
+            </ol>
+          </section>
+        ) : null}
+        <CommandReportsSection reports={reports} />
+        <section className="next-attention-section" data-next-attention-section="open">
+          <Heading section="open">Not on this board yet</Heading>
+          <ul className="next-attention-open">
+            {observed.open.map(([key, name, note]) => (
+              <li key={key} data-next-open={key}>
+                <strong>{name}</strong>
+                <p>{note}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </Disclosure>
     </section>
   );
 }
