@@ -14,15 +14,21 @@ coordination while Codex and AGY carried the deep dives, builds, lenses and arbi
 |---|---|---|
 | Steps 1, 2, 5, 6, 7: load, plan, stack and land, reconcile, close | Orchestrator | Tracker writes, `gh stack` and merges need the session's tools and the owner's approvals. |
 | Mode 1 and Mode 2 walks, the real-session check | Orchestrator | Only the orchestrator has the browser and a logged-in `claude`. |
-| Step 3 deep dive | Codex, at the plan stage's setting, inside the build run | Neither CLI can run `linear-deep-dive`; the builder writes the analysis file first (below). |
+| Step 3 deep dive | Codex at the plan stage setting, or a read-only Claude subagent ahead of the build | Give builders a line-by-line analysis as soon as scope is known. Two docs issues took 31 minutes against a 75-minute estimate with analyses ready. |
 | Step 4.1, 4.2, 4.5, 4.6: tests, code, `sync-docs`, fix rounds, bundle | Codex | Long agentic edits with a test loop. |
 | Step 4.4 lenses | Mixed: Codex and AGY | Two model families find different defects; a lens never shares a family with every other lens. |
-| Step 4.4 arbiter | Codex | It reproduces findings, so it needs a working shell and test runner. |
+| Step 4.4 arbiter, full adversarial | Codex | It reproduces findings with a working shell and test runner. |
 | Small inline fixes (a few lines and a test) | Orchestrator | Five minutes inline against twenty or more for a fresh run. |
 
 The orchestrator still reads every hand-back, every lens report and the arbiter's verdict before
 acting on any of them, and it still owns every decision a stage surfaces. A delegate's "done" is
 a claim to check, not a fact.
+
+When the owner authorizes Claude subagents alongside Codex and AGY, use them for read-only deep
+dives, PR drafts and a [slice reconciliation](reconciliation.md#6-reconcile-every-issue-that-landed).
+They can add planning capacity while the builders run. Where Claude subagents can only return
+text, ask for their analysis in the final message and save it yourself. Asking them to write a
+file left the redesign coordinator with extra hand-back work.
 
 ## Choose the models at run time
 
@@ -36,7 +42,7 @@ for m in json.load(sys.stdin)["models"]:
     print(m["slug"], [l["effort"] for l in m["supported_reasoning_levels"]], m.get("visibility"))'
 grep -E '^model' ~/.codex/config.toml   # the owner's configured default and effort
 # AGY: Gemini models, one row per model-effort variant
-perl -e 'alarm shift; exec @ARGV' 20 agy models
+bash .claude/skills/burndown/scripts/capped.sh 20 agy models
 ```
 
 Measured 2026-11-15: an owner named `gpt-6.1-astra` and `gpt-6.1-luna`, and the catalog held
@@ -52,7 +58,7 @@ reference's stage table onto it:
 | Plan (inside the build run) | Codex newest general model · medium | Codex · high |
 | Build and fix rounds | Codex · medium; high for a web-surface group of L or more, `config.py` or the shipped `SKILL.md` | Codex · high |
 | Review lenses | one Codex · high and one AGY · high | add a second AGY lens of a different model, all at high |
-| Arbiter | Codex · high, a different model from the builder when one is listed | Codex · high |
+| Arbiter | Standard fix builder reproduces findings | Codex · high, a different model from the builder when one is listed |
 
 Never recommend `xhigh`, `max` or `ultra` unless the caller asks. Ask the stage questions as the
 planning reference says, naming the exact slugs and efforts, with the recommendation first. When
@@ -64,10 +70,11 @@ Each item was measured; each cost a stalled or wasted run when missed.
 
 - **Close stdin.** `codex exec` prints `Reading additional input from stdin...` and waits for EOF
   when stdin is an open pipe. Always end the command with `< /dev/null`.
-- **Bound every run.** macOS has no `timeout`: wrap each call in
-  `perl -e 'alarm shift; exec @ARGV' <seconds> ...`, about twice the stage's usual time, and run it
-  in the background so its exit wakes the orchestrator. A builder for an M issue took 25 to 50
-  minutes; a lens 15 to 40; an arbiter 20 to 40.
+- **Bound every run.** Wrap each CLI in [`capped.sh`](../scripts/capped.sh), about twice the
+  stage's usual time. The wrapper sends TERM and then KILL to the process group and exits 124
+  at the deadline. The old exec-and-alarm wrapper left an AGY probe running for 3h13m. It drove
+  load to 23, followed by closed-browser and Vite-readiness failures. Use literal or bounded
+  searches over `react.html`. After a cap, follow the [process sweep](cleanup.md#1-tear-down-this-runs-own-artifacts).
 - **Codex needs loopback.** The `workspace-write` sandbox cannot bind `127.0.0.1` (`EPERM`), and
   many suites here need it (`test_http_api`, MCP and hook transports, `pnpm test:stories`). Give
   builders and reviewers `--sandbox danger-full-access`, and confine them by giving each its own
@@ -86,7 +93,7 @@ Each item was measured; each cost a stalled or wasted run when missed.
   out as steps.
 - **One prompt preamble, one task file per layer.** The preamble carries the repository rules a
   builder needs: read `AGENTS.md`; deep dive into a named analysis file first; failing test first;
-  run only the touched modules with a `-j` share; ruff, format, mypy, `validate_plugins.py`; DCO
+  follow the [layer's gate](delivery.md#4-build-a-layer); give touched modules a `-j` share; DCO
   commits through `/usr/bin/git` with `SKIP_CLAUDE_PRECOMMIT=1` when no frontend changed; no push,
   no PR, no rebase; never a version field or the `docs-synced-through` marker; the contention list
   from **AGENTS.md, "Parallel Work"**; hooks abstain rather than fail. The task file carries the
@@ -96,9 +103,14 @@ Each item was measured; each cost a stalled or wasted run when missed.
   A lens must reproduce before it reports and mutation-test the new guards. The arbiter gets every
   lens report and probe directory and returns confirmed, refuted and pre-existing verdicts, a fix
   list in build order with the test that must fail first, and a file list.
-- **Fix rounds go back to Codex.** Resume nothing: start a fresh Codex run in the layer's worktree
-  with the arbiter's fix list, the original task file and the analysis file. A builder that edits
-  a lower layer's file is a restack the orchestrator does, never the builder.
+- **Launch the pair together.** [`launch-lenses.sh`](../scripts/launch-lenses.sh) sets up both
+  detached worktrees and prompts, starts the approved Codex and AGY models with separate ports,
+  and registers their PIDs and output paths. Supply absolute task-file paths in the prompt.
+  In full adversarial review, schedule the third lens with this pair, then cost, parity and
+  completeness, then the arbiter. Seven reviewers beside three builders would compete for the
+  same resources and skew the cost benchmark.
+- **Fix rounds go back to Codex.** Start a fresh run with the lens reports or arbiter fix list,
+  the original task file and the analysis. The orchestrator owns any resulting restack.
 
 ## Keep the wall clock down
 
@@ -107,10 +119,21 @@ the queue, each 15 to 40 minutes. Measured 2026-11-16 on a two-layer stack (runt
 review was worth it, since every round found a real defect, two of them blockers. Serial waiting
 nobody needed was not worth it. These overlaps cut the remaining estimate from about 2.5 hours to about 1.25:
 
-- **Build the next layer as soon as the lower layer hands back.** Do not wait for the lower layer's
-  review. Stack the new worktree on the lower builder's commit, and restack it when the fix rounds
-  land. A fix round that keeps the published contract restacks without conflict; tell the upper
-  builder which fields are frozen.
+- **Keep independent work moving.** The owner allowed independent non-web PRs off main while
+  the page line advanced. On the redesign machine, cap at three Codex or AGY builders alongside
+  read-only planners. At a five-minute load of about 20 on ten cores, the fourth builder waited
+  for a slot. Use one heavy agent per worktree, its own pnpm install and an assigned review port.
+  Shared node_modules and overlapping typechecks caused cross-worktree failures. Apply
+  [delivery's overlap rule](delivery.md#parallel-work) to page layers.
+- **Prepare work ahead of a dependency.** Build the independent parts before the dependency
+  lands. Mark every passage written from a ruling or a proposed implementation and verify it
+  against main once its particular dependency lands. Starting a docs layer when only about
+  17 lines depended on an open slice saved roughly 90 minutes of tail work.
+- **Chain ready stages.** Start the next job after its predecessor has a usable hand-back on the
+  expected head, or after its waiter records `MERGED` if landing is the dependency. Name the
+  detached chain `chain-<id>.sh` in the run directory, invoke it by absolute path with `nohup`
+  and `disown`, and record its PID. Check it with `ps` when reading the board. A chain once died
+  before its trigger and left the next layer unstarted.
 - **Review a stacked layer on its own diff** (`git diff <lower head>..HEAD`) while the lower layer is
   in its fix round. Name the lower head in the lens prompt and give the runtime contract as text.
 - **Run fix rounds in parallel across layers** when they touch disjoint files. Tell each builder what
@@ -118,10 +141,10 @@ nobody needed was not worth it. These overlaps cut the remaining estimate from a
 - **Push and open a lower layer's PR as soon as its own verification passes.** Its CI then runs
   while the upper layers finish. Stack the upper PR on it when ready. `gh stack merge` still lands
   them together, so a lower layer never ships without the upper layer's half of a rule.
-- **Verify a fix round by re-running the arbiter's failing regressions**, not by a fresh full pass.
-  Ask every arbiter to leave its reproductions in its probe directory as runnable tests; the fix
-  builder starts from them as its failing tests, and the orchestrator re-runs them on the fix head
-  in minutes. Run one fresh verification pass only after a fix round that adds a mechanism (a new
+- **Verify a fix round by re-running its failing regressions** alongside the layer's gate.
+  Ask reviewers to leave runnable reproductions in their probe directories. The fix builder starts
+  there, and the orchestrator re-runs them on the fix head in minutes. Add a fresh review pass if
+  a fix round adds a mechanism (a new
   store, a new projection), where new code needs new eyes. That pass on 2026-11-16 found a blocker
   the first round's fix had moved rather than closed: the browser still read the held state.
 - **Walk the board while CI runs**, after the push, not before it. A walk finding costs one more
@@ -135,26 +158,44 @@ nobody needed was not worth it. These overlaps cut the remaining estimate from a
   2026-11-16 that check found that Claude Code exports `CLAUDE_CODE_SESSION_ID` to its Bash
   commands and Codex exports `CODEX_THREAD_ID` to its shell commands, which replaced a documented
   procedure that only worked if the reader looked the id up by hand.
-- **Watch CI with one waiter.** Use `gh pr checks <n> --watch --interval 90` per PR, in the
-  background, rather than a polling loop. The previous run's loops exhausted the 5,000-per-hour
-  GitHub API limit and blocked the closeout for an hour.
+- **Use one watcher per landing.** Use the [delivery waiter](delivery.md#5-stack-submit-and-land)
+  or `gh pr checks <n> --watch --interval 90` if watching CI alone. Overlapping polling loops
+  exhausted the 5,000-per-hour API limit and blocked a closeout for an hour.
 
-Measured stage times on that run (Codex `gpt-6.1-sol` high building, `gpt-6-astra` high arbitrating):
+Run [`status.sh`](../scripts/status.sh) against the run directory. Keep `tasks.tsv` there with PID,
+label, start epoch, typical minutes, max minutes and output path, tab-separated. The board reports
+elapsed time, remaining time and health. It checks the wrapper and agent process groups. A child
+at 90% CPU or more after 20 minutes of process age gets a `STUCK?` flag. Check probe-directory
+mtimes before calling an AGY lens hung. One full-adversarial Argon run was still writing probes
+at 30 minutes and wrote its report only at the end.
 
-| Stage | Time |
+Seed estimates with these redesign measurements, then update them from the run:
+
+| Stage | Measured or planning time |
 |---|---|
-| Runtime builder, L | 38 min |
-| Board builder, L | 35 min |
-| Lens | 5 to 20 min |
-| Arbiter | 12 to 15 min |
-| Fix round | 10 to 30 min |
+| Build without final gate | 26 min average, 46 min max |
+| Build with gate | 40 min typical, 65 min max |
+| Large two-issue layer with gate | 80 min typical, 100 min max |
+| Lens / full-adversarial Argon | 9 to 16 min / 40 to 55 min budget |
+| Arbiter | 8 to 13 min |
+| Fix round without / with gate | 20 to 30 min / 50 min typical, 70 min max |
+| Local gate / CI / queue batch | 12 to 15 min, about 20 under load / about 25 min / about 15 min |
 
 ## When the stages disagree
 
-Two lenses can pull in opposite directions (one wants fewer symlinks followed, one found a real
-layout the change breaks). The orchestrator writes one rule that satisfies both, hands that rule to
-the arbiter to test, and records it in the pull request as the orchestrator's call. Writing it to
-the tracker as the owner's decision needs the owner's words.
+Compare every finding with the base. File pre-existing findings with their evidence outside the
+current scope. In slice 1, 46 pre-existing findings pulled attention into fix rounds.
+
+**Standard review uses two lenses and one fix round that arbitrates by reproduction.** The builder
+records confirmed, refuted and pre-existing findings and writes a failing test for each accepted
+fix. The owner removed the separate standard arbiter after it refuted one of 22 and zero of 17
+findings on two layers, saving about 12 to 15 minutes per layer. **Full adversarial keeps the
+arbiter** and its reproducible verdict. If it says NO-GO, apply the skill's stop rule. In one
+owner-authorized correction and replay, evidence-loss cases still failed, so the coordinator
+deferred the layer with its findings.
+
+When lenses disagree, the orchestrator records the proposed rule and has the fix builder or
+full-adversarial arbiter test it. Attribute a decision to the owner only with their words.
 
 ## Reporting
 

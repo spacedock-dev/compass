@@ -43,10 +43,15 @@ merged, and the closing docs worktree until its pull request has.
 
 - **Processes first.** Stop each ledger pid by its own stop path (`server.py --stop --port <p>`
   for a board, `kill -TERM` otherwise), wait, and confirm with `kill -0` that it is gone. Stop a
-  monitor with its task stop. A process that left its group survives a group kill; check by name
-  as **AGENTS.md, "Parallel Work"** says.
-- **Worktrees, then branches.** Remove each ledger worktree whose tracked tree is clean
-  (`git worktree remove --force`, since `node_modules` is untracked). Then delete its branch only
+  monitor with its task stop. After any capped kill, use [`sweep.sh`](../scripts/sweep.sh) on the
+  ledger worktree. Run it with `--dry-run` first to identify commands that name the worktree and
+  check they belong to this run. Also check its recorded port and the working directory of any
+  remaining listener. A Storybook dev server changed process groups, survived the cap and held
+  its port for 74 minutes.
+- **Worktrees, then branches.** Start with plain `git worktree remove` for each clean ledger
+  worktree. If it refuses, list untracked and ignored files, then use `--force` only when all
+  those files are disposable. One force-removal pass swept seven worktrees' untracked installs
+  and probes along with them. Then delete the branch only
   when `gh pr view <branch> --json state` says `MERGED`: a squash merge leaves the branch's
   commits off `main`, so `git branch -d` refuses every merged branch here and `-D` is the only
   delete, which is why the pull request state is the check. Delete backup refs the run made.
@@ -116,7 +121,5 @@ what remains.
 - Write the ledger line when you create the thing, not at the end.
 - Give every reviewer worktree a run-specific prefix and remove it as soon as its verdict is read;
   a verdict file is all a later round needs.
-- Bound every delegated or background job (`perl -e 'alarm shift; exec @ARGV' <seconds>` on macOS)
-  so a hung one ends on its own.
-- Never `ln -s` into a path that may already be a directory. `ln -sf <dir> node_modules` into an
-  existing `node_modules` made a stray symlink inside it here, which only an `ls` showed.
+- Use [delegation's deadline wrapper](delegation.md#dispatch-mechanics) for background CLI jobs
+  and keep their PIDs in the ledger for teardown.
