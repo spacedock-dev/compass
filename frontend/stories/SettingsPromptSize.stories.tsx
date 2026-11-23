@@ -442,6 +442,11 @@ function fit(width: number): Story {
         }
         await expect(limits.getByText('16 KB')).toBeVisible();
         await expect(limits.getByText('2,048 KB', { exact: true })).toBeVisible();
+        const longestEndpoint = limits.getByText('1,048,576 KB', { exact: true });
+        await expect(longestEndpoint).toBeVisible();
+        const endpointText = document.createRange();
+        endpointText.selectNodeContents(longestEndpoint);
+        await expect(await settledLayout(() => endpointText.getClientRects().length)).toBe(1);
         const resets = limits.getAllByRole('button', { name: /^Reset (?!all)/ });
         await expect(resets).toHaveLength(4);
         for (const reset of resets) {

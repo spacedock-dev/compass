@@ -183,14 +183,15 @@ even on a project page.
 |---|---|---|
 | Sessions | `s` | Every session, with active work above recent history. Each active session shows where it is, what it is doing now, what it does next and whether it is blocked. Clicking a goal opens that session at its Goal card. |
 | Projects | `p` | Sessions grouped by project. Each project has a page with a briefing and the views Overview, Timeline, Decisions and Usage and alerts. |
-| Needs you | `n` | Requests, reported blocks and risks. The badge counts Waiting on you and Worth a look. |
-| Goal history | none | Every session on the board, plus the goals Compass has kept, each labeled with where it came from. |
+| Needs you | `n` | Waiting on you comes first, followed by Worth a look and Ready to wrap up. The badge counts the first two queues. Open What Compass can't see for coverage and its limits. |
+| Goal history | none | Search current and older goals by their text or by session title where available. Each goal shows its source and time. Open How long goals are kept for the limits. |
 | Settings | none | AI use controls, browser notifications, progress check limits, and what Forget everything deletes and keeps. Changes save as you make them. |
 | Help | none | How Compass works, See an example, the icon legend, progress check terms and common questions. |
 
 `Escape` goes back to where you opened a session from. The example opened from Help returns to
-Help, and a session opened from a pasted link goes back to Sessions. The current view lives in the URL, so a reload or a pasted link comes back to
-the same place.
+Help, and a session opened from a pasted link goes back to Sessions. Below 1100 pixels, Menu opens
+the page links inline. Escape closes the open Menu and returns focus to its button. The current
+view lives in the URL, so a reload or a pasted link comes back to the same place.
 
 At a glance on Sessions shows what is waiting on you, what is working and what is worth a look.
 Waiting on you and Worth a look open Needs you. Working now selects Working and moves focus to

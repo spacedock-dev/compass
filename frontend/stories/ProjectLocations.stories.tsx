@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, within, waitFor } from 'storybook/test';
+import { expect, within, waitFor, userEvent } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { App } from '../src/App';
 import { createRouter } from '../src/router/router';
@@ -83,16 +83,19 @@ const meta = { title: 'Attention/Project locations', component: Board } satisfie
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-async function worthALookRows(canvasElement: HTMLElement, count: number, total: number) {
+async function expectNoWorthALook(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement);
+  await canvas.findByRole('button', { name: "What Compass can't see" });
+  await expect(canvas.queryByRole('heading', { name: /Worth a look/ })).toBeNull();
+}
+
+async function worthALookRows(canvasElement: HTMLElement, count: number) {
   const heading = await within(canvasElement).findByRole('heading', {
     name: `Worth a look (${String(count)})`,
   });
   const section = heading.closest('section');
   const list = section?.querySelector(':scope > ol');
   if (!section || !list) throw new Error('Expected the Worth a look list');
-  await expect(
-    within(section).getByText(`${String(count)} of ${String(total)} sessions`),
-  ).toBeVisible();
   const rows = within(list as HTMLElement);
   await expect(rows.queryAllByRole('listitem')).toHaveLength(count);
   return rows;
@@ -137,7 +140,7 @@ export const ProjectShellLabels: Story = {
 
 export const OneMeasuredLocation: Story = {
   play: async ({ canvasElement }) => {
-    await worthALookRows(canvasElement, 0, 9);
+    await expectNoWorthALook(canvasElement);
     await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
     await expect(canvasElement.textContent).not.toContain('shared location is not established');
   },
@@ -146,13 +149,14 @@ export const OneMeasuredLocation: Story = {
 export const TwoMeasuredLocations: Story = {
   args: { locations: 2 },
   play: async ({ canvasElement }) => {
-    const rows = await worthALookRows(canvasElement, 9, 9);
+    const rows = await worthALookRows(canvasElement, 9);
     await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
     for (let i = 0; i < 9; i++) {
       const id = String(i);
-      const link = rows.getByRole('link', {
-        name: new RegExp(`^Audit ${id} · No worktree published · claude:audit-${id} · Start time `),
-      });
+      const row = rows
+        .getByRole('heading', { name: `Audit ${id}` })
+        .closest('article') as HTMLElement;
+      const link = within(row).getByRole('link', { name: 'Open session' });
       await expect(link).toHaveAttribute('href', `#n=session:audits:claude:audit-${id}`);
       await expect(link.closest('li')).toHaveTextContent(
         '9 sessions share this display label across 2 measured locations',
@@ -165,12 +169,16 @@ export const SharedCheckout: Story = {
   args: { checkout: 'shared' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: "What Compass can't see" }));
     await expect(
       await canvas.findByRole('link', { name: 'Concurrent sessions in one checkout' }),
     ).toHaveAttribute('href', '#n=project:audits');
     const card = canvasElement.querySelector('[data-next-board-risk="checkout"]') as HTMLElement;
     await expect(within(card).getAllByRole('link', { name: /Audit \d/ })).toHaveLength(2);
     await expect(card).toHaveTextContent('2 sessions working or waiting in the same checkout');
+    await expect(card.innerText).not.toContain('claude:audit-0');
+    await userEvent.click(within(card).getByRole('button', { name: 'Show technical details' }));
+    await waitFor(() => expect(within(card).getByText('claude:audit-0')).toBeVisible());
     await expect(card.textContent).not.toContain('checkout:shared-evidence');
   },
 };
@@ -178,7 +186,7 @@ export const SharedCheckout: Story = {
 export const SameNameDistinctCheckouts: Story = {
   args: { checkout: 'distinct' },
   play: async ({ canvasElement }) => {
-    await worthALookRows(canvasElement, 0, 2);
+    await expectNoWorthALook(canvasElement);
     await expect(canvasElement.querySelector('[data-next-board-risk="checkout"]')).toBeNull();
   },
 };
@@ -186,7 +194,7 @@ export const SameNameDistinctCheckouts: Story = {
 export const MissingCheckoutEvidence: Story = {
   args: { checkout: 'missing' },
   play: async ({ canvasElement }) => {
-    await worthALookRows(canvasElement, 0, 2);
+    await expectNoWorthALook(canvasElement);
     await expect(canvasElement.querySelector('[data-next-board-risk="checkout"]')).toBeNull();
   },
 };
@@ -194,28 +202,37 @@ export const MissingCheckoutEvidence: Story = {
 export const MixedMeasuredAndInferred: Story = {
   args: { locations: 2, unknown: true },
   play: async ({ canvasElement }) => {
-    const rows = await worthALookRows(canvasElement, 8, 9);
+    const rows = await worthALookRows(canvasElement, 8);
     await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
     for (const i of [0, 1, 2, 3, 4, 5, 6, 8]) {
-      const link = rows.getByRole('link', { name: new RegExp(`^Audit ${String(i)} ·`) });
+      const row = rows
+        .getByRole('heading', { name: `Audit ${i}` })
+        .closest('article') as HTMLElement;
+      const link = within(row).getByRole('link', { name: 'Open session' });
       await expect(link).toHaveAttribute('href', `#n=session:audits:claude:audit-${String(i)}`);
       await expect(link.closest('li')).toHaveTextContent(
         '8 sessions share this display label across 2 measured locations. Location not measured for 1 session with this display label',
       );
     }
-    await expect(rows.queryByRole('link', { name: /^Audit 7 ·/ })).toBeNull();
+    await expect(rows.queryByRole('heading', { name: 'Audit 7' })).toBeNull();
   },
 };
 
 export const UnpublishedMemberDetails: Story = {
   args: { locations: 2, fallbacks: true },
   play: async ({ canvasElement }) => {
-    const rows = await worthALookRows(canvasElement, 9, 9);
-    await expect(
-      rows.getByRole('link', {
-        name: 'Title not published · No worktree published · claude:audit-8 · Start time not published',
-      }),
-    ).toHaveAttribute('href', '#n=session:audits:claude:audit-8');
+    const rows = await worthALookRows(canvasElement, 9);
+    const last = rows
+      .getAllByRole('listitem')
+      .find((item) => item.textContent?.includes('claude:audit-8'));
+    if (!last) throw new Error('Missing unpublished member');
+    const row = within(last);
+    await expect(row.getByRole('link', { name: 'Open session' })).toHaveAttribute(
+      'href',
+      '#n=session:audits:claude:audit-8',
+    );
+    await userEvent.click(row.getByRole('button', { name: 'Show technical details' }));
+    await waitFor(() => expect(row.getByText(/Start time not published/)).toBeVisible());
     await expect(canvasElement.textContent).not.toContain('1970-01-01');
   },
 };
@@ -223,7 +240,9 @@ export const UnpublishedMemberDetails: Story = {
 export const RootAndSubdirectoryShareCheckout: Story = {
   args: { checkout: 'shared', subdirectory: true },
   play: async ({ canvasElement }) => {
-    const heading = await within(canvasElement).findByRole('link', {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: "What Compass can't see" }));
+    const heading = await canvas.findByRole('link', {
       name: 'Concurrent sessions in one checkout',
     });
     await expect(heading).toHaveAttribute('href', '#n=sessions');
@@ -240,7 +259,7 @@ export const RootAndSubdirectoryShareCheckout: Story = {
 export const RepeatedIdentityHasNoOrphanCard: Story = {
   args: { duplicate: true },
   play: async ({ canvasElement }) => {
-    await worthALookRows(canvasElement, 0, 1);
+    await expectNoWorthALook(canvasElement);
     await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
     await expect(canvasElement).not.toHaveTextContent('Location not measured for 2 sessions');
   },

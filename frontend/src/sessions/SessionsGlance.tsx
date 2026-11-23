@@ -30,6 +30,7 @@ function CardContents({
           }`}
         >
           {tone === 'worth' ? <Icon name="worth-a-look" /> : null}
+          {tone === 'waiting' ? <Icon name="waiting" className="min-[621px]:hidden" /> : null}
           {label}
         </span>{' '}
         <strong className="text-hero leading-none font-extrabold tabular-nums">{count}</strong>
@@ -116,7 +117,7 @@ export function SessionsGlance({
         <SummaryRouteCard
           route={NEEDS_YOU}
           cue={SESSION_LIST_WORDS.openInNeedsYou}
-          className={CARD}
+          className={`${CARD} max-[620px]:border-[var(--status-waiting-ink)] max-[620px]:bg-[color-mix(in_srgb,var(--status-waiting-bg)_30%,var(--panel))]`}
         >
           <CardContents
             label={SESSION_ROW_WORDS.waitingOnYou}
@@ -131,7 +132,7 @@ export function SessionsGlance({
           controls={listId}
           pressed={working}
           onClick={showWorking}
-          className={CARD}
+          className={`${CARD} max-[620px]:hidden`}
         >
           <CardContents
             label={SESSION_LIST_WORDS.workingNow}
@@ -143,7 +144,7 @@ export function SessionsGlance({
         <SummaryRouteCard
           route={NEEDS_YOU}
           cue={SESSION_LIST_WORDS.openInNeedsYou}
-          className={CARD}
+          className={`${CARD} max-[620px]:hidden`}
         >
           <CardContents
             label={SESSION_ROW_WORDS.worthALook}

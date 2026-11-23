@@ -193,6 +193,19 @@ With the landed Help, Projects and Session changes underneath, Settings packages
 2,473,199 bytes on Node 26.10.0 and pnpm 12.17.0. The page bound follows the measured build,
 42,532 bytes above the previous page on main. The fixture bound stays at 250,000 bytes.
 
+On 2026-11-23, the Needs you, Goal history and phone layout layer packaged at 2,466,879
+bytes, an increase of 4,000 bytes (0.16%) from the 2,462,879-byte Settings page.
+The review fixes restore independent quota and goal evidence, report failed saves, and make
+dismissal writes sequential. The corrected build measures 2,468,711 bytes, 1,832 bytes
+(0.07%) above the first package. The page bound is the measured 2,468,711 bytes. The fixture
+bound stays at 250,000 bytes.
+
+After restacking Needs you, Goal history and the phone layout on the landed Settings page,
+the packaged page measures 2,479,799 bytes on Node 26.10.0 and pnpm 12.17.0. The 6,600-byte
+increase over the 2,473,199-byte Settings page includes the rebuilt navigation and the phone
+layout for the slider labels. The page bound follows the measured build. The fixture bound
+stays at 250,000 bytes.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.

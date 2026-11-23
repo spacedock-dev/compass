@@ -16,6 +16,22 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+Departure (2026-11-23): Goal history uses searchable On the board now and Older sessions
+groups. Rows show each published goal's source and time, and the binding and standing-quotation
+caveats stay next to the saved or discarded record. Older records can lack a title because the
+annotations endpoint publishes goal records independently of session history. The view
+differential compares goal text, exact routes, titles, group membership and load states after
+masking the old labels and account of the store. The retention disclosure explains both bounds
+and identifies the session history copy's default duration.
+
+Departure (2026-11-23): Needs you starts with Waiting on you, Worth a look and Ready to
+wrap up. The view differential checks their membership against the board selector and
+masks the replaced layouts, headings and action wording. The unchanged coverage, reports
+and independent risk evidence retain their recorded answers. Quota warnings are drawn under
+What Compass can't see even when the board cannot count sessions. Raw request and session
+identifiers in other warnings open with Show technical details. Coming next belongs on the
+session page. Dismiss and Mark as read both use the server dismissals store.
+
 Settings adds an inline Your data explanation. Its Copy button copies the terminal commands for
 the dashboard's listening port. The operation still runs in the terminal.
 
@@ -142,6 +158,10 @@ Quota, checkout warnings, unowned requests and location gaps without measured co
 outside the session count. The view differential checks the new membership and compares details
 for rows that keep their leading signal. It sets aside the old opening brief, queue counts and
 the native wait reason newly shown alongside exact requests. The recordings stay fixed.
+
+The Needs you coverage row says "Waits not reported" when an agent does not publish waits.
+The view comparison projects that label onto the recorded row and still checks the rate and
+coverage indicators.
 
 2026-11-23, Needs you writes out waiting, end, stop and turn ages using the displayed payload's
 clock. Older observations use the reader's clock or a short date. Absolute starts and scheduled

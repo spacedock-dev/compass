@@ -35,7 +35,7 @@ def _sources(suffix: str) -> dict[Path, str]:
 class TheAttentionHeadingsTheSkillNamesAreTheOnesTheBoardDrawsTest(unittest.TestCase):
     def _skill_headings(self) -> set[str]:
         section = SKILL.split("\n## Needs you\n", 1)[1].split("\n## ", 1)[0]
-        return set(re.findall(r"\*\*([A-Z][A-Za-z ,]+?)\*\*", section))
+        return set(re.findall(r"\*\*([A-Z][A-Za-z ,']+?)\*\*", section))
 
     def _rendered_headings(self) -> set[str]:
         view = (SRC / "attention/AttentionView.tsx").read_text(encoding="utf-8")
@@ -51,6 +51,10 @@ class TheAttentionHeadingsTheSkillNamesAreTheOnesTheBoardDrawsTest(unittest.Test
         headings = re.findall(r'<Heading section="[a-z-]+">([^<]+)</Heading>', view)
         headings += re.findall(
             r'<QueueSection\s+section="[a-z-]+"\s+title=("[^"]+"|\{[^}]+\})', view
+        )
+        headings += re.findall(
+            r'disclosureKey="attention:what-compass-cannot-see"\s+headerProps=\{\{ render: <h2 /> \}\}\s+summary="([^"]+)"',
+            view,
         )
         rendered: set[str] = set()
         for heading in headings:
@@ -77,7 +81,8 @@ class TheAttentionHeadingsTheSkillNamesAreTheOnesTheBoardDrawsTest(unittest.Test
                 "Waiting on you",
                 "Worth a look",
                 "Ready to wrap up",
-                "Also at risk, off the session count",
+                "What Compass can't see",
+                "Other warnings",
                 "Not on this board yet",
             },
             self._rendered_headings(),
@@ -119,10 +124,10 @@ class TheReaderStateRecordCitesRealOwnersTest(unittest.TestCase):
         self.assertGreater(cited, 150, "the derivation found almost nothing to check")
 
 
-class OnlyTheTerminalScrollsTest(unittest.TestCase):
+class ScrollContainersAreDeliberateTest(unittest.TestCase):
     """A replaced scroll container needs its own restoration lane (`design-reader-state.md`)."""
 
-    def test_overflow_forms_and_the_one_auto_scroller(self) -> None:
+    def test_overflow_forms_and_the_named_scroll_containers(self) -> None:
         forms: set[str] = set()
         scrollers: list[str] = []
         for text in _sources(".css").values():
@@ -140,10 +145,10 @@ class OnlyTheTerminalScrollsTest(unittest.TestCase):
                 )
             ]
         self.assertEqual(
-            ["overflow-wrap:anywhere", "overflow:auto", "overflow:hidden"],
+            ["overflow-wrap:anywhere", "overflow-x:auto", "overflow:auto", "overflow:hidden"],
             sorted(forms),
         )
-        self.assertEqual([".pc-terminal-viewport"], scrollers)
+        self.assertCountEqual([".pc-terminal-viewport", ".next-sessions-status"], scrollers)
         for form in sorted(forms):
             with self.subTest(form=form):
                 self.assertIn(f"`{form}`", STATE_DOC)

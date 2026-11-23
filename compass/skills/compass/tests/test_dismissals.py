@@ -7,7 +7,9 @@ rather than what any real store contains.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
+import io
 import json
 import os
 import tempfile
@@ -15,7 +17,7 @@ import unittest
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from compass_runtime import aggregate, dismissals
+from compass_runtime import aggregate, cli, dismissals
 from compass_runtime import sessions as runtime_sessions
 
 from .support import make_config
@@ -149,6 +151,17 @@ class SubtractionTest(DismissalStoreTestCase):
         self.assertEqual(["blocked"], [s["sid"] for s in data["sessions"]])
         self.assertEqual(1, data["summary"]["needs_input"])
         self.assertEqual(0, data["cleared"])
+
+    def test_forget_keeps_dismissed_and_marked_read_sessions(self) -> None:
+        config, state = self.runtime()
+        self.assertTrue(dismissals.dismiss(config, state, "claude", "risk", now=4_500.0))
+        self.assertTrue(dismissals.dismiss(config, state, "codex", "read", now=4_501.0))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli._forget_stores(config), 0)
+        self.assertEqual(
+            {(entry["harness"], entry["sid"]) for entry in dismissals.load(config)},
+            {("claude", "risk"), ("codex", "read")},
+        )
 
     def test_the_watermark_is_the_servers_own_clock_not_the_callers(self) -> None:
         """A dismissal can never outlive the session's next write.

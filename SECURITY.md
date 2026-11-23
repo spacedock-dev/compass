@@ -330,10 +330,10 @@ The posture rests on two invariants:
    departure store rather than session history. Discarding a session's annotation withdraws from
    both: it deletes every revision and blanks the quotations from the departure rows those
    revisions were read against, keeping only that a check ran, so words discarded that way are
-   gone from this response and from both of those stores on disk. Both of those and not every
-   store: session history keeps its own fourteen-day copy of the goal and each outcome line, the discard
-   path does not touch it, and `--forget` is what removes that copy. The record's own sentence
-   names it, so a reader meets that fact where the act happened rather than only here.
+   gone from this response and from both of those stores on disk. When enabled, session history
+   keeps its own copy of the goal and each outcome line for fourteen days by default. The discard
+   path leaves that copy in place. `--forget` removes it. The discard record tells the reader
+   about the copy.
    What stays in the annotation store in their place is a
    **discard record**, and it holds four facts about the discard: the harness, the session id, the
    moment of the act, and the number of the last revision that went. A later group save may add

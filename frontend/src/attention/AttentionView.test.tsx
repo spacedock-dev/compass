@@ -79,7 +79,7 @@ describe('the four queues', () => {
     expect(document.querySelector('.next-attention-brief')?.textContent).toContain(
       '1 with limited state evidence.',
     );
-    expect(section('risk').querySelectorAll(':scope > ol > li')).toHaveLength(0);
+    expect(section('risk')).toBeNull();
   });
 
   it('shows three rows of a longer queue and the rest on request, and the request is the reader’s', async () => {
@@ -125,7 +125,7 @@ describe('the four queues', () => {
     const page = await open();
     const link = () =>
       document.querySelector(
-        '[data-next-attention-subject="session:[\\"claude\\",\\"gate-2\\"]"] h3 a',
+        '[data-next-attention-subject="session:[\\"claude\\",\\"gate-2\\"]"] a',
       ) as HTMLElement;
     link().focus();
     const node = link();
@@ -137,7 +137,7 @@ describe('the four queues', () => {
   it('moves focus to the section heading when the subject the reader was on leaves the board', async () => {
     const page = await open();
     const link = document.querySelector(
-      '[data-next-attention-subject="session:[\\"claude\\",\\"gate-1\\"]"] h3 a',
+      '[data-next-attention-subject="session:[\\"claude\\",\\"gate-1\\"]"] a',
     ) as HTMLElement;
     link.focus();
     expect(document.activeElement).toBe(link);
@@ -175,18 +175,21 @@ describe('the four queues', () => {
     const subject = document.querySelector(
       '[data-next-attention-subject="session:[\\"claude\\",\\"gate-1\\"]"]',
     ) as HTMLElement;
-    expect(subject.querySelector('h3')?.textContent).toMatch(
-      /Question waiting · \d additional source signals?/,
+    expect(subject.querySelector('.next-attention-reason')?.textContent).toBeTruthy();
+    expect(subject.querySelector('[data-layer="technical"]')?.textContent).toContain(
+      'Repeated tool failures',
     );
     expect(subject.textContent).toContain(
       'Repeated tool failures: Bash failed 4 times, nothing succeeded',
     );
-    expect(subject.textContent).toContain('Attribution conflict');
+    expect(subject.querySelector('[data-layer="technical"]')?.textContent).toContain(
+      'Sources disagree',
+    );
     // And it is not duplicated as a risk row of its own.
     expect(
-      section('risk').querySelectorAll(
+      section('risk')?.querySelectorAll(
         ':scope > ol > li [data-next-attention-subject="session:[\\"claude\\",\\"gate-1\\"]"]',
-      ),
+      ) ?? [],
     ).toHaveLength(0);
   });
 
@@ -279,10 +282,10 @@ describe('published times on the board', () => {
         { ...session, sid: 'end', ended_at: stamp, finished_at: stamp, dirty: false },
       ],
     });
-    expect(section('needs').textContent).toContain('Needs-input state reported');
+    expect(section('needs').textContent).toContain('The agent is waiting for your input.');
     expect(section('needs').textContent).not.toMatch(/waiting \d/);
-    expect(section('close').textContent).toContain('This session id reported its own end');
-    expect(section('close').textContent).not.toMatch(/· ended (?:\d|on |at )/);
+    expect(section('close').textContent).toContain('Ended');
+    expect(section('close').textContent).not.toMatch(/· Ended (?:\d|on |at )/);
   });
 
   it('shows the quota countdown and a scheduled reset in the reader’s time zone', async () => {
@@ -300,6 +303,8 @@ describe('published times on the board', () => {
         },
       ],
     });
+    expect(section('risk')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: "What Compass can't see" }));
     expect(screen.getByText('1 hour 6 minutes')).toBeInTheDocument();
     expect(
       screen.getByText(`Reset at ${reset.toLocaleTimeString(undefined, { timeStyle: 'short' })}`),
@@ -318,6 +323,7 @@ describe('published times on the board', () => {
         },
       ],
     });
+    fireEvent.click(screen.getByRole('button', { name: "What Compass can't see" }));
     const date = reset.toLocaleDateString(undefined, {
       month: 'short',
       day: 'numeric',
@@ -385,7 +391,7 @@ describe('the announcement', () => {
     await page.go('#n=sessions');
     await revise(page, attentionBoard({ generated: 1_000_025, gone: ['gate-1'] }));
     expect(status()).toMatch(
-      /^Attention updated: 5 need you, 5 at risk, 4 close the loop, 4 coming next$/,
+      /^Needs you updated: 4 waiting on you, 4 worth a look, 1 ready to wrap up\.$/,
     );
     expect(document.getElementById('next-attention-status')?.getAttribute('role')).toBe('status');
   });
@@ -462,10 +468,10 @@ describe('the counters moved from Sessions', () => {
   it('shows exact requests and reported blocks beside their counts', async () => {
     await open(attentionBoard());
     expect(document.querySelector('[data-next-fleet-fact="requests"]')?.textContent).toContain(
-      'EXACT REQUESTS',
+      'exact request',
     );
     expect(
       document.querySelector('[data-next-fleet-fact="reported-blocks"]')?.textContent,
-    ).toContain('REPORTED BLOCKS');
+    ).toContain('report block state');
   });
 });

@@ -37,8 +37,9 @@ Each group counts the rows it shows when the collection is readable. A search wi
 says "Nothing here matches." and offers Show everything. The Show older sessions link below the
 list reloads with the wider scope and explains that filters are cleared.
 
-All tab, filter and option targets are at least 44px high. They wrap at narrow widths. The
-toolbar is in normal page flow and the slash hint is hidden below 620px.
+All tab, filter and option targets are at least 44px high. At phone widths the status buttons
+scroll inside their row, the search field is 48px high, and Filters opens inline. The toolbar
+moves with the page. The slash hint is hidden below 620px.
 Press Working now again to clear the Working selection. An ended session with an open request
 appears in both Ended and Waiting on you. The summary identifies incomplete sources and includes
 a limited state count for sessions waiting on a child or without a published state.

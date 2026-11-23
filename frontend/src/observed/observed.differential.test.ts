@@ -75,7 +75,19 @@ function recordedObservation(payload: unknown): Record<string, unknown> {
     capacityEmptyNoteText: _noteText,
     ...recorded
   } = legacy.call<Record<string, unknown>>('nextObserved', payload, {});
-  return withoutHistory({ ...recorded, capacityEmptyText: 'No plan usage has been reported yet.' });
+  const coverage = recorded['coverage'] as { rows: Record<string, unknown>[] };
+  return withoutHistory({
+    ...recorded,
+    capacityEmptyText: 'No plan usage has been reported yet.',
+    coverage: {
+      ...coverage,
+      rows: coverage.rows.map((row) =>
+        row['blockText'] === 'Harness does not report blocks'
+          ? { ...row, blockText: 'Waits not reported' }
+          : row,
+      ),
+    },
+  });
 }
 
 describe('nextObserved and observe agree over generated payloads', () => {

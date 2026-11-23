@@ -300,7 +300,7 @@ export function createApiClient(deps: {
     ) => post<Record<string, unknown>>('/api/lane', body, signal),
     postAnswer: (body: { readonly id: string; readonly index: number }, signal?: AbortSignal) =>
       post<AnswerReceipt>('/api/answer', body, signal),
-    postDismiss: (body: SessionIdentity, signal?: AbortSignal) =>
+    postDismiss: (body: SessionIdentity & { readonly clear?: false }, signal?: AbortSignal) =>
       post<DismissReceipt>('/api/dismiss', body, signal),
     postNotify: (
       body: { readonly message: string; readonly session_id: string },

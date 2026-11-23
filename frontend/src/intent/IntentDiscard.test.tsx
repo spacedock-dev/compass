@@ -1,4 +1,4 @@
-import { act, fireEvent } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { json } from './testing';
 import { editGoal, board, control, goalBox, mountSession, text, type } from './panel.testing';
@@ -529,7 +529,7 @@ describe('Discard everything', () => {
     await settle(page);
     // Visit the log so it holds the rows, then come back to the session and discard.
     await page.go('#n=intent');
-    expect(document.body.textContent).toContain('Typed goal: Saved goal');
+    expect(document.body.textContent).toContain('Saved goal');
     await page.go('#n=session:alpha%2Fapp:claude:s1');
     await armed(page);
     await act(async () => {
@@ -539,8 +539,8 @@ describe('Discard everything', () => {
     await press(discard());
     await settle(page);
     await page.go('#n=intent');
-    expect(document.body.textContent).not.toContain('Typed goal: Saved goal');
-    expect(document.body.textContent).toContain('Reading the annotation store.');
+    expect(screen.queryByText('Saved goal', { exact: true })).toBeNull();
+    expect(document.body.textContent).toContain('Loading saved goals.');
   });
 });
 

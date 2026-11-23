@@ -149,7 +149,7 @@ function Identity({
   const limit = sessionStateLimit(session, state);
   const tile = state !== 'State not published' && state !== 'Waiting on child';
   return (
-    <div className="next-operation-identity flex items-start gap-3 pl-3">
+    <div className="next-operation-identity flex items-start gap-3 pl-3 max-[620px]:grid max-[620px]:gap-1">
       {tile ? <StatusTile state={state} live={session.isLive && state === 'Working'} /> : null}
       <div className="min-w-0">
         <RouteAnchor
@@ -178,7 +178,9 @@ function Identity({
             {limit}
           </span>
         ) : null}
-        {!session.titleKnown && session.promptKnown ? (
+        {!session.titleKnown &&
+        session.promptKnown &&
+        session.promptText.trim() !== row.goal.text.trim() ? (
           <span className="next-operation-assignment block">
             {'Last prompt · '}
             <span data-authored>{session.promptText}</span>

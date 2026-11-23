@@ -33,6 +33,7 @@ from unittest import mock
 
 from compass_runtime import (
     aggregate,
+    config,
     http_api,
     observer,
     project_context,
@@ -48,7 +49,7 @@ from compass_runtime import (
 from compass_runtime import annotations as annotation_store
 
 from .reading_pins import refuse_real_models
-from .support import make_server, serve_until_closed
+from .support import make_config, make_server, serve_until_closed
 from .test_claude_checks import SHORT, START
 from .test_direction_adoption import _row
 from .test_project_context import codex_message
@@ -359,6 +360,19 @@ class TheReadersWordsNeverCostAVerdictItsEvidenceTest(unittest.TestCase):
         sentences = (root / "frontend/src/intent/sentences.ts").read_text(encoding="utf-8")
         cap = f"{reading.LEDGER_WORDS_CAP_CHARS:_}"
         self.assertIn(f"export const ANALYZE_PROMPT_CAP_CHARS = {cap};", sentences)
+
+    def test_goal_history_retention_matches_the_server(self) -> None:
+        root = Path(reading.__file__).resolve().parents[4]
+        model = (root / "frontend/src/intent/logModel.ts").read_text(encoding="utf-8")
+        defaults = make_config()
+        for name, number in {
+            "SESSION_LIMIT": defaults.annotation_max_sessions,
+            "REVISION_LIMIT": defaults.annotation_max_revisions,
+            "COPY_DAYS": int(config.HISTORY_RETENTION_DEFAULT_DAYS),
+        }.items():
+            self.assertIn(f"export const GOAL_HISTORY_{name} = {number};", model)
+            self.assertIn(f"${{GOAL_HISTORY_{name}}}", model)
+        self.assertIn("Forget everything keeps typed goals and readings.", model)
 
     def test_a_short_session_sends_every_message_whole(self) -> None:
         prompt, _ = self.prompt([_fact(), _check(), _write()])

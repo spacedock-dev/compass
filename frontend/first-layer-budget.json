@@ -1,10 +1,5 @@
 {
   "counts": {
-    "frontend/src/attention/attention.css": {
-      "monospace": 4,
-      "uppercase": 1,
-      "tracking": 3
-    },
     "frontend/src/delegation/delegation.css": {
       "tracking": 2
     },
@@ -27,8 +22,7 @@
       "monospace": 1
     },
     "frontend/src/intent/intent.css": {
-      "monospace": 6,
-      "tracking": 1
+      "monospace": 5
     },
     "frontend/src/intent/OutcomeLines.tsx": {
       "monospace": 1
@@ -39,9 +33,9 @@
       "tracking": 13
     },
     "frontend/src/sessions/sessions.css": {
-      "monospace": 16,
+      "monospace": 15,
       "uppercase": 2,
-      "tracking": 15
+      "tracking": 14
     },
     "frontend/src/sessions/WhatItDid.tsx": {
       "monospace": 4
@@ -72,18 +66,12 @@
       "monospace": 1
     }
   },
-
   "technical": {
     "frontend/src/drift/WorkListView.tsx": "Activity log row text is under the technical details panel.",
     "frontend/src/terminal/terminal.css": "Styles terminal output, identities and attach commands."
   },
 
   "stories": [
-    "accessibility--attention-at-1280-zoomed-200",
-    "accessibility--attention-at-160",
-    "accessibility--attention-at-188",
-    "accessibility--attention-at-320",
-    "accessibility--attention-at-375",
     "accessibility--every-control-takes-focus-in-reading-order-with-a-ring",
     "accessibility--focus-in-the-steer-back-box",
     "accessibility--focus-on-a-stale-result",
@@ -94,32 +82,24 @@
     "accessibility--session-result-at-188",
     "accessibility--session-result-at-320",
     "accessibility--session-result-at-375",
-    "attention-project-locations--missing-checkout-evidence",
-    "attention-project-locations--mixed-measured-and-inferred",
-    "attention-project-locations--one-measured-location",
-    "attention-project-locations--repeated-identity-has-no-orphan-card",
-    "attention-project-locations--repeated-session-does-not-invent-sharing",
-    "attention-project-locations--repeated-unknown-counts-once-beside-measured-session",
-    "attention-project-locations--root-and-subdirectory-share-checkout",
-    "attention-project-locations--same-name-distinct-checkouts",
-    "attention-project-locations--shared-checkout",
-    "attention-project-locations--two-measured-locations",
-    "attention-project-locations--unpublished-member-details",
-    "board-needs-you--absolute-times-without-board-clock",
-    "board-needs-you--readable-times",
+
     "capacity-quota-line--console-rail-turned-off-with-no-window-read",
     "capacity-quota-line--console-rail-turned-off-with-windows-shown",
+
     "controls-disclosure--what-is-sent-size",
+
     "controls-raise-refusal--admission-refusal",
     "controls-raise-refusal--primary-admission-refusal",
     "controls-raise-refusal--restarted-dashboard",
     "controls-raise-refusal--tunnel-port-refusal",
+
     "drift-a-compass-skill-action--a-compass-skill-action-adds-nothing-to-the-goal",
     "drift-a-compass-skill-action--a-compass-skill-action-after-an-analysis-leaves-it-current",
     "drift-a-compass-skill-action--a-message-the-reader-typed-after-the-goal-is-still-asked-about",
     "drift-a-compass-skill-action--full-activity-labels-the-entries-as-compass-answer",
     "drift-a-compass-skill-action--the-outline-opens-no-phase-for-a-compass-skill-action",
     "drift-a-compass-skill-action--the-same-turn-without-the-mark-is-new-work",
+
     "drift-a-level-needs-a-departure--a-cleared-departure-is-named-once-on-the-next-reading",
     "drift-a-level-needs-a-departure--a-contradicted-claim-alone-draws-no-medium",
     "drift-a-level-needs-a-departure--a-partial-clear-is-named-on-the-next-reading",
@@ -127,6 +107,7 @@
     "drift-a-level-needs-a-departure--cant-tell-on-every-line-draws-no-level",
     "drift-a-level-needs-a-departure--consistent-but-held-back-says-why-in-the-sentence",
     "drift-a-level-needs-a-departure--goal-only-held-back-names-the-check-it-needs",
+
     "drift-a-pasted-correction--a-cited-message-is-quoted-without-its-wrapper",
     "drift-a-pasted-correction--a-departure-the-steer-named-is-said-to-be-gone",
     "drift-a-pasted-correction--a-replaced-departure-after-a-correction-is-named",
@@ -137,6 +118,7 @@
     "drift-a-pasted-correction--an-earlier-departure-the-next-reading-cannot-tell-about-stays-listed",
     "drift-a-pasted-correction--the-direction-select-draws-no-wrapper",
     "drift-a-pasted-correction--the-work-list-draws-no-wrapper",
+
     "drift-activity--command-with-a-forced-status-says-so",
     "drift-activity--commands-keep-their-label",
     "drift-activity--failure-splits",
@@ -148,6 +130,7 @@
     "drift-activity--number-order-and-one-last-turn",
     "drift-activity--unbound-ci-poll-says-why",
     "drift-activity--whole-turn-folded",
+
     "drift-analysis-result-limit-inaccurate-mark-what-it-read--a-command-cited-in-a-departure-and-in-a-consistent-line",
     "drift-analysis-result-limit-inaccurate-mark-what-it-read--an-older-reading-without-tiers-still-renders",
     "drift-analysis-result-limit-inaccurate-mark-what-it-read--limit-reached-holds-the-top-of-the-page",
@@ -164,6 +147,7 @@
     "drift-analysis-result-limit-inaccurate-mark-what-it-read--what-the-analysis-read-says-at-least-when-the-scan-began-late",
     "drift-analysis-result-limit-inaccurate-mark-what-it-read--what-the-analysis-read-with-an-exhausted-prompt",
     "drift-analysis-result-limit-inaccurate-mark-what-it-read--what-the-analysis-read-with-message-excerpts",
+
     "drift-card-states--a-failed-check-nothing-fixed-still-raises-it",
     "drift-card-states--a-fixed-red-test-raises-no-failed-check",
     "drift-card-states--a-pass-of-the-same-command-in-another-directory-fixes-nothing",
@@ -176,6 +160,7 @@
     "drift-card-states--re-running",
     "drift-card-states--result",
     "drift-card-states--running",
+
     "drift-check-scan-sentence--a-codex-version-with-no-exit-status-is-not-read",
     "drift-check-scan-sentence--background-and-other-commands-are-counted-not-listed",
     "drift-check-scan-sentence--claude-code-with-unread-subagent-work",
@@ -189,6 +174,7 @@
     "drift-check-scan-sentence--pull-requests-and-skills-are-said-apart",
     "drift-check-scan-sentence--runs-and-their-latest-results",
     "drift-check-scan-sentence--the-listing-note-comes-after-the-rest",
+
     "drift-departure-cards-and-quiet-rows--a-cited-check-reads-plainly-with-its-number",
     "drift-departure-cards-and-quiet-rows--a-departure-card-lists-each-cited-entry-and-its-number-opens-full-activity",
     "drift-departure-cards-and-quiet-rows--a-goal-too-vague-is-refused",
@@ -224,6 +210,7 @@
     "drift-departure-cards-and-quiet-rows--refused-reading",
     "drift-departure-cards-and-quiet-rows--two-departures-a-cant-tell-and-a-claim",
     "drift-departure-cards-and-quiet-rows--two-departures-on-two-messages-are-titled-apart",
+
     "drift-harness-goal-verdict--claim-before-any-analysis",
     "drift-harness-goal-verdict--claim-beside-an-agreeing-analysis",
     "drift-harness-goal-verdict--claim-confirmed-by-ci-on-a-merge-request-says-merge-request",
@@ -239,6 +226,7 @@
     "drift-harness-goal-verdict--harness-gave-up-beside-an-analysis-changes-no-level",
     "drift-harness-goal-verdict--harness-gave-up-on-the-goal",
     "drift-harness-goal-verdict--no-note-without-a-met-verdict",
+
     "drift-idle-analysis-and-steer-back--a-failed-analysis-names-its-cause",
     "drift-idle-analysis-and-steer-back--a-stored-codex-last-turn-reading-labels-the-turn",
     "drift-idle-analysis-and-steer-back--an-idle-reading-says-how-far-it-read",
@@ -251,9 +239,11 @@
     "drift-idle-analysis-and-steer-back--steer-back-from-an-idle-session",
     "drift-idle-analysis-and-steer-back--steer-back-off-for-an-earlier-intent",
     "drift-idle-analysis-and-steer-back--steer-back-off-when-marked-inaccurate",
+
     "drift-latest-long-outcome--partial-findings-leave-unknowns-explicit",
     "drift-latest-long-outcome--pending-direction-and-pause-keep-latest-outcome",
     "drift-latest-long-outcome--withheld-keeps-the-earlier-reading-and-accounting",
+
     "drift-live-monitor--analyze-outranks-the-monitor",
     "drift-live-monitor--ended-and-disabled",
     "drift-live-monitor--ends-while-viewed",
@@ -269,6 +259,7 @@
     "drift-live-monitor--turned-off-because-the-reader-left",
     "drift-live-monitor--turned-off-by-claude-code-settings",
     "drift-live-monitor--turned-off-by-its-own-limit",
+
     "drift-live-monitor-question--announced-and-reachable-by-keyboard",
     "drift-live-monitor-question--cleared-when-model-calls-were-paused",
     "drift-live-monitor-question--cleared-when-the-reader-left",
@@ -277,30 +268,38 @@
     "drift-live-monitor-question--no-turns-it-off",
     "drift-live-monitor-question--opens-and-counts-down-ten",
     "drift-live-monitor-question--yes-resets-it-and-the-next-comes-later",
+
     "drift-long-analysis-preview--drafted-goal-saves-then-requires-fresh-preview",
     "drift-long-analysis-preview--explicit-preview-then-one-start",
     "drift-long-analysis-preview--unavailable-preview-does-not-start",
+
     "drift-long-analysis-progress--cleanup-unconfirmed-after-cancel",
     "drift-long-analysis-progress--fourth-of-seven-with-actual-reservations",
     "drift-long-analysis-progress--reserved-final-slot-is-not-an-actual-pass-count",
     "drift-long-analysis-progress--unknown-blocked-token-is-not-displayed",
     "drift-long-analysis-progress--unknown-until-measured",
+
     "drift-long-coverage-and-limits--failed-evidence-ranges-keep-qualified-findings",
     "drift-long-coverage-and-limits--recorded-resource-stop-and-plan-ceilings",
     "drift-long-coverage-and-limits--source-gap-and-unknown-extent",
     "drift-long-coverage-and-limits--unknown-saved-coverage-while-new-job-runs",
+
     "drift-long-partial-and-interrupted-outcomes--local-departure-without-global-reassurance",
     "drift-long-partial-and-interrupted-outcomes--pending-direction-and-pause-keep-the-restart-outcome",
     "drift-long-partial-and-interrupted-outcomes--restart-keeps-the-earlier-reading-visibly-older",
+
     "drift-mid-turn-messages-and-answers--a-person-sees-the-draft-direction-after-saving-only-outcomes",
     "drift-mid-turn-messages-and-answers--the-readers-directions-are-not-the-agents-drift",
+
     "drift-next-prompt-allowance--an-older-server-leaves-the-next-allowance-unknown",
     "drift-next-prompt-allowance--an-unsent-prompt-keeps-its-refusal-and-counts-no-analysis",
     "drift-next-prompt-allowance--managed-mcp-explains-why-the-reading-cannot-run",
+
     "drift-pending-direction-keeps-the-last-outcome--a-cancellation-before-send-stays-visible",
     "drift-pending-direction-keeps-the-last-outcome--a-failed-analysis-stays-visible-and-its-attempt-stays-counted",
     "drift-pending-direction-keeps-the-last-outcome--a-failed-attempt-keeps-the-earlier-assessment-readable",
     "drift-pending-direction-keeps-the-last-outcome--an-unsent-refusal-stays-visible-and-spends-nothing",
+
     "drift-pull-request-ci-read--a-gitlab-configuration-that-could-not-be-used-says-so",
     "drift-pull-request-ci-read--a-gitlab-host-glab-does-not-name-says-so",
     "drift-pull-request-ci-read--a-head-past-the-sessions-commit-settles-nothing",
@@ -318,12 +317,14 @@
     "drift-pull-request-ci-read--required-only-says-how-many-checks-it-left-out",
     "drift-pull-request-ci-read--still-running-settles-nothing",
     "drift-pull-request-ci-read--the-flag-holds-the-read-off-and-offers-no-switch",
+
     "drift-record-pages--cited-entries-are-tinted",
     "drift-record-pages--numbers-stay-when-older-entries-load",
     "drift-record-pages--older-direction-draft-survives-navigation",
     "drift-record-pages--open-page-keeps-what-it-showed",
     "drift-record-pages--reader-appends-older-entries",
     "drift-record-pages--reading-names-entries-it-has-not-loaded",
+
     "drift-stages-harness-limits-and-no-reader--analyzing",
     "drift-stages-harness-limits-and-no-reader--antigravity-says-it-cannot-read-work",
     "drift-stages-harness-limits-and-no-reader--claude-code-missing-falls-back-to-codex",
@@ -347,6 +348,7 @@
     "drift-stages-harness-limits-and-no-reader--result-under-a-departure",
     "drift-stages-harness-limits-and-no-reader--sent-and-settings-stay-in-flow",
     "drift-stages-harness-limits-and-no-reader--stale-result",
+
     "drift-steer-back-correction--a-departure-on-a-failing-ci-check-names-it",
     "drift-steer-back-correction--a-departure-reads-as-what-happened",
     "drift-steer-back-correction--a-missing-explanation-keeps-the-line",
@@ -354,17 +356,13 @@
     "drift-steer-back-correction--the-cap-holds-every-explanation",
     "drift-steer-back-correction--the-counter-follows-the-correction",
     "drift-steer-back-correction--two-departures-each-explained",
+
     "drift-store-refusal--busy-store-says-so-and-starts-nothing",
     "drift-store-refusal--unreadable-store-says-so-and-points-at-the-card-notice",
+
     "drift-unasked-check-permission--antigravity-keeps-permission",
-    "drift-unasked-check-permission--attention-cue-after-a-revoke",
-    "drift-unasked-check-permission--attention-cue-waiting",
-    "drift-unasked-check-permission--attention-does-not-invite-reader-with-covered-grant",
-    "drift-unasked-check-permission--attention-does-not-invite-reader-with-dormant-grant",
-    "drift-unasked-check-permission--attention-points-to-the-toggle",
     "drift-unasked-check-permission--claude-needs-no-toggle",
     "drift-unasked-check-permission--flag-off",
-    "drift-unasked-check-permission--flag-off-on-attention",
     "drift-unasked-check-permission--granting",
     "drift-unasked-check-permission--no-session-record-reader",
     "drift-unasked-check-permission--paused",
@@ -384,17 +382,19 @@
     "drift-unasked-check-permission--reader-sees-unconfirmed-reply-after-another-board-arrives",
     "drift-unasked-check-permission--revoke-after-claude-took-the-route",
     "drift-unasked-check-permission--revoking",
-    "drift-unasked-check-permission--unreadable-session-is-absent-from-attention",
     "drift-unasked-check-permission--unreadable-session-keeps-revocation",
     "drift-unasked-check-permission--waiting-with-toggle-off",
+
     "drift-unfinished-long-analysis-records--explicit-inspection-and-confirmed-removal",
     "drift-unfinished-long-analysis-records--minimum-and-unknown-are-retained",
     "drift-unfinished-long-analysis-records--server-refusal-keeps-the-record",
+
     "drift-usability-review-2026-10-20--a-departure-card-has-no-evidence-or-source-fold",
     "drift-usability-review-2026-10-20--check-again-beside-the-stale-banner",
     "drift-usability-review-2026-10-20--copied-lapses-back-to-copy",
     "drift-usability-review-2026-10-20--pause-in-the-head-and-the-disclosure-closes",
     "drift-usability-review-2026-10-20--the-answer-first-and-what-quotes-the-agent",
+
     "intent-direction-actions--add-as-a-line-one-save",
     "intent-direction-actions--analyze-stays-available",
     "intent-direction-actions--make-it-the-goal-one-save",
@@ -405,6 +405,7 @@
     "intent-direction-actions--quoted-before-any-press",
     "intent-direction-actions--session-writing",
     "intent-direction-actions--twenty-two-directions",
+
     "intent-findgoal--a-citation-opens-the-entry-in-full-activity",
     "intent-findgoal--a-cleared-goal-note-sits-above-the-source-line-naming-a-found-goal",
     "intent-findgoal--a-found-goal-is-analyzed-without-a-save-first",
@@ -417,6 +418,7 @@
     "intent-findgoal--nothing-found",
     "intent-findgoal--paused-sends-nothing-and-says-so",
     "intent-findgoal--the-button-beside-the-prompt-list",
+
     "intent-intentcard--a-discard-from-a-stale-tab-takes-nothing-newer",
     "intent-intentcard--a-discard-names-the-words-shown-when-it-was-armed",
     "intent-intentcard--a-goal-too-vague-warns-under-the-goal-field",
@@ -469,6 +471,7 @@
     "intent-intentcard--typed-source-and-saved-status",
     "intent-intentcard--typed-words-stay-through-slow-save",
     "intent-intentcard--using-a-prompt-as-the-goal-keeps-the-reading-start",
+
     "intent-wording-at-the-edges-of-a-reading--cant-tell-after-a-write-was-cited",
     "intent-wording-at-the-edges-of-a-reading--cant-tell-with-nothing-published-as-cited",
     "intent-wording-at-the-edges-of-a-reading--how-to-says-what-a-reading-can-settle-and-how-far-to-trust-it",
@@ -504,10 +507,11 @@
     "sample-session-page--turn-off-summaries-is-held",
     "sample-session-page--turn-summaries-on-is-held",
     "sample-session-page--update-summary-is-held",
+
     "sessions-codex-finished-run--finished-and-interactive",
     "sessions-codex-finished-run--interactive-still-waits",
     "sessions-codex-finished-run--open-question-suppresses-finished-metadata",
-    "sessions-declared-children-and-groups--attention-quiet-coverage",
+
     "sessions-declared-children-and-groups--child-page-names-parent",
     "sessions-declared-children-and-groups--family-links-navigate-to-their-named-session",
     "sessions-declared-children-and-groups--parent-link-from-sessions-row-uses-pointer",
@@ -516,14 +520,19 @@
     "sessions-declared-children-and-groups--parent-question-outranks-child-wait",
     "sessions-declared-children-and-groups--prompt-first-title-is-a-child-wait",
     "sessions-declared-children-and-groups--unmatched-child-page",
+
     "sessions-declared-hold-preserves-reading--completed-reading-and-final-result",
+
     "sessions-header-age--phone-header",
+
     "sessions-long-histories--missing-optional-explanation-shows-no-token",
     "sessions-long-histories--project-shows-the-servers-task-cut",
     "sessions-long-histories--shared-delivery-words-keep-their-outcomes",
     "sessions-long-histories--skipped-xml-still-discloses-the-cut",
     "sessions-long-histories--whole-task-needs-no-ellipsis",
+
     "sessions-long-question-clamp--waiting-rail",
+
     "sessions-named-by-its-goal--session-page-names-the-held-goal",
     "sessions-named-by-its-goal--session-without-goal-keeps-its-name",
     "sessions-named-by-its-goal--untitled-waiting-session",
@@ -551,6 +560,7 @@
     "sessions-what-the-session-has-done--starts-partway",
     "sessions-what-the-session-has-done--unknown-coverage",
     "sessions-what-the-session-has-done--updating",
+
     "sessions-what-the-session-has-done-summary--agent-words-on-an-asked-line",
     "sessions-what-the-session-has-done-summary--asked-names-the-person",
     "sessions-what-the-session-has-done-summary--at-its-cap",
@@ -623,6 +633,7 @@
     "sessions-what-the-session-has-done-summary--withheld-run-collapses",
     "sessions-what-the-session-has-done-summary--working",
     "sessions-what-the-session-has-done-summary--working-over-a-saved-summary",
+
     "sessions-worktree-rows--header-names-the-worktree",
 
     "steering-local-notes-and-limits--ambiguous-tripwire-refreshes",
@@ -634,9 +645,12 @@
     "steering-local-notes-and-limits--tripwire-keeps-over-limit-text",
     "steering-local-notes-and-limits--tripwire-limit-refuses",
     "steering-local-notes-and-limits--tripwire-switch",
+
     "terminal-contrast--ansi-and-selection",
+
     "ui-badge--course-tag",
     "ui-badge--work-flag",
+
     "ui-button--primary-raise-declined",
     "ui-button--raise",
     "ui-button--raise-declined",

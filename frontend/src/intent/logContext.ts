@@ -3,7 +3,7 @@ import type { Row } from '../observed';
 import type { Shell } from '../shell/context';
 import { createIntentLog, type IntentLog, type LogSnapshot } from './logStore';
 
-/* One log per shell, made on first use and kept for the document's life, so a view that unmounts and
+/* One Goal history store per shell, made on first use and kept for the document's life, so a view that unmounts and
    returns finds the rows and the retry deadline it left. It is subscribed to the board's STORE and not to
    what the reader is shown: an accepted board whose token moved must withhold retained words at once,
    not after a paint an open option list or a toggle's motion is holding back. */

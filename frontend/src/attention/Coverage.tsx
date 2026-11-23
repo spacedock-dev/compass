@@ -1,4 +1,4 @@
-import { Disclosure, disclosureKey, useControls } from '../controls';
+import { useControls } from '../controls';
 import type { Observed } from '../observed';
 import { FOCUS_OFF_LINE } from '../sessions/detail';
 import { AttentionLink } from './AttentionLink';
@@ -35,20 +35,13 @@ export function CoverageBlock({
   const previous = model.coverage;
   return (
     <div className="next-attention-coverage">
-      <p>
-        <span className="next-attention-brief-label">COVERAGE</span>
-        <span>{coverage.gates}</span>
-      </p>
-      <Disclosure
-        disclosureKey={disclosureKey({ project: null, scope: null, name: 'attention-coverage' })}
-        summary="per-harness detail"
-        className="next-attention-coverage-details"
-        focusKey="attention:coverage"
-      >
+      <h3>Coverage by agent</h3>
+      <p>{coverage.gates}</p>
+      <div className="next-attention-coverage-details">
         <ul>
           {coverage.rows.map((row) => (
             <li key={row.key} data-next-coverage-harness={row.key}>
-              <strong>{row.label}</strong>
+              <strong data-authored>{row.label}</strong>
               <span className="next-attention-squares" aria-hidden="true">
                 <span className="next-attention-square" data-known={String(row.blockKnown)} />
                 <span className="next-attention-square" data-known={String(row.rateKnown)} />
@@ -78,7 +71,7 @@ export function CoverageBlock({
           </p>
           <TerminalCoverage model={model} />
         </div>
-      </Disclosure>
+      </div>
     </div>
   );
 }
@@ -109,7 +102,7 @@ export function CommandReportsSection({ reports }: { readonly reports: BoardRepo
         <ol>
           {reports.rows.map((report) => (
             <li key={report.key} className="next-attention-risk-identity">
-              <h3>
+              <h3 data-authored>
                 {report.route ? (
                   <AttentionLink
                     route={report.route}
@@ -122,7 +115,9 @@ export function CommandReportsSection({ reports }: { readonly reports: BoardRepo
                   report.text
                 )}
               </h3>
-              <p className="next-attention-risk-source">{report.source}</p>
+              <p className="next-attention-risk-source" data-authored>
+                {report.source}
+              </p>
             </li>
           ))}
         </ol>

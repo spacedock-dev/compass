@@ -7,7 +7,7 @@ import type { Section } from './model';
    Attention section"). It is the reader's, so a revision that reorders or replaces the subjects does not
    touch it: the section is the identity, and a flag set while a section held nine rows is still set when
    it holds four. The list is closed, so nothing a payload says can grow it. */
-export const EXPANDABLE: readonly Section[] = ['needs', 'risk', 'close', 'next'];
+export const EXPANDABLE: readonly Section[] = ['needs', 'close'];
 
 function create() {
   const open = new Set<string>();

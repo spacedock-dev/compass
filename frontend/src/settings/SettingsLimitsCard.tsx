@@ -121,10 +121,14 @@ export function LimitSlider({
           }}
         />
       ) : null}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-1 text-label text-muted-foreground [overflow-wrap:anywhere]">
-        <span>{withUnit(field, field.minimum)}</span>
-        <span className="text-center">{`Recommended: ${withUnit(field, field.fallback)}`}</span>
-        <span className="text-end">{withUnit(field, field.maximum)}</span>
+      <div className="grid grid-cols-2 items-start gap-1 text-label text-muted-foreground sm:grid-cols-[1fr_auto_1fr]">
+        <span className="whitespace-nowrap">{withUnit(field, field.minimum)}</span>
+        <span className="col-span-2 row-start-2 text-center sm:col-span-1 sm:col-start-2 sm:row-start-1">
+          {`Recommended: ${withUnit(field, field.fallback)}`}
+        </span>
+        <span className="col-start-2 row-start-1 text-end whitespace-nowrap sm:col-start-3">
+          {withUnit(field, field.maximum)}
+        </span>
       </div>
       {saving ? (
         <p role="status" className="m-0 text-label">{`Saving ${field.label.toLowerCase()}…`}</p>

@@ -1,5 +1,5 @@
 import { toHaveTextContent, toHaveAttribute } from '@testing-library/jest-dom/matchers';
-import { screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { locationBoard, locationRow, locationRows } from '../../test/location_boards';
 import { mountShell } from '../shell/testing';
@@ -55,10 +55,13 @@ describe('a label is interpreted by measured locations', () => {
     const cards = measuredCards();
     expect(cards).toHaveLength(2);
     for (const row of locationRows(data)) {
-      const link = screen.getByRole('link', { name: new RegExp(String(row['title'])) });
+      const card = screen
+        .getByRole('heading', { name: String(row['title']) })
+        .closest('article') as HTMLElement;
+      const link = within(card).getByRole('link', { name: 'Open session' });
       expect(link).toHaveAttribute('href', `#n=session:audits:claude:${String(row['sid'])}`);
-      expect(link.closest('article')).toHaveTextContent('2 measured locations');
-      expect(link.closest('article')).not.toHaveTextContent('path:other');
+      expect(card).toHaveTextContent('2 measured locations');
+      expect(card).not.toHaveTextContent('path:other');
     }
   });
 
@@ -113,7 +116,7 @@ describe('a label is interpreted by measured locations', () => {
       expect(card.querySelector('.next-attention-risk-observation > p')).toHaveTextContent(
         expected,
       );
-      expect(within(card).getAllByRole('link', { name: /Audit \d/ })).toHaveLength(1);
+      expect(within(card).getAllByRole('link', { name: 'Open session' })).toHaveLength(1);
     }
     expect(screen.queryByRole('link', { name: /Audit 2/ })).toBeNull();
     attention.unmount();
@@ -165,9 +168,8 @@ describe('a label is interpreted by measured locations', () => {
       });
     const page = mountShell({ hash: '#n=attention', data });
     await page.settle();
-    expect(
-      screen.getByRole('link', { name: 'Concurrent sessions in one checkout' }),
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: "What Compass can't see" }));
+    expect(screen.getByRole('link', { name: 'Concurrent sessions in one checkout' })).toBeVisible();
   });
 
   it.each(['different', 'missing', 'empty', 'inferred', 'idle', 'ended'])(
@@ -202,9 +204,8 @@ describe('a label is interpreted by measured locations', () => {
     locationRow(data, 1)['state'] = 'needs_input';
     const page = mountShell({ hash: '#n=attention', data });
     await page.settle();
-    expect(
-      screen.getByRole('link', { name: 'Concurrent sessions in one checkout' }),
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: "What Compass can't see" }));
+    expect(screen.getByRole('link', { name: 'Concurrent sessions in one checkout' })).toBeVisible();
     expect(document.body).toHaveTextContent('2 sessions working or waiting in the same checkout');
     expect(document.body.innerHTML).not.toContain('checkout:a7b8c9');
     expect(document.body.innerHTML).not.toContain('path:audits');
@@ -238,14 +239,16 @@ describe('a label is interpreted by measured locations', () => {
       });
       const page = mountShell({ hash: '#n=attention', data });
       await page.settle();
-      const link = screen.getByRole('link', {
-        name: /Title not published · No worktree published · claude:audit-1 · Start time/,
-      });
+      const card = measuredCards().find((node) => node.textContent?.includes('claude:audit-1'));
+      if (!card) throw new Error('Missing location evidence');
+      const view = within(card);
+      const link = view.getByRole('link', { name: 'Open session' });
       expect(link).toHaveAttribute('href', '#n=session:audits:claude:audit-1');
-      expect(link).toHaveTextContent(started > 0 ? /Start time at \d/ : 'Start time not published');
-      expect(screen.getByRole('link', { name: /Audit 0/ })).toHaveTextContent(/Start time at \d/);
-      expect(link).not.toHaveTextContent(/\d{4}-\d{2}-\d{2}T/);
-      expect(link).not.toHaveTextContent('1970-01-01');
+      fireEvent.click(view.getByRole('button', { name: 'Show technical details' }));
+      expect(view.getByText(/Start time/)).toHaveTextContent(
+        started > 0 ? /Start time at \d/ : 'Start time not published',
+      );
+      expect(card).not.toHaveTextContent(/\d{4}-\d{2}-\d{2}T|1970-01-01/);
     },
   );
 
@@ -271,9 +274,12 @@ describe('a label is interpreted by measured locations', () => {
         });
         const time = start.toLocaleTimeString(undefined, { timeStyle: 'short' });
         const words = hasClock ? `at ${time}` : `on ${date} at ${time}`;
-        expect(
-          screen.getByRole('link', { name: new RegExp(`Audit ${index} ·`) }),
-        ).toHaveTextContent(`Start time ${words}`);
+        const card = screen
+          .getByRole('heading', { name: `Audit ${index}` })
+          .closest('article') as HTMLElement;
+        const view = within(card);
+        fireEvent.click(view.getByRole('button', { name: 'Show technical details' }));
+        expect(view.getByText(/Start time/)).toHaveTextContent(`Start time ${words}`);
       }
     },
   );

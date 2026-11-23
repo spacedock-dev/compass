@@ -36,6 +36,18 @@ it.each([states, focused])(
 );
 
 it.each([
+  {
+    name: 'Needs you',
+    hash: '#n=attention',
+    heading: 'Needs you',
+    disclosure: "What Compass can't see",
+  },
+  {
+    name: 'Goal history',
+    hash: '#n=intent',
+    heading: 'Goal history',
+    disclosure: 'How long goals are kept',
+  },
   { name: 'Help', hash: '#n=help', heading: 'How Compass works' },
   { name: 'Projects', hash: '#n=projects', heading: 'Projects', link: /alpha-app/ },
   { name: 'project Overview', hash: '#n=project:alpha-app', heading: 'alpha-app', tab: 'Overview' },
@@ -58,7 +70,7 @@ it.each([
     tab: 'Usage and alerts',
   },
   { name: 'Settings', hash: '#n=settings', heading: 'Settings' },
-])('keeps Compass copy on $name current', async ({ hash, heading, link, tab }) => {
+])('keeps Compass copy on $name current', async ({ hash, heading, link, tab, disclosure }) => {
   const page = mountShell({ hash, data: states.response.body });
   await page.settle();
   const view = within(page.container);
@@ -66,6 +78,12 @@ it.each([
   if (link) expect(view.getAllByRole('link', { name: link })[0]).toBeVisible();
   if (tab) expect(view.getByRole('tab', { name: new RegExp(tab), selected: true })).toBeVisible();
   expect(boardCopyViolations(page.container)).toEqual([]);
+  if (disclosure) {
+    const trigger = view.getByRole('button', { name: disclosure });
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(boardCopyViolations(page.container)).toEqual([]);
+  }
 });
 
 it('keeps Compass copy in the Settings disclosures current', async () => {

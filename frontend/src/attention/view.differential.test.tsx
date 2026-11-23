@@ -117,6 +117,9 @@ function summarize(root: ParentNode): Summary {
       if (source?.nodeType === Node.TEXT_NODE)
         source.textContent = maskSourceTime(source.textContent ?? '');
       if (article.dataset['nextBoardRisk'] === 'ask') {
+        // Request identifiers are still available in the technical layer.
+        content.querySelector('.next-attention-risk-identity > span')?.remove();
+        content.querySelector('.technical-details')?.remove();
         const source = content.querySelector('.next-attention-risk-source > span:last-child');
         if (source) source.textContent = maskSourceTime(norm(source));
       }
@@ -133,7 +136,7 @@ function summarize(root: ParentNode): Summary {
         board: article.dataset['nextBoardRisk'] ?? '',
         text: maskTimePhrases(norm(content)),
         links: links(article),
-        buttons: [...article.querySelectorAll('button')].map((button) =>
+        buttons: [...content.querySelectorAll('button')].map((button) =>
           button.getAttribute('aria-label'),
         ),
       };
@@ -177,7 +180,13 @@ function legacySummary(payload: unknown, expanded: readonly string[], capability
   legacy.setFocusCapability(capability);
   const template = document.createElement('template');
   template.innerHTML = legacy.attentionHtml(payload, expanded);
-  return summarize(template.content);
+  const summary = summarize(template.content);
+  return {
+    ...summary,
+    coverageRows: summary.coverageRows.map((row) =>
+      row.replace('Harness does not report blocks', 'Waits not reported'),
+    ),
+  };
 }
 
 async function reactSummary(
@@ -213,42 +222,27 @@ function firstDifference(left: string, right: string): string {
   return `near ${JSON.stringify(left.slice(Math.max(0, at - 90), at + 160))} vs ${JSON.stringify(right.slice(Math.max(0, at - 90), at + 160))}`;
 }
 
-function unchangedView(summary: Summary, counterpart: Summary, restored: Set<string>): Summary {
+function unchangedView(summary: Summary, restored: Set<string>): Summary {
+  // The 2026-11-23 redesign replaces the three session card layouts and moves Coming next.
+  // Compare their exact session membership above. Keep coverage, command reports and the unchanged
+  // off-count evidence against the recording after masking their new container and locations.
   const sections = summary.sections.flatMap((section) => {
-    const other = counterpart.sections.find(({ name }) => name === section.name);
-    if (['needs', 'risk', 'close'].includes(section.name)) {
-      if (!other) return [];
-      // Only subjects whose membership and leading signal still match retain their legacy row contract.
-      const keys = (items: readonly Item[]) =>
-        items.map(({ subjectKey, kind }) => JSON.stringify([subjectKey, kind]));
-      const own = keys(section.items);
-      const peer = keys(other.items);
-      const sameRows = new Set(
-        peer.filter(
-          (key) =>
-            peer.indexOf(key) === peer.lastIndexOf(key) &&
-            own.indexOf(key) === own.lastIndexOf(key),
-        ),
-      );
-      const items = section.items
-        .filter(({ subjectKey, kind }) => sameRows.has(JSON.stringify([subjectKey, kind])))
-        .map((item) => ({ ...item, hidden: false }))
-        .sort((left, right) => left.subjectKey.localeCompare(right.subjectKey));
-      return [{ ...section, heading: '', note: '', toggle: null, items }];
-    }
+    if (section.name !== 'board-risk') return [];
     const items = section.items.filter(
       ({ kind, subjectKey }) =>
-        kind !== 'collision' && kind !== 'checkout' && !restored.has(subjectKey),
+        kind !== 'collision' &&
+        kind !== 'checkout' &&
+        kind !== 'quota' &&
+        !restored.has(subjectKey),
     );
-    // Pending tasks now appear in Right now on their own session.
-    return items.length && section.name !== 'next' ? [{ ...section, items }] : [];
+    return items.length ? [{ ...section, heading: '', items }] : [];
   });
   return {
     ...summary,
+    heading: summary.heading.replace(/ ?what is observed, and what the board could not see$/, ''),
     brief: '',
-    // A repeated identity now counts once, so a label shared only by repeats is no longer shared.
     caveats: summary.caveats.filter((text) => text !== 'No shared display label observed'),
-    sections: sections.sort((left, right) => left.name.localeCompare(right.name)),
+    sections,
   };
 }
 
@@ -303,11 +297,10 @@ describe('the Attention screen reads as the legacy screen does, over generated p
         const left = JSON.stringify(
           unchangedView(
             { ...old, heading: old.heading.replace(/^Attention/, 'Needs you') },
-            mine,
             restored,
           ),
         );
-        const right = JSON.stringify(unchangedView(mine, old, restored));
+        const right = JSON.stringify(unchangedView(mine, restored));
         if (left !== right && !DEVIATIONS.some((d) => d.seed === seed)) {
           failures.push(
             `seed ${String(seed)} (${expanded.length ? 'expanded' : 'collapsed'}, capability ${capability || 'none'}): ${firstDifference(left, right)}`,

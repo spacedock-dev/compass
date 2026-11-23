@@ -203,13 +203,10 @@ function fitsAt(name: string, width: number): Story {
           `${name} at ${width}px: clipped controls`,
         ).toEqual([]);
         if (name === 'Sessions' && (width === 375 || width === 320)) {
-          const glance = within(canvasElement).getByRole('region', { name: 'At a glance' });
-          const cards = [...glance.children].map((card) => card.getBoundingClientRect());
-          await expect(cards).toHaveLength(3);
-          for (const [index, card] of cards.entries()) {
-            await expect(card.width).toBe(cards[0]?.width);
-            if (index > 0) await expect(card.top).toBeGreaterThan(cards[index - 1]?.bottom ?? 0);
-          }
+          const cards = within(canvasElement).getByRole('region', { name: 'At a glance' });
+          await expect(within(cards).getByRole('link', { name: /Waiting on you/ })).toBeVisible();
+          await expect(within(cards).queryByRole('button', { name: /Working now/ })).toBeNull();
+          await expect(within(cards).queryByRole('link', { name: /Worth a look/ })).toBeNull();
         }
       } finally {
         await restore();
@@ -218,6 +215,7 @@ function fitsAt(name: string, width: number): Story {
   };
 }
 
+export const SessionResultAt390: Story = fitsAt('Session result', 390);
 export const SessionResultAt375: Story = fitsAt('Session result', 375);
 export const SessionResultAt320: Story = fitsAt('Session result', 320);
 export const SessionResultAt188: Story = fitsAt('Session result', 188);
