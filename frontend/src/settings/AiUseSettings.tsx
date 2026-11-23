@@ -45,7 +45,7 @@ function SummariesSwitch({ paused }: { readonly paused: boolean | null }) {
         title="Summaries"
         description={
           <>
-            <p className="m-0">Write a short summary when you open a ended Claude Code session.</p>
+            <p className="m-0">Summarize an ended Claude Code session when you open it.</p>
             <p id={descriptionId} className="m-0">
               {words}
             </p>

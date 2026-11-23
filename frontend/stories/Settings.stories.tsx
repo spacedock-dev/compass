@@ -461,6 +461,9 @@ export const AiUseOn: Story = {
     const pause = await canvas.findByRole('switch', { name: 'Pause all AI use' });
     const summaries = canvas.getByRole('switch', { name: 'Summaries' });
     await expect(pause).toHaveAttribute('aria-checked', 'false');
+    await expect(
+      canvas.getByText('Summarize an ended Claude Code session when you open it.', { exact: true }),
+    ).toBeVisible();
     await expect(summaries).toHaveAttribute('aria-checked', 'true');
     await expect(canvas.getByText(SUMMARY_ON)).toBeVisible();
     await expect(canvas.queryByText(SUMMARY_PAUSED)).toBeNull();
