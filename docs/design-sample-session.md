@@ -185,7 +185,7 @@ from the 2,423,571-byte Help and Projects page. The new stepped slider and Setti
 ship in the page. The page bound rises once to the measured 2,462,879 bytes. The fixture
 bound stays at 250,000 bytes.
 
-The Settings review fixes packaged at 2,466,039 bytes, up 3,160 bytes. The increase
+The Settings review fixes packaged at 2,466,095 bytes, up 3,216 bytes. The increase
 covers save confirmation, browser availability and the fallback for unreadable preferences.
 The page bound rises to the measured size. The fixture bound stays at 250,000 bytes.
 

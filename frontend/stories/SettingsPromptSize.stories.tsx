@@ -400,6 +400,29 @@ export const ACancelledTouchDoesNotSave: Story = {
   },
 };
 
+export const ATouchSavesOnRelease: Story = {
+  args: { scenario: 'changed' },
+  play: async ({ canvasElement }) => {
+    const limits = await customize(canvasElement);
+    const slider = limits.getByRole('slider', { name: 'Prompt size' });
+    const control = slider.closest('[data-slot="slider-control"]');
+    if (!control) throw new Error('Missing slider control');
+    const box = await settledRect(control);
+    const point = { clientX: box.x + box.width * 0.2, clientY: box.y + box.height / 2 };
+    const touches = [new Touch({ identifier: 1, target: control, ...point })];
+    fireEvent.pointerDown(control, { ...point, pointerType: 'touch', button: 0, buttons: 1 });
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    fireEvent.touchStart(control, { changedTouches: touches });
+    await expect(slider).not.toHaveAttribute('aria-valuetext', '1,024 KB');
+    await expect(posted).toEqual([]);
+    fireEvent.pointerUp(control, { ...point, pointerType: 'touch', button: 0, buttons: 0 });
+    fireEvent.touchEnd(control, { changedTouches: touches });
+    await expect(await limits.findByText('Limits saved.')).toBeVisible();
+    await expect(posted).toEqual([{ analyze_prompt_bytes: 32768 }]);
+    await expect(slider).toHaveAttribute('aria-valuetext', '32 KB');
+  },
+};
+
 function fit(width: number): Story {
   return {
     args: { scenario: 'all-changed' },

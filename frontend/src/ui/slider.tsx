@@ -61,7 +61,10 @@ export function Slider({
           onRelease(next);
         }
       }}
-      onPointerDownCapture={() => {
+      onPointerDownCapture={(event) => {
+        // Base UI also starts a touch interaction on touchstart. Let that event own the gesture
+        // so a second start cannot clear the draft before release.
+        if (event.pointerType === 'touch') event.preventDefault();
         key.current = null;
         cancelled.current = false;
       }}
