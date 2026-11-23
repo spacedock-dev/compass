@@ -1,15 +1,15 @@
 {
   "document": {
-    "bytes": 2479707,
+    "bytes": 2478431,
     "file": "react.html",
-    "sha256": "155bfa5368114f70d154b77d6fbc0a7186972eef289ead26c685c2fc4e3c1f31"
+    "sha256": "686b571882b4b15a96af304cf75ff637dff27e5560174f7dccc8ac248794c643"
   },
   "format": 1,
   "frontend": "react",
   "licenses": {
     "bytes": 37269,
     "file": "react-licenses.txt",
-    "sha256": "d44cd73588ddcb96418a879910c09cbb8c47eacbb8946392d3189551d3911fed"
+    "sha256": "467a15b53bc63c1830e5e0a0efba9c2d2b5f24b86a1950b96b3d2026292fef5a"
   },
   "optionalTerminal": {
     "javascript": {
@@ -106,14 +106,14 @@
         "licenseFile": "LICENSE",
         "name": "react",
         "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93",
-        "version": "19.3.0"
+        "version": "19.3.1"
       },
       {
         "license": "MIT",
         "licenseFile": "LICENSE",
         "name": "react-dom",
         "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93",
-        "version": "19.3.0"
+        "version": "19.3.1"
       },
       {
         "license": "MIT",
@@ -1467,7 +1467,7 @@
       },
       {
         "file": "frontend/src/steering/StageConditions.tsx",
-        "sha256": "6a42ef350849885399f830b78ddce7b9e799db688ce0462daaaee8fc2bc5c795"
+        "sha256": "a6ca57e4bfecb7c1b1a8de86f6be59fdbe7c333c64fe161cc0357a77f185fa52"
       },
       {
         "file": "frontend/src/steering/Tripwires.tsx",
@@ -1851,11 +1851,11 @@
       },
       {
         "file": "package.json",
-        "sha256": "77f4ffcf9f450c8a9e7d43bd7d7ba4151151467a7dcaa79eb8ac5050a89b1190"
+        "sha256": "0b7535318f6a2e05ea81859d9ec2a33ef478efcf6d2f7b4f0faba88eb3672322"
       },
       {
         "file": "pnpm-lock.yaml",
-        "sha256": "b37e26b44d9ad6e4d8ce5b1cc1f70d8d1d9969f491ab1d415a7d2834fd8394d3"
+        "sha256": "65582c15f4f2c9a20f1f824f9816119740bbf87c3d1124d8a41fe65dba4443e2"
       }
     ]
   }
