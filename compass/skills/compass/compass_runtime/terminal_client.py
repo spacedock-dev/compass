@@ -250,7 +250,7 @@ OPERATIONS = (
         "read the goal a reading would use; text saves it, --clear empties it, "
         "--adopt saves its source",
     ),
-    Operation("--pause-model-calls", "pause Compass model calls; Resume stays on the board"),
+    Operation("--pause-model-calls", "Pause all AI use in Compass. Use Resume AI use on the board"),
     Operation(
         "--monitor",
         "hold the Live monitor for this Claude Code session; --off stops this terminal holder",
@@ -267,13 +267,13 @@ OPERATIONS = (
     ),
     Operation(
         "--sessions",
-        "list the sessions running now and those that finished lately; with `waiting`, only "
+        "list the sessions running now and those that ended lately; with `waiting`, only "
         "the ones waiting on you",
         ("waiting",),
     ),
     Operation(
         "--drift",
-        "print a session's drift reading against your goal, with --session or "
+        "print a session's progress check against your goal, with --session or "
         "CLAUDE_CODE_SESSION_ID; a stored reading costs nothing, and with none, or with "
         "`again`, it asks the model for one and waits",
         ("again",),

@@ -1,4 +1,4 @@
 {
   "name": "compass",
-  "description": "Agnostic agent cartography and visualization — a live local dashboard mapping coding-agent sessions across Claude Code, Codex, Pi, Gemini, Antigravity, Copilot, OpenCode, Cursor, Goose, and Droid"
+  "description": "See which coding agents are working, which sessions are waiting on you, and how their work lines up with your goals. A local dashboard for Claude Code, Codex, Pi, Gemini, Antigravity, Copilot, OpenCode, Cursor, Goose, and Droid."
 }

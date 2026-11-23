@@ -1,14 +1,14 @@
-# Intent and drift reference
+# Goals and progress checks
 
-This reference covers marking sessions handled, recording Intent and checking drift, and long analysis.
+This reference covers marking sessions handled, setting goals, checking progress and using long checks.
 
 Return to [start, status and stop](../SKILL.md#start).
 
 ## Marking a session handled
 
-The dismissal API remains available for integrations, but the dashboard does not currently expose
-handled controls. A mark made through `POST /api/dismiss` removes that session from published
-counts until anything in it writes again; a subagent write counts. Marks live in
+In Needs you, Dismiss clears a Worth a look row and Mark as read clears a Ready to wrap up row.
+The marks survive Forget everything. Integrations can call `POST /api/dismiss` to remove a session
+from published counts until anything in it writes again, including a subagent. Marks live in
 `compass-dismissals.json`. Delete that file to clear them all, call the endpoint with
 `{"clear": false}` to restore one, or run with `--no-dismiss` to leave the store unread for a run.
 
@@ -94,7 +94,7 @@ Binding is per session, and the board says when it is not exact. Where a harness
 short identity prefix, another session sharing that prefix would share these words, and the row says
 so rather than leaving you to assume otherwise.
 
-Below the two fields the Drift section holds the run control (or the question about a later
+Is it on track? holds the check control (or the question about a later
 direction), the reading and the departures on record. Notes about your saved words are in the
 Goal card under the save. At the foot of the page, Show technical details opens the Activity log.
 It lists every loaded entry, with the session's current activity and end evidence below.
@@ -136,27 +136,25 @@ shows more than the first sentence; an unasked reading sends none of them. The n
 the content sent. It includes those checks by default, with the last 180 characters each printed,
 the paths of the files written, every other command as its masked line and exit status (with its output only when the reading runs on Claude Code itself), the repository and number of a pull request the session created and the names of skills it used, for the destination named beside the button, and sends none where Compass cannot name that destination. On every other harness those
 entries are instructions, dispatches and gate decisions and never an inspected file, test or
-deliverable. Pressing Analyze drift also reads one pull request's CI checks from GitHub with your own `gh` login, when your goal names the pull request by its URL or a Claude Code session records one for the repository its folder points at. GitHub is sent the repository and the number, or, where a pushed branch is what bound it, the repository and that branch's name, and nothing else of the session, and the notice carries one line about it. Checks still running, no completed check and a pull request head past the session's commit settle nothing, unless the pull request was merged by a commit the session's folder already holds, when its checks count and the card says it was merged into the session's branch; skipped checks count as neither a pass nor a failure; a missing or signed-out `gh` is said beside the reading, as is a session with no recorded folder (a harness that records none, or a transcript that cannot be found), where nothing is launched. Where GitHub names required checks, only those count and the card says how many others it left out. A GitLab merge request your goal names by its URL is read the same way through your own `glab`, only on a host `glab`'s own configuration names, and no session record binds one. Its checks and head are worded as a merge request's, one 60 second deadline covers the whole read, and a login stored by `glab auth login` is what it uses: `GITLAB_TOKEN` is not passed on, and a configuration only under `GLAB_CONFIG_DIR` is not followed. `--no-ci-read` or the page's switch turns it off. Your words also appear beside the goal the harness published,
+deliverable. Pressing Check progress also reads one pull request's CI checks from GitHub with your own `gh` login, when your goal names the pull request by its URL or a Claude Code session records one for the repository its folder points at. GitHub is sent the repository and the number, or, where a pushed branch is what bound it, the repository and that branch's name, and nothing else of the session, and the notice carries one line about it. Checks still running, no completed check and a pull request head past the session's commit settle nothing, unless the pull request was merged by a commit the session's folder already holds, when its checks count and the card says it was merged into the session's branch; skipped checks count as neither a pass nor a failure; a missing or signed-out `gh` is said beside the reading, as is a session with no recorded folder (a harness that records none, or a transcript that cannot be found), where nothing is launched. Where GitHub names required checks, only those count and the card says how many others it left out. A GitLab merge request your goal names by its URL is read the same way through your own `glab`, only on a host `glab`'s own configuration names, and no session record binds one. Its checks and head are worded as a merge request's, one 60 second deadline covers the whole read, and a login stored by `glab auth login` is what it uses: `GITLAB_TOKEN` is not passed on, and a configuration only under `GLAB_CONFIG_DIR` is not followed. `--no-ci-read` or the page's switch turns it off. Your words also appear beside the goal the harness published,
 in the project view's Latest instruction card (Published instruction when undated), each on its own row so the two claims are never merged, and
 the derived row says when the directive was observed.
 
 Long caveats keep their claim on the page and put the rest behind a summary you can open, on both
-the session page's drift block and Console. Nothing is removed by that: an opened one stays open when the board redraws,
+Is it on track? on the session page and the project's technical details. Nothing is removed by that: an opened one stays open when the board redraws,
 and a closed one still holds every word it was written with.
 
 A goal-less Claude Code or Codex session arrives with its goal drafted from your first prompt, as
 Compass publishes it, or from your latest prompt, marked "latest", where no first prompt with a
 time is published. A session that opened with a harness control such as `/clear` drafts nothing,
 not even the latest prompt, and says there is no first prompt to draft from, so you type a goal.
-A line above the box says where the words came from, "Drafted from your first prompt · not saved", and an
-excerpt adds "Shortened here; Analyze reads the whole prompt"
-(the goal keeps the excerpt, and a reading reads the prompt it came from whole, up to 1,000
-characters, or says in what it read that it could not), and the box is tinted: nothing is saved until you press Save intent, edit the box and save, or
-press `Analyze drift`, which adopts the draft. `Use your prompt` lists up to five of your own
-prompts, and choosing one fills the goal box for you to save. While no goal is saved and no `/goal` was detected, `Find goal` beside it reads the prompts you typed in the session, on your press only, and fills the box when it can quote your own words for a goal: it says "Found in your prompts at" the time and the prompt entries it quotes, each a link to that entry in the Activity log, and editing the words replaces it. It sends your prompts to the model Analyze names, counts against the same daily limit, is refused while model calls are paused, and says so beside the button when it finds nothing clear. Analyze drift, Keep and an added line's save are refused
+The goal field says whether the draft came from your first or latest prompt. When it shows an
+excerpt, the progress check can read up to the first 1,000 characters of the original prompt.
+The draft waits for Save intent or Check progress to save it. Check progress adopts the draft. `Use your prompt` lists up to five of your own
+prompts, and choosing one fills the goal box for you to save. While no goal is saved and no `/goal` was detected, `Find goal` beside it reads the prompts you typed in the session, on your press only, and fills the box when it can quote your own words for a goal: it says "Found in your prompts at" the time and the prompt entries it quotes, each a link to that entry in the Activity log, and editing the words replaces it. It sends your prompts to the named provider, counts against the same daily limit, is refused while AI use is paused, and says so beside the button when it finds nothing clear. Check progress, Keep and an added line's save are refused
 while the goal box or the outcome lines hold an edit you have not saved, because each would stand
-on words that are not on screen; your edit stays in the box. No drift level or pill is drawn over
-an unsaved draft. Once a goal is saved, "Saved" names the window's opening time and holds when the words were saved. Editing the goal, using a prompt or a later direction as the goal, and adding or editing outcome lines all keep that window, so work already done toward the earlier words stays read. `Read from my latest message`, beside Save intent over saved words, saves and opens a new window at your latest message, and says so with its time. A `/goal` Claude Code gave up on, or the reader cleared, ends that goal: the Drift card says a give-up as the harness's claim with its time, never as met and never as a level or a check, and the Goal card says under the Goal field that an earlier `/goal` was replaced, met, given up or cleared, with the time and never its words.
+on words that are not on screen; your edit stays in the box. No progress level or pill is drawn over
+an unsaved draft. Once a goal is saved, "Saved" names the window's opening time and holds when the words were saved. Editing the goal, using a prompt or a later direction as the goal, and adding or editing outcome lines all keep that window, so work already done toward the earlier words stays read. `Read from my latest message`, beside Save intent over saved words, saves and opens a new window at your latest message, and says so with its time. A `/goal` Claude Code gave up on, or the reader cleared, ends that goal: Is it on track? says a give-up as the harness's claim with its time, never as met and never as a level or a check, and the Goal card says under the Goal field that an earlier `/goal` was replaced, met, given up or cleared, with the time and never its words.
 
 A direction you gave after your intent (after the saved goal's words, or after the drafted prompt)
 is asked about before the press, in the control's place: "Your 11:05 message adds:" quotes the
@@ -166,7 +164,7 @@ opening words, in the Direction picker above the quote, which holds only the one
 those words when the question is drawn, so each choice acts on its first press. Nothing there decides
 whether it changes what you asked for: that is yours, and Compass does not write into the session
 either way. `Leave it` settles them through the newest one shown, adopting a draft in the same write,
-says no analysis was started, and starts none; `Analyze drift` stays beside the choices and does not settle
+says no analysis was started, and starts none; `Check progress` stays beside the choices and does not settle
 anything. `Add as a line` opens the selected direction's first sentence as a pending line under
 Expected outcome, marked "not saved", with the hint "Write the rule, not the moment.", for you to edit;
 the one `Save intent` saves it, after any unsaved goal or line words, and settles through that direction
@@ -180,8 +178,8 @@ The correction uses the same rule: your messages and answers to questions count 
 a correction copied from Compass does not. `Leave it` settles directions through and including its
 timestamp, and a reading includes directions at its cutoff.
 
-Delegated work has no line on the Drift card. An unpaired launch followed by thirty quiet
-minutes in the last turn adds an At-risk item and a question to copy into the session, and that
+Delegated work appears in Right now. An unpaired launch followed by thirty quiet
+minutes in the last turn adds a Worth a look item and a question to copy into the session, and that
 item names the recorded launches and their clocks. Missing or partial attribution says Compass
 cannot see all the work; a missing count is not zero. It records no finding about whether a
 process is running or finished.
@@ -206,7 +204,7 @@ the save after it keeps every earlier revision, so the raises quoting those word
 the whole annotation withdraws them and deletes the session's summary, stopping one being written
 first: the quotations go from the departure record too, and what
 stays is the fact that a check ran and a record of the discard itself, holding when it happened
-and no text at all. That record is why a discarded session still has a line in the Intent log,
+and no text at all. That record is why a discarded session still has a line in Goal history,
 and why the board never describes it as a session nobody typed against. That act is the `Discard everything` control, in the Goal card, behind the summary of the same name and offered only
 where a revision is stored; it takes two presses, and between them the board names what it will
 delete (the revisions, any reading and the summary), what it will withdraw and what it keeps (the
@@ -214,32 +212,28 @@ record that a check ran, and session history, which `--forget` clears), and when
 written to the page's live region when the first press arms it, so it reaches a reader who is not
 looking at the screen. Beside each raised departure sits the raise that selects its tmux pane
 where available, whatever state the session is in; it does not bring the window forward or send
-anything to the session. Resume commands are available on Attention, the waiting panel and the
-project rail. The Intent log carries the same raises a line at a time, and keeps
-them after the session leaves the board.
+anything to the session. Needs you links to the session, where the request has its own controls. Goal history keeps
+saved goals after sessions leave the board, subject to its retention limits.
 
-Sessions labels your typed goal beside NOW, or shows the prompt the session page drafts ("GOAL ·
-YOUR FIRST PROMPT", or your latest where no first one is published) from Claude Code or Codex;
-other harnesses show typed words only, and a session that opened with a harness control shows "Add
-a goal". A slot without a typed
-goal opens the session page with the cursor in its goal field. Showing a prompt does not save it.
+Sessions uses published goal evidence, including unsaved drafts, for its filters. Showing a
+prompt leaves it unsaved. Open the session's Goal card to read or edit it.
 A recorded departure moves the session after blocked sessions and before working ones, even if it
 is quiet. At a glance counts session states and observed signals. Open the session to see the
 reading, its age and whether the goal has changed since the reading. With annotations off,
 the goal slot has no link and the history explanation says that goals cannot be typed.
 
-One thing here evaluates on a cadence, and only when you turn it on: the `Live monitor`, in the session page's **Show technical details**, under **AI use and privacy** or the `monitor on` terminal action. The page switch is off by default and not remembered across reloads. With a visible page or a terminal holder, a Claude Code session is checked by Haiku through your installed Claude Code about once a minute after new work. The Drift card and the page header then show the level that check gives (None or low, Medium, High or Extreme, or Not enough recorded yet), with the time of the check and a sentence on where the latest turns are heading. AI use and privacy labels the source `Live monitor · Haiku`. Each check sends your saved goal and the recent turns, redacted: your messages, the agent's replies, the commands of checks with their result, every other command as its line with its exit status, and the paths of files written, and no tool output. It names what it sends and where when you turn it on, says nothing of whether the work met your goal, and its accuracy check has not been run yet, which is why the label names the model. An Analyze reading outranks it, and the estimate described next shows whenever the monitor has no level: before its first check returns, and when it is paused, capped or has failed. A browser holder stops when you turn it off or leave the session, and pauses checks while the tab is hidden. After 20 minutes it asks "Do you still want to monitor this session?" and drops that browser holder, with a note, if nobody answers within 10 minutes. A terminal holder asks no question and keeps running without a tab; `monitor off` stops that holder alone. Session end, a lost dashboard connection or Pause all AI use ends terminal monitoring too; `--no-observer-model` refuses it. It has its own limits, 30 checks per session in a 30-minute window (fixed accounting buckets for a terminal holder) and 240 per rolling 24 hours across the board, apart from Analyze's 100 attempts; it never appears on a Sessions row, raises no notification and never feeds the unasked lane.
+One thing here evaluates on a cadence, and only when you turn it on: the `Live monitor`, in the session page's **Show technical details**, under **AI use and privacy** or the `monitor on` terminal action. The page switch is off by default and not remembered across reloads. With a visible page or a terminal holder, a Claude Code session is checked by Haiku through your installed Claude Code about once a minute after new work. Is it on track? and the page header show any level that check gives, with the time of the check and a sentence on where the latest turns are heading. AI use and privacy labels the source `Live monitor · Haiku`. Each check sends your saved goal and the recent turns, redacted: your messages, the agent's replies, the commands of checks with their result, every other command as its line with its exit status, and the paths of files written, and no tool output. It names what it sends and where when you turn it on, says nothing of whether the work met your goal, and its accuracy check has not been run yet, which is why the label names the model. A reader-requested progress check outranks it, and the estimate described next shows whenever the monitor has no level: before its first check returns, and when it is paused, capped or has failed. A browser holder stops when you turn it off or leave the session, and pauses checks while the tab is hidden. After 20 minutes it asks "Do you still want to monitor this session?" and drops that browser holder, with a note, if nobody answers within 10 minutes. A terminal holder asks no question and keeps running without a tab; `monitor off` stops that holder alone. Session end, a lost dashboard connection or Pause all AI use ends terminal monitoring too; `--no-observer-model` refuses it. It has its own limits, 30 checks per session in a 30-minute window (fixed accounting buckets for a terminal holder) and 240 per rolling 24 hours across the board, apart from the 100 reader-requested attempts; it never appears on a Sessions row, raises no notification and never feeds the unasked lane.
 
-The estimate is the level worked out after every turn from the recorded checks and written paths against your saved intent, with no model call, labelled `Live estimate` with the time it was computed. It says where it last rose ("Rose from Medium at #12"), recomputed each time and never stored, adds a nudge to analyze only for a cited High signal after your last message, and shows the level in the page header beside the entry count. An older failure blocks None or low and keeps its name and age; a failure followed
-by file writes reads Medium at most until a re-run. Recorded signals show the cited entries and
+The estimate is the level worked out after every turn from the recorded checks and written paths against your saved intent, with no model call, labelled `Live estimate` with the time it was computed. It says where it last rose ("Rose from Slightly off course at #12."), recomputed each time and never stored, adds a nudge to check progress only for a cited Off course signal after your last message, and shows the level in the page header beside the entry count. An older failure blocks On track and keeps its name and age; a failure followed
+by file writes reads Slightly off course at most until a re-run. Recorded signals show the cited entries and
 their event times; its line says it reads checks and file paths, not what your intent says, and that files written by
 shell commands, such as a build, are not seen. Limits of this estimate names gaps such as an intent that names no folder.
-At Not enough recorded yet, the reasons sit once under Why not None or low, while that folder
-limit stays visible. A broader explicit passing run can retire a
+When the record is too short for an estimate, its explanation gives the reasons and keeps any
+folder limit visible. A broader explicit passing run can retire a
 covered failure in the same directory and execution context. A folder counts only when it exists
 in the session's known working directory or holds a recorded write. Over an unsaved draft it reads "Save your intent to see a live estimate" and there is no
 pill. It never appears on a Sessions row, raises no notification, and never feeds the unasked lane.
-Drift marks show departures already on record, from a
+The progress card shows departures already on record, from a
 reader-requested reading or the optional unasked lane. With nothing typed the block says there is nothing to read against; with the observer
 model off it gives that reason; otherwise it states what a reading may and may not read and offers
 the ordinary one-call control, Check progress. A saved reading offers Check progress again.
@@ -251,19 +245,19 @@ scored runs failed): a
 Claude Code session is read by Claude Code when `claude` is on PATH and by Codex otherwise, and the
 evidence stays readable
 whether or not you ask for a reading. A press that waits on the server shows a spinner and a busy
-label ("Saving…", "Starting…") and takes no second press until it is answered, and when Analyze
-opens or closes on its own a line under it says so and why. A press starts an analysis the server runs in the background,
-and while it runs the control is replaced by an "Analyzing drift" box listing its real steps
+label ("Saving…", "Starting…") and takes no second press until it is answered, and when the progress controls
+open or close on its own a line under it says so and why. A press starts an analysis the server runs in the background,
+and while it runs the control is replaced by an "Checking progress" box listing its real steps
 (preparing what is sent, waiting for the named provider, checking the reply), the one under way
-marked, with the attempt count and disclosure still beside it. A screen reader hears "Analyzing drift" once
+marked, with the attempt count and disclosure still beside it. A screen reader hears "Checking progress" once
 when the box appears and how the analysis ended once when it goes, never again on a redraw or reload. The box comes from the published
 board, so a reload or another tab shows the same analysis at the same step, and a second press
 starts nothing. The result, or why there is none, replaces the box when it is stored; an analysis
-a stop or restart cut short is recorded as an interrupted attempt. On a Claude Code, Codex or Pi session the
-result shows the analysis level (worked out again from the stored reading on every view, never
-stored, never on a row) with its time. A level above None or low is drawn only beside a departure the
-reading shows. With none, the card draws no level or bar, and the answer says what the reading did
-find and, where every line is consistent but the level is held back, why. The live estimate is not
+a stop or restart cut short is recorded as an interrupted attempt. The session page shows the
+result with its time. Where the result supports a level, Compass derives it from the stored
+reading. Codex shows the evidence without a level. A level above On track requires a departure
+the reading shows. When Compass withholds a level, the card says what the reading found and
+gives the reason. The live estimate is not
 drawn beside a reading that stands, and where the switch is on and it has a level to draw, the card
 says so. A reading that could tell nothing about a session only minutes old says it is early and to
 read again once the session has run its checks. The header pill adds "so far" while the session runs.
@@ -279,19 +273,18 @@ or "at least" that many when the scan began late, because it was cut from the ta
 transcript moved where it starts, or a named subagent left no transcript to count),
 how many were read-only, and says Compass did not read what they did; an older reading says that count was not recorded.
 An older reading says coverage was not recorded. A tail starting inside the intent window tags
-every intent row "may be in the part not read"; claims stay independent. On Claude Code an Analyze
-press reads the session's messages back to the window start where it can, and says where it stopped
-when it cannot. How much a press keeps and sends is set on the page's Settings screen: the largest
+every intent row "may be in the part not read"; claims stay independent. On Claude Code a progress
+check reads the session's messages back to the window start where it can, and says where it stopped
+when it cannot. How much a press keeps and sends is set under Customize in Settings: the largest
 prompt (512 KB by default, optionally up to 2,048 KB), how many of the session's messages and checks it keeps (2,000), how
 many checks and written files it lists (1,000), and how much of the session's and its subagents'
 transcripts it scans for them (512 MB), which is where delegated work runs its tests. Prompt size
-limits one Analyze drift prompt, not the outline or Summary's source coverage. Settings shows
-each route's estimated allowance separately from the saved limit. The session's Next Analyze
-prompt line shows the current route's allowance outside any stored assessment; it describes the
-next press, not what an earlier reading covered. Neither estimate confirms model availability
-or fit. An assembled prompt above that allowance is refused before a model call,
+limits one progress check. The outline and summary have their own limits. In Settings,
+How much a progress check reads shows each route's estimated prompt ceiling separately from
+the saved limit. The session page also shows the current route's ceiling for the next check.
+The model's availability and whether the assembled prompt fits are checked separately. An assembled prompt above that ceiling is refused before a model call,
 without automatically shortening it or switching providers. A smaller actual prompt may still
-pass when the saved limit is higher. Unknown or unusable estimates say so, and a tiny allowance
+pass when the saved limit is higher. Unknown or unusable estimates say so, and a low ceiling
 does not ask you to save below the 16 KB minimum. The project
 page keeps its own 100 events and 12 checks and scans 8 MB. A check that `&&` joins ahead of a later
 check whose own summary ends the output counts as passed, since the later one only ran because the
@@ -299,7 +292,7 @@ earlier one exited 0. Checks separated by `;`, each cut by `tail`, each take the
 in order, but only when there is exactly one such line per check and the last ends the output; a
 bare unittest `OK` counts when the command names the tests it runs. When nothing departs and the
 goal line rests on what the agent said, green pull request checks that count (on the session's
-commit, or merged into its branch) are enough for a level of None or low. An idle Claude Code or Codex session whose last turn has no recorded finish is read up to
+commit, or merged into its branch) are enough for a level of On track. An idle Claude Code or Codex session whose last turn has no recorded finish is read up to
 its last recorded entry, and the result says so with that entry's time, never as a final verdict. A Codex session that finished a turn is read through that turn, from the finish its own record shows or from its Stop hook. General scope and the
 count-by-kind cutoff remain under What the analysis read, which groups the model, your intent, the
 session read and what is never read under their own headings. Coverage holds only counts, time and closed state
@@ -311,7 +304,7 @@ not a check", "Not reached at this stop" or "Can't tell · <your line>" with its
 there, whatever the reading said; a recorded passing check that covers a line is cited ahead of the agent's
 message on it, which it does only where the line claims that kind of check's result ("the tests pass"), never for a line that merely names the subject ("the lint config is left alone"). Unfinished work in flight
 at a non-final stop has its own result and cited explanation in view, where the record shows that line's work under way: a check or write that bears on it, or a call still running. A line only a message says is coming reads "Can't tell". It raises no
-departure, Medium level or Steer back offer, and cannot establish None or low. An unkept promise
+departure, Slightly off course level or Steer back offer, and cannot establish On track. An unkept promise
 to continue or finish, a needless wait on you or a stated remainder of the asked-for set still
 counts as departure. While a turn is open, a departure that rests on messages alone is stored as not
 reached at this stop when a call is still running (a Claude Code session only: the call is read from
@@ -324,7 +317,7 @@ agent's messages, never beside a check that failed after your words or a file wr
 there the goal and each line need a check, CI command or CI check that passed, a pull request created
 or a skill used, and a command that only ran, or a file write cited, is neither. A passing check covers a line only when every clause that says how a check came out leaves its kind of check unqualified, before or after ("the tests pass", not "the frontend tests pass" or "tests for the parser pass"). A line departs only on recorded work, a failed check or a write the record settles, and on
 messages alone reads "Can't tell"; a line that is only a ban on pushing ("Don't push to main", with no condition anywhere in the line) also departs on a `git push` the record shows exited 0 to that branch (any branch, where the line names none), once you wrote it, when the analysis cited that push, and a dry run, a deletion, another branch or a condition anywhere in the line leaves it "Can't tell"; the goal may still depart on what the agent said. A line that only asks for the agent's own account of what it did, found or changed ("Tell me which files changed", not "Tell me when the deploy is green") is the exception: it is judged on the agent's messages, a "consistent" on one sent after the last file write and a departure only where every message was read whole and the newest is cited. The goal reads
-consistent only when every line asked beside it does, and the level never reads "None or low" on
+consistent only when every line asked beside it does, and the level never reads "On track" on
 the agent's word alone. A goal departure resting on an agent message stops counting once that
 message leaves the transcript tail the board reads. A press that carries the agent's
 messages also asks whether any of them claims a state of the work (running, merged, passing and
@@ -335,7 +328,7 @@ or file writes went unread, or where a check or command that can fail ran inside
 drawn when there was no claim. A check that failed before the claim does not contradict it once
 the agent ran the same tool again before claiming, with no failure in that run or an earlier one of it,
 naming nothing after the tool but flags or `.`; the working directory is not recorded. A
-contradicted claim is said on its own row and sets no level by itself. An unshown claim blocks None or low without raising Medium.
+contradicted claim is said on its own row and sets no level by itself. An unshown claim blocks On track without raising Slightly off course.
 Neither is counted as a departure from your intent or held back by an unsettled later direction.
 A withdrawn claim draws no row. Steer back is offered only with a departure from your intent; the server still composes a correction from a claim or a failed check, as an evidence request:
 `Can you show evidence for "<its first sentence>" at 14:02?`, or, contradicted,
@@ -380,7 +373,7 @@ review the saved intent and reading window, then press `Start long analysis` aga
 The plan permits at most 16 sequential evidence calls and one final reconciliation call. Each
 prompt uses the smaller of the saved ceiling (512 KiB by default, at most 2 MiB) and the route
 allowance. All prompts together are bounded at 16 MiB, including repeated context; each reply
-at 8,192 bytes. Every reserved call consumes the same 100-attempt rolling daily Analyze allowance,
+at 8,192 bytes. Every reserved call consumes the same 100-attempt rolling daily progress check limit,
 including failures and late refusals. A final slot numbered 17 is not 17 spent calls. There is
 no automatic retry, resume, shortening or provider fallback.
 
@@ -400,14 +393,14 @@ and adopted-goal proofs remain required, so larger limits do not make every sess
 Synthetic application tests do not establish the model's accuracy on long sessions.
 
 The server runs the requested job across browser reloads, but never starts long analysis on its
-own. Cancel requests a stop for that job; Pause and the model off switch stop further calls. A withheld,
+own. Cancel requests a stop for that job. Pause all AI use and `--no-observer-model` stop further calls. A withheld,
 cancelled or failed attempt leaves the older reading visible beside the latest outcome; a
 qualified partial reading may replace it. Restart markers hold word-free identity, plan and
 accounting metadata, not prompts or permission to resume. Refresh the preview before another
 explicit Start. Unknown accounting or unconfirmed cleanup stays unknown.
 
 `Unfinished long checks` reads the selected session's recovery metadata only on an
-explicit open or `Refresh recovery records`, including while model calls are paused. Recorded
+explicit open or `Refresh recovery records`, including while AI use is paused. Recorded
 state does not prove owner liveness. `Check and discard superseded record` asks the server to
 prove a dead terminal owner, exact accounting and a superseded target; it cannot stop a model or
 refund calls. A lost or refused reply stays uncertain and never retries automatically. A marker

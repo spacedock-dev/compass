@@ -444,7 +444,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "do not read a pull request's or merge request's CI checks from GitHub or GitLab when "
-            "Analyze drift is pressed (no `gh` or `glab` command runs, and a reading goes "
+            "Check progress is pressed (no `gh` or `glab` command runs, and a reading goes "
             "without those checks)"
         ),
     )
@@ -498,7 +498,7 @@ def build_parser() -> argparse.ArgumentParser:
             "session and per day, and only a departure is ever raised. A check "
             "uses the session's own provider for Claude Code and Codex, and prefers "
             "Claude Code elsewhere, falling back only when unavailable. Codex needs "
-            "the Drift card's 'Allow Codex to run unasked checks' toggle for the "
+            "the 'Allow Codex to run unasked checks' toggle in 'Is it on track?' for the "
             "current destination. Checks send your typed goal and bounded reader messages "
             "through your signed-in CLI to where its settings send them, with no agent "
             "messages or outcome lines. On a Claude Code session a check or command that "
@@ -506,7 +506,7 @@ def build_parser() -> argparse.ArgumentParser:
             "characters of its output; one that passed never does. Claude Code also "
             "sends its working directory, platform, shell, OS version, date and device "
             "identifier, and under a Claude account sign-in your email address and account ID. "
-            "Pause model calls stops checks too. "
+            "Pause all AI use stops checks too. "
             "--no-observer-model refuses it for the run"
         ),
     )
