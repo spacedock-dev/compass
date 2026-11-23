@@ -316,7 +316,7 @@ describe('the groups', () => {
     expect(
       document.querySelector('article[data-next-session="work"] [data-next-operation-fact="where"]')
         ?.textContent,
-    ).toBe('PROJECTp');
+    ).toBe('Projectp');
   });
 
   const reading = {
@@ -449,7 +449,7 @@ describe('the groups', () => {
   it('says annotations are off, and the goal cell says so too, when the payload does not publish them', async () => {
     await open(board([{ harness: 'claude', sid: 'a', project: 'p', state: 'idle' }]));
     expect(document.querySelector('[data-next-operation-fact="goal"]')?.textContent).toBe(
-      'GOALAnnotations off',
+      'GoalAnnotations off',
     );
   });
 
@@ -475,12 +475,12 @@ describe('the groups', () => {
       document.querySelector(
         `article[data-next-session="${sid}"] [data-next-operation-fact="goal"]`,
       );
-    expect(goal('typed')?.textContent).toBe('GOAL · YOUR WORDSShip the queue');
+    expect(goal('typed')?.textContent).toBe('Goal · your wordsShip the queue');
     expect(goal('typed')?.querySelector('a')?.getAttribute('href')).toBe(
       '#n=session:p:claude:typed',
     );
-    expect(goal('drafted')?.textContent).toBe('GOAL · YOUR FIRST PROMPTDo the thing');
-    expect(goal('empty')?.textContent).toBe('GOALAdd a goal');
+    expect(goal('drafted')?.textContent).toBe('Goal · your first promptDo the thing');
+    expect(goal('empty')?.textContent).toBe('GoalAdd a goal');
     expect(goal('empty')?.querySelector('a')?.classList.contains('next-absence')).toBe(true);
   });
 
@@ -510,8 +510,8 @@ describe('the groups', () => {
       document.querySelector(
         `article[data-next-session="${sid}"] [data-next-operation-fact="blocked"] small`,
       )?.textContent;
-    expect(blocked('a')).toBe('BLOCKED · NEEDS YOU');
-    expect(blocked('b')).toBe('BLOCKED · CAPTAIN');
+    expect(blocked('a')).toBe('Blocked · needs you');
+    expect(blocked('b')).toBe('Blocked · captain');
   });
 });
 
@@ -689,7 +689,7 @@ describe('two sessions in two worktrees of one repository', () => {
     expect(facts('s1')).toContain('worktree haiku-a');
     expect(facts('s2')).toContain('worktree haiku-b');
     // A main checkout publishes no worktree, so no worktree is drawn for it.
-    expect(facts('s3')).toBe('PROJECTone/compass');
+    expect(facts('s3')).toBe('Projectone/compass');
   });
 });
 

@@ -408,6 +408,32 @@ or the anonymized Sample session for those proofs and follow the
 [frontend migration record](design-frontend-migration.md) when an asking test's wording
 departs from a recorded answer.
 
+### First-layer checks
+
+The [style policy](../frontend/build/style-policy.mjs) counts monospace, uppercase and tracking
+per source file. It recognizes equivalent font-family declarations in CSS and Tailwind utilities.
+The [budget](../frontend/first-layer-budget.json) records the actual counts and gives a reason
+for each file where technical work can add monospace. Other counts can fall against the PR base.
+The first comparison reads the base sources when the budget is absent. The string scan includes
+class recipes and conditionals, so it also counts a literal such as `uppercase` when that
+word appears as a separate token in a prose string. Inline SVG belongs in the shared UI directory.
+
+The [Storybook audit](../frontend/stories/calm.audit.ts) checks computed monospace, uppercase
+transforms and tracking above 0.04 em on visible first-layer text and placeholders. The
+wording check reads adjacent inline text together, looking for all-capital labels, raw epochs,
+hex identifiers and bracketed citations. Acronyms such as AI and KB may stay capitalized.
+Published words such as a session title, held question or task subject keep their wording.
+Typography still applies to them and to the earlier labels quoted in the style guide. A
+technical area is outside the text audit. Visible, enabled
+control borders must reach 3:1 against the painted surround, including any control fill painted
+under a translucent edge.
+
+The initial budget lists measured failures from stories that end on legacy views or components.
+During bootstrap, only stories already in the base can qualify. After that, the base budget
+sets the allowed list. As each view is converted, remove its passing stories from the list.
+Sessions has no technical disclosure. An ID search can find its session without printing
+the matched ID on the row.
+
 ## Owner rulings
 
 The canvas rows summarize the resolved comments. The dated entries quote the decision

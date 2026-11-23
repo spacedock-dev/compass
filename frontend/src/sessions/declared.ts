@@ -5,11 +5,20 @@ export { declaredRelations } from '../observed/relationships';
 export const groupOf = (source: Row | undefined): string => trimmed(source?.['group']);
 /* Quoting names reserves the unquoted absence label even when a launcher uses those exact words. */
 export const groupName = (value: string): string => (value ? JSON.stringify(value) : 'No group');
+export function groupLabelParts(source: Row | undefined) {
+  const name = groupOf(source);
+  return name
+    ? {
+        prefix: 'Group: ',
+        name,
+        suffix: source?.['group_source'] === 'parent' ? ' (from parent)' : '',
+      }
+    : null;
+}
+
 export const groupLabel = (source: Row | undefined): string => {
-  const group = groupOf(source);
-  return group
-    ? `Group: ${group}${source?.['group_source'] === 'parent' ? ' (from parent)' : ''}`
-    : '';
+  const group = groupLabelParts(source);
+  return group ? group.prefix + group.name + group.suffix : '';
 };
 
 /* Work only with already-kept rows: hierarchy never widens a filter or moves history into active work. */

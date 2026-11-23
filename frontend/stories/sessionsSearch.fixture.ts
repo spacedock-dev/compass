@@ -129,6 +129,7 @@ export interface FixtureOptions {
   readonly generated?: number;
   readonly annotate?: boolean;
   readonly rowExamples?: boolean;
+  readonly auditPayload?: boolean;
   /** Row B has gone quiet since the first board. */
   readonly bIdle?: boolean;
   readonly bProject?: string;
@@ -171,7 +172,9 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
       state: options.bWaiting ? 'needs_input' : options.bIdle ? 'idle' : 'working',
       active: !options.bIdle,
       state_detail: options.bWaiting
-        ? 'Permission prompt: Edit'
+        ? options.auditPayload
+          ? 'Decision on branch deadbeef [11]'
+          : 'Permission prompt: Edit'
         : options.bIdle
           ? 'awaiting your message'
           : 'running Bash',
@@ -195,6 +198,16 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
       project_key: 'k-rc',
       project_identity_source: 'working directory path',
       worktree: 'parser-fix',
+      ...(options.auditPayload
+        ? {
+            project: 'project [6]',
+            worktree: 'branch [7]',
+            tasks: [
+              { status: 'in_progress', subject: 'Review deadbeef [4]' },
+              { status: 'pending', subject: 'Ship deadbeef [5]' },
+            ],
+          }
+        : {}),
       state: 'working',
       state_detail: 'running tests',
       ...(options.rowExamples ? { prompt_states_work: true } : {}),
@@ -364,7 +377,9 @@ export function sessionsSearchPayload(options: FixtureOptions = {}): Record<stri
         session_id: SIDS.A,
         harness: 'claude',
         project: 'projects/pendulum-of-despair',
-        question: 'Run the combat suite now?',
+        question: options.auditPayload
+          ? 'Approve deadbeef at 1795327749000 [3]?'
+          : 'Run the combat suite now?',
         options: ['Yes, run it', 'Not yet'],
         age_sec: 180,
       },

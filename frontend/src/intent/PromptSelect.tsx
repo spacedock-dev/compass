@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
 import { compatSessKey } from '../api/identity';
 import { buttonVariants } from '../ui/button';
+import { Icon } from '../ui/icons';
 import { Popover, PopoverContent } from '../ui/popover';
 import { useFocusKey } from '../controls';
 import { sessionGoalCandidate } from '../sessions/intent';
@@ -74,16 +75,11 @@ export function PromptSelect() {
           title={face}
         >
           {face}
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 10 10"
-            width="10"
-            height="10"
-            fill="none"
+          <Icon
+            name="caret-down"
+            size={10}
             className="pointer-events-none shrink-0 text-muted-foreground"
-          >
-            <path d="m2 3.5 3 3 3-3" stroke="currentColor" strokeWidth="1.5" />
-          </svg>
+          />
         </PopoverPrimitive.Trigger>
         <PopoverContent align="end" className="p-0 px-0 py-1 w-[min(24rem,calc(100vw-32px))]">
           <div className="px-3.5 pt-2.5 pb-1 [font-family:var(--mono)] text-label text-muted-foreground">

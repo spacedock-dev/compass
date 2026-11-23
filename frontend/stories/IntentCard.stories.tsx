@@ -698,6 +698,10 @@ export const PromptMenuPick: Story = {
     // The design's button, not a select: it holds no value, and pressing it opens the list of prompts.
     const trigger = view.getByRole('button', { name: 'Use your prompt' });
     await expect(view.queryByRole('combobox', { name: 'Use your prompt' })).toBeNull();
+    await expect(trigger.querySelector('[data-icon="caret-down"]')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    );
     await expect(trigger).toHaveAttribute('aria-haspopup', 'listbox');
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await userEvent.click(trigger);

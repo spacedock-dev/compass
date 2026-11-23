@@ -45,7 +45,7 @@ a limited state count for sessions waiting on a child or without a published sta
 
 ## Search
 
-Search reads what the row shows: the title as published (including the LAST PROMPT fallback), the
+Search reads what the row shows: the title as published (including the Last prompt fallback), the
 goal cell's text when the goal is known, the current task where the row draws it, the project label,
 the worktree, group and the harness label. An active row draws the current task under its title unless it
 repeats the title; a history row does not draw it. Search also reads what a reader would have to open
@@ -66,7 +66,8 @@ to 15 ms and no row after (measured 2026-10-29).
 
 When a term matched only a field the row does not show, the identity cell names that field with about
 80 characters around the match, for example `Matched in your first prompt: "write the release notes
-for 2.4"`. When exactly one row matches, the result line adds "Press Enter to open it." and Enter
+for 2.4"`. An ID match says "Matched in the session ID". When exactly one row matches, the result
+line adds "Press Enter to open it." and Enter
 opens that session. Enter does nothing during an input-method composition or when zero or several
 rows match. The rows can lag the field by a render, so the line offers Enter only once they agree, and
 Enter itself reads the words in the field, not the rows still drawn.

@@ -50,9 +50,9 @@ describe('the session-goal source', () => {
       ).label;
 
     it('in the Sessions list row', () => {
-      expect(cell(SESSION_GOAL)).toBe('GOAL · FROM /GOAL');
-      expect(cell('first-prompt')).toBe('GOAL · FROM YOUR PROMPT');
-      expect(cell('typed')).toBe('GOAL · YOUR WORDS');
+      expect(cell(SESSION_GOAL)).toBe('Goal · from /goal');
+      expect(cell('first-prompt')).toBe('Goal · from your prompt');
+      expect(cell('typed')).toBe('Goal · your words');
     });
 
     it('in the project goal tag', () => {

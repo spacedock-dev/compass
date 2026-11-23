@@ -73,7 +73,7 @@ const describe = (element: Element): string => {
   return parts.join(' > ');
 };
 
-function isHidden(element: Element): boolean {
+export function isHidden(element: Element): boolean {
   const box = element.getBoundingClientRect();
   if (box.width <= 1 || box.height <= 1) return true;
   return !(element as HTMLElement).checkVisibility({
@@ -88,15 +88,27 @@ function isHidden(element: Element): boolean {
 export function paintedControlColors(
   element: Element,
   color: string,
+  paintAt: 'fill' | 'border' = 'fill',
 ): { foreground: Rgb; background: Rgb } | null {
   if (isHidden(element)) return null;
   const blend = (backdrop: string, layer: string, alpha: number) => {
     const [r = 0, g = 0, b = 0, a = 0] = composite(backdrop, layer, alpha);
     return `rgb(${r} ${g} ${b} / ${a / 255})`;
   };
+  const controlStyle = getComputedStyle(element);
+  const clip = controlStyle.backgroundClip.split(',').at(-1)?.trim();
+  const fillReachesBorder = clip === 'border-box' || clip === 'border-area';
   let foreground = color;
+  if (paintAt === 'border') {
+    if (controlStyle.filter !== 'none') return null;
+    // Opaque border paint already hides a background image beneath its edge.
+    if (fillReachesBorder && composite('transparent', color, 1)[3] !== 255) {
+      if (controlStyle.backgroundImage !== 'none') return null;
+      foreground = blend(controlStyle.backgroundColor, color, 1);
+    }
+  }
   let background = 'transparent';
-  let opacity = Number(getComputedStyle(element).opacity);
+  let opacity = Number(controlStyle.opacity);
   for (let node = element.parentElement; node; node = node.parentElement) {
     const style = getComputedStyle(node);
     if (style.backgroundImage !== 'none' || style.filter !== 'none') return null;

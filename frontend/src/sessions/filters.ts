@@ -201,7 +201,6 @@ const HIDDEN = {
   outcome: 'your expected outcome',
   task: 'a task',
   currentTask: 'its current task',
-  sid: 'the session id',
 } as const;
 
 export interface Stamp {
@@ -322,23 +321,28 @@ export function excerpt(text: string, term: string): string {
   return `${start > 0 ? '…' : ''}${text.slice(start, end).trim()}${end < text.length ? '…' : ''}`;
 }
 
-export interface SearchResult {
+export interface RowHint {
+  readonly text: string;
+  readonly authoredExcerpt?: string;
+}
+
+interface SearchResult {
   readonly match: boolean;
   /** Set when a term matched only something the row does not show. */
-  readonly hint: string;
+  readonly hint: RowHint | null;
 }
 
 export function searchRow(indexed: IndexedRow, terms: readonly string[]): SearchResult {
-  let hint = '';
+  let hint: RowHint | null = null;
   for (const term of terms) {
     if (indexed.shown.some((one) => one.folded.includes(term))) continue;
     const hidden = indexed.hidden.find((one) => one.folded.includes(term));
     const byId = !hidden && ID_TERM.test(term) && indexed.sid.startsWith(term);
-    if (!hidden && !byId) return { match: false, hint: '' };
+    if (!hidden && !byId) return { match: false, hint: null };
     if (!hint)
       hint = hidden
-        ? `Matched in ${hidden.name}: "${excerpt(hidden.text, term)}"`
-        : `Matched in ${HIDDEN.sid}: "${indexed.row.session.sid}"`;
+        ? { text: `Matched in ${hidden.name}`, authoredExcerpt: excerpt(hidden.text, term) }
+        : { text: 'Matched in the session ID' };
   }
   return { match: true, hint };
 }
@@ -529,7 +533,7 @@ export interface Filtered {
   readonly active: boolean;
   readonly keys: ReadonlySet<string>;
   /** Lines a kept row adds under its identity: where the words matched, and which time dated it. */
-  readonly hints: ReadonlyMap<string, readonly string[]>;
+  readonly hints: ReadonlyMap<string, readonly RowHint[]>;
   readonly shown: number;
   readonly total: number;
 }
@@ -541,21 +545,21 @@ export function applyFilters(
 ): Filtered {
   const active = filtersActive(prepared);
   const keys = new Set<string>();
-  const hints = new Map<string, string[]>();
+  const hints = new Map<string, RowHint[]>();
   const { filters, terms, edges } = prepared;
   const dated = edges !== null && filters.when !== 'any' && filters.when !== 'unstamped';
   for (const one of indexed) {
     if (active && !passes(one, prepared)) continue;
     keys.add(one.row.key);
-    const lines: string[] = [];
-    const found = terms.length ? searchRow(one, terms).hint : '';
+    const lines: RowHint[] = [];
+    const found = terms.length ? searchRow(one, terms).hint : null;
     if (found) lines.push(found);
     const stamp = dated ? stampOf(one, filters.dateField) : null;
     const when = stamp ? formatStamp(stamp.at) : null;
     if (stamp && when)
-      lines.push(
-        `${dateFieldLabel(filters.dateField)} ${when}${stamp.fromFirstMessage ? ', from the first message' : ''}`,
-      );
+      lines.push({
+        text: `${dateFieldLabel(filters.dateField)} ${when}${stamp.fromFirstMessage ? ', from the first message' : ''}`,
+      });
     if (lines.length) hints.set(one.row.key, lines);
   }
   return { active, keys, hints, shown: keys.size, total: indexed.length };

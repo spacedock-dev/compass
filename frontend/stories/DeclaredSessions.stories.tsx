@@ -9,6 +9,7 @@ import { createFakeClock, createFakeEnvironment } from '../src/transport/testing
 import { fakeBackend } from '../test/storage_backends';
 import fixture from '../test/fixtures/declared-sessions.json';
 import { projectStatusBoard } from '../test/project_boards';
+import { auditCalm } from './calm.audit';
 
 function Example({
   hash = '#n=sessions',
@@ -218,7 +219,9 @@ export const ChildPageNamesParent: Story = {
     await expect(
       await canvas.findByRole('link', { name: 'Child of Coordinate release' }),
     ).toBeVisible();
-    await expect(canvas.getByText(fixture.expected.child[0] ?? '')).toBeVisible();
+    await expect(
+      canvas.getByText((_text, node) => node?.textContent === fixture.expected.child[0]),
+    ).toBeVisible();
   },
 };
 export const UnmatchedChildPage: Story = {
@@ -566,6 +569,51 @@ export const PlanEntityStatus: Story = {
       await waitFor(() => expect(entity).toBeVisible());
       await expect(entity).toHaveTextContent(state ?? '');
       await expect(entity?.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    }
+  },
+};
+
+export const PublishedGroupAndRelationshipNames: Story = {
+  args: {
+    board: {
+      sessions: fixture.payload.sessions.map((one) => {
+        if (one.sid === 'parent')
+          return { ...one, title: 'Coordinate release [8]', group: 'release [9]' };
+        if (one.sid === 'child') return { ...one, title: 'Check build [10]', group: 'release [9]' };
+        return one;
+      }),
+    },
+  },
+  play: async ({ canvas, canvasElement }) => {
+    const parent = await canvas.findByRole('link', { name: 'Child of Coordinate release [8]' });
+    await expect(parent).toBeVisible();
+    await expect(
+      canvas.getByRole('link', { name: 'Waiting on child "Check build [10]"' }),
+    ).toBeVisible();
+    await userEvent.click(canvas.getByRole('button', { name: 'Filters' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'More filters for power users' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'Group by group' }));
+    await expect(canvas.getAllByRole('heading', { name: '"release [9]"' })[0]).toBeVisible();
+    const group = canvas.getByRole('checkbox', { name: /^"release \[9\]"/ });
+    await waitFor(() => expect(auditCalm(canvasElement)).toEqual([]));
+    await userEvent.click(group);
+    await expect(
+      canvas.getByRole('button', { name: /Remove Group: "release \[9\]"/ }),
+    ).toBeVisible();
+    await waitFor(() => expect(auditCalm(canvasElement)).toEqual([]));
+
+    const currentParent = canvas.getByRole('link', { name: 'Child of Coordinate release [8]' });
+    const prefix = currentParent.firstChild;
+    if (!(prefix instanceof Text)) throw new Error('The relationship has no Compass prefix');
+    const words = prefix.data;
+    prefix.data = 'Child of [12] ';
+    try {
+      await expect(currentParent).toHaveTextContent('Child of [12] Coordinate release [8]');
+      await expect(auditCalm(canvasElement)).toContainEqual(
+        expect.stringMatching(/citation.*Child of \[12\]/),
+      );
+    } finally {
+      prefix.data = words;
     }
   },
 };

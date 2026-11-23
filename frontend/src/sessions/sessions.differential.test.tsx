@@ -168,7 +168,10 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
           : 'Recently active';
   }
   template.content.querySelectorAll('.next-operation-assignment').forEach((node) => {
-    node.textContent = node.textContent?.replace(/^ASSIGNMENT · /, 'Current task · ') ?? '';
+    node.textContent =
+      node.textContent
+        ?.replace(/^ASSIGNMENT · /, 'Current task · ')
+        .replace(/^LAST PROMPT · /, 'Last prompt · ') ?? '';
   });
   /* Deviation (2026-10-20, docs/design-frontend-migration.md#held-to-recorded-answers): each row leads with
      one state word in place of the SESSION label, NOW · <state> and the QUIET or ENDED tag, and WHERE is the
@@ -191,6 +194,11 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
     const value = document.createElement('strong');
     value.textContent = project;
     node.append(label, value);
+  });
+  // The recorded page emphasized its column labels with capitals. Preserve the content comparison.
+  template.content.querySelectorAll('.next-operation-fact > small').forEach((node) => {
+    const text = node.textContent ?? '';
+    node.textContent = text.charAt(0) + text.slice(1).toLowerCase();
   });
   // The retired page clamped future observations to zero. Project just those recorded ages.
   const generated = data['generated'];
@@ -308,10 +316,10 @@ describe('the Sessions screen reads as the legacy screen does, over generated pa
       seen.active += (text.match(/"kind":"active"/g) ?? []).length;
       seen.history += (text.match(/"kind":"history"/g) ?? []).length;
       seen.ended += (html.match(/NOW · ENDED/g) ?? []).length;
-      seen.asked += (text.match(/BLOCKED · /g) ?? []).length;
+      seen.asked += (text.match(/Blocked · /g) ?? []).length;
       seen.drift += (html.match(/class="next-operation-drift"/g) ?? []).length;
       seen.shared += (html.match(/sessions share this display label/g) ?? []).length;
-      seen.goalTyped += (text.match(/GOAL · YOUR WORDS|GOAL · FROM YOUR PROMPT/g) ?? []).length;
+      seen.goalTyped += (text.match(/Goal · your words|Goal · from your prompt/g) ?? []).length;
       seen.annotationsOff += (text.match(/Annotations off/g) ?? []).length;
     }
     for (const [name, count] of Object.entries(seen)) expect(count, name).toBeGreaterThan(5);

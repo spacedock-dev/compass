@@ -12,7 +12,7 @@ import { WorthALookFlag } from '../attention/WorthALookFlag';
 import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 'react';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
-import { gapNames, sessionStateLimit, type Row } from '../observed';
+import { SESSION_TEXT_ORIGIN, gapNames, sessionStateLimit, type Row } from '../observed';
 import { selectObserved } from '../observed/select';
 import { selectHarnessSources } from '../store/selectors';
 import { useDisplayed, useShell } from '../shell/context';
@@ -30,6 +30,7 @@ import {
   prepare,
   type Filtered,
   type FilterState,
+  type RowHint,
 } from './filters';
 import { useFilterState } from './filterStore';
 import {
@@ -43,7 +44,8 @@ import { buildSessionsScreen, rowState, type SessionRow } from './rows';
 import { SessionsGlance } from './SessionsGlance';
 import { assignmentOf, type PromptCandidate } from './intent';
 import { goalFocusFor } from './heldState';
-import { worktreeLabel } from './worktree';
+import { worktreeOf } from './worktree';
+import type { ReactNode } from 'react';
 import {
   BOARD_WHY,
   DUPLICATE_LABEL_LIMIT,
@@ -89,13 +91,17 @@ function Fact({
   kind,
   label,
   value,
-  detail = '',
+  valueAuthored,
+  detail,
+  detailAuthored,
   tone = '',
 }: {
   readonly kind: string;
   readonly label: string;
   readonly value: string;
-  readonly detail?: string;
+  readonly valueAuthored?: boolean;
+  readonly detail?: ReactNode;
+  readonly detailAuthored?: boolean;
   readonly tone?: string;
 }) {
   return (
@@ -104,9 +110,18 @@ function Fact({
       data-next-operation-fact={kind}
     >
       <small>{label}</small>
-      <strong {...(tone === 'unknown' ? { className: 'next-absence' } : {})}>{value}</strong>
+      <strong
+        className={tone === 'unknown' ? 'next-absence' : undefined}
+        data-authored={valueAuthored || undefined}
+      >
+        {value}
+      </strong>
       {/* A held question can run to 2,000 characters: the row shows its opening, the session page all of it. */}
-      {detail ? <em className="line-clamp-3">{detail}</em> : null}
+      {detail ? (
+        <em className="line-clamp-3" data-authored={detailAuthored || undefined}>
+          {detail}
+        </em>
+      ) : null}
     </span>
   );
 }
@@ -118,22 +133,40 @@ function ObservedFact({
   label,
   text,
   known,
+  authored = false,
   note = '',
+  noteAuthored = false,
   tone = '',
 }: {
   readonly kind: string;
   readonly label: string;
   readonly text: string;
   readonly known: boolean;
+  readonly authored?: boolean;
   readonly note?: string;
+  readonly noteAuthored?: boolean;
   readonly tone?: string;
 }) {
   return (
-    <Fact kind={kind} label={label} value={text} detail={note} tone={known ? tone : 'unknown'} />
+    <Fact
+      kind={kind}
+      label={label}
+      value={text}
+      valueAuthored={authored}
+      detail={note}
+      detailAuthored={noteAuthored}
+      tone={known ? tone : 'unknown'}
+    />
   );
 }
 
-function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: readonly string[] }) {
+function Identity({
+  row,
+  hints,
+}: {
+  readonly row: SessionRow;
+  readonly hints: readonly RowHint[];
+}) {
   const { session, source, history } = row;
   const assignment = history ? '' : assignmentOf(source);
   const names = source ? gapNames(source) : [];
@@ -152,6 +185,7 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
           fallback={SEARCH_KEY}
         >
           <strong
+            data-authored={session.titleKnown || undefined}
             className={`mt-0 font-semibold${session.titleKnown ? '' : ' next-operation-title--unknown next-absence'}`}
           >
             {session.titleText}
@@ -170,7 +204,10 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
           </span>
         ) : null}
         {!session.titleKnown && session.promptKnown ? (
-          <span className="next-operation-assignment block">{`LAST PROMPT · ${session.promptText}`}</span>
+          <span className="next-operation-assignment block">
+            {'Last prompt · '}
+            <span data-authored>{session.promptText}</span>
+          </span>
         ) : null}
         <RelationshipLabels
           source={source}
@@ -181,15 +218,25 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
         />
         {hints.map((hint) => (
           <span
-            key={hint}
+            key={hint.text}
             className="mt-1 block text-label leading-[1.5] text-muted-foreground"
             data-next-row-hint
           >
-            {hint}
+            {hint.text}
+            {hint.authoredExcerpt === undefined ? null : (
+              <>
+                {': "'}
+                <span data-authored>{hint.authoredExcerpt}</span>
+                {'"'}
+              </>
+            )}
           </span>
         ))}
         {assignment ? (
-          <span className="next-operation-assignment block">{`Current task · ${assignment}`}</span>
+          <span className="next-operation-assignment block">
+            {'Current task · '}
+            <span data-authored>{assignment}</span>
+          </span>
         ) : null}
         {session.sharedLabelKnown ? (
           <span className="next-operation-collision block" title={DUPLICATE_LABEL_LIMIT}>
@@ -211,7 +258,7 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
   const shell = useShell();
   const { goal } = row;
   if (goal.kind === 'off')
-    return <Fact kind="goal" label="GOAL" value={goal.text} tone="unknown" />;
+    return <Fact kind="goal" label="Goal" value={goal.text} tone="unknown" />;
   const onGoal = () =>
     goalFocusFor(shell.controls).request({ harness: row.session.harness, sid: row.session.sid });
   return (
@@ -225,7 +272,7 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
             ? 'next-operation-goal-link line-clamp-3'
             : 'next-operation-goal-link line-clamp-3 next-absence'
         }
-        extra={{ 'data-next-goal-focus': '' }}
+        extra={{ 'data-next-goal-focus': '', ...(goal.known ? { 'data-authored': '' } : {}) }}
         before={onGoal}
         focusKey={`sessions-row-goal:${row.key}`}
         fallback={SEARCH_KEY}
@@ -236,7 +283,7 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
   );
 }
 
-const NO_HINTS: readonly string[] = [];
+const NO_HINTS: readonly RowHint[] = [];
 
 /* Memoized with `Group`, so the urgent render a keystroke makes, which still holds the deferred result,
    passes every row the same props and redraws none of them. */
@@ -246,11 +293,11 @@ const RowView = memo(function RowView({
   depth = 0,
 }: {
   readonly row: SessionRow;
-  readonly hints?: readonly string[];
+  readonly hints?: readonly RowHint[];
   readonly depth?: number;
 }) {
   const { session, history } = row;
-  const nowKind = 'NOW';
+  const worktree = worktreeOf(row.source);
   const outcomeTone =
     session.outcomeIcon === 'worth-a-look' ? '' : ` next-operation-outcome--${session.tone}`;
   const outcome = row.showOutcome ? (
@@ -273,9 +320,10 @@ const RowView = memo(function RowView({
   const now = (
     <ObservedFact
       kind="now"
-      label={nowKind}
+      label="Now"
       text={session.nowWords}
       known={session.nowWordsKnown}
+      authored={session[SESSION_TEXT_ORIGIN].now}
       note={row.endedSince}
     />
   );
@@ -294,9 +342,17 @@ const RowView = memo(function RowView({
           error, for a location no harness publishes here. */}
       <Fact
         kind="where"
-        label="PROJECT"
+        label="Project"
         value={session.project}
-        detail={worktreeLabel(row.source)}
+        valueAuthored={Boolean(session.project.trim())}
+        detail={
+          worktree ? (
+            <>
+              {'worktree '}
+              <span data-authored>{worktree}</span>
+            </>
+          ) : null
+        }
       />
       <GoalCellView row={row} />
       {history ? (
@@ -311,16 +367,18 @@ const RowView = memo(function RowView({
           {now}
           <ObservedFact
             kind="next"
-            label="NEXT"
+            label="Next"
             text={session.nextText}
             known={session.nextKnown}
+            authored={session.nextKnown}
           />
           <ObservedFact
             kind="blocked"
-            label={`BLOCKED${row.responsibility}`}
+            label={`Blocked${row.responsibility}`}
             text={session.blockText}
             known={session.blockKnown}
             note={session.blockNote}
+            noteAuthored={session[SESSION_TEXT_ORIGIN].blockNote}
             tone={session.isNeeds || session.askKnown ? 'blocked' : 'clear'}
           />
           {outcome ? <div className="next-operation-end-note">{outcome}</div> : null}
@@ -422,14 +480,14 @@ const Group = memo(function Group({
       ) : null}
       {!countsAvailable || noMatches ? null : (
         <div className="next-operations-columns" aria-hidden="true">
-          <span>SESSION</span>
-          <span>PROJECT</span>
-          <span>GOAL</span>
-          <span>NOW</span>
+          <span>Session</span>
+          <span>Project</span>
+          <span>Goal</span>
+          <span>Now</span>
           {kind === 'history' ? null : (
             <>
-              <span>NEXT</span>
-              <span>BLOCKED</span>
+              <span>Next</span>
+              <span>Blocked</span>
             </>
           )}
         </div>
@@ -440,7 +498,10 @@ const Group = memo(function Group({
             buckets.map((bucket) => (
               <Fragment key={bucket.group}>
                 {byGroup ? (
-                  <h3 className="my-2 text-label font-semibold [overflow-wrap:anywhere]">
+                  <h3
+                    className="my-2 text-label font-semibold [overflow-wrap:anywhere]"
+                    data-authored={Boolean(bucket.group) || undefined}
+                  >
                     {groupName(bucket.group)}
                   </h3>
                 ) : null}

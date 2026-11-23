@@ -1,7 +1,16 @@
-import type { Row, ObservedSession } from '../observed';
+import { trimmed, type Row, type ObservedSession } from '../observed';
+import type { SessionLink } from '../observed/relationships';
 import { rowState } from './rows';
-import { declaredRelations, groupLabel } from './declared';
+import { declaredRelations, groupLabelParts } from './declared';
 import { RouteAnchor } from './RouteAnchor';
+
+function RelationshipTitle({ target }: { readonly target: SessionLink }) {
+  return (
+    <span data-authored={Boolean(trimmed(target.source['title'])) || undefined}>
+      {target.title}
+    </span>
+  );
+}
 
 export function RelationshipLabels({
   source,
@@ -16,11 +25,14 @@ export function RelationshipLabels({
   readonly source: Row | undefined;
   readonly relations: ReturnType<typeof declaredRelations>;
 }) {
+  const group = groupLabelParts(source);
   return (
     <>
-      {groupLabel(source) ? (
+      {group ? (
         <span className="mt-1 block text-label text-muted-foreground [overflow-wrap:anywhere]">
-          {groupLabel(source)}
+          {group.prefix}
+          <span data-authored>{group.name}</span>
+          {group.suffix}
         </span>
       ) : null}
       {relations.parentText ? (
@@ -29,10 +41,12 @@ export function RelationshipLabels({
             <RouteAnchor
               className="relative z-[1]"
               route={relations.parent.route}
+              label={relations.parentText}
               focusKey={`${focusScope}:parent`}
               fallback={fallback}
             >
-              {relations.parentText}
+              {'Child of '}
+              <RelationshipTitle target={relations.parent} />
             </RouteAnchor>
           ) : (
             relations.parentText
@@ -64,10 +78,13 @@ export function WaitingChild({
     <RouteAnchor
       className="relative z-[1]"
       route={relations.waiting.route}
+      label={relations.waitingText}
       focusKey={`${focusScope}:waiting`}
       fallback={fallback}
     >
-      {relations.waitingText}
+      {'Waiting on child "'}
+      <RelationshipTitle target={relations.waiting} />
+      {'"'}
     </RouteAnchor>
   ) : (
     <>{relations.waitingText}</>
@@ -96,7 +113,7 @@ export function LinkedChildren({
               focusKey={`linked-child:${child.key}`}
               fallback="session-title"
             >
-              {child.title}
+              <RelationshipTitle target={child} />
             </RouteAnchor>
             {' · '}
             {states.get(child.key) ?? 'State not published'}
