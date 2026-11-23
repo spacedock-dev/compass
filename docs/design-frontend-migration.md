@@ -16,6 +16,9 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+Settings adds an inline Your data explanation. Its Copy button copies the terminal commands for
+the dashboard's listening port. The operation still runs in the terminal.
+
 On 2026-11-23 legacy project focus fragments began opening the exact Session page, including
 the older `held-to` alias. A focus with no harness uses the ID-only session form. The return
 origin is the project. The grammar differential applies this departure to recorded project

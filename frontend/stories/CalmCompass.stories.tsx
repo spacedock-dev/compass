@@ -6,6 +6,7 @@ import { ControlsProvider, Disclosure } from '../src/controls';
 import { testControls } from '../src/controls/testControls';
 import { TechnicalDetails } from '../src/controls/TechnicalDetails';
 import { GLOSSARY } from '../src/language/glossary';
+import { YourDataCard } from '../src/settings/YourDataCard';
 import { Alert } from '../src/ui/alert';
 import { Button } from '../src/ui/button';
 import { Card } from '../src/ui/card';
@@ -353,15 +354,15 @@ function ReservedExamples() {
             />
           </ControlsProvider>
         </section>
-        {[
-          ['Stepped slider', 'Choose how much a progress check reads.'],
-          ['Forget everything', 'The explanation opens inline in the Your data card.'],
-        ].map(([title, note]) => (
-          <section key={title} style={row}>
-            <h3 style={subheading}>{title}</h3>
-            <p style={caption}>{note}</p>
-          </section>
-        ))}
+        <section style={row}>
+          <h3 style={subheading}>Stepped slider</h3>
+          <p style={caption}>Choose how much a progress check reads.</p>
+        </section>
+        <section style={row} aria-label="Forget everything example">
+          <ControlsProvider controls={kit.controls}>
+            <YourDataCard port={6226} />
+          </ControlsProvider>
+        </section>
       </div>
     </Panel>
   );
@@ -466,6 +467,10 @@ export const StyleGuide: Story = {
     await waitFor(() =>
       expect(examples.getByText('Compass uses your saved goal to check progress.')).toBeVisible(),
     );
+    const reset = within(examples.getByRole('region', { name: 'Forget everything example' }));
+    await userEvent.click(reset.getByRole('button', { name: 'Forget everything' }));
+    await waitFor(() => expect(reset.getByRole('list', { name: 'Deletes' })).toBeVisible());
+    await expect(reset.getByRole('list', { name: 'Keeps' })).toBeVisible();
     const colors = canvas.getByRole('region', { name: 'Color' });
     const swatches = colors.querySelectorAll<HTMLElement>('[data-swatch]');
     await expect(swatches).toHaveLength(8);

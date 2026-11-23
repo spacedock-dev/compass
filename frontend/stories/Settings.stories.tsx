@@ -3,6 +3,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { createShell } from '../src/shell/createShell';
 import { ShellContext } from '../src/shell/context';
+import { ControlsProvider } from '../src/controls';
 import { SettingsView } from '../src/settings';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
@@ -40,6 +41,7 @@ function SettingsExample({ scenario }: { readonly scenario: Scenario }) {
       doc: null,
       reducedMotion: () => true,
       fetch: async (url, init) => {
+        if (url === '/api/health') return json({ port: 6226 });
         if (url !== '/api/settings') return json({ generated: 1, sessions: [] });
         if (init?.method !== 'POST') {
           reads += 1;
@@ -70,7 +72,9 @@ function SettingsExample({ scenario }: { readonly scenario: Scenario }) {
   );
   return (
     <ShellContext.Provider value={shell}>
-      <SettingsView />
+      <ControlsProvider controls={shell.controls}>
+        <SettingsView />
+      </ControlsProvider>
     </ShellContext.Provider>
   );
 }
@@ -224,5 +228,31 @@ export const FailedReadThenTryAgain: Story = {
     await expect(await canvas.findByRole('spinbutton', { name: 'Prompt size (KB)' })).toHaveValue(
       256,
     );
+  },
+};
+
+export const ForgetEverythingInline: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const card = within(canvas.getByRole('region', { name: 'Your data' }));
+    await expect(
+      canvas.getByRole('region', { name: 'Your data' }).querySelector('svg[data-icon="forget"]'),
+    ).not.toBeNull();
+    const trigger = card.getByRole('button', { name: 'Forget everything' });
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(trigger);
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await waitFor(() => expect(card.getByText('This cannot be undone.')).toBeVisible());
+    const stop = await card.findByText('spacedock-compass --port 6226 --stop');
+    const forget = card.getByText('spacedock-compass --port 6226 --forget');
+    await expect(
+      stop.compareDocumentPosition(forget) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await expect(card.getByRole('list', { name: 'Deletes' })).toBeVisible();
+    await expect(card.getByRole('list', { name: 'Keeps' })).toBeVisible();
+    await expect(
+      canvasElement.querySelector('[role="dialog"], [role="alertdialog"], [aria-modal]'),
+    ).toBeNull();
+    await expect(card.queryByRole('button', { name: 'Done' })).toBeNull();
   },
 };

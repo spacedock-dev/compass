@@ -1,4 +1,5 @@
 import { AiUseSettings } from './AiUseSettings';
+import { DashboardDataCard } from './YourDataCard';
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { ApiClient } from '../api/client';
 import type { ApiResult, SettingsBody } from '../api/types';
@@ -200,9 +201,11 @@ function SettingField({
 export function SettingsScreen({
   client,
   aiUse,
+  yourData,
 }: {
   readonly client: SettingsClient;
   readonly aiUse?: ReactNode;
+  readonly yourData?: ReactNode;
 }) {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -289,156 +292,157 @@ export function SettingsScreen({
     void send('save', values, 'Saved. The next Analyze drift press reads with these limits.');
   };
 
-  if (load.state === 'loading')
+  const settings = () => {
+    if (load.state === 'loading')
+      return <p className="next-absence">Reading the settings in force.</p>;
+    if (load.state === 'failed')
+      return (
+        <>
+          <p className="next-absence">The prompt limits and update preference could not be read.</p>
+          <div className="mt-4">
+            <Button
+              type="button"
+              variant="retry"
+              onClick={() => {
+                setLoad({ state: 'loading' });
+                setAttempt((count) => count + 1);
+              }}
+            >
+              Try again
+            </Button>
+          </div>
+        </>
+      );
+    const anyChanged = fields.some((field) => field.value !== field.fallback);
     return (
-      <section
-        className="next-view"
-        data-next-view-body="settings"
-        data-next-settings-state="loading"
-      >
-        <h1>Settings</h1>
-        {aiUse}
-        <p className="next-absence">Reading the settings in force.</p>
-      </section>
-    );
-  if (load.state === 'failed')
-    return (
-      <section
-        className="next-view"
-        data-next-view-body="settings"
-        data-next-settings-state="failed"
-      >
-        <h1>Settings</h1>
-        {aiUse}
-        <p className="next-absence">The prompt limits and update preference could not be read.</p>
-        <div className="mt-4">
-          <Button
-            type="button"
-            variant="retry"
-            onClick={() => {
-              setLoad({ state: 'loading' });
-              setAttempt((count) => count + 1);
-            }}
+      <>
+        {load.body.update_check ? (
+          <section
+            className="mt-4 flex max-w-[var(--measure)] flex-col gap-2"
+            aria-labelledby="update-check-heading"
           >
-            Try again
-          </Button>
-        </div>
-      </section>
-    );
-
-  const anyChanged = fields.some((field) => field.value !== field.fallback);
-  return (
-    <section className="next-view" data-next-view-body="settings" data-next-settings-state="ready">
-      <h1>Settings</h1>
-      {aiUse}
-      {load.body.update_check ? (
-        <section
-          className="mt-4 flex max-w-[var(--measure)] flex-col gap-2"
-          aria-labelledby="update-check-heading"
+            <h2 id="update-check-heading" className="m-0 text-value font-bold">
+              Updates
+            </h2>
+            <Label className="flex items-center gap-2 text-body">
+              <input
+                type="checkbox"
+                checked={load.body.update_check.disabled}
+                aria-disabled={pending !== null ? true : undefined}
+                onChange={(event) =>
+                  pending === null &&
+                  void send(
+                    'update-check',
+                    { no_update_check: event.currentTarget.checked },
+                    'Update check preference saved.',
+                  )
+                }
+              />
+              Turn off daily update checks
+            </Label>
+            <p className="m-0 text-body text-muted-foreground">
+              Checks spacedock.md at most once per UTC day for a newer release.
+            </p>
+            {!load.body.update_check.default_enabled ? (
+              <p className="m-0 text-body text-muted-foreground">
+                Update checks are off by default in this build.
+              </p>
+            ) : null}
+            {load.body.update_check.cli_disabled ? (
+              <p className="m-0 text-body text-muted-foreground">
+                Update checks are off for this run (--no-update-check).
+              </p>
+            ) : null}
+          </section>
+        ) : null}
+        <form
+          ref={form}
+          noValidate
+          aria-labelledby="next-settings-reading"
+          className="mt-4 flex max-w-[var(--measure)] flex-col gap-6"
+          onSubmit={onSubmit}
         >
-          <h2 id="update-check-heading" className="m-0 text-value font-bold">
-            Updates
-          </h2>
-          <Label className="flex items-center gap-2 text-body">
-            <input
-              type="checkbox"
-              checked={load.body.update_check.disabled}
-              aria-disabled={pending !== null ? true : undefined}
-              onChange={(event) =>
-                pending === null &&
+          <div className="flex flex-col gap-2">
+            <h2 id="next-settings-reading" className="m-0 text-value font-bold">
+              Analyze drift reading limits
+            </h2>
+            <p className="m-0 text-body text-muted-foreground">{INTRO}</p>
+          </div>
+          {fields.map((field) => (
+            <SettingField
+              key={field.key}
+              field={field}
+              draft={drafts[field.key] ?? textOf(field.value)}
+              pending={pending}
+              capacities={load.body.capacities}
+              onChange={(value) => setDrafts((current) => ({ ...current, [field.key]: value }))}
+              onRestore={() =>
                 void send(
-                  'update-check',
-                  { no_update_check: event.currentTarget.checked },
-                  'Update check preference saved.',
+                  `restore:${field.key}`,
+                  { [field.key]: null },
+                  `${field.label} is back to its default, ${withUnit(field, field.fallback)}.`,
                 )
               }
             />
-            Turn off daily update checks
-          </Label>
-          <p className="m-0 text-body text-muted-foreground">
-            Checks spacedock.md at most once per UTC day for a newer release.
-          </p>
-          {!load.body.update_check.default_enabled ? (
-            <p className="m-0 text-body text-muted-foreground">
-              Update checks are off by default in this build.
-            </p>
-          ) : null}
-          {load.body.update_check.cli_disabled ? (
-            <p className="m-0 text-body text-muted-foreground">
-              Update checks are off for this run (--no-update-check).
-            </p>
-          ) : null}
-        </section>
-      ) : null}
-      <form
-        ref={form}
-        noValidate
-        aria-labelledby="next-settings-reading"
-        className="mt-4 flex max-w-[var(--measure)] flex-col gap-6"
-        onSubmit={onSubmit}
-      >
-        <div className="flex flex-col gap-2">
-          <h2 id="next-settings-reading" className="m-0 text-value font-bold">
-            Analyze drift reading limits
-          </h2>
-          <p className="m-0 text-body text-muted-foreground">{INTRO}</p>
-        </div>
-        {fields.map((field) => (
-          <SettingField
-            key={field.key}
-            field={field}
-            draft={drafts[field.key] ?? textOf(field.value)}
-            pending={pending}
-            capacities={load.body.capacities}
-            onChange={(value) => setDrafts((current) => ({ ...current, [field.key]: value }))}
-            onRestore={() =>
-              void send(
-                `restore:${field.key}`,
-                { [field.key]: null },
-                `${field.label} is back to its default, ${withUnit(field, field.fallback)}.`,
-              )
-            }
-          />
-        ))}
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            type="submit"
-            variant="primary"
-            aria-busy={pending === 'save' ? true : undefined}
-            busyLabel="Saving…"
-            disabled={pending !== null && pending !== 'save'}
-          >
-            Save
-          </Button>
-          {anyChanged ? (
+          ))}
+          <div className="flex flex-wrap items-center gap-3">
             <Button
-              type="button"
-              aria-busy={pending === 'restore-all' ? true : undefined}
-              busyLabel="Restoring…"
-              disabled={pending !== null && pending !== 'restore-all'}
-              onClick={() =>
-                void send(
-                  'restore-all',
-                  Object.fromEntries(fields.map((field) => [field.key, null])),
-                  'Every limit is back to its default.',
-                )
-              }
+              type="submit"
+              variant="primary"
+              aria-busy={pending === 'save' ? true : undefined}
+              busyLabel="Saving…"
+              disabled={pending !== null && pending !== 'save'}
             >
-              Restore all defaults
+              Save
             </Button>
-          ) : null}
-        </div>
-        {/* Mounted before it has anything to say: a status node that arrives carrying its words is the one
+            {anyChanged ? (
+              <Button
+                type="button"
+                aria-busy={pending === 'restore-all' ? true : undefined}
+                busyLabel="Restoring…"
+                disabled={pending !== null && pending !== 'restore-all'}
+                onClick={() =>
+                  void send(
+                    'restore-all',
+                    Object.fromEntries(fields.map((field) => [field.key, null])),
+                    'Every limit is back to its default.',
+                  )
+                }
+              >
+                Restore all defaults
+              </Button>
+            ) : null}
+          </div>
+          {/* Mounted before it has anything to say: a status node that arrives carrying its words is the one
             a screen reader skips. */}
-        <Alert as="p" variant="intent-note" data-next-settings-outcome={outcome?.tone ?? 'none'}>
-          {outcome?.text ?? ''}
-        </Alert>
-      </form>
+          <Alert as="p" variant="intent-note" data-next-settings-outcome={outcome?.tone ?? 'none'}>
+            {outcome?.text ?? ''}
+          </Alert>
+        </form>
+      </>
+    );
+  };
+  return (
+    <section
+      className="next-view"
+      data-next-view-body="settings"
+      data-next-settings-state={load.state}
+    >
+      <h1>Settings</h1>
+      {aiUse}
+      {settings()}
+      {yourData}
     </section>
   );
 }
 
 export function SettingsView() {
   const { runtime } = useShell();
-  return <SettingsScreen client={runtime.client} aiUse={<AiUseSettings />} />;
+  return (
+    <SettingsScreen
+      client={runtime.client}
+      aiUse={<AiUseSettings />}
+      yourData={<DashboardDataCard client={runtime.client} />}
+    />
+  );
 }
