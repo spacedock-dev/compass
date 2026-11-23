@@ -70,6 +70,7 @@ export function SessionItem({
   risk,
   reason,
   onMark,
+  markDisabled,
   markPending,
   markFallback,
 }: {
@@ -81,6 +82,7 @@ export function SessionItem({
   readonly risk?: BoardRisk;
   readonly reason?: string;
   readonly onMark?: (() => void) | undefined;
+  readonly markDisabled?: boolean;
   readonly markPending?: boolean;
   readonly markFallback?: string;
 }) {
@@ -189,6 +191,8 @@ export function SessionItem({
               type="button"
               variant="quiet"
               aria-busy={markPending || undefined}
+              busyLabel="Saving…"
+              disabled={markDisabled}
               onClick={onMark}
             >
               {section === 'close' ? 'Mark as read' : 'Dismiss'}

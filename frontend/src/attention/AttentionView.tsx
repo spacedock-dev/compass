@@ -22,6 +22,16 @@ import './attention.css';
 /* Subjects shown before "Show N more". The reader opens the rest, and the choice outlives every revision. */
 export const INITIAL_SECTION_SIZE = 3;
 
+const DISMISSAL_WRITE = 'attention:dismiss:';
+
+function isDismissalWrite(key: string) {
+  return key.startsWith(DISMISSAL_WRITE);
+}
+
+function markKey(row: Pick<ObservedSession, 'harness' | 'sid'>, undo = false) {
+  return `${DISMISSAL_WRITE}${undo ? 'undo' : 'mark'}:${sessionKey(row)}`;
+}
+
 function occurrences(keys: readonly string[]): string[] {
   const seen = new Map<string, number>();
   return keys.map((key) => {
@@ -120,7 +130,7 @@ function Board({
   readonly selection: AttentionSelection | null;
 }) {
   const data = useDisplayed((snapshot) => snapshot.data);
-  const pending = useDisplayed((snapshot) => snapshot.pending);
+  const pending = useDisplayed((snapshot) => snapshot.pending.find(isDismissalWrite));
   const { runtime, controls } = useShell();
   const undoRef = useFocusKey<HTMLButtonElement>(controls.focusLane, 'attention:undo', {
     fallback: 'attention:title',
@@ -133,8 +143,10 @@ function Board({
   } | null>(null);
 
   async function mark(row: Pick<ObservedSession, 'harness' | 'sid'>, text: string, undo = false) {
+    // The dismissals store replaces the whole file. Keep this page's writes in sequence.
+    if (runtime.store.getSnapshot().pending.some(isDismissalWrite)) return;
     const identity = { harness: row.harness, sid: row.sid };
-    const key = markKey(identity);
+    const key = markKey(identity, undo);
     const token = runtime.pending.start(key, 'Saving…');
     if (!token) return;
     try {
@@ -152,15 +164,12 @@ function Board({
     }
   }
 
-  function markKey(row: Pick<ObservedSession, 'harness' | 'sid'>) {
-    return `attention:dismiss:${sessionKey(row)}`;
-  }
-
   function rowMark(row: ObservedSession, text: string) {
     if (data?.dismiss !== true) return {};
     return {
       onMark: () => void mark(row, text),
-      markPending: pending.includes(markKey(row)),
+      markPending: pending === markKey(row),
+      markDisabled: pending !== undefined,
       markFallback:
         action?.canUndo && sessionKey(action.identity) === sessionKey(row)
           ? 'attention:undo'
@@ -237,7 +246,9 @@ function Board({
             <Button
               ref={undoRef}
               type="button"
-              aria-busy={pending.includes(markKey(action.identity)) || undefined}
+              aria-busy={pending === markKey(action.identity, true) || undefined}
+              busyLabel="Saving…"
+              disabled={pending !== undefined}
               onClick={() => void mark(action.identity, 'Restored', true)}
             >
               Undo

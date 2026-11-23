@@ -195,8 +195,10 @@ With the landed Help, Projects and Session changes underneath, Settings packages
 
 On 2026-11-23, the Needs you, Goal history and phone layout layer packaged at 2,466,879
 bytes, an increase of 4,000 bytes (0.16%) from the 2,462,879-byte Settings page.
-The page bound rises once to the measured 2,466,879 bytes. The fixture bound stays at
-250,000 bytes.
+The review fixes restore independent quota and goal evidence, report failed saves, and make
+dismissal writes sequential. The corrected build measures 2,468,711 bytes, 1,832 bytes
+(0.07%) above the first package. The page bound is the measured 2,468,711 bytes. The fixture
+bound stays at 250,000 bytes.
 
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement

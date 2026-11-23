@@ -68,21 +68,35 @@ it('dismisses, undoes and marks read through the server and waits for the board 
   expect(post).toHaveBeenCalledTimes(3);
 });
 
-it('posts actions for two different sessions even while the first write is outstanding', async () => {
+it('shows when another dismissal is saving and allows a new action after it finishes', async () => {
   const page = mountShell({ hash: '#n=attention', data: board });
   await page.settle();
   const post = vi.spyOn(page.shell.runtime.client, 'postDismiss');
-  post.mockImplementationOnce(() => new Promise(() => undefined));
-  post.mockResolvedValueOnce({
+  const receipt = {
     kind: 'ok',
     body: { ok: true, persisted: true },
     status: 200,
     revision: '',
+  } as const;
+  let release: () => void = () => undefined;
+  post.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return receipt;
   });
+  post.mockResolvedValueOnce(receipt);
 
+  const read = screen.getByRole<HTMLButtonElement>('button', { name: 'Mark as read' });
   fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Mark as read' }));
+  expect(read.disabled).toBe(true);
+  fireEvent.click(read);
+  expect(post).toHaveBeenCalledTimes(1);
+  await act(async () => release());
+  expect(read.disabled).toBe(false);
+  fireEvent.click(read);
   expect(post).toHaveBeenNthCalledWith(2, { harness: 'claude', sid: 'clean' });
+  await page.settle();
 });
 
 it('keeps one waiting row and shows its measured dirty end', async () => {

@@ -181,6 +181,7 @@ function Example({
   persisted = true,
   collection = 'loaded',
   removeOnWrite = false,
+  beforeWrite,
 }: {
   readonly missingClock?: boolean;
   readonly waitingForBoard?: boolean;
@@ -195,6 +196,7 @@ function Example({
     | 'wait-and-dirty'
     | 'ended-collision';
   readonly removeOnWrite?: boolean;
+  readonly beforeWrite?: () => Promise<void>;
   readonly canDismiss?: boolean;
   readonly onRefresh?: (refresh: () => Promise<void>) => void;
 }) {
@@ -237,8 +239,11 @@ function Example({
       search: '',
       reducedMotion: () => true,
       fetch: (url) => {
-        if (url.startsWith('/api/dismiss') && removeOnWrite)
+        const writing = url.startsWith('/api/dismiss');
+        if (writing && removeOnWrite)
           payload = { ...board, sessions: board.sessions.filter(({ sid }) => sid !== 'review') };
+        if (writing && beforeWrite)
+          return beforeWrite().then(() => new Response(JSON.stringify({ ok: true, persisted })));
         return url.startsWith('/api/data') && waitingForBoard
           ? new Promise<Response>(() => undefined)
           : Promise.resolve(
@@ -713,6 +718,32 @@ export const KeyboardDismissMovesToUndo: Story = {
     await userEvent.keyboard('{Enter}');
     await waitFor(() => expect(title).not.toBeInTheDocument());
     await expect(canvas.getByRole('button', { name: 'Undo' })).toHaveFocus();
+  },
+};
+
+export const DismissalSaving: Story = {
+  play: async ({ canvasElement, mount }) => {
+    let release: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await mount(<Example beforeWrite={() => hold} />);
+    const canvas = within(canvasElement);
+    const flagged = await canvas.findByRole('heading', { name: 'Review pull request #482' });
+    const read = canvas.getAllByRole('button', { name: 'Mark as read' })[0] as HTMLElement;
+    const dismiss = within(flagged.closest('article') as HTMLElement).getByRole('button', {
+      name: 'Dismiss',
+    });
+    try {
+      await userEvent.click(dismiss);
+      await expect(dismiss).toHaveAttribute('aria-busy', 'true');
+      await expect(within(dismiss).getByText('Saving…')).toBeVisible();
+      await expect(read).toBeDisabled();
+    } finally {
+      release();
+    }
+    await waitFor(() => expect(read).toBeEnabled());
+    await expect(canvas.getByRole('button', { name: 'Undo' })).toBeVisible();
   },
 };
 

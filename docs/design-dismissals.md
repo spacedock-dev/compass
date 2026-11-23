@@ -114,14 +114,13 @@ strings go through `records.safe_text` at 64 characters, because they reach the 
 reveal endpoint; both timestamps go through `records.norm_epoch`, where a string or a null becomes 0.
 And 0 is the safe direction, since it lapses on the session's next write.
 
-An unwritable store is reported rather than hidden. `dismiss` returns whether the write landed, the
-endpoint answers `persisted: false`, and the page says the mark holds for this run only. The mark
-still takes effect: the write failed, the reader's intent did not.
+An unwritable store returns `persisted: false`. The next collection rereads the disk store and can
+lose the in-memory mark. Needs you reports that Compass could not save the change and offers Undo
+only for a saved mark or dismissal.
 
 More than one Compass can bind on one machine, and they share the one file. Each re-reads it at
 the top of every collection, so a mark made in one dashboard is picked up by the other within a
-poll. A write reads the file under a lock, merges, and replaces it atomically, so a
-mark can never be corrupted by a concurrent one. But two marks landing in the same instant resolve
-last-writer-wins on the whole file, and the loser is lost. That is stated rather than solved: the
-alternative is a lock file with a stale-lock problem, for a race between two dashboards one person is
-clicking in.
+poll. A write reads and merges the stored marks under the process lock, then atomically replaces
+the file after releasing that lock. Overlapping writes can each produce a complete file and the
+last replacement wins. Needs you sends one change at a time and disables the other dismissal
+controls while that write is pending. Overlap across dashboards remains possible.
