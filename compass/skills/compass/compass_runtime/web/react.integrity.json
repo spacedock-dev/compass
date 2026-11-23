@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2419603,
+    "bytes": 2419703,
     "file": "react.html",
-    "sha256": "28938a4f5d29a46ad2c7fc9c0414a11b4499087146ab5ab80cd868e152c6eb39"
+    "sha256": "35d4317d4b03995db9185f52d795ce23f0296141466744cd3882aa81afcfe266"
   },
   "format": 1,
   "frontend": "react",
@@ -695,7 +695,7 @@
       },
       {
         "file": "frontend/src/drift/model.ts",
-        "sha256": "c6d55e2df51a3cbc381ee1644d31417560318534bce574b7042bb6214e660709"
+        "sha256": "68d676128e9f95f2d83d42ecbcb04eb59dcb052bc683a1a5a688507abe2cef81"
       },
       {
         "file": "frontend/src/drift/monitor.ts",
@@ -1195,7 +1195,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionDetail.tsx",
-        "sha256": "89b4c21cdf89b2a18026b70f9519d2dcd5c9e956b8d21a3c475792511cac1754"
+        "sha256": "59e602b55ec3e376e6c5b374f5b91ba157026cc53a504525de92bbd43db5cbdd"
       },
       {
         "file": "frontend/src/sessions/SessionTechnicalDetails.tsx",
