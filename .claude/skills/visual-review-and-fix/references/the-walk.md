@@ -11,17 +11,19 @@ wording is wrong, do not edit one copy. See "If a promise is wrong" at the botto
 
 ## The routes
 
-Three top-level views, and the fragment is the address:
+Sessions is the entry. The fragment is the address:
 
-- `#n=projects` is the default route. The v2 design moves the entry point up to Projects so the reader
-  first finds the project and then its sessions (NUI-16 in
-  [`docs/design-next-ui.md`](../../../../docs/design-next-ui.md)).
-- `#n=sessions` is fleet operations.
-- `#n=attention` is the gate queue and the coverage disclosure. It has a nav entry as of #287, last
-  of the three, and the `a` key and the reported-blocks chip in the header still reach it. That chip
-  appears only while a block is reported, which is why it was never a nav entry's substitute.
+- `#n=sessions` (Sessions) shows the session list and its filters. It also opens when the address
+  has no route.
+- `#n=projects` (Projects) shows projects and links to their sessions. Keep it in the navigation
+  with any project count. With one project, check that the single-project note appears.
+- `#n=attention` (Needs you) shows Waiting on you, Worth a look, Ready to wrap up and What Compass
+  can't see. Follow a row title to its Session page.
+- `#n=intent` (Goal history) shows recorded goal changes.
+- `#n=settings` (Settings) shows saved choices.
 
-`p` and `s` reach the other two. Fragment changes alone do not reload the document.
+`n` opens Needs you, `p` Projects and `s` Sessions. Fragment changes alone do not reload the document.
+When Help ships, include it in the navigation walk.
 
 **Walk the routes before you walk the stages, with the mouse only.** From each top-level view, check
 that every other one is offered and that the one you are standing on is marked. Put the keyboard
@@ -44,15 +46,17 @@ that never navigates to a view cannot make about it.
 > every session on this machine, across ten harnesses, on one screen, with what is active now kept
 > apart from what is only recent history.
 
-**On screen:** the fleet strip's four counts, then Active now against Recent history. Active now
-means a working state, a needs-input state or an exact request, and is deliberately not the number
-of rows in the payload.
+**On screen:** the header's Working count, At a glance, then Right now and the earlier group
+named for its time window. The Working count includes only sessions shown as Working. Use the
+Sessions legend to read the state tiles and the Worth a look flag.
 
 **Force these absences:**
 
-- A harness present but with nothing to show. Its chip must read as discovered-and-quiet, not vanish.
-- A row whose harness publishes no title, no location, no activity. Each must say it is not
-  published rather than render blank.
+- An agent Compass discovered without sessions to show. Its filter entry still shows that it
+  was discovered and has no sessions in view.
+- A row whose agent publishes no title, no location or no activity. Look for each absence in
+  words. Compare an event-capable row with no published state, which says State not published,
+  with a scan-only row, which says Read by scanning: no turn end can be observed here.
 - Sessions sharing a display label. They collide into one identity row, which is correct, and the
   count beside it must match the payload.
 
@@ -65,17 +69,15 @@ that it is, and a recent observation cannot prove a harness is still open.
 > is, and an estimate of when that turn ends. It tells you when that changes instead of making you
 > poll.
 
-**On screen:** the NOW, NEXT and BLOCKED columns on an active row, and the turn's progress.
+**On screen:** open a working session and read Right now. Check the current work, any coming
+step, what the session is waiting for and the turn's progress against the available evidence.
 
 **Force these absences:**
 
-- No pending step published. The column must say so.
-- A turn with failures. Three readings are published and they are different sentences: a consecutive
-  run, a request total, and a request where nothing succeeded. Check the one on screen matches the
-  one the payload supports, because saying "in a row" about a total is false the moment a success
-  splits it.
-- A turn the scanner has not finished reading. A request-wide claim must be withheld, not published
-  off a partial view.
+- No coming step published. Right now says what is missing.
+- A turn with failures. Check the sentence against the evidence for that turn. Consecutive failures,
+  total failures and a request where nothing succeeded each need their own wording.
+- A turn Compass has only partly read. Check that Right now withholds claims about the whole request.
 
 **The limit:** Compass reads a tool call's name and whether it failed, never what it contained.
 
@@ -84,22 +86,22 @@ that it is, and a recent observation cannot prove a harness is still open.
 > one queue of everything blocked on you, with what it is waiting for and how long it has waited. A
 > session can also ask you a question directly and wait for your answer.
 
-**On screen:** the gate queue at `#n=attention`, the wait reason, the standing duration, and on a row
-Compass can reach, the controls. `COPY COMMAND` copies the harness's own re-entry verb; `RAISE`
-switches that terminal to the session. They sit together where both apply, and the raise stands alone
-where the harness documents no re-entry verb.
+**On screen:** in Needs you, read the Waiting on you reason and how long the session has waited.
+Open the Session page from the row. Where Copy command is available, verify it copies the agent's
+own command for returning to the session. Check any terminal switch action on the surface that
+offers it, including when that action is the only one available.
 
 **Force these absences:**
 
-- Nothing waiting. The queue reads zero and the coverage line still states what it can and cannot see.
-- A harness that cannot report a gate at all. The row must be marked, because its silence must not
-  read as an all-clear.
-- A harness that can report but whose mechanism the operator has switched off. The coverage line
-  counts it as reporting, which is true of the mechanism, so check the condition is stated.
-- A gate on a row with no reachable terminal. No raise control at all, and the copy still present
-  wherever a re-entry verb exists.
-- A second click while a raise is in flight. It refuses page-wide, and the announcement names no
-  single refusal arm.
+- Nothing waiting. The queue reads zero and What Compass can't see still explains the coverage.
+- An agent that cannot report a request at all. Look for the coverage limit on its row so the
+  silence does not read as an all-clear.
+- An agent that can report requests when its hook is enabled, with that hook switched off. Check
+  that the coverage explains the condition even when it counts the agent as able to report.
+- A request from a session with no reachable terminal. The terminal action is absent. Copy command
+  remains available wherever the agent has a command for returning to that session.
+- A second press while a terminal switch request is in flight. It is refused page-wide. The
+  announcement keeps the reason as broad as the response supports.
 
 **The limit:** four of the ten harnesses can report a gate, and they are Claude Code, Codex, Copilot
 and Cursor.
@@ -109,9 +111,10 @@ and Cursor.
 > your quota in one place across vendors, with each window's budget shown against its own clock, so
 > you can see whether there is room before you start rather than partway through.
 
-**On screen:** the capacity strip. Per window: the level as fill, the clock as a tick, the pace that
-comparison implies, when the budget ends, and when the window resets. Rows order by when the budget
-runs out, which is not the order by percentage.
+**On screen:** Your AI allowance. With the explanation closed, read the fill, the clock tick when
+measured and the reset sentence for the selected window. When several windows are available,
+check the window choices, ordered by earliest projected budget end. Open How the AI allowance works
+to read Pace, Reset time, Window, Source and Projected budget end for the selected window.
 
 **This is the stage where this product has failed most often.** Force all of these:
 
@@ -134,23 +137,25 @@ runs out, which is not the order by percentage.
 > nothing finishes invisibly. Work that finished and was never read is flagged, and a session that
 > ends leaving uncommitted changes says so.
 
-**On screen:** the finished-and-unread flag, the ENDED marker, and the git state on an ended
-session.
+**On screen:** the Ended state and any outcome evidence. Check Needs you for a clean end in
+Ready to wrap up and a dirty end in Worth a look. Check the promise that finished-but-unread work
+is flagged. Look for published read status. If the page cannot establish it, record that evidence
+limit and the gap against the promise. Open the session's technical details to read the underlying
+git evidence when it is available.
 
 **Force these absences:**
 
-- A session that went quiet without reporting. It must render exactly as one waiting at its prompt,
-  because those two are indistinguishable and the board may not guess.
-- An ended session. It leaves Active now and is promoted into `CLOSE THE LOOP` rather than
-  dropped. Read that heading off the page, not off a document. For two months the shipped skill
-  body called the same section "Safe to close", a name that appeared nowhere on screen, and this
-  file said it too, having been written from a milestone record instead of from the board
-  (DRC-4421). A test now holds the body's section names to the ones the page renders, which is the
-  kind of oracle a walk should leave behind rather than a corrected sentence.
-- A harness with no event adapter, and a run under `--no-events`. An absent end is not evidence of
-  anything and the row must say so.
-- A session whose git state was not measured, against one measured clean, against one dirty. Three
-  readings, three sentences.
+- A session that went quiet without reporting. Compare it with a session at its prompt whose
+  evidence is identical. Both show the same text. On event-capable rows with no published state,
+  expect State not published.
+- A session that published an end. Check that it leaves the Working count and shows Ended.
+  Follow a clean end to Ready to wrap up and a dirty one to Worth a look. Read the section
+  headings on the page and hold the documented names to them.
+- An agent whose activity Compass can only scan, and a run under `--no-events`. The scan-only row
+  says Read by scanning: no turn end can be observed here. For an event-capable agent run with
+  events disabled, check for the absence of an end mark.
+- A session whose git state was not measured, one measured clean and one measured dirty.
+  Look for a distinct sentence in each case.
 
 **The limit:** the probe runs one bounded command and publishes two numbers, never a pathname. It
 is not read-only and not non-executing: DEC-11 retracted both adjectives, because a committed filter

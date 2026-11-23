@@ -53,6 +53,12 @@ reader knows the walk was considered rather than forgotten.
 
 Never review on the port the operator is already using. Pick a spare one, and stop what you start.
 
+In both modes, use the page's dated owner rulings to resolve differences with its After artboard.
+For example, the [Forget ruling](../../../docs/design-calm-compass.md#drc-5488-owner-ruling-2026-11-22)
+calls for an inline explanation in Your data and a retention list checked against the runtime.
+Verify the explanation there, including that typed goals, readings, dismissals and read choices
+are kept.
+
 ## Mode 1: before development
 
 ### 1. Name the promise you are about to touch
@@ -64,6 +70,17 @@ verbatim, the shipped capability behind it, and the limit that keeps it honest. 
 
 If you cannot name the promise, the issue has no user-visible property to review and the calibration
 table's "Runtime only" row applies.
+
+### 1a. Name the two layers
+
+Write the expected first-layer sentence as acceptance text. Name the answer, the reader's next
+action and every absence value the page can show. Keep the words that qualify the answer visible,
+including What Compass can't see. Use the [glossary](../../../docs/design-calm-compass.md#glossary)
+for the visible words and accessible names.
+
+List what the reader should find in Show technical details, such as sources, identifiers, exact
+times, entry numbers and byte sizes. The first layer uses Inter. Use ui-monospace for values that
+need fixed-width type inside technical details.
 
 ### 2. Bring the surface up with real data
 
@@ -81,7 +98,12 @@ with its promise, the surface that renders it, the absences to force, and the st
 is disclosed. Walk the stages the issue touches, and the whole set only when the change reaches the
 whole page.
 
-Read the rendered text, never the source, and quote it in your report. Two issues filed off a
+Start with technical details closed and quote the first-layer text in your report. Compare the
+answer, action and absences with the page's dated owner rulings. Use its After artboard for
+details the rulings leave open. Then open Show technical details where the page offers it.
+Use the same sources to check that the evidence, limits and actions assigned there are available.
+
+Read the rendered text, never the source. Two issues filed off a
 code-reading pass in this repository stated the user-visible claim wrongly: one asserted the page
 called a project "busiest" when only a comment did, which made its acceptance criterion
 unsatisfiable, and the other proposed a fix that would have shipped a regression. The screen is the
@@ -143,8 +165,11 @@ review after the PR opens means green, blocked, fixed, green again.
 
 ### 1. Re-walk what you walked before
 
-Same stages, same absences, same rendered text. You are looking for two things: the property the
-issue promised, and anything that used to read correctly and now does not.
+Use the same stages and absences. With technical details closed, quote the first-layer text
+and compare it with the acceptance text and the page's dated owner rulings. Use its After
+artboard for details the rulings leave open. Then open Show technical details where offered
+and use the same sources to check that the evidence, limits and actions are still available.
+Record what changed and any answer that used to read correctly.
 
 ### 2. Compare against the merge base, not against your memory
 
@@ -157,7 +182,7 @@ belonged in the same branch.
 
 ### 3. Check the regression classes this repository has actually shipped
 
-Not a generic checklist. Every one of these has happened here:
+Check the failures previous reviews found and the boundaries the redesign depends on.
 
 - **State a refresh throws away.** The React page redraws on every board refresh, and anything
   held only in a node is lost when that node remounts. Each lane that must survive has an owner in
@@ -179,6 +204,15 @@ Not a generic checklist. Every one of these has happened here:
   coverage line counts it as reporting, truthfully, while its silence reads as an all-clear.
 - **Agreement between the number and the words around it.** A sentence picked its verb from a count
   in one place and hardcoded it in the next, so every count but one read wrongly.
+- Check that a row's progress pill requires a stored departure of Slightly off course or worse.
+  For missing state, expect State not published on an event-capable row. A scan-only row explains
+  what scanning can observe.
+- Read server-supplied sentences and accessible names as well as visible controls. A heading
+  can use the current words while a sentence from the server or an accessible name uses an old label.
+- Close technical details and look for any epoch, ID, entry number or byte size that reaches the
+  first layer. Open details to confirm the exact value is still available.
+- Follow the same session through Sessions, Project, Needs you and its Session page. Keep its
+  state word consistent so a change of page reads as the same state.
 
 ### 4. Hold the tests to behaviour
 
@@ -238,9 +272,9 @@ allowed to assert.
 
 A behavioural test here:
 
-- **Drives the page as the reader meets it**: the built bundle in a real browser (`frontend/e2e`),
-  or the mounted component in its React test, not a function in isolation. The page is one
-  canonical artifact and the reader meets it whole.
+- **Drives the page as the reader meets it.** Use a mounted React component test or a Storybook
+  `play` function. A visible change needs a story whose `play` asserts what the reader sees.
+  Run `frontend/e2e` on demand for browser investigations.
 - **Is named as a sentence about a person.** `test_a_stale_capability_names_the_restart_and_the_remedy`
   reads as a claim someone can check. `test_403_branch` does not. This is the house style rather than
   a new ask: 82% of the suite's 2,180 test names already carry an article or a pronoun, and six of
@@ -358,9 +392,9 @@ Four classes need something else, and each one has a shipped instance here:
   [`docs/design-usage-quota.md`](../../../docs/design-usage-quota.md) says outright that no unit
   fixture can settle that last one, because a self-authored fixture agrees with either scale. Those
   need transcript replay, a real capture, or a live install.
-- **Whether an external action actually happened.** The board saying it happened is not evidence that
-  it did. The raise control says SENT rather than RAISED precisely because a zero exit status did not
-  prove a window came forward. Validating that class means watching the terminal, not the dashboard.
+- **Whether an external action actually happened.** A successful terminal switch request confirms
+  the request was sent. The terminal window may still be behind others. Watch the terminal to
+  verify that its window came forward.
 
 When a finding falls in one of these, say which, and name the instrument that would settle it. Do not
 stretch the walk to cover it.
@@ -368,6 +402,10 @@ stretch the walk to cover it.
 ## Hard rules
 
 Never review on the operator's own dashboard port, and stop every server and session you start.
+
+Take review screenshots on the Sample session route or in Storybook with synthetic data.
+Keep real-session captures in gitignored `docs/screenshots/` and describe what they show in words.
+Follow the [screenshot evidence policy](../../../docs/design-calm-compass.md#screenshot-evidence-policy).
 
 Never edit the tree while a verification is running, yours or a delegate's.
 

@@ -51,6 +51,7 @@ diff-and-reconcile pass, not a rewrite.
 | `compass/skills/compass/SKILL.md` and its bundled `reference/*.md` | **Canonical** product surface: the loaded body holds terminal actions, disclosures and start/status/stop; the references hold data sources, session states, Intent and drift, notifications, options, interpretation notes and common mistakes. | *Shipped, validated artifacts* — see the constraints below. They are installed without the repository, so links must resolve inside the installed plugin and must never describe repo process. Keep the complete action body within 24,000 bytes. |
 | `docs/promise-map.md` | **Canonical** user-facing promise: the five questions of a user's day, one promise each, the shipped capability that backs it, and the limit that keeps it honest. | A promise may not enter it before the capability ships, and the wording of each promise is duplicated verbatim in `docs/visibility-2x2/items.json` (`columns[].promise`) and in the Linear project description. Change one, change all three. [Development tracking](../../../docs/development-tracking.md#how-work-links-to-a-promise) owns promise IDs and the move taxonomy; keep them out of user-facing tracker prose. |
 | `docs/development-tracking.md` | **Canonical** development taxonomy: promise IDs, journey labels, board columns, moves and tracker copies. | Preserve development provenance here; the public promise map owns reader-facing behavior and limits. |
+| `docs/design-calm-compass.md` | **Canonical** redesign record and glossary for the first layer and technical details. | Keep the glossary's five columns and row order. The [glossary test](../../../frontend/src/language/glossary.test.ts) compares them with [`frontend/src/language/glossary.ts`](../../../frontend/src/language/glossary.ts). Change the table and module together. |
 | `docs/flaky-tests.md` | The flaky-test ledger: one row per test that failed in CI and passed on the same code, and a second table of flakes seen only under local load, with their causes. | Rows come from AGENTS.md's "Flaky tests" rule, not from a docs pass. Keep the table's columns; `scripts/tests/test_flaky_tally.py` reads it and refuses a malformed row. |
 | `docs/design-runtime-architecture.md` | **Canonical** module map: what each runtime file owns, the inward-only dependency rule, top-level import identity, and the config/state/application split. | Other design docs link here for the module map instead of restating it. The import allowlist it describes is asserted by a test. |
 | `docs/design-*.md` | The durable *why/how* per area — decisions that outlive the build, **including alternatives that were tried and rejected and the reason why**. | A decision earns a place here if re-deriving it would cost a day, or if a maintainer would otherwise re-attempt something already proven wrong. |
@@ -106,6 +107,23 @@ publishing. An external body must be read back and checked after publication; th
 cannot inspect it. Moving the promise taxonomy also requires repointing all development consumers
 to [its owner](../../../docs/development-tracking.md#how-work-links-to-a-promise) while keeping the
 five canonical promise sentences unchanged.
+
+## Product words in docs
+
+Name each control by the first-layer label the page ships. If a reader needs the technical
+name too, put it in parentheses after the first mention in the section, then use the plain
+label. Use the ruled form `How <subject> works` for explanation links and take the subject
+from the glossary. Keep CLI flags, skill action names, route slugs, data tokens and model
+prompt text verbatim.
+
+Keep the words in anchored headings so existing links resolve. Design records keep the
+names that were true when the decision was made. Link to the
+[current glossary](../../../docs/design-calm-compass.md#glossary) for today's names. A
+changed signed ruling belongs in a dated owner amendment in its own record, with a link
+to the redesign record.
+
+Use the glossary when writing the shipped skill, which has a 24,000-byte body cap. Keep
+the glossary itself in its owning design record and module.
 
 ## Voice and tone
 
@@ -337,8 +355,10 @@ minutes, a Python version. Stale counts are this repository's most common drift.
    above is the ground truth. If the marker is missing or unresolvable, fall back to
    `origin/main..HEAD` and say so in the report.
 2. **Reconcile each doc against the code truth.** Every real item must appear correctly wherever it
-   is documented, and every doc claim must still match the code. Build the full checklist of edits
-   before making any. **Prune as you go:** tighten entries that bloated into specs, collapse an
+   is documented, and every doc claim must still match the code. Take control names from the
+   [glossary module](../../../frontend/src/language/glossary.ts) and confirm them on the rendered page.
+   Build the full checklist of edits before making any. **Prune as you go:** tighten entries
+   that bloated into specs, collapse an
    explanation repeated across docs down to the one owner plus a link, and delete shipped TODOs and
    caveats that no longer apply.
 3. **Diff the command lists against each other.** The pre-PR suite, the CI workflows and the PR
@@ -402,7 +422,7 @@ minutes, a Python version. Stale counts are this repository's most common drift.
    then cannot resolve the marker it is supposed to read. A merge-base sha is already on `main` and
    stays there. (This was learned twice the hard way: markers pointing at `a4eb54c` and `ef480af`
    were both orphaned by the squash that shipped them.)
-10. **Verify.** All five checks, every run. Use `git status`/`git diff HEAD`, **not** plain
+10. **Verify.** All six checks, every run. Use `git status`/`git diff HEAD`, **not** plain
    `git diff` — a bare `git diff` shows neither your new untracked docs nor a staged deletion, so it
    reports "clean" for exactly the changes this pass makes:
    ```bash
@@ -423,7 +443,7 @@ minutes, a Python version. Stale counts are this repository's most common drift.
    python3 -m unittest discover -s compass/skills/compass/tests -t .
 
    # e. Tone: no em/en dashes or curly quotes in the human-facing prose docs. Nothing in CI
-   #    enforces this, so it is the one anti-drift check that only exists here.
+   #    enforces this.
    #    `git ls-files` builds the list, for two reasons. Step 4 deletes plan docs, and a bare
    #    `docs/plans/*.md` that matches nothing stays literal and makes grep exit 2 on a
    #    "No such file" error. And `docs/plans/` is where per-issue deep-dive notes are kept
@@ -449,17 +469,177 @@ minutes, a Python version. Stale counts are this repository's most common drift.
    else
      echo "tone clean"
    fi
+
+   # f. Product words: run this command from the repository root with the pinned Node version.
+   #    For a PR, use the default branch scan. It includes staged and untracked docs.
+   #    For periodic or release reconciliation, prefix the invocation with PRODUCT_WORDS_SCOPE=--all.
+   #    To check a scratch copy, use PRODUCT_WORDS_SCOPE with the file's path instead.
+   python3 - "${PRODUCT_WORDS_SCOPE:-}" <<'PY'
+   from collections import Counter
+   import json
+   import os
+   from pathlib import Path
+   import re
+   import subprocess
+   import sys
+
+   from scripts.validate_plugins import ROOT, _public_doc_candidate, _public_document
+
+   def git(*args):
+       return subprocess.check_output(["git", *args], cwd=ROOT, text=True, encoding="utf-8")
+
+   glossary = json.loads(subprocess.check_output(
+       ["node", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--input-type=module", "-e",
+        "import { GLOSSARY } from './frontend/src/language/glossary.ts';"
+        "console.log(JSON.stringify(GLOSSARY));"],
+       cwd=ROOT, text=True, encoding="utf-8",
+   ))
+   # Replaces mixes old labels with descriptions of what changed.
+   migration_notes = set("""\
+   Keeps current label
+   Names the pill for assistive technology
+   Singular Working count
+   Plural Working count
+   No standalone attention-row control
+   No standalone control
+   Direct editing in the goal field
+   No dedicated Settings section
+   Goal-only reading with no level
+   Stale or withdrawn reading
+   Cost implied by Analyze
+   Budget count
+   New destination
+   Running count at zero
+   Session activity and summary areas
+   Session facts spread across the page
+   Unfiltered Sessions list
+   Separate technical controls
+   Keeps the same subject as Show technical details
+   Separate model and quota controls
+   Separate model controls and disclosures
+   Always-visible prompt limits""".splitlines())
+   current = {row["plain"] for row in glossary.values()}
+   replacements = {}
+   for row in glossary.values():
+       former = row["replaces"]
+       if former in migration_notes or former == f'{row["plain"]} (kept)':
+           continue
+       # A shipped literal can itself have a comma. The lists in Replaces
+       # introduce each additional label with a capital letter.
+       labels = [former] if former == row.get("shown") else re.split(r", (?=[A-Z])", former)
+       for label in labels:
+           label = label.removeprefix("Generic ")
+           if label and label not in current:
+               replacements.setdefault(label, set()).add(row["plain"])
+
+   def alternatives(labels):
+       longest_first = sorted(labels, key=lambda name: (-len(name), name))
+       return "|".join(re.escape(name).replace(r"\ ", r"\s+") for name in longest_first)
+
+   names = re.compile(rf"(?<![\w-])(?:{alternatives(current | replacements.keys())})(?![\w-])")
+   parenthetical = re.compile(rf"""\s+\(\s*(?P<quote>["']?)(?P<old>{alternatives(replacements)})(?P=quote)\s*\)""")
+   heading = re.compile(r"^ {0,3}#{1,6}(?:\s|$)")
+   block_start = re.compile(r"^\s*(?:[-*+]\s|\d+[.)]\s|\||`{3,}|~{3,})")
+   inline_markup = re.compile(r"(?<!\w)(\*{1,3}|_{1,3}|`+)(?=\S)(.+?)(?<=\S)\1(?!\w)", re.S)
+
+   def blocks(lines):
+       start = 0
+       for index, line in enumerate(lines):
+           if not line.strip() or heading.match(line) or block_start.match(line):
+               if start < index:
+                   yield start, lines[start:index]
+               start = index
+               if not line.strip() or heading.match(line):
+                   if line.strip():
+                       yield index, [line]
+                   start = index + 1
+       if start < len(lines):
+           yield start, lines[start:]
+
+   def occurrences(lines):
+       seen = set()
+       for start, block in blocks(lines):
+           is_heading = heading.match(block[0])
+           if is_heading:
+               seen.clear()
+           visible = inline_markup.sub(r"\2", "\n".join(block))
+           exempt = None
+           for word in names.finditer(visible):
+               label = " ".join(word.group().split())
+               if label in current:
+                   if label not in seen and not is_heading:
+                       pair = parenthetical.match(visible, word.end())
+                       if pair and label in replacements.get(" ".join(pair["old"].split()), ()):
+                           exempt = pair.span("old")
+                       seen.add(label)
+               elif word.span() != exempt:
+                   first = start + visible.count("\n", 0, word.start())
+                   last = start + visible.count("\n", 0, word.end())
+                   yield first, (label, *lines[first:last + 1])
+
+   scope = os.environ.get("PRODUCT_WORDS_SCOPE") or sys.argv[1] or "--branch"
+   scope_name = {
+       "--branch": "branch: new occurrences against the merge base",
+       "--all": "full inventory",
+   }.get(scope, "scratch file")
+   base = git("merge-base", "origin/main", "HEAD").strip() if scope == "--branch" else None
+   if scope in {"--all", "--branch"}:
+       untracked = git("ls-files", "-z", "--others", "--exclude-standard")
+       tracked = (
+           git("diff", "--name-only", "-z", "--diff-filter=ACMRT", "--no-renames", base, "--")
+           if base else git("ls-files", "-z")
+       )
+       paths = [
+           ROOT / name for name in sorted(set((tracked + untracked).split("\0")) - {""})
+           if _public_doc_candidate(ROOT / name) and _public_document(ROOT / name)
+       ]
+   else:
+       paths = [Path(scope)]
+
+   found = False
+   for path in paths:
+       if not path.exists() and scope in {"--all", "--branch"}:
+           continue  # Tracked deletion.
+       display = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+       previous = Counter()
+       if base:
+           source = f"{base}:{display.as_posix()}"
+           if subprocess.run(
+               ["git", "cat-file", "-e", source], cwd=ROOT, capture_output=True, check=False
+           ).returncode == 0:
+               previous.update(match for _, match in occurrences(git("show", source).splitlines()))
+       lines = path.read_text(encoding="utf-8").splitlines()
+       findings = set()
+       for index, match in occurrences(lines):
+           if previous[match]:
+               previous[match] -= 1
+           else:
+               findings.add(index)
+       for index in sorted(findings):
+           print(f"{display}:{index + 1}:{lines[index]}")
+           found = True
+   if found:
+       print(f"PRODUCT WORD DRIFT ({scope_name}): review the lines above")
+   else:
+       print(f"product words clean ({scope_name})")
+   sys.exit(int(found))
+   PY
    ```
+   Review the matches in context. The scan can also find an anchored heading or an ordinary
+   use of a retired label. Leave the heading intact and use the glossary wording in nearby prose.
+   The branch scan reports new occurrences against the merge base. During a periodic or release
+   reconciliation, the full inventory also reports inherited matches.
+
    **Then decide whether you owe the full gate, by who authors the PR:**
-   - **Pre-PR-gate run** — checks a to e are enough. The suite in `AGENTS.md` § Pre-PR Checks ran on
+   - **Pre-PR-gate run** — checks a to f are enough. The suite in `AGENTS.md` § Pre-PR Checks ran on
      this same tree minutes ago and the human author owns the result.
    - **Standalone/periodic run** — you are the PR author, so run the **whole** pre-PR suite from
      `AGENTS.md` before opening anything. `quality-gate` is a required check covering ruff, format,
      `mypy --strict`, the frontend lint, strict types and tests, coverage against `fail_under`, and, for a
-     platform-sensitive change, `platform-tests` on macOS; none of that is implied by a to e. Opening a PR you have not gated pushes your own
+     platform-sensitive change, `platform-tests` on macOS; none of that is implied by a to f. Opening a PR you have not gated pushes your own
      verification onto the reviewer.
 
-   Never open or update a PR on the strength of a to e alone.
+   Never open or update a PR on the strength of a to f alone.
 11. **Stage, commit in the right place, then report.** Never commit to `main`. Stage explicitly —
     new docs are untracked, so `git commit -a` would silently skip them:
     ```bash
@@ -491,5 +671,7 @@ minutes, a Python version. Stale counts are this repository's most common drift.
 - A `docs/design-*.md` entry that explains why an approach was **rejected**. It describes code that
   does not exist, which is exactly what makes it look stale and exactly why it is there. Never
   prune it on those grounds.
+- Old control names in a design record are part of the decision's history. Keep the names and add
+  a pointer to the [current glossary](../../../docs/design-calm-compass.md#glossary) when needed.
 - Version and description fields, per the hard boundaries above.
 - Any file in the exclusion table, or any file whose classification you are unsure of.
