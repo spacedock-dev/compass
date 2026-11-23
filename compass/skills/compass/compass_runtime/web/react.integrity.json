@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2413527,
+    "bytes": 2415259,
     "file": "react.html",
-    "sha256": "4c3e4a75c6c1e72b7944f1b7d2adc5b60cc0d6ca0bd5cf7fb32028f95b45cbbe"
+    "sha256": "ed9e9cbaf99b85f862bce8ea718dc29af0897bb8ad581dd00825c56e202761ca"
   },
   "format": 1,
   "frontend": "react",
@@ -527,7 +527,7 @@
       },
       {
         "file": "frontend/src/drift/DriftBody.tsx",
-        "sha256": "5f037ac7d51d4ed6b09c02f8d1b09f27fceb7cea3c6819b29289b085ac683232"
+        "sha256": "b88cc97cfe7c884a3b8d93dab4667aec83e41f65e0c49cf407d0208fdec176b9"
       },
       {
         "file": "frontend/src/drift/DriftHead.tsx",
@@ -535,7 +535,7 @@
       },
       {
         "file": "frontend/src/drift/DriftLevelView.tsx",
-        "sha256": "15f6604a311d935cc6743508ddb219708b7a43d69c492f85da76f2532a90ada9"
+        "sha256": "ba793fba899d3f9e2c059e8c3e39b33811bd69b9d0d6d2946ace6f95373f8595"
       },
       {
         "file": "frontend/src/drift/DriftProvider.tsx",
@@ -603,11 +603,11 @@
       },
       {
         "file": "frontend/src/drift/ReadingControl.tsx",
-        "sha256": "2f0d2c55ea9cc1b806eac4a0946ea36dc556aee3d480115767f223f32875b489"
+        "sha256": "962803826213e842aebd39b8a93b596a04395651c1542b5637c479e224701b1f"
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
-        "sha256": "9fa79587b84827caf6f7db4068a7e4ea27c7d1fce624df3f297762d8a7600870"
+        "sha256": "5ebf28230c2cc852e09f5cecb477ad9efc4a10d5a378c7069f07e00e3c7584e3"
       },
       {
         "file": "frontend/src/drift/ShowMore.tsx",
@@ -615,7 +615,7 @@
       },
       {
         "file": "frontend/src/drift/SteerBack.tsx",
-        "sha256": "1a0d7079e6dac3ad4d2eeeb9ce6faea483e9e0211800d8a3066ce84c02057356"
+        "sha256": "729e3a509cf281818f4b4b2d84d2ae4a9b094522e96a800c2137e6f1d99570e4"
       },
       {
         "file": "frontend/src/drift/UnaskedPermission.tsx",
@@ -695,7 +695,7 @@
       },
       {
         "file": "frontend/src/drift/model.ts",
-        "sha256": "022be7a09a06f6dbaee33d71a6a9d09c376aceaf22b10976214a0a5c370bb10e"
+        "sha256": "eff8b8ed692865804fd8a917b2655b8a0dd8d2133e38f9f2e309a28e77772601"
       },
       {
         "file": "frontend/src/drift/monitor.ts",
@@ -719,7 +719,7 @@
       },
       {
         "file": "frontend/src/drift/result.ts",
-        "sha256": "e190962972c94c21b0c9d28e17c845a88d6d40d22f54d9c6edb52677597911c7"
+        "sha256": "d111bd3c91e0dfeb763bd513cdc8d4fb2d7c2006ba1fb192861464ce49f41598"
       },
       {
         "file": "frontend/src/drift/route.ts",
@@ -727,7 +727,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "685f86f60296086c4427648bba763931b2346d521af32ec1d41e1735305a924a"
+        "sha256": "7157c1f59f262702935fae8523855f81e47361b08d667563b2a02a07e91b6f30"
       },
       {
         "file": "frontend/src/drift/shape.ts",
@@ -771,7 +771,7 @@
       },
       {
         "file": "frontend/src/intent/DirectionQuestion.tsx",
-        "sha256": "88f4232c21b5d581b24d1703a0d888c0438998917485daca9754134fb5aaba9e"
+        "sha256": "83421a8442eb5f90a95ff82989863c7e6117a60655f5fc86e0657d043e916c83"
       },
       {
         "file": "frontend/src/intent/FeedbackHint.tsx",
@@ -791,7 +791,7 @@
       },
       {
         "file": "frontend/src/intent/HowTo.tsx",
-        "sha256": "768b1716cce8e21a6729843bda4e8c206cbc1d4319e3626053a39336476c07ed"
+        "sha256": "442cdbec0d163d65bcb6f13596b9223950aebf89bf40b58e3bfb5949788ac638"
       },
       {
         "file": "frontend/src/intent/IntentLog.tsx",
@@ -803,7 +803,7 @@
       },
       {
         "file": "frontend/src/intent/IntentSection.tsx",
-        "sha256": "c90f198da996820a7b3394977037130533922535b21bfb6bb593e3ca4ef9f96b"
+        "sha256": "061b7d049e7dfe73e6dfb3d8b13e08787c8ae8a8dc02f8a7cc56343654c1b8b3"
       },
       {
         "file": "frontend/src/intent/LiveMonitorSwitch.tsx",
@@ -811,11 +811,11 @@
       },
       {
         "file": "frontend/src/intent/OutcomeLines.tsx",
-        "sha256": "2dccedec7d57b3f0f3fe0a5805f316eebab107f7e4cf6486d2477fabd7c270e8"
+        "sha256": "e91662b347e67420b69e2e0229b9283efc1ef58c7d90418e88c57136dc4b5cd3"
       },
       {
         "file": "frontend/src/intent/PromptSelect.tsx",
-        "sha256": "61ae47bddfd59f39d6f1fef7bd85ca70a58e4ba7482116c7a1fbd2fd377d091c"
+        "sha256": "bcb6f5831dfe242d6a2453277045e226eff68e60382bd7520d2713abe1d71267"
       },
       {
         "file": "frontend/src/intent/annotation.ts",
@@ -835,7 +835,7 @@
       },
       {
         "file": "frontend/src/intent/derive.ts",
-        "sha256": "66379e06e2ac49b1621f19b88ee8216d12fb3bc61ff85102660fe903fda44935"
+        "sha256": "d6296379620291ce4f6cb632c27bee4d30254f85b03539dbd659b1339cb4b48d"
       },
       {
         "file": "frontend/src/intent/directions.ts",
@@ -891,7 +891,7 @@
       },
       {
         "file": "frontend/src/intent/sentences.ts",
-        "sha256": "13c12359849c58036c0cfd7c32f6ce0d59e9f3a647f6fc915225ea2c7837011f"
+        "sha256": "a4dcc48dd5041632c22c0ff3fd5205c774e744f44c501e6723cbf4cf8ae86beb"
       },
       {
         "file": "frontend/src/intent/testing.tsx",
@@ -907,7 +907,7 @@
       },
       {
         "file": "frontend/src/language/glossary.ts",
-        "sha256": "f1187386e6446258db38cbfc5590adf21e81d803ff882e014016ad6725d7a799"
+        "sha256": "a424fb8e07a2cd7abc8a402f1c88fc813f353dc67041037658e1352374af75b3"
       },
       {
         "file": "frontend/src/lib/utils.ts",
@@ -1195,7 +1195,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionDetail.tsx",
-        "sha256": "299c6ae2f441cf1dea582394f19dde7adc7c028cfb503f61cfdb22d213a360d8"
+        "sha256": "81d0277c2e103ee7f85dc0b6a5bef698b13ba47a091bc98ae7fd2d9f018de254"
       },
       {
         "file": "frontend/src/sessions/SessionTechnicalDetails.tsx",
