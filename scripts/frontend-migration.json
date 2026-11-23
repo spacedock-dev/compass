@@ -762,6 +762,20 @@
   ],
   "reader_state": [
     {
+      "name": "Projects search text",
+      "owner": "DRC-4823",
+      "oracles": ["frontend/stories/Projects.stories.tsx"],
+      "contract": "Filter both groups with seven projects or more. Keep the text through a board refresh.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "Expanded No recent activity on Projects",
+      "owner": "DRC-4823",
+      "oracles": ["frontend/stories/Projects.stories.tsx"],
+      "contract": "Show three rows by default and keep a reader's expansion across board refreshes.",
+      "disposition": "store-held"
+    },
+    {
       "name": "An open disclosure",
       "owner": "DRC-4823",
       "oracles": [

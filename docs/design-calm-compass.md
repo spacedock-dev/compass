@@ -385,6 +385,11 @@ bounds the change to NUI-16. The terminal follows the same terms when its slice 
 
 ## Open questions
 
+**Projects grouping proposal, 2026-11-23.** A project belongs to Active today when a session is
+Waiting on you or Working, or has a reported end on the displayed board's local calendar day.
+The other projects appear under No recent activity. An absent end time supplies no evidence for
+Active today. The grouping rule is awaiting owner review in Storybook.
+
 The Needs you rename is closed. The Projects rule that distinguishes Active today from
 No recent activity still needs sign-off on the grouping logic in Storybook. The pending
 builder proposal starts with observed waiting or working activity and adds a window for

@@ -16,6 +16,11 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+On 2026-11-23 Projects adopted uniform links, measured state chips and a shared legend. Its
+differential keeps the recorded named projects and destinations across both groups. The new
+grouping, order, expansion, headings and row copy are asserted in the Projects stories and
+list model tests. Session rows open from the project page. The recordings are unchanged.
+
 2026-11-23. The page offers Check progress and Check progress again with Uses AI at the
 13 px supporting-text size. The route comparison projects those control names and the goal
 wording onto recorded refusals. The browser comparison renames the recorded progress action and

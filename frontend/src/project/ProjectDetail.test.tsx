@@ -526,33 +526,18 @@ describe('plain project words', () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
-  it('opens each project member at its Intent heading in one press', async () => {
+  it('opens the project from its row on Projects', async () => {
     const page = mountProject({
       hash: '#n=projects',
       data: {
         generated: 1000,
-        annotate: true,
-        sessions: [
-          {
-            harness: 'claude',
-            sid: 'a',
-            project: 'p',
-            state: 'working',
-            first_prompt: 'Ship the queue',
-            first_prompt_at: 100,
-          },
-        ],
+        sessions: [{ harness: 'claude', sid: 'a', project: 'p', state: 'working' }],
       },
     });
     await page.settle();
-    fireEvent.click(document.querySelector('[data-next-project-session]') as Element);
+    fireEvent.click(screen.getByRole('link', { name: /^Working p/ }));
     await page.settle();
-    expect(page.router.getRoute()).toMatchObject({
-      view: 'session',
-      session: 'a',
-      from: 'projects',
-    });
-    expect(document.activeElement?.id).toBe('next-session-intent-heading');
+    expect(page.router.getRoute()).toMatchObject({ view: 'project', project: 'p' });
   });
 });
 

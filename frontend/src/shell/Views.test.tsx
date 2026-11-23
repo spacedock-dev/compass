@@ -20,7 +20,7 @@ describe('every top-level view is drawn by its own screen', () => {
   it('draws the Projects list and a project page themselves, with a stated slot only where the steering step is still to come', async () => {
     await open('#n=projects');
     expect(document.querySelector('[data-next-placeholder]')).toBeNull();
-    expect(document.querySelectorAll('article.next-project-row').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('a.project-list-row').length).toBeGreaterThan(0);
     await open('#n=project:alpha%2Fapp');
     expect(document.querySelector('article.next-project-detail')).not.toBeNull();
     expect(document.querySelector('[data-next-placeholder]')).toBeNull();
