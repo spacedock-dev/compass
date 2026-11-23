@@ -206,8 +206,8 @@ increase over the 2,473,199-byte Settings page includes the rebuilt navigation a
 layout for the slider labels. The page bound follows the measured build. The fixture bound
 stays at 250,000 bytes.
 
-DRC-5510 packages the shared AI use pause notice at 2,473,107 bytes on Node 26.10.0
-and pnpm 12.17.0, 92 bytes below the preceding Settings build. The page bound follows
+DRC-5510 packages the shared AI use pause notice at 2,479,707 bytes on Node 26.10.0
+and pnpm 12.17.0, 92 bytes below the preceding Needs you build. The page bound follows
 that measurement. The fixture bound stays at 250,000 bytes.
 
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks

@@ -138,14 +138,14 @@
     "reasons": {
       "ADOPTION_REFUSED": "The prompt or saved goal changed. Review the current goal before analyzing again.",
       "NOTHING_PRODUCED": "No new reading was produced.",
-      "PROMPT_TIME_UNPUBLISHED": "The prompt time was not published, so it cannot be adopted. Type a goal to analyze drift.",
+      "PROMPT_TIME_UNPUBLISHED": "The prompt time was not published, so it cannot be adopted. Type a goal to check progress.",
       "MODEL_UNREAD": "Reading availability has not been read, so no reading can be offered. Compass asks again with the next update.",
       "MODEL_OFF": "Model calls are off for this run. Restart without --no-observer-model or its alias --no-harness-usage to allow a reading.",
       "ROUTE_UNREAD": "Who would read this session is not published, so no analysis is offered. Compass asks again with the next update.",
       "READINGS_OFF": "AI use is paused. Nothing is sent until you resume.",
       "STORE_BUSY": "Another tab or dashboard is saving to the store of what you typed, so nothing was started or spent. Try again in a moment.",
       "STORE_UNUSABLE": "Compass could not use the file that holds what you typed, so nothing was started or spent.",
-      "POLICY_UNREADABLE": "Reading permission or its daily budget could not be read or saved. Restore access to the Compass store before analyzing drift."
+      "POLICY_UNREADABLE": "Reading permission or its daily budget could not be read or saved. Restore access to the Compass store before checking progress."
     }
   },
   "monitor": {

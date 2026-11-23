@@ -233,15 +233,6 @@ it('a person reads the page wording and derived reading in their terminal', () =
       return;
     }
     const expected = JSON.parse(readFileSync(path, 'utf8'));
-    const reasons = expected.drift.reasons;
-    reasons.POLICY_UNREADABLE = reasons.POLICY_UNREADABLE.replace(
-      'before analyzing drift',
-      'before checking progress',
-    );
-    reasons.PROMPT_TIME_UNPUBLISHED = reasons.PROMPT_TIME_UNPUBLISHED.replace(
-      'analyze drift',
-      'check progress',
-    );
     expect(JSON.parse(JSON.stringify(actual))).toEqual(expected);
   } finally {
     clock.mockRestore();

@@ -103,11 +103,11 @@ ROUTE_UNREAD: Final = (
 )
 POLICY_UNREADABLE: Final = (
     "Reading permission or its daily budget could not be read or saved. Restore access to the "
-    "Compass store before analyzing drift."
+    "Compass store before checking progress."
 )
 READINGS_OFF: Final = "AI use is paused. Nothing is sent until you resume."
 PROMPT_TIME_UNPUBLISHED: Final = (
-    "The prompt time was not published, so it cannot be adopted. Type a goal to analyze drift."
+    "The prompt time was not published, so it cannot be adopted. Type a goal to check progress."
 )
 PROVIDER_CHANGED: Final = (
     "The reader for this session changed while this was sending, so nothing was sent; "
