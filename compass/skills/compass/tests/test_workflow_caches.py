@@ -345,7 +345,7 @@ class PnpmOfflineBootstrapTest(unittest.TestCase):
         self.assertEqual(0, installed.returncode, installed.stderr)
         version = self.version()
         self.assertEqual(0, version.returncode, version.stderr)
-        self.assertEqual("12.17.0", version.stdout.strip())
+        self.assertEqual("12.19.0", version.stdout.strip())
         self.assertEqual(before, (self.bootstrap / "package-lock.json").read_bytes())
         self.assertFalse(
             (self.bootstrap / "node_modules/pnpm/pnpm-native").exists(),
@@ -404,7 +404,7 @@ class PnpmOfflineBootstrapTest(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(0, version.returncode, version.stderr)
-        self.assertEqual("12.17.0", version.stdout.strip())
+        self.assertEqual("12.19.0", version.stdout.strip())
 
     def test_a_builder_rejects_a_changed_pnpm_integrity_before_running_it(self) -> None:
         baseline = self.install()
