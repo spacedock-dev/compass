@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2413407,
+    "bytes": 2413451,
     "file": "react.html",
-    "sha256": "1ee13ae81d5bbab5f2923c83c35cba4f58177db46be8482ecc5c874eb797b2b7"
+    "sha256": "b608f25582e88338955271d408a0aca2e1b7eba4c5728c6104b35709c567ef34"
   },
   "format": 1,
   "frontend": "react",
@@ -791,7 +791,7 @@
       },
       {
         "file": "frontend/src/intent/HowTo.tsx",
-        "sha256": "d23b23aad0b9884a65e1bafaac67995e9685d61571665f9f523b78636e8cf5d6"
+        "sha256": "768b1716cce8e21a6729843bda4e8c206cbc1d4319e3626053a39336476c07ed"
       },
       {
         "file": "frontend/src/intent/IntentLog.tsx",
@@ -799,11 +799,11 @@
       },
       {
         "file": "frontend/src/intent/IntentPanel.tsx",
-        "sha256": "be4d75261290d367512dec4fae98ec5618733df4d8e4ea4ed886b451647e07a6"
+        "sha256": "25b4af0474a8fd98cc40ed81c662dca4b64454a28ffb30c101803f44d87858e8"
       },
       {
         "file": "frontend/src/intent/IntentSection.tsx",
-        "sha256": "41e2f1a6d72343ba76104fb23638818365c3040a4adc085328d9c0571be481bb"
+        "sha256": "c90f198da996820a7b3394977037130533922535b21bfb6bb593e3ca4ef9f96b"
       },
       {
         "file": "frontend/src/intent/LiveMonitorSwitch.tsx",
@@ -1535,7 +1535,7 @@
       },
       {
         "file": "frontend/src/styles/tailwind.css",
-        "sha256": "58eccdeae793c0052f15746eb9354aadc29eef4c68baf60a5dcd84e1b08886d1"
+        "sha256": "9a68a9981f015b4caaae6be9a4070d22ac36b5d5f15fa03cb6185a9c615ccb0b"
       },
       {
         "file": "frontend/src/terminal/TerminalSurface.tsx",
