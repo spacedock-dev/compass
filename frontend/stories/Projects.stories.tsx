@@ -79,6 +79,15 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+export const Empty: Story = {
+  args: { sessions: [], stage: false },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText('No projects in the current board.')).toBeVisible();
+    await expect(canvas.queryByRole('searchbox', { name: 'Search projects' })).toBeNull();
+  },
+};
+
 export const ManyProjects: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);

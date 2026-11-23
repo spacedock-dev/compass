@@ -726,13 +726,11 @@ export const ProjectActivityIcons: Story = {
   args: { hash: '#n=project:recce%2Fcompass' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const project = await canvas.findByRole('heading', { name: /compass/i, level: 1 });
-    const activity = within(project.closest('article') as HTMLElement);
-    const currentRun = await activity.findByRole('button', { name: /Changelog for 2.4/ });
-    await expect(currentRun.querySelector('svg[data-icon="working"]')).toBeVisible();
-    const ended = await activity.findByRole('button', { name: /Theme tokens/ });
-    await expect(ended.querySelector('svg[data-icon="ended"]')).toBeVisible();
-    await expect(ended).toHaveTextContent('Session ended; git state not measured');
+    const sessions = within(await canvas.findByRole('region', { name: 'Sessions' }));
+    const currentRun = within(await sessions.findByRole('link', { name: /Changelog for 2.4/ }));
+    await expect(currentRun.getByRole('img', { name: 'Working' })).toBeVisible();
+    const ended = within(await sessions.findByRole('link', { name: /Theme tokens/ }));
+    await expect(ended.getByRole('img', { name: 'Ended' })).toBeVisible();
   },
 };
 
@@ -1009,14 +1007,14 @@ export const TitlesOpenSessions: Story = {
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
     const title = canvas.getAllByRole('link', { name: /^Open session / })[0] as HTMLElement;
-    const sentence = canvas.getByRole('link', { name: 'See a sample session (view only)' });
+    const example = canvas.getByRole('link', { name: 'See an example' });
     const decoration = (link: HTMLElement) => getComputedStyle(link).textDecorationLine;
     await expect(title).toHaveAttribute('href', expect.stringContaining('#'));
     await expect(decoration(title)).toBe('none');
-    await expect(decoration(sentence)).toBe('underline');
-    const invite = sentence.closest('[data-sample-invite]');
+    await expect(example.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+    const invite = example.closest('[data-sample-invite]');
     await expect(invite).toHaveTextContent(
-      'to see how Compass shows a session’s goal and the results of progress checks.',
+      'Open an example session to see how goals, progress checks and Steer back work.',
     );
     await expect(invite).toHaveStyle({
       backgroundColor: 'rgb(230, 242, 236)',

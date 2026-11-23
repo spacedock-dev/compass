@@ -67,7 +67,6 @@ function Example() {
           shell.router.navigate({
             view: 'project',
             project: heldParent.project,
-            focus: `claude:${heldParent.sid}`,
             tab: 'decisions',
           })
         }

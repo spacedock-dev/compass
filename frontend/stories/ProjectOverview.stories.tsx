@@ -40,9 +40,11 @@ const clipboard: string[] = [];
 function Example({
   sessions,
   workflow = false,
+  measure = false,
 }: {
   readonly sessions: readonly ReturnType<typeof session>[];
   readonly workflow?: boolean;
+  readonly measure?: boolean;
 }) {
   const [storage] = useState(() => fakeBackend());
   const [reload, setReload] = useState(0);
@@ -51,6 +53,7 @@ function Example({
       key={reload}
       sessions={sessions}
       workflow={workflow}
+      measure={measure}
       storage={storage}
       reload={() => setReload(reload + 1)}
     />
@@ -60,16 +63,19 @@ function Example({
 function ProjectMount({
   sessions,
   workflow,
+  measure,
   storage,
   reload,
 }: {
   readonly sessions: readonly ReturnType<typeof session>[];
   readonly workflow: boolean;
+  readonly measure: boolean;
   readonly storage: ReturnType<typeof fakeBackend>;
   readonly reload: () => void;
 }) {
   const [shell] = useState(() => {
     clipboard.length = 0;
+    let samples = 0;
     return createShell({
       env: createFakeEnvironment({ clock: createFakeClock() }),
       router: createRouter(fakeRouterEnvironment('#n=project:acme%2Fdashboard').env),
@@ -89,7 +95,7 @@ function ProjectMount({
             JSON.stringify(
               url.startsWith('/api/data')
                 ? {
-                    generated: STAMP,
+                    generated: STAMP + (measure ? samples++ * 1200 : 0),
                     sessions,
                     harnesses: [
                       { key: 'claude', label: 'Claude Code' },
@@ -113,6 +119,11 @@ function ProjectMount({
   return (
     <>
       <App shell={shell} />
+      {measure ? (
+        <button type="button" onClick={() => void shell.runtime.refresh()}>
+          Record another observation
+        </button>
+      ) : null}
       <button type="button" className="sr-only" onClick={reload}>
         Reload example
       </button>
@@ -170,6 +181,24 @@ export const CopyAndNotes: Story = {
     await expect(await canvas.findByRole('textbox', { name: 'Your notes' })).toHaveValue(
       'Review the new checklist tomorrow',
     );
+  },
+};
+
+export const MeasuredTime: Story = {
+  args: { sessions: [working], measure: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const time = within(
+      await canvas.findByRole('region', { name: 'Time agents worked on their own' }),
+    );
+    const waiting = 'Waiting for enough recorded working time.';
+    await expect(time.getByText(waiting, { exact: true })).toBeVisible();
+    await userEvent.click(canvas.getByRole('button', { name: 'Record another observation' }));
+    await expect(await time.findByText('100%', { exact: true })).toBeVisible();
+    await expect(
+      time.getByText('Over 20 minutes, you stepped in 0 times.', { exact: true }),
+    ).toBeVisible();
+    await expect(time.queryByText(waiting, { exact: true })).toBeNull();
   },
 };
 
