@@ -1,2 +1,2 @@
-/* The Settings screen: the reader's limits on how much of a session an Analyze drift press reads. */
+/* The Settings route and its server settings client. */
 export { SettingsScreen, SettingsView, type SettingsClient } from './SettingsView';

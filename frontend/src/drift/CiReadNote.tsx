@@ -1,7 +1,6 @@
 import { datedClock } from '../observed/values';
-import { ActionButton } from '../intent/ActionButton';
-import { ciReadAnswer } from './actions';
 import { ciReadNote } from './ciRead';
+import { RouteLink } from '../shell/RouteLink';
 import { useDrift } from './context';
 import { ciProvider, ciReadLabel, CI_SWITCH_FLAG, CI_SWITCH_OFF, CI_SWITCH_ON } from './sentences';
 
@@ -25,46 +24,22 @@ export function CiReadNote() {
   );
 }
 
-/* The page's switch for the read, beside the notice that names it. The route says which of three states
-   holds; `flag-off` is the run's own `--no-ci-read`, which this switch cannot lift and so does not offer. An
-   older server's route carries no state, and then there is nothing to switch. */
-export function CiReadSwitch({ technical = false }: { readonly technical?: boolean }) {
-  const { ctx, model } = useDrift();
-  const state = String(model.route?.['ci_read'] ?? '');
-  if (!['on', 'off', 'flag-off'].includes(state)) return null;
-  const message = ctx.intent.held.requests.get(`ci-read:${model.key}`)?.message ?? '';
-  const on = state === 'on';
-  const focusKey = `${technical ? 'technical-ci-read' : 'ci-read'}:${model.key}`;
+/* The disclosure describes this route's answer. Settings owns the shared preference. */
+export function CiReadSettingNote({ technical = false }: { readonly technical?: boolean }) {
+  const { model } = useDrift();
+  const state = model.route?.['ci_read'];
+  if (state !== 'on' && state !== 'off' && state !== 'flag-off') return null;
   return (
     <div
-      className={technical ? 'flex flex-col items-start gap-1' : 'next-cockpit-reading-why'}
+      className={technical ? 'text-label text-muted-foreground' : 'next-cockpit-reading-why'}
       data-next-ci-switch={state}
     >
-      <span className={technical ? 'order-last text-label text-muted-foreground' : undefined}>
-        {on ? CI_SWITCH_ON : state === 'off' ? CI_SWITCH_OFF : CI_SWITCH_FLAG}
-      </span>
-      {state === 'flag-off' ? null : (
-        <ActionButton
-          weight="secondary"
-          label={
-            technical
-              ? on
-                ? 'Stop pull request reads'
-                : 'Allow pull request reads'
-              : on
-                ? 'Turn off the pull request read'
-                : 'Turn on the pull request read'
-          }
-          busyLabel="Saving…"
-          pendingKey={`ci-read:${model.key}`}
-          action={on ? 'ci-read-off' : 'ci-read-on'}
-          focusKey={focusKey}
-          onPress={() => {
-            void ciReadAnswer(ctx, model.identity, !on, focusKey);
-          }}
-        />
-      )}
-      {message ? <span role="status">{message}</span> : null}
+      <p className="m-0">
+        {state === 'on' ? CI_SWITCH_ON : state === 'off' ? CI_SWITCH_OFF : CI_SWITCH_FLAG}
+      </p>
+      {technical && state !== 'flag-off' ? (
+        <RouteLink route={{ view: 'settings' }}>Read pull request status in Settings</RouteLink>
+      ) : null}
     </div>
   );
 }

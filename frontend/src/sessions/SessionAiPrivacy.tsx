@@ -1,5 +1,5 @@
 import { progressBudget } from '../drift/route';
-import { CiReadSwitch } from '../drift/CiReadNote';
+import { CiReadSettingNote } from '../drift/CiReadNote';
 import { WhatIsSent } from '../drift/ReadingControl';
 import { useDrift } from '../drift/context';
 import { LiveMonitorSwitch } from '../intent/LiveMonitorSwitch';
@@ -53,7 +53,7 @@ export function SessionAiPrivacy() {
       <LiveMonitorSwitch />
       <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
         {sample ? null : <AiPauseSwitch />}
-        <CiReadSwitch technical />
+        <CiReadSettingNote technical />
       </div>
     </div>
   );

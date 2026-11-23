@@ -159,3 +159,48 @@ describe('the Settings screen', () => {
     expect(prompt().getAttribute('aria-valuetext')).toBe('256 KB');
   });
 });
+
+describe('the daily release lookup switch', () => {
+  const answer = (disabled: boolean): Answer => ({
+    status: 200,
+    body: {
+      limits: LIMITS,
+      values: DEFAULTS,
+      update_check: { disabled, default_enabled: true, cli_disabled: false },
+    },
+  });
+  const name = 'Look for new versions once a day';
+
+  it('writes the inverse saved key and shows what the server confirms', async () => {
+    const server = backend([answer(true)], [answer(false)]);
+    await mount(server);
+    const control = await screen.findByRole('switch', { name });
+    expect(control.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(control);
+    await flush();
+    expect(server.posts()).toEqual([
+      { method: 'POST', url: '/api/settings', body: { values: { no_update_check: false } } },
+    ]);
+    expect(control.getAttribute('aria-checked')).toBe('true');
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+  });
+
+  it('does not show an enabled switch when the server says the run cannot check', async () => {
+    await mount(
+      backend([
+        {
+          status: 200,
+          body: {
+            limits: LIMITS,
+            values: DEFAULTS,
+            update_check: { disabled: false, default_enabled: true, cli_disabled: true },
+          },
+        },
+      ]),
+    );
+    expect(
+      await screen.findByText('Update checks are off for this run (--no-update-check).'),
+    ).toBeTruthy();
+    expect(screen.queryByRole('switch', { name })).toBeNull();
+  });
+});

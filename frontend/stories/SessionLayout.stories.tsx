@@ -904,23 +904,26 @@ export const OpenTechnicalDetails: Story = {
   },
 };
 
-export const TechnicalPullRequestReadKeepsFocus: Story = {
+export const TechnicalPullRequestReadPointsToSettings: Story = {
   render: () => <PageExample technical />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const first = within(await canvas.findByRole('region', { name: 'Is it on track?' }));
     await userEvent.click(first.getByRole('button', { name: 'What is sent' }));
     await waitFor(() =>
-      expect(first.getByRole('button', { name: 'Turn off the pull request read' })).toBeVisible(),
-    );
-    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
-    await userEvent.click(privacy.getByRole('button', { name: 'Stop pull request reads' }));
-    await waitFor(() =>
-      expect(privacy.getByRole('button', { name: 'Allow pull request reads' })).toHaveFocus(),
+      expect(
+        first.getByText(
+          'Pull request checks are read from GitHub or GitLab with your gh or glab login when you press Check progress.',
+        ),
+      ).toBeVisible(),
     );
     await expect(
-      first.getByRole('button', { name: 'Turn on the pull request read' }),
-    ).toBeVisible();
+      first.queryByRole('button', { name: 'Turn off the pull request read' }),
+    ).toBeNull();
+    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+    await expect(
+      privacy.getByRole('link', { name: 'Read pull request status in Settings' }),
+    ).toHaveAttribute('href', '#n=settings');
   },
 };
 
@@ -999,13 +1002,15 @@ export const TechnicalTabsAtPhoneWidth: Story = {
       await expect(Math.min(...sameRow)).toBeGreaterThan(0);
 
       const pause = privacy.getByText('Applies to every session.');
-      const pullRequests = privacy.getByRole('button', { name: 'Stop pull request reads' });
+      const pullRequests = privacy.getByRole('link', {
+        name: 'Read pull request status in Settings',
+      });
       const explanation = privacy.getByText(/pull request checks are read from GitHub or GitLab/i);
-      await expect(
-        pullRequests.getBoundingClientRect().top - pause.getBoundingClientRect().bottom,
-      ).toBeGreaterThan(0);
       await expect(explanation.getBoundingClientRect().top).toBeGreaterThanOrEqual(
-        pullRequests.getBoundingClientRect().bottom,
+        pause.getBoundingClientRect().bottom,
+      );
+      await expect(pullRequests.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        explanation.getBoundingClientRect().bottom,
       );
     });
   },
@@ -1079,7 +1084,9 @@ async function technicalTabInventory(canvasElement: HTMLElement) {
   await expect(privacy.getByText('Live monitor · Haiku')).toBeVisible();
   await expect(privacy.getByText(/Applies to every session/)).toBeVisible();
   await expect(privacy.getByText('99 of 100 daily checks')).toBeVisible();
-  await expect(privacy.getByRole('button', { name: 'Stop pull request reads' })).toBeVisible();
+  await expect(
+    privacy.getByRole('link', { name: 'Read pull request status in Settings' }),
+  ).toBeVisible();
   await expect(privacy.getByRole('switch', { name: 'Pause all AI use' })).toBeVisible();
   await userEvent.click(privacy.getByRole('button', { name: 'What is sent' }));
   await waitFor(() =>

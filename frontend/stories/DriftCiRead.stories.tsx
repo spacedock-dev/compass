@@ -365,44 +365,20 @@ const ROUTE = routeOf('claude', {
   fallback: false,
 });
 
-export const TheSwitchTurnsTheReadOffAndBackOn: Story = {
-  ...scenario({
-    facts: FACTS,
-    route: ROUTE,
-    ciPosts: [],
-  }),
-  play: async ({ canvasElement, args }) => {
+export const TheDisclosureNamesTheEnabledRead: Story = {
+  ...scenario({ facts: FACTS, route: ROUTE }),
+  play: async ({ canvasElement }) => {
     const panel = await opened(canvasElement);
-    const posts = args.scenario.ciPosts ?? [];
-    const node = await waitFor(() => {
+    const note = await waitFor(() => {
       const found = panel.querySelector<HTMLElement>(SWITCH);
-      if (!found) throw new Error('no switch');
+      if (!found) throw new Error('Missing the pull request read explanation');
       return found;
     });
-    await expect(node).toHaveAttribute('data-next-ci-switch', 'on');
-    await expect(node).toHaveTextContent(
+    await expect(note).toHaveAttribute('data-next-ci-switch', 'on');
+    await expect(note).toHaveTextContent(
       'Pull request checks are read from GitHub or GitLab with your gh or glab login when you press Check progress.',
     );
-    await userEvent.click(
-      within(node).getByRole('button', { name: 'Turn off the pull request read' }),
-    );
-    // Saved on the server and read back from the board: the sentence follows the answer, not the press.
-    await waitFor(() =>
-      expect(panel.querySelector(SWITCH)).toHaveAttribute('data-next-ci-switch', 'off'),
-    );
-    await expect(posts).toEqual([{ ci_read: 'off', press: true, observer_model: 1 }]);
-    await expect(panel.querySelector(SWITCH)).toHaveTextContent(
-      'Pull request checks are not read from GitHub or GitLab.',
-    );
-    await userEvent.click(
-      within(panel.querySelector<HTMLElement>(SWITCH) as HTMLElement).getByRole('button', {
-        name: 'Turn on the pull request read',
-      }),
-    );
-    await waitFor(() =>
-      expect(panel.querySelector(SWITCH)).toHaveAttribute('data-next-ci-switch', 'on'),
-    );
-    await expect(posts).toHaveLength(2);
+    await expect(within(note).queryByRole('button')).toBeNull();
   },
 };
 

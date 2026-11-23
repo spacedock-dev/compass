@@ -318,7 +318,6 @@
     "drift-pull-request-ci-read--required-only-says-how-many-checks-it-left-out",
     "drift-pull-request-ci-read--still-running-settles-nothing",
     "drift-pull-request-ci-read--the-flag-holds-the-read-off-and-offers-no-switch",
-    "drift-pull-request-ci-read--the-switch-turns-the-read-off-and-back-on",
     "drift-record-pages--cited-entries-are-tinted",
     "drift-record-pages--numbers-stay-when-older-entries-load",
     "drift-record-pages--older-direction-draft-survives-navigation",

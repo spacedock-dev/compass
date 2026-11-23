@@ -24,7 +24,7 @@ function modelPause(payload: Row): boolean | null {
 export function AiPauseSwitch({
   children,
 }: {
-  readonly children?: (paused: boolean) => ReactNode;
+  readonly children?: (paused: boolean | null) => ReactNode;
 }) {
   const shell = useShell();
   const ctx = driftCtxFor(shell);
@@ -33,25 +33,40 @@ export function AiPauseSwitch({
   const payload = board.data
     ? overlaid(board.data as unknown as Row, ctx.drift.getOverlay(), board.acceptedCount)
     : null;
-  const paused = payload ? modelPause(payload) : null;
+  const fresh =
+    !board.failures ||
+    Boolean(ctx.drift.getOverlay().reading && ctx.drift.getOverlay().stamp === board.acceptedCount);
+  const paused = payload && fresh ? modelPause(payload) : null;
   const [failure, setFailure] = useState('');
   const id = useId();
   const label = paused ? GLOSSARY.resumeAi.plain : GLOSSARY.pauseAi.plain;
   const pending = board.pending.some(
     (key) => key === 'reading-on' || key === 'reading-off' || /^reading-(off|on):/.test(key),
   );
-  if (!payload) return null;
+
   if (paused === null) {
     return (
       <div className="flex flex-col items-start gap-1">
-        <p className="m-0 text-label text-muted-foreground">The AI pause setting is unavailable.</p>
-        {children?.(false)}
+        <p className="m-0 text-label text-muted-foreground">
+          {!fresh
+            ? 'Compass could not refresh the AI pause setting.'
+            : 'The AI pause setting is unavailable.'}
+        </p>
+        {children?.(null)}
       </div>
     );
   }
   return (
-    <div className="flex flex-col items-start gap-1">
-      <div className="flex items-center gap-2">
+    <div className="flex w-full flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p id={`${id}-label`} className="m-0 text-body font-semibold">
+            {label}
+          </p>
+          <p id={id} className="m-0 text-label text-muted-foreground">
+            Applies to every session.
+          </p>
+        </div>
         <Switch
           aria-labelledby={`${id}-label`}
           aria-describedby={id}
@@ -71,13 +86,7 @@ export function AiPauseSwitch({
               );
           }}
         />
-        <span id={`${id}-label`} className="text-body font-semibold">
-          {label}
-        </span>
       </div>
-      <p id={id} className="m-0 text-label text-muted-foreground">
-        Applies to every session.
-      </p>
       {failure ? <p role="status">{failure}</p> : null}
       {children?.(paused)}
     </div>

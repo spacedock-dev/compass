@@ -384,7 +384,7 @@ export const CI_REQUIRED_ONLY = 'Only the checks GitHub requires are counted.';
 /* How many checks that rule left out, so a failing one that is not required is not silently hidden. */
 export const ciNotCounted = (count: number): string =>
   `${String(count)} non-required ${count === 1 ? 'check' : 'checks'} not counted.`;
-/* The switch beside the notice. `flag-off` is the run's own `--no-ci-read`, which the page cannot lift. */
+/* The pull request preference beside the notice. `flag-off` is the run's own `--no-ci-read`, which the page cannot lift. */
 export const CI_SWITCH_ON =
   'Pull request checks are read from GitHub or GitLab with your gh or glab login when you press Check progress.';
 export const CI_SWITCH_OFF = 'Pull request checks are not read from GitHub or GitLab.';
