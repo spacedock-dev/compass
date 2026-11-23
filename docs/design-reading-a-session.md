@@ -8381,6 +8381,10 @@ level words and six distinct absences. DEC-17 rule 4, DEC-20 item 3 and DEC-26 i
 | Terminal status-line footer | The row rule. It may also say the Live monitor is on. |
 | Sessions Filters | Progress check chips read Slightly off course, Off course, Way off course and No goal yet, with no counts. |
 
+The Sessions implementation of 2026-11-23 leaves the progress slot blank. The session
+page holds the progress reading. The board snapshot uses ordinary collection. DRC-5533
+owns both the stored-departure pill and the row absence words.
+
 Codex sessions show neither a level nor a correction. The
 [installed skill](../compass/skills/compass/SKILL.md) states the limit.
 

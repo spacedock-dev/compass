@@ -58,6 +58,11 @@ function Board({
             ? project.response.body
             : shared.response.body,
     ) as MutableRow;
+    if (liveOnly) {
+      const row = (data['sessions'] as MutableRow[]).find((row) => row['sid'] === '44444444');
+      if (!row) throw new Error('Live estimate row missing');
+      row['departure_checked'] = false;
+    }
     if (missingExplanation) {
       const rows = data['sessions'] as MutableRow[];
       const token = rows.find((row) => row['sid'] === '33333333')?.['delivery_binding_why'];
@@ -123,13 +128,12 @@ export const StoredReadingNamesItsLevel: Story = {
     );
     if (!mounted) throw new Error('Board not mounted');
     mounted.router.navigate({ view: 'sessions' });
-    await waitFor(() =>
-      expect(
-        canvasElement.querySelector(
-          '[data-next-session="a1b2c3d4"] [data-next-session-drift-mark]',
-        ),
-      ).toHaveTextContent('Drift: Medium'),
-    );
+    const row = await waitFor(() => {
+      const session = canvasElement.querySelector('[data-next-session="a1b2c3d4"]');
+      expect(session).not.toBeNull();
+      return session;
+    });
+    await expect(row?.querySelector('.next-operation-progress')).toBeNull();
     await expect(canvasElement.textContent).not.toContain('why:');
   },
 };
@@ -143,8 +147,7 @@ async function absentReading(canvasElement: HTMLElement) {
     expect(canvasElement.querySelector('[data-next-session="a1b2c3d4"]')).not.toBeNull(),
   );
   const row = canvasElement.querySelector('[data-next-session="a1b2c3d4"]');
-  await expect(row?.querySelector('[data-next-row-drift-level]')).toBeNull();
-  await expect(row?.textContent).not.toMatch(/Medium|High/);
+  await expect(row?.querySelector('.next-operation-progress')).toBeNull();
 }
 export const StaleReadingNamesNoRowLevel: Story = {
   args: { view: 'rows', reading: 'stale' },
@@ -170,13 +173,15 @@ export const LiveEstimateNamesNoRowLevel: Story = {
     await expect(live).toHaveTextContent('No model assessment for this intent yet.');
     if (!mounted) throw new Error('Board not mounted');
     mounted.router.navigate({ view: 'sessions' });
-    await waitFor(() =>
-      expect(canvasElement.querySelector('[data-next-session="44444444"]')).not.toBeNull(),
-    );
+    const row = await waitFor(() => {
+      const session = canvasElement.querySelector('[data-next-session="44444444"]');
+      if (!session) throw new Error('Live estimate row missing');
+      return session;
+    });
     await expect(
-      canvasElement.querySelector('[data-next-session="44444444"] [data-next-session-drift-mark]'),
-    ).toHaveTextContent(/^Drift · /);
-    await expect(canvasElement.querySelector('[data-next-row-drift-level]')).toBeNull();
+      row.querySelector('.next-operation-progress, [data-variant="progress"]'),
+    ).toBeNull();
+    await expect(row).not.toHaveTextContent(/No goal yet|Not checked yet/);
   },
 };
 export const ProjectShowsTheServersTaskCut: Story = {

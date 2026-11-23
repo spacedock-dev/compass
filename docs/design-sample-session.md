@@ -224,6 +224,23 @@ from 2,354,223 bytes at `9303135c` to 2,355,311 bytes with Node 26.10.0. The inc
 by 1 KiB to the same baseline plus 460 KiB, or 2,355,787 bytes, with 476 bytes to spare.
 The fixture allowance stays at 250,000 bytes.
 
+On 2026-11-23, the Sessions status tiles, keyboard tooltips and stored-progress pills brought
+the page from 2,355,311 bytes on the shared Switch layer to 2,358,771 bytes on Node 26.10.0.
+The 3,460-byte increase (0.15%) exceeded the previous bound by 2,984 bytes. The page allowance
+rises by 3 KiB to the same baseline plus 463 KiB, or 2,358,859 bytes, leaving 88 bytes above
+the build. The fixture allowance stays at 250,000 bytes.
+
+On 2026-11-23, the corrected Sessions absence words, row facts and tooltip target brought
+the page to 2,359,323 bytes on Node 26.10.0, 552 bytes above the previous build and 464 bytes
+above its allowance. The allowance rises by 1 KiB to the same baseline plus 464 KiB, or
+2,359,883 bytes, with 560 bytes to spare. The fixture allowance stays at 250,000 bytes.
+
+Removing progress levels from Sessions rows on 2026-11-23 reduced the page by 768 bytes
+to 2,358,555 bytes on Node 26.10.0. The 2,359,883-byte allowance leaves 1,328 bytes to spare.
+
+Removing progress absence words from Sessions rows reduced the page by another 1,624 bytes,
+to 2,356,931 bytes on Node 26.10.0. The same allowance leaves 2,952 bytes to spare.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

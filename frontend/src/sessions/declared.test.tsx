@@ -168,7 +168,7 @@ it('a parent exact question remains its visible state while a child works', asyn
   });
   await page.settle();
   const state = row('parent').querySelector('[data-next-row-state]');
-  expect(state).toHaveTextContent('Waiting on you');
+  expect(within(row('parent')).getByRole('img', { name: 'Waiting on you' })).toBe(state);
   expect(state).not.toHaveTextContent('Waiting on child "Check build"');
   await act(async () =>
     page.router.navigate({

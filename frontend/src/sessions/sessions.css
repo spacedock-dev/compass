@@ -13,6 +13,11 @@
 .next-instruction-text{font-family:var(--sans);font-size:var(--fs-body);line-height:1.55}
 
 /* ===== SESSIONS ===== */
+@keyframes next-status-tile-pulse{
+  0%,100%{scale:1}
+  50%{scale:.8}
+}
+
 .next-operations{min-width:0;padding:26px 0 34px}
 .next-operations-header{display:grid;grid-template-columns:minmax(0,1fr);gap:5px 16px;align-items:baseline}
 .next-operations-header h1{margin:0;font-size:var(--fs-head);font-weight:700;letter-spacing:-.02em}
@@ -30,20 +35,18 @@
 .next-operation-group>header{display:flex;justify-content:space-between;gap:24px;align-items:baseline;padding-bottom:10px;border-bottom:1px solid var(--rule)}
 .next-operation-group>header h2{margin:0;font-size:var(--fs-value);font-weight:600}
 .next-operation-group>header p{max-width:620px;margin:0;color:var(--ink2);font-size:var(--fs-body);font-weight:500;line-height:1.55;text-align:right}
-.next-operations-columns,#app .next-operation-row{grid-template-columns:minmax(0,1.2fr) 140px minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 140px}
+.next-operations-columns,#app .next-operation-row{grid-template-columns:minmax(0,1.5fr) 120px minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 120px var(--operation-progress-track)}
 .next-operations-columns{display:grid;border-bottom:1px solid var(--rule);color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em}
 .next-operations-columns span{padding:9px 12px}
-#app .next-operation-row{grid-template-columns:minmax(0,1.2fr) 140px minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 140px;position:relative;text-decoration:none;cursor:pointer}
 
 .next-operation-route::after{content:"";position:absolute;inset:0}
 
 .next-operation-identity,.next-operation-fact{display:block;min-width:0;padding:13px 8px;overflow-wrap:anywhere}
 .next-operation-fact{border-left:0}
-.next-operation-identity small,.next-operation-identity strong,.next-operation-identity>span,.next-operation-fact small,.next-operation-fact strong,.next-operation-fact em{display:block}
+.next-operation-identity small,.next-operation-identity strong,.next-operation-fact small,.next-operation-fact strong,.next-operation-fact em{display:block}
 .next-operation-identity small,.next-operation-fact small{color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-style:normal;font-weight:600;letter-spacing:.07em}
 .next-operation-identity>.next-operation-local-label,.next-operation-fact>small{display:none}
 .next-operation-identity strong,.next-operation-fact strong{margin-top:7px;font-size:var(--fs-body);font-style:normal;font-weight:500;line-height:1.4}
-.next-operation-harness{color:var(--ink2);font-family:var(--mono);font-size:var(--fs-label)}
 .next-operation-assignment{margin-top:8px;color:var(--ink2);font-size:var(--fs-body);font-weight:500;line-height:1.55;max-width:var(--measure)}
 .next-operation-collision{margin-top:8px;color:var(--ink);font-size:var(--fs-body);font-weight:500;line-height:1.55;max-width:var(--measure)}
 .next-operation-unread,.next-operation-scan-only{display:block;margin-top:8px;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-body);line-height:1.4}
@@ -61,12 +64,10 @@
 .next-operation-outcome{display:block;margin-top:6px;color:var(--ink2);font-size:var(--fs-body);font-weight:500;line-height:1.55}
 .next-operation-outcome--bad{color:var(--ink2)}
 .next-operation-outcome--unknown{color:var(--ink2)}
-.next-operation-state{padding:13px 8px;text-align:right;color:var(--ink-label);font:600 var(--fs-label) var(--mono);letter-spacing:.07em}
-.next-operation-group--history .next-operations-columns,#app .next-operation-row[data-next-operation-history="true"]{grid-template-columns:minmax(0,1.2fr) 140px minmax(0,1fr) minmax(0,1fr) 92px}
+.next-operation-group--history .next-operations-columns,#app .next-operation-row[data-next-operation-history="true"]{grid-template-columns:minmax(0,1.5fr) 120px minmax(0,1fr) minmax(0,1fr) var(--operation-progress-track)}
 .next-operation-history-now{min-width:0}
 .next-operation-history-now>.next-operation-outcome{padding:0 8px 13px}
 .next-operation-end-note{grid-column:1/-1;padding:0 8px 13px}
-.next-operation-end-note .next-operation-state{padding:0;text-align:left}
 .next-operation-fact strong{font-family:var(--sans)}
 .next-operation-fact--unknown strong{font-family:var(--sans)}
 .next-operation-unread,.next-operation-scan-only,.next-operation-fact em{font-family:var(--sans)}
@@ -74,14 +75,13 @@
   .next-operations-fleet{grid-template-columns:repeat(2,minmax(0,1fr))}
   .next-operations-columns{display:none}
   #app .next-operation-row[data-next-operation-history="true"]{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .next-operation-state{grid-column:1/-1}
   .next-operation-history-now{grid-column:1/-1}
   .next-operation-group--history .next-operations-columns{display:none}
   #app .next-operation-row{grid-template-columns:repeat(2,minmax(0,1fr))}
   .next-operation-identity{grid-column:1/-1;border-bottom:1px solid var(--rule)}
   .next-operation-identity>.next-operation-local-label,.next-operation-fact>small{display:block}
   .next-operation-fact:nth-child(even){border-left:0}
-  .next-operation-fact:nth-child(n+4){border-top:1px solid var(--rule)}
+  .next-operation-fact:not([data-next-operation-fact="where"]){border-top:1px solid var(--rule)}
 }
 @media(max-width:620px){
   #app .next-operation-row[data-next-operation-history="true"]{grid-template-columns:minmax(0,1fr)}
@@ -315,9 +315,6 @@
 .next-cockpit-landed-value--absent{color:var(--ink-absence)}
 .next-cockpit-landed-note{color:var(--ink2);font:500 var(--fs-body)/1.55 var(--sans);max-width:var(--measure)}
 .next-operation-goal-link{position:relative;z-index:1;display:block;color:var(--ink);text-decoration-color:var(--line);text-underline-offset:3px;overflow-wrap:anywhere}
-.next-operation-drift{grid-column:1/-1;padding:6px 12px 12px;font-size:var(--fs-label);color:var(--ink2)}
-.next-operation-drift>strong{font-weight:600;color:var(--ink)}
-.next-operation-drift>small{display:block;font-size:inherit;max-width:var(--measure)}
 .next-operation-fact[data-next-operation-fact="goal"]>small{display:block}
 .next-operation-goal-link{margin-top:7px;font-size:var(--fs-body);font-weight:500;line-height:1.4}
 @media(max-width:1100px){

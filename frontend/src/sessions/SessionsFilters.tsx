@@ -286,7 +286,7 @@ function FilterButton({
         <>
           <span>{name}</span>
           {selected ? (
-            <Badge className="px-1.5 py-0" data-filter-badge>
+            <Badge variant="count-chip" data-filter-badge>
               {selected}
             </Badge>
           ) : null}

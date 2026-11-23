@@ -45,6 +45,7 @@
   --text-hero: var(--fs-hero);
 
   --radius-control: var(--r-control);
+  --radius-status-tile: var(--sp-3);
   --radius-card: var(--r-card);
   --radius-standard-card: var(--r-standard-card);
   --radius-shell: var(--r-shell);
@@ -69,6 +70,8 @@
   --color-input: var(--line);
   --color-ring: var(--accent);
   --color-cite: var(--cite);
+  /* Keep the working glyph at full colour throughout its pulse. */
+  --animate-status-tile-pulse: next-status-tile-pulse 1.6s ease-in-out infinite;
 }
 
 /* The page palette and five type steps stay present even when no utility names them. Semantic colours

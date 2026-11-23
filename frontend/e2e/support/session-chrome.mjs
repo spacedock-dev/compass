@@ -5,7 +5,7 @@ export function measureSessionChrome() {
     current: '[data-slot="card"][data-variant="session-current"]',
     ask: '[data-slot="card"][data-variant="session-ask"]',
     landed: '[data-slot="card"][data-variant="session-landed"]',
-    state: '[data-slot="badge"][data-variant="session-state"]',
+    state: '[data-next-session-status] > [data-slot="badge"][data-variant="status"]',
     health: '[data-slot="alert"][data-variant="session-health"]',
     failure: '[data-slot="alert"][data-variant="answer-failure"]',
   };
@@ -93,14 +93,29 @@ const currentFamilyByRecordedFamily = new Map([
   ['"IBM Plex Mono", ui-monospace, monospace', 'ui-monospace, monospace'],
 ]);
 
+// The Session header adopted the sans status badge and the light palette's ink and border.
+// Preserve the recorded typography size, spacing, and content sizing.
+const headerStatusChrome = {
+  color: 'rgb(82, 96, 109)',
+  'border-top': '1px solid rgb(123, 135, 148)',
+  'border-right': '1px solid rgb(123, 135, 148)',
+  'border-bottom': '1px solid rgb(123, 135, 148)',
+  'border-left': '1px solid rgb(123, 135, 148)',
+  'font-family': 'Inter, system-ui, -apple-system, sans-serif',
+  'font-weight': '500',
+};
+
 export function sessionChromeDifferences(rows, instances) {
   const differences = [];
   for (const row of rows) {
     const recorded = instances[row.key];
     const family = currentFamilyByRecordedFamily.get(recorded?.chrome['font-family']);
-    const expected = family
+    let expected = family
       ? { ...recorded, chrome: { ...recorded.chrome, 'font-family': family } }
       : recorded;
+    if (recorded && row.key.startsWith('state|')) {
+      expected = { ...recorded, chrome: { ...recorded.chrome, ...headerStatusChrome } };
+    }
     const tolerance = row.inlineSize.kind === 'text' ? 0.15 : 0.015;
     const nonFinite =
       expected &&

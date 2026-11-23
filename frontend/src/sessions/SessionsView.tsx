@@ -4,27 +4,15 @@ import { RelationshipLabels } from './DeclaredRelationships';
 import { Card } from '../ui/card';
 import { titleLink } from '../ui/link';
 import { Button } from '../ui/button';
-import {
-  Fragment,
-  memo,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useSyncExternalStore,
-} from 'react';
+import { StatusTile } from '../ui/status-tile';
+import { TooltipProvider } from '../ui/tooltip';
+import { SESSION_ROW_WORDS } from '../language/glossary';
+import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 'react';
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
-import { gapNames, isRecord, sessionStateLimit, type Row } from '../observed';
+import { gapNames, sessionStateLimit, type Row } from '../observed';
 import { nextNumber } from '../api/bootstrap';
-import { contextKey } from '../api/identity';
-import { headerAnalysis } from '../drift/model';
-import { overlaid } from '../drift/overlay';
-import { driftCtxFor } from '../drift/state';
-import { PillMeter } from '../drift/DriftLevelView';
-import { identityOf } from '../intent/context';
-import { useHeldVersion } from '../intent/useIntent';
 import { selectObserved } from '../observed/select';
 import { selectHarnessSources } from '../store/selectors';
 import { useDisplayed, useShell } from '../shell/context';
@@ -54,7 +42,6 @@ import {
   analysisAvailable,
   buildSessionsScreen,
   NOT_CHECKED,
-  readingDeparts,
   rowState,
   type SessionRow,
 } from './rows';
@@ -79,7 +66,7 @@ import './sessions.css';
 
 const SESSION_LEGEND = [
   ...Object.entries(SESSION_STATE_ICONS),
-  ['Worth a look', 'worth-a-look'],
+  [SESSION_ROW_WORDS.worthALook, 'worth-a-look'],
 ] as const;
 
 function StatusLegend() {
@@ -154,81 +141,70 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
   const names = source ? gapNames(source) : [];
   const state = rowState(session);
   const limit = sessionStateLimit(session, state);
-  const statusIcon =
-    state === 'State not published' || state === 'Waiting on child'
-      ? null
-      : SESSION_STATE_ICONS[state];
+  const tile = state !== 'State not published' && state !== 'Waiting on child';
   return (
-    <span className="next-operation-identity">
-      {statusIcon ? (
-        <span
-          className={`m-0 flex items-center gap-2 text-label font-semibold ${state === 'Waiting on you' ? 'text-[var(--amber)]' : state === 'Working' ? 'text-foreground' : 'text-[var(--ink-label)]'}`}
-          data-next-row-state={state}
+    <div className="next-operation-identity flex items-start gap-3 pl-3">
+      {tile ? <StatusTile state={state} live={session.isLive && state === 'Working'} /> : null}
+      <div className="min-w-0">
+        <RouteAnchor
+          route={row.route}
+          className={`next-operation-route block ${titleLink}`}
+          label={`Open session ${session.titleText}`}
+          focusKey={`sessions-row:${row.key}`}
+          fallback={SEARCH_KEY}
         >
-          <span className={session.isLive && state === 'Working' ? 'next-live' : undefined}>
-            <Icon name={statusIcon} className="next-status-icon" />
+          <strong
+            className={`mt-0 font-semibold${session.titleKnown ? '' : ' next-operation-title--unknown next-absence'}`}
+          >
+            {session.titleText}
+          </strong>
+          <span className="next-operation-harness block text-label text-muted-foreground">
+            {row.harnessLabel}
           </span>
-          {state}
-        </span>
-      ) : null}
-      <span className="next-operation-harness">{row.harnessLabel}</span>
-      <RouteAnchor
-        route={row.route}
-        className={`next-operation-route block ${titleLink}`}
-        label={`Open session ${session.titleText}`}
-        focusKey={`sessions-row:${row.key}`}
-        fallback={SEARCH_KEY}
-      >
-        <strong
-          {...(session.titleKnown
-            ? {}
-            : { className: 'next-operation-title--unknown next-absence' })}
-        >
-          {session.titleText}
-        </strong>
-      </RouteAnchor>
-      {!session.titleKnown && session.promptKnown ? (
-        <span className="next-operation-assignment">{`LAST PROMPT · ${session.promptText}`}</span>
-      ) : null}
-      <RelationshipLabels
-        source={source}
-        relations={row.relations}
-        waitingIsState={state === 'Waiting on child'}
-        focusScope={`sessions-row:${row.key}`}
-        fallback={SEARCH_KEY}
-      />
-      {hints.map((hint) => (
-        <span
-          key={hint}
-          className="mt-1 block text-label leading-[1.5] text-muted-foreground"
-          data-next-row-hint
-        >
-          {hint}
-        </span>
-      ))}
-      {assignment ? (
-        <span className="next-operation-assignment">{`Current task · ${assignment}`}</span>
-      ) : null}
-      {session.sharedLabelKnown ? (
-        <span className="next-operation-collision" title={DUPLICATE_LABEL_LIMIT}>
-          {session.sharedLabelText}
-        </span>
-      ) : null}
-      {limit && state !== 'Waiting on child' ? (
-        <span
-          className="next-operation-scan-only"
-          title={session.scanOnly ? SCAN_ONLY_NOTE : undefined}
-          data-next-row-state={statusIcon ? undefined : state}
-        >
-          {limit}
-        </span>
-      ) : null}
-      {names.length ? (
-        <span className="next-operation-unread" title={UNREAD_SOURCE_NOTE}>
-          {`Source not fully read: ${names.join(', ')}`}
-        </span>
-      ) : null}
-    </span>
+        </RouteAnchor>
+        {limit && state !== 'Waiting on child' ? (
+          <span
+            className="next-operation-scan-only"
+            title={session.scanOnly ? SCAN_ONLY_NOTE : undefined}
+            data-next-row-state={tile ? undefined : state}
+          >
+            {limit}
+          </span>
+        ) : null}
+        {!session.titleKnown && session.promptKnown ? (
+          <span className="next-operation-assignment block">{`LAST PROMPT · ${session.promptText}`}</span>
+        ) : null}
+        <RelationshipLabels
+          source={source}
+          relations={row.relations}
+          waitingIsState={state === 'Waiting on child'}
+          focusScope={`sessions-row:${row.key}`}
+          fallback={SEARCH_KEY}
+        />
+        {hints.map((hint) => (
+          <span
+            key={hint}
+            className="mt-1 block text-label leading-[1.5] text-muted-foreground"
+            data-next-row-hint
+          >
+            {hint}
+          </span>
+        ))}
+        {assignment ? (
+          <span className="next-operation-assignment block">{`Current task · ${assignment}`}</span>
+        ) : null}
+        {session.sharedLabelKnown ? (
+          <span className="next-operation-collision block" title={DUPLICATE_LABEL_LIMIT}>
+            {session.sharedLabelText}
+          </span>
+        ) : null}
+        {names.length ? (
+          <span className="next-operation-unread" title={UNREAD_SOURCE_NOTE}>
+            {`Source not fully read: ${names.join(', ')}`}
+          </span>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -257,81 +233,6 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
       >
         {goal.text}
       </RouteAnchor>
-    </span>
-  );
-}
-
-/* Before context arrives, a current stored departure is at least Medium; its exact level is unknown.
-   Once this tab holds context, only the session header's analysis may name a level, even when null. */
-function rowLevel(
-  input: Parameters<typeof headerAnalysis>[0] | null,
-): { readonly level: string | null; readonly label: string } | null {
-  if (!input || !readingDeparts(input.session)) return null;
-  if (input.contexts.get(contextKey(input.projectKey, identityOf(input.session)))?.data) {
-    return headerAnalysis(input);
-  }
-  const { session } = input;
-  if (session['annotation_not_accurate'] === true) return null;
-  const raw = session['annotation_assessment'];
-  if (isRecord(raw) && raw['scope'] === 'withdrawn') return null;
-  const read = isRecord(raw) ? nextNumber(raw['revision_read']) : null;
-  const current = nextNumber(session['annotation_revision']);
-  if (read === null || (current !== null && current !== read)) return null;
-  return { level: null, label: 'Medium or higher' };
-}
-
-function DriftMarkView({ row }: { readonly row: SessionRow }) {
-  const shell = useShell();
-  const ctx = driftCtxFor(shell);
-  // Redraws when the reader's held words change, so a drafted intent hides the level as the header does.
-  useHeldVersion(ctx.intent.held);
-  const overlay = useSyncExternalStore(ctx.drift.subscribe, ctx.drift.getOverlay);
-  const contexts = useDisplayed((snapshot) => snapshot.contexts);
-  const data = useDisplayed((snapshot) => snapshot.data) as Row | null;
-  const records = useDisplayed((snapshot) => snapshot.records);
-  const count = useDisplayed((snapshot) => snapshot.acceptedCount);
-  const mark = row.drift;
-  const { source, projectKey } = row;
-  if (!mark || !source || !data) return mark ? <DriftMark mark={mark} level={null} /> : null;
-  const record = records.get(contextKey(projectKey, identityOf(source)));
-  const level = rowLevel({
-    session: source,
-    payload: overlaid(data, overlay, count),
-    projectKey,
-    contexts,
-    held: ctx.intent.held,
-    ...(record ? { record } : {}),
-  });
-  return <DriftMark mark={mark} level={level} />;
-}
-
-function DriftMark({
-  mark,
-  level,
-}: {
-  readonly mark: NonNullable<SessionRow['drift']>;
-  readonly level: ReturnType<typeof rowLevel>;
-}) {
-  return (
-    <span className="next-operation-drift" data-next-session-drift-mark>
-      {level ? (
-        <span
-          className="inline-flex items-baseline gap-1.5"
-          data-next-row-drift-level={level.level ?? 'medium_or_higher'}
-        >
-          {level.level ? <PillMeter level={level.level} /> : null}
-          <span>
-            Drift: <strong className="font-semibold text-foreground">{level.label}</strong>
-          </span>
-        </span>
-      ) : (
-        <strong>Drift</strong>
-      )}
-      {` · ${mark.age}`}
-      {mark.someUnknown ? <small>Some recorded departure ages are unknown</small> : null}
-      {mark.stale.map((line) => (
-        <small key={line}>{line}</small>
-      ))}
     </span>
   );
 }
@@ -381,7 +282,7 @@ const RowView = memo(function RowView({
     <Card
       as="article"
       variant="session-row"
-      className={`next-operation-row next-operation-row--${session.tone}${depth ? ' ml-4 w-auto border-l-2 border-l-border' : ''}`}
+      className={`next-operation-row relative cursor-pointer no-underline next-operation-row--${session.tone}${depth ? ' ml-4 w-auto border-l-2 border-l-border' : ''}`}
       {...(depth ? { 'data-declared-depth': depth } : {})}
       data-next-harness={session.harness}
       data-next-session={session.sid}
@@ -403,8 +304,6 @@ const RowView = memo(function RowView({
             {now}
             {outcome}
           </div>
-          {/* The state cell's place in the history grid; the state itself leads the row. */}
-          <span className="next-operation-state" aria-hidden="true" />
         </>
       ) : (
         <>
@@ -426,7 +325,6 @@ const RowView = memo(function RowView({
           {outcome ? <div className="next-operation-end-note">{outcome}</div> : null}
         </>
       )}
-      <DriftMarkView row={row} />
     </Card>
   );
 });
@@ -440,8 +338,10 @@ const Group = memo(function Group({
   caveat,
   filter,
   byGroup = false,
+  progressEnabled,
 }: {
   readonly byGroup?: boolean;
+  readonly progressEnabled: boolean;
   readonly kind: 'active' | 'history';
   readonly title: string;
   readonly label: string;
@@ -464,8 +364,9 @@ const Group = memo(function Group({
     : [{ group: '', rows: kept }];
   return (
     <section
-      className={`next-operation-group next-operation-group--${kind}`}
+      className={`next-operation-group next-operation-group--${kind} [--operation-progress-track:0px] data-[next-progress-enabled]:[--operation-progress-track:176px]`}
       data-next-operation-group={kind}
+      data-next-progress-enabled={progressEnabled ? true : undefined}
     >
       <header>
         <h2>{title}</h2>
@@ -504,42 +405,43 @@ const Group = memo(function Group({
         <span>PROJECT</span>
         <span>GOAL</span>
         <span>NOW</span>
-        {kind === 'history' ? (
-          <span />
-        ) : (
+        {kind === 'history' ? null : (
           <>
             <span>NEXT</span>
             <span>BLOCKED</span>
           </>
         )}
+        {progressEnabled ? <span /> : null}
       </div>
-      <div className="next-operation-rows">
-        {kept.length ? (
-          buckets.map((bucket) => (
-            <Fragment key={bucket.group}>
-              {byGroup ? (
-                <h3 className="my-2 text-label font-semibold [overflow-wrap:anywhere]">
-                  {groupName(bucket.group)}
-                </h3>
-              ) : null}
-              {nestRows(bucket.rows).map(({ row, depth }) => (
-                <RowView
-                  key={row.key}
-                  row={row}
-                  depth={depth}
-                  hints={filter?.filtered.hints.get(row.key) ?? NO_HINTS}
-                />
-              ))}
-            </Fragment>
-          ))
-        ) : rows.length ? (
-          <p data-next-sessions-filtered-empty className="next-absence">
-            {groupEmptyLine(rows.length, title)}
-          </p>
-        ) : (
-          <p className="next-sessions-empty next-absence">{empty}</p>
-        )}
-      </div>
+      <TooltipProvider>
+        <div className="next-operation-rows">
+          {kept.length ? (
+            buckets.map((bucket) => (
+              <Fragment key={bucket.group}>
+                {byGroup ? (
+                  <h3 className="my-2 text-label font-semibold [overflow-wrap:anywhere]">
+                    {groupName(bucket.group)}
+                  </h3>
+                ) : null}
+                {nestRows(bucket.rows).map(({ row, depth }) => (
+                  <RowView
+                    key={row.key}
+                    row={row}
+                    depth={depth}
+                    hints={filter?.filtered.hints.get(row.key) ?? NO_HINTS}
+                  />
+                ))}
+              </Fragment>
+            ))
+          ) : rows.length ? (
+            <p data-next-sessions-filtered-empty className="next-absence">
+              {groupEmptyLine(rows.length, title)}
+            </p>
+          ) : (
+            <p className="next-sessions-empty next-absence">{empty}</p>
+          )}
+        </div>
+      </TooltipProvider>
     </section>
   );
 });
@@ -730,6 +632,7 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
         empty="No exact session has active evidence right now."
         filter={groupFilter}
         byGroup={filters.byGroup}
+        progressEnabled={annotated}
       />
       <Group
         kind="history"
@@ -740,6 +643,7 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
         caveat={RECENT_CAVEAT}
         filter={groupFilter}
         byGroup={filters.byGroup}
+        progressEnabled={annotated}
       />
       <CapacityStrip />
     </section>

@@ -268,7 +268,7 @@ export const ParentQuestionOutranksChildWait: Story = {
     const canvas = within(canvasElement);
     await canvas.findByText('Ship now?');
     const state = row(canvasElement, 'parent').querySelector('[data-next-row-state]');
-    await expect(state).toHaveTextContent('Waiting on you');
+    await expect(state).toHaveAccessibleName('Waiting on you');
     await expect(state).not.toHaveTextContent('Waiting on child "Check build"');
     await userEvent.click(
       within(row(canvasElement, 'parent')).getByRole('link', {

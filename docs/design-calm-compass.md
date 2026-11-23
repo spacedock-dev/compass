@@ -123,8 +123,9 @@ rows and relationships.
 | Way off course | Extreme |
 
 The Session header and Is it on track? card can show full levels. The meter and Help explain
-all four. A Sessions or Project row shows one text pill at most, for a stored reading that found
-a departure. Goal history carries no level. The
+all four. The owner allows one progress pill on a Sessions or Project row when a stored reading
+found a departure. The Sessions list currently leaves the progress slot blank.
+Goal history carries no level. The
 [progress amendment](design-reading-a-session.md#amended-2026-11-22-owner-progress-words-by-surface)
 specifies the eligible surfaces, including the terminal footer, and the Codex limit.
 

@@ -1,6 +1,10 @@
-import { toBeInTheDocument, toHaveTextContent } from '@testing-library/jest-dom/matchers';
+import {
+  toBeInTheDocument,
+  toHaveAccessibleName,
+  toHaveTextContent,
+} from '@testing-library/jest-dom/matchers';
 
-expect.extend({ toBeInTheDocument, toHaveTextContent });
+expect.extend({ toBeInTheDocument, toHaveAccessibleName, toHaveTextContent });
 
 import { within } from '@testing-library/react';
 import { expect, it } from 'vitest';
@@ -66,16 +70,16 @@ it('draws only the statuses and outcomes that a Sessions row has evidence for', 
       );
   }
   for (const id of ['clean', 'dirty', 'transcript']) {
-    expect.soft(state(id)).toHaveTextContent('Quiet');
+    expect.soft(state(id)).toHaveAccessibleName('Quiet');
     expect.soft(state(id)?.querySelector('[data-icon="quiet"]')).toBeInTheDocument();
     expect.soft(row(id).querySelector('.next-operation-outcome svg')).toBeNull();
   }
   expect.soft(row('clean')).toHaveTextContent('Stop observed; git state clean');
   expect.soft(row('dirty')).toHaveTextContent('Stop observed with uncommitted work');
   expect.soft(row('transcript')).not.toHaveTextContent('no turn end can be observed here');
-  expect.soft(state('ended')).toHaveTextContent('Ended');
+  expect.soft(state('ended')).toHaveAccessibleName('Ended');
   expect.soft(state('ended')?.querySelector('[data-icon="ended"]')).toBeInTheDocument();
-  expect.soft(state('ended-with-request')).toHaveTextContent('Ended');
+  expect.soft(state('ended-with-request')).toHaveAccessibleName('Ended');
   expect
     .soft(state('ended-with-request')?.querySelector('[data-icon="ended"]'))
     .toBeInTheDocument();
@@ -84,14 +88,15 @@ it('draws only the statuses and outcomes that a Sessions row has evidence for', 
   expect
     .soft(row('dirty-end').querySelector('.next-operation-outcome [data-icon="worth-a-look"]'))
     .toBeInTheDocument();
-  expect.soft(state('waiting')).toHaveTextContent('Waiting on you');
+  expect.soft(state('waiting')).toHaveAccessibleName('Waiting on you');
   expect.soft(state('waiting')?.querySelector('[data-icon="waiting"]')).toBeInTheDocument();
   for (const id of ['live', 'lapsed']) {
-    expect.soft(state(id)).toHaveTextContent('Working');
+    expect.soft(state(id)).toHaveAccessibleName('Working');
     expect.soft(state(id)?.querySelectorAll('[data-icon="working"]')).toHaveLength(1);
   }
-  expect.soft(state('live')?.querySelector('.next-live .next-status-icon')).toBeInTheDocument();
-  expect.soft(state('lapsed')?.querySelector('.next-live .next-status-icon')).toBeNull();
+  const pulse = 'motion-safe:animate-status-tile-pulse';
+  expect.soft(state('live')?.querySelector('svg')?.classList.contains(pulse)).toBe(true);
+  expect.soft(state('lapsed')?.querySelector('svg')?.classList.contains(pulse)).toBe(false);
 });
 
 it.each([

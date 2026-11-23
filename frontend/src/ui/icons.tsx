@@ -2,6 +2,7 @@
    "ran, nothing recorded"; the marked circle carries a recorded result. Each icon is decorative
    (`aria-hidden`): the words that mean the same thing sit beside it, or on its trigger as a name.
    docs/design-shadcn-adoption.md#icons-and-tooltips owns the choice and what it was weighed against. */
+import { SESSION_ROW_WORDS } from '../language/glossary';
 import type { IconBaseProps } from 'react-icons';
 import {
   PiArrowCounterClockwiseBold,
@@ -74,10 +75,10 @@ const ICONS = {
 } as const;
 
 export const SESSION_STATE_ICONS = {
-  Working: 'working',
-  'Waiting on you': 'waiting',
-  Quiet: 'quiet',
-  Ended: 'ended',
+  [SESSION_ROW_WORDS.working]: 'working',
+  [SESSION_ROW_WORDS.waitingOnYou]: 'waiting',
+  [SESSION_ROW_WORDS.quiet]: 'quiet',
+  [SESSION_ROW_WORDS.ended]: 'ended',
 } as const;
 
 export type IconName = keyof typeof ICONS;

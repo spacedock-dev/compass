@@ -1,17 +1,9 @@
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { mountSessions } from './testing';
 import { rowState } from './rows';
-import current from '../../test/fixtures/client-contract/data-focused-drift-medium.json';
-import currentContext from '../../test/fixtures/client-contract/context-focused-drift-medium.json';
-import missing from '../../test/fixtures/client-contract/data-focused-drift-missing-evidence.json';
-import missingContext from '../../test/fixtures/client-contract/context-focused-drift-missing-evidence.json';
-import stale from '../../test/fixtures/client-contract/data-focused-drift-stale.json';
-import staleContext from '../../test/fixtures/client-contract/context-focused-drift-stale.json';
-import inaccurate from '../../test/fixtures/client-contract/data-focused-drift-inaccurate.json';
-import inaccurateContext from '../../test/fixtures/client-contract/context-focused-drift-inaccurate.json';
-import withdrawn from '../../test/fixtures/client-contract/data-focused-drift-withdrawn.json';
-import withdrawnContext from '../../test/fixtures/client-contract/context-focused-drift-withdrawn.json';
+import declared from '../../test/fixtures/declared-sessions.json';
+import liveBoard from '../../test/fixtures/client-contract/data-live-row.json';
 import { observe } from '../observed';
 
 const NOW = 5000;
@@ -134,9 +126,8 @@ describe('the groups', () => {
       }),
     );
     expect(rows('active')).toEqual(['claude/raised']);
-    expect(document.querySelector('[data-next-session-drift-mark]')?.textContent).toBe(
-      'Drift · 1m ago',
-    );
+    const raised = document.querySelector('article[data-next-session="raised"]');
+    expect(raised?.querySelector('[data-variant="progress"]')).toBeNull();
     // Counted with the cards listed under Active now, and still not called working.
     expect(document.querySelector('[data-next-fleet-fact="active"] strong')?.textContent).toBe('1');
     expect(document.querySelector('[data-next-fleet-fact="working"] strong')?.textContent).toBe(
@@ -165,15 +156,17 @@ describe('the groups', () => {
     );
   });
 
-  it('leads each row with one state word and shows the project label alone as where', async () => {
+  it('names the state tile and shows the project label alone as where', async () => {
     await open(data);
-    const state = (sid: string) =>
-      document.querySelector(`article[data-next-session="${sid}"] [data-next-row-state]`)
-        ?.textContent;
-    expect(state('gate')).toBe('Waiting on you');
-    expect(state('work')).toBe('Working');
-    expect(state('idle-new')).toBe('State not published');
-    expect(state('done')).toBe('Ended');
+    for (const [sid, name] of [
+      ['gate', 'Waiting on you'],
+      ['work', 'Working'],
+      ['done', 'Ended'],
+    ] as const) {
+      const row = document.querySelector<HTMLElement>(`article[data-next-session="${sid}"]`);
+      if (!row) throw new Error(`Missing row ${sid}`);
+      expect(within(row).getByRole('img', { name })).toBeVisible();
+    }
     const groups = [...document.querySelectorAll('[data-next-operation-group]')];
     for (const group of groups) expect(group.textContent).not.toMatch(/NOW · |QUIET/);
     expect(document.body.textContent).not.toContain('Exact location not published');
@@ -183,196 +176,135 @@ describe('the groups', () => {
     ).toBe('PROJECTp');
   });
 
-  it('lets a person see a current departure as Medium or higher before opening its session', async () => {
-    const page = await open(current.response.body);
-    const row = document.querySelector('[data-next-session="a1b2c3d4"]');
-    const mark = row?.querySelector('[data-next-session-drift-mark]');
-    expect(mark?.textContent).toMatch(/^Drift: Medium or higher · /);
-    expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
-    expect(
-      page.state.requests.some((request) => request.url.startsWith('/api/project-context')),
-    ).toBe(false);
-  });
+  const reading = {
+    revision_read: 2,
+    read_at: NOW - 60,
+    scope: 'last-turn',
+    criteria: { goal: { result: 'departure', cites: ['f1'], detail: '', clause: 'Ship it' } },
+  };
+  const assessed = {
+    annotation_goal: 'Ship it',
+    annotation_revision: 2,
+    annotation_assessment: reading,
+  };
 
   it.each([
-    ['stale', stale],
-    ['inaccurate', inaccurate],
-  ] as const)('lets a person see no cold row level for a %s reading', async (_case, data) => {
-    await open(data.response.body);
-    const mark = document.querySelector(
-      '[data-next-session="a1b2c3d4"] [data-next-session-drift-mark]',
-    );
-    expect(mark?.textContent).toMatch(/^Drift · /);
-    expect(mark?.querySelector('[data-next-row-drift-level]')).toBeNull();
-    expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
-  });
-
-  it('lets a person see no cold row level when the stored reading was withdrawn', async () => {
-    const data = structuredClone(current.response.body);
-    const session = data.sessions.find((row) => row.sid === 'a1b2c3d4');
-    if (!session) throw new Error('The recorded session is missing');
-    session.annotation_assessment.scope = 'withdrawn';
-    await open(data);
-    const mark = document.querySelector(
-      '[data-next-session="a1b2c3d4"] [data-next-session-drift-mark]',
-    );
-    expect(mark?.textContent).toMatch(/^Drift · /);
-    expect(mark?.querySelector('[data-next-row-drift-level]')).toBeNull();
-    expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
-  });
-
-  it('lets a person see no level for a notification raise beside a reading that does not depart', async () => {
-    const session = {
-      harness: 'claude',
-      sid: 'raised',
-      project: 'p',
-      state: 'idle',
-      departures: [{ at: NOW - 60, revision: 1 }],
-      annotation_revision: 1,
-      annotation_assessment: {
-        read_at: NOW - 60,
-        revision_read: 1,
-        criteria: { goal: { result: 'consistent', cites: ['f1'], detail: '', clause: 'x' } },
-      },
-    };
-    await open(board([session], { annotate: true }));
-    const mark = document.querySelector('[data-next-session-drift-mark]');
-    expect(mark?.textContent).toBe('Drift · 1m ago');
-    expect(mark?.querySelector('[data-next-row-drift-level]')).toBeNull();
-    expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
-  });
-
-  describe('the chip and the session header name one level', () => {
-    const departing = {
-      harness: 'claude',
-      sid: 'read',
-      project: 'p',
-      project_key: '/p',
-      state: 'idle',
-      annotation_goal: 'Ship the queue',
-      annotation_line_1: 'Tests pass',
-      annotation_revision: 2,
-      annotation_assessment: {
-        read_at: NOW - 240,
-        revision_read: 2,
-        criteria: { goal: { result: 'departure', cites: ['f1'], detail: '', clause: 'x' } },
-      },
-    };
-    /* The entry the departure cites: a departure naming one the record does not hold is refused, and a
-       level stands only on a departure the reading shows. */
-    const said = {
-      fact_id: 'f1',
-      type: 'agent_message',
-      by: 'agent',
-      summary: 'Done: the queue ships.',
-      at: NOW - 300,
-      source_session: { harness: 'claude', sid: 'read' },
-      evidence: { source: 'transcript', confidence: 'exact' },
-    };
-    const context = (level: string) => ({
-      semantic: { facts: [said] },
-      sources: {
-        work: {
-          tool_reports: [],
-          analysis_levels: [
+    ['medium', 'Slightly off course'],
+    ['high', 'Off course'],
+  ])(
+    'shows no progress copy for a stored %s departure on the first visit',
+    async (level, label) => {
+      const page = await open(
+        board(
+          [
             {
               harness: 'claude',
               sid: 'read',
-              revision_read: 2,
-              read_at: NOW - 240,
-              computed_at: NOW - 240,
-              level,
-              reasons: ['departure'],
-              cites: ['f1'],
+              state: 'working',
+              ...assessed,
+              stored_progress: level,
             },
           ],
+          {
+            annotate: true,
+          },
+        ),
+      );
+      const row = document.querySelector<HTMLElement>('article[data-next-session="read"]');
+      if (!row) throw new Error('Missing row');
+      expect(within(row).queryByText(label)).not.toBeInTheDocument();
+      expect(row.querySelector('[data-slot="badge"]')).toBeNull();
+      expect(row.querySelector('.next-operation-progress')).toBeNull();
+      expect(
+        page.state.requests.some((request) => request.url.startsWith('/api/project-context')),
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    ['a row with no goal', {}],
+    ['a Codex row without a goal', { harness: 'codex' }],
+    ['a Codex row with a goal', { harness: 'codex', annotation_goal: 'Ship it' }],
+    ['a saved departure', assessed],
+    [
+      'a non-departing reading',
+      {
+        ...assessed,
+        annotation_assessment: {
+          ...reading,
+          criteria: {
+            goal: { ...reading.criteria.goal, result: 'consistent with the evidence read' },
+          },
         },
       },
-    });
-    const chip = () => document.querySelector('[data-next-session-drift-mark]');
+    ],
+    ['a Codex reading', { ...assessed, harness: 'codex' }],
+    [
+      'a withdrawn reading',
+      {
+        ...assessed,
+        annotation_assessment: { ...reading, scope: 'withdrawn' },
+      },
+    ],
+    ['an inaccurate reading', { ...assessed, annotation_not_accurate: true }],
+    ['a mismatched revision', { ...assessed, annotation_revision: 3 }],
+    ['a refused reading', { annotation_goal: 'Ship it', annotation_reading_refused: true }],
+  ])('leaves the progress slot blank for %s', async (_kind, fields) => {
+    await open(
+      board([{ harness: 'claude', sid: 'read', state: 'working', ...fields }], { annotate: true }),
+    );
+    const row = document.querySelector('article[data-next-session="read"]');
+    expect(row).toBeInTheDocument();
+    expect(row?.querySelector('.next-operation-progress')).toBeNull();
+    expect(row?.querySelector('[data-variant="progress"]')).toBeNull();
+    expect(row?.textContent).not.toMatch(/No goal yet|Not checked yet/);
+  });
 
-    it.each([
-      ['high', 'High'],
-      ['medium', 'Medium'],
-    ])('names %s on the chip once this tab holds the analysis', async (level, word) => {
-      const page = mountSessions({
-        hash: '#n=session:p:claude:read',
-        data: board([departing], { annotate: true }),
-        context: context(level),
-      });
-      await page.settle();
-      const pill = document.querySelector('[data-next-drift-pill] strong')?.textContent;
-      expect(pill).toBe(word);
-      await act(async () => {
-        page.router.navigate({ view: 'sessions' });
-      });
-      await page.settle();
-      expect(chip()?.querySelector('strong')?.textContent).toBe(pill);
-      expect(
-        chip()
-          ?.querySelector('[data-next-row-drift-level]')
-          ?.getAttribute('data-next-row-drift-level'),
-      ).toBe(level);
+  it('leaves the row blank for a live estimate before a stored check', async () => {
+    const data = liveBoard.response.body;
+    await open({
+      ...data,
+      sessions: data.sessions.map((row) =>
+        row.sid === '44444444' ? { ...row, departure_checked: false } : row,
+      ),
     });
-
-    it('names no level for a raise beside a reading that does not depart', async () => {
-      const page = mountSessions({
-        hash: '#n=session:p:claude:read',
-        data: board(
-          [
-            {
-              ...departing,
-              departures: [{ at: NOW - 60, revision: 2 }],
-              annotation_assessment: {
-                read_at: NOW - 240,
-                revision_read: 2,
-                criteria: {
-                  goal: { result: 'consistent', cites: ['f1'], detail: '', clause: 'x' },
-                },
-              },
-            },
-          ],
-          { annotate: true },
-        ),
-        context: context('none_or_low'),
-      });
-      await page.settle();
-      await act(async () => {
-        page.router.navigate({ view: 'sessions' });
-      });
-      await page.settle();
-      expect(chip()?.textContent).toMatch(/^Drift · /);
-      expect(chip()?.querySelector('[data-next-row-drift-level]')).toBeNull();
-    });
+    const row = document.querySelector('article[data-next-session="44444444"]');
+    expect(row).toBeInTheDocument();
+    expect(row?.querySelector('.next-operation-progress, [data-variant="progress"]')).toBeNull();
+    expect(row?.textContent).not.toMatch(/No goal yet|Not checked yet/);
   });
 
   it.each([
-    ['current', current, currentContext, 'Medium'],
-    ['missing evidence', missing, missingContext, null],
-    ['stale', stale, staleContext, null],
-    ['inaccurate', inaccurate, inaccurateContext, null],
-    ['withdrawn', withdrawn, withdrawnContext, null],
-  ] as const)(
-    'lets a person read the same analysis level in the row and header for %s',
-    async (_case, data, context, expected) => {
-      const page = mountSessions({
-        hash: '#n=session:alpha-app:claude:a1b2c3d4',
-        data: data.response.body,
-        context: context.response.body,
-      });
-      await page.settle();
-      const header = document.querySelector('[data-next-drift-pill] strong')?.textContent ?? null;
-      expect(header).toBe(expected);
-      await act(async () => page.router.navigate({ view: 'sessions' }));
-      await page.settle();
-      const row = document.querySelector('[data-next-session="a1b2c3d4"]');
-      expect(row).not.toBeNull();
-      const level = row?.querySelector('[data-next-row-drift-level] strong')?.textContent ?? null;
-      expect(level).toBe(header);
-      expect(row?.textContent).not.toContain('Medium or higher');
-      page.unmount();
-    },
-  );
+    { annotate: false },
+    { annotate: true, annotate_unreadable: 'The store cannot be read' },
+  ])('omits progress copy when saved goals are unavailable (%j)', async (metadata) => {
+    await open(board([{ harness: 'claude', sid: 'read', state: 'working' }], metadata));
+    const row = document.querySelector('article[data-next-session="read"]');
+    expect(row).toBeInTheDocument();
+    expect(row?.querySelector('.next-operation-progress')).toBeNull();
+  });
+
+  it('keeps State not published in the line below the title', async () => {
+    await open(
+      board([{ harness: 'claude', sid: 'unpublished', title: 'Unmeasured', state: 'idle' }]),
+    );
+    const row = document.querySelector<HTMLElement>('article[data-next-session="unpublished"]');
+    if (!row) throw new Error('Missing row');
+    const title = within(row).getByRole('link', { name: 'Open session Unmeasured' });
+    const absence = within(row).getByText('State not published');
+    expect(title.compareDocumentPosition(absence) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(row).queryByRole('img')).toBeNull();
+  });
+
+  it('keeps Waiting on child in the line below the title', async () => {
+    await open(declared.payload);
+    const row = document.querySelector<HTMLElement>('article[data-next-session="parent"]');
+    if (!row) throw new Error('Missing row');
+    const title = within(row).getByRole('link', { name: 'Open session Coordinate release' });
+    const absence = within(row).getByText(/Waiting on child/);
+    expect(title.compareDocumentPosition(absence) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(row).queryByRole('img')).toBeNull();
+  });
 
   it('shows Quiet only for a published idle with a measured turn stop', () => {
     const states = observe(

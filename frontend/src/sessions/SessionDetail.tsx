@@ -245,7 +245,7 @@ function Header({
       <div className="next-session-detail-bar">
         {showState ? (
           <span className="inline-flex" data-next-session-status>
-            <Badge variant="session-state" className="next-session-state">
+            <Badge variant="status" className="next-session-state">
               <span className="next-visually-hidden">State: </span>
               {status}
             </Badge>

@@ -62,6 +62,23 @@ export const SHOWN = {
   intent: 'Intent log',
 } as const;
 
+export const SESSION_ROW_WORDS = {
+  working: 'Working',
+  waitingOnYou: 'Waiting on you',
+  quiet: 'Quiet',
+  ended: 'Ended',
+  worthALook: 'Worth a look',
+  slightlyOffCourse: 'Slightly off course',
+  offCourse: 'Off course',
+  wayOffCourse: 'Way off course',
+  noGoalYet: 'No goal yet',
+  notCheckedYet: 'Not checked yet',
+  tooEarlyToTell: 'Too early to tell',
+  cantTell: "Can't tell",
+  goalTooVague: 'Goal too vague to check',
+  outOfDate: 'Out of date',
+} as const;
+
 export const GLOSSARY = /* @__PURE__ */ (() =>
   ({
     // Shell and project tabs.
@@ -396,28 +413,28 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       SHOWN.attention,
     ),
     working: kept([
-      'Working',
+      SESSION_ROW_WORDS.working,
       'WORKING',
       'The source-backed working state',
       'Right now membership',
       'Working now is the card label',
     ]),
     waitingOnYou: kept([
-      'Waiting on you',
+      SESSION_ROW_WORDS.waitingOnYou,
       'Needs input, Needs you now',
       'The exact request or gate',
       'Needs you, the navigation destination',
       'Gate detail appears on the session page and in Needs you',
     ]),
     quiet: kept([
-      'Quiet',
+      SESSION_ROW_WORDS.quiet,
       'Idle',
       'The observed turn-end state',
       'Ended or a scan-only absence',
       'Projects uses No recent activity',
     ]),
     ended: kept([
-      'Ended',
+      SESSION_ROW_WORDS.ended,
       'Finished, Finished cleanly',
       'End evidence and any observed outcome',
       'A turn end or proof of success',
@@ -425,7 +442,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ]),
     worthALook: ruled(
       [
-        'Worth a look',
+        SESSION_ROW_WORDS.worthALook,
         'At risk',
         'The underlying warning or end evidence',
         'A session state or progress level',
@@ -455,7 +472,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ),
     slightlyOffCourse: ruled(
       [
-        'Slightly off course',
+        SESSION_ROW_WORDS.slightlyOffCourse,
         'Medium',
         '`medium`',
         'Off course or a live estimate on a row',
@@ -465,7 +482,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ),
     offCourse: ruled(
       [
-        'Off course',
+        SESSION_ROW_WORDS.offCourse,
         'High',
         '`high`',
         'A generic risk signal',
@@ -475,7 +492,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ),
     wayOffCourse: ruled(
       [
-        'Way off course',
+        SESSION_ROW_WORDS.wayOffCourse,
         'Extreme',
         '`extreme`',
         'A dirty end',
@@ -484,14 +501,14 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'Extreme',
     ),
     noGoalYet: kept([
-      'No goal yet',
+      SESSION_ROW_WORDS.noGoalYet,
       'Generic Not checked',
       'Goal availability',
       'Not checked yet',
       'Also a Progress check filter chip',
     ]),
     notCheckedYet: kept([
-      'Not checked yet',
+      SESSION_ROW_WORDS.notCheckedYet,
       'Generic Not checked',
       'No check recorded',
       'No goal yet or Out of date',
@@ -499,7 +516,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ]),
     tooEarlyToTell: ruled(
       [
-        'Too early to tell',
+        SESSION_ROW_WORDS.tooEarlyToTell,
         'Not enough recorded yet',
         '`not_enough` and the evidence floor',
         "Can't tell",
@@ -509,7 +526,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ),
     cantTell: ruled(
       [
-        "Can't tell",
+        SESSION_ROW_WORDS.cantTell,
         'Goal-only reading with no level',
         'Missing proof that the goal was met',
         'On track',
@@ -519,7 +536,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ),
     goalTooVague: ruled(
       [
-        'Goal too vague to check',
+        SESSION_ROW_WORDS.goalTooVague,
         'Goal too vague to analyze against',
         'Reading refusal and reason',
         'Too early to tell',
@@ -529,7 +546,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     ),
     outOfDate: ruled(
       [
-        'Out of date',
+        SESSION_ROW_WORDS.outOfDate,
         'Stale or withdrawn reading',
         'Why the prior reading is stale or withdrawn',
         'Never checked',

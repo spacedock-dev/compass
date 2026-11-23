@@ -16,6 +16,7 @@ from unittest import mock
 from compass_runtime import annotations as annotation_store
 from compass_runtime import (
     correction,
+    focused_reading,
     http_api,
     levels,
     live_estimate,
@@ -609,7 +610,7 @@ class SourceContinuityIncludesWordsOutsideTheVisibleClip(unittest.TestCase):
                 mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(path)),
                 mock.patch.object(live_estimate, "for_session", return_value={}),
                 mock.patch.object(
-                    http_api, "_request_sources", wraps=http_api._request_sources
+                    focused_reading, "request_sources", wraps=focused_reading.request_sources
                 ) as lookup,
             ):
                 published = http_api._with_levels(

@@ -4,22 +4,27 @@ Items 6, 10 and 14 of
 [DEC-24](docs/design-reading-a-session.md#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy)
 and items 1 and 2 of
 [DEC-26](docs/design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn).
-The analysis-derived level is `levels.analysis_level` over the stored reading and the record as it
-is now, published on the focused project context only and never stored, never in history and never
-on a row. The reader's Not accurate mark is a token stored with the annotation entry and nothing
-else: removed with the entry, untouched by `--forget`, never sent and never counted.
+The analysis-derived level is `levels.analysis_level` over the stored reading and the current
+record. The focused context carries the calculation. The reader's Not accurate mark is a token
+stored with the annotation entry and nothing else: removed with the entry, untouched by
+`--forget`, never sent and never counted.
 """
 
 from __future__ import annotations
 
+import builtins
 import contextlib
 import http.client
+import io
 import json
+import os
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import patch
 
+from compass_runtime import aggregate, history, http_api, levels
 from compass_runtime import annotations as annotation_store
-from compass_runtime import history, http_api, levels
+from compass_runtime import io as runtime_io
 from compass_runtime import reading as runtime_reading
 
 from .support import make_server, serve_until_closed
@@ -344,8 +349,97 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
         self.assertEqual(stored["read_at"], row["read_at"])
         self.assertEqual(1, row["revision_read"])
         self.assertNotIn("analysis_levels", project["sources"]["work"])
-        self.assertNotIn("analysis_level", json.dumps(board))
+        self.assertNotIn("analysis_levels", json.dumps(board))
         self.assertNotIn('"level"', json.dumps(board["sessions"]))
+
+    def departure(self) -> dict[str, Any]:
+        self.session.write(str(Path(self.session.cwd) / "unrelated.py"))
+        cite = next(f["fact_id"] for f in self.facts_now() if f["subject"] == "write")
+        through = START.timestamp() + self.session.seconds
+        return _reading(
+            {
+                "goal": {
+                    "result": runtime_reading.RESULT_DEPARTURE,
+                    "cites": [cite],
+                    "why": runtime_reading.WHY_RECORDED_WRITE,
+                }
+            },
+            window_start=START.timestamp(),
+            revision_read_at=START.timestamp(),
+            read_at=through + 1,
+            evidence_through=through,
+        )
+
+    def test_board_polls_do_not_reopen_evidence_for_a_saved_departure(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.app()
+        app.harnesses = tuple(
+            spec
+            for spec in aggregate.default_harnesses(usage_fetch_enabled=False)
+            if spec.key == "claude"
+        )
+        app.state.annotations = None
+        store_name = Path(annotation_store.store_path(self.config)).name
+        # On POSIX the safe readers open a leaf relative to an admitted directory descriptor.
+        # On Windows the regular opener uses a native file handle.
+        descriptor_owner = runtime_io if os.name == "nt" else os
+        descriptor_method = "open_regular" if os.name == "nt" else "open"
+        # Claude's cold scan opens this transcript four times. With warm caches the collector
+        # still reads the head for agent identity and Spacedock settings.
+        for poll, expected_transcript_opens in (("cold", 4), ("expired", 2)):
+            with (
+                self.subTest(poll=poll),
+                patch.object(
+                    descriptor_owner,
+                    descriptor_method,
+                    wraps=getattr(descriptor_owner, descriptor_method),
+                ) as descriptor_open,
+                patch.object(builtins, "open", wraps=builtins.open) as file_open,
+                patch.object(io, "open", wraps=io.open) as path_open,
+            ):
+                board = json.loads(app.collect_json(show_all=True)[1])
+                (session,) = board["sessions"]
+                self.assertIsNotNone(session["annotation_assessment"])
+                self.assertNotIn("stored_progress", session)
+                paths = [
+                    Path(call.args[0])
+                    for opener in (descriptor_open, file_open, path_open)
+                    for call in opener.call_args_list
+                    if call.args and isinstance(call.args[0], (str, os.PathLike))
+                ]
+                self.assertEqual(
+                    expected_transcript_opens,
+                    sum(path.suffix == ".jsonl" for path in paths),
+                    "transcript opens",
+                )
+                self.assertEqual(
+                    1,
+                    sum(path.name == store_name for path in paths),
+                    "annotation store opens",
+                )
+            self.now += self.config.collect_memo_sec + 1
+
+    def test_the_focused_page_shows_the_level_of_a_saved_departure(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        with self.serving() as port:
+            self.get(port, "/api/data")
+            (focused,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+        self.assertEqual(levels.MEDIUM, focused["pill"]["level"])
+        self.assertEqual("analysis", focused["pill"]["source"])
+
+    def test_the_focused_page_withholds_a_departure_with_an_unsettled_direction(self) -> None:
+        self.save_goal(lines=())
+        self.session.prompt("Actually make the unrelated change first.")
+        for _ in range(64):
+            self.session._entry("assistant", [{"type": "text", "text": "x" * 8192}])
+        self.record(self.departure())
+        with self.serving() as port:
+            (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+        self.assertEqual(1, view["unsettled_count"])
+        self.assertIsNone(view["pill"])
+        self.assertIsNone(view["stale"])
 
     def test_it_follows_the_record_and_is_never_written(self) -> None:
         self.save_goal()

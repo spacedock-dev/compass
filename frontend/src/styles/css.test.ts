@@ -242,6 +242,17 @@ describe('the light board palette', () => {
     ).toBeGreaterThanOrEqual(3);
   });
 
+  it('uses the 13px type step for badges and the 12px radius for session status tiles', () => {
+    const badge = source('ui/badge.tsx');
+    for (const variant of ['status', 'progress', "'count-chip'"]) {
+      expect(badge).toMatch(new RegExp(`${variant}:\\s*'[^']*\\btext-label\\b`));
+    }
+    expect(css).toMatch(/--fs-label:\s*\.8125rem/);
+    expect(css).toContain('.rounded-status-tile');
+    expect(theme).toContain('--radius-status-tile: var(--sp-3);');
+    expect(theme).toContain('--sp-3: 0.75rem;');
+  });
+
   it('uses the on-accent token for primary foregrounds', () => {
     expect(theme).toMatch(/--color-primary-foreground:\s*var\(--on-accent\);/);
   });

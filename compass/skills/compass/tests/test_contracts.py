@@ -1126,6 +1126,20 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading",
             "compass_runtime.records",
         },
+        # Record paging, message ordinals and stored-reading evidence extracted from http_api.
+        "compass_runtime.focused_reading": {
+            "compass_runtime.annotations",
+            "compass_runtime.ci_read",
+            "compass_runtime.compass_turns",
+            "compass_runtime.copied_corrections",
+            "compass_runtime.correction",
+            "compass_runtime.entry_numbers",
+            "compass_runtime.levels",
+            "compass_runtime.observer",
+            "compass_runtime.project_context",
+            "compass_runtime.reading",
+            "compass_runtime.record_pages",
+        },
         # The turn detector also identifies launcher calls for check accounting; its source is
         # included in the qualification parser stamp.
         "compass_runtime.compass_turns": {
@@ -2057,8 +2071,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.correction",
             # The focused project context's live drift estimate (DRC-4696).
             "compass_runtime.live_estimate",
-            # And its analysis-derived level, recomputed from the stored reading (DRC-4695).
-            "compass_runtime.levels",
+            # Shared record paging and stored-reading evidence for focused and board reads.
+            "compass_runtime.focused_reading",
             # Resolves the one provider a press may reach (DRC-4650).
             "compass_runtime.reading_route",
             "compass_runtime.tripwires",

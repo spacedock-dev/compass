@@ -289,11 +289,9 @@ export const CopiedLapsesBackToCopy: Story = {
   },
 };
 
-/* Findings 8 and 17: a Sessions row leads with one state word and shows the project label alone, and its
-   drift chip says Medium or higher before this tab holds the analysis evidence. Once held, it names
-   the level the session header names, from the same derivation. */
+/* The level belongs to the focused session, including after the reader returns to Sessions. */
 const SESSIONS_NAV: { back?: () => void } = {};
-export const TheSessionsRowSaysTheLevel: Story = {
+export const TheLevelStaysOnTheSessionPage: Story = {
   ...scenario({
     initialView: 'sessions',
     session: TWO_DEPARTURES,
@@ -309,18 +307,11 @@ export const TheSessionsRowSaysTheLevel: Story = {
         return node as HTMLElement;
       });
     const first = await row();
-    // The scenario's session publishes `working`.
-    await expect(first.querySelector('[data-next-row-state]')).toHaveTextContent(/^Working$/);
-    await expect(first.querySelector('[data-next-row-state]')).toBeVisible();
+    await expect(within(first).getByRole('img', { name: 'Working' })).toBeVisible();
     await expect(first.textContent).not.toContain('Exact location not published');
     await expect(first.textContent).not.toMatch(/NOW · |QUIET/);
-    await expect(first.querySelector('[data-next-session-drift-mark]')).toHaveTextContent(
-      /^Drift: Medium or higher · /,
-    );
-    await expect(
-      first.querySelector('[data-next-row-drift-level="medium_or_higher"]'),
-    ).not.toBeNull();
-    await expect(first.querySelector('.next-session-drift-pill-meter')).toBeNull();
+    await expect(within(first).queryByText('Slightly off course')).toBeNull();
+    await expect(first.querySelector('.next-operation-progress')).toBeNull();
     await userEvent.click(first.querySelector('a.next-operation-route') as HTMLElement);
     await card(canvasElement);
     await waitFor(() =>
@@ -328,16 +319,10 @@ export const TheSessionsRowSaysTheLevel: Story = {
         'Drift: Medium',
       ),
     );
-    const pill = canvasElement.querySelector('[data-next-drift-pill] strong')?.textContent;
     SESSIONS_NAV.back?.();
     const back = await row();
-    await waitFor(() =>
-      expect(back.querySelector('[data-next-row-drift-level="medium"]')).not.toBeNull(),
-    );
-    await expect(back.querySelector('[data-next-session-drift-mark] strong')).toHaveTextContent(
-      pill ?? 'missing',
-    );
-    await expect(back.querySelector('.next-session-drift-pill-meter')).not.toBeNull();
+    await expect(within(back).queryByText('Slightly off course')).toBeNull();
+    await expect(back.querySelector('.next-operation-progress')).toBeNull();
   },
 };
 
@@ -365,8 +350,6 @@ export const ARaiseAloneNamesNoLevel: Story = {
     await card(canvasElement);
     RAISE_NAV.back?.();
     const back = await row();
-    const mark = back.querySelector('[data-next-session-drift-mark]');
-    await expect(mark).toHaveTextContent(/^Drift · /);
-    await expect(mark?.querySelector('[data-next-row-drift-level]')).toBeNull();
+    await expect(back.querySelector('[data-slot="badge"]')).toBeNull();
   },
 };
