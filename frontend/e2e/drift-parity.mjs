@@ -24,10 +24,9 @@ import { sessionDeviations } from './support/session-deviations.mjs';
  */
 import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 import {
   ASSESSMENT,
@@ -57,11 +56,6 @@ import { copyProofPath } from './support/proof-copy.mjs';
 const patience = (ms) => (process.env.CI ? ms * 3 : ms);
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-const checkout = fileURLToPath(new URL('../../', import.meta.url));
-const SHOTS = (process.env.COMPASS_SCREENSHOTS || `${checkout}docs/screenshots`).replace(
-  /\/?$/,
-  '/',
-);
 const golden = sessionDeviations('drift-parity');
 /* The React reading in the stable form a recorded observation has, so the two compare as plain data. */
 const norm = (value) => jsonSafe(normalise(value));
@@ -69,6 +63,7 @@ const receipts = {};
 const failures = [];
 const shots = [];
 const only = process.env.COMPASS_E2E_STEPS ? new RegExp(process.env.COMPASS_E2E_STEPS) : null;
+let outputDir;
 
 async function step(name, run) {
   if (only && !only.test(name)) return;
@@ -1741,8 +1736,8 @@ try {
             `the card overflows at ${width}px in ${name}`,
           );
           if ([375, 1280].includes(width)) {
-            await mkdir(SHOTS, { recursive: true });
-            const file = `${SHOTS}drift-${name.replace(/[^a-z]+/g, '-')}-${width}.png`;
+            outputDir ??= await mkdtemp(join(tmpdir(), 'compass-drift-parity-'));
+            const file = join(outputDir, `drift-${name.replace(/[^a-z]+/g, '-')}-${width}.png`);
             await o.page.screenshot({ path: file, fullPage: true });
             shots.push(file);
           }
@@ -1754,6 +1749,7 @@ try {
     },
   );
 } finally {
+  if (outputDir) console.error(`Browser proof artifacts in ${outputDir}`);
   for (const o of opened) await o.close().catch(() => undefined);
   await browser.close();
   await board.close();

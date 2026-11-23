@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 import { startIntentBoard } from './intent-board.mjs';
@@ -50,6 +52,7 @@ const inventory = () =>
           el.getBoundingClientRect().top < innerHeight && el.getBoundingClientRect().bottom > 0,
       }));
   });
+let outputDir;
 try {
   await page.goto(`${board.react.origin}/#n=session:w%2Falpha:claude:${SID}`);
   await page.locator('[data-next-cockpit-drafted]').waitFor();
@@ -62,9 +65,12 @@ try {
       document.querySelector('[data-next-session-panel]').prepend(button);
     });
   const before = await inventory();
-  await mkdir(`${root}docs/screenshots`, { recursive: true });
+  outputDir = await mkdtemp(join(tmpdir(), 'compass-session-first-view-'));
   await writeFile(
-    `${root}docs/screenshots/session-first-view-${process.env.FIRST_VIEW_MUTATION ? 'mutation' : inventoryOnly ? 'before' : 'after'}.json`,
+    join(
+      outputDir,
+      `session-first-view-${process.env.FIRST_VIEW_MUTATION ? 'mutation' : inventoryOnly ? 'before' : 'after'}.json`,
+    ),
     JSON.stringify(before, null, 2),
   );
   console.log(
@@ -112,7 +118,7 @@ try {
       await page.setViewportSize(viewport);
       await page.evaluate(() => scrollTo(0, 0));
       await page.screenshot({
-        path: `${root}docs/screenshots/session-first-view-${viewport.width}.png`,
+        path: join(outputDir, `session-first-view-${viewport.width}.png`),
         fullPage: true,
       });
       const bounds = await page.evaluate(() => {
@@ -303,6 +309,7 @@ try {
     assert.deepEqual(opened.log.externalRequests, []);
   }
 } finally {
+  if (outputDir) console.error(`Browser proof artifacts in ${outputDir}`);
   await opened.close();
   await browser.close();
   await board.close();
