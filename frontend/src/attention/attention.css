@@ -57,7 +57,6 @@
 [data-next-attention-section="needs"] .next-attention-actions a{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 .next-attention-evidence{flex:1 0 100%}
 .next-attention-evidence:empty{display:none}
-.next-attention-notices{display:grid;gap:8px;margin:0;padding:10px;list-style:none}
 .next-attention-evidence p{padding-top:8px}
 .next-attention-section>button.next-attention-disclosure{margin:0 18px 12px}
 @media(max-width:400px){

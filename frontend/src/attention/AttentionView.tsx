@@ -43,20 +43,17 @@ function Heading({ section, children }: { readonly section: string; readonly chi
   );
 }
 
-/* A queue under Worth a look. Empty draws nothing at all: a heading over no rows would claim a
-   queue that was looked at and held nothing, which the coverage lines say once and in numbers. */
+/* Empty queues are omitted. Coverage explains which sessions and signals the board could read. */
 function QueueSection({
   section,
   title,
   size,
   children,
-  aside,
 }: {
   readonly section: 'needs' | 'risk' | 'close';
   readonly title: string;
   readonly size: number;
   readonly children: (expanded: boolean) => ReactNode;
-  readonly aside?: ReactNode;
 }) {
   const controls = useControls();
   const expansion = useExpansion(controls);
@@ -67,7 +64,7 @@ function QueueSection({
       fallback: `attention:section:${section}`,
     },
   );
-  if (!size && section !== 'risk') return null;
+  if (!size) return null;
   const expanded = expansion.has(section);
   const remainder = section === 'risk' ? 0 : Math.max(0, size - INITIAL_SECTION_SIZE);
   const listId = `next-attention-${section}-list`;
@@ -75,7 +72,6 @@ function QueueSection({
     <section className="next-attention-section" data-next-attention-section={section}>
       <Heading section={section}>{`${title} (${String(size)})`}</Heading>
       <ol id={listId}>{children(expanded)}</ol>
-      {aside}
       {remainder ? (
         <Button
           variant="native"
@@ -124,7 +120,11 @@ function Board({
   readonly selection: AttentionSelection | null;
 }) {
   const data = useDisplayed((snapshot) => snapshot.data);
+  const pending = useDisplayed((snapshot) => snapshot.pending);
   const { runtime, controls } = useShell();
+  const undoRef = useFocusKey<HTMLButtonElement>(controls.focusLane, 'attention:undo', {
+    fallback: 'attention:title',
+  });
   const reports = useMemo(() => boardReports(data), [data]);
   const [action, setAction] = useState<{
     readonly identity: { readonly harness: string; readonly sid: string };
@@ -134,23 +134,38 @@ function Board({
 
   async function mark(row: Pick<ObservedSession, 'harness' | 'sid'>, text: string, undo = false) {
     const identity = { harness: row.harness, sid: row.sid };
-    const key = 'attention:dismiss';
+    const key = markKey(identity);
     const token = runtime.pending.start(key, 'Saving…');
     if (!token) return;
     try {
       const result = await runtime.client.postDismiss(
         undo ? { ...identity, clear: false } : identity,
       );
-      const saved = result.kind === 'ok' && result.body?.ok === true;
-      const message = saved
-        ? `${text}.${result.body?.persisted === false ? ' This change is saved for this run only.' : ''}`
-        : 'Compass could not save that change.';
+      const saved =
+        result.kind === 'ok' && result.body?.ok === true && result.body.persisted === true;
+      const message = saved ? `${text}.` : 'Compass could not save that change.';
       setAction({ identity, text: message, canUndo: saved && !undo });
       controls.announce(key, message);
       if (saved) void runtime.refresh();
     } finally {
       runtime.pending.end(key, token);
     }
+  }
+
+  function markKey(row: Pick<ObservedSession, 'harness' | 'sid'>) {
+    return `attention:dismiss:${sessionKey(row)}`;
+  }
+
+  function rowMark(row: ObservedSession, text: string) {
+    if (data?.dismiss !== true) return {};
+    return {
+      onMark: () => void mark(row, text),
+      markPending: pending.includes(markKey(row)),
+      markFallback:
+        action?.canUndo && sessionKey(action.identity) === sessionKey(row)
+          ? 'attention:undo'
+          : 'attention:title',
+    };
   }
 
   const offCountKeys = new Set(selection?.offCountRisks.map((subject) => subject.key));
@@ -187,17 +202,18 @@ function Board({
   });
   const ready = selection?.readyToWrapUp ?? [];
   const boardRisks = observed.boardRisks.filter((risk) => {
-    if (risk.kind === 'quota') return false;
     if (!selection || risk.kind !== 'collision') return true;
     const subject = riskSubject(risk, model);
     return !subject || offCountKeys.has(subject.key);
   });
-  const windows = observed.boardRisks.filter((risk) => risk.kind === 'quota');
-  const notices = (selection?.worthALookNotices ?? model.risk).filter(
+  const notices = model.risk.filter(
     (subject) => subject.kind === 'quota' && subject.identity?.project.startsWith('model:'),
   );
-  const quota = [...windows, ...notices.map((subject) => modelQuotaRisk(subject, model))];
-  const boardKeys = occurrences(boardRisks.map((risk) => `${risk.kind}\u0000${risk.identity}`));
+  const warnings = [
+    ...boardRisks.map((risk) => ({ risk, retained: undefined })),
+    ...notices.map((retained) => ({ risk: modelQuotaRisk(retained, model), retained })),
+  ];
+  const boardKeys = occurrences(warnings.map(({ risk }) => `${risk.kind}\u0000${risk.identity}`));
   const dismiss = data?.dismiss === true;
   return (
     <section className="next-attention" data-next-view-body="attention">
@@ -218,7 +234,12 @@ function Board({
         <div className="next-attention-actions" data-next-dismiss-receipt>
           <p>{action.text}</p>
           {action.canUndo && dismiss ? (
-            <Button type="button" onClick={() => void mark(action.identity, 'Restored', true)}>
+            <Button
+              ref={undoRef}
+              type="button"
+              aria-busy={pending.includes(markKey(action.identity)) || undefined}
+              onClick={() => void mark(action.identity, 'Restored', true)}
+            >
               Undo
             </Button>
           ) : null}
@@ -238,45 +259,23 @@ function Board({
           ))
         }
       </QueueSection>
-      {selection?.counts ? (
-        <QueueSection
-          section="risk"
-          title={SESSION_ROW_WORDS.worthALook}
-          size={risks.length}
-          aside={
-            quota.length ? (
-              <ul className="next-attention-notices" aria-label="Quota notices">
-                {quota.map((risk, index) => (
-                  <RiskItem
-                    key={`${risk.identity}:${index}`}
-                    risk={risk}
-                    index={index}
-                    model={model}
-                    board
-                    retained={notices[index - windows.length]}
-                  />
-                ))}
-              </ul>
-            ) : null
-          }
-        >
-          {() =>
-            risks.map(({ session, reason, risk, subject }) => (
-              <SessionItem
-                key={sessionKey(session)}
-                row={session}
-                section="risk"
-                model={model}
-                hidden={false}
-                subject={subject}
-                risk={risk}
-                reason={reason}
-                onMark={dismiss ? () => void mark(session, 'Dismissed') : undefined}
-              />
-            ))
-          }
-        </QueueSection>
-      ) : null}
+      <QueueSection section="risk" title={SESSION_ROW_WORDS.worthALook} size={risks.length}>
+        {() =>
+          risks.map(({ session, reason, risk, subject }) => (
+            <SessionItem
+              key={sessionKey(session)}
+              row={session}
+              section="risk"
+              model={model}
+              hidden={false}
+              subject={subject}
+              risk={risk}
+              reason={reason}
+              {...rowMark(session, 'Dismissed')}
+            />
+          ))
+        }
+      </QueueSection>
       <QueueSection section="close" title="Ready to wrap up" size={ready.length}>
         {(expanded) =>
           ready.map((row, index) => (
@@ -287,7 +286,7 @@ function Board({
               model={model}
               hidden={!expanded && index >= INITIAL_SECTION_SIZE}
               subject={subjects.get(sessionKey(row))}
-              onMark={dismiss ? () => void mark(row, 'Marked as read') : undefined}
+              {...rowMark(row, 'Marked as read')}
             />
           ))
         }
@@ -321,12 +320,19 @@ function Board({
             View all projects
           </RouteAnchor>
         </div>
-        {boardRisks.length ? (
+        {warnings.length ? (
           <section className="next-attention-section" data-next-attention-section="board-risk">
             <Heading section="board-risk">Other warnings</Heading>
             <ol>
-              {boardRisks.map((risk, index) => (
-                <RiskItem key={boardKeys[index]} risk={risk} index={index} model={model} board />
+              {warnings.map(({ risk, retained }, index) => (
+                <RiskItem
+                  key={boardKeys[index]}
+                  risk={risk}
+                  index={index}
+                  model={model}
+                  board
+                  retained={retained}
+                />
               ))}
             </ol>
           </section>

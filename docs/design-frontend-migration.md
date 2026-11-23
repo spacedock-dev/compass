@@ -17,15 +17,18 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 ## Held to recorded answers
 
 Departure (2026-11-23): Goal history uses searchable On the board now and Older sessions
-groups. Each row shows the goal's source and saved or discarded time. The view differential
-compares goal text, exact routes, titles, group membership and load states after masking
-the old labels and account of the store. The retention disclosure explains both bounds
-and the distinction between the saved goal store and the session history copy.
+groups. Rows show each published goal's source and time, and the binding and standing-quotation
+caveats stay next to the saved or discarded record. Older records can lack a title because the
+annotations endpoint publishes goal records independently of session history. The view
+differential compares goal text, exact routes, titles, group membership and load states after
+masking the old labels and account of the store. The retention disclosure explains both bounds
+and identifies the session history copy's default duration.
 
 Departure (2026-11-23): Needs you starts with Waiting on you, Worth a look and Ready to
 wrap up. The view differential checks their membership against the board selector and
 masks the replaced layouts, headings and action wording. The unchanged coverage, reports
-and independent risk evidence retain their recorded answers. Raw request and session
+and independent risk evidence retain their recorded answers. Quota warnings are drawn under
+What Compass can't see even when the board cannot count sessions. Raw request and session
 identifiers in other warnings open with Show technical details. Coming next belongs on the
 session page. Dismiss and Mark as read both use the server dismissals store.
 

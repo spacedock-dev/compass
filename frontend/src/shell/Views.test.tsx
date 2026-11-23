@@ -13,7 +13,7 @@ describe('every top-level view is drawn by its own screen', () => {
     await open('#n=attention');
     expect(document.querySelector('[data-next-placeholder]')).toBeNull();
     expect(document.querySelector('[data-next-view-body="attention"]')).not.toBeNull();
-    expect(document.querySelector('[data-next-attention-section="risk"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: "What Compass can't see" })).toBeVisible();
     expect(document.body.textContent).not.toContain('not available in the React interface yet');
   });
 

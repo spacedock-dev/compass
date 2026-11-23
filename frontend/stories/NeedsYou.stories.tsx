@@ -16,6 +16,7 @@ import { createShell } from '../src/shell/createShell';
 import { createFakeEnvironment } from '../src/transport/testing';
 import { atPageWidth } from './PageFit';
 import { fakeBackend } from '../test/storage_backends';
+import { settledRect } from './settled-layout';
 
 const generated = new Date(2026, 10, 23, 12).getTime() / 1000;
 const claude = { project: 'acme/api', harness: 'claude' };
@@ -177,16 +178,57 @@ function Example({
   onRefresh,
   waitingForBoard = false,
   writeFails = false,
+  persisted = true,
+  collection = 'loaded',
+  removeOnWrite = false,
 }: {
   readonly missingClock?: boolean;
   readonly waitingForBoard?: boolean;
   readonly writeFails?: boolean;
+  readonly persisted?: boolean;
+  readonly collection?:
+    | 'loaded'
+    | 'empty'
+    | 'missing'
+    | 'failed'
+    | 'partial'
+    | 'wait-and-dirty'
+    | 'ended-collision';
+  readonly removeOnWrite?: boolean;
   readonly canDismiss?: boolean;
   readonly onRefresh?: (refresh: () => Promise<void>) => void;
 }) {
   const [shell] = useState(() => {
     const backend = fakeBackend();
     let revision = 0;
+    const failed = { key: 'claude', discovered: true, error: 'Read failed' };
+    let payload: object = { ...board, dismiss: canDismiss };
+    if (collection === 'empty') payload = { generated, window_hours: 24, sessions: [] };
+    if (collection === 'missing') payload = { generated, usage: board.usage };
+    if (collection === 'failed')
+      payload = { generated, sessions: [], harnesses: [failed], usage: board.usage };
+    if (collection === 'partial')
+      payload = {
+        generated,
+        sessions: [board.sessions.find(({ sid }) => sid === 'untimed')],
+        harnesses: [failed, { key: 'codex', discovered: true }],
+      };
+    if (collection === 'wait-and-dirty')
+      payload = {
+        ...board,
+        sessions: board.sessions.filter(({ sid }) => sid === 'review'),
+        asks: [
+          { id: 'ask', harness: 'claude', session_id: 'review', question: 'Review the report?' },
+        ],
+      };
+    if (collection === 'ended-collision')
+      payload = {
+        ...withoutClock,
+        generated,
+        sessions: withoutClock.sessions.map((row, index) =>
+          index === 0 ? { ...row, ended_at: generated - 120, dirty: null } : row,
+        ),
+      };
     const shell = createShell({
       env: createFakeEnvironment(),
       router: createRouter(fakeRouterEnvironment('#n=attention').env),
@@ -194,20 +236,23 @@ function Example({
       doc: null,
       search: '',
       reducedMotion: () => true,
-      fetch: (url) =>
-        url.startsWith('/api/data') && waitingForBoard
+      fetch: (url) => {
+        if (url.startsWith('/api/dismiss') && removeOnWrite)
+          payload = { ...board, sessions: board.sessions.filter(({ sid }) => sid !== 'review') };
+        return url.startsWith('/api/data') && waitingForBoard
           ? new Promise<Response>(() => undefined)
           : Promise.resolve(
               new Response(
                 url.startsWith('/api/data')
-                  ? JSON.stringify(missingClock ? withoutClock : { ...board, dismiss: canDismiss })
-                  : '{"ok":true,"persisted":true}',
+                  ? JSON.stringify(missingClock ? withoutClock : payload)
+                  : JSON.stringify({ ok: true, persisted }),
                 {
                   status: writeFails && url.startsWith('/api/dismiss') ? 503 : 200,
                   headers: { 'X-Compass-Revision': `9.${++revision}` },
                 },
               ),
-            ),
+            );
+      },
     });
     return shell;
   });
@@ -256,6 +301,86 @@ export const FirstBoardPending: Story = {
   },
 };
 
+const collectionWords = [
+  'No sessions in this 24-hour payload',
+  'The board published no session collection.',
+  'Session counts are unavailable because the sources could not be read.',
+];
+
+function collectionState(collection: 'empty' | 'missing' | 'failed', words: string): Story {
+  return {
+    args: { collection },
+    play: async ({ canvasElement }) => {
+      const canvas = within(canvasElement);
+      await expect(await canvas.findByText(words, { exact: true })).toBeVisible();
+      for (const other of collectionWords.filter((text) => text !== words))
+        await expect(canvas.queryByText(other, { exact: true })).toBeNull();
+      await expect(
+        canvas.queryByRole('heading', { name: /Waiting on you|Worth a look|Ready to wrap up/ }),
+      ).toBeNull();
+      await expect(canvas.getByRole('link', { name: 'Needs you' })).toBeVisible();
+      if (collection === 'empty') return;
+      await expect(canvas.queryByRole('heading', { name: 'Other warnings' })).toBeNull();
+      await userEvent.click(canvas.getByRole('button', { name: "What Compass can't see" }));
+      await waitFor(() =>
+        expect(canvas.getByRole('heading', { name: 'Other warnings' })).toBeVisible(),
+      );
+      const warnings = lane(canvasElement, 'board-risk');
+      await expect(warnings.getAllByText(/95%/)[0]).toBeVisible();
+    },
+  };
+}
+
+export const EmptyCollection = collectionState('empty', 'No sessions in this 24-hour payload');
+export const MissingCollection = collectionState(
+  'missing',
+  'The board published no session collection.',
+);
+export const UnreadableCollection = collectionState(
+  'failed',
+  'Session counts are unavailable because the sources could not be read.',
+);
+
+export const PartialCollection: Story = {
+  args: { collection: 'partial' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole('heading', { name: 'Waiting on you (1)' })).toBeVisible();
+    await expect(canvas.getByText('Awaiting confirmation', { exact: true })).toBeVisible();
+    for (const words of collectionWords)
+      await expect(canvas.queryByText(words, { exact: true })).toBeNull();
+    await userEvent.click(canvas.getByRole('button', { name: "What Compass can't see" }));
+    await waitFor(() => expect(canvas.getByText('Harness sources: 1 failed.')).toBeVisible());
+  },
+};
+
+export const WaitingWithDirtyEnd: Story = {
+  args: { collection: 'wait-and-dirty' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('heading', { name: 'Waiting on you (1)' });
+    const waiting = lane(canvasElement, 'needs');
+    await expect(waiting.getByText('Review the report?')).toBeVisible();
+    await expect(
+      waiting.getByText('Session ended with uncommitted work: 2 changed entries'),
+    ).toBeVisible();
+    await expect(canvas.getByRole('link', { name: 'Needs you 1' })).toBeVisible();
+    await expect(canvas.queryByRole('heading', { name: /Worth a look/ })).toBeNull();
+  },
+};
+
+export const EndedWithSharedLabel: Story = {
+  args: { collection: 'ended-collision' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const title = await canvas.findByRole('heading', { name: 'Checkout 1' });
+    const row = within(title.closest('article') as HTMLElement);
+    await expect(row.getByText(/Ended 2 minutes ago/)).toBeVisible();
+    await expect(row.getByText('Worth a look: Shared project label')).toBeVisible();
+    await expect(row.queryByText(/Last active|Ended with uncommitted work/)).toBeNull();
+  },
+};
+
 export const QueuesAndBadge: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -292,9 +417,13 @@ export const ReadableTimes: Story = {
     await expect(canvas.getByText('Awaiting confirmation')).toBeVisible();
     await expect(canvas.getByText(/Ended 25 minutes ago/)).toBeVisible();
     await expect(canvas.getByText(/1 hour 10 minutes into turn/)).toBeVisible();
-    await expect(canvas.getByText('1 hour 6 minutes')).toBeVisible();
+    await expect(canvas.getByText('1 hour 6 minutes')).not.toBeVisible();
     await expect(canvas.queryByRole('heading', { name: 'Not on this board yet' })).toBeNull();
     await userEvent.click(canvas.getByRole('button', { name: "What Compass can't see" }));
+    await waitFor(() =>
+      expect(canvas.getByRole('heading', { name: 'Other warnings' })).toBeVisible(),
+    );
+    await expect(lane(canvasElement, 'board-risk').getByText('1 hour 6 minutes')).toBeVisible();
     await waitFor(() => expect(canvas.getByText('Coverage by agent')).toBeVisible());
     await expect(
       canvas.getByText('needs-input reporting, where approvals are enabled · token-rate reporting'),
@@ -316,7 +445,11 @@ export const AbsoluteTimesWithoutBoardClock: Story = {
   args: { missingClock: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByText(`Reset ${absoluteTime(absoluteReset)}`);
+    await canvas.findByRole('heading', { name: /Worth a look/ });
+    await userEvent.click(canvas.getByRole('button', { name: "What Compass can't see" }));
+    await waitFor(() =>
+      expect(canvas.getByText(`Reset ${absoluteTime(absoluteReset)}`)).toBeVisible(),
+    );
     const cards = lane(canvasElement, 'risk');
     const controls = cards.getAllByRole('button', { name: 'Show technical details' });
     for (const [index, time] of absoluteTimes.entries()) {
@@ -553,6 +686,36 @@ export const DismissFails: Story = {
   },
 };
 
+export const MarkReadWasNotSaved: Story = {
+  args: { persisted: false },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const title = await canvas.findByRole('heading', { name: 'Move billing to the new API' });
+    const row = within(title.closest('article') as HTMLElement);
+    await userEvent.click(row.getByRole('button', { name: 'Mark as read' }));
+    const receipt = within(
+      canvasElement.querySelector('[data-next-dismiss-receipt]') as HTMLElement,
+    );
+    await expect(receipt.getByText('Compass could not save that change.')).toBeVisible();
+    await expect(title).toBeVisible();
+    await expect(receipt.queryByText(/Marked as read/)).toBeNull();
+    await expect(receipt.queryByRole('button', { name: 'Undo' })).toBeNull();
+  },
+};
+
+export const KeyboardDismissMovesToUndo: Story = {
+  args: { removeOnWrite: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const title = await canvas.findByRole('heading', { name: 'Review pull request #482' });
+    const row = within(title.closest('article') as HTMLElement);
+    row.getByRole('button', { name: 'Dismiss' }).focus();
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(title).not.toBeInTheDocument());
+    await expect(canvas.getByRole('button', { name: 'Undo' })).toHaveFocus();
+  },
+};
+
 export const DismissalsOff: Story = {
   args: { canDismiss: false },
   play: async ({ canvasElement }) => {
@@ -599,6 +762,16 @@ function fit(width: number): Story {
         await waitFor(() =>
           expect(canvas.getByRole('heading', { name: 'Not on this board yet' })).toBeVisible(),
         );
+        const view = within(
+          canvasElement.querySelector('[data-next-view-body="attention"]') as HTMLElement,
+        );
+        const controls = [...view.getAllByRole('button'), ...view.getAllByRole('link')];
+        for (const box of await Promise.all(controls.map(settledRect))) {
+          await expect(box.width).toBeGreaterThanOrEqual(44);
+          await expect(box.height).toBeGreaterThanOrEqual(44);
+          await expect(box.left).toBeGreaterThanOrEqual(0);
+          await expect(box.right).toBeLessThanOrEqual(window.innerWidth);
+        }
       }),
   };
 }

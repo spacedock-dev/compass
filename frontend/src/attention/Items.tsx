@@ -1,6 +1,7 @@
 import { Card } from '../ui/card';
 import { CopyControl, RaiseControl, resumeCommand, useControls } from '../controls';
 import { TechnicalDetails } from '../controls/TechnicalDetails';
+import { useFocusKey } from '../controls/useFocusKey';
 import { Button } from '../ui/button';
 import { Icon } from '../ui/icons';
 import { StatusTile } from '../ui/status-tile';
@@ -11,6 +12,7 @@ import { subjectAge, type AttentionModel, type Subject } from './model';
 import { riskRow } from './subjects';
 import {
   delegatedAttentionText,
+  dirtyEndText,
   riskSourceText,
   inputNow,
   subjectOutcome,
@@ -68,6 +70,8 @@ export function SessionItem({
   risk,
   reason,
   onMark,
+  markPending,
+  markFallback,
 }: {
   readonly row: ObservedSession;
   readonly section: 'needs' | 'risk' | 'close';
@@ -77,16 +81,26 @@ export function SessionItem({
   readonly risk?: BoardRisk;
   readonly reason?: string;
   readonly onMark?: (() => void) | undefined;
+  readonly markPending?: boolean;
+  readonly markFallback?: string;
 }) {
   const key = sessionKey(row);
+  const { focusLane } = useControls();
+  const markRef = useFocusKey<HTMLButtonElement>(focusLane, `attention:mark:${key}`, {
+    fallback: markFallback ?? 'attention:title',
+  });
   const route = {
     view: 'session',
     project: row.project,
     harness: row.harness,
     session: row.sid,
   } as const;
+  const member =
+    risk?.kind === 'collision'
+      ? subject?.sessions.find((source) => sessionKey(source) === key)
+      : undefined;
   const time = formatTimestamp(
-    row.isEnded ? endedAt(subject?.session ?? {}) : row.lastActivityAt,
+    row.isEnded ? endedAt(subject?.session ?? member) : row.lastActivityAt,
     model.generated,
     { style: 'same-day-relative' },
   );
@@ -94,13 +108,10 @@ export function SessionItem({
   const age = subject && formatDurationWords(subjectAge(subject, model.generated));
   const evidence = risk ? riskRow(risk, model, false, subject) : null;
   const shortRisk = risk?.nowText === reason;
-  const member =
-    risk?.kind === 'collision'
-      ? subject?.sessions.find((source) => sessionKey(source) === key)
-      : undefined;
   const started =
     member && formatTimestamp(member['started_at'], model.generated, { style: 'clock' });
   const outcome = subject && subjectOutcome(subject, model);
+  const dirtyEnd = section === 'needs' && subject?.signals.find(({ kind }) => kind === 'end-dirty');
   return (
     <li hidden={hidden}>
       <article
@@ -146,6 +157,7 @@ export function SessionItem({
                 </p>
               ) : null}
               {wait?.note ? <p>{wait.note}</p> : null}
+              {dirtyEnd ? <p>{dirtyEndText(dirtyEnd.detail)}</p> : null}
             </div>
           ) : null}
           {section === 'risk' && reason ? (
@@ -172,7 +184,13 @@ export function SessionItem({
             Open session
           </AttentionLink>
           {onMark ? (
-            <Button type="button" variant="quiet" onClick={onMark}>
+            <Button
+              ref={markRef}
+              type="button"
+              variant="quiet"
+              aria-busy={markPending || undefined}
+              onClick={onMark}
+            >
               {section === 'close' ? 'Mark as read' : 'Dismiss'}
             </Button>
           ) : null}
@@ -260,7 +278,7 @@ export function RiskItem({
             <AttentionLink
               route={row.route}
               focusKey={`attention:subject:${row.key}`}
-              fallback="attention:section:risk"
+              fallback="attention:title"
             >
               {risk.title}
             </AttentionLink>

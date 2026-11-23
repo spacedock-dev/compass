@@ -3,7 +3,7 @@ import { payloadSessions } from '../api/bootstrap';
 import { Disclosure, useControls } from '../controls';
 import { DraftInput } from '../controls/DraftField';
 import { useControlledDisclosureState } from '../controls/useDisclosureState';
-import { SHOWN } from '../language/glossary';
+import { GLOSSARY, SHOWN } from '../language/glossary';
 import type { Row } from '../observed';
 import { selectObserved } from '../observed/select';
 import { asPayload, sessionKey } from '../observed/values';
@@ -58,6 +58,9 @@ function RowView({ row, title }: { readonly row: LogRow; readonly title: string 
             {row.goal}
           </p>
         ) : null}
+        {!route && !title ? (
+          <p className="m-0 text-label text-muted-foreground">Session title unavailable.</p>
+        ) : null}
         {row.absence ? <p className="m-0 text-body text-muted-foreground">{row.absence}</p> : null}
         {row.source ? (
           <p className="m-0 text-label text-muted-foreground" data-next-goal-history-source>
@@ -67,8 +70,26 @@ function RowView({ row, title }: { readonly row: LogRow; readonly title: string 
             ) : null}
           </p>
         ) : null}
+        {row.additionalGoals.map(({ goal, source, time }, index) => (
+          <div key={index}>
+            <p className="m-0 text-body" data-next-goal-history-words data-authored>
+              {goal}
+            </p>
+            <p className="m-0 text-label text-muted-foreground">
+              {source} · {time}
+            </p>
+          </div>
+        ))}
+        {row.caveats.map((text) => (
+          <p className="m-0 text-label text-muted-foreground" key={text}>
+            {text}
+          </p>
+        ))}
         {supplemental ? (
-          <Disclosure disclosureKey={`goal-history-outcome:${row.key}`} summary="Expected outcome">
+          <Disclosure
+            disclosureKey={`goal-history-outcome:${row.key}`}
+            summary={GLOSSARY.doneLooksLike.shown}
+          >
             <ul className="pl-5">
               {row.outcomes.map(({ k, text }) => (
                 <li key={k} data-authored>
@@ -158,7 +179,9 @@ export function IntentLog() {
     ...group,
     rows: group.rows.flatMap((row) => {
       const title = row.session ? (titles.get(namedKey(row.session)) ?? row.title) : row.title;
-      return [row.goal, row.title, title].some((text) => text.toLocaleLowerCase().includes(query))
+      return [row.goal, row.title, title, ...row.additionalGoals.map(({ goal }) => goal)].some(
+        (text) => text.toLocaleLowerCase().includes(query),
+      )
         ? [{ ...row, title }]
         : [];
     }),
@@ -188,7 +211,10 @@ export function IntentLog() {
       {!data || view.notice ? (
         <p className="m-0 text-muted-foreground">{data ? view.notice : SHOWN.waitingForBoard}</p>
       ) : null}
-      {query && !hasMatch && !view.notice ? (
+      {data &&
+      query &&
+      !hasMatch &&
+      (!view.notice || view.groups.some(({ rows }) => rows.length > 0)) ? (
         <p role="status">No goals or session titles match your search.</p>
       ) : null}
       {data && !query && !hasMatch && !view.notice ? <p>No goals or sessions to show.</p> : null}

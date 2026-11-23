@@ -150,6 +150,10 @@ function closeText(kind: string, detail: Signal['detail']): string {
   return 'Git state was not measured';
 }
 
+export function dirtyEndText(detail: Signal['detail']): string {
+  return `${kindLabel('end-dirty')}: ${closeText('end-dirty', detail)}`;
+}
+
 export interface NowRow {
   readonly text: string;
   readonly note: string;

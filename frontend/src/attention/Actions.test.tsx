@@ -67,3 +67,39 @@ it('dismisses, undoes and marks read through the server and waits for the board 
   expect(screen.queryByText('Update the guide')).toBeNull();
   expect(post).toHaveBeenCalledTimes(3);
 });
+
+it('posts actions for two different sessions even while the first write is outstanding', async () => {
+  const page = mountShell({ hash: '#n=attention', data: board });
+  await page.settle();
+  const post = vi.spyOn(page.shell.runtime.client, 'postDismiss');
+  post.mockImplementationOnce(() => new Promise(() => undefined));
+  post.mockResolvedValueOnce({
+    kind: 'ok',
+    body: { ok: true, persisted: true },
+    status: 200,
+    revision: '',
+  });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Mark as read' }));
+  expect(post).toHaveBeenNthCalledWith(2, { harness: 'claude', sid: 'clean' });
+});
+
+it('keeps one waiting row and shows its measured dirty end', async () => {
+  const page = mountShell({
+    hash: '#n=attention',
+    data: {
+      ...board,
+      sessions: [flagged],
+      ask: true,
+      asks: [
+        { id: 'ask', harness: 'claude', session_id: flagged.sid, question: 'Review the report?' },
+      ],
+    },
+  });
+  await page.settle();
+  expect(screen.getByRole('heading', { name: 'Waiting on you (1)' })).toBeVisible();
+  expect(screen.getByText('Review the report?')).toBeVisible();
+  expect(screen.getByText('Session ended with uncommitted work: 2 changed entries')).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Needs you 1' })).toBeVisible();
+});

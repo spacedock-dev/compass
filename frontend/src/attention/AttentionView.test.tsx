@@ -79,7 +79,7 @@ describe('the four queues', () => {
     expect(document.querySelector('.next-attention-brief')?.textContent).toContain(
       '1 with limited state evidence.',
     );
-    expect(section('risk').querySelectorAll(':scope > ol > li')).toHaveLength(0);
+    expect(section('risk')).toBeNull();
   });
 
   it('shows three rows of a longer queue and the rest on request, and the request is the reader’s', async () => {
@@ -187,9 +187,9 @@ describe('the four queues', () => {
     );
     // And it is not duplicated as a risk row of its own.
     expect(
-      section('risk').querySelectorAll(
+      section('risk')?.querySelectorAll(
         ':scope > ol > li [data-next-attention-subject="session:[\\"claude\\",\\"gate-1\\"]"]',
-      ),
+      ) ?? [],
     ).toHaveLength(0);
   });
 
@@ -303,6 +303,8 @@ describe('published times on the board', () => {
         },
       ],
     });
+    expect(section('risk')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: "What Compass can't see" }));
     expect(screen.getByText('1 hour 6 minutes')).toBeInTheDocument();
     expect(
       screen.getByText(`Reset at ${reset.toLocaleTimeString(undefined, { timeStyle: 'short' })}`),
@@ -321,6 +323,7 @@ describe('published times on the board', () => {
         },
       ],
     });
+    fireEvent.click(screen.getByRole('button', { name: "What Compass can't see" }));
     const date = reset.toLocaleDateString(undefined, {
       month: 'short',
       day: 'numeric',

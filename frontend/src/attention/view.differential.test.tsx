@@ -216,21 +216,18 @@ function firstDifference(left: string, right: string): string {
   return `near ${JSON.stringify(left.slice(Math.max(0, at - 90), at + 160))} vs ${JSON.stringify(right.slice(Math.max(0, at - 90), at + 160))}`;
 }
 
-function unchangedView(summary: Summary, counterpart: Summary, restored: Set<string>): Summary {
+function unchangedView(summary: Summary, restored: Set<string>): Summary {
   // The 2026-11-23 redesign replaces the three session card layouts and moves Coming next.
   // Compare their exact session membership above. Keep coverage, command reports and the unchanged
   // off-count evidence against the recording after masking their new container and locations.
   const sections = summary.sections.flatMap((section) => {
     if (section.name !== 'board-risk') return [];
-    const other = counterpart.sections.find(({ name }) => name === 'board-risk');
-    const peerKeys = new Set(other?.items.map(({ subjectKey }) => subjectKey));
     const items = section.items.filter(
       ({ kind, subjectKey }) =>
         kind !== 'collision' &&
         kind !== 'checkout' &&
         kind !== 'quota' &&
-        !restored.has(subjectKey) &&
-        peerKeys.has(subjectKey),
+        !restored.has(subjectKey),
     );
     return items.length ? [{ ...section, heading: '', items }] : [];
   });
@@ -294,11 +291,10 @@ describe('the Attention screen reads as the legacy screen does, over generated p
         const left = JSON.stringify(
           unchangedView(
             { ...old, heading: old.heading.replace(/^Attention/, 'Needs you') },
-            mine,
             restored,
           ),
         );
-        const right = JSON.stringify(unchangedView(mine, old, restored));
+        const right = JSON.stringify(unchangedView(mine, restored));
         if (left !== right && !DEVIATIONS.some((d) => d.seed === seed)) {
           failures.push(
             `seed ${String(seed)} (${expanded.length ? 'expanded' : 'collapsed'}, capability ${capability || 'none'}): ${firstDifference(left, right)}`,

@@ -83,7 +83,13 @@ const meta = { title: 'Attention/Project locations', component: Board } satisfie
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-async function worthALookRows(canvasElement: HTMLElement, count: number, _total: number) {
+async function expectNoWorthALook(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement);
+  await canvas.findByRole('button', { name: "What Compass can't see" });
+  await expect(canvas.queryByRole('heading', { name: /Worth a look/ })).toBeNull();
+}
+
+async function worthALookRows(canvasElement: HTMLElement, count: number) {
   const heading = await within(canvasElement).findByRole('heading', {
     name: `Worth a look (${String(count)})`,
   });
@@ -134,7 +140,7 @@ export const ProjectShellLabels: Story = {
 
 export const OneMeasuredLocation: Story = {
   play: async ({ canvasElement }) => {
-    await worthALookRows(canvasElement, 0, 9);
+    await expectNoWorthALook(canvasElement);
     await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
     await expect(canvasElement.textContent).not.toContain('shared location is not established');
   },
@@ -143,7 +149,7 @@ export const OneMeasuredLocation: Story = {
 export const TwoMeasuredLocations: Story = {
   args: { locations: 2 },
   play: async ({ canvasElement }) => {
-    const rows = await worthALookRows(canvasElement, 9, 9);
+    const rows = await worthALookRows(canvasElement, 9);
     await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
     for (let i = 0; i < 9; i++) {
       const id = String(i);
@@ -180,7 +186,7 @@ export const SharedCheckout: Story = {
 export const SameNameDistinctCheckouts: Story = {
   args: { checkout: 'distinct' },
   play: async ({ canvasElement }) => {
-    await worthALookRows(canvasElement, 0, 2);
+    await expectNoWorthALook(canvasElement);
     await expect(canvasElement.querySelector('[data-next-board-risk="checkout"]')).toBeNull();
   },
 };
@@ -188,7 +194,7 @@ export const SameNameDistinctCheckouts: Story = {
 export const MissingCheckoutEvidence: Story = {
   args: { checkout: 'missing' },
   play: async ({ canvasElement }) => {
-    await worthALookRows(canvasElement, 0, 2);
+    await expectNoWorthALook(canvasElement);
     await expect(canvasElement.querySelector('[data-next-board-risk="checkout"]')).toBeNull();
   },
 };
@@ -196,7 +202,7 @@ export const MissingCheckoutEvidence: Story = {
 export const MixedMeasuredAndInferred: Story = {
   args: { locations: 2, unknown: true },
   play: async ({ canvasElement }) => {
-    const rows = await worthALookRows(canvasElement, 8, 9);
+    const rows = await worthALookRows(canvasElement, 8);
     await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
     for (const i of [0, 1, 2, 3, 4, 5, 6, 8]) {
       const row = rows
@@ -215,7 +221,7 @@ export const MixedMeasuredAndInferred: Story = {
 export const UnpublishedMemberDetails: Story = {
   args: { locations: 2, fallbacks: true },
   play: async ({ canvasElement }) => {
-    const rows = await worthALookRows(canvasElement, 9, 9);
+    const rows = await worthALookRows(canvasElement, 9);
     const last = rows
       .getAllByRole('listitem')
       .find((item) => item.textContent?.includes('claude:audit-8'));
@@ -253,7 +259,7 @@ export const RootAndSubdirectoryShareCheckout: Story = {
 export const RepeatedIdentityHasNoOrphanCard: Story = {
   args: { duplicate: true },
   play: async ({ canvasElement }) => {
-    await worthALookRows(canvasElement, 0, 1);
+    await expectNoWorthALook(canvasElement);
     await expect(canvasElement.querySelector('[data-next-board-risk="collision"]')).toBeNull();
     await expect(canvasElement).not.toHaveTextContent('Location not measured for 2 sessions');
   },

@@ -232,8 +232,9 @@ The terminal session and project lists use the same group, parent and waiting wo
 ## Needs you
 
 **Waiting on you** puts native waits and exact requests first. A session that reports both
-counts once. Open session shows the request and the harness's reason. Answer a native prompt
-in its terminal. A question registered through `ask_operator` offers its response buttons
+counts once. Its row also shows any observed end with uncommitted work. Open session shows the
+request and the harness's reason. Answer a native prompt in its terminal. A question registered
+through `ask_operator` offers its response buttons
 on the session page. Unanswered questions expire, and `--no-ask` disables that lane.
 
 **Worth a look** lists sessions with repeated tool failures, long turns, quiet launches,
@@ -243,9 +244,10 @@ behind each warning. The Needs you badge counts these sessions and those waiting
 
 **Ready to wrap up** lists observed ends with clean git state after exact requests have cleared.
 Mark as read records that you have seen a row. Show more expands beyond the first three rows.
-Marks and dismissals stay until the session records new activity and survive `--forget`. Undo
-restores a row. A stop alone leaves a session available for another turn, and a later lifecycle
-event can clear an end. Upcoming work appears in Right now on the session page.
+Saved marks and dismissals stay until the session records new activity and survive `--forget`.
+Undo puts a marked or dismissed row back. A stop alone leaves a session available for another
+turn, and a later lifecycle event can clear an end. Upcoming work appears in Right now on the
+session page.
 
 An end establishes neither who read the work, whether it was committed remotely, nor why it
 ended. A SessionEnd after a stop still reads ended. A late SessionEnd after resumed activity
