@@ -211,6 +211,7 @@
           "annotation_goal_saved_at": null,
           "annotation_goal_source": null,
           "annotation_goal_source_at": null,
+          "annotation_goal_unreadable": false,
           "annotation_goal_why": "why:goal-absent",
           "annotation_line_1": "",
           "annotation_line_1_source": null,
@@ -371,6 +372,7 @@
           "annotation_goal_saved_at": null,
           "annotation_goal_source": null,
           "annotation_goal_source_at": null,
+          "annotation_goal_unreadable": false,
           "annotation_goal_why": "why:goal-absent",
           "annotation_line_1": "",
           "annotation_line_1_source": null,
@@ -531,6 +533,7 @@
           "annotation_goal_saved_at": null,
           "annotation_goal_source": null,
           "annotation_goal_source_at": null,
+          "annotation_goal_unreadable": false,
           "annotation_goal_why": "why:goal-absent",
           "annotation_line_1": "",
           "annotation_line_1_source": null,
@@ -762,7 +765,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "32254",
+      "Content-Length": "32365",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.3"

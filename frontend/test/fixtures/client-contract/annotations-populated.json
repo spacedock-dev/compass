@@ -24,6 +24,7 @@
           "goal_saved_at": 1900000000.0,
           "goal_source": "typed",
           "goal_source_at": null,
+          "goal_unreadable": false,
           "goal_why": "",
           "harness": "claude",
           "line_1": "Docs build",
@@ -65,7 +66,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "1296",
+      "Content-Length": "1320",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json"
     },

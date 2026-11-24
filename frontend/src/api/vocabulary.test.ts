@@ -286,8 +286,9 @@ describe('the goal and the annotation', () => {
   });
 
   it('reads exactly the fields the store publishes', () => {
-    // The drift outcome reads the token directly from the session, like its diagnostic metadata.
-    expect(sorted([...ANNOTATION_FIELDS, 'reading_withheld_reason'])).toEqual(
+    // The drift outcome reads the token directly from the session, like its diagnostic metadata. So does the
+    // Sessions row for `goal_unreadable`, a bool about this build that the recorded legacy reader never knew.
+    expect(sorted([...ANNOTATION_FIELDS, 'reading_withheld_reason', 'goal_unreadable'])).toEqual(
       sorted(vocabulary.annotationFields),
     );
   });

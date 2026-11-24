@@ -182,6 +182,7 @@
           "annotation_goal_saved_at": 1899996400.0,
           "annotation_goal_source": "typed",
           "annotation_goal_source_at": null,
+          "annotation_goal_unreadable": false,
           "annotation_goal_why": "",
           "annotation_line_1": "",
           "annotation_line_1_source": null,
@@ -368,7 +369,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "15146",
+      "Content-Length": "15183",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"
