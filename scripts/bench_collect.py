@@ -605,6 +605,7 @@ def seed_stored_readings(config: Any, state: Any, count: int) -> None:
     import inspect  # noqa: PLC0415
 
     from compass_runtime import annotations as annotation_store  # noqa: PLC0415
+    from compass_runtime import reading  # noqa: PLC0415
 
     keeps_record = "evidence" in inspect.signature(annotation_store.record_reading).parameters
     now = time.time()
@@ -619,14 +620,20 @@ def seed_stored_readings(config: Any, state: Any, count: int) -> None:
             "revision_read": 1,
             "stamp": "bench",
             "cutoff": "",
-            "scope": "last-turn",
-            "scope_text": "Read to its last turn.",
+            "scope": reading.SCOPE_LAST_TURN,
+            "scope_text": reading.SCOPE_TEXT[reading.SCOPE_LAST_TURN],
             "ended_at_read": None,
             "read_at": read_at,
             "evidence_through": read_at - 1,
             "revision_read_at": now - 600,
             "window_start": now - 600,
-            "criteria": {"goal": {"result": "unverifiable", "cites": [], "why": ""}},
+            "criteria": {
+                "goal": {
+                    "result": reading.RESULT_UNVERIFIABLE,
+                    "cites": [],
+                    "why": reading.WHY_UNCITED,
+                }
+            },
         }
         extra: dict[str, Any] = {}
         if keeps_record:
@@ -643,6 +650,11 @@ def seed_stored_readings(config: Any, state: Any, count: int) -> None:
         )
         if stored != annotation_store.OUTCOME_STORED:
             raise RuntimeError(f"bench_collect: could not seed a reading ({stored})")
+        # Stored is not enough: a reading the store refuses on load polls as a refusal, which is not
+        # the published reading this measures.
+        entry = annotation_store.find(annotation_store.load(config), "claude", sid)
+        if not entry or not entry.get("assessment") or entry.get("refused"):
+            raise RuntimeError("bench_collect: a seeded reading does not load as a reading")
 
 
 def build_runtime(
