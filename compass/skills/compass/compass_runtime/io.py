@@ -393,14 +393,14 @@ def reverse_lines(
         return
 
 
-def admit_harness_root(path: str) -> bool:
-    """Validate an existing configured store directory without creating absent stores."""
+def admit_harness_root(path: str, *, tighten_permissions: bool = True) -> bool:
+    """Validate an existing harness directory, tightening configured roots by default."""
     if os.name == "nt":
         return os.path.isdir(path)
     try:
         fd = _directory_fd(path)
         try:
-            if stat.S_IMODE(os.fstat(fd).st_mode) & ~0o700:
+            if tighten_permissions and stat.S_IMODE(os.fstat(fd).st_mode) & ~0o700:
                 os.fchmod(fd, 0o700)
         finally:
             os.close(fd)
@@ -409,8 +409,9 @@ def admit_harness_root(path: str) -> bool:
     return True
 
 
-def glob_under(root: str, *pattern: str) -> list[str]:
-    if not admit_harness_root(root):
+def glob_under(root: str, *pattern: str, tighten_permissions: bool = True) -> list[str]:
+    """List sorted matches under an admitted directory, escaping the literal root."""
+    if not admit_harness_root(root, tighten_permissions=tighten_permissions):
         return []
     return sorted(glob.glob(os.path.join(glob.escape(root), *pattern)))
 
