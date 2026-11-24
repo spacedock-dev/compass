@@ -141,7 +141,8 @@ inventory and stylesheet cleanup.
 `frontend/src/styles/tailwind.css` owns the 42 page tokens in `@theme static`, preserving their
 names and values even when no utility names them. They cover surfaces, boundaries, inks and role
 registers, observed colours, five type steps, reading measure, fonts, radii, control padding,
-elevation, hatch, spacing and disclosure motion. The same block declares six bridge and Base UI
+elevation, spacing and disclosure motion. The hatch token left on 2026-11-24, when absences became
+plain quiet ink. The same block declares six bridge and Base UI
 defaults: `--foreground`, `--secondary`, the two panel heights, `--transform-origin` and
 `--available-height`. All eighteen `--ctl-*` aliases are removed; components read the page tokens
 directly. `shell.css` retains the native dark colour scheme and the `100%` root font size.

@@ -74,7 +74,6 @@ const PALETTE = {
   'e-raise': '0 1px 2px rgb(31 41 51 / 12%)',
   'e-pop': '0 8px 24px rgb(31 41 51 / 18%)',
   'e-dialog': '0 16px 48px rgb(31 41 51 / 24%)',
-  hatch: 'repeating-linear-gradient(135deg, transparent 0 5px, rgb(31 41 51 / 9%) 5px 6px)',
 };
 // The production optimizer shortens opaque white and serializes these alpha colours as hex.
 const COMPILED_PALETTE = {
@@ -85,7 +84,6 @@ const COMPILED_PALETTE = {
   'e-raise': '0 1px 2px #1f29331f',
   'e-pop': '0 8px 24px #1f29332e',
   'e-dialog': '0 16px 48px #1f29333d',
-  hatch: 'repeating-linear-gradient(135deg, transparent 0 5px, #1f293317 5px 6px)',
 };
 const source = (path: string) =>
   clean(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'));

@@ -90,8 +90,7 @@ summary,
 }
 
 .next-absence {
-  border: 1px dashed var(--line);
-  background: var(--hatch);
+  color: var(--ink-absence);
 }
 
 :where(#app) small {
@@ -176,18 +175,21 @@ summary,
   overflow-wrap: anywhere;
 }
 
-.next-placeholder,
 .next-view .next-absence {
   max-width: var(--measure);
   margin: 14px 0 0;
-  padding: 10px 12px;
-  color: var(--ink2);
+  color: var(--ink-absence);
   font: var(--fs-body) / 1.55 var(--sans);
 }
 
 .next-placeholder {
+  max-width: var(--measure);
+  margin: 14px 0 0;
+  padding: 10px 12px;
   border-left: 3px solid var(--line);
+  color: var(--ink2);
   background: var(--panel);
+  font: var(--fs-body) / 1.55 var(--sans);
 }
 
 .next-project-detail-empty,
@@ -202,7 +204,6 @@ summary,
 .next-project-detail-empty .next-absence,
 .next-session-detail-empty .next-absence {
   margin: 0 0 12px;
-  padding: 10px 12px;
 }
 
 .next-session-identity {

@@ -148,21 +148,6 @@ export const grayOf = ([r, g, b]: Rgb, amount: number): Rgb => {
    gradient or a filter other than `grayscale` sits between. A `grayscale()` ancestor turns the colours it
    draws grey, and the page backdrop outside it is not touched, so the filter is applied to the group's own
    layers only. The one level of filter the page uses is all this models. */
-/* The page's hatch, the pattern that says a value is absent: faint 1px lines over the surface's own colour.
-   Text over it is measured against that colour, as the lines are faint enough not to be its backdrop; any other
-   image or gradient under text stays unmeasured. */
-let hatchValue: string | null = null;
-const isHatch = (backgroundImage: string): boolean => {
-  if (hatchValue === null) {
-    const probe = document.createElement('div');
-    probe.style.background = 'var(--hatch)';
-    document.body.append(probe);
-    hatchValue = getComputedStyle(probe).backgroundImage;
-    probe.remove();
-  }
-  return backgroundImage === hatchValue;
-};
-
 export function paintedColors(
   element: Element,
   textColor?: string,
@@ -174,7 +159,7 @@ export function paintedColors(
   let amount = 0;
   for (const node of chain) {
     const style = getComputedStyle(node);
-    if (style.backgroundImage !== 'none' && !isHatch(style.backgroundImage)) return null;
+    if (style.backgroundImage !== 'none') return null;
     if (style.filter !== 'none') {
       const match = /^grayscale\(([\d.]+)\)$/.exec(style.filter);
       if (!match || amount) return null;
@@ -371,8 +356,8 @@ export async function settled(limitMs = 2000): Promise<void> {
    the story, so a new gradient, image or filter under text is a decision someone makes, not a gap nobody sees.
    Each entry matches `path "text"` as `describe` and the text give it. */
 export const UNMEASURED_ALLOWED: readonly RegExp[] = [
-  // None today: the hatch that marks an absent value is measured against its surface (see `isHatch`), and a
-  // glyph with no letter or digit is measured at 3:1. A new entry names the pattern it permits and why.
+  // None today: an absent value is plain quiet ink, measured like any text, and a glyph with no letter or digit
+  // is measured at 3:1. A new entry names the pattern it permits and why.
 ];
 
 export const unexpectedlyUnmeasured = (report: ContrastReport): string[] =>

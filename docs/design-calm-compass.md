@@ -197,8 +197,9 @@ shows State not known on Projects. The Sessions legend and Help list the new til
 explanation. The same day the owner asked the list's empty lines to match the calm list: "No exact
 session has active evidence right now.", the earlier group's empty line and the filtered-to-nothing
 line are plain quiet ink at the 15 px body size, padded as a row inside the list card, with no
-hatch, dashed border or tinted box, as the canvas style board draws absences. The global absence
-treatment is unchanged for the surfaces that still use it.
+hatch, dashed border or tinted box, as the canvas style board draws absences. Later that day the
+owner extended this to the whole board; see the
+[calm absence note](#absences-are-plain-quiet-ink-across-the-board-2026-11-24).
 
 Later that day the owner rejected the hatched box on Sessions a second time, so no absence inside a
 Sessions row or the list draws it. An unknown title, "Title not published", keeps the title's 18 px
@@ -425,6 +426,26 @@ now draws the muted `--sunk` fill, the solid `--line` outline at 3.23:1 against 
 keeps the sentence that says why. A busy button is unchanged: it keeps its own fill and spinner.
 [NUI-18](design-next-ui.md#amended-2026-11-24-owner-a-refused-control-rests-calm) records the
 amendment to "disabled is dashed".
+
+### Absences are plain quiet ink across the board, 2026-11-24
+
+The owner asked for the hatched absence box to go everywhere, not just on Sessions. The shared
+`.next-absence` rule, in both stylesheets that carry it, now draws only quiet ink `#52606D`
+(`--ink-absence`): no hatch, no dashed border, no background. That covers the board-status lines
+("The first payload has not arrived yet.", "No data has been received in this tab.", "The board
+published no session collection.", "This session is not in the current payload.", "Not present in
+the current payload."), the three on Needs you, Settings while it reads or fails to read its
+limits, the project console's "This project is not in the current payload." and the project
+`Absence` part that Needs you, the observer controls and the terminal surface use. A view-level
+absence keeps the body size and its top margin but drops the 10 by 12 px inset, which only made
+sense inside a box, so its words start where the heading above them does; inside an empty project
+or session card it keeps its bottom margin only. The text measures 6.46:1 on a card and 5.96:1 on
+the page ground, as plain text, so the story audit no longer special-cases a hatched background,
+and the `--hatch` token and its pins are gone. Refused status segments and filter options take the
+calm refused look of the shared Button above. No hatch is left on the first layer. Three dashed
+edges remain, none of them an absence: the switch track when a switch cannot be changed, the Add a
+line control in the Goal editor, and the rule beside a defined term in the session summary. The
+owner has not asked about them.
 
 ### The Session page follows the canvas, 2026-11-24
 
