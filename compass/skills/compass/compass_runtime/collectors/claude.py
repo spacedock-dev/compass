@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 from collections import Counter
+from itertools import chain
 from typing import TYPE_CHECKING, Any
 
 from compass_runtime import claude_data, notifications, project_context, records
@@ -12,14 +14,13 @@ from compass_runtime import io as runtime_io
 from compass_runtime import quota as runtime_quota
 from compass_runtime import sessions as runtime_sessions
 from compass_runtime import spacedock as runtime_spacedock
-from compass_runtime import state as runtime_state
 from compass_runtime import transcripts as runtime_transcripts
 from compass_runtime import turns as runtime_turns
 
 if TYPE_CHECKING:
     from compass_runtime.config import RuntimeConfig
     from compass_runtime.sessions import Session
-    from compass_runtime.state import RuntimeState
+    from compass_runtime.state import RuntimeState, SubagentTreeStamp
 
 
 # Subagent transcripts sit beneath the session directory in two layouts. A
@@ -189,35 +190,34 @@ def load_tasks(config: RuntimeConfig) -> dict[str, list[dict[str, Any]]]:
     return by_session
 
 
-def subagent_tree_stamp(sess_dir: str) -> tuple[float, ...]:
-    """The mtimes of every directory a ``SUBAGENT_GLOBS`` pattern can reach.
+def directory_stamp(path: str) -> tuple[int, int, int, int] | None:
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None
+    if not stat.S_ISDIR(info.st_mode):
+        return None
+    return info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns
 
-    A file appears in or leaves a directory only by changing that directory's
-    mtime, so this tuple is a complete change detector for the listing: the two
-    container directories catch a first flat subagent and a first workflow run,
-    and every existing run directory catches an agent landing inside a run that
-    the glob has already walked. Watching the run directories by listing them,
-    rather than by taking the parents of an existing listing, is what makes the
-    empty case safe: a run directory is created a beat before its first agent
-    transcript, and a run watched only once it holds one would never notice the
-    file that put it there. Absent directories stamp as -1 rather than dropping
-    out, so a directory appearing changes the tuple instead of shifting it.
-    """
+
+def subagent_tree_stamp(sess_dir: str, previous: SubagentTreeStamp) -> SubagentTreeStamp | None:
     subagents = os.path.join(sess_dir, "subagents")
     workflows = os.path.join(subagents, "workflows")
-    watched = {sess_dir, subagents, workflows}
-    try:
-        with os.scandir(workflows) as entries:
-            watched.update(entry.path for entry in entries if entry.is_dir())
-    except OSError:
-        pass  # no workflows directory: the two containers are the whole tree
-    stamp: list[float] = []
-    for directory in sorted(watched):
+    stamp = {path: directory_stamp(path) for path in (sess_dir, subagents, workflows)}
+    if stamp[workflows] is None:
+        return stamp
+    # A run can exist before its first worker or point to a target that is
+    # still missing. Keep those names so each can change without its container.
+    if stamp[workflows] == previous.get(workflows):
+        run_dirs = [path for path in previous if path not in stamp]
+    else:
         try:
-            stamp.append(os.stat(directory).st_mtime)
+            with os.scandir(workflows) as entries:
+                run_dirs = [entry.path for entry in entries]
         except OSError:
-            stamp.append(-1.0)  # absent, or a file where a directory was expected
-    return tuple(stamp)
+            return None
+    stamp.update((path, directory_stamp(path)) for path in run_dirs)
+    return stamp
 
 
 def agent_transcripts(
@@ -228,11 +228,9 @@ def agent_transcripts(
 ) -> list[tuple[str, float]]:
     """(path, mtime) for every subagent transcript belonging to a session.
 
-    With ``config`` and ``state`` the glob is memoised on the subagent tree's
-    directory mtimes, which is what makes a large history cheap: most session
-    directories belong to finished work and are walked once per process rather
-    than once per collection. Without them the scan is unmemoised, so callers
-    outside a runtime keep working.
+    With ``config`` and ``state`` the worker index holds paths and directory
+    stamps. An append only moves the file's mtime, so the file stats are fresh
+    even on an index hit.
     """
     if not transcript:
         return []
@@ -240,17 +238,19 @@ def agent_transcripts(
         os.path.dirname(transcript), os.path.basename(transcript)[: -len(".jsonl")]
     )
     subagents = os.path.join(sess_dir, "subagents")
+    index = None if state is None or config is None else state.claude_subagent_index
     # Claude can leave a session directory with no worker tree. Check again each
     # refresh so the first worker can bring an archived parent back into view.
     if not os.path.isdir(subagents):
+        if index is not None:
+            index.pop(transcript, None)
         return []
-    cache = None if state is None or config is None else state.claude_subagent_cache
     # Stamped before the listing, never after it. A transcript written while the
     # tree is being walked moves a directory mtime, and a stamp taken afterwards
     # would record that move as already accounted for, pinning the listing that
     # missed the file. Stamping first can only cost one extra glob next time.
-    stamp = None if cache is None else subagent_tree_stamp(sess_dir)
-    hit = None if cache is None else cache.get(sess_dir)
+    hit = None if index is None else index.get(transcript)
+    stamp = None if index is None else subagent_tree_stamp(sess_dir, hit[0] if hit else {})
     if hit is not None and hit[0] == stamp:
         return stamped(hit[1])
     paths = [
@@ -258,10 +258,8 @@ def agent_transcripts(
         for pattern in SUBAGENT_GLOBS
         for fp in runtime_io.glob_under(subagents, *pattern, tighten_permissions=False)
     ]
-    if cache is not None and config is not None and stamp is not None:
-        runtime_state.bounded_put(
-            cache, sess_dir, (stamp, list(paths)), limit=config.max_cache_entries
-        )
+    if index is not None and stamp is not None:
+        index[transcript] = stamp, paths
     return stamped(paths)
 
 
@@ -536,15 +534,20 @@ def collect(
 ) -> list[Session]:
     window_sec = window_hours * 3600
     tasks_by_session = load_tasks(config)
+    latest_task_mtimes = {
+        prefix: runtime_sessions.newest_plausible(config, now, (t["updated"] for t in tasks))
+        for prefix, tasks in tasks_by_session.items()
+    }
     team_members = load_team_members(config)
     candidates: dict[str, list[tuple[str, float]]] = {}
     reachable = {
         prefix
-        for prefix, tasks in tasks_by_session.items()
-        if runtime_sessions.is_fresh(config, now, max(t["updated"] for t in tasks), window_sec)
+        for prefix, mtime in latest_task_mtimes.items()
+        if runtime_sessions.is_fresh(config, now, mtime, window_sec)
     }
-    raw_children: list[dict[str, Any]] = []
     paths = runtime_io.glob_stores(config, "claude.projects", "*", "*.jsonl")
+    for removed in state.claude_subagent_index.keys() - paths:
+        del state.claude_subagent_index[removed]
     # The resolver sees these stems before the collector discards archive and metadata rows.
     prefixes = Counter(os.path.basename(path).removesuffix(".jsonl")[:8] for path in paths)
     state.claude_transcript_collisions = frozenset(
@@ -559,62 +562,54 @@ def collect(
         except OSError:
             continue  # transcript rotated/deleted between glob and stat
         prefix = base[:8]
-        fresh = runtime_sessions.is_fresh(config, now, mtime, window_sec)
-        if show_all or fresh:
-            is_agent, agent_name, parent_prefix = claude_data.agent_identity(config, state, fp)
-            if is_agent:
-                # Fold into the parent, never a standalone session; without a
-                # parent prefix there is nothing to attach to.
-                if parent_prefix and fresh:
-                    raw_children.append(
-                        {
-                            "path": fp,
-                            "prefix": prefix,
-                            "mtime": mtime,
-                            # Both unbounded: `published_agent` redacts and
-                            # then bounds for display, and the roster join
-                            # needs the name as written or a long one misses.
-                            "label": agent_name or "subagent",
-                            "agent_name": agent_name,
-                            "parent_prefix": parent_prefix,
-                        }
-                    )
-                continue
         candidates.setdefault(prefix, []).append((fp, mtime))
-        if fresh:
+        if runtime_sessions.is_fresh(config, now, mtime, window_sec):
             reachable.add(prefix)
 
-    # Every possible stop in the teammate walk below is named by an incoming
-    # link. A child can reach a parked parent, and its workers can extend that
-    # parent's activity once the child is attached.
-    reachable.update(c["parent_prefix"] for c in raw_children)
-    transcripts: dict[str, tuple[str, float]] = {}
+    # An old transcript can still have a worker writing under it. Probe
+    # mtimes before reading any heads so parked archives stay cheap.
     probed_agent_files: dict[str, list[tuple[str, float]]] = {}
     for prefix, copies in candidates.items():
-        probed: dict[str, list[tuple[str, float]]] = {}
-        if not show_all and prefix not in reachable:
-            for fp, _ in copies:
-                files = agent_transcripts(fp, config=config, state=state)
-                probed[fp] = files
-                if any(
-                    runtime_sessions.is_fresh(config, now, stamp, window_sec) for _, stamp in files
-                ):
-                    break
-            else:
-                continue
+        if prefix in reachable:
+            continue
+        for fp, _ in copies:
+            files = agent_transcripts(fp, config=config, state=state)
+            if any(runtime_sessions.is_fresh(config, now, stamp, window_sec) for _, stamp in files):
+                reachable.add(prefix)
+                probed_agent_files[fp] = files
+                break
 
-        # Check reachability for the whole prefix. A recent copy can be a
-        # metadata-only file, in which case an older valid copy still wins.
-        for fp, mtime in copies:
+    transcripts: dict[str, tuple[str, float]] = {}
+    children_by_path: dict[str, dict[str, Any]] = {}
+    pending = [prefix for prefix in candidates if prefix in reachable]
+    history = (prefix for prefix in candidates if prefix not in reachable) if show_all else ()
+    # Visiting a reachable teammate can extend the pending list all the way up
+    # to its lead. Full history visits the remaining prefixes after that walk.
+    for prefix in chain(pending, history):
+        for fp, mtime in candidates[prefix]:
+            is_agent, agent_name, parent_prefix = claude_data.agent_identity(config, state, fp)
+            if is_agent:
+                if parent_prefix and prefix in reachable:
+                    children_by_path[fp] = {
+                        "path": fp,
+                        "prefix": prefix,
+                        "mtime": mtime,
+                        # The roster join needs the original name, and
+                        # published_agent redacts it before bounding it.
+                        "label": agent_name or "subagent",
+                        "agent_name": agent_name,
+                        "parent_prefix": parent_prefix,
+                    }
+                    if parent_prefix not in reachable and parent_prefix in candidates:
+                        reachable.add(parent_prefix)
+                        pending.append(parent_prefix)
+                continue
+            # A metadata-only copy can be the reason the prefix is reachable
+            # even though an older conversation is what the board should show.
             if not claude_data.has_conversation(config, state, fp):
                 continue
             if prefix not in transcripts or mtime > transcripts[prefix][1]:
                 transcripts[prefix] = (fp, mtime)
-        if (
-            prefix in transcripts
-            and (winner_files := probed.get(transcripts[prefix][0])) is not None
-        ):
-            probed_agent_files[prefix] = winner_files
 
     # DRC-4347. Resolve nested teammate parentage.
     # In Claude Code, the harness coordinates agent teams under the team
@@ -626,6 +621,7 @@ def collect(
     # structures), trace the parent chain to the root session so the nested
     # child is not silently discarded, and attribute `parent` to the
     # intermediate teammate's label.
+    raw_children = [children_by_path[fp] for fp in paths if fp in children_by_path]
     agent_children: dict[str, list[dict[str, Any]]] = {}
     children_by_prefix: dict[str, dict[str, Any]] = {c["prefix"]: c for c in raw_children}
     for c in raw_children:
@@ -654,8 +650,7 @@ def collect(
             tasks_by_session.get(prefix, []),
             key=lambda t: int(t["id"]) if str(t["id"]).isdigit() else 0,
         )
-        latest_task_mtime = max((t["updated"] for t in tasks), default=0)
-        agent_files = probed_agent_files.get(prefix)
+        agent_files = probed_agent_files.get(transcript) if transcript else None
         if agent_files is None:
             agent_files = agent_transcripts(transcript, config=config, state=state)
         children = agent_children.get(prefix, [])
@@ -703,9 +698,15 @@ def collect(
             for m in team_members.get(prefix, [])
             for key in (m["label"], m["agent_id"], m["local"])
         }
-        child_agent_files = {
-            c["path"]: agent_transcripts(c["path"], config=config, state=state) for c in children
-        }
+        child_agent_files = {}
+        for c in children:
+            child_path = c["path"]
+            cached_files = probed_agent_files.get(child_path)
+            child_agent_files[child_path] = (
+                cached_files
+                if cached_files is not None
+                else agent_transcripts(child_path, config=config, state=state)
+            )
         child_is_live: dict[str, bool] = {}
         for c in children:
             name = c.get("agent_name") or ""
@@ -740,10 +741,6 @@ def collect(
             *(
                 {
                     "label": c["label"],
-                    "mtime": max(
-                        [c["mtime"], *(gm for _, gm in child_agent_files.get(c["path"], []))],
-                        default=c["mtime"],
-                    ),
                     "model": models.get(c["path"]),
                     "started_at": child_started[c["path"]],
                 }
@@ -751,28 +748,20 @@ def collect(
                 if child_is_live[c["path"]]  # fresh = running
             ),
         ]
-        latest_agent_mtime = max(
-            (a["mtime"] for a in subagents),
-            default=0,
+        # A workflow can park the lead's transcript for hours. Its workers'
+        # writes still count after they stop qualifying as running.
+        task_and_worker_activity = runtime_sessions.newest_plausible(
+            config,
+            now,
+            chain(
+                (latest_task_mtimes.get(prefix, 0),),
+                (mtime for _, mtime in child_files),
+                (mtime for files in child_agent_files.values() for _, mtime in files),
+            ),
         )
-        latest_child_mtime = max((c["mtime"] for c in children), default=0)
-        # Every subagent write, not just the ones fresh enough to read as
-        # running: a workflow that has been going for hours parks its parent
-        # transcript, and without this the session ages out of the window.
-        latest_agent_file_mtime = max((m for _, m in agent_files), default=0)
-        latest_grandchild_file_mtime = max(
-            (gm for files in child_agent_files.values() for _, gm in files),
-            default=0,
+        last_activity = runtime_sessions.newest_plausible(
+            config, now, (transcript_mtime, task_and_worker_activity)
         )
-        activity_sources = (
-            latest_task_mtime,
-            transcript_mtime,
-            latest_agent_mtime,
-            latest_agent_file_mtime,
-            latest_child_mtime,
-            latest_grandchild_file_mtime,
-        )
-        last_activity = runtime_sessions.newest_plausible(config, now, activity_sources)
         active = runtime_sessions.is_fresh(config, now, last_activity, window_hours * 3600)
         if not (active or show_all):
             continue
@@ -802,7 +791,7 @@ def collect(
 
         # The published roster is deliberately NOT the list above. Everything
         # that derives state -- the Working pin, `working_detail`, the Spacedock
-        # strip, `last_activity` -- keeps reading `subagents`, which is gated on
+        # strip -- keeps reading `subagents`, which is gated on
         # `working_threshold_sec` because DRC-4118 settled that a child parked
         # hours ago must not make its parent read "running 1 subagent", and
         # DRC-4263 requires it. A teammate blocked on its own subagents writes
@@ -906,24 +895,16 @@ def collect(
             newest_unpaired if entrypoint.get("headless") is True else None,
         )
 
-        # What retires an observed stop: `activity_sources` with the parent
-        # transcript read by its newest conversation record instead of its
-        # mtime (DRC-4770). Every other source stays an mtime, so a child
-        # writing still retires the stop (DRC-4101). An unanalyzed row, or a
-        # tail with no conversation record, falls back to the mtime, which
-        # retires rather than keeps: the direction DRC-4101 requires.
-        # `last_activity` itself is unchanged, because it also gates the
-        # display window and the notifications.
+        # A conversation record can distinguish real work from Claude's
+        # post-turn transcript writes (DRC-4770). Task and worker writes still
+        # retire the stop, as does the transcript mtime when there is no
+        # conversation record to go by (DRC-4101).
         work_activity = runtime_sessions.newest_plausible(
             config,
             now,
             (
-                latest_task_mtime,
                 (info or {}).get("last_conversation_ts") or transcript_mtime,
-                latest_agent_mtime,
-                latest_agent_file_mtime,
-                latest_child_mtime,
-                latest_grandchild_file_mtime,
+                task_and_worker_activity,
             ),
         )
         session_state, state_detail = "idle", "awaiting your message"

@@ -2182,6 +2182,25 @@ class SubagentWorkflowCacheTest(RuntimeTestCase):
                 self._names(claude_collector.agent_transcripts(parent, config=config, state=state)),
             )
 
+    @unittest.skipIf(os.name == "nt", "symlinks need Windows privileges")
+    def test_a_linked_workflow_run_is_seen_when_its_target_appears(self) -> None:
+        config, state = runtime()
+        with tempfile.TemporaryDirectory() as root:
+            parent, run = self._fixture(root)
+            target = Path(root) / "relocated-run"
+            Path(run).with_name("wf_2").symlink_to(target, target_is_directory=True)
+            self.assertEqual(
+                [], claude_collector.agent_transcripts(parent, config=config, state=state)
+            )
+
+            target.mkdir()
+            (target / "agent-alpha.jsonl").write_text("{}\n", encoding="utf-8")
+
+            self.assertEqual(
+                ["agent-alpha.jsonl"],
+                self._names(claude_collector.agent_transcripts(parent, config=config, state=state)),
+            )
+
     def test_a_run_directory_created_after_the_first_listing_is_seen(self) -> None:
         config, state = runtime()
         with tempfile.TemporaryDirectory() as root:
@@ -2279,6 +2298,79 @@ class SubagentScanCountTest(RuntimeTestCase):
             f"one collection should list the subagent tree once, listed: {scans}",
         )
         self.assertEqual(after_one, len(scans), "an unchanged tree was listed again")
+
+    def test_a_warm_refresh_reuses_worker_listings_past_the_metadata_cache_limit(self) -> None:
+        now = 1_700_000_000.0
+        old = now - 30 * 3600
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "projects" / "sample"
+            project.mkdir(parents=True)
+            workers = []
+            for index in range(12):
+                sid = f"{index:08x}-0000-0000-0000-000000000000"
+                transcript = project / f"{sid}.jsonl"
+                transcript.write_text(
+                    json.dumps(
+                        {
+                            "type": "user",
+                            "sessionId": sid,
+                            "timestamp": datetime.fromtimestamp(old, UTC).isoformat(),
+                            "message": {"role": "user", "content": "Review this file"},
+                        }
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                os.utime(transcript, (old, old))
+                folder = project / sid / "subagents"
+                if index % 2 == 0:
+                    folder /= "workflows/run"
+                folder.mkdir(parents=True)
+                worker = folder / "agent-review.jsonl"
+                worker.write_text(
+                    json.dumps(
+                        {
+                            "type": "user",
+                            "sessionId": sid,
+                            "isSidechain": True,
+                            "timestamp": datetime.fromtimestamp(old, UTC).isoformat(),
+                            "message": {"role": "user", "content": "Review the tests"},
+                        }
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                stamp = now if index == 11 else old
+                os.utime(worker, (stamp, stamp))
+                workers.append(worker)
+
+            with (
+                store_patch(PROJECTS_DIR=str(project.parent)),
+                config_patch(max_cache_entries=4),
+                mock.patch.object(os, "scandir", wraps=os.scandir) as scandir,
+            ):
+                cold = collect_claude(now, 24, False)
+                cold_worker_dirs = {
+                    call.args[0]
+                    for call in scandir.call_args_list
+                    if isinstance(call.args[0], str) and "subagents" in Path(call.args[0]).parts
+                }
+                scandir.reset_mock()
+                os.utime(workers[0], (now + 5, now + 5))
+                warm = collect_claude(now + 5, 24, False)
+                warm_worker_dirs = {
+                    call.args[0]
+                    for call in scandir.call_args_list
+                    if isinstance(call.args[0], str) and "subagents" in Path(call.args[0]).parts
+                }
+
+        self.assertEqual(["0000000b"], [row["sid"] for row in cold])
+        self.assertEqual(
+            {"00000000": now + 5, "0000000b": now},
+            {row["sid"]: row["last_activity"] for row in warm},
+        )
+        self.assertTrue(cold_worker_dirs)
+        self.assertEqual(set(), cold_worker_dirs & warm_worker_dirs)
 
 
 class OwnActivityTest(RuntimeTestCase):
@@ -3760,6 +3852,79 @@ class DispatchedTeammateTest(RuntimeTestCase):
         self.assertEqual("working", session["state"])
         self.assertEqual("running 1 subagent", session["state_detail"])
         self.assertEqual(now - 5, session["last_activity"])
+
+    def test_a_live_worker_keeps_its_archived_teammate_under_the_archived_lead(self) -> None:
+        now = 1_700_000_000.0
+        child_sid = "bbbb2222-0000-0000-0000-000000000000"
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(tmp, now=now, parent_age=30 * 3600)
+            self.teammate(
+                project,
+                sid=child_sid,
+                name="ensign-review",
+                stamp=self.stamp(now - 25 * 3600),
+                age=25 * 3600,
+                now=now,
+            )
+            workers = project / child_sid / "subagents"
+            workers.mkdir(parents=True)
+            worker = workers / "agent-lens.jsonl"
+            worker.write_text(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "isSidechain": True,
+                        "timestamp": self.stamp(now - 5),
+                        "message": {"role": "user", "content": "Review this file"},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (workers / "agent-lens.meta.json").write_text(
+                json.dumps({"name": "lens-worker"}), encoding="utf-8"
+            )
+            os.utime(worker, (now - 5, now - 5))
+            with store_patch(PROJECTS_DIR=str(project.parent)):
+                for show_all in (False, True):
+                    with self.subTest(show_all=show_all):
+                        rows = collect_claude(now, 24, show_all)
+                        self.assertEqual([self.PARENT], [row["resume_id"] for row in rows])
+                        self.assertEqual(now - 5, rows[0]["last_activity"])
+                        self.assertEqual("working", rows[0]["state"])
+                        self.assertEqual(
+                            {"ensign-review": (None, True), "lens-worker": ("ensign-review", True)},
+                            {
+                                agent["name"]: (agent["parent"], agent["active"])
+                                for agent in rows[0]["subagents"]
+                            },
+                        )
+
+    def test_future_files_do_not_hide_recent_task_or_worker_activity(self) -> None:
+        now = 1_700_000_000.0
+        recent = now - 3600
+        future = now + 3600
+        for source in ("task", "worker"):
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as tmp:
+                project = self.project(tmp, now=now, parent_age=30 * 3600)
+                tasks = Path(tmp) / "tasks" / f"session-{self.PARENT[:8]}"
+                if source == "task":
+                    tasks.mkdir(parents=True)
+                    for task_id, mtime in (("1", recent), ("2", future)):
+                        task = tasks / f"{task_id}.json"
+                        task.write_text(
+                            json.dumps({"id": task_id, "subject": "Review", "status": "pending"}),
+                            encoding="utf-8",
+                        )
+                        os.utime(task, (mtime, mtime))
+                else:
+                    self.own_agent(project, label="recent", age=3600, now=now)
+                    self.own_agent(project, label="future", age=-3600, now=now)
+                with store_patch(PROJECTS_DIR=str(project.parent), TASKS_DIR=str(tasks.parent)):
+                    rows = collect_claude(now, 24, False)
+
+                self.assertEqual([self.PARENT], [row["resume_id"] for row in rows])
+                self.assertEqual(recent, rows[0]["last_activity"])
 
     def test_a_teammate_with_only_stale_workers_reads_as_not_running(self) -> None:
         # DRC-4346. When both teammate and its workers are quiet, the teammate

@@ -24,6 +24,9 @@ class UsageFetchEntry(TypedDict):
     entries: list[dict[str, Any]]
 
 
+SubagentTreeStamp = dict[str, tuple[int, int, int, int] | None]
+
+
 @dataclass
 class RuntimeState:
     config: RuntimeConfig
@@ -118,13 +121,10 @@ class RuntimeState:
     # Only those files are ever analyzed, so the live entry count is the active
     # sessions plus at most eight and never approaches `max_cache_entries`.
     codex_analysis_cache: dict[str, tuple[int, int, dict[str, Any]]] = field(default_factory=dict)
-    # sess_dir -> (directory mtimes, subagent transcript paths). A subagent tree
-    # whose directory mtimes have not moved cannot have gained or lost a
-    # transcript, so only the glob is memoised; mtimes are restated on every
-    # read because appending to a transcript moves no directory. Keying on
-    # directory mtimes rather than on a freshness window keeps a parked
-    # parent's subagents visible.
-    claude_subagent_cache: dict[str, tuple[tuple[float, ...], list[str]]] = field(
+    # transcript -> (directory mtimes, subagent transcript paths). Collection
+    # prunes missing transcripts. FIFO would rescan every tree in a stable walk
+    # over the limit, including workers that can reactivate archived parents.
+    claude_subagent_index: dict[str, tuple[SubagentTreeStamp, list[str]]] = field(
         default_factory=dict
     )
     # (rollout path, the bounds a read depends on) -> (stamps of the root and every child, the

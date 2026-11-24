@@ -4597,8 +4597,9 @@ depth. The platform's own ancestor aliases, such as
 macOS `/tmp` pointing to `/private/tmp`, remain usable.
 
 Harness discovery validates existing configured store roots, tightening owned roots to `0o700`
-on POSIX without creating absent stores. During a Claude refresh, the worker listing applies the
-directory admission check to `subagents/` and preserves its permissions.
+on POSIX without creating absent stores. Claude worker listings apply the directory admission check
+to `subagents/` and preserve its permissions. Refreshes reuse the worker paths in memory while the
+directory stamps agree.
 Harness-store reads use a separate shared opener. Owned store directory and transcript links work,
 including a parent transcript on another disk. On POSIX, link traversal is bounded to 40 links;
 linked directory targets and the opened regular file must belong to the current user. Reads use
