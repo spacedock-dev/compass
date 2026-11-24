@@ -665,6 +665,7 @@ def _attach_annotations(
     *,
     now: float | None = None,
     settle_sec: float = 0.0,
+    held: frozenset[tuple[str, str]] = frozenset(),
 ) -> None:
     """Put what the reader typed onto every row, including the rows with none.
 
@@ -704,6 +705,7 @@ def _attach_annotations(
             binding_why=(
                 annotation_store.BINDING_BY_PREFIX if by_prefix else annotation_store.BINDING_EXACT
             ),
+            held=entry is None and annotation_store.held_key(held, row.get("harness"), sid),
         )
         _withdraw_stale_finality(row, published.get("assessment"))
         # Prefixed and flat rather than nested, for the reason `base_session`
@@ -1000,6 +1002,7 @@ class Application:
             annotation_entries,
             now=now if config.annotations_enabled else None,
             settle_sec=config.reading_settle_sec,
+            held=state.annotations_held if config.annotations_enabled else frozenset(),
         )
         # After the overlays, which is load-bearing: a wait only an event knows
         # about is a wait, and reading the collector's state is what left the

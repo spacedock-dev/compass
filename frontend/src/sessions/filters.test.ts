@@ -18,6 +18,7 @@ import {
   filtersActive,
   hasChoices,
   fixedOptions,
+  GOAL_OPTIONS,
   harnessMeta,
   harnessOptions,
   hiddenWaiting,
@@ -420,6 +421,14 @@ describe('the facets', () => {
         },
         { harness: 'droid', sid: 'unpublished' },
         { harness: 'cursor', sid: 'default', annotation_goal: '', annotation_goal_why: '' },
+        { harness: 'gemini', sid: 'lines', ...absent, annotation_line_1: 'A summary exists' },
+        {
+          harness: 'gemini',
+          sid: 'held',
+          annotation_goal: '',
+          annotation_goal_why: '',
+          annotation_goal_unreadable: true,
+        },
       ],
     };
     const indexed = indexScreen(buildSessionsScreen(payload, observe(payload)));
@@ -431,10 +440,29 @@ describe('the facets', () => {
         .map(({ row }) => row.session.sid)
         .sort();
     };
-    expect(kept({ progress: ['no-goal'] })).toEqual(['discarded', 'draft', 'never']);
-    expect(kept({ goal: ['none'] })).toEqual(['discarded', 'never']);
-    expect(kept({ goal: ['saved'] })).toEqual(['adopted', 'saved']);
+    // The Goal cell's own word decides both chips, through one predicate, so a drafted row (a goal the
+    // reader can check) is in neither. This replaces the earlier chip, which kept the draft too.
+    const noGoal = kept({ progress: ['no-goal'] });
+    expect(noGoal).toEqual(['discarded', 'never']);
+    expect(kept({ goal: ['none'] })).toEqual(noGoal);
+    // Saved lines are saved words: in Goal saved, and in neither No goal yet chip.
+    expect(kept({ goal: ['saved'] })).toEqual(['adopted', 'lines', 'saved']);
     expect(kept({ goal: ['drafted'] })).toEqual(['draft']);
+    // Each kept row reads No goal yet in its Goal cell, and no other row does.
+    const reads = (sid: string) =>
+      indexed.find(({ row }) => row.session.sid === sid)?.row.goal.text === 'No goal yet';
+    expect(
+      indexed
+        .filter(({ row }) => reads(row.session.sid))
+        .map(({ row }) => row.session.sid)
+        .sort(),
+    ).toEqual([...noGoal, 'unpublished', 'default'].filter((sid) => reads(sid)).sort());
+    for (const sid of noGoal) expect(reads(sid)).toBe(true);
+    expect(GOAL_OPTIONS.map((one) => one.label)).toEqual([
+      'Goal saved',
+      'Drafted from a prompt, not saved',
+      'No goal yet',
+    ]);
   });
 
   it('filter nothing on drift or goal while annotations are off', () => {

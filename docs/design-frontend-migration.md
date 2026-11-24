@@ -16,6 +16,16 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+Departure (2026-11-24, absence words): a Sessions row may draw one grey word in a far-right cell (Not
+checked yet), which no recorded row had. `frontend/test/sessionCanvasRowDeviation.ts`
+sets the page's line aside (`data-next-row-absence`), and the mounted tests, `rowAbsence.test.ts` and the
+canvas row story hold it instead. Over an annotation store that cannot be read, the recorded row said No
+goal yet or offered a prompt as the goal, which was wrong, and the page says Saved goal unavailable; the
+mask sets the goal fact aside on both sides for that board. A session with saved outcome lines and no goal reads What "done" looks like in its Goal cell, where the recorded row said "No goal yet". Both "No goal yet" filter chips now keep the
+rows whose Goal cell reads it, through one predicate, so the Progress check chip no longer keeps a
+drafted row. The session page's progress card says Not checked yet for a draft a check would adopt. The
+recorded answers stay fixed.
+
 Departure (2026-11-24, later): a Sessions row says its end and git facts once. The page joins the
 outcome and the git line into one line, drops "; git state not measured" and "Git state was not
 measured", drops a git line the outcome already states, and leaves a bare "Session ended" to the
@@ -161,8 +171,8 @@ the ID. The recorded answers stay fixed.
 2026-11-23, Sessions uses status tabs, search and an inline Filters panel. The Sessions
 differential masks the active group heading and group counts while keeping the window-derived
 history heading, row order and links in the comparison. The Sessions Search and filters stories
-check the two headings and their counts directly. The progress slot stays empty on Sessions
-rows in this slice. The count-free level chips are disabled. No goal yet filters by published
+check the two headings and their counts directly. Sessions rows draw no progress pill in this
+slice (a later slice adds a far-right absence word). The count-free level chips are disabled. No goal yet filters by published
 goal evidence. The recorded answers stay fixed.
 
 2026-11-23, Sessions replaces its operations heading, drift orientation and two fleet counters with

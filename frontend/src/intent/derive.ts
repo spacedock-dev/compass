@@ -21,6 +21,7 @@ import {
   goalCap,
   heldCap,
   characterCount,
+  goalUnavailable,
   storeUnreadable,
   OUTCOME_LINES_MAX,
   type Annotation,
@@ -258,7 +259,7 @@ export function findGoalOffered(input: DraftInput): boolean {
    pending adoption every consumer of the draft reads. */
 export function intentDraft(input: DraftInput): Draft | null {
   const { payload, session } = input;
-  if (!annotateOn(payload) || storeUnreadable(payload)) return null;
+  if (!annotateOn(payload) || storeUnreadable(payload) || goalUnavailable(session)) return null;
   const chosen = chosenStands(input);
   if (chosen) return chosen;
   /* A discarded session starts empty: the draft is offered by "Use your prompt" and never put back in the
@@ -482,7 +483,7 @@ export function goalEndedNote(input: DraftInput): string {
 /* Why the goal box arrives empty over a session that opened with a harness command: the command's name
    alone, since its arguments are not the reader's goal either. */
 export function noDraftWhy(session: Row, annotation: Annotation | null, payload: Row): string {
-  if (!annotateOn(payload) || storeUnreadable(payload)) return '';
+  if (!annotateOn(payload) || storeUnreadable(payload) || goalUnavailable(session)) return '';
   const goal = annotation ? annotation['goal'] : session['annotation_goal'];
   if (String(goal || '').trim() || !openedWithControl(session)) return '';
   const command = String(session['first_prompt'] || '')

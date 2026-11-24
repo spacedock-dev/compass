@@ -92,6 +92,7 @@ export const SESSION_ROW_WORDS = {
   offCourse: 'Off course',
   wayOffCourse: 'Way off course',
   noGoalYet: 'No goal yet',
+  savedGoalUnavailable: 'Saved goal unavailable',
   notCheckedYet: 'Not checked yet',
   tooEarlyToTell: 'Too early to tell',
   cantTell: "Can't tell",
@@ -612,6 +613,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       ],
       /\bNot checked(?! yet\b)(?:\s*[·:.]|$)/i,
     ),
+    savedGoalUnavailable: kept([
+      SESSION_ROW_WORDS.savedGoalUnavailable,
+      'No goal yet over an unreadable store',
+      'The annotation store or this session entry cannot be read',
+      'No goal yet',
+      'Plain text. Goal history says it too',
+    ]),
     tooEarlyToTell: ruled(
       [
         SESSION_ROW_WORDS.tooEarlyToTell,

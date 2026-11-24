@@ -91,6 +91,7 @@ Claude Code  gamma
 Working  Claude Code  alpha-app
   Wire the parser
   Goal · your first prompt: Add a config parser with tests.
+  Not checked yet
   Now: running the parser tests
   Resume: claude --resume a1b2c3d4-11111111-2222-4333-8444-555500000001
 
@@ -98,6 +99,7 @@ Earlier in the last 24 hours
 Quiet  Claude Code  beta-api
   Paginate the list endpoint
   Goal · your first prompt: Add a page cursor to the API response.
+  Not checked yet
   Now: last active 8 minutes ago
   Stop observed with uncommitted work · 3 changed entries
   Resume: claude --resume d4e5f6a7-11111111-2222-4333-8444-555500000004
@@ -109,6 +111,13 @@ Quiet  Claude Code  beta-api
   lacks evidence for a state.
 - A `Goal ·` label that starts with `from` or reads `your words` is a saved goal. Other labels
   can identify a draft, which the first check saves.
+- `Not checked yet` under a goal is the word the board draws at the right of the row: a saved goal,
+  or a draft the first check would save, that no check has read. No line means Compass cannot show
+  one for that session, which includes every Codex session. A session with no goal and no draft has
+  no goal line at all. A prompt you picked as the goal in the dashboard is held only in that browser,
+  so a session whose only draft is that choice shows no `Not checked yet` line here, though the
+  board shows one. `Goal: Saved goal unavailable` means the saved goals could not be read, so
+  Compass shows no goal and no prompt.
 - Run [`--drift`](#check-a-session-for-drift) to see the stored reading in detail.
 - `Resume:` is the command to reopen a stopped session, and it holds the session's id. For a session
   that is still running, go to the terminal it runs in.

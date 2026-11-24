@@ -6,7 +6,7 @@ import { titleLink } from '../ui/link';
 import { Button } from '../ui/button';
 import { StatusTile } from '../ui/status-tile';
 import { TooltipProvider } from '../ui/tooltip';
-import { EXPLANATIONS, SESSION_LIST_WORDS } from '../language/glossary';
+import { EXPLANATIONS, SESSION_LIST_WORDS, SESSION_ROW_WORDS } from '../language/glossary';
 import { selectAttentionSelection } from '../attention/select';
 import { WorthALookFlag } from '../attention/WorthALookFlag';
 import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 'react';
@@ -355,6 +355,22 @@ const NO_HINTS: readonly RowHint[] = [];
 
 /* Memoized with `Group`, so the urgent render a keystroke makes, which still holds the deferred result,
    passes every row the same props and redraws none of them. */
+/* The far-right cell: where the canvas draws a row's progress. Today it holds one plain grey word the board
+   can prove, Not checked yet, with no pill, border or icon, and it draws nothing (no empty element) where
+   there is none. Outside the row link, so it is not part of the link's name, and under the card's cover like
+   the descriptor, so a press on it still opens the session. The stored-departure pill will use this cell. */
+function ProgressCell({ row }: { readonly row: SessionRow }) {
+  if (!row.absence) return null;
+  return (
+    <span
+      className="self-start whitespace-nowrap pt-[3px] text-label leading-[1.5] text-muted-foreground max-[620px]:pt-0"
+      data-next-row-absence={SESSION_ROW_WORDS[row.absence]}
+    >
+      {SESSION_ROW_WORDS[row.absence]}
+    </span>
+  );
+}
+
 const RowView = memo(function RowView({
   row,
   hints = NO_HINTS,
@@ -365,14 +381,14 @@ const RowView = memo(function RowView({
   readonly depth?: number;
 }) {
   const { session, history } = row;
-  /* Two columns, as the redesign canvas draws a row: the session and what it is doing on the left, its goal on
-     the right. A phone stacks them. A declared child is indented, never striped: the style board allows no
+  /* Three columns, as the redesign canvas draws a row: the session and what it is doing, its goal, and its
+     progress at the far right. A phone stacks them. A declared child is indented, never striped: the style board allows no
      left-border stripes. */
   return (
     <Card
       as="article"
       variant="session-row"
-      className={`next-operation-row relative cursor-pointer no-underline grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] max-[620px]:grid-cols-1 next-operation-row--${session.tone}${depth ? ' pl-12 max-[620px]:pl-8' : ''}`}
+      className={`next-operation-row relative cursor-pointer no-underline grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_7rem] max-[620px]:grid-cols-1 next-operation-row--${session.tone}${depth ? ' pl-12 max-[620px]:pl-8' : ''}`}
       {...(depth ? { 'data-declared-depth': depth } : {})}
       data-next-harness={session.harness}
       data-next-session={session.sid}
@@ -380,6 +396,7 @@ const RowView = memo(function RowView({
     >
       <Identity row={row} hints={hints} />
       <GoalCellView row={row} />
+      <ProgressCell row={row} />
     </Card>
   );
 });

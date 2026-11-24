@@ -843,5 +843,8 @@
       "input": "The agent coordinated parallel builders on the milestone and opened PRs #9325, #9326 and #9327. The agent said it was merging #9327 first, then updating #9325, after the person asked to merge both and dig into DASH-3801.",
       "expected": "The agent coordinated parallel builders on the milestone and opened PRs #9325, #9326 and #9327. The agent said it was merging #9327 first, then updating #9325, after the person asked to merge both and dig into DASH-3801."
     }
+  },
+  "goalCell": {
+    "doneLooksLike": "What \"done\" looks like"
   }
 }

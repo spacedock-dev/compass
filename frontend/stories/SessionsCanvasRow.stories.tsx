@@ -78,10 +78,12 @@ function Board({
   sessions = CANVAS_SESSIONS,
   annotate = true,
   usage,
+  extra,
 }: {
   readonly sessions?: readonly Record<string, unknown>[];
   readonly annotate?: boolean;
   readonly usage?: readonly Record<string, unknown>[];
+  readonly extra?: Record<string, unknown>;
 }) {
   const [shell] = useState(() => {
     const history = fakeRouterEnvironment('#n=sessions');
@@ -123,6 +125,7 @@ function Board({
                 ],
                 sessions,
                 ...(usage ? { usage } : {}),
+                ...extra,
               })
             : json({}),
         ),
@@ -441,6 +444,163 @@ export const ListCard: Story = {
     await expect(cleanup.textContent?.match(/own end/g)).toHaveLength(1);
     await expect(cleanup.textContent?.match(/git state/gi)).toHaveLength(1);
     await expect(auditCalm(canvasElement)).toEqual([]);
+  },
+};
+
+/* The grey word at the right of a row (owner, 2026-11-24): Not checked yet where the goal, or the draft a check
+   would adopt, has no check recorded, and nothing where the board cannot prove it. No goal yet stays in the
+   Goal cell, once. A goal that cannot be read says so and never No goal yet. Invented rows throughout. */
+const ABSENT = { annotation_goal: '', annotation_goal_why: 'No goal typed for this session.' };
+const ABSENCE_ROUTES = { claude: { reason: '' }, codex: { reason: '' } };
+const base = (sid: string, title: string) => ({
+  harness: 'claude',
+  sid,
+  project: 'acme/api',
+  project_key: '/acme/api',
+  title,
+  state: 'idle',
+  started_at: G - 3600,
+  last_activity: G - 60,
+});
+const ABSENCE_SESSIONS: readonly Record<string, unknown>[] = [
+  {
+    ...base('acme-unchecked', 'Draft the release notes'),
+    annotation_goal: 'Publish the acme release notes',
+    annotation_revision: 1,
+  },
+  {
+    ...base('acme-draft', 'Tidy the invoice export'),
+    ...ABSENT,
+    first_prompt: 'Tidy the invoice export',
+    first_prompt_at: G - 3500,
+  },
+  { ...base('acme-empty', 'Open question'), ...ABSENT },
+  {
+    ...base('acme-lines', 'Write the changelog'),
+    ...ABSENT,
+    annotation_line_1: 'The changelog lists every fix',
+  },
+  {
+    ...base('acme-codex', 'Port the importer'),
+    harness: 'codex',
+    annotation_goal: 'Port the acme importer',
+    annotation_revision: 1,
+  },
+  {
+    ...base('acme-held', 'Rename the tables'),
+    annotation_goal: '',
+    annotation_goal_why: '',
+    annotation_goal_unreadable: true,
+    first_prompt: 'Rename the legacy tables',
+    first_prompt_at: G - 3500,
+  },
+];
+
+export const AbsenceWord: Story = {
+  render: () => <Board sessions={ABSENCE_SESSIONS} extra={{ reading_routes: ABSENCE_ROUTES }} />,
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(6),
+    );
+    const word = (sid: string) =>
+      rowOf(canvasElement, sid).querySelector<HTMLElement>('[data-next-row-absence]');
+    for (const width of [1280, 700, 400]) {
+      await atWidth(width, async () => {
+        for (const sid of ['acme-unchecked', 'acme-draft', 'acme-lines']) {
+          const row = rowOf(canvasElement, sid);
+          const found = word(sid);
+          if (!found) throw new Error(`No absence word on ${sid}`);
+          await expect(found.textContent).toBe('Not checked yet');
+          // Plain quiet text: no pill, border, background, icon or action, and outside the row link.
+          await expect(found).toHaveStyle({
+            fontSize: '13px',
+            color: 'rgb(82, 96, 109)',
+            borderTopWidth: '0px',
+            borderTopLeftRadius: '0px',
+            paddingLeft: '0px',
+            backgroundImage: 'none',
+            backgroundColor: 'rgba(0, 0, 0, 0)',
+          });
+          await expect(found.querySelector('svg, img')).toBeNull();
+          await expect(found.closest('a, button')).toBeNull();
+          await expect(found.className).not.toMatch(/badge|pill/i);
+          await expect(found.hasAttribute('data-slot')).toBe(false);
+          await expect(row.querySelector('[data-slot="badge"], [data-next-drift-pill]')).toBeNull();
+          const goal = part(row, '[data-next-operation-fact="goal"]');
+          await expect(goal.contains(found)).toBe(false);
+          const box = found.getBoundingClientRect();
+          if (width >= 700) {
+            // The far right, top-aligned with the title, and the goal beside it is not squeezed away.
+            const title = part(row, '.next-operation-route').getBoundingClientRect();
+            await near(box.top, title.top, 4);
+            await expect(box.left).toBeGreaterThanOrEqual(goal.getBoundingClientRect().right - 1);
+            await expect(box.right).toBeLessThanOrEqual(row.getBoundingClientRect().right);
+            await expect(goal.getBoundingClientRect().width).toBeGreaterThanOrEqual(150);
+          } else {
+            // A phone stacks it under the Goal cell, still on the screen.
+            await expect(box.top).toBeGreaterThanOrEqual(goal.getBoundingClientRect().bottom - 1);
+            await expect(box.right).toBeLessThanOrEqual(window.innerWidth);
+          }
+          // A press on the word still opens the session: it sits under the card's cover.
+          await expect(word(sid)?.textContent).toBe('Not checked yet');
+        }
+        // Rows with nothing to prove draw no element at all: empty, Codex and unreadable.
+        for (const sid of ['acme-empty', 'acme-codex', 'acme-held'])
+          await expect(word(sid)).toBeNull();
+        // No goal yet is in the Goal cell once, and a draft row shows its prompt instead, never both.
+        await expect(
+          rowOf(canvasElement, 'acme-empty').textContent?.match(/No goal yet/g),
+        ).toHaveLength(1);
+        for (const sid of ['acme-draft', 'acme-unchecked', 'acme-lines'])
+          await expect(rowOf(canvasElement, sid).textContent).not.toMatch(/No goal yet/);
+        // Saved outcome lines and no goal name the expected outcome, never No goal yet beside Not checked yet.
+        await expect(
+          part(rowOf(canvasElement, 'acme-lines'), '[data-next-operation-fact="goal"]').textContent,
+        ).toContain('What "done" looks like');
+        // A goal that cannot be read says so, never No goal yet or its prompt.
+        const held = rowOf(canvasElement, 'acme-held');
+        await expect(part(held, '[data-next-operation-fact="goal"]').textContent).toContain(
+          'Saved goal unavailable',
+        );
+        await expect(held.textContent).not.toMatch(/No goal yet|Not checked yet|legacy tables/);
+        await expect(held.querySelector('[data-next-operation-fact="goal"] a')).toBeNull();
+        await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+      });
+    }
+    await expect(auditCalm(canvasElement)).toEqual([]);
+  },
+};
+
+/* Both "No goal yet" chips keep exactly the rows whose Goal cell reads it, through one predicate. A draft row
+   shows its prompt as a goal a check can adopt, so neither chip keeps it. */
+export const NoGoalChips: Story = {
+  render: () => <Board sessions={ABSENCE_SESSIONS} extra={{ reading_routes: ABSENCE_ROUTES }} />,
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(6),
+    );
+    const shown = () =>
+      [...canvasElement.querySelectorAll('article.next-operation-row')]
+        .map((row) => row.getAttribute('data-next-session'))
+        .sort();
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'Filters' }));
+    const panel = within(canvas.getByRole('region', { name: 'Filters' }));
+    const progress = within(panel.getByRole('group', { name: 'Progress check' }));
+    const chip = progress.getByRole('button', { name: 'No goal yet' });
+    await userEvent.click(chip);
+    await waitFor(() => expect(shown()).toEqual(['acme-empty']));
+    const kept = shown() as string[];
+    for (const sid of kept)
+      await expect(
+        part(rowOf(canvasElement, sid), '[data-next-operation-fact="goal"]').textContent,
+      ).toContain('No goal yet');
+    await userEvent.click(chip);
+    await userEvent.click(panel.getByRole('button', { name: 'More filters for power users' }));
+    const goal = canvasElement.querySelector<HTMLElement>('[data-filter-facet="goal"]');
+    if (!goal) throw new Error('Missing the goal facet');
+    await userEvent.click(within(goal).getByText('No goal yet'));
+    await waitFor(() => expect(shown()).toEqual(kept));
   },
 };
 

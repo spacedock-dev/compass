@@ -222,6 +222,8 @@ it('a person reads the page wording and derived reading in their terminal', () =
         relevance: SUMMARY_RELEVANCE,
         ...summaryCases(),
       },
+      // The Sessions goal cell's label over saved outcome lines and no goal, which `--sessions` repeats.
+      goalCell: { doneLooksLike: GLOSSARY.doneLooksLike.plain },
     };
     if (process.env['COMPASS_WRITE_WORDING_PARITY'] === '1') {
       const candidate = join(

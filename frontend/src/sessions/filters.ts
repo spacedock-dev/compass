@@ -7,6 +7,9 @@ import { assignmentOf, sessionInstruction } from './intent';
 import { SESSION_LIST_WORDS, SESSION_ROW_WORDS } from '../language/glossary';
 import {
   checkedAgainstCurrentWords,
+  hasSavedWords,
+  noGoalYet,
+  type GoalCell,
   rowState,
   type SessionRow,
   type SessionsContext,
@@ -113,14 +116,24 @@ export const PROGRESS_OPTIONS = [
 
 type ProgressValue = 'no-goal' | 'has-goal';
 
-function progressValue(source: Row | undefined): ProgressValue | null {
-  const saved = source?.['annotation_goal'];
-  if (typeof saved !== 'string') return null;
-  if (saved.trim()) return 'has-goal';
-  // The collector initializes an empty field. The annotation store publishes the reason for an absence.
-  const discarded = nextNumber(source?.['annotation_discarded_at']);
-  return trimmed(source?.['annotation_goal_why']) || (discarded !== null && discarded > 0)
-    ? 'no-goal'
+/* The Progress check chip's "No goal yet" and the Goal source chip's are one predicate, `noGoalYet` in
+   rows.ts, so both keep exactly the rows whose Goal cell reads No goal yet. A drafted row is a goal the
+   reader can check, so it is "has goal" here, as it is for the row's Not checked yet. Null where the board
+   publishes nothing to partition. */
+function progressValue(
+  source: Row | undefined,
+  context: SessionsContext,
+  goal: GoalCell,
+): ProgressValue | null {
+  if (noGoalYet(source, context, goal)) return 'no-goal';
+  if (!context.annotate || context.unreadable || !source) return null;
+  if (source['annotation_goal_unreadable'] === true) return null;
+  const discarded = nextNumber(source['annotation_discarded_at']);
+  return typeof source['annotation_goal'] === 'string' &&
+    (hasSavedWords(source) ||
+      trimmed(source['annotation_goal_why']) ||
+      (discarded !== null && discarded > 0))
+    ? 'has-goal'
     : null;
 }
 
@@ -281,7 +294,7 @@ export function indexRow(row: SessionRow, context: SessionsContext): IndexedRow 
     ...outcome,
     ...tasks,
   ].filter((one): one is Field => one !== null);
-  const progress = readable ? progressValue(source) : null;
+  const progress = readable ? progressValue(source, context, goal) : null;
   const checked = checkedAgainstCurrentWords(source, context);
   return {
     row,
@@ -292,13 +305,7 @@ export function indexRow(row: SessionRow, context: SessionsContext): IndexedRow 
     progress,
     drift: !readable ? null : row.drift ? 'recorded' : checked ? 'checked' : 'unchecked',
     goal:
-      progress === 'has-goal'
-        ? 'saved'
-        : progress === 'no-goal'
-          ? goal.known
-            ? 'drafted'
-            : 'none'
-          : null,
+      progress === null ? null : hasSavedWords(source) ? 'saved' : goal.known ? 'drafted' : 'none',
     started: startStamp(source),
     active: activityStamp(source),
   };

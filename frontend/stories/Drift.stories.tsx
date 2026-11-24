@@ -86,7 +86,7 @@ export const SentAndSettingsStayInFlow: Story = {
     });
     await analyzeButton(card);
     const title = inCard.getByRole('heading', { name: 'Is it on track?' });
-    const answer = await inCard.findByText('No goal yet');
+    const answer = await inCard.findByText('Not checked yet');
     const answerOffset = () =>
       settledLayout(() => answer.getBoundingClientRect().top - title.getBoundingClientRect().top);
     const before = await answerOffset();

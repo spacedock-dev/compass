@@ -1636,6 +1636,24 @@ class AnnotationOnTheRowTest(unittest.TestCase):
         self.assertTrue(rows[1]["annotation_goal_why"])
         self.assertEqual(0, rows[1]["annotation_revision_count"])
 
+    def test_a_session_held_raw_says_its_goal_is_unreadable_and_not_that_none_was_typed(
+        self,
+    ) -> None:
+        # A newer build wrote this session's entry, so `find` misses it and the row would read "No goal
+        # typed", a sentence about a session whose words exist. The flag is the only thing that tells the
+        # two apart, and it is False on every row that was read.
+        rows: list[Any] = [
+            {"harness": "pi", "sid": "held", "state": "working"},
+            {"harness": "pi", "sid": "untouched", "state": "working"},
+        ]
+        aggregate._attach_annotations(rows, (), held=frozenset({("pi", "held")}))
+
+        self.assertIs(True, rows[0]["annotation_goal_unreadable"])
+        self.assertEqual("", rows[0]["annotation_goal"])
+        self.assertEqual("", rows[0]["annotation_goal_why"])
+        self.assertIs(False, rows[1]["annotation_goal_unreadable"])
+        self.assertTrue(rows[1]["annotation_goal_why"])
+
     def test_binding_on_the_row_is_the_full_sid_not_the_display_prefix(self) -> None:
         """`sessions.py` publishes both. Keying on `session` would let one
         session's words appear under another's name."""

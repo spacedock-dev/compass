@@ -517,12 +517,53 @@ export const Progress05NoGoalYet = absenceStory(
   '05 · No goal yet',
   {
     unsaved: true,
-    session: { annotation_goal: '', annotation_goal_why: 'No goal typed for this session.' },
+    // No first prompt either, so there is no draft for a check to adopt.
+    session: {
+      annotation_goal: '',
+      annotation_goal_why: 'No goal typed for this session.',
+      first_prompt: '',
+      first_prompt_at: null,
+    },
   },
   'No goal yet',
   /Give Compass a goal/,
   'Check progress',
 );
+
+// A draft is a goal Check progress adopts before it reads, so the page agrees with the Sessions row.
+export const Progress05DraftIsNotCheckedYet = absenceStory(
+  '05 · A draft goal is Not checked yet',
+  {
+    unsaved: true,
+    session: { annotation_goal: '', annotation_goal_why: 'No goal typed for this session.' },
+  },
+  'Not checked yet',
+  /no saved progress check/,
+  'Check progress',
+);
+
+// A newer build wrote this session's entry: the row says Saved goal unavailable, and so does the page. It
+// drafts no prompt, and the card says no word about a goal that may exist.
+export const SavedGoalUnavailableDraftsNothingAndSaysNoWord: Story = {
+  name: 'Saved goal unavailable · no draft, no word',
+  ...scenario({
+    unsaved: true,
+    session: {
+      annotation_goal: '',
+      annotation_goal_why: '',
+      annotation_goal_unreadable: true,
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const progress = await progressCard(canvasElement);
+    const view = within(canvasElement);
+    await expect(await view.findByText('Saved goal unavailable')).toBeVisible();
+    await expect(view.queryByText(/Drafted from your first prompt/)).toBeNull();
+    await expect(progress.querySelector('[data-next-progress-absence]')).toBeNull();
+    await expect(progress).not.toHaveTextContent(/No goal yet|Not checked yet/);
+    await expectNoLevel(progress);
+  },
+};
 
 export const Progress06NotCheckedYet = absenceStory(
   '06 · Not checked yet',

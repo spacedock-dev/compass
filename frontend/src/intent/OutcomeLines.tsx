@@ -5,7 +5,13 @@ import { DriftContext } from '../drift/context';
 import { GLOSSARY } from '../language/glossary';
 import { isOutcomeLine } from '../drift/shape';
 import { compatSessKey } from '../api/identity';
-import { annotationLines, storeUnreadable, OUTCOME_LINES_MAX, characterCount } from './annotation';
+import {
+  annotationLines,
+  goalUnavailable,
+  storeUnreadable,
+  OUTCOME_LINES_MAX,
+  characterCount,
+} from './annotation';
 import { heldSentence } from './cues';
 import { directionWhy, linesDraft, linesKey, linesToSend, lineSource } from './derive';
 import { ActionButton } from './ActionButton';
@@ -275,7 +281,10 @@ export function OutcomeLines() {
   const boxes = draft.length ? draft : [''];
   const full = draft.length >= OUTCOME_LINES_MAX;
   const line = held.directions.get(compatSessKey(session));
-  const why = storeUnreadable(payload) ? '' : String(annotation?.['lines_why'] || '');
+  const why =
+    storeUnreadable(payload) || goalUnavailable(session)
+      ? ''
+      : String(annotation?.['lines_why'] || '');
   const cue = heldSentence(held.kind(key), null);
   const holds = useOutcomesHeld();
   /* Where an open later direction already says the list is full beside its own save, the list's sentence is

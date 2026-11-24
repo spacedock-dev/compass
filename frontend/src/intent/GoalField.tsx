@@ -3,7 +3,7 @@ import { Label } from '../ui/label';
 import { clock as clockText } from '../observed';
 import { promptClip } from './derive';
 import { ActionButton } from './ActionButton';
-import { storeUnreadable, characterCount } from './annotation';
+import { goalUnavailable, storeUnreadable, characterCount } from './annotation';
 import { heldSentence } from './cues';
 import { clearGoal, escapeGoal, keepSavedGoal, takeDetectedGoal, typeGoal } from './edit';
 import {
@@ -106,7 +106,10 @@ export function GoalField() {
   const found = foundGoal(input);
   const sourceLine = goalSourceLine(input);
   const endedGoal = goalEndedNote(input);
-  const why = storeUnreadable(input.payload) ? '' : String(input.annotation?.['goal_why'] || '');
+  const why =
+    storeUnreadable(input.payload) || goalUnavailable(input.session)
+      ? ''
+      : String(input.annotation?.['goal_why'] || '');
   const cue = heldSentence(held.kind(key), null);
   /* The refusal says it for the words that were read, so it goes the moment the box differs from them. */
   const refused = goalRefused(input) && !drafted && text === saved;
