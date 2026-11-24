@@ -157,8 +157,8 @@ the captured pages already are those boundaries.
 
 ## How big it may be
 
-On 2026-11-24, the Sessions progress pill, filters and Help measured 2,487,863 packaged bytes,
-which sets the page bound.
+On 2026-11-24, before the rebase, the Sessions progress pill, filters and Help measured
+2,487,863 packaged bytes.
 
 The fixture ships inside `react.html`, and every install and every page load carries it, so its size is
 bounded before a sample is built, not measured after. The initial bounds were set on 2026-10-19, before this
@@ -401,6 +401,9 @@ On 2026-11-23, the Session layout, side cards and story brought the packaged pag
 2,415,259 bytes at `5289924f` to 2,417,811 bytes. The review fixes increased it by
 1,892 bytes to 2,419,703 bytes on Node 26.10.0 and pnpm 12.17.0.
 The page bound is the measured 2,419,703 bytes. The fixture allowance stays at 250,000 bytes.
+
+On 2026-11-24, the rebased Sessions review fixes packaged at 2,488,543 bytes on Node 26.12.1
+and pnpm 12.19.0, setting the page bound to that measurement.
 
 ## View only
 

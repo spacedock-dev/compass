@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2487303,
+    "bytes": 2488543,
     "file": "react.html",
-    "sha256": "d6fbcde8bb378b3638014ec8dcc58f7fd997b968d3b9554b2b9f8936dd32972c"
+    "sha256": "6ab0353c81e85b4bcefae286d5e7ad34c8a74d49f2eb0e51b0012d6990801a80"
   },
   "format": 1,
   "frontend": "react",
@@ -763,7 +763,7 @@
       },
       {
         "file": "frontend/src/help/Help.tsx",
-        "sha256": "15bc7fb3f75b0cf9256ea6c10837c64ae05c4a6d6e34facd98b0bcb5e4637280"
+        "sha256": "47ecd0aaa99b850067dd3ece3946ec08930b6fc261fc23f7ca0e0d50a10c151a"
       },
       {
         "file": "frontend/src/help/agents.ts",
@@ -1227,7 +1227,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionsFilters.tsx",
-        "sha256": "868ff038510138dd8533d44ccb9b621d7c57879eedbfe9d5179198508e96d285"
+        "sha256": "8be2e72a2c076d9e51a6b38742753ea65ed0c373359259d1549ae8ece2f78375"
       },
       {
         "file": "frontend/src/sessions/SessionsGlance.tsx",
@@ -1235,7 +1235,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionsView.tsx",
-        "sha256": "846c30daed1346dfa0d9228fc71afd1cf89b2aed46af28d201372a88efbb40d2"
+        "sha256": "ae51b17685c90e0eb6b6182b6d8e5e6a754b8efc67e8baa6fa6e47b2f140bf18"
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",
@@ -1263,7 +1263,7 @@
       },
       {
         "file": "frontend/src/sessions/filters.ts",
-        "sha256": "93485d26e55aa4bdea4356a284326e559ae63fbb625c2f1a8d02104737abbaf6"
+        "sha256": "658dbdb332198f15954dae71db0a9803b8dd1adfe6f11b0b1218078708c6e21d"
       },
       {
         "file": "frontend/src/sessions/fullActivityKey.ts",
@@ -1291,7 +1291,7 @@
       },
       {
         "file": "frontend/src/sessions/rows.ts",
-        "sha256": "f5df7957ed8c67a0dcb1ea555eac4fed207c0aa1af9ae92738041e5cb63fc4cf"
+        "sha256": "066c76b75d6590c7948b0a8b81419a0c1898fc29b657c3cd09ec21f7bee2021f"
       },
       {
         "file": "frontend/src/sessions/sessions.css",
