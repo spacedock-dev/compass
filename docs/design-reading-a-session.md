@@ -8742,27 +8742,28 @@ The coordinator applies DEC-26 to the far-right Sessions cell. A proven saved de
 Slightly off course or Off course. Out of date and Goal too vague to check are plain text. A goal
 that no check has read can show Not checked yet. The cell shows one answer at most. Codex rows and
 live estimates supply no level. While a peer dashboard is checking, the standing saved answer can
-still show. The level filters count the same rows that draw those pills. Way off course stays
-available with a count of zero because the analysis scale stops at High.
+still show. The level chips select rows showing the corresponding pill. All four Progress check
+chips stay enabled on readable annotation boards and carry no counts.
 
 The row uses the same focused derivation as the session page. It keeps the result in process
 memory, including when that derivation reuses its view. A poll verifies a matching row input
 digest and reading time, a readable annotation store, the absence of an overrule, the saved
-evidence record, and the size of the same transcript. Only Out of date can survive transcript
-growth. The gate opens no transcript. A memo expires at 300 seconds. An unknown answer leaves
+evidence record, and the transcript's identity, accessibility and file metadata. Only Out of date
+can survive transcript growth. The gate opens no transcript. A memo expires at 300 seconds. An unknown answer leaves
 the cell empty until the focused derivation can prove one.
 
 The owner approved warming that memo in the background. The server takes at most four rows per
-pass and stops starting work at the pass deadline. It uses the existing collection and runs the
-focused derivation locally with no model, Live monitor lease or new collection. Between messages,
-it gives a board collection priority. It invalidates
-the board snapshot after the pass so the next collection can show what it found. No level is
+pass and stops starting work at the pass deadline. It checks that the saved evidence still holds
+before running the focused derivation. It uses the existing collection and skips model calls,
+live estimates, Live monitor leases and history updates. Between messages it gives board collection
+priority. When the published answer changes, it invalidates the board snapshot after the pass.
+The status-line writer rechecks the published proof before refreshing an idle footer. No level is
 saved with the assessment.
 
 History-only changes that preserve lineage and do not change the transcript can leave an answer
-standing until the memo expires or the page is opened. An in-place rewrite that preserves size
-and mtime can also escape the metadata check. After expiry the focused page or the warmer must
-derive a new answer. Each dashboard warms its own memo.
+standing until the memo expires or the page is opened. POSIX change time catches in-place rewrites
+that preserve size and mtime. On Windows, creation time cannot detect those rewrites. After expiry
+the focused page or the warmer must derive a new answer. Each dashboard warms its own memo.
 
 ### Amended 2026-10-19 (owner): each departure is a card
 

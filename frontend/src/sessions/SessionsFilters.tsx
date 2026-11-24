@@ -31,7 +31,6 @@ import {
   dateCounts,
   dateFieldLabel,
   fixedOptions,
-  facetCounts,
   harnessOptions,
   hiddenWaiting,
   isDated,
@@ -553,13 +552,6 @@ export function SessionsFilters({
     () => indexed.some(({ progress }) => progress === null),
     [indexed],
   );
-  const progressCounts = useMemo(
-    () =>
-      prepared.progressAvailable && board.countsAvailable
-        ? facetCounts(indexed, prepared, 'progress')
-        : null,
-    [indexed, prepared, board.countsAvailable],
-  );
   const goalCoverage = progressExplanation || (incompleteGoals ? PARTIAL_GOALS : '');
   const noMatches = board.countsAvailable && filtered.active && filtered.shown === 0;
   const emptySearch = noMatches && prepared.terms.length > 0;
@@ -939,11 +931,8 @@ export function SessionsFilters({
               <FilterChip
                 key={value}
                 label={label}
-                count={
-                  value === 'no-goal' || !progressCounts ? null : (progressCounts.get(value) ?? 0)
-                }
                 selected={filters.progress.includes(value)}
-                disabled={!prepared.progressAvailable}
+                disabled={!readable}
                 onClick={() => toggle('progress', value)}
               />
             ))}

@@ -66,6 +66,7 @@ class RuntimeState:
     hook_generation: dict[str, int] = field(default_factory=dict)
     store_errors: dict[str, str] = field(default_factory=dict)
     metadata_cache: dict[str, dict[str, Any]] = field(default_factory=dict)
+    claude_transcript_collisions: frozenset[str] = frozenset()
     claude_title_cache: dict[str, tuple[int, int, str | None]] = field(default_factory=dict)
     claude_user_event_cache: dict[str, tuple[int, int, str | None]] = field(default_factory=dict)
     # One message index per transcript (`entry_numbers.MessageIndex`), keyed by its path, harness

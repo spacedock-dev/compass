@@ -196,7 +196,13 @@ class FooterLane(Protocol):
     that owns collection takes no edge toward a module that owns files.
     """
 
-    def update(self, collection: Mapping[str, Any], now: float) -> None: ...
+    def update(
+        self,
+        collection: Mapping[str, Any],
+        now: float,
+        *,
+        validate_progress: Callable[[float], bool] | None = None,
+    ) -> None: ...
 
     def touch(self, now: float) -> None: ...
 
@@ -1795,9 +1801,13 @@ class Application:
             validate = row_progress.publish(collection, self.config, self.state, self.clock, stamp)
             body = json.dumps(board_explanations.compact(collection, _BOARD_EXPLANATIONS)).encode()
             revision, kept = self.snapshot.publish(
-                key, body, now=self.clock(), generation=generation, validate=validate
+                key,
+                body,
+                now=self.clock(),
+                generation=generation,
+                validate=(lambda: validate(self.clock())) if validate else None,
             )
-            self._write_footer_lines(collection, show_all=show_all)
+            self._write_footer_lines(collection, show_all=show_all, validate_progress=validate)
             # Only a freshly minted revision that was kept is worth announcing. A
             # warm reuse returns above without reaching this line, so a connected
             # client is never woken for a state it already has; and a body that
@@ -1810,7 +1820,13 @@ class Application:
                     self.warm_row_progress(collection)
             return revision, body
 
-    def _write_footer_lines(self, collection: Collection, *, show_all: bool) -> None:
+    def _write_footer_lines(
+        self,
+        collection: Collection,
+        *,
+        show_all: bool,
+        validate_progress: Callable[[float], bool] | None,
+    ) -> None:
         """The status line's files, from the page-default variant only.
 
         `show_all` carries old rows, which would count waits the board does not show.
@@ -1819,7 +1835,7 @@ class Application:
         if writer is None or show_all:
             return
         with contextlib.suppress(Exception):
-            writer.update(collection, self.clock())
+            writer.update(collection, self.clock(), validate_progress=validate_progress)
 
     def _fresh_snapshot(
         self, key: runtime_snapshot.SnapshotKey

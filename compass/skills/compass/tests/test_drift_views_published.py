@@ -34,7 +34,12 @@ def _application() -> Any:
     return types.SimpleNamespace(
         diagnostic_sink=lambda _message: None,
         config=types.SimpleNamespace(max_cache_entries=2),
-        state=types.SimpleNamespace(drift_view_cache={}, drift_view_lock=threading.Lock()),
+        state=types.SimpleNamespace(
+            drift_view_cache={},
+            drift_view_lock=threading.Lock(),
+            row_progress={},
+            row_progress_lock=threading.Lock(),
+        ),
     )
 
 
@@ -293,10 +298,10 @@ class OverARealServerTest(LeaseRoute):
     def _unavailable(self, reason: str) -> None:
         original = http_api._with_drift_view
 
-        def attach(app: Any, context: Any, payload: Any, *args: Any) -> Any:
+        def attach(app: Any, context: Any, payload: Any, *args: Any, **kwargs: Any) -> Any:
             if reason == "identity-not-unique":
                 payload = {**payload, "sessions": payload["sessions"] * 2}
-            return original(app, context, payload, *args)
+            return original(app, context, payload, *args, **kwargs)
 
         with (
             mock.patch.object(http_api, "_with_drift_view", side_effect=attach),
@@ -352,14 +357,19 @@ class OverARealServerTest(LeaseRoute):
                 with self.subTest(key=key, value=value):
 
                     def attach(
-                        app: Any, context: Any, *args: Any, key: str = key, value: Any = value
+                        app: Any,
+                        context: Any,
+                        *args: Any,
+                        key: str = key,
+                        value: Any = value,
+                        **kwargs: Any,
                     ) -> Any:
                         context = copy.deepcopy(context)
                         if key == "work":
                             context["sources"]["work"] = value
                         else:
                             context[key] = value
-                        return original(app, context, *args)
+                        return original(app, context, *args, **kwargs)
 
                     with (
                         mock.patch.object(http_api, "_with_drift_view", side_effect=attach),

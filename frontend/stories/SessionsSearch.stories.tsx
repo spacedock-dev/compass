@@ -1715,17 +1715,7 @@ export const TabsAndInlineFilters: Story = {
       filters.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     const progress = within(panel).getByRole('group', { name: 'Progress check' });
-    await expect(
-      within(progress)
-        .getAllByRole('button')
-        .map((chip) => chip.textContent),
-    ).toEqual(['Slightly off course', 'Off course', 'Way off course', 'No goal yet']);
-    for (const name of ['Slightly off course', 'Off course', 'Way off course']) {
-      await expect(within(progress).getByRole('button', { name })).toBeDisabled();
-    }
-    await expect(
-      within(progress).getByText(/Filtering by progress level is unavailable/),
-    ).toBeVisible();
+    await expectProgressChips(progress);
     await expect(shownRows(canvasElement)).toHaveLength(2);
     await userEvent.click(
       within(panel).getByRole('button', { name: 'More filters for power users' }),
@@ -1864,18 +1854,25 @@ export const UnavailableSegmentsLookDisabled: Story = {
   },
 };
 
-export const CodexFiltersExplainUnavailableLevels: Story = {
+async function expectProgressChips(group: HTMLElement) {
+  const chips = within(group).getAllByRole('button');
+  await expect(chips.map((chip) => chip.textContent)).toEqual([
+    'Slightly off course',
+    'Off course',
+    'Way off course',
+    'No goal yet',
+  ]);
+  for (const chip of chips) await expect(chip).toBeEnabled();
+  await expect(within(group).queryByText('Filtering by progress level is unavailable.')).toBeNull();
+}
+
+export const CodexFiltersOfferCountFreeLevels: Story = {
   args: { flagBoard: 'codex' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByRole('button', { name: 'All 1' });
     const panel = within(await openPanel(canvasElement));
-    const progress = within(panel.getByRole('group', { name: 'Progress check' }));
-    const explanation = 'Filtering by progress level is unavailable.';
-    await expect(progress.getByText(explanation)).toBeVisible();
-    for (const name of ['Slightly off course', 'Off course', 'Way off course']) {
-      await expect(progress.getByRole('button', { name })).toBeDisabled();
-    }
+    await expectProgressChips(panel.getByRole('group', { name: 'Progress check' }));
   },
 };
 

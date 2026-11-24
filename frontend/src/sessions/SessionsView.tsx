@@ -371,8 +371,8 @@ function ProgressCell({ row }: { readonly row: SessionRow }) {
         tone={progress}
         className={
           progress === 'medium'
-            ? 'justify-self-start bg-card py-[3px] leading-5'
-            : 'justify-self-start py-[3px] leading-5'
+            ? 'self-start justify-self-start bg-card py-[3px] leading-5'
+            : 'self-start justify-self-start py-[3px] leading-5'
         }
         data-next-drift-pill
         data-level={progress}

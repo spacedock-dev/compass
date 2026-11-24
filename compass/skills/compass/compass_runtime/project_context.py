@@ -11808,14 +11808,6 @@ def _history_identity(
     return key, aliases
 
 
-def _history_project(
-    config: RuntimeConfig, state: RuntimeState, sessions: Sequence[Mapping[str, Any]], project: str
-) -> str:
-    key, aliases = _history_identity(sessions, project)
-    semantic_history.reconcile_project(config, state, key, aliases)
-    return key
-
-
 def _analysis_context_sessions(
     sessions: Sequence[Mapping[str, Any]], project: str, focus: tuple[str, str] | None
 ) -> tuple[list[Mapping[str, Any]], list[Mapping[str, Any]], str, int]:
@@ -13800,6 +13792,7 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
     focus: tuple[str, str] | None = None,
     model_consent: bool = False,
     message_reach: PressWindow | None = None,
+    update_history: bool = True,
 ) -> dict[str, Any]:
     """Observer results and a real project event log for exact-label sessions.
 
@@ -13812,7 +13805,9 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
         sessions, project, focus
     )
     attention_sessions, attention_coverage = _attention_context_sessions(sessions, project)
-    history_project = _history_project(config, state, sessions, project)
+    history_project, aliases = _history_identity(sessions, project)
+    if update_history:
+        semantic_history.reconcile_project(config, state, history_project, aliases)
     workflow_discovery = _project_workflow_discovery(
         config,
         state,
@@ -13946,14 +13941,8 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
     project_gate_rows, prepared = _project_peer_gate_context(config, state, sessions, project, None)
     gate_events.extend(project_gate_rows)
     briefings += prepared
-    _scope_gate_events(
-        events,
-        history_events,
-        gate_events,
-        None,
-        child_assignments,
-        semantic_history.read(config, state, history_project),
-    )
+    history = semantic_history.read(config, state, history_project)
+    _scope_gate_events(events, history_events, gate_events, None, child_assignments, history)
 
     timeline = _project_timeline(
         events,
@@ -13961,20 +13950,21 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
         reached.anchors if reached else frozenset(),
         cap=message_reach.cap if message_reach is not None else MAX_PROJECT_EVENTS,
     )
-    history_timeline = _dedupe_project_events(history_events)
     gate_count, steer_count, work_count = _timeline_counts(timeline)
     semantic = _semantic_model(timeline, observers, now=now)
-    history_semantic = _semantic_model(history_timeline, observers, now=now)
-    history = semantic_history.update(
-        config,
-        state,
-        history_project,
-        history_semantic,
-        attention_sessions,
-        child_assignments,
-        now=now,
-        source_scans=history_source_scans,
-    )
+    if update_history:
+        history_timeline = _dedupe_project_events(history_events)
+        history_semantic = _semantic_model(history_timeline, observers, now=now)
+        history = semantic_history.update(
+            config,
+            state,
+            history_project,
+            history_semantic,
+            attention_sessions,
+            child_assignments,
+            now=now,
+            source_scans=history_source_scans,
+        )
     semantic = _with_command_attention(
         _semantic_for_focus(
             _merge_semantic_history(semantic, history, now=now),

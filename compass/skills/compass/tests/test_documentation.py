@@ -761,7 +761,7 @@ class DocumentVocabularyTest(unittest.TestCase):
         for word in ("Slightly off course", "Off course", "Out of date", "Goal too vague to check"):
             self.assertIn(word, sessions)
         self.assertIn("while its evidence still matches", sessions)
-        self.assertIn("level chips count and", dashboard)
+        self.assertIn("The Progress check chips carry no counts.", dashboard)
         self.assertNotIn("level chips are disabled", dashboard)
 
     def test_the_guard_covers_every_bundled_reference(self) -> None:

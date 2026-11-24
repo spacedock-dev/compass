@@ -659,9 +659,12 @@ it('lets a reader filter by the level displayed on each row', async () => {
   const slight = group.getByRole('button', { name: /Slightly off course/ });
   const off = group.getByRole('button', { name: /^Off course/ });
   const way = group.getByRole('button', { name: /Way off course/ });
-  expect(slight.textContent).toMatch(/1$/);
-  expect(off.textContent).toMatch(/1$/);
-  expect(way.textContent).toMatch(/0$/);
+  expect(group.getAllByRole('button').map((chip) => chip.textContent)).toEqual([
+    'Slightly off course',
+    'Off course',
+    'Way off course',
+    'No goal yet',
+  ]);
   await press(page, way);
   expect(rows()).toBe(0);
   await press(page, slight);
@@ -669,6 +672,21 @@ it('lets a reader filter by the level displayed on each row', async () => {
   await press(page, off);
   expect(rows()).toBe(2);
   expect(screen.queryByText('Out of date')).toBeNull();
+});
+
+it('keeps the four count-free Progress check chips enabled on a readable empty board', async () => {
+  const page = await open({ sessions: [], annotate: true, generated: GENERATED });
+  const panel = await openPanel(page);
+  const chips = within(within(panel).getByRole('group', { name: 'Progress check' })).getAllByRole(
+    'button',
+  );
+  expect(chips.map((chip) => chip.textContent)).toEqual([
+    'Slightly off course',
+    'Off course',
+    'Way off course',
+    'No goal yet',
+  ]);
+  for (const chip of chips) expect(chip.hasAttribute('disabled')).toBe(false);
 });
 
 it('a mixed-evidence board explains its goal coverage', async () => {
@@ -711,9 +729,7 @@ it('a mixed-evidence board explains its goal coverage', async () => {
   expect(document.querySelector('[data-next-session="unpublished"]')).toBeInTheDocument();
   await openPanel(page);
   const updated = within(screen.getByRole('group', { name: 'Progress check' }));
-  expect(updated.getByRole<HTMLButtonElement>('button', { name: 'No goal yet' }).disabled).toBe(
-    true,
-  );
+  expect(updated.getByRole('button', { name: 'No goal yet' }).hasAttribute('disabled')).toBe(false);
   expect(
     updated.getByText(/The board did not publish saved goals for these sessions\./),
   ).toBeVisible();

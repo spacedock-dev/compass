@@ -68,10 +68,12 @@ def identity(row: Mapping[str, Any]) -> tuple[str, str]:
 
 def eligible(row: Mapping[str, Any]) -> bool:
     harness, sid = identity(row)
+    assessment = row.get("annotation_assessment")
     return (
         bool(harness and sid)
         and harness != "codex"
-        and isinstance(row.get("annotation_assessment"), dict)
+        and isinstance(assessment, dict)
+        and bool(assessment)
         and not row.get("annotation_goal_unreadable")
         and not row.get("annotation_not_accurate")
     )
@@ -105,6 +107,7 @@ class Transcript(NamedTuple):
     mode: int
     size: int
     modified_ns: int
+    changed_ns: int
 
 
 def transcript(path: str) -> Transcript | None:
@@ -114,7 +117,23 @@ def transcript(path: str) -> Transcript | None:
         return None
     if not stat.S_ISREG(info.st_mode) or not info.st_mode & 0o444:
         return None
-    return Transcript(path, info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns)
+    return Transcript(
+        path,
+        info.st_dev,
+        info.st_ino,
+        info.st_mode,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
+def current_transcript(state: RuntimeState, owner: tuple[str, str], path: str) -> Transcript | None:
+    if (owner[0] == "claude" and owner[1] in state.claude_transcript_collisions) or not os.access(
+        os.path.dirname(path), os.R_OK | os.X_OK
+    ):
+        return None
+    return transcript(path)
 
 
 def annotation_stamp(config: RuntimeConfig) -> tuple[int, ...] | None:
@@ -135,6 +154,25 @@ class Memo:
     token: str | None
     at: float
 
+    def matches(self, row: Mapping[str, Any], row_key: bytes, current: Transcript | None) -> bool:
+        assessment = row.get("annotation_assessment")
+        return (
+            isinstance(assessment, dict)
+            and self.read_at == assessment.get("read_at")
+            and self.key == row_key
+            and self.transcript == current
+        )
+
+
+def make_memo(
+    row: Mapping[str, Any], row_key: bytes, seen: Transcript, token: str | None, now: float
+) -> Memo | None:
+    assessment = row.get("annotation_assessment")
+    read_at = assessment.get("read_at") if isinstance(assessment, dict) else None
+    if not isinstance(read_at, (int, float)) or transcript(seen.path) != seen:
+        return None
+    return Memo(row_key, read_at, seen, token, now)
+
 
 def remember(
     config: RuntimeConfig, state: RuntimeState, owner: tuple[str, str], memo: Memo | None
@@ -146,7 +184,11 @@ def remember(
             state.row_progress.pop(owner, None)
         else:
             bounded_put(state.row_progress, owner, memo, limit=config.max_cache_entries)
-    old = (before.key, before.transcript, before.token) if before and before.token else None
+    old = (
+        (before.key, before.transcript, before.token)
+        if before and before.token and (memo is None or 0 <= memo.at - before.at < MAX_AGE_SEC)
+        else None
+    )
     new = (memo.key, memo.transcript, memo.token) if memo and memo.token else None
     return old != new
 
@@ -162,13 +204,22 @@ class Proof:
         memo = self.memo
         if not 0 <= now - memo.at < MAX_AGE_SEC:
             return False
-        current = transcript(memo.transcript.path)
+        owner = identity(self.row)
+        with state.row_progress_lock:
+            standing = state.row_progress.get(owner)
+        if standing is None or (
+            standing.key,
+            standing.read_at,
+            standing.transcript,
+            standing.token,
+        ) != (memo.key, memo.read_at, memo.transcript, memo.token):
+            return False
+        current = current_transcript(state, owner, memo.transcript.path)
         if current is None or current[:4] != memo.transcript[:4]:
             return False
-        if current.size == memo.transcript.size:
-            if current.modified_ns != memo.transcript.modified_ns:
-                return False
-        elif memo.token != OUT_OF_DATE or current.size < memo.transcript.size:
+        if current != memo.transcript and (
+            memo.token != OUT_OF_DATE or current.size <= memo.transcript.size
+        ):
             return False
         try:
             project = reading_evidence.project_key(self.row)
@@ -194,6 +245,11 @@ def _proof(
         not assessment
         or entry is None
         or entry.get("not_accurate")
+        or (
+            isinstance(row.get("annotation_assessment"), dict)
+            and row["annotation_assessment"].get("scope") == "withdrawn"
+            and memo.token != OUT_OF_DATE
+        )
         or memo.read_at != assessment.get("read_at")
         or memo.key != key(row, *derive_inputs(row, collection))
     ):
@@ -207,7 +263,7 @@ def publish(
     state: RuntimeState,
     clock: Callable[[], float],
     stamp: tuple[int, ...] | None,
-) -> Callable[[], bool] | None:
+) -> Callable[[float], bool] | None:
     """Attach only proven tokens after the annotation and SessionEnd overlays.
 
     Reused snapshot bytes also need their proofs checked. Their row fields are immutable, so
@@ -247,8 +303,7 @@ def publish(
     for proof in proofs:
         proof.row.update(published(proof.memo.token))
 
-    def valid() -> bool:
-        now = clock()
+    def valid(now: float) -> bool:
         return all(proof.holds(config, state, now) for proof in proofs) and stores_readable()
 
     return valid

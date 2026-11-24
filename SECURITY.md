@@ -4682,8 +4682,9 @@ so an older collection cannot supply a stale pause answer. Samples are ordered b
 A late older read cannot replace a newer answer. Unknown clears an earlier assertion.
 The client prints `AI use paused` only for exact `true`, independently of the monitor, and
 keeps waiting and quota segments. Resume AI use clears the pause segment on the next refresh.
-The writer clears stored progress when the next snapshot withholds it. A session with a stored
-departure or a standing monitor that leaves the board gets one final write, retried if it fails. The client shows an end note for five
+The writer clears stored progress when the next snapshot withholds it or an idle refresh finds
+that the snapshot's progress proof has failed or expired. A session with a stored departure or a
+standing monitor that leaves the board gets one final write, retried if it fails. The client shows an end note for five
 minutes after the recorded end, except for the reader's own Off. A dashboard that stops removes the
 files it wrote, including on `--stop`; a crash leaves them to the client's one-minute freshness
 ceiling, after which the client ignores them, and to a sweep that removes strays older than an hour.

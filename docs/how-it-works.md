@@ -209,8 +209,8 @@ the list. The status tabs are All, Waiting on you, Worth a look, Working, Quiet 
 and At a glance count the whole loaded board while you filter it.
 Search reads titles, goals, prompts and project names. Press `/` to jump to the field.
 Open Filters for Project, Agent, Started and Progress check. Choose Slightly off course or Off
-course to see rows carrying that saved progress pill. Way off course has a count of zero. No goal
-yet finds the rows whose Goal cell says No goal yet. Filters explains when some sessions have
+course to see rows carrying that saved progress pill. The Progress check chips carry no counts.
+No goal yet finds the rows whose Goal cell says No goal yet. Filters explains when some sessions have
 unpublished goal data.
 More filters for power users holds the complete list of choices, including
 Last active, Group, Headless and Goal source.

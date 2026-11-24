@@ -222,8 +222,8 @@ Mobile.dc.html does.
 
 The Session header and Is it on track? card can show full levels. The meter and Help explain
 all four. The owner allows one progress pill on a Sessions or Project row when a stored reading
-found a departure. The Sessions list draws no pill yet; the absence word at the right of a row is the
-[2026-11-24 note](#absence-words-on-a-sessions-row-2026-11-24).
+found a departure. The Sessions list shows that pill while the saved evidence holds, as described in
+the [2026-11-24 Sessions amendment](design-reading-a-session.md#amended-2026-11-24-sessions-progress-follows-the-saved-check).
 Goal history carries no level. The
 [progress amendment](design-reading-a-session.md#amended-2026-11-22-owner-progress-words-by-surface)
 specifies the eligible surfaces, including the terminal footer, and the Codex limit.
@@ -478,15 +478,12 @@ published data proves ship:
   and Goal history read the same flag: no draft is offered, the Goal card says Saved goal unavailable,
   and the progress card says no absence word.
 
-Left off the row, and why: Too early to tell and Can't tell need the analysis level, which reads
-transcript evidence on every poll, so a row cannot prove them. Goal too vague to check and Out of
-date need a freshness record the stored-departure pill issue builds, because the session page says
-Out of date before it. A refused or withheld reading is a failed check, not "nothing departs", so
-it shows nothing. A Codex row shows nothing. The row cannot see a live estimate: it rides the focused
-session's project context, which the list does not load. So a Claude draft row can read Not checked
-yet while its own page, with the Live monitor on and an estimate of too little recorded, reads Too
-early to tell. The row never names a level, and the same gap covers a lease held by another tab or
-the terminal. It is recorded, not closed, and adds no field.
+The [2026-11-24 Sessions amendment](design-reading-a-session.md#amended-2026-11-24-sessions-progress-follows-the-saved-check)
+governs the saved-departure pill and the plain text for Goal too vague to check and Out of date.
+Too early to tell and Can't tell require evidence from the focused page. A refusal, a withheld check
+or a Codex row leaves the progress cell empty. Live estimates belong to the focused session page.
+A Claude draft row can therefore read Not checked yet while its own page, with the Live monitor on
+and too little recorded work, reads Too early to tell.
 
 Both "No goal yet" filter chips (Progress check and Goal source) read one predicate, `noGoalYet` in
 `rows.ts`, and keep exactly the rows whose Goal cell reads it. The Progress check chip used to keep
@@ -703,10 +700,10 @@ rulings govern where they change an earlier decision.
 ### DRC-5476 Owner follow-up rulings, 2026-11-22 (fourth round)
 
 > * **The terminal's status-line footer** follows the row rule. It names a level only from a stored reading that found a departure (Slightly off course or worse). Otherwise it shows a ruled absence word, or nothing. It may still say the Live monitor is on.
-> * **The Sessions Filters panel's Progress check chips** are Slightly off course, Off course, Way off course and No goal yet.
+> * **The Sessions Filters panel's Progress check chips** are Slightly off course, Off course, Way off course and No goal yet. No chip shows a count (DEC-20).
 
-The 2026-11-24 [Sessions amendment](design-reading-a-session.md#amended-2026-11-24-sessions-progress-follows-the-saved-check)
-counts the level chips from the pills on the rows, including zero for Way off course. Slightly off course
+Under the 2026-11-24 [Sessions amendment](design-reading-a-session.md#amended-2026-11-24-sessions-progress-follows-the-saved-check),
+the level chips select rows showing the corresponding pill. Slightly off course
 has an orange outline on white, and Off course uses white text on orange. Out of date and Goal too vague
 to check share the far-right cell as plain quiet text. The progress slot stacks below the goal on narrow screens.
 

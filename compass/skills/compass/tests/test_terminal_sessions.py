@@ -698,6 +698,13 @@ class SessionsRenderTest(unittest.TestCase):
                     [line for line in text if line.strip() in words],
                 )
                 self.assertNotIn("Drift ·", "\n".join(text))
+        for token in (*DEPARTURES, "out-of-date", "goal-unclear"):
+            with self.subTest(harness="codex", token=token):
+                source = with_rows(**{sid: {"harness": "codex", "stored_progress": token}})
+                (row,) = [row for row in terminal_sessions.board(source).active if row.sid == sid]
+                self.assertIsNone(row.drift)
+                text = self.render(terminal_sessions.list_payload(source))
+                self.assertFalse(words.intersection(line.strip() for line in text))
         for token in ("none_or_low", "checked", "no-goal", "not_enough"):
             with self.subTest(token=token):
                 self.assertTrue(

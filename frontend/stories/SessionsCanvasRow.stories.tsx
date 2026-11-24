@@ -639,6 +639,7 @@ export const SavedProgress: Story = {
             });
           }
           const box = mark.getBoundingClientRect();
+          if (tone) await expect(Math.round(box.height)).toBe(28);
           const goal = part(row, '[data-next-operation-fact="goal"]').getBoundingClientRect();
           if (width >= 700) await expect(box.left).toBeGreaterThanOrEqual(goal.right - 1);
           else await expect(box.top).toBeGreaterThanOrEqual(goal.bottom - 1);
@@ -653,9 +654,11 @@ export const SavedProgress: Story = {
     const progress = within(canvas.getByRole('group', { name: 'Progress check' }));
     const slight = progress.getByRole('button', { name: /^Slightly off course/ });
     const off = progress.getByRole('button', { name: /^Off course/ });
-    await expect(slight).toHaveAccessibleName('Slightly off course 1');
-    await expect(off).toHaveAccessibleName('Off course 1');
-    await expect(progress.getByRole('button', { name: 'Way off course 0' })).toBeEnabled();
+    for (const label of ['Slightly off course', 'Off course', 'Way off course', 'No goal yet']) {
+      const chip = progress.getByRole('button', { name: label });
+      await expect(chip).toHaveTextContent(new RegExp(`^${label}$`));
+      await expect(chip).toBeEnabled();
+    }
     await userEvent.click(slight);
     await waitFor(() =>
       expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(1),

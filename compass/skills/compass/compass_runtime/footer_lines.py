@@ -186,8 +186,15 @@ class Lines:
         # restamping the previous live body when a replacement fails.
         self._desired: dict[str, Body] = {}
         self._retired: set[str] = set()
+        self._validate_progress: Callable[[float], bool] | None = None
 
-    def update(self, collection: Mapping[str, Any], now: float) -> None:
+    def update(
+        self,
+        collection: Mapping[str, Any],
+        now: float,
+        *,
+        validate_progress: Callable[[float], bool] | None = None,
+    ) -> None:
         """Publish the board's stored progress and cheap lease state."""
         try:
             sample = self._pause_state()
@@ -206,6 +213,7 @@ class Lines:
             }
             with self._lock:
                 self._accept_pause(sample)
+                self._validate_progress = validate_progress
                 for name in self._current - sessions.keys():
                     body = self._desired[name]
                     previous = self._written.get(name)
@@ -292,6 +300,11 @@ class Lines:
             sample = self._pause_state()
             with self._lock:
                 self._accept_pause(sample)
+                validate = self._validate_progress
+                if validate is None or not validate(now):
+                    self._validate_progress = None
+                    for body in self._desired.values():
+                        body["stored_progress"] = None
                 for name, row in self._sessions.items():
                     lease = self._state(row) if name not in self._ambiguous else {}
                     self._apply_state(name, lease)
@@ -311,6 +324,7 @@ class Lines:
             self._ambiguous.clear()
             self._desired.clear()
             self._retired.clear()
+            self._validate_progress = None
 
     def _write(self, name: str, body: Body, now: float) -> bool:
         previous = self._written.get(name)

@@ -113,7 +113,16 @@ def analysis_levels(
     a revision the store no longer holds gives no level rather than a guess.
     """
     assessment = entry.get("assessment") if entry else None
-    if not entry or not assessment or entry.get("not_accurate") is True:
+    published = row.get("annotation_assessment")
+    if (
+        not entry
+        or not assessment
+        or entry.get("not_accurate") is True
+        or (
+            isinstance(published, dict)
+            and published.get("scope") == runtime_reading.SCOPE_WITHDRAWN
+        )
+    ):
         return []
     read = next(
         (rev for rev in entry["revisions"] if rev["n"] == assessment.get("revision_read")), None

@@ -503,7 +503,7 @@ export function passes(indexed: IndexedRow, prepared: Prepared, skip: Part | nul
     const value = facetValue(indexed, facet);
     if (facet === 'progress') {
       if (
-        prepared.progressAvailable &&
+        prepared.annotated &&
         !(value !== null && chosen.includes(value)) &&
         !(indexed.progress === 'no-goal' && chosen.includes('no-goal'))
       )
@@ -535,7 +535,7 @@ export function filtersActive(prepared: Prepared): boolean {
     (edges !== null && filters.when !== 'any') ||
     FACETS.some((facet) =>
       facet === 'progress'
-        ? prepared.progressAvailable && filters.progress.length > 0
+        ? annotated && filters.progress.length > 0
         : filters[facet].length > 0 &&
           (facet === 'goal'
             ? prepared.progressAvailable

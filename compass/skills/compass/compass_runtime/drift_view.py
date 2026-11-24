@@ -1815,12 +1815,14 @@ def live_estimate(
 def result_stale(
     shape: Shape, raw: Json, annotation: dict[str, Json] | None, entries: list[Entry]
 ) -> dict[str, Json] | None:
-    """`resultStale`: the two stale states, from the revision read and the newest entry it saw.
+    """`resultStale`: a withdrawn final reading, a changed goal or later work.
 
     The words changing is one; new work is any entry after the reading's newest, or after when it
     read where an older row stored no such time. Compass's answer to a command the reader typed is
     not work the reading could have read.
     """
+    if shape.scope == reading.SCOPE_WITHDRAWN:
+        return {"kind": "withdrawn", "before": None}
     held = [entry for entry in entries if not entry.compass_turn]
     current = _number(_get(annotation, "revision"))
     superseded = (
