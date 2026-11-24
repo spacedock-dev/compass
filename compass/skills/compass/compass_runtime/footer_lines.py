@@ -248,7 +248,10 @@ class Lines:
                     self._desired[name] = body
                     row = sessions[name]
                     self._apply_state(name, self._state(row) if name not in self._ambiguous else {})
-                self._flush(now, unambiguous=self._unambiguous_progress())
+                unambiguous = self._unambiguous_progress()
+                if validate_progress is not None:
+                    self._recheck_progress(now)
+                self._flush(now, unambiguous=unambiguous)
         except Exception as exc:  # noqa: BLE001 — a status line file must never fail a request
             self._report(exc)
 
@@ -313,26 +316,34 @@ class Lines:
         try:
             sample = self._pause_state()
             with self._lock:
+                # The permission read can finish after a newer writer, whose file
+                # the terminal reader would reject if we restamped it with this time.
+                if sample[0] <= self._pause_accepted:
+                    return
                 self._accept_pause(sample)
-                retained: list[Body] = []
                 for name, row in self._sessions.items():
-                    body = self._desired[name]
-                    if body["stored_progress"]:
-                        if self._progress_holds(row, now):
-                            retained.append(body)
-                        else:
-                            body["stored_progress"] = None
                     lease = self._state(row) if name not in self._ambiguous else {}
                     self._apply_state(name, lease)
                 unambiguous = self._unambiguous_progress()
-                # A clear during a later proof check or the namespace scan can invalidate
-                # an earlier proof.
-                if retained and not self._progress_stores_hold():
-                    for body in retained:
-                        body["stored_progress"] = None
+                self._recheck_progress(now)
                 self._flush(now, unambiguous=unambiguous)
         except Exception as exc:  # noqa: BLE001
             self._report(exc)
+
+    def _recheck_progress(self, now: float) -> None:
+        retained: list[Body] = []
+        for name, row in self._sessions.items():
+            body = self._desired[name]
+            if body["stored_progress"]:
+                if self._progress_holds(row, now):
+                    retained.append(body)
+                else:
+                    body["stored_progress"] = None
+        # The scan can outlast a transcript proof, and a clear during a later
+        # row's check can invalidate a shared stamp an earlier row relied on.
+        if retained and not self._progress_stores_hold():
+            for body in retained:
+                body["stored_progress"] = None
 
     def _progress_holds(self, row: Mapping[str, Any], now: float) -> bool:
         validate = self._validate_progress

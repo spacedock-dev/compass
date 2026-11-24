@@ -58,6 +58,7 @@ class IngressTestCase(unittest.TestCase):
         self.coordinator = observation.Observation(
             FakeApplication(self.config),  # type: ignore[arg-type]
             clock=lambda: NOW,
+            monotonic=lambda: 0.0,
             diagnostic_sink=lambda _message: None,
         )
         self.token = self.coordinator.capability("claude")
@@ -248,13 +249,26 @@ class RateCeilingTest(IngressTestCase):
         self.assertGreaterEqual(self.coordinator.counters["reject.rate"], 1)
 
     def test_the_bucket_refills_over_time(self) -> None:
-        clock = {"now": NOW}
-        self.coordinator.clock = lambda: clock["now"]
+        elapsed = 0.0
+        self.coordinator.monotonic = lambda: elapsed
         for _ in range(self.config.event_burst_max):
             self.coordinator.within_budget("claude")
         self.assertFalse(self.coordinator.within_budget("claude"))
-        clock["now"] += 1.0
+        elapsed += 1.0
         self.assertTrue(self.coordinator.within_budget("claude"))
+
+    def test_a_backward_wall_step_does_not_stop_event_admission(self) -> None:
+        wall = NOW
+        elapsed = 0.0
+        self.coordinator.clock = lambda: wall
+        self.coordinator.monotonic = lambda: elapsed
+        for _ in range(self.config.event_burst_max):
+            self.assertTrue(self.coordinator.within_budget("claude"))
+        self.assertFalse(self.coordinator.within_budget("claude"))
+        wall -= 12
+        elapsed += 2
+        code, _ = self.post("/api/events/claude", self.envelope())
+        self.assertEqual(200, code)
 
     def test_one_source_exhausting_its_budget_does_not_throttle_another(self) -> None:
         for _ in range(self.config.event_burst_max + 5):

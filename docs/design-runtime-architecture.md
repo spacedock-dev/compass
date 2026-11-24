@@ -116,22 +116,25 @@ operation so the footer's no-socket rule stays whole ([Q-13](design-usage-quota.
 coordinator checks for footer changes every 5 s of monotonic time by default while idle, and after
 a collection or probe skip. It writes changed files at that check and refreshes unchanged files
 once they are 15 s old (`footer_lines.REFRESH_SEC`). A wall-clock setback restamps a future-dated
-file at the next touch so the terminal reader can use it. Updates and idle touches sample the shared permission store
-outside the writer lock. The additive v1 `model_calls_paused` field is true, false or null.
+file at the next touch so the terminal reader can use it. Updates and idle touches sample the
+shared permission store outside the writer lock. A touch that finishes that read after a newer
+publication leaves the newer file alone. The additive v1 `model_calls_paused` field is true, false or null.
 Unknown replaces an old assertion. The writer uses the snapshot's validated `stored_progress`
-token while annotations are enabled and readable. During an idle refresh, the writer checks each
-session's proof and confirms that its Claude transcript is still the only match for its prefix.
-An archived transcript in another project can make a prefix ambiguous. The writer reuses a listing
-when the root or project stamp still matches and the listing was taken at least two seconds after
-the directory's latest timestamp. On HFS+, adding an archive name in the same second left the
-directory stamp unchanged even on the next touch. Roots and projects are sampled again after
-enumeration, including projects whose listings were reused. The scan follows the collector's scope
-and skips project symlink loops and directories it lacks permission to open. If a scan fails or a
-directory moves during validation, the write withholds the level. A later idle touch can restore it
-after rechecking the namespace and the snapshot proof. Before writing any retained levels, the writer
-checks the shared annotation stamp and history readability. A clear during a later
-proof check can invalidate a level that already passed, so a failed shared check clears every
-retained level. The writer reads the lease independently. This path can run without focused
+token while annotations are enabled and readable. Before publishing or refreshing a level, the
+writer checks that its Claude transcript is still the only match for its prefix. An archived
+transcript in another project can make a prefix ambiguous. HFS+ can preserve the entire directory
+stamp when a transcript is renamed or a hidden project is renamed into view. On macOS a bounded
+kernel queue can vouch for a listing while the root and its projects are watched. Both kinds of
+rename delivered directory change events on APFS and HFS+. An unwatched namespace, including
+one with a project symlink, requires fresh name reads. The writer repeats the scan for the
+prefixes that still match and checks the project list again. This catches changes in an earlier
+project while a later one is read. The scan follows the collector's scope and skips project
+symlink loops and projects it lacks permission to open. A failed scan or a change to the project
+list withholds the level for that write. A later idle touch can restore it if the evidence still
+holds. After the namespace check the writer
+rechecks each transcript proof, then the shared annotation stamp and history readability. A clear
+during a later proof check can invalidate a level that already passed, so a failed shared check
+clears every retained level. The writer reads the lease independently. This path can run without focused
 context or record reads. Older files can still supply waits and monitor state.
 The client ignores their live `level` token and drops any invalid or missing stored verdict.
 

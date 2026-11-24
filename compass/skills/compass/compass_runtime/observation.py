@@ -316,7 +316,7 @@ class Observation:
         # `usage_poll_floor_sec` beside `usage_fetch_inflight`. A raise is the
         # one thing Compass does that it cannot undo and that is visible outside
         # Compass, so a looped request must not be able to repeat it.
-        self._focus_last_at = 0.0
+        self._focus_last_at = -float("inf")
         self._focus_inflight = False
         # This run's focus consumer key. Its own secret rather than a derived
         # per-harness token: those are byte-identical to the ones
@@ -395,8 +395,8 @@ class Observation:
         """
         ceiling = float(self.config.event_burst_max)
         refill = self.config.event_rate_per_sec
-        now = self.clock()
         with self._lock:
+            now = self.monotonic()
             tokens, last = self._budget.get(harness, (ceiling, now))
             tokens = min(ceiling, tokens + (now - last) * refill)
             if tokens < 1.0:
@@ -791,8 +791,8 @@ class Observation:
 
     def claim_focus(self) -> bool:
         """Take the one focus slot, or refuse. Release it with `release_focus`."""
-        now = self.clock()
         with self._lock:
+            now = self.monotonic()
             if self._focus_inflight or now - self._focus_last_at < self.config.focus_floor_sec:
                 self._bump("focus.rate")
                 return False

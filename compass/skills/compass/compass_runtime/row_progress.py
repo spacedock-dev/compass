@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import fnmatch
 import hashlib
 import json
 import os
+import select
 import stat
-import time
+import sys
+import weakref
 from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -140,67 +143,128 @@ def current_transcript(state: RuntimeState, owner: tuple[str, str], path: str) -
     return transcript(path)
 
 
-class _DirectoryStamp(NamedTuple):
-    device: int
-    inode: int
-    mode: int
-    size: int
-    links: int
-    modified_ns: int
-    changed_ns: int
-
-    def settled(self, now_ns: int) -> bool:
-        # HFS+ can retain the whole stamp across a same-second insertion. FAT mtime can
-        # have a two-second tick, so reuse starts with a listing made outside that window.
-        return now_ns - max(self.modified_ns, self.changed_ns) >= 2_000_000_000
+_MISSING_DIRECTORY = {errno.ENOENT, errno.ENOTDIR, errno.ELOOP}
+# A vnode filter holds a descriptor per directory. Leave room for the
+# dashboard's clients and stores even under macOS's low soft descriptor limit.
+_MAX_WATCHED_DIRECTORIES = 128
 
 
-class _ProjectNames(NamedTuple):
-    stamp: _DirectoryStamp | None
-    matches: dict[str, str | None]
-    reusable: bool
-
-
-def _directory_stamp(path: str) -> _DirectoryStamp | None:
-    try:
-        info = os.stat(path)
-    except OSError as exc:
-        if exc.errno in {errno.ENOENT, errno.ENOTDIR, errno.ELOOP}:
-            return None
-        raise
-    if not stat.S_ISDIR(info.st_mode):
-        return None
-    return _DirectoryStamp(
-        info.st_dev,
-        info.st_ino,
-        info.st_mode,
-        info.st_size,
-        info.st_nlink,
-        info.st_mtime_ns,
-        info.st_ctime_ns,
-    )
-
-
-def _claude_matches(directory: str, sids: frozenset[str]) -> dict[str, str | None] | None:
+def _claude_matches(directory: str, sids: frozenset[str]) -> dict[str, str | None]:
     matches: dict[str, str | None] = {}
-    lengths = {len(sid) for sid in sids}
     try:
-        listing = os.scandir(directory)
-    except PermissionError:
-        # The board's glob skips a project it cannot open. Retry if access is restored,
-        # since an ancestor can grant it without changing this project's metadata.
-        return None
-    # Archived names can make a prefix ambiguous even when the board omits their rows.
-    with listing as entries:
-        for entry in entries:
-            if entry.name.startswith(".") or not fnmatch.fnmatch(entry.name, "*.jsonl"):
-                continue
-            stem = entry.name.removesuffix(".jsonl")
-            for length in lengths:
-                sid = stem[:length]
-                if len(sid) == length and sid in sids:
-                    matches[sid] = None if sid in matches else entry.path
+        names = os.listdir(directory)
+    except OSError as exc:
+        # Match the collector's glob when a project or its symlink target is inaccessible.
+        if isinstance(exc, PermissionError) or exc.errno in _MISSING_DIRECTORY:
+            return matches
+        raise
+    # An archived name can collide without contributing a board row. Check the held
+    # prefixes before applying the glob or allocating a path for a match.
+    for length in {len(sid) for sid in sids}:
+        for name in names:
+            sid = name[:length]
+            if (
+                sid in sids
+                and len(sid) == length
+                and len(name) >= length + len(".jsonl")
+                and not name.startswith(".")
+                and fnmatch.fnmatch(name, "*.jsonl")
+            ):
+                matches[sid] = None if sid in matches else os.path.join(directory, name)
     return matches
+
+
+class _Namespace(NamedTuple):
+    roots: list[tuple[str, int, int]]
+    projects: list[str]
+    linked_projects: bool
+
+
+class _NameWatch:
+    def __init__(self, queue: select.kqueue, resources: contextlib.ExitStack) -> None:
+        self._queue = queue
+        self.close = weakref.finalize(self, resources.close)
+
+    @classmethod
+    def start(cls, namespace: _Namespace) -> _NameWatch | None:
+        # A project alias can change through an ancestor outside the watched
+        # namespace. The fresh name path handles these and unsupported platforms.
+        if sys.platform != "darwin" or namespace.linked_projects:
+            return None
+        root_ids = {path: (device, inode) for path, device, inode in namespace.roots}
+        directories = [*root_ids, *namespace.projects]
+        if len(directories) > _MAX_WATCHED_DIRECTORIES:
+            return None
+        try:
+            with contextlib.ExitStack() as resources:
+                queue = resources.enter_context(contextlib.closing(select.kqueue()))
+                root_fds: dict[str, int] = {}
+                for path in directories:
+                    root_id = root_ids.get(path)
+                    parent = root_fds[os.path.dirname(path)] if root_id is None else None
+                    # Keep the checked directory descriptor for the vnode filter.
+                    fd = runtime_io._directory_fd(  # noqa: SLF001
+                        path if parent is None else os.path.basename(path),
+                        parent_fd=parent,
+                        follow_links=parent is None,
+                    )
+                    resources.callback(os.close, fd)
+                    if root_id is not None:
+                        info = os.fstat(fd)
+                        if (info.st_dev, info.st_ino) != root_id:
+                            return None
+                        # Watch children relative to the held root, even if the
+                        # configured root path itself is a relocated store link.
+                        root_fds[path] = fd
+                    queue.control(
+                        [
+                            select.kevent(
+                                fd,
+                                filter=select.KQ_FILTER_VNODE,
+                                flags=select.KQ_EV_ADD | select.KQ_EV_CLEAR,
+                                fflags=(
+                                    select.KQ_NOTE_WRITE
+                                    | select.KQ_NOTE_RENAME
+                                    | select.KQ_NOTE_DELETE
+                                    | select.KQ_NOTE_ATTRIB
+                                    | select.KQ_NOTE_REVOKE
+                                ),
+                            )
+                        ],
+                        0,
+                        0,
+                    )
+                return cls(queue, resources.pop_all())
+        except OSError:
+            return None
+
+    def unchanged(self) -> bool:
+        try:
+            return not self._queue.control(None, 1, 0)
+        except OSError:
+            return False
+
+
+class _WatchedNames(NamedTuple):
+    namespace: _Namespace
+    paths: dict[str, str]
+    remaining: frozenset[str]
+    watch: _NameWatch
+
+
+def _confirmed_names(projects: list[str], paths: Mapping[str, str]) -> frozenset[str]:
+    remaining = frozenset(paths)
+    # A second pass catches collisions introduced in an earlier project while
+    # a later project was read, even when the directory stamp did not move.
+    for _ in range(2):
+        unique: dict[str, str | None] = {}
+        for directory in projects:
+            for sid, path in _claude_matches(directory, remaining).items():
+                unique[sid] = None if sid in unique else path
+        remaining = frozenset(sid for sid in remaining if unique.get(sid) == paths[sid])
+        if not remaining:
+            break
+    return remaining
 
 
 class ClaudePrefixes:
@@ -208,76 +272,56 @@ class ClaudePrefixes:
 
     def __init__(self, config: RuntimeConfig) -> None:
         self._roots = config.store_roots.get("claude.projects", ())
-        self._root_stamps: dict[str, _DirectoryStamp | None] | None = None
-        self._projects: dict[str, _ProjectNames] = {}
-        self._sids: frozenset[str] = frozenset()
+        self._names: _WatchedNames | None = None
 
-    def _sample_roots(self) -> dict[str, _DirectoryStamp | None]:
-        return {root: _directory_stamp(root) for root in self._roots}
-
-    def _project_paths(
-        self, roots: Mapping[str, _DirectoryStamp | None], *, settled: bool
-    ) -> list[str] | None:
-        if settled and roots == self._root_stamps:
-            return list(self._projects)
-        directories: list[str] = []
-        for root, stamp in roots.items():
-            if stamp is None:
+    def _project_paths(self) -> _Namespace | None:
+        roots: list[tuple[str, int, int]] = []
+        projects: list[str] = []
+        linked_projects = False
+        for root in self._roots:
+            try:
+                info = os.stat(root)
+            except OSError as exc:
+                if exc.errno in _MISSING_DIRECTORY:
+                    continue
+                raise
+            if not stat.S_ISDIR(info.st_mode):
                 continue
-            # Tightening here changes the very metadata the validation brackets.
+            # A footer proof must not mutate the configured store on an idle tick.
             if not runtime_io.admit_harness_root(root, tighten_permissions=False):
                 return None
+            roots.append((root, info.st_dev, info.st_ino))
             with os.scandir(root) as entries:
-                directories.extend(
-                    entry.path
-                    for entry in entries
-                    if not entry.name.startswith(".")
-                    and (entry.is_symlink() or entry.is_dir(follow_symlinks=False))
-                )
-        return directories
+                for entry in entries:
+                    if entry.name.startswith("."):
+                        continue
+                    if entry.is_symlink():
+                        linked_projects = True
+                        projects.append(entry.path)
+                    elif entry.is_dir(follow_symlinks=False):
+                        projects.append(entry.path)
+        return _Namespace(roots, sorted(projects), linked_projects)
 
     def unambiguous(self, paths: Mapping[str, str]) -> set[str]:
-        if not paths:
+        namespace = self._project_paths() if paths else None
+        cached = self._names
+        if cached is not None:
+            if namespace == cached.namespace and paths == cached.paths and cached.watch.unchanged():
+                return set(cached.remaining)
+            cached.watch.close()
+            self._names = None
+        if namespace is None:
             return set()
-        now_ns = time.time_ns()
-        roots = self._sample_roots()
-        roots_settled = all(stamp is None or stamp.settled(now_ns) for stamp in roots.values())
-        directories = self._project_paths(roots, settled=roots_settled)
-        if directories is None:
+
+        watch = _NameWatch.start(namespace)
+        remaining = _confirmed_names(namespace.projects, paths)
+        if not remaining or self._project_paths() != namespace:
             return set()
-        sids = frozenset(paths)
-        projects = {}
-        unique: dict[str, str | None] = {}
-        # An append does not change the namespace. A settled listing can carry its name
-        # evidence across touches, while a listing made inside the timestamp tick cannot.
-        for directory in directories:
-            stamp = _directory_stamp(directory)
-            settled = stamp is None or stamp.settled(now_ns)
-            cached = self._projects.get(directory)
-            if (
-                settled
-                and cached is not None
-                and cached.reusable
-                and cached.stamp == stamp
-                and sids == self._sids
-            ):
-                project = cached
-            else:
-                matches = _claude_matches(directory, sids) if stamp is not None else {}
-                project = _ProjectNames(stamp, matches or {}, settled and matches is not None)
-            projects[directory] = project
-            for sid, path in project.matches.items():
-                unique[sid] = None if sid in unique else path
-        # A later project can take long enough for an earlier one's cached proof to change.
-        if any(
-            _directory_stamp(directory) != project.stamp for directory, project in projects.items()
-        ):
-            return set()
-        if self._sample_roots() != roots:
-            return set()
-        self._root_stamps = roots if roots_settled else None
-        self._projects, self._sids = projects, sids
-        return {sid for sid, path in paths.items() if unique.get(sid) == path}
+        if watch is not None:
+            if not watch.unchanged():
+                return set()
+            self._names = _WatchedNames(namespace, dict(paths), remaining, watch)
+        return set(remaining)
 
 
 def annotation_stamp(config: RuntimeConfig) -> tuple[int, ...] | None:
