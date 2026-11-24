@@ -260,4 +260,10 @@ agy plugin validate ./compass
      rendered board, and left the on-demand browser proof descriptions, which keep the retired
      view names their scripts use. -->
 
-<!-- docs-synced-through: e7cf3426 (2026-11-24) -->
+<!-- Reconciled e7cf3426..bb3f0ac1: the installed browser proof's disclosure checks, Activity log
+     alignment, release and distribution checks, Claude history and team discovery, and saved
+     progress across the board and footer. The harness and platform matrices still apply. This
+     pass clarified where the release browser proofs run, how release resolution reads checksums,
+     and which runtime modules keep the board and footer in agreement. -->
+
+<!-- docs-synced-through: bb3f0ac1 (2026-11-25) -->

@@ -6309,8 +6309,10 @@ uploaded and not whatever was served under that name.
 
 The resolve job uses its read-only token to check previously published assets. It streams the
 checksum file over HTTPS after checking the API URL and asset ID against the release metadata.
-The bearer header reaches curl through stdin. Curl ignores local configuration and follows only
-HTTPS redirects, dropping authorization when the origin changes.
+The four expected SHA-256 lines cap the advertised size and the streamed body of the HTTP 200
+response. The bearer header reaches curl through stdin, with the token removed from curl's
+environment. Curl ignores local configuration and follows only HTTPS redirects, dropping
+authorization when the origin changes.
 
 The marketplace and Homebrew publish steps use their read-only job tokens to look up GitHub's
 SSH host keys at `https://api.github.com/meta` before cloning. The bearer header reaches curl
