@@ -1143,8 +1143,12 @@ What you see depends on what the board already holds:
 
 - If Your AI allowance showed no Claude five-hour figure, it shows 40% within a few seconds, when the
   board next collects, and the test figure leaves the board when its two minutes are up.
-- If it already showed one, that figure stays: it resets later than the test figure, and the board
-  keeps the later window, the same rule that stops an idle session pulling a real reading back.
+- If it already showed one, that figure usually stays: it resets later than the test figure, and the
+  board keeps the later window, the same rule that stops an idle session pulling a real reading back.
+- The exception is a figure that came from the status line when no session has posted for more than
+  five minutes, which is common without `refreshInterval`. The test figure then replaces it, and two
+  minutes later Claude's five-hour figure leaves the board until a session's status line next
+  updates. Nothing is lost: the next update brings the real figure back.
 
 To see that the dashboard took the post either way, send the same body to its route directly. The
 answer `{"ok":true,"usage":1}` means one window was received; `"usage":0` means it was refused, for

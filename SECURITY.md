@@ -1653,7 +1653,8 @@ accepted). Within one window it cannot lower a figure, because the higher one is
 later reset does replace the window, so a local process can make the tile read low, but only while
 it keeps posting: once the forged window has gone five minutes without a post, the next genuine post
 replaces it. Two Claude accounts on one machine share the one slot, because the payload names no
-account; when one stops reporting, the other's figures take over within the same five minutes.
+account; when one stops reporting, the other's figures take over after five minutes, at the other
+account's next post.
 
 ## Light harness usage (asking a harness a bounded question)
 
