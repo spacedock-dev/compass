@@ -1017,8 +1017,14 @@ export const TitlesOpenSessions: Story = {
       backgroundColor: 'rgb(230, 242, 236)',
       borderLeftWidth: '1px',
     });
-    await expect(title.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
-    await expect(title.getBoundingClientRect().width).toBeGreaterThanOrEqual(44);
+    // The row is the title's 44 px target (owner, 2026-11-24): the link covers the whole card, so the title's
+    // own box can keep its line height and the descriptor sits directly under it.
+    const row = title.closest('article') as HTMLElement;
+    row.scrollIntoView({ block: 'center' });
+    const box = row.getBoundingClientRect();
+    await expect(box.height).toBeGreaterThanOrEqual(44);
+    await expect(box.width).toBeGreaterThanOrEqual(44);
+    await expect(document.elementFromPoint(box.left + 6, box.top + 6)).toBe(title);
     if ('__vitest_browser_runner__' in window) {
       const { page } = await import('vitest/browser');
       await page
@@ -1763,14 +1769,23 @@ export const MixedGoalEvidence: Story = {
   },
 };
 
-export const UnselectedSegmentHasVisibleBoundary: Story = {
+/* The segmented control as the redesign canvas draws it (owner, 2026-11-24): the chosen segment is a white
+   tab whose border clears 3:1 against the track, and the rest are plain words on the track, which clear the
+   4.5:1 text bar instead of carrying a border of their own. */
+export const SegmentBoundaries: Story = {
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
+    const chosen = canvas.getByRole('button', { name: /^All \d/ });
+    await expect(chosen).toHaveAttribute('aria-pressed', 'true');
+    const edge = paintedControlColors(chosen, getComputedStyle(chosen).borderTopColor, 'border');
+    if (!edge) throw new Error('The chosen segment has no measurable boundary.');
+    await expect(contrastOf(edge.foreground, edge.background)).toBeGreaterThanOrEqual(3);
     const tab = canvas.getByRole('button', { name: /^Quiet \d/ });
     await expect(tab).toHaveAttribute('aria-pressed', 'false');
-    const edge = paintedControlColors(tab, getComputedStyle(tab).borderTopColor);
-    if (!edge) throw new Error('The segment boundary has no measurable backdrop.');
-    await expect(contrastOf(edge.foreground, edge.background)).toBeGreaterThanOrEqual(3);
+    await expect(getComputedStyle(tab).borderTopColor).toBe('rgba(0, 0, 0, 0)');
+    const words = paintedColors(tab);
+    if (!words) throw new Error('The segment words have no measurable backdrop.');
+    await expect(contrastOf(words.foreground, words.background)).toBeGreaterThanOrEqual(4.5);
   },
 };
 

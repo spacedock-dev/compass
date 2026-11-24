@@ -259,6 +259,27 @@ export function goalCell(
     : { label, kind: 'link', text: text || 'Add a goal', known: Boolean(text) };
 }
 
+/* A row's end and git facts, said once (owner, 2026-11-24). The model words them twice, as an outcome
+   ("Stop observed; git state clean") and a git line ("Git state reported clean"), and adds a sentence
+   saying git was not measured. The row keeps every measured fact and drops what only repeats one: an
+   unmeasured git state, a git line the outcome already states, and a bare end the Now line ("Session
+   reported its own end"), the tile and the descriptor's end age already carry. A changed-entry count is
+   the one git fact the outcome lacks, so it follows. */
+const GIT_NOT_MEASURED = '; git state not measured';
+const ENDED_FACTS: Readonly<Record<string, string>> = {
+  'Session ended': '',
+  'Session ended; git state clean': 'Git state reported clean',
+  'Session ended with uncommitted work': 'Ended with uncommitted work',
+};
+export function outcomeLine(outcome: string, git: string): string {
+  const said = outcome.endsWith(GIT_NOT_MEASURED)
+    ? outcome.slice(0, -GIT_NOT_MEASURED.length)
+    : outcome;
+  const end = ENDED_FACTS[said] ?? said;
+  const changed = /^\d+ changed entries$/.test(git) ? git : '';
+  return end && changed ? `${end} · ${changed}` : end || changed;
+}
+
 export type StateSegment = 'waiting' | 'working' | 'quiet' | 'ended';
 
 export interface SessionRow {

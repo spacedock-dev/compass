@@ -2,9 +2,12 @@
    A row is now its title, one descriptor line (harness, project, start, end), the Now line and what the
    session waits on, then the goal. The Project, Next and Blocked columns are gone: the Waiting on you tile
    carries the block. The recorded row is rearranged as the page now draws it, so the comparison still reads
-   every title, harness, project, end age, Now value, held question, outcome and goal in order. The start age
+   every title, harness, project, end age, Now value, held question, outcome and goal in order. The end and git
+   facts are said once, so the recorded outcome and git line are joined as the page joins them. The start age
    is new, with no recorded answer, so the page's copy is set aside; the mounted tests and the Sessions
    canvas row story check it. */
+
+import { outcomeLine } from '../src/sessions/rows';
 
 const text = (node: Element | null | undefined): string => node?.textContent ?? '';
 
@@ -53,11 +56,24 @@ function recordedRow(row: Element) {
     held.setAttribute('data-next-row-block-note', '');
     placed.push(held);
   }
-  placed.push(
-    ...[...row.querySelectorAll('.next-operation-outcome')].filter(
-      (outcome) => !outcome.parentElement?.closest('.next-operation-outcome'),
-    ),
-  );
+  // 2026-11-24: the end and git facts are said once. The recorded outcome and git line are joined the way
+  // the page now joins them, so both recorded sentences still decide the compared text.
+  for (const outcome of [...row.querySelectorAll('.next-operation-outcome')].filter(
+    (found) => !found.parentElement?.closest('.next-operation-outcome'),
+  )) {
+    const git = outcome.querySelector('.next-operation-outcome');
+    const said = [...outcome.childNodes]
+      .filter((node) => node !== git)
+      .map((node) => node.textContent ?? '')
+      .join('')
+      .trim();
+    const facts = outcomeLine(said, text(git).trim());
+    outcome.remove();
+    if (!facts) continue;
+    const joined = span(facts);
+    joined.className = outcome.className;
+    placed.push(joined);
+  }
   descriptor.after(...placed);
   for (const retired of [
     where,

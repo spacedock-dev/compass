@@ -56,7 +56,9 @@ const buttonVariants = cva(
         segment: cn(
           action,
           refused,
-          'px-3 py-1 hover:not-disabled:bg-accent aria-pressed:bg-card aria-pressed:font-semibold',
+          /* The canvas's segmented control: plain words on the track, the chosen one a white bordered tab.
+             A refused segment keeps its dashed outline, so the hatch is not its only cue. */
+          'rounded-card border-transparent px-4 py-1 font-medium text-[var(--status-quiet-ink)] hover:border-transparent hover:not-disabled:bg-accent disabled:border-[var(--line)] aria-pressed:border-[var(--line)] aria-pressed:bg-card aria-pressed:font-semibold aria-pressed:text-foreground aria-pressed:shadow-[0_1px_2px_rgb(31_41_51/12%)]',
         ),
         'filter-option': cn(
           action,

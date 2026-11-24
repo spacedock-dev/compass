@@ -100,6 +100,17 @@ function Board() {
                     last_activity: G - 1500,
                     dirty: false,
                   },
+                  {
+                    harness: 'claude',
+                    sid: 'acme-nightly',
+                    project: 'acme/website',
+                    project_key: '/acme/website',
+                    title: 'Nightly dependency check',
+                    state: 'idle',
+                    started_at: G - 10800,
+                    finished_at: G - 180,
+                    last_activity: G - 180,
+                  },
                 ],
               })
             : json({}),
@@ -150,7 +161,7 @@ export const DescriptorAndNow: Story = {
   render: () => <Board />,
   play: async ({ canvasElement }) => {
     await waitFor(() =>
-      expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(3),
+      expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(4),
     );
     const docs = rowOf(canvasElement, 'acme-docs');
     const billing = rowOf(canvasElement, 'acme-billing');
@@ -220,6 +231,207 @@ export const DescriptorAndNow: Story = {
         await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
       });
     }
+    await expect(auditCalm(canvasElement)).toEqual([]);
+  },
+};
+
+/* The list as the redesign canvas draws it (owner request, 2026-11-24): both groups in one white card, each
+   opening with a small header band, history on the card's tinted ground, rows split by hairline dividers and
+   no coloured left edge. A history row says its end and git facts once. */
+const near = async (actual: number, expected: number, slack = 1) => {
+  await expect(actual).toBeGreaterThanOrEqual(expected - slack);
+  await expect(actual).toBeLessThanOrEqual(expected + slack);
+};
+
+export const ListCard: Story = {
+  render: () => <Board />,
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(4),
+    );
+    const card = canvasElement.querySelector<HTMLElement>('[data-sessions-list-card]');
+    if (!card) throw new Error('Missing the list card');
+    const active = part(card, '[data-next-operation-group="active"]');
+    const history = part(card, '[data-next-operation-group="history"]');
+    const docs = rowOf(canvasElement, 'acme-docs');
+    const cleanup = rowOf(canvasElement, 'acme-cleanup');
+    const nightly = rowOf(canvasElement, 'acme-nightly');
+
+    for (const width of [1280, 400]) {
+      await atWidth(width, async () => {
+        // One white card wraps both groups.
+        await expect(card).toHaveStyle({
+          backgroundColor: 'rgb(255, 255, 255)',
+          borderTopWidth: '1px',
+          borderTopStyle: 'solid',
+          borderTopColor: 'rgb(227, 231, 235)',
+          borderTopLeftRadius: '16px',
+          overflow: 'hidden',
+        });
+        await expect(card.contains(active) && card.contains(history)).toBe(true);
+        await expect(card.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth);
+
+        // Each group opens with a small header band; history sits under a divider on the tinted ground.
+        for (const group of [active, history]) {
+          const header = part(group, ':scope > header');
+          await expect(part(header, 'h2')).toHaveStyle({
+            fontSize: '13px',
+            fontWeight: '700',
+            color: 'rgb(62, 76, 89)',
+          });
+          await expect(header.querySelector('[data-sessions-group-count]')).toBeVisible();
+          await expect(header.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+            group.getBoundingClientRect().top,
+          );
+        }
+        await expect(getComputedStyle(active).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+        await expect(history).toHaveStyle({
+          backgroundColor: 'rgb(250, 251, 252)',
+          borderTopWidth: '1px',
+          borderTopColor: 'rgb(227, 231, 235)',
+        });
+        // How session history works stays in the history header band.
+        const why = within(history).getByRole('button', { name: 'How session history works' });
+        await below(part(history, ':scope > header'), why);
+        await expect(why.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+
+        for (const row of canvasElement.querySelectorAll<HTMLElement>(
+          'article.next-operation-row',
+        )) {
+          // Hairline dividers between rows, and no left stripe of any kind.
+          await expect(row).toHaveStyle({
+            borderTopWidth: '1px',
+            borderTopColor: 'rgb(238, 241, 244)',
+            borderLeftWidth: '0px',
+            boxShadow: 'none',
+          });
+          const title = part(row, '.next-operation-route');
+          const name = part(title, 'strong');
+          const descriptor = part(row, '[data-next-row-descriptor]');
+          const now = part(row, '[data-next-operation-fact="now"]');
+          await expect(name).toHaveStyle({ fontSize: '18px', fontWeight: '700' });
+          // The descriptor sits directly under the title, and the Now line 8 px under that.
+          const gap = descriptor.getBoundingClientRect().top - title.getBoundingClientRect().bottom;
+          await near(gap, 2, 1.5);
+          await expect(descriptor).toHaveStyle({ fontSize: '13px', color: 'rgb(82, 96, 109)' });
+          await near(
+            now.getBoundingClientRect().top - descriptor.getBoundingClientRect().bottom,
+            8,
+          );
+          await expect(now).toHaveStyle({ fontSize: '15px' });
+          // The status tile lines up with the title.
+          const tile = row.querySelector<HTMLElement>('[data-next-row-state]');
+          if (tile)
+            await near(tile.getBoundingClientRect().top, title.getBoundingClientRect().top, 4);
+          // The row is the 44 px target: a press on its padding opens the session.
+          row.scrollIntoView({ block: 'center' });
+          const box = row.getBoundingClientRect();
+          await expect(box.height).toBeGreaterThanOrEqual(44);
+          await near(
+            descriptor.getBoundingClientRect().left - box.left,
+            width === 1280 ? 24 + 44 + 12 : 16 + 44 + 8,
+            4,
+          );
+          await expect(document.elementFromPoint(box.left + 6, box.top + 6)).toBe(title);
+          await near(name.getBoundingClientRect().top - box.top, width === 1280 ? 20 : 16, 3);
+        }
+
+        // The goal: a small bold label over plain ink text, underlined only on hover or focus.
+        const goal = part(docs, '[data-next-operation-fact="goal"]');
+        await expect(part(goal, 'small')).toHaveStyle({ fontSize: '13px', fontWeight: '600' });
+        const link = part(goal, 'a');
+        await expect(link).toHaveStyle({
+          fontSize: '15px',
+          fontWeight: '400',
+          color: 'rgb(31, 41, 51)',
+          textDecorationLine: 'none',
+        });
+        link.focus();
+        await expect(link).toHaveStyle({ textDecorationLine: 'underline', outlineWidth: '2px' });
+        link.blur();
+        await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+      });
+    }
+
+    // History rows say the end and git facts once. A stop keeps its stop and drops the unmeasured git state;
+    // an ended row keeps the reported end and the measured clean state, each once.
+    await expect(part(nightly, '[data-next-row-outcome]').textContent).toBe('Stop observed');
+    await expect(nightly).not.toHaveTextContent(/not measured|Git state/);
+    await expect(part(cleanup, '[data-next-operation-fact="now"]').textContent).toBe(
+      'Session reported its own end',
+    );
+    await expect(part(cleanup, '[data-next-row-outcome]').textContent).toBe(
+      'Git state reported clean',
+    );
+    // The end age once in the descriptor, the reported end once in the Now line.
+    await expect(cleanup.textContent?.match(/ended/gi)).toHaveLength(1);
+    await expect(cleanup.textContent?.match(/own end/g)).toHaveLength(1);
+    await expect(cleanup.textContent?.match(/git state/gi)).toHaveLength(1);
+    await expect(auditCalm(canvasElement)).toEqual([]);
+  },
+};
+
+/* The status segments as the canvas draws them: on a wide screen, one segmented control on a light grey
+   track, the chosen segment white with a border and the rest plain words; on a phone, outlined pills with the
+   chosen one filled, as Mobile.dc.html does. Every segment keeps a 44 px target and a visible focus ring. */
+export const SegmentedControl: Story = {
+  render: () => <Board />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const group = await canvas.findByRole('group', { name: 'Session status' });
+    await waitFor(() =>
+      expect(within(group).getByRole('button', { name: /^All \d/ })).toBeVisible(),
+    );
+    const segments = within(group).getAllByRole('button');
+    const chosen = within(group).getByRole('button', { name: /^All \d/ });
+    await expect(chosen).toHaveAttribute('aria-pressed', 'true');
+    await atWidth(1280, async () => {
+      await expect(group).toHaveStyle({ backgroundColor: 'rgb(238, 241, 244)', paddingTop: '4px' });
+      await expect(chosen).toHaveStyle({
+        backgroundColor: 'rgb(255, 255, 255)',
+        borderTopColor: 'rgb(123, 135, 148)',
+        borderTopWidth: '1px',
+        fontWeight: '600',
+        color: 'rgb(31, 41, 51)',
+      });
+      for (const segment of segments) {
+        await expect(segment.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+        if (segment === chosen || segment.matches(':disabled')) continue;
+        await expect(segment).toHaveStyle({
+          backgroundColor: 'rgba(0, 0, 0, 0)',
+          borderTopColor: 'rgba(0, 0, 0, 0)',
+          fontWeight: '500',
+        });
+      }
+      const working = within(group).getByRole('button', { name: /^Working \d/ });
+      working.focus();
+      await expect(working).toHaveStyle({
+        outlineWidth: '2px',
+        outlineStyle: 'solid',
+        outlineColor: 'rgb(47, 125, 91)',
+      });
+      working.blur();
+    });
+    await atWidth(400, async () => {
+      await expect(getComputedStyle(group).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+      await expect(chosen).toHaveStyle({
+        backgroundColor: 'rgb(31, 41, 51)',
+        color: 'rgb(255, 255, 255)',
+      });
+      for (const segment of segments) {
+        await expect(segment.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+        if (segment !== chosen && !segment.matches(':disabled'))
+          await expect(segment).toHaveStyle({
+            backgroundColor: 'rgb(255, 255, 255)',
+            borderTopColor: 'rgb(123, 135, 148)',
+          });
+      }
+      await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(400);
+    });
+    await expect(canvas.getByRole('searchbox', { name: 'Search sessions' })).toHaveAttribute(
+      'placeholder',
+      'Search by title, goal or project',
+    );
     await expect(auditCalm(canvasElement)).toEqual([]);
   },
 };

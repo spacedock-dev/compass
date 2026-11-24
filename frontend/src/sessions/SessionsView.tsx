@@ -1,4 +1,3 @@
-import { Icon } from '../ui/icons';
 import { StatusLegend } from '../ui/status-legend';
 import { groupName, groupOf, nestRows } from './declared';
 import { RelationshipLabels } from './DeclaredRelationships';
@@ -41,7 +40,7 @@ import {
   type FilterActions,
   type FilterBoard,
 } from './SessionsFilters';
-import { buildSessionsScreen, rowState, type SessionRow } from './rows';
+import { buildSessionsScreen, outcomeLine, rowState, type SessionRow } from './rows';
 import { SessionsGlance } from './SessionsGlance';
 import { assignmentOf, type PromptCandidate } from './intent';
 import { goalFocusFor } from './heldState';
@@ -61,6 +60,9 @@ import './sessions.css';
    it was given. Every summary figure comes from the shared selection over the rows being drawn.
    Nothing here fetches, polls or acts; a row's controls act only when pressed. */
 
+/* The goal cell's label, as the redesign canvas draws it: a small bold line over the goal. */
+const GOAL_LABEL = 'block text-label font-semibold leading-[1.5] text-muted-foreground';
+
 /* The goal cell's label and its stated absence, while annotations are off and there is no goal to link. */
 function Fact({
   kind,
@@ -76,8 +78,8 @@ function Fact({
       className="next-operation-fact next-operation-fact--unknown"
       data-next-operation-fact={kind}
     >
-      <small>{label}</small>
-      <strong className="next-absence">{value}</strong>
+      <small className={GOAL_LABEL}>{label}</small>
+      <strong className="next-absence mt-0.5 block text-body font-normal">{value}</strong>
     </span>
   );
 }
@@ -129,7 +131,7 @@ function NowLine({ row, assignment }: { readonly row: SessionRow; readonly assig
   if (session.nowWordsKnown)
     return (
       <span
-        className="next-operation-now mt-1 block text-body leading-[1.5] text-foreground"
+        className="next-operation-now mt-2 block text-body leading-[1.5] text-foreground"
         data-next-operation-fact="now"
         data-authored={session[SESSION_TEXT_ORIGIN].now || undefined}
       >
@@ -139,7 +141,7 @@ function NowLine({ row, assignment }: { readonly row: SessionRow; readonly assig
   if (assignment)
     return (
       <span
-        className="next-operation-now mt-1 line-clamp-2 text-body leading-[1.5] text-foreground"
+        className="next-operation-now mt-2 line-clamp-2 text-body leading-[1.5] text-foreground"
         data-next-operation-fact="now"
       >
         {'Current task · '}
@@ -148,7 +150,7 @@ function NowLine({ row, assignment }: { readonly row: SessionRow; readonly assig
     );
   return (
     <span
-      className="next-operation-now mt-1 block text-body leading-[1.5] text-muted-foreground"
+      className="next-operation-now mt-2 block text-body leading-[1.5] text-muted-foreground"
       data-next-operation-fact="now"
     >
       {session.nowWords}
@@ -178,20 +180,23 @@ function Identity({
       : '';
   const outcomeTone =
     session.outcomeIcon === 'worth-a-look' ? '' : ` next-operation-outcome--${session.tone}`;
+  const facts = row.showOutcome ? outcomeLine(session.outcomeText, session.gitText) : '';
   return (
-    <div className="next-operation-identity flex items-start gap-3 pl-3 max-[620px]:grid max-[620px]:gap-1">
+    <div className="next-operation-identity flex items-start gap-4 max-[620px]:gap-3">
       {tile ? <StatusTile state={state} live={session.isLive && state === 'Working'} /> : null}
       <div className="min-w-0">
         <RouteAnchor
           route={row.route}
-          className={`next-operation-route block ${titleLink}`}
+          /* The row is the 44 px target: the link's ::after covers the whole card. The title's own box keeps
+             its line height, so the descriptor sits directly under it. */
+          className={`next-operation-route block [min-block-size:0]! ${titleLink}`}
           label={`Open session ${session.titleText}`}
           focusKey={`sessions-row:${row.key}`}
           fallback={SEARCH_KEY}
         >
           <strong
             data-authored={session.titleKnown || undefined}
-            className={`mt-0 font-semibold${session.titleKnown ? '' : ' next-operation-title--unknown next-absence'}`}
+            className={`mt-0 text-value font-bold leading-[1.4]${session.titleKnown ? '' : ' next-operation-title--unknown next-absence'}`}
           >
             {session.titleText}
           </strong>
@@ -207,21 +212,9 @@ function Identity({
             {note}
           </span>
         ) : null}
-        {row.showOutcome ? (
-          <span className={`next-operation-outcome${outcomeTone}`}>
-            {session.outcomeIcon === 'ended' ? (
-              <Icon name={session.outcomeIcon} className="mr-1 inline-block align-text-bottom" />
-            ) : null}
-            {session.outcomeText}
-            <span
-              className={
-                session.gitKnown
-                  ? 'next-operation-outcome'
-                  : 'next-operation-outcome next-operation-outcome--unknown'
-              }
-            >
-              {session.gitText}
-            </span>
+        {facts ? (
+          <span className={`next-operation-outcome${outcomeTone}`} data-next-row-outcome>
+            {facts}
           </span>
         ) : null}
         {limit && state !== 'Waiting on child' ? (
@@ -295,14 +288,16 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
     goalFocusFor(shell.controls).request({ harness: row.session.harness, sid: row.session.sid });
   return (
     <span className="next-operation-fact" data-next-operation-fact="goal">
-      <small>{goal.label}</small>
+      <small className={GOAL_LABEL}>{goal.label}</small>
       <RouteAnchor
         route={row.route}
-        /* A goal holds 1,000 characters since 2026-10-27: the list shows three lines, the session page the rest. */
+        /* A goal holds 1,000 characters since 2026-10-27: the list shows three lines, the session page the rest.
+           Plain ink at rest, as the canvas draws it; like a row title it underlines on hover and focus. */
         className={
           goal.known
-            ? 'next-operation-goal-link line-clamp-3'
-            : 'next-operation-goal-link line-clamp-3 next-absence'
+            ? `next-operation-goal-link relative z-[1] mt-0.5 line-clamp-3 text-body font-normal leading-[1.5] [overflow-wrap:anywhere] ${titleLink}`
+            : /* "Add a goal" is an action, drawn as the canvas's quiet green link rather than a hatched absence. */
+              'next-operation-goal-link next-absence relative z-[1] mt-0.5 line-clamp-3 border-0 bg-none text-label font-semibold leading-[1.5] text-primary underline underline-offset-[3px]'
         }
         extra={{ 'data-next-goal-focus': '', ...(goal.known ? { 'data-authored': '' } : {}) }}
         before={onGoal}
@@ -330,12 +325,13 @@ const RowView = memo(function RowView({
 }) {
   const { session, history } = row;
   /* Two columns, as the redesign canvas draws a row: the session and what it is doing on the left, its goal on
-     the right. A phone stacks them. */
+     the right. A phone stacks them. A declared child is indented, never striped: the style board allows no
+     left-border stripes. */
   return (
     <Card
       as="article"
       variant="session-row"
-      className={`next-operation-row relative cursor-pointer no-underline grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] max-[620px]:grid-cols-1 next-operation-row--${session.tone}${depth ? ' ml-4 w-auto border-l-2 border-l-border' : ''}`}
+      className={`next-operation-row relative cursor-pointer no-underline grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] max-[620px]:grid-cols-1 next-operation-row--${session.tone}${depth ? ' pl-12 max-[620px]:pl-8' : ''}`}
       {...(depth ? { 'data-declared-depth': depth } : {})}
       data-next-harness={session.harness}
       data-next-session={session.sid}
@@ -380,12 +376,17 @@ const Group = memo(function Group({
         .map((group) => ({ group, rows: kept.filter((row) => groupOf(row.source) === group) }))
     : [{ group: '', rows: kept }];
   return (
+    /* One band of the list card: a small header, then rows split by hairline dividers. History sits on the
+       card's tinted ground, under a divider. */
     <section
-      className={`next-operation-group next-operation-group--${kind}`}
+      className={`next-operation-group next-operation-group--${kind}${kind === 'history' ? ' border-0 border-t border-solid border-[var(--rule)] bg-[var(--raise)]' : ''}`}
       data-next-operation-group={kind}
     >
-      <header className="flex flex-wrap items-center justify-between gap-x-2">
-        <h2>{title}</h2>
+      <header
+        className={`flex flex-wrap items-baseline justify-between gap-x-3 px-6 pb-2 max-[620px]:px-4 ${kind === 'history' ? 'pt-6 max-[620px]:pt-4' : 'pt-4 max-[620px]:pt-3'}`}
+      >
+        {/* The canvas draws group names in the quiet tile's ink. */}
+        <h2 className="m-0 text-label font-bold text-[var(--status-quiet-ink)]">{title}</h2>
         {countsAvailable ? (
           <span className="text-label text-muted-foreground" data-sessions-group-count>
             {kept.length} {kept.length === 1 ? 'session' : 'sessions'}
@@ -393,7 +394,10 @@ const Group = memo(function Group({
         ) : null}
       </header>
       {noMatches && kind === 'active' ? (
-        <div className="flex flex-wrap items-center gap-x-2" data-sessions-nothing>
+        <div
+          className="flex flex-wrap items-center gap-x-2 border-0 border-t border-solid border-[var(--sunk)] px-6 py-3 max-[620px]:px-4"
+          data-sessions-nothing
+        >
           <p className="m-0 text-body text-muted-foreground">{SESSION_LIST_WORDS.nothingMatches}</p>
           <Button
             type="button"
@@ -414,6 +418,7 @@ const Group = memo(function Group({
           })}
           summary={EXPLANATIONS.sessionHistory}
           explanation
+          className="px-6 pb-2 max-[620px]:px-4"
         >
           {caveat.map((sentence) => (
             <p key={sentence} className="next-why-body">
@@ -425,7 +430,7 @@ const Group = memo(function Group({
       {/* A sibling after the header, never inside it, so a filtered header reads exactly as an unfiltered one. */}
       {filter?.filtered.active && !noMatches && rows.length ? (
         <p
-          className="m-0 flex flex-wrap items-center gap-x-2 text-body text-muted-foreground"
+          className="m-0 flex flex-wrap items-center gap-x-2 px-6 pb-2 text-body text-muted-foreground max-[620px]:px-4"
           data-next-sessions-shown={kind}
         >
           <span
@@ -444,7 +449,7 @@ const Group = memo(function Group({
               <Fragment key={bucket.group}>
                 {byGroup ? (
                   <h3
-                    className="my-2 text-label font-semibold [overflow-wrap:anywhere]"
+                    className="m-0 border-0 border-t border-solid border-[var(--sunk)] px-6 pt-4 pb-2 text-label font-semibold [overflow-wrap:anywhere] max-[620px]:px-4"
                     data-authored={Boolean(bucket.group) || undefined}
                   >
                     {groupName(bucket.group)}
@@ -461,7 +466,10 @@ const Group = memo(function Group({
               </Fragment>
             ))
           ) : !countsAvailable || noMatches ? null : rows.length ? (
-            <p data-next-sessions-filtered-empty className="next-absence">
+            <p
+              data-next-sessions-filtered-empty
+              className="next-absence m-0 border-0 border-t border-solid border-[var(--sunk)] px-6 py-5 max-[620px]:px-4"
+            >
               {groupEmptyLine(rows.length, title)}
             </p>
           ) : (
@@ -681,7 +689,9 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
         id={SESSIONS_LIST_ID}
         aria-label={SESSION_LIST_WORDS.all}
         tabIndex={-1}
-        className="scroll-mt-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        /* The whole list, both groups, sits in one white card, as the redesign canvas draws it. */
+        className="mt-4 scroll-mt-2 overflow-hidden rounded-standard-card border border-solid border-[var(--rule)] bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        data-sessions-list-card
       >
         <Group
           kind="active"

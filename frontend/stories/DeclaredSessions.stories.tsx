@@ -334,7 +334,13 @@ function containedChild(width: number): Story {
         const bounds = list.getBoundingClientRect();
         const parent = row(canvasElement, 'parent').getBoundingClientRect();
         const nested = child.getBoundingClientRect();
-        await expect(nested.left).toBeGreaterThan(parent.left);
+        // Rows span the list card; a child is indented inside its row rather than striped or shifted.
+        const start = (sid: string) =>
+          (
+            row(canvasElement, sid).querySelector('.next-operation-identity') as HTMLElement
+          ).getBoundingClientRect().left;
+        await expect(start('child')).toBeGreaterThan(start('parent') + 8);
+        await expect(nested.left).toBeGreaterThanOrEqual(parent.left);
         await expect(nested.left).toBeGreaterThanOrEqual(bounds.left);
         await expect(nested.right).toBeLessThanOrEqual(bounds.right + 1);
       } finally {

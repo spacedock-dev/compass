@@ -19,7 +19,7 @@ const cardVariants = cva('min-w-0', {
     variant: {
       base: baseCard,
       'session-row':
-        'grid w-full p-0 text-foreground [border-bottom:1px_solid_var(--line)] hover:bg-card [@media(max-width:620px)]:[border:1px_solid_var(--line)] [@media(max-width:620px)]:rounded-control [@media(max-width:620px)]:bg-card',
+        'grid w-full gap-x-6 gap-y-3 px-6 py-5 text-foreground border-0 border-t border-solid border-[var(--sunk)] hover:bg-[var(--raise)] max-[620px]:p-4',
       'session-current':
         'block px-[17px] py-[14px] border border-solid border-[var(--rule)] border-l-2 border-l-border rounded-card bg-card',
       'session-ask':

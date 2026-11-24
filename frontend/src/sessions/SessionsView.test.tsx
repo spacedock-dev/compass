@@ -201,6 +201,55 @@ describe('the groups', () => {
     expect(rows('history')).toEqual(['claude/done', 'claude/idle-new', 'claude/idle-old']);
   });
 
+  it('says a history row’s end and git facts once, keeping every measured one', async () => {
+    await open(
+      board([
+        // A stop with git unmeasured, a clean stop, a dirty stop with a count, and the three kinds of end.
+        { harness: 'claude', sid: 'stop', project: 'p', state: 'idle', finished_at: NOW - 60 },
+        {
+          harness: 'claude',
+          sid: 'stop-clean',
+          project: 'p',
+          state: 'idle',
+          finished_at: NOW - 60,
+          dirty: false,
+        },
+        {
+          harness: 'claude',
+          sid: 'stop-dirty',
+          project: 'p',
+          state: 'idle',
+          finished_at: NOW - 60,
+          dirty: true,
+          changed: 3,
+        },
+        { harness: 'claude', sid: 'end', project: 'p', ended_at: NOW - 20 },
+        { harness: 'claude', sid: 'end-clean', project: 'p', ended_at: NOW - 20, dirty: false },
+      ]),
+    );
+    const facts = (sid: string) =>
+      document.querySelector(`[data-next-session="${sid}"] [data-next-row-outcome]`)?.textContent ??
+      null;
+    expect(facts('stop')).toBe('Stop observed');
+    expect(facts('stop-clean')).toBe('Stop observed; git state clean');
+    expect(facts('stop-dirty')).toBe('Stop observed with uncommitted work · 3 changed entries');
+    // A bare end is the tile, the descriptor's end age and the Now line; nothing repeats it.
+    expect(facts('end')).toBeNull();
+    expect(facts('end-clean')).toBe('Git state reported clean');
+    for (const sid of ['stop', 'stop-clean', 'stop-dirty', 'end', 'end-clean']) {
+      const row = document.querySelector(`[data-next-session="${sid}"]`);
+      expect(row?.textContent, sid).not.toMatch(
+        /git state not measured|Git state was not measured|Uncommitted work observed/,
+      );
+      expect(row?.textContent?.match(/git state|Git state/gi)?.length ?? 0).toBeLessThanOrEqual(1);
+    }
+    expect(
+      within(document.querySelector('[data-next-session="end"]') as HTMLElement).getByText(
+        'Session reported its own end',
+      ),
+    ).toBeVisible();
+  });
+
   it('spells out the elapsed time on quiet and ended rows', async () => {
     await open(data);
     expect(screen.getByText('last active 5 seconds ago')).toBeVisible();
