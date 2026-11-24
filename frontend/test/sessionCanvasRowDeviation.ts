@@ -8,6 +8,8 @@
    is new, with no recorded answer, so the page's copy is set aside; the mounted tests and the Sessions
    canvas row story check it.
 
+   2026-11-24, saved progress: the far-right cell can draw a stored departure pill
+   (`data-next-drift-pill`) or a quiet date or goal word. The recorded rows have no progress cell.
    2026-11-24, absence words: a row may now draw one grey word in a far-right cell (`data-next-row-absence`,
    Not checked yet). The recorded rows never had it, so the page's copy is set aside, and the
    mounted tests, `rowAbsence.test.ts` and the canvas row story check it. Over a store that cannot be read the
@@ -100,7 +102,7 @@ export function maskCanvasRow(root: ParentNode, recorded = false, goalUnavailabl
     if (recorded) recordedRow(row);
     else {
       row.querySelector('[data-next-row-started]')?.remove();
-      row.querySelector('[data-next-row-absence]')?.remove();
+      row.querySelector('[data-next-row-absence], [data-next-drift-pill]')?.remove();
     }
     if (goalUnavailable) row.querySelector('[data-next-operation-fact="goal"]')?.remove();
   }

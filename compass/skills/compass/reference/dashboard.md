@@ -43,11 +43,12 @@ one line names the agent, the project and how long ago the session started, and 
 once it has. A session that published no start says so. The next line says what the session is
 doing now, and a session waiting on you shows what it is waiting for under it. A stopped or
 ended session states how it ended and its git state once, leaving out a git state nobody
-measured. The goal sits beside it, and a session with no goal says No goal yet there. At the far right a row
-may carry one plain grey word, never a pill or an icon: Not checked yet, for a saved goal or a draft
-goal that no check has read. A row says nothing there where Compass cannot prove it, which includes
-every Codex row, and a goal that cannot be read says Saved goal unavailable. Open the session page
-to see the progress reading and any live estimate the session supports.
+measured. The goal sits beside it, and a session with no goal says No goal yet there. At the far right
+a saved check can show a Slightly off course or Off course pill while its evidence still matches.
+Out of date and Goal too vague to check appear as plain text where the saved check supports them.
+Not checked yet is plain text for a saved goal or draft that no check has read. The cell stays empty
+while Compass has no answer it can show, including on Codex. A goal that cannot be read says
+Saved goal unavailable. Open the session page for the check's evidence or a live estimate.
 
 The Sessions legend pairs Working with a pulse, Waiting on you with a clock, Quiet with a moon,
 Ended with a checkmark and State not known with a dashed circle. The warning triangle means Worth a look. Open What the icons mean in Help for the full legend.
@@ -138,8 +139,9 @@ Press it again to clear that selection. The summary says when it covers only sou
 could read. Below the cards, one list card holds Right now and then the earlier group. The status tabs count the whole loaded board in this order: All, Waiting on you, Worth a look,
 Working, Quiet and Ended.
 Search reads titles, goals and prompts. Press `/` to jump to it or paste a session id to find it.
-Filters opens a panel for Project, Agent, Started and Progress check. The level chips are disabled.
-No goal yet uses published goal evidence across agents and includes unsaved prompt drafts.
+Filters opens a panel for Project, Agent, Started and Progress check. The level chips count and
+filter the progress pills on the rows. Way off course has a count of zero. No goal yet keeps rows
+whose Goal cell reads No goal yet.
 Filters explains when some sessions have unpublished goal data. More filters for power users holds
 the full project list, date ranges,
 Group, Headless, State, Progress records and Goal source.

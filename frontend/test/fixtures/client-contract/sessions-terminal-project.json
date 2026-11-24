@@ -89,6 +89,7 @@
           "spacedock": null,
           "state": "needs_input",
           "state_detail": "awaiting your message",
+          "stored_progress": null,
           "subagent_events": null,
           "subagent_hierarchy": null,
           "subagents": [],
@@ -154,6 +155,7 @@
           "spacedock": null,
           "state": "working",
           "state_detail": "running a synthetic tool",
+          "stored_progress": null,
           "subagent_events": null,
           "subagent_hierarchy": null,
           "subagents": [
@@ -221,6 +223,7 @@
           "spacedock": null,
           "state": "working",
           "state_detail": "running a synthetic tool",
+          "stored_progress": null,
           "subagent_events": [
             {
               "assignment": "Write migration",
@@ -291,6 +294,7 @@
           "spacedock": null,
           "state": "idle",
           "state_detail": "awaiting your message",
+          "stored_progress": null,
           "subagent_events": null,
           "subagent_hierarchy": null,
           "subagents": [],
@@ -310,7 +314,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "6483",
+      "Content-Length": "6575",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json"
     },

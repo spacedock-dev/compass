@@ -17,7 +17,6 @@ import { riskSubject } from '../attention/subjects';
 import { resumeCommand } from '../controls/resumeCommand';
 import { observe, sessionKey, type Row } from '../observed';
 import { asPayload } from '../observed/values';
-import { SESSION_ROW_WORDS } from '../language/glossary';
 import { buildSessionsScreen } from './rows';
 import { groupLabel } from './declared';
 import { mountSessions } from './testing';
@@ -52,7 +51,7 @@ function boardView(payload: Row, root: HTMLElement, needsYou: HTMLElement) {
         command: resumeCommand(row.session.harness, String(row.session.resume_id ?? '')),
         ended: row.endedSince,
         drift: rowProgress(rendered),
-        absence: row.absence ? SESSION_ROW_WORDS[row.absence] : null,
+        absence: rendered.querySelector('[data-next-row-absence]')?.textContent ?? null,
       };
     });
   const attention = attentionModel(payload);
@@ -139,18 +138,24 @@ describe('the board against the terminal listing', () => {
     expect([...groups].map((heading) => heading.textContent)).toEqual(labels);
   });
 
-  const unavailable = expected['unpublishedProgress'] as ({ name: string; mark: null } & Row)[];
-  it.each(unavailable)('withholds a row mark: $name', async ({ name: _name, mark, ...fields }) => {
-    const sid = 'f6a7b8c9';
-    const sessions = (payload['sessions'] as Row[]).map((row) =>
-      row['sid'] === sid ? { ...row, ...fields } : row,
-    );
-    const board = mountSessions({ data: { ...payload, sessions } });
-    await board.settle();
-    expect(
-      rowProgress(sessionRow(board.container, String(fields['harness'] ?? 'claude'), sid)),
-    ).toBe(mark);
-  });
+  const progress = [
+    ...(expected['unpublishedProgress'] as Row[]),
+    ...(expected['publishedProgress'] as Row[]),
+  ] as ({ name: string; mark: string | null; word?: string | null } & Row)[];
+  it.each(progress)(
+    'shows the reader the available progress: $name',
+    async ({ name: _name, mark, word, ...fields }) => {
+      const sid = 'f6a7b8c9';
+      const sessions = (payload['sessions'] as Row[]).map((row) =>
+        row['sid'] === sid ? { ...row, ...fields } : row,
+      );
+      const board = mountSessions({ data: { ...payload, sessions } });
+      await board.settle();
+      const row = sessionRow(board.container, String(fields['harness'] ?? 'claude'), sid);
+      expect(rowProgress(row)).toBe(mark);
+      expect(row.querySelector('[data-next-row-absence]')?.textContent ?? null).toBe(word ?? null);
+    },
+  );
 
   it('reads the progress pill independently of the session title', async () => {
     const sid = 'f6a7b8c9';

@@ -518,6 +518,27 @@ def _observe_session(
     }
 
 
+_MESSAGE_CHECKPOINT: contextvars.ContextVar[Callable[[], None] | None] = contextvars.ContextVar(
+    "compass_message_checkpoint", default=None
+)
+
+
+@contextlib.contextmanager
+def message_checkpoints(checkpoint: Callable[[], None]) -> Iterator[None]:
+    """Give a background focused read a chance to pause between messages."""
+    token = _MESSAGE_CHECKPOINT.set(checkpoint)
+    try:
+        yield
+    finally:
+        _MESSAGE_CHECKPOINT.reset(token)
+
+
+def _before_message() -> None:
+    checkpoint = _MESSAGE_CHECKPOINT.get()
+    if checkpoint is not None:
+        checkpoint()
+
+
 def _instruction_event(
     config: RuntimeConfig,
     record: Any,
@@ -525,6 +546,7 @@ def _instruction_event(
     sid: str,
 ) -> dict[str, Any] | None:
     """One timestamped user-role message, excluding known tool/meta records."""
+    _before_message()
     if not isinstance(record, dict):
         return None
     if harness in observer.DIRECTION_HARNESSES:
@@ -683,6 +705,7 @@ def _agent_message_event(
     than the model (`claude_data.SYNTHETIC_MODEL`: a cancellation notice, an error banner)
     is not the agent speaking, so it stays out, by value as `model_reported` tests it.
     """
+    _before_message()
     if (
         harness not in AGENT_MESSAGE_HARNESSES
         or not isinstance(record, dict)

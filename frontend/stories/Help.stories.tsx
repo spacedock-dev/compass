@@ -47,6 +47,9 @@ export const Guide: Story = {
       'The agent reports it is idle, but Compass saw no finished turn, so it cannot say whether it is quiet or stopped.',
     );
     const progress = within(canvas.getByRole('region', { name: 'Goals and progress checks' }));
+    await expect(
+      progress.getByText(/On Sessions, a saved check can show Slightly off course or Off course/),
+    ).toHaveTextContent('while its evidence still matches. Use Filters to find those rows.');
     for (const word of [
       GLOSSARY.onTrack.plain,
       words.slightlyOffCourse,

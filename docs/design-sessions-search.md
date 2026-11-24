@@ -83,12 +83,11 @@ When every discovered source fails, counts are unavailable for the tabs, list gr
 filter choices. Search reports that the sources could not be read. A readable empty board has
 measured zeros. On an empty board the tabs cannot start a new status filter.
 
-Progress check lists Slightly off course, Off course and Way off course as disabled choices.
-No goal yet uses published annotation evidence from every harness. An explicitly empty or
-discarded saved goal qualifies, including when the row offers an unsaved draft. Goal source
-keeps drafted goals separate. On a mixed board both filters explain that they skip rows with
-unpublished goal status. If no usable goal evidence is published, the goal choices are
-unavailable. Progress check and the advanced Progress records options carry no counts.
+Progress check selects Slightly off course, Off course and Way off course from the levels on the
+rows. The three options show counts, including zero. No goal yet uses the same published goal
+evidence as the Goal cell. Goal source keeps drafted goals separate. On a mixed board the panel
+explains when rows have unpublished goal status. No goal yet and the advanced Progress records
+options carry no counts.
 
 A choice whose clock or annotation data becomes unavailable stays visible and clearable.
 An explanation beside the choice says why it filters nothing.

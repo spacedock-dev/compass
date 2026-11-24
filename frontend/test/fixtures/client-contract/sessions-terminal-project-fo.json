@@ -85,6 +85,7 @@
           "spacedock": null,
           "state": "working",
           "state_detail": "running a synthetic tool",
+          "stored_progress": null,
           "subagent_events": [],
           "subagent_hierarchy": null,
           "subagents": [],
@@ -146,6 +147,7 @@
           "spacedock": null,
           "state": "idle",
           "state_detail": "awaiting your message",
+          "stored_progress": null,
           "subagent_events": null,
           "subagent_hierarchy": null,
           "subagents": [],
@@ -213,6 +215,7 @@
           },
           "state": "idle",
           "state_detail": "running a synthetic tool",
+          "stored_progress": null,
           "subagent_events": [
             {
               "at": 1899999900.0,
@@ -284,6 +287,7 @@
           "spacedock": null,
           "state": "idle",
           "state_detail": "awaiting your message",
+          "stored_progress": null,
           "subagent_events": [
             {
               "at": 1899999900.0,
@@ -309,7 +313,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "6399",
+      "Content-Length": "6491",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json"
     },

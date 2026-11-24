@@ -27,6 +27,7 @@ from . import (
     reading_policy,
     reading_route,
     records,
+    row_progress,
     sessions,
     summary_jobs,
     summary_store,
@@ -844,6 +845,7 @@ class Application:
         # without writing a file into the reader's home. Written from `collect_json`, the one
         # place the page-default snapshot is made.
         self.footer_lines: FooterLane | None = None
+        self.warm_row_progress: Callable[[Collection], object] | None = None
         # Created on the first Live monitor start, so a board nobody monitors holds no table and
         # runs no thread. Never persisted: a restart starts with no lease.
         self.live_leases: Any = None
@@ -1788,10 +1790,12 @@ class Application:
             # Read before collecting: a clear while this collection runs means a
             # write it may have missed, so its body is not kept (DRC-4760).
             generation = self.snapshot.generation()
+            stamp = row_progress.annotation_stamp(self.config) if self.state.row_progress else None
             collection = self.collect(show_all=show_all)
+            validate = row_progress.publish(collection, self.config, self.state, self.clock, stamp)
             body = json.dumps(board_explanations.compact(collection, _BOARD_EXPLANATIONS)).encode()
             revision, kept = self.snapshot.publish(
-                key, body, now=self.clock(), generation=generation
+                key, body, now=self.clock(), generation=generation, validate=validate
             )
             self._write_footer_lines(collection, show_all=show_all)
             # Only a freshly minted revision that was kept is worth announcing. A
@@ -1802,6 +1806,8 @@ class Application:
             # save's four GETs). The next kept collection announces.
             if kept:
                 self.state.streams.publish(revision)
+                if self.warm_row_progress is not None:
+                    self.warm_row_progress(collection)
             return revision, body
 
     def _write_footer_lines(self, collection: Collection, *, show_all: bool) -> None:
@@ -1819,7 +1825,4 @@ class Application:
         self, key: runtime_snapshot.SnapshotKey
     ) -> tuple[runtime_snapshot.Revision, bytes] | None:
         """The published entry for `key` if it is inside the floor, else None."""
-        age = self.snapshot.age(key, now=self.clock())
-        if age is None or age >= self.config.collect_memo_sec:
-            return None
-        return self.snapshot.current(key)
+        return self.snapshot.fresh(key, now=self.clock(), max_age=self.config.collect_memo_sec)

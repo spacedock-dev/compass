@@ -32,6 +32,40 @@ const absent = { annotation_goal: '', annotation_goal_why: 'No goal typed for th
 const draft = { first_prompt: 'Write the acme summary', first_prompt_at: NOW - 60 };
 const saved = { annotation_goal: 'Ship the acme release', annotation_revision: 1 };
 
+describe('saved progress on the row', () => {
+  it.each([
+    ['medium', 'medium'],
+    ['high', 'high'],
+    ['out-of-date', 'outOfDate'],
+    ['goal-unclear', 'goalTooVague'],
+  ])('gives the reader one progress answer for %s', (token, expected) => {
+    const { row } = rowFor({ ...saved, stored_progress: token });
+    expect(row.progress).toBe(expected);
+    expect(row.absence).toBeNull();
+  });
+
+  it('keeps the cell empty where the stored answer has no proven token', () => {
+    const { row } = rowFor({
+      ...saved,
+      annotation_assessment: { ...reading, revision_read: 0 },
+      live_level: 'high',
+    });
+    expect(row.progress).toBeNull();
+    expect(row.absence).toBeNull();
+  });
+
+  it('keeps the progress answer out when the reader cannot read saved goals', () => {
+    const { row } = rowFor(
+      { ...saved, stored_progress: 'high' },
+      {
+        annotate_unreadable: 'Saved goals could not be read.',
+      },
+    );
+    expect(row.progress).toBeNull();
+    expect(row.absence).toBeNull();
+  });
+});
+
 describe('the row absence word', () => {
   it.each([
     ['a saved goal that was never checked', saved, 'notCheckedYet'],

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from _thread import LockType
+    from collections.abc import Callable
 
 # Keyed as the memo keyed it: window hours paired with the show-all flag, so the
 # two response variants stay separate.
@@ -24,6 +25,7 @@ SnapshotKey = tuple[float, bool]
 # The server start stamp paired with a per-process counter. See the module
 # docstring for why a bare counter is not enough.
 Revision = tuple[float, int]
+Entry = tuple[Revision, bytes, float, "Callable[[], bool] | None"]
 
 
 def format_revision(revision: Revision) -> str:
@@ -45,7 +47,7 @@ class Snapshot:
         self._lock: LockType = threading.Lock()
         self._counter = 0
         self._generation = 0
-        self._entries: dict[SnapshotKey, tuple[Revision, bytes, float]] = {}
+        self._entries: dict[SnapshotKey, Entry] = {}
 
     def generation(self) -> int:
         """How many times `clear` has run: read before collecting, passed to `publish`."""
@@ -59,6 +61,7 @@ class Snapshot:
         *,
         now: float = 0.0,
         generation: int | None = None,
+        validate: Callable[[], bool] | None = None,
     ) -> tuple[Revision, bool]:
         """Mint a revision for `body`, and keep it unless a `clear` came after `generation`.
 
@@ -78,7 +81,7 @@ class Snapshot:
             revision = (self.server_started, self._counter)
             kept = generation is None or generation == self._generation
             if kept:
-                self._entries[key] = (revision, body, now)
+                self._entries[key] = (revision, body, now, validate)
             return revision, kept
 
     def current(self, key: SnapshotKey) -> tuple[Revision, bytes] | None:
@@ -86,7 +89,26 @@ class Snapshot:
             entry = self._entries.get(key)
         if entry is None:
             return None
-        revision, body, _published_at = entry
+        revision, body, _published_at, _validate = entry
+        return revision, body
+
+    def fresh(
+        self, key: SnapshotKey, *, now: float, max_age: float
+    ) -> tuple[Revision, bytes] | None:
+        """Check evidence outside the lock and never reuse a response cleared during that check."""
+        with self._lock:
+            entry = self._entries.get(key)
+        if entry is None:
+            return None
+        revision, body, published_at, validate = entry
+        if now - published_at >= max_age:
+            return None
+        if validate is not None:
+            if not validate():
+                return None
+            with self._lock:
+                if self._entries.get(key) is not entry:
+                    return None
         return revision, body
 
     def clear(self) -> None:

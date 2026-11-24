@@ -157,6 +157,9 @@ the captured pages already are those boundaries.
 
 ## How big it may be
 
+On 2026-11-24, the Sessions progress pill, filters and Help measured 2,487,863 packaged bytes,
+which sets the page bound.
+
 The fixture ships inside `react.html`, and every install and every page load carries it, so its size is
 bounded before a sample is built, not measured after. The initial bounds were set on 2026-10-19, before this
 sample was captured:

@@ -87,12 +87,15 @@ it('filters for the flag independently from a row’s State', () => {
   ).toEqual(['dirty-end', 'dirty-one-entry', 'dirty-unknown-count']);
 });
 
-it.each(['medium', 'high', 'extreme'])('keeps search matches with inert level %s', (level) => {
-  const matches = run({ query: 'combat' }).filtered;
-  expect(matches.shown).toBeGreaterThan(0);
-  expect(run({ progress: [level] }).filtered.active).toBe(false);
-  expect(run({ query: 'combat', progress: [level] }).filtered.keys).toEqual(matches.keys);
-});
+it.each(['medium', 'high', 'extreme'])(
+  'shows the reader zero matches when the chosen level %s appears on no row',
+  (level) => {
+    expect(run({ query: 'combat' }).filtered.shown).toBeGreaterThan(0);
+    const { filtered } = run({ query: 'combat', progress: [level] });
+    expect(filtered.active).toBe(true);
+    expect(filtered.shown).toBe(0);
+  },
+);
 
 describe('the words', () => {
   it('lets a reader choose headless sessions or interactive and unknown rows', () => {

@@ -178,9 +178,9 @@ end age and "Session reported its own end". A dirty end, a known git state and a
 count stay. The status segments are one segmented control on the `--sunk` track: the chosen
 segment is white with a `--line` border, and the others are plain words that clear 4.5:1. A phone
 shows them as outlined pills with the chosen one filled. The search box reads "Search by title,
-goal or project". The canvas's short ages and row progress pills are not taken: the elapsed
-spelling above stands, and the row progress pill waits for a stored departure (the grey absence word
-that can stand in its place is the 2026-11-24 note below).
+goal or project". The elapsed spelling above stands. The row progress pill uses the far-right
+cell when a saved check still proves a departure. The 2026-11-24 note below covers the quiet words
+that can use the same cell.
 
 Also on 2026-11-24 the owner found Sessions rows with no tile, their titles shifted left out of
 line: 14 Antigravity and 3 Codex sessions reported idle with no recorded turn stop, which reads
@@ -703,7 +703,12 @@ rulings govern where they change an earlier decision.
 ### DRC-5476 Owner follow-up rulings, 2026-11-22 (fourth round)
 
 > * **The terminal's status-line footer** follows the row rule. It names a level only from a stored reading that found a departure (Slightly off course or worse). Otherwise it shows a ruled absence word, or nothing. It may still say the Live monitor is on.
-> * **The Sessions Filters panel's Progress check chips** are Slightly off course, Off course, Way off course and No goal yet. No chip shows a count (DEC-20).
+> * **The Sessions Filters panel's Progress check chips** are Slightly off course, Off course, Way off course and No goal yet.
+
+The 2026-11-24 [Sessions amendment](design-reading-a-session.md#amended-2026-11-24-sessions-progress-follows-the-saved-check)
+counts the level chips from the pills on the rows, including zero for Way off course. Slightly off course
+has an orange outline on white, and Off course uses white text on orange. Out of date and Goal too vague
+to check share the far-right cell as plain quiet text. The progress slot stacks below the goal on narrow screens.
 
 ### DRC-5476 Owner ruling, 2026-11-22
 

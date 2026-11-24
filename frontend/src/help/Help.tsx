@@ -154,6 +154,11 @@ export function Help() {
             </div>
           ))}
         </dl>
+        <p className="mx-6">
+          On Sessions, a saved check can show {SESSION_ROW_WORDS.slightlyOffCourse} or{' '}
+          {SESSION_ROW_WORDS.offCourse} while its evidence still matches. Use Filters to find those
+          rows. Open the session to see what the check read.
+        </p>
         <RouteLink route={{ ...HELP_EXAMPLE, explain: 'goal' }} className="mx-6 text-primary">
           {EXPLANATIONS.goals}
         </RouteLink>

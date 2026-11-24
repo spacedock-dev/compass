@@ -94,17 +94,19 @@ class TheAttentionHeadingsTheSkillNamesAreTheOnesTheBoardDrawsTest(unittest.Test
 
 
 class TheSessionsProgressFiltersTest(unittest.TestCase):
-    def test_reader_docs_say_the_level_chips_are_disabled(self) -> None:
-        for filename in (
-            "docs/design-frontend-migration.md",
-            "docs/how-it-works.md",
-            "compass/skills/compass/reference/dashboard.md",
+    def test_a_reader_can_find_the_saved_progress_filters_in_both_guides(self) -> None:
+        for filename, basis in (
+            ("docs/how-it-works.md", "to see rows carrying that saved progress pill"),
+            (
+                "compass/skills/compass/reference/dashboard.md",
+                "filter the progress pills on the rows",
+            ),
         ):
             with self.subTest(file=filename):
                 text = " ".join((ROOT / filename).read_text(encoding="utf-8").split())
-                self.assertIn("level chips are disabled", text)
-                self.assertNotIn("Stored readings can narrow the list", text)
-                self.assertNotIn("Progress levels appear on each session's page", text)
+                self.assertIn(basis, text)
+                self.assertIn("Way off course has a count of zero", text)
+                self.assertNotIn("level chips are disabled", text)
 
 
 class TheReaderStateRecordCitesRealOwnersTest(unittest.TestCase):

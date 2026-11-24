@@ -321,6 +321,7 @@
           "started_at": 1899999100.0,
           "state": "working",
           "state_detail": "running a synthetic tool",
+          "stored_progress": null,
           "subagent_events": null,
           "subagent_hierarchy": null,
           "subagents": [],
@@ -509,6 +510,7 @@
           "started_at": 1899999100.0,
           "state": "working",
           "state_detail": "waiting on a linked child session",
+          "stored_progress": null,
           "subagent_events": null,
           "subagent_hierarchy": null,
           "subagents": [],
@@ -574,7 +576,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "20507",
+      "Content-Length": "20557",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"

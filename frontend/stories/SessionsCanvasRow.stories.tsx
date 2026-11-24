@@ -571,6 +571,104 @@ export const AbsenceWord: Story = {
   },
 };
 
+const PROGRESS_SESSIONS = [
+  { sid: 'slight', stored_progress: 'medium' },
+  { sid: 'off', stored_progress: 'high' },
+  { sid: 'stale', stored_progress: 'out-of-date' },
+  { sid: 'vague', stored_progress: 'goal-unclear' },
+  { sid: 'unchecked' },
+  { sid: 'codex', harness: 'codex', stored_progress: 'high' },
+  { sid: 'held', annotation_goal_unreadable: true, stored_progress: 'high' },
+].map((values) => ({
+  harness: 'claude',
+  project: 'acme/dashboard',
+  active: true,
+  state: 'working',
+  title: 'Ship the release notes',
+  annotation_goal: 'The published notes describe the API changes',
+  ...values,
+}));
+
+export const SavedProgress: Story = {
+  render: () => <Board sessions={PROGRESS_SESSIONS} extra={{ reading_routes: ABSENCE_ROUTES }} />,
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(7),
+    );
+    const cases = [
+      ['slight', 'Slightly off course', 'medium'],
+      ['off', 'Off course', 'high'],
+      ['stale', 'Out of date', null],
+      ['vague', 'Goal too vague to check', null],
+      ['unchecked', 'Not checked yet', null],
+      ['codex', null, null],
+      ['held', null, null],
+    ] as const;
+    for (const width of [1280, 700, 400]) {
+      await atWidth(width, async () => {
+        for (const [sid, text, tone] of cases) {
+          const row = rowOf(canvasElement, sid);
+          const marks = row.querySelectorAll<HTMLElement>(
+            '[data-next-drift-pill], [data-next-row-absence]',
+          );
+          await expect(marks).toHaveLength(text === null ? 0 : 1);
+          const mark = marks[0];
+          if (!mark) continue;
+          await expect(mark.textContent).toBe(text);
+          await expect(mark.closest('a, button')).toBeNull();
+          await expect(mark.getAttribute('data-level')).toBe(tone);
+          if (tone) {
+            const style = getComputedStyle(mark);
+            await expect(style.fontSize).toBe('13px');
+            await expect(style.fontWeight).toBe('600');
+            await expect(style.borderTopWidth).toBe('1px');
+            await expect(style.paddingLeft).toBe('10px');
+            await expect(style.paddingTop).toBe('3px');
+            await expect(style.lineHeight).toBe('20px');
+            await expect(style.color).toBe(
+              tone === 'high' ? 'rgb(255, 255, 255)' : 'rgb(154, 52, 18)',
+            );
+            await expect(style.backgroundColor).toBe(
+              tone === 'high' ? 'rgb(194, 65, 12)' : 'rgb(255, 255, 255)',
+            );
+          } else {
+            await expect(mark).toHaveStyle({
+              color: 'rgb(82, 96, 109)',
+              borderTopWidth: '0px',
+              backgroundColor: 'rgba(0, 0, 0, 0)',
+            });
+          }
+          const box = mark.getBoundingClientRect();
+          const goal = part(row, '[data-next-operation-fact="goal"]').getBoundingClientRect();
+          if (width >= 700) await expect(box.left).toBeGreaterThanOrEqual(goal.right - 1);
+          else await expect(box.top).toBeGreaterThanOrEqual(goal.bottom - 1);
+          await expect(box.right).toBeLessThanOrEqual(row.getBoundingClientRect().right);
+          await expect(mark.scrollWidth).toBeLessThanOrEqual(mark.clientWidth + 1);
+        }
+        await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+      });
+    }
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'Filters' }));
+    const progress = within(canvas.getByRole('group', { name: 'Progress check' }));
+    const slight = progress.getByRole('button', { name: /^Slightly off course/ });
+    const off = progress.getByRole('button', { name: /^Off course/ });
+    await expect(slight).toHaveAccessibleName('Slightly off course 1');
+    await expect(off).toHaveAccessibleName('Off course 1');
+    await expect(progress.getByRole('button', { name: 'Way off course 0' })).toBeEnabled();
+    await userEvent.click(slight);
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(1),
+    );
+    await expect(rowOf(canvasElement, 'slight')).toBeVisible();
+    await userEvent.click(off);
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(2),
+    );
+    await expect(rowOf(canvasElement, 'off')).toBeVisible();
+  },
+};
+
 /* Both "No goal yet" chips keep exactly the rows whose Goal cell reads it, through one predicate. A draft row
    shows its prompt as a goal a check can adopt, so neither chip keeps it. */
 export const NoGoalChips: Story = {

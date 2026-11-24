@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from _thread import LockType
 
     from compass_runtime.config import RuntimeConfig
+    from compass_runtime.row_progress import Memo
 
 
 class UsageFetchEntry(TypedDict):
@@ -74,6 +75,8 @@ class RuntimeState:
     # Focused drift views only: content digests retain no record bytes, bounded per application.
     drift_view_cache: dict[str, dict[str, Any]] = field(default_factory=dict)
     drift_view_lock: LockType = field(default_factory=threading.Lock)
+    row_progress: dict[tuple[str, str], Memo] = field(default_factory=dict)
+    row_progress_lock: LockType = field(default_factory=threading.Lock)
     session_outlines: dict[str, Any] = field(default_factory=dict)
     # Registry exchanges only; each outline slot owns its work outside this lock.
     session_outline_lock: LockType = field(default_factory=threading.Lock)

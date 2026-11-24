@@ -1065,6 +1065,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # collectors and whichever one is added next. `records` is a leaf, so
         # this stays inward.
         "compass_runtime.aggregate": {
+            # Board polls revalidate the progress words from the focused view.
+            "compass_runtime.row_progress",
             "compass_runtime.declared_sessions",
             "compass_runtime.update_check",
             "compass_runtime.board_explanations",
@@ -2041,7 +2043,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # `PendingAsk` and is therefore the one place that bounding can happen.
         "compass_runtime.http_api": {
             "compass_runtime.reading_evidence",
-            "compass_runtime.declared_sessions",
+            # One derivation keeps the page and the Sessions progress memo in agreement.
+            "compass_runtime.row_progress",
             "compass_runtime.board_explanations",
             # Per-application focused views use the state owner's bounded cache insertion.
             "compass_runtime.state",
@@ -2362,6 +2365,15 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         "compass_runtime.probe": {"compass_runtime.config"},
         "compass_runtime.records": set(),
+        "compass_runtime.row_progress": {
+            "compass_runtime.annotations",
+            "compass_runtime.config",
+            "compass_runtime.declared_sessions",
+            "compass_runtime.levels",
+            "compass_runtime.reading_evidence",
+            "compass_runtime.semantic_history",
+            "compass_runtime.state",
+        },
         "compass_runtime.sessions": {"compass_runtime.config"},
         # The published snapshot is a passive container: it holds bytes and a
         # revision and takes a lock. It imports no runtime module, which is what
@@ -2371,6 +2383,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # module, which is what lets state own a registry without a cycle.
         "compass_runtime.stream": set(),
         "compass_runtime.state": {
+            # Memo type only. The state need not import its producer at runtime.
+            "compass_runtime.row_progress",
             "compass_runtime.asks",
             "compass_runtime.config",
             "compass_runtime.git_status",

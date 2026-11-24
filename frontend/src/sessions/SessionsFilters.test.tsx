@@ -619,24 +619,56 @@ it('keeps the count on every tab equal to its unfiltered rows and independent of
   expect(tabs.getAllByRole('button').map((button) => button.textContent)).toEqual(names);
 });
 
-it('keeps the rows visible when progress levels cannot be filtered', async () => {
+it('lets a reader filter by the level displayed on each row', async () => {
   const page = await open({
     generated: GENERATED,
     annotate: true,
     sessions: [
-      { harness: 'claude', sid: 'saved', project: 'p', annotation_goal: 'Ship' },
-      { harness: 'codex', sid: 'empty', project: 'p', annotation_goal: '' },
+      {
+        harness: 'claude',
+        sid: 'slight',
+        project: 'p',
+        annotation_goal: 'Ship',
+        stored_progress: 'medium',
+      },
+      {
+        harness: 'claude',
+        sid: 'off',
+        project: 'p',
+        annotation_goal: 'Ship',
+        stored_progress: 'high',
+      },
+      {
+        harness: 'claude',
+        sid: 'stale',
+        project: 'p',
+        annotation_goal: 'Ship',
+        stored_progress: 'out-of-date',
+      },
+      {
+        harness: 'codex',
+        sid: 'empty',
+        project: 'p',
+        annotation_goal: '',
+        stored_progress: 'high',
+      },
     ],
   });
   await press(page, screen.getByRole('button', { name: 'Filters' }));
   const group = within(screen.getByRole('group', { name: 'Progress check' }));
-  for (const name of ['Slightly off course', 'Off course', 'Way off course']) {
-    const chip = group.getByRole('button', { name });
-    await press(page, chip);
-    expect(rows(), name).toBe(2);
-    expect((chip as HTMLButtonElement).disabled).toBe(true);
-  }
-  expect(group.getByText(/Filtering by progress level is unavailable/)).toBeVisible();
+  const slight = group.getByRole('button', { name: /Slightly off course/ });
+  const off = group.getByRole('button', { name: /^Off course/ });
+  const way = group.getByRole('button', { name: /Way off course/ });
+  expect(slight.textContent).toMatch(/1$/);
+  expect(off.textContent).toMatch(/1$/);
+  expect(way.textContent).toMatch(/0$/);
+  await press(page, way);
+  expect(rows()).toBe(0);
+  await press(page, slight);
+  expect(rows()).toBe(1);
+  await press(page, off);
+  expect(rows()).toBe(2);
+  expect(screen.queryByText('Out of date')).toBeNull();
 });
 
 it('a mixed-evidence board explains its goal coverage', async () => {

@@ -12,6 +12,7 @@ import {
   type GoalCell,
   rowState,
   type SessionRow,
+  type RowLevel,
   type SessionsContext,
   type SessionsScreen,
   type StateSegment,
@@ -245,6 +246,7 @@ export interface IndexedRow {
   readonly drift: DriftValue | null;
   readonly goal: GoalValue | null;
   readonly progress: ProgressValue | null;
+  readonly progressLevel: RowLevel | null;
   readonly started: Stamp | null;
   readonly active: Stamp | null;
 }
@@ -296,6 +298,7 @@ export function indexRow(row: SessionRow, context: SessionsContext): IndexedRow 
   ].filter((one): one is Field => one !== null);
   const progress = readable ? progressValue(source, context, goal) : null;
   const checked = checkedAgainstCurrentWords(source, context);
+  const level = row.progress;
   return {
     row,
     shown,
@@ -303,6 +306,7 @@ export function indexRow(row: SessionRow, context: SessionsContext): IndexedRow 
     sid: normalize(session.sid),
     state: rowState(session),
     progress,
+    progressLevel: level === 'medium' || level === 'high' || level === 'extreme' ? level : null,
     drift: !readable ? null : row.drift ? 'recorded' : checked ? 'checked' : 'unchecked',
     goal:
       progress === null ? null : hasSavedWords(source) ? 'saved' : goal.known ? 'drafted' : 'none',
@@ -422,7 +426,7 @@ export function facetValue(indexed: IndexedRow, facet: Facet): string | null {
   if (facet === 'headless') return indexed.row.source?.['headless'] === true ? 'headless' : 'other';
   if (facet === 'state') return indexed.state;
   if (facet === 'drift') return indexed.drift;
-  if (facet === 'progress') return indexed.progress;
+  if (facet === 'progress') return indexed.progressLevel ?? indexed.progress;
   return indexed.goal;
 }
 
@@ -498,7 +502,11 @@ export function passes(indexed: IndexedRow, prepared: Prepared, skip: Part | nul
     if (!chosen.length) continue;
     const value = facetValue(indexed, facet);
     if (facet === 'progress') {
-      if (prepared.progressAvailable && chosen.includes('no-goal') && value !== 'no-goal')
+      if (
+        prepared.progressAvailable &&
+        !(value !== null && chosen.includes(value)) &&
+        !(indexed.progress === 'no-goal' && chosen.includes('no-goal'))
+      )
         return false;
       continue;
     }
@@ -527,7 +535,7 @@ export function filtersActive(prepared: Prepared): boolean {
     (edges !== null && filters.when !== 'any') ||
     FACETS.some((facet) =>
       facet === 'progress'
-        ? prepared.progressAvailable && filters.progress.includes('no-goal')
+        ? prepared.progressAvailable && filters.progress.length > 0
         : filters[facet].length > 0 &&
           (facet === 'goal'
             ? prepared.progressAvailable
@@ -588,6 +596,9 @@ export function facetCounts(
     const value = facetValue(one, facet);
     if (value === null) continue;
     counts.set(value, (counts.get(value) ?? 0) + 1);
+    if (facet === 'progress' && one.progress === 'no-goal' && value !== 'no-goal') {
+      counts.set('no-goal', (counts.get('no-goal') ?? 0) + 1);
+    }
     if (facet === 'state' && hasEndedRequest(one)) {
       const waiting = SESSION_ROW_WORDS.waitingOnYou;
       counts.set(waiting, (counts.get(waiting) ?? 0) + 1);

@@ -782,6 +782,7 @@ def base_session(harness: str, sid: Any, project: str) -> Session:
         # here at their absent values on the rule above: a missing key renders
         # as `undefined`, and an absence has to arrive carrying its reason.
         "annotation_assessment": None,
+        "stored_progress": None,
         "annotation_reading_count": 0,
         "annotation_reading_withheld": "",
         "annotation_reading_withheld_reason": "",

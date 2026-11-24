@@ -683,25 +683,21 @@ class SessionsRenderTest(unittest.TestCase):
         self.assertIn("Read by scanning: no turn end can be observed here", text)
         self.assertNotIn("helper", text.lower())
 
-    def test_only_a_validated_stored_departure_marks_a_session(self) -> None:
+    def test_a_reader_sees_the_boards_progress_mark_or_word(self) -> None:
         sid = "f6a7b8c9"  # The board already recorded a departure for this row.
-        for case in GROUPS["unpublishedProgress"]:
+        words = {"Out of date", "Goal too vague to check", *DEPARTURES.values()}
+        for case in [*GROUPS["unpublishedProgress"], *GROUPS["publishedProgress"]]:
             with self.subTest(case=case["name"]):
-                fields = {key: value for key, value in case.items() if key not in ("name", "mark")}
+                fields = {
+                    key: value for key, value in case.items() if key not in ("name", "mark", "word")
+                }
                 payload = terminal_sessions.list_payload(with_rows(**{sid: fields}))
-                text = "\n".join(self.render(payload))
-                self.assertTrue(all(f"  {word}" not in text for word in DEPARTURES.values()))
-                self.assertNotIn("Drift ·", text)
-        for token, word in DEPARTURES.items():
-            with self.subTest(token=token):
-                payload = terminal_sessions.list_payload(
-                    with_rows(**{sid: {"stored_progress": token}})
+                text = self.render(payload)
+                self.assertEqual(
+                    [f"  {word}" for word in (case.get("word"), case["mark"]) if word],
+                    [line for line in text if line.strip() in words],
                 )
-                self.assertIn(f"  {word}", self.render(payload))
-                codex = with_rows(
-                    **{"019c0000-1111-7222-8333-444455557777": {"stored_progress": token}}
-                )
-                self.assertNotIn(f"  {word}", self.render(codex))
+                self.assertNotIn("Drift ·", "\n".join(text))
         for token in ("none_or_low", "checked", "no-goal", "not_enough"):
             with self.subTest(token=token):
                 self.assertTrue(

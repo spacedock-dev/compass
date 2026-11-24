@@ -29,7 +29,6 @@ from compass_runtime import (
     compass_turns,
     copied_corrections,
     correction,
-    declared_sessions,
     departures,
     dismissals,
     drift_view,
@@ -52,6 +51,7 @@ from compass_runtime import (
     reading_policy,
     record_pages,
     records,
+    row_progress,
     session_outline,
     settings,
     summary_jobs,
@@ -114,6 +114,8 @@ def _websocket_accept(value: str) -> str | None:
 # 2.3 MB page read at 150 KB/s arrived short. 64 KiB drains within the timeout at any rate a
 # reader that is still reading can manage.
 WRITE_SLICE_BYTES = 65_536
+ROW_PROGRESS_PASS_ROWS = 4
+ROW_PROGRESS_PASS_SEC = 0.25
 
 
 def _write_in_slices(write: Callable[[memoryview], object], payload: bytes) -> None:
@@ -411,7 +413,97 @@ class CompassHTTPServer(ThreadingHTTPServer):
         self.bound_host = address[0]
         self.connection_slots = threading.BoundedSemaphore(self.CONNECTION_LIMIT)
         self.interaction_stream_slots = threading.BoundedSemaphore(self.INTERACTION_STREAM_LIMIT)
+        self._row_progress_start = threading.Lock()
+        self._row_progress_closed = threading.Event()
+        self._row_progress_worker: threading.Thread | None = None
+        self._row_progress_attempted: dict[tuple[str, str], float] = {}
         super().__init__(address, _RequestHandler, bind_and_activate=bind_and_activate)
+        if hasattr(application, "warm_row_progress"):
+            application.warm_row_progress = self.warm_row_progress
+
+    def warm_row_progress(self, collection: dict[str, Any]) -> threading.Thread | None:
+        """Start at most one local focused pass over the already-collected rows."""
+        if not collection.get("annotate") or collection.get("annotate_unreadable"):
+            return None
+        with self._row_progress_start:
+            worker = self._row_progress_worker
+            if self._row_progress_closed.is_set() or (worker is not None and worker.is_alive()):
+                return worker
+            now = self.application.clock()
+            state = self.application.state
+            candidates = []
+            with state.row_progress_lock:
+                for row in collection["sessions"]:
+                    if not row_progress.eligible(row):
+                        continue
+                    owner = row_progress.identity(row)
+                    last = self._row_progress_attempted.get(owner, float("-inf"))
+                    memo = state.row_progress.get(owner)
+                    delay = (
+                        row_progress.MAX_AGE_SEC / 2
+                        if row.get("stored_progress")
+                        else row_progress.RETRY_SEC
+                    )
+                    if now - max(last, memo.at if memo else last) >= delay:
+                        candidates.append((last, row))
+            if not candidates:
+                return None
+            candidates.sort(key=lambda candidate: candidate[0])
+            worker = threading.Thread(
+                target=self._warm_row_progress_pass,
+                args=(collection, [row for _, row in candidates[:ROW_PROGRESS_PASS_ROWS]]),
+                name="compass-row-progress",
+                daemon=True,
+            )
+            self._row_progress_worker = worker
+            worker.start()
+            return worker
+
+    def _warm_row_progress_pass(
+        self, collection: dict[str, Any], rows: list[dict[str, Any]]
+    ) -> None:
+        app = self.application
+        deadline = time.monotonic() + ROW_PROGRESS_PASS_SEC
+
+        def yield_to_board() -> None:
+            # Message masking is CPU-heavy. Between messages let the poll finish its own
+            # scan. The poll never takes the message index or page-record locks.
+            with app.state.collect_memo_lock:
+                pass
+
+        try:
+            for row in rows:
+                if self._row_progress_closed.is_set() or time.monotonic() >= deadline:
+                    break
+                owner = row_progress.identity(row)
+                project = reading_evidence.project_key(row)
+                runtime_state.bounded_put(
+                    self._row_progress_attempted,
+                    owner,
+                    app.clock(),
+                    limit=app.config.max_cache_entries,
+                )
+                if not project:
+                    continue
+                try:
+                    with runtime_project_context.message_checkpoints(yield_to_board):
+                        assemble_project_drift(
+                            app,
+                            collection,
+                            project,
+                            owner,
+                            self.record_cursor_key,
+                            refresh=False,
+                            model_consent=False,
+                            with_lease=False,
+                        )
+                except Exception as exc:  # noqa: BLE001 - the next row can still be warmed
+                    runtime_io.diag(
+                        f"Compass: row progress could not be warmed ({exc.__class__.__name__}).",
+                        app.diagnostic_sink,
+                    )
+        finally:
+            app.snapshot.clear()
 
     def process_request(self, request: Any, client_address: Any) -> None:
         # Refused on the accept thread rather than queued: a waiting connection would hold
@@ -449,6 +541,13 @@ class CompassHTTPServer(ThreadingHTTPServer):
         self.shutdown_request(request)
 
     def server_close(self) -> None:
+        with self._row_progress_start:
+            self._row_progress_closed.set()
+            worker = self._row_progress_worker
+        if worker is not None:
+            worker.join()
+        if getattr(self.application, "warm_row_progress", None) == self.warm_row_progress:
+            self.application.warm_row_progress = None
         if self.interaction_prototype is not None:
             self.interaction_prototype.stop()
         # The ticker and any check in flight end with the server, whichever way it stops.
@@ -868,13 +967,15 @@ def _with_drift_view(
     focus: tuple[str, str],
     project: str,
     cursor_key: bytes,
+    transcript_at_start: row_progress.Transcript | None = None,
+    invalidate_snapshot: bool = True,
 ) -> dict[str, Any]:
-    """The focused session's Drift card answer, on `sources.work.drift_views` and on no row.
+    """The focused session's Drift card answer and the source of the Sessions progress memo.
 
     The page's own derivation (`drift_view`), held to the page by a parity check, so a terminal
     prints what the card shows and not what the server's published fields alone would say: a level
-    the page withholds, a departure it demotes, an earlier departure it keeps in view. Not a row
-    field and not on `_session_context`, for the reason the levels are not
+    the page withholds, a departure it demotes, an earlier departure it keeps in view. The
+    reading route's `_session_context` still receives no level
     ([DEC-26](docs/design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)).
 
     Called after `_with_lease`, because the view reads the lease, the levels and the line requests,
@@ -926,30 +1027,8 @@ def _with_drift_view(
     try:
         # Pass the exact derivation inputs as well as digesting them. Collector age/turn clocks
         # must not rebuild an unchanged reading, and a new dependency must enter this projection.
-        session = {
-            key: value
-            for key, value in declared_sessions.model_row(matching[0]).items()
-            if key.startswith("annotation_")
-            or key
-            in {
-                "harness",
-                "sid",
-                "state",
-                "ended_at",
-                "copied_prompts",
-                "instruction",
-                "first_prompt",
-                "first_prompt_at",
-                "prompt_states_work",
-                "title",
-                "prompt_at",
-                "session_goal",
-                "first_prompt_control",
-            }
-        }
-        inputs = {
-            key: payload.get(key) for key in ("annotate", "annotate_unreadable", "reading_routes")
-        }
+        row = matching[0]
+        session, inputs = row_progress.derive_inputs(row, payload)
         raw_sources = context.get("sources")
         sources = raw_sources if isinstance(raw_sources, dict) else {}
         raw_work = sources.get("work")
@@ -975,18 +1054,44 @@ def _with_drift_view(
         ).hexdigest()
         state = application.state
         with state.drift_view_lock:
-            cached = state.drift_view_cache.get(digest)
-            if cached is not None:
-                return attach(cached)
-            view = drift_view.derive(session, inputs, keyed_context, record)
-            runtime_state.bounded_put(
-                state.drift_view_cache,
-                digest,
-                view,
-                limit=min(128, application.config.max_cache_entries),
-            )
-            return attach(view)
+            view = state.drift_view_cache.get(digest)
+            if view is None:
+                # The page reads the wire shape. In-process annotations use tuples for citations.
+                view = drift_view.derive(
+                    json.loads(json.dumps(session)), inputs, keyed_context, record
+                )
+                runtime_state.bounded_put(
+                    state.drift_view_cache,
+                    digest,
+                    view,
+                    limit=min(128, application.config.max_cache_entries),
+                )
+        memo = None
+        if transcript_at_start is not None and (
+            row_progress.transcript(transcript_at_start.path) == transcript_at_start
+        ):
+            read_at = row["annotation_assessment"].get("read_at")
+            if isinstance(read_at, (int, float)):
+                memo = row_progress.Memo(
+                    row_progress.key(row, session, inputs),
+                    read_at,
+                    transcript_at_start,
+                    row_progress.token(view) if record is not None else None,
+                    application.clock(),
+                )
+        changed = transcript_at_start is not None and row_progress.remember(
+            application.config, state, focus, memo
+        )
+        if invalidate_snapshot and (changed or (memo and memo.token != row.get("stored_progress"))):
+            application.snapshot.clear()
+        return attach(view)
     except Exception as exc:  # noqa: BLE001 - an unavailable view costs no context
+        if (
+            transcript_at_start is not None
+            and row_progress.remember(application.config, application.state, focus, None)
+            and invalidate_snapshot
+        ):
+            application.snapshot.clear()
         runtime_io.diag(
             f"Compass: the drift view could not be derived ({exc.__class__.__name__}).",
             application.diagnostic_sink,
@@ -1059,6 +1164,7 @@ def assemble_project_drift(
     *,
     refresh: bool = False,
     model_consent: bool = False,
+    with_lease: bool = True,
 ) -> dict[str, Any]:
     """Assemble the page context, including its focused reading view when requested.
 
@@ -1066,6 +1172,14 @@ def assemble_project_drift(
     page. The reading route's `_session_context` still receives no levels.
     """
     rows = collected["sessions"]
+    transcript_at_start = None
+    if focus is not None and collected.get("annotate") and not collected.get("annotate_unreadable"):
+        matching = [row for row in rows if row_progress.identity(row) == focus]
+        if len(matching) == 1 and row_progress.eligible(matching[0]):
+            path = runtime_observer.resolve_transcript(
+                application.config, application.state, *focus
+            )
+            transcript_at_start = row_progress.transcript(path) if path else None
     result = runtime_project_context.collect(
         application.config,
         application.state,
@@ -1086,8 +1200,18 @@ def assemble_project_drift(
         )
         result = _with_message_ordinals(application, result, focus)
         result = _with_levels(application, result, rows, focus, project)
-        result = _with_lease(application, result, rows, focus)
-        result = _with_drift_view(application, result, collected, focus, project, cursor_key)
+        if with_lease:
+            result = _with_lease(application, result, rows, focus)
+        result = _with_drift_view(
+            application,
+            result,
+            collected,
+            focus,
+            project,
+            cursor_key,
+            transcript_at_start,
+            with_lease,
+        )
     return result
 
 
