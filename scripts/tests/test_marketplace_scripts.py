@@ -192,6 +192,7 @@ class PublishMarketplaceTest(unittest.TestCase):
         }
         self.env.pop("RUNNER_TEMP", None)
         self.env.pop("MARKETPLACE_DEPLOY_KEY", None)
+        self.env.pop("GITHUB_TOKEN", None)
         self.git(self.root, "init", "--quiet", "--bare", "--initial-branch=main", str(self.remote))
         self.seed([sibling(), entry("0.4.2")])
 
@@ -220,9 +221,12 @@ class PublishMarketplaceTest(unittest.TestCase):
         )  # fmt: skip
         self.git(work, "push", "--quiet", "origin", "HEAD:main")
 
-    def publish(self, version: str = "1.0.0") -> subprocess.CompletedProcess[str]:
+    def publish(
+        self, version: str = "1.0.0", *, trace: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        shell = [SH, "-x"] if trace else [SH]
         return subprocess.run(
-            [SH, str(PUBLISH), version],
+            [*shell, str(PUBLISH), version],
             capture_output=True,
             text=True,
             check=False,
@@ -317,6 +321,95 @@ class PublishMarketplaceTest(unittest.TestCase):
         self.assertEqual(1, done.returncode)
         self.assertIn("MARKETPLACE_DEPLOY_KEY is empty", done.stderr)
 
+    def ssh_publish(
+        self, responses: str, *, token: str = publish_fakes.TEST_BEARER
+    ) -> subprocess.CompletedProcess[str]:
+        log = self.root / "log"
+        bin_dir = self.root / "bin"
+        publish_fakes.install(bin_dir, log)
+        url = "git@github.com:spacedock-dev/marketplace.git"
+        self.env.update(publish_fakes.ssh_publish_env(self.remote, url, log / "git", token=token))
+        self.env.update(
+            PATH=f"{bin_dir}{os.pathsep}{self.env['PATH']}",
+            FAKE_LOG=str(log),
+            MARKETPLACE_REMOTE=url,
+            MARKETPLACE_DEPLOY_KEY="placeholder, not a key",
+            FAKE_META_RESPONSES=responses,
+        )
+        return self.publish(trace=True)
+
+    def test_host_key_403_retries_with_auth_before_publishing(self) -> None:
+        done = self.ssh_publish("403 200")
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        log = self.root / "log"
+        calls = publish_fakes.curl_calls(log)
+        self.assertEqual([publish_fakes.META_URL] * 2, [call[-1] for call in calls])
+        self.assertEqual(["bearer", "bearer"], (log / "auth").read_text().splitlines())
+        for call in calls:
+            self.assertEqual("--disable", call[0])
+            self.assertEqual("=https", call[call.index("--proto") + 1])
+            self.assertEqual("8", call[call.index("--max-time") + 1])
+            self.assertIn("--tlsv1.2", call)
+            self.assertTrue({"--location", "--location-trusted", "-L"}.isdisjoint(call))
+        self.assertNotIn(publish_fakes.TEST_BEARER, done.stdout + done.stderr)
+        self.assertNotIn(publish_fakes.TEST_BEARER, str(calls))
+        self.assertEqual(["compass 1.0.0", "seed"], self.commits())
+        self.assertEqual([], list(self.scratch.iterdir()))
+
+    def test_persistent_host_key_rate_limit_stops_before_clone(self) -> None:
+        done = self.ssh_publish("403")
+
+        self.assertEqual(1, done.returncode)
+        self.assertIn("no GitHub host keys fetched", done.stderr)
+        log = self.root / "log"
+        self.assertEqual(
+            [publish_fakes.META_URL] * 4, [c[-1] for c in publish_fakes.curl_calls(log)]
+        )
+        self.assertFalse((log / "git").exists())
+        self.assertNotIn(publish_fakes.TEST_BEARER, done.stdout + done.stderr)
+        self.assertEqual([], list(self.scratch.iterdir()))
+
+    def test_host_key_redirect_stops_before_clone_even_with_a_keys_body(self) -> None:
+        done = self.ssh_publish("302 200")
+
+        self.assertEqual(1, done.returncode)
+        self.assertIn("no GitHub host keys fetched", done.stderr)
+        log = self.root / "log"
+        self.assertEqual(1, len(publish_fakes.curl_calls(log)))
+        self.assertFalse((log / "git").exists())
+
+    def test_permanent_host_key_http_error_does_not_retry(self) -> None:
+        done = self.ssh_publish("401 200")
+
+        self.assertEqual(1, done.returncode)
+        self.assertIn("no GitHub host keys fetched", done.stderr)
+        self.assertEqual(1, len(publish_fakes.curl_calls(self.root / "log")))
+
+    def test_an_empty_token_uses_the_same_bounded_retry(self) -> None:
+        done = self.ssh_publish("403 200", token="")
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual(["none", "none"], (self.root / "log" / "auth").read_text().splitlines())
+        self.assertEqual(["compass 1.0.0", "seed"], self.commits())
+
+    def test_a_token_cannot_add_another_request_header(self) -> None:
+        done = self.ssh_publish("200", token=f"{publish_fakes.TEST_BEARER}\nHost: other.example")
+
+        self.assertEqual(1, done.returncode)
+        self.assertIn("no GitHub host keys fetched", done.stderr)
+        self.assertNotIn(publish_fakes.TEST_BEARER, done.stdout + done.stderr)
+        self.assertEqual([], publish_fakes.curl_calls(self.root / "log"))
+
+    def test_the_meta_response_must_supply_ssh_keys(self) -> None:
+        done = self.ssh_publish("no-keys 200")
+
+        self.assertEqual(1, done.returncode)
+        self.assertIn("no GitHub host keys fetched", done.stderr)
+        log = self.root / "log"
+        self.assertEqual(1, len(publish_fakes.curl_calls(log)))
+        self.assertFalse((log / "git").exists())
+
     def test_the_ssh_key_paths_reach_ssh_whole_whatever_the_scratch_path_holds(self) -> None:
         # git runs GIT_SSH_COMMAND through the shell. A scratch path spliced into it would be
         # split at the space and the `;` would end the ssh command; passed through the
@@ -356,6 +449,7 @@ class PublishMarketplaceTest(unittest.TestCase):
             ["identity file present", "known_hosts present"], publish_fakes.ssh_files(log)
         )
         (meta,) = publish_fakes.curl_calls(log)
+        self.assertEqual(["none"], (log / "auth").read_text().splitlines())
         self.assertEqual("=https", meta[meta.index("--proto") + 1])
         self.assertIn("--tlsv1.2", meta)
         self.assertEqual([], list(odd.iterdir()))

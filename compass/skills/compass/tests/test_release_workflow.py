@@ -888,6 +888,11 @@ class CredentialBoundaryTest(unittest.TestCase):
                     self.assertEqual({"contents": "write"}, job["permissions"])
                 elif name == "resolve":
                     self.assertEqual({"contents": "read"}, job["permissions"])
+                elif name in {"marketplace", "homebrew"}:
+                    self.assertEqual({"contents": "read"}, job["permissions"])
+                    self.assertEqual(1, text.count("github.token"))
+                    self.assertEqual(1, text.count("GITHUB_TOKEN"))
+                    self.assertNotIn("GH_TOKEN", text)
                 else:
                     self.assertNotIn("github.token", text)
                     self.assertNotIn("GITHUB_TOKEN", text)
@@ -1473,11 +1478,15 @@ class MarketplaceJobTest(unittest.TestCase):
         self.assertEqual(checkout, steps("marketplace")[0], "nothing may run before the checkout")
         self.assertIn("assert-head", commands("marketplace")[0])
 
-    def test_the_key_is_bound_at_the_one_step_that_runs_the_script(self) -> None:
+    def test_credentials_are_bound_at_the_one_step_that_runs_the_script(self) -> None:
         holders = [s for s in steps("marketplace") if "env" in s]
         self.assertEqual(1, len(holders))
         self.assertEqual(
-            {"MARKETPLACE_DEPLOY_KEY": "${{ secrets.MARKETPLACE_DEPLOY_KEY }}"}, holders[0]["env"]
+            {
+                "MARKETPLACE_DEPLOY_KEY": "${{ secrets.MARKETPLACE_DEPLOY_KEY }}",
+                "GITHUB_TOKEN": "${{ github.token }}",
+            },
+            holders[0]["env"],
         )
         script = [line for line in code(holders[0]["run"]).splitlines() if "publish" in line]
         self.assertEqual(['scripts/publish-marketplace.sh "$VERSION"'], script)
@@ -1502,7 +1511,7 @@ class MarketplaceJobTest(unittest.TestCase):
     def test_the_script_it_runs_cannot_reach_this_repository_or_move_a_release(self) -> None:
         text = (ROOT / "scripts/publish-marketplace.sh").read_text(encoding="utf-8")
         self.assertIn("spacedock-dev/marketplace.git", text)
-        for hazard in ("GITHUB_TOKEN", "GH_TOKEN", "RELEASE_DEPLOY_KEY", "--force", "git tag"):
+        for hazard in ("GH_TOKEN", "RELEASE_DEPLOY_KEY", "--force", "git tag"):
             self.assertNotIn(hazard, text)
 
 
@@ -1515,11 +1524,14 @@ class HomebrewJobTest(unittest.TestCase):
         self.assertEqual(checkout, steps("homebrew")[0], "nothing may run before the checkout")
         self.assertIn("assert-head", commands("homebrew")[0])
 
-    def test_the_key_is_bound_at_the_one_step_that_runs_the_script(self) -> None:
+    def test_credentials_are_bound_at_the_one_step_that_runs_the_script(self) -> None:
         holders = [s for s in steps("homebrew") if "env" in s]
         self.assertEqual(1, len(holders))
         self.assertEqual(
-            {"HOMEBREW_TAP_DEPLOY_KEY": "${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}"},
+            {
+                "HOMEBREW_TAP_DEPLOY_KEY": "${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}",
+                "GITHUB_TOKEN": "${{ github.token }}",
+            },
             holders[0]["env"],
         )
         script = [line for line in code(holders[0]["run"]).splitlines() if "publish" in line]
@@ -1549,7 +1561,6 @@ class HomebrewJobTest(unittest.TestCase):
         text = (ROOT / "scripts/publish-homebrew.sh").read_text(encoding="utf-8")
         self.assertIn("spacedock-dev/homebrew-tap.git", text)
         for hazard in (
-            "GITHUB_TOKEN",
             "GH_TOKEN",
             "RELEASE_DEPLOY_KEY",
             "MARKETPLACE_DEPLOY_KEY",

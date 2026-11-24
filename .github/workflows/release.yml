@@ -677,6 +677,7 @@ jobs:
         timeout-minutes: 5
         env:
           MARKETPLACE_DEPLOY_KEY: ${{ secrets.MARKETPLACE_DEPLOY_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # An unchanged or newer listing is a no-op, so a re-run of this job is safe.
@@ -714,6 +715,7 @@ jobs:
         timeout-minutes: 5
         env:
           HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # An unchanged or newer formula is a no-op, so a re-run of this job is safe. The
