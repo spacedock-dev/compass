@@ -877,10 +877,25 @@ class HistoryLineageTest(unittest.TestCase):
             last = semantic_history.update(
                 self.config, self.state, "p", {"facts": [fact]}, [], now=300, source_scans=scans
             )
+        # One more write, large enough that it must trim whatever headroom the last trim left.
+        before = len(json.loads(self.path.read_text())["projects"]["p"]["events"])
+        fact = {
+            "fact_id": "big-last",
+            "type": "user_message",
+            "summary": "s" * 200,
+            "at": 500,
+            "evidence": {"source": "z" * 8000, "confidence": "exact"},
+            "source_session": {"harness": "claude", "sid": "s"},
+        }
+        last = semantic_history.update(
+            self.config, self.state, "p", {"facts": [fact]}, [], now=600, source_scans=scans
+        )
         stored = json.loads(self.path.read_text())
         bucket = stored["projects"]["p"]
         kept = [event["event_id"] for event in bucket["events"]]
+        self.assertLess(len(kept), before + 1, "the last write did not trim")
         self.assertLessEqual(self.path.stat().st_size, 65_536)
+        self.assertIn("big-last", kept)
         self.assertIn("big199", kept)
         self.assertNotIn("big0", kept)
         self.assertNotIn("u1", kept)
