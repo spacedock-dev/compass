@@ -63,9 +63,7 @@ export const RowsNameTheirWorktree: Story = {
   render: () => <Page hash="#n=sessions" />,
   play: async ({ canvasElement }) => {
     const where = (sid: string) =>
-      canvasElement.querySelector(
-        `article[data-next-session="${sid}"] [data-next-operation-fact="where"]`,
-      );
+      canvasElement.querySelector(`article[data-next-session="${sid}"] [data-next-row-descriptor]`);
     await waitFor(() => expect(where('wa')).not.toBeNull());
     await expect(where('wa')?.textContent).toContain('one/compass');
     await expect(where('wb')?.textContent).toContain('one/compass');

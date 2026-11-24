@@ -272,9 +272,12 @@ export interface SessionRow {
   readonly projectKey: string;
   readonly goal: GoalCell;
   readonly drift: DriftMark | null;
+  /** "started <duration> ago"; empty when a published start has no usable age. */
+  readonly startedSince: string;
+  /** Whether the session published a start at all. A row without one says so rather than leaving it out. */
+  readonly startPublished: boolean;
   /** "ended <duration> ago", or empty. */
   readonly endedSince: string;
-  readonly responsibility: string;
   readonly history: boolean;
   readonly worthALook: string | undefined;
   readonly showOutcome: boolean;
@@ -328,7 +331,6 @@ export function buildSessionsScreen(
   const context = sessionsContext(payload);
   const rows = payloadSessionRows(payload);
   const sources = new Map(rows.map((session) => [sessionKey(session), session] as const));
-  const asks = operationsAsks(payload, rows);
   const labels = harnessLabels(payload);
   const worthALook = selection?.worthALook;
   const flaggedRows = [...(worthALook?.keys() ?? [])];
@@ -385,7 +387,8 @@ export function buildSessionsScreen(
   };
   const row = (session: ObservedSession, history: boolean): SessionRow => {
     const source = sources.get(sessionKey(session));
-    const ask = source ? askFor(payload, source, asks) : null;
+    const startedAt = nextNumber(source?.['started_at']);
+    const started = formatDurationWords(observationAge(context.generated, startedAt));
     const since =
       session.isEnded && source
         ? formatDurationWords(observationAge(context.generated, endedAt(source)))
@@ -404,13 +407,14 @@ export function buildSessionsScreen(
       projectKey: projectKey(String(source?.['project'] ?? '')),
       goal: goalCell(source, context, source && chosenFor ? chosenFor(source) : null),
       drift: driftMark(source, context),
+      startedSince: started ? `started ${started} ago` : '',
+      startPublished: startedAt !== null && startedAt > 0,
       endedSince: since ? `ended ${since} ago` : '',
       worthALook: worthALook?.get(session),
       showOutcome:
         session.outcomeKnown &&
         (session.outcomeIcon !== 'worth-a-look' || dirtyOutcomes.has(session)),
       stateSegments: segments.get(session),
-      responsibility: ask ? ` · ${askResponsibility(payload, ask).toLowerCase()}` : '',
       history,
       relations: declaredRelations(payload, source),
     };

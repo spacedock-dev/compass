@@ -10,6 +10,7 @@ import { retractSessionCopies } from '../../test/sessionCopyDeviation';
 import { projectRecordedRowOpener } from '../../test/recordedCommandOpener';
 import { maskRevisionWords } from '../../test/revisionWordDeviation';
 import { maskSessionRowPresentation } from '../../test/sessionRowDeviation';
+import { maskCanvasRow } from '../../test/sessionCanvasRowDeviation';
 import { attentionSelectionFor } from '../attention/select';
 
 /* The Sessions screen, held to the legacy page by what a reader can read. The legacy `nextSessionsView`
@@ -50,6 +51,8 @@ const norm = (node: Element | null): string =>
 const DEVIATIONS = {
   // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
   rowPresentation: maskSessionRowPresentation,
+  // 2026-11-24, docs/design-frontend-migration.md#held-to-recorded-answers
+  canvasRow: maskCanvasRow,
   // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
   liveMarks: (root: DocumentFragment) => {
     for (const mark of root.querySelectorAll('.next-operation-live-glyph'))
@@ -89,8 +92,10 @@ function summarize(source: Element | DocumentFragment): Summary {
       rows: [...group.querySelectorAll('article.next-operation-row')].map((row) => {
         const route = row.querySelector('a.next-operation-route');
         const data = (row as HTMLElement).dataset;
-        const now = row.querySelector('[data-next-operation-fact="now"]');
-        for (const value of now?.querySelectorAll('strong, em') ?? []) {
+        for (const value of row.querySelectorAll(
+          '[data-next-operation-fact="now"], [data-next-row-ended]',
+        )) {
+          if (value.childElementCount) continue;
           // The recorded page used compact units only in these generated Now labels.
           if (/^(?:last active|run finished|ended) /.test(value.textContent ?? '')) {
             value.textContent =
@@ -100,7 +105,7 @@ function summarize(source: Element | DocumentFragment): Summary {
               ) ?? '';
           }
         }
-        const caution = row.querySelector('[data-next-operation-fact="blocked"] em');
+        const caution = row.querySelector('[data-next-row-block-note]');
         if (
           caution?.textContent ===
           'Unconfirmed: no positive observation in 5m; prompt may still be standing'
@@ -232,6 +237,7 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
       }
     }
   }
+  DEVIATIONS.canvasRow(template.content, true);
   return summarize(template.content);
 }
 
@@ -241,8 +247,9 @@ async function reactSummary(payload: unknown): Promise<Summary> {
   const root = page.container.querySelector('[data-next-view-body="sessions"]');
   if (!root) throw new Error('The Sessions screen did not draw.');
   DEVIATIONS.rowPresentation(root);
+  DEVIATIONS.canvasRow(root);
   root.querySelector('[data-next-operation-group="history"] > [data-explanation]')?.remove();
-  for (const text of root.querySelectorAll('[data-next-operation-fact="now"] strong')) {
+  for (const text of root.querySelectorAll('[data-next-operation-fact="now"]')) {
     if (text.textContent === 'No recent activity') text.textContent = 'quiet';
   }
   const drawn = summarize(root);
@@ -316,7 +323,7 @@ describe('the Sessions screen reads as the legacy screen does, over generated pa
       seen.active += (text.match(/"kind":"active"/g) ?? []).length;
       seen.history += (text.match(/"kind":"history"/g) ?? []).length;
       seen.ended += (html.match(/NOW · ENDED/g) ?? []).length;
-      seen.asked += (text.match(/Blocked · /g) ?? []).length;
+      seen.asked += (html.match(/BLOCKED · /g) ?? []).length;
       seen.drift += (html.match(/class="next-operation-drift"/g) ?? []).length;
       seen.shared += (html.match(/sessions share this display label/g) ?? []).length;
       seen.goalTyped += (text.match(/Goal · your words|Goal · from your prompt/g) ?? []).length;

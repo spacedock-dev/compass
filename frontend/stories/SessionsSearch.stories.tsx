@@ -680,8 +680,9 @@ export const StatusTilesWithoutProgress: Story = {
       const active = rowOf(canvasElement, 'B');
       const history = canvasElement.querySelector('[data-next-operation-history]');
       if (!active || !history) throw new Error('Missing desktop session rows');
-      await expect(getComputedStyle(active).gridTemplateColumns.split(' ')).toHaveLength(6);
-      await expect(getComputedStyle(history).gridTemplateColumns.split(' ')).toHaveLength(4);
+      // The session beside its goal; the Project, Next and Blocked columns are gone.
+      await expect(getComputedStyle(active).gridTemplateColumns.split(' ')).toHaveLength(2);
+      await expect(getComputedStyle(history).gridTemplateColumns.split(' ')).toHaveLength(2);
     });
   },
 };
@@ -954,14 +955,11 @@ export const CompassLabelsAndPayloadWordsCoexist: Story = {
     const row = canvas
       .getByRole('link', { name: 'Open session Parser cleanup' })
       .closest('article');
-    for (const words of [
-      'Review deadbeef [4]',
-      'Ship deadbeef [5]',
-      'project [6]',
-      'worktree branch [7]',
-    ]) {
+    for (const words of ['Review deadbeef [4]', 'project [6]', 'worktree branch [7]']) {
       await expect(row).toHaveTextContent(words);
     }
+    // The pending step was the Next column, which the row no longer has; the session page keeps it.
+    await expect(row).not.toHaveTextContent('Ship deadbeef [5]');
     await expect(auditCalm(canvasElement)).toEqual([]);
   },
 };
@@ -985,9 +983,8 @@ export const DefaultBoard: Story = {
     await expect(search.compareDocumentPosition(active) & FOLLOWS).toBeTruthy();
     await expect(chips(canvasElement)).toEqual([]);
     const rows = canvasElement.querySelectorAll('[data-next-operation-group]');
-    await expect(rows[0]?.querySelector('.next-operations-columns')?.textContent).toBe(
-      'SessionProjectGoalNowNextBlocked',
-    );
+    // Rows follow the redesign canvas: no column header strip.
+    await expect(rows[0]?.querySelector('.next-operations-columns')).toBeNull();
     await expect(auditCalm(canvasElement)).toEqual([]);
     await expect(canvas.getByRole('button', { name: 'All 12' })).toHaveAttribute(
       'aria-pressed',

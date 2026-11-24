@@ -25,24 +25,18 @@
 .next-operation-group>header{display:flex;justify-content:space-between;gap:24px;align-items:baseline;padding-bottom:10px;border-bottom:1px solid var(--rule)}
 .next-operation-group>header h2{margin:0;font-size:var(--fs-value);font-weight:600}
 .next-operation-group>header p{max-width:620px;margin:0;color:var(--ink2);font-size:var(--fs-body);font-weight:500;line-height:1.55;text-align:right}
-.next-operations-columns,#app .next-operation-row{grid-template-columns:minmax(0,1.5fr) 120px minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 120px}
-.next-operations-columns{display:grid;border-bottom:1px solid var(--rule);color:var(--ink-label);font-size:var(--fs-label);font-weight:600}
-.next-operations-columns span{padding:9px 12px}
 
 .next-operation-route::after{content:"";position:absolute;inset:0}
 
 .next-operation-identity,.next-operation-fact{display:block;min-width:0;padding:13px 8px;overflow-wrap:anywhere}
 .next-operation-fact{border-left:0}
-.next-operation-identity small,.next-operation-identity strong,.next-operation-fact small,.next-operation-fact strong,.next-operation-fact em{display:block}
+.next-operation-identity small,.next-operation-identity strong,.next-operation-fact small,.next-operation-fact strong{display:block}
 .next-operation-fact small{color:var(--ink-label);font-size:var(--fs-label);font-style:normal;font-weight:600}
 .next-operation-identity>.next-operation-local-label,.next-operation-fact>small{display:none}
 .next-operation-identity strong,.next-operation-fact strong{margin-top:7px;font-size:var(--fs-body);font-style:normal;font-weight:500;line-height:1.4}
 .next-operation-assignment{margin-top:8px;color:var(--ink2);font-size:var(--fs-body);font-weight:500;line-height:1.55;max-width:var(--measure)}
 .next-operation-collision{margin-top:8px;color:var(--ink);font-size:var(--fs-body);font-weight:500;line-height:1.55;max-width:var(--measure)}
 .next-operation-unread,.next-operation-scan-only{display:block;margin-top:8px;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-body);line-height:1.4}
-.next-operation-fact em{margin-top:6px;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-body);font-style:normal;line-height:1.4}
-.next-operation-fact--blocked strong{color:var(--amber)}
-.next-operation-fact--clear strong{color:var(--ink)}
 .next-operation-fact--unknown strong{color:var(--ink2)}
 .next-sessions-empty{grid-column:1/-1;margin:0;padding:24px 12px;border-bottom:1px solid var(--rule);color:var(--ink2);font-size:var(--fs-body)}
 .next-operation-identity .next-operation-title--unknown{color:var(--ink2)}
@@ -53,24 +47,9 @@
 .next-operation-outcome{display:block;margin-top:6px;color:var(--ink2);font-size:var(--fs-body);font-weight:500;line-height:1.55}
 .next-operation-outcome--bad{color:var(--ink2)}
 .next-operation-outcome--unknown{color:var(--ink2)}
-.next-operation-group--history .next-operations-columns,#app .next-operation-row[data-next-operation-history="true"]{grid-template-columns:minmax(0,1.5fr) 120px minmax(0,1fr) minmax(0,1fr)}
-.next-operation-history-now{min-width:0}
-.next-operation-history-now>.next-operation-outcome{padding:0 8px 13px}
-.next-operation-end-note{grid-column:1/-1;padding:0 8px 13px}
 .next-operation-fact strong{font-family:var(--sans)}
 .next-operation-fact--unknown strong{font-family:var(--sans)}
-.next-operation-unread,.next-operation-scan-only,.next-operation-fact em{font-family:var(--sans)}
-@media(max-width:1100px){
-  .next-operations-columns{display:none}
-  #app .next-operation-row[data-next-operation-history="true"]{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .next-operation-history-now{grid-column:1/-1}
-  .next-operation-group--history .next-operations-columns{display:none}
-  #app .next-operation-row{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .next-operation-identity{grid-column:1/-1;border-bottom:1px solid var(--rule)}
-  .next-operation-identity>.next-operation-local-label,.next-operation-fact>small{display:block}
-  .next-operation-fact:nth-child(even){border-left:0}
-  .next-operation-fact:not([data-next-operation-fact="where"]){border-top:1px solid var(--rule)}
-}
+.next-operation-unread,.next-operation-scan-only{font-family:var(--sans)}
 .next-sessions-status{flex-wrap:wrap}
 @media(max-width:620px){
   .next-operations{padding-top:16px}
@@ -81,14 +60,8 @@
   #app .next-operation-row,#app .next-operation-row[data-next-operation-history="true"]{grid-template-columns:minmax(0,1fr);padding-block:8px}
   .next-operation-identity{grid-column:auto;border:0;padding:4px 10px}
   .next-operation-fact{display:block;padding:3px 10px}
-  .next-operation-fact:not([data-next-operation-fact="where"]){border:0}
   .next-operation-row .next-operation-fact>:is(small,em:empty){display:none}
   .next-operation-fact :is(strong,em){margin-top:0}
-  .next-operation-row>.next-operation-fact--clear[data-next-operation-fact="blocked"]{display:none}
-  .next-operation-row>[data-next-operation-fact="where"]{order:1}
-  .next-operation-row>[data-next-operation-fact="now"],.next-operation-history-now{order:2}
-  .next-operation-row>[data-next-operation-fact="goal"]{order:3}
-  .next-operation-row>[data-next-operation-fact="next"],.next-operation-row>[data-next-operation-fact="blocked"],.next-operation-end-note{order:4}
   [data-next-sessions-search]{grid-template-columns:minmax(0,1fr) auto;align-items:start}
   [data-next-sessions-search]>:not(.next-sessions-find,.next-sessions-segments){grid-column:1/-1}
   .next-sessions-find>div{grid-area:1/1/2/-1}
@@ -280,9 +253,6 @@
 .next-operation-goal-link{position:relative;z-index:1;display:block;color:var(--ink);text-decoration-color:var(--line);text-underline-offset:3px;overflow-wrap:anywhere}
 .next-operation-fact[data-next-operation-fact="goal"]>small{display:block}
 .next-operation-goal-link{margin-top:7px;font-size:var(--fs-body);font-weight:500;line-height:1.4}
-@media(max-width:1100px){
-  #app .next-operation-fact[data-next-operation-fact="where"]{grid-column:1/-1}
-}
 
 /* ===== The shared controls and disclosure, where the legacy rules name their old elements ===== */
 .next-session-controls [data-control="raise"]{margin:0}

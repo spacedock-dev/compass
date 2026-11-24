@@ -46,7 +46,6 @@ import { SessionsGlance } from './SessionsGlance';
 import { assignmentOf, type PromptCandidate } from './intent';
 import { goalFocusFor } from './heldState';
 import { worktreeOf } from './worktree';
-import type { ReactNode } from 'react';
 import {
   BOARD_WHY,
   DUPLICATE_LABEL_LIMIT,
@@ -62,76 +61,98 @@ import './sessions.css';
    it was given. Every summary figure comes from the shared selection over the rows being drawn.
    Nothing here fetches, polls or acts; a row's controls act only when pressed. */
 
+/* The goal cell's label and its stated absence, while annotations are off and there is no goal to link. */
 function Fact({
   kind,
   label,
   value,
-  valueAuthored,
-  detail,
-  detailAuthored,
-  tone = '',
 }: {
   readonly kind: string;
   readonly label: string;
   readonly value: string;
-  readonly valueAuthored?: boolean;
-  readonly detail?: ReactNode;
-  readonly detailAuthored?: boolean;
-  readonly tone?: string;
 }) {
   return (
     <span
-      className={tone ? `next-operation-fact next-operation-fact--${tone}` : 'next-operation-fact'}
+      className="next-operation-fact next-operation-fact--unknown"
       data-next-operation-fact={kind}
     >
       <small>{label}</small>
-      <strong
-        className={tone === 'unknown' ? 'next-absence' : undefined}
-        data-authored={valueAuthored || undefined}
-      >
-        {value}
-      </strong>
-      {/* A held question can run to 2,000 characters: the row shows its opening, the session page all of it. */}
-      {detail ? (
-        <em className="line-clamp-3" data-authored={detailAuthored || undefined}>
-          {detail}
-        </em>
+      <strong className="next-absence">{value}</strong>
+    </span>
+  );
+}
+
+/* One line under the title, as the redesign canvas gives it: harness, project, worktree, when the session
+   started and, once it has, when it ended. Every row says when it started: a session that published no start
+   says so in quiet text. A start with no usable age is left out, as every other age is. */
+function Descriptor({ row }: { readonly row: SessionRow }) {
+  const { session } = row;
+  const worktree = worktreeOf(row.source);
+  return (
+    <span
+      className="next-operation-descriptor mt-0.5 block text-label text-muted-foreground"
+      data-next-row-descriptor
+    >
+      <span className="next-operation-harness">{row.harnessLabel}</span>
+      {session.project.trim() ? (
+        <>
+          {' · '}
+          <span data-authored>{session.project}</span>
+        </>
+      ) : null}
+      {worktree ? (
+        <>
+          {' · worktree '}
+          <span data-authored>{worktree}</span>
+        </>
+      ) : null}
+      {row.startedSince || !row.startPublished ? (
+        <span data-next-row-started>
+          {' · '}
+          {row.startedSince || 'start time not published'}
+        </span>
+      ) : null}
+      {row.endedSince ? (
+        <>
+          {' · '}
+          <span data-next-row-ended>{row.endedSince}</span>
+        </>
       ) : null}
     </span>
   );
 }
 
-/* A fact is toned only while it is known: an unknown value is a stated absence and wears `.next-absence`,
-   so "not published" never reads as a quieter version of a value. */
-function ObservedFact({
-  kind,
-  label,
-  text,
-  known,
-  authored = false,
-  note = '',
-  noteAuthored = false,
-  tone = '',
-}: {
-  readonly kind: string;
-  readonly label: string;
-  readonly text: string;
-  readonly known: boolean;
-  readonly authored?: boolean;
-  readonly note?: string;
-  readonly noteAuthored?: boolean;
-  readonly tone?: string;
-}) {
+/* What the session is doing now, under the descriptor. With nothing published about now, a current task
+   stands in for it; with neither, the absence words, in plain quiet text. */
+function NowLine({ row, assignment }: { readonly row: SessionRow; readonly assignment: string }) {
+  const { session } = row;
+  if (session.nowWordsKnown)
+    return (
+      <span
+        className="next-operation-now mt-1 block text-body leading-[1.5] text-foreground"
+        data-next-operation-fact="now"
+        data-authored={session[SESSION_TEXT_ORIGIN].now || undefined}
+      >
+        {session.nowWords}
+      </span>
+    );
+  if (assignment)
+    return (
+      <span
+        className="next-operation-now mt-1 line-clamp-2 text-body leading-[1.5] text-foreground"
+        data-next-operation-fact="now"
+      >
+        {'Current task · '}
+        <span data-authored>{assignment}</span>
+      </span>
+    );
   return (
-    <Fact
-      kind={kind}
-      label={label}
-      value={text}
-      valueAuthored={authored}
-      detail={note}
-      detailAuthored={noteAuthored}
-      tone={known ? tone : 'unknown'}
-    />
+    <span
+      className="next-operation-now mt-1 block text-body leading-[1.5] text-muted-foreground"
+      data-next-operation-fact="now"
+    >
+      {session.nowWords}
+    </span>
   );
 }
 
@@ -148,6 +169,15 @@ function Identity({
   const state = rowState(session);
   const limit = sessionStateLimit(session, state);
   const tile = state !== 'State not published' && state !== 'Waiting on child';
+  /* The Waiting on you tile carries the block; what the session is waiting on stays under the Now line. A held
+     question can run to 2,000 characters: the row shows three lines, the session page all of it. A note that
+     only repeats the Now line is said once. */
+  const note =
+    !history && session.blockNote.trim() && session.blockNote.trim() !== session.nowWords.trim()
+      ? session.blockNote
+      : '';
+  const outcomeTone =
+    session.outcomeIcon === 'worth-a-look' ? '' : ` next-operation-outcome--${session.tone}`;
   return (
     <div className="next-operation-identity flex items-start gap-3 pl-3 max-[620px]:grid max-[620px]:gap-1">
       {tile ? <StatusTile state={state} live={session.isLive && state === 'Working'} /> : null}
@@ -165,10 +195,35 @@ function Identity({
           >
             {session.titleText}
           </strong>
-          <span className="next-operation-harness block text-label text-muted-foreground">
-            {row.harnessLabel}
-          </span>
         </RouteAnchor>
+        <Descriptor row={row} />
+        <NowLine row={row} assignment={assignment} />
+        {note ? (
+          <span
+            className="next-operation-block-note mt-1 line-clamp-3 text-body leading-[1.5] text-muted-foreground"
+            data-next-row-block-note
+            data-authored={session[SESSION_TEXT_ORIGIN].blockNote || undefined}
+          >
+            {note}
+          </span>
+        ) : null}
+        {row.showOutcome ? (
+          <span className={`next-operation-outcome${outcomeTone}`}>
+            {session.outcomeIcon === 'ended' ? (
+              <Icon name={session.outcomeIcon} className="mr-1 inline-block align-text-bottom" />
+            ) : null}
+            {session.outcomeText}
+            <span
+              className={
+                session.gitKnown
+                  ? 'next-operation-outcome'
+                  : 'next-operation-outcome next-operation-outcome--unknown'
+              }
+            >
+              {session.gitText}
+            </span>
+          </span>
+        ) : null}
         {limit && state !== 'Waiting on child' ? (
           <span
             className="next-operation-scan-only"
@@ -209,7 +264,8 @@ function Identity({
             )}
           </span>
         ))}
-        {assignment ? (
+        {/* Where the Now line already says what the session is doing, the task keeps its own line. */}
+        {assignment && session.nowWordsKnown ? (
           <span className="next-operation-assignment block">
             {'Current task · '}
             <span data-authored>{assignment}</span>
@@ -234,8 +290,7 @@ function Identity({
 function GoalCellView({ row }: { readonly row: SessionRow }) {
   const shell = useShell();
   const { goal } = row;
-  if (goal.kind === 'off')
-    return <Fact kind="goal" label="Goal" value={goal.text} tone="unknown" />;
+  if (goal.kind === 'off') return <Fact kind="goal" label="Goal" value={goal.text} />;
   const onGoal = () =>
     goalFocusFor(shell.controls).request({ harness: row.session.harness, sid: row.session.sid });
   return (
@@ -274,93 +329,20 @@ const RowView = memo(function RowView({
   readonly depth?: number;
 }) {
   const { session, history } = row;
-  const worktree = worktreeOf(row.source);
-  const outcomeTone =
-    session.outcomeIcon === 'worth-a-look' ? '' : ` next-operation-outcome--${session.tone}`;
-  const outcome = row.showOutcome ? (
-    <span className={`next-operation-outcome${outcomeTone}`}>
-      {session.outcomeIcon === 'ended' ? (
-        <Icon name={session.outcomeIcon} className="mr-1 inline-block align-text-bottom" />
-      ) : null}
-      {session.outcomeText}
-      <span
-        className={
-          session.gitKnown
-            ? 'next-operation-outcome'
-            : 'next-operation-outcome next-operation-outcome--unknown'
-        }
-      >
-        {session.gitText}
-      </span>
-    </span>
-  ) : null;
-  const now = (
-    <ObservedFact
-      kind="now"
-      label="Now"
-      text={session.nowWords}
-      known={session.nowWordsKnown}
-      authored={session[SESSION_TEXT_ORIGIN].now}
-      note={row.endedSince}
-    />
-  );
+  /* Two columns, as the redesign canvas draws a row: the session and what it is doing on the left, its goal on
+     the right. A phone stacks them. */
   return (
     <Card
       as="article"
       variant="session-row"
-      className={`next-operation-row relative cursor-pointer no-underline next-operation-row--${session.tone}${depth ? ' ml-4 w-auto border-l-2 border-l-border' : ''}`}
+      className={`next-operation-row relative cursor-pointer no-underline grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] max-[620px]:grid-cols-1 next-operation-row--${session.tone}${depth ? ' ml-4 w-auto border-l-2 border-l-border' : ''}`}
       {...(depth ? { 'data-declared-depth': depth } : {})}
       data-next-harness={session.harness}
       data-next-session={session.sid}
       {...(history ? { 'data-next-operation-history': 'true' } : {})}
     >
       <Identity row={row} hints={hints} />
-      {/* The project label alone: "Exact location not published" sat hatched on every row and read as an
-          error, for a location no harness publishes here. */}
-      <Fact
-        kind="where"
-        label="Project"
-        value={session.project}
-        valueAuthored={Boolean(session.project.trim())}
-        detail={
-          worktree ? (
-            <>
-              {'worktree '}
-              <span data-authored>{worktree}</span>
-            </>
-          ) : null
-        }
-      />
       <GoalCellView row={row} />
-      {history ? (
-        <>
-          <div className="next-operation-history-now">
-            {now}
-            {outcome}
-          </div>
-        </>
-      ) : (
-        <>
-          {now}
-          <ObservedFact
-            kind="next"
-            label="Next"
-            text={session.nextText}
-            known={session.nextKnown}
-            authored={session.nextKnown}
-          />
-          <ObservedFact
-            kind="blocked"
-            label={`Blocked${row.responsibility}`}
-            text={session.blockText}
-            known={session.blockKnown}
-            note={session.blockNote}
-            noteAuthored={session[SESSION_TEXT_ORIGIN].blockNote}
-            tone={session.isNeeds || session.askKnown ? 'blocked' : 'clear'}
-          />
-          {outcome ? <div className="next-operation-end-note">{outcome}</div> : null}
-        </>
-      )}
     </Card>
   );
 });
@@ -455,20 +437,6 @@ const Group = memo(function Group({
           </Button>
         </p>
       ) : null}
-      {!countsAvailable || noMatches ? null : (
-        <div className="next-operations-columns" aria-hidden="true">
-          <span>Session</span>
-          <span>Project</span>
-          <span>Goal</span>
-          <span>Now</span>
-          {kind === 'history' ? null : (
-            <>
-              <span>Next</span>
-              <span>Blocked</span>
-            </>
-          )}
-        </div>
-      )}
       <TooltipProvider>
         <div className="next-operation-rows">
           {kept.length ? (
