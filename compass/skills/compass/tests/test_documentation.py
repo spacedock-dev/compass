@@ -2364,8 +2364,7 @@ class ClaudeAllowanceSourceDocumentationTest(unittest.TestCase):
             (
                 _DASHBOARD_REFERENCE,
                 (
-                    "Claude's figures can also come from Claude Code's status line, with no "
-                    "credential",
+                    "Claude's figures can also come from Claude Code's status line",
                     "`--forward-usage`",
                     "Turning off quota reading hides these too.",
                 ),
