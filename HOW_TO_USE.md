@@ -148,8 +148,10 @@ What to expect:
 - The agent prints the answer in one code block and adds nothing.
 - The answer is now part of that session's context. The agent reads it on every later turn, and it
   goes to that session's model provider. `sessions` lists every session on the board, in any harness or project,
-  with its title, its goal or the start of its first prompt, what it is doing and its resume command, so a Codex or Cursor session's words can reach the provider of the
-  Claude Code session you typed this into. `drift` adds this session's reading: your goal and outcome lines, and the model's level (none on Codex) and reasons. [What can reach into a session](SECURITY.md#what-can-reach-into-a-session)
+  with its title, goal or opening prompt, current activity, any progress answer the board
+  publishes and its resume command. A Codex or Cursor session's words can reach the provider of
+  the Claude Code session you typed this into. `drift` adds this session's reading, including your
+  goal and outcome lines, any progress level the session page can show, and the model's reasons. [What can reach into a session](SECURITY.md#what-can-reach-into-a-session)
   has the full account. To keep a list out of a session, run the command above in a terminal outside the session instead.
 - On native Windows, the skill tells the agent to write `python` or `py -3` where this page writes
   `python3`. That was not measured.
@@ -937,7 +939,7 @@ credential-backed fetches from this browser. You can also use **Turn off** under
 disk readings and Antigravity receipts can still appear; Claude's figures from its status line are
 hidden too ([Show Claude's allowance on the board from your status line](#show-claudes-allowance-on-the-board-from-your-status-line)). **Turn on quota reading** in Sessions
 or **Allow** under **Show my AI allowance** in Settings resumes fetching without a restart.
-`--no-usage` disables credential-backed reads for a whole run.
+`--no-usage` disables credential-backed reads and drops forwarded quota for a whole run.
 [SECURITY.md](SECURITY.md#usage-quota-reads-the-quota-fetcher) owns the contract, including what is
 sent, what comes back, and what is never touched.
 
@@ -950,15 +952,15 @@ to know about the waits: `spacedock-compass --daemon` starts one. Compass edits 
 never replaces a status line you have, so both procedures below are yours to apply.
 
 Checked on Claude Code 2.1.319. Its [`statusLine.refreshInterval`](https://code.claude.com/docs/en/statusline)
-re-runs the command while you are idle, in seconds, with a minimum of 1. Without it, a level produced
-after a turn ends may wait until the next turn to appear. Claude Code runs a status line per open session.
+re-runs the command while you are idle, in seconds, with a minimum of 1. Without it, a change in the footer may wait until the next turn to appear. Claude Code runs a status line per open session.
 
 What the line says, and when it says nothing:
 
 - `AI use paused` appears while the shared permission store confirms the pause. Choose Pause all AI
   use on the board or run `spacedock-compass --pause-model-calls` from any shell. Choose Resume AI
   use on the board to clear the message on the next footer refresh.
-- A level appears only when the dashboard publishes a stored check that found a departure.
+- Slightly off course or Off course follows the session's Sessions row while the saved evidence
+  still matches.
 - `Live monitor on` means this session's monitor is on. Start it from the session page, type
   `/compass:compass monitor on` inside the session, or run
   `spacedock-compass --monitor --session claude:ID` from another terminal. A short reason such as
@@ -1112,22 +1114,26 @@ What to expect:
   before that, and a session that has not replied yet changes nothing on the board.
 - Claude Code sends these figures only for Claude subscriptions such as Pro and Max.
 - Every open session's status line sends its figures, idle ones included. The board keeps the higher
-  figure of each window and the newer window, so an idle session cannot pull it back.
+  figure within each window. It usually keeps the later reset, though a window with an earlier
+  reset can replace one that has gone unreported for five minutes.
 - A window leaves the board once it resets, or once no session has reported it for the activity
   window, 24 hours by default.
 - Turn off quota reading hides Claude's figures from this source too, in Your AI allowance, a
   project's Usage and alerts view and Needs you. The dashboard still receives and keeps them;
   `--no-usage` makes it drop them on arrival.
 - Where Compass can also read the login, the two sources make one Claude row, and the per-model
-  weekly rows still come from the login.
+  weekly limits come from the login. They disappear when the status line reports a new week,
+  until a fetch supplies limits for that week.
 - Two Claude accounts on one machine share one Claude row, because the status line does not say
   which account it reports.
 
 This was checked with hand-built payloads in the shape Claude Code documents, through the wrapper
 with a stand-in for the existing command, against a dashboard on a spare port: the wrapper printed
 the stand-in's line alone, a payload without `rate_limits` changed nothing, and the next payload put
-Claude's two windows in `/api/data` with nothing else from it. No live Claude Code session has run it
-yet. In five runs each on a machine under heavy load, `--footer` took a median of about 0.9 seconds
+Claude's two windows in `/api/data` with nothing else from it. On 2026-11-24 it ran live: a Claude
+Code session's status line, through this wrapper with Cortado as the existing command, put Claude's
+five-hour and weekly figures in Your AI allowance. In five runs each on a machine under heavy load,
+`--footer` took a median of about 0.9 seconds
 and `--forward-usage` about 1.2 seconds; the 50 millisecond footer figure above was measured on an
 unloaded machine.
 

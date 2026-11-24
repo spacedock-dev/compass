@@ -215,8 +215,10 @@ where available, whatever state the session is in; it does not bring the window 
 anything to the session. Needs you links to the session, where the request has its own controls. Goal history keeps
 saved goals after sessions leave the board, subject to its retention limits.
 
-Sessions uses published goal evidence, including unsaved drafts, for its filters. Showing a
-prompt leaves it unsaved. Open the session's Goal card to read or edit it.
+Sessions uses published goal evidence for its filters. A prompt can be shown without being
+saved, and its row is left out of No goal yet. Open the session's Goal card to read or edit it.
+A Sessions row can show a saved departure level while the check's evidence still matches. See
+[Dashboard views](dashboard.md#dashboard-views) for the filters.
 A recorded departure moves the session after blocked sessions and before working ones, even if it
 is quiet. At a glance counts session states and observed signals. Open the session to see the
 reading, its age and whether the goal has changed since the reading. With annotations off,
@@ -260,10 +262,9 @@ the reading shows. When Compass withholds a level, the card says what the readin
 gives the reason. A check keeps a word-free record of what it read, and a level stands only while
 that record still matches what Compass can read: if history it relied on was lost, the transcript
 was cut or the project changed, the card says "What this check read has changed since, so it shows
-no level. Check progress again." A check saved before this version has no such record, so it shows
-no level until the session is checked again. `--drift` prints the same sentence and no level. The live estimate is not
-drawn beside a reading that stands, and where the switch is on and it has a level to draw, the card
-says so. A reading that could tell nothing about a session only minutes old says it is early and to
+no level. Check progress again." An older check without that record also needs a new check
+before it can show a level. `--drift` prints the same sentence and no level. A stored reading
+owns the level slot even when its level is withheld, so a live estimate cannot fill it. A reading that could tell nothing about a session only minutes old says it is early and to
 read again once the session has run its checks. The header pill adds "so far" while the session runs.
 A departure that an earlier reading found and the next one does not is named once on that reading,
 whether it was the only one or one of several: two departures that become one name the one that went.

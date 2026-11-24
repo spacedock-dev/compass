@@ -176,9 +176,9 @@ the ID. The recorded answers stay fixed.
 2026-11-23, Sessions uses status tabs, search and an inline Filters panel. The Sessions
 differential masks the active group heading and group counts while keeping the window-derived
 history heading, row order and links in the comparison. The Sessions Search and filters stories
-check the two headings and their counts directly. Sessions rows draw no progress pill in this
-slice (a later slice adds a far-right absence word). The count-free level chips are disabled. No goal yet filters by published
-goal evidence. The recorded answers stay fixed.
+check the two headings and their counts directly. This slice introduced count-free level chips
+and filtered No goal yet by published goal evidence. The [2026-11-24 Sessions amendment](design-reading-a-session.md#amended-2026-11-24-sessions-progress-follows-the-saved-check)
+records when the level chips became active and what the row shows. The recorded answers stay fixed.
 
 2026-11-23, Sessions replaces its operations heading, drift orientation and two fleet counters with
 a greeting, one state summary and the At a glance cards. The Sessions differential masks the old

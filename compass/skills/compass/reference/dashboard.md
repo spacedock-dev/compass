@@ -43,12 +43,14 @@ one line names the agent, the project and how long ago the session started, and 
 once it has. A session that published no start says so. The next line says what the session is
 doing now, and a session waiting on you shows what it is waiting for under it. A stopped or
 ended session states how it ended and its git state once, leaving out a git state nobody
-measured. The goal sits beside it, and a session with no goal says No goal yet there. At the far right
-a saved check can show a Slightly off course or Off course pill while its evidence still matches.
-Out of date and Goal too vague to check appear as plain text where the saved check supports them.
-Not checked yet is plain text for a saved goal or draft that no check has read. The cell stays empty
-while Compass has no answer it can show, including on Codex. A goal that cannot be read says
-Saved goal unavailable. Open the session page for the check's evidence or a live estimate.
+measured. The Goal cell beside it can show a goal, a prompt or a saved expected outcome. An empty
+cell says No goal yet when annotations are available. A goal Compass cannot read says Saved goal
+unavailable. At the far right, a saved check can show a Slightly off course or Off course pill
+while its evidence still matches. Out of date and Goal too vague to check appear as plain text.
+Not checked yet is plain text for a session with a reading route and words to check, including a
+draft the first check would save. A recorded check, attempt, refusal or departure rules out
+Not checked yet. The progress cell stays empty when Compass has no answer it can show, including
+on Codex. Open the session page for the reading and any live estimate it supports.
 
 The Sessions legend pairs Working with a pulse, Waiting on you with a clock, Quiet with a moon,
 Ended with a checkmark and State not known with a dashed circle. The warning triangle means Worth a look. Open What the icons mean in Help for the full legend.
@@ -141,8 +143,9 @@ Working, Quiet and Ended.
 Search reads titles, goals and prompts. Press `/` to jump to it or paste a session id to find it.
 Filters opens a panel for Project, Agent, Started and Progress check. The Progress check choices
 are Slightly off course, Off course, Way off course and No goal yet. The level chips select rows
-with the matching progress pill. No goal yet keeps rows whose Goal cell reads No goal yet. All
-four chips are enabled when annotations are available. The Progress check chips carry no counts.
+with the matching progress pill. Both No goal yet filters use published goal evidence and skip
+sessions whose Goal cell shows a saved goal, a prompt or a saved expected outcome. All four chips
+are enabled when annotations are available. The Progress check chips carry no counts.
 Filters explains when some sessions have unpublished goal data. More filters for power users holds
 the full project list, date ranges,
 Group, Headless, State, Progress records and Goal source.
@@ -353,8 +356,8 @@ readings and Antigravity receipts can still appear in Your AI allowance.
 Claude's figures can also come from Claude Code's status line, with no credential: a status line
 wrapper pipes its JSON to `--forward-usage`, which sends the board only the five-hour and seven-day
 percentages and resets, to a route that answers this machine alone. They appear after a session's
-first reply. Where the credential fetch also reads them, the two make one Claude row and the
-per-model rows still come from the fetch. Turning off quota reading hides these too, in Your AI
+first reply when Claude Code supplies them. The two sources make one Claude row. Per-model
+limits come from the credential fetch and appear only for the week it measured. Turning off quota reading hides these too, in Your AI
 allowance, a project's Usage and alerts view and Needs you's quota warnings; the dashboard still
 receives and keeps them until it runs with `--no-usage`.
 Cursor fetching is macOS-only, and because Cursor publishes a cycle end with no start, its row shows
@@ -366,7 +369,8 @@ stored locally. Antigravity can forward quota from its status-line payload:
 "statusLine": {"command": "python3 <skill-dir>/launch.py <skill-dir>/notify_hook.py http://127.0.0.1:4553/api/usage", "enabled": true}
 ```
 
-`--no-usage` disables credential-backed vendor fetching for a run whatever the page has stored; disk-read evidence remains.
+`--no-usage` disables credential-backed vendor fetching and drops forwarded quota for the run.
+Quota read from harness-owned files still appears.
 Expired, rejected, missing, or stale quota is withheld rather than rendered as zero. Claude, Codex,
 and Antigravity may publish five-hour and weekly windows, while Cursor publishes its monthly billing
 cycle. The allowance bars use accent below the window's sustainable pace, amber from 1× pace, clay from 1.5×, and neutral ink when no clock supports a pace.

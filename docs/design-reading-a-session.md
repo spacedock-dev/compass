@@ -8691,8 +8691,7 @@ up to 1 MiB, not the 64 KiB cap its other state files share: one busy project's 
 filed 123,903 bytes after a single check, and a file the reader refused would have withheld every
 stored level on that board.
 
-The gate runs once, on the focused route that serves the session page, and the page, the served
-Drift view and the terminal all read its row. A level is drawn only when the record is present and
+The focused route runs the gate for the session page, the served Drift view and `--drift`. A level is drawn only when the record is present and
 readable, belongs to this reading, names the same project, the bucket keeps its lineage at a
 generation no lower than recorded, and the transcript has not shrunk. The recorded direction must
 also be settled, by the current goal floor or by a Keep given since. Any mismatch, missing part or
@@ -8738,9 +8737,9 @@ three are coordinator decisions of the same day that the owner may overrule.
 
 ### Amended 2026-11-24: Sessions progress follows the saved check
 
-The coordinator applies DEC-26 to the far-right Sessions cell. A proven saved departure shows
-Slightly off course or Off course. Out of date and Goal too vague to check are plain text. A goal
-that no check has read can show Not checked yet. The cell shows one answer at most. Codex rows and
+The coordinator applies DEC-26 to the far-right Sessions cell. A saved departure shows
+Slightly off course or Off course while its evidence still matches. Out of date and Goal too vague
+to check are plain text. A goal that no check has read can show Not checked yet. The cell shows one answer at most. Codex rows and
 live estimates supply no level. While a peer dashboard is checking, the standing saved answer can
 still show. The level chips select rows showing the corresponding pill. All four Progress check
 chips stay enabled on readable annotation boards and carry no counts.
@@ -8749,16 +8748,17 @@ The row uses the same focused derivation as the session page. It keeps the resul
 memory, including when that derivation reuses its view. A poll verifies a matching row input
 digest and reading time, a readable annotation store, the absence of an overrule, the saved
 evidence record, and the transcript's identity, accessibility and file metadata. Only Out of date
-can survive transcript growth. The gate opens no transcript. A memo expires at 300 seconds. An unknown answer leaves
-the cell empty until the focused derivation can prove one.
+can survive transcript growth. The gate opens no transcript. A memo expires at 300 seconds.
+An unknown answer leaves the cell empty until the focused derivation can prove one.
 
 The owner approved warming that memo in the background. The server takes at most four rows per
 pass and stops starting work at the pass deadline. It checks that the saved evidence still holds
 before running the focused derivation. It uses the existing collection and skips model calls,
 live estimates, Live monitor leases and history updates. Between messages it gives board collection
 priority. When the published answer changes, it invalidates the board snapshot after the pass.
-The status-line writer rechecks the published proof before refreshing an idle footer. No level is
-saved with the assessment.
+`--sessions` uses the same published progress answer. The Claude Code footer uses the row's
+departure level. Its writer rechecks the published proof before refreshing an idle footer. No
+level is saved with the assessment.
 
 History-only changes that preserve lineage and do not change the transcript can leave an answer
 standing until the memo expires or the page is opened. POSIX change time catches in-place rewrites
@@ -8936,8 +8936,10 @@ Amended 2026-11-06 (owner, the terminal shows what the page shows): the page's r
 only in the page, so a terminal that printed the server's published fields would show a level and a
 departure the card holds back. The server now publishes the card's own answer for terminal surfaces as
 `sources.work.drift_views` (one row) on the focused `/api/project-context` answer, beside
-`analysis_levels` and `live_levels` and under the same placement rule: on no session row, and not on
-the reading route's context. It is a port of the page's derivation (`drift_view`), not a second
+`analysis_levels` and `live_levels`. The full Drift view stays in that focused response. The
+[Sessions progress amendment](#amended-2026-11-24-sessions-progress-follows-the-saved-check)
+describes the separate progress answer published on a row. The Drift view is a port of the page's
+derivation (`drift_view`), not a second
 opinion: the page writes the expected views from a named corpus and a seeded generated one, and the
 Vitest and Python suites both read them, so a change to the page's rules rewrites the expected values
 from the page and the port follows. What "the page" means for a terminal is the page as freshly

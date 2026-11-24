@@ -680,10 +680,10 @@ which is itself one of the states question three has to render rather than hide.
 
 | Authority | Harness rows spending it | What Compass reads | There when |
 |---|---|---|---|
-| Anthropic | Claude Code, and any harness signed in to the same subscription | percent of a 5 hour and a 7 day rolling window (Q-2) | the store exists, the disclosure has been answered, and the last fetch landed inside `window_hours` |
+| Anthropic | Claude Code, and any harness signed in to the same subscription | percent used in five-hour and seven-day windows ([Q-2](#q-2), [Q-13](#q-13)) | a current window from a credential fetch or the status line, with quota reading on |
 | OpenAI | Codex | percent per window, classified by the window's own length (Q-1) | Codex left a snapshot inside `window_hours` |
 | Google | Antigravity | percent per named bucket, the worse of two model families (Q-7) | the user pointed the status line at `/api/usage` and the harness ran inside `window_hours` |
-| Cursor | Cursor CLI | spend in cents against a monthly billing cycle, macOS only (Q-8) | the Keychain token reads, the disclosure has been answered, and the last fetch landed inside `window_hours` |
+| Cursor | Cursor CLI | spend in cents against a monthly billing cycle, macOS only (Q-8) | quota reading is on, the Keychain token reads, and the last fetch landed inside `window_hours` |
 | GitHub | Copilot CLI | AI Units consumed, with the entitlement nowhere on the machine (Q-6) | a usage row landed inside `window_hours` |
 | Factory | Droid | nothing: on the account measured, `GET /api/billing/limits` carries no window, and the store holds a per-session credit count | never yet; an account on token-rate-limits billing would publish three windows nobody here has captured |
 
