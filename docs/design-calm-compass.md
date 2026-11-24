@@ -154,8 +154,11 @@ are split by `--sunk` hairlines and carry no left-edge stripe, which the style b
 The title is 18 px bold, the descriptor sits 2 px under it and the Now line 8 px under that. The
 row is the title's 44 px target, so the title's own box keeps its line height. The goal is a small
 bold label over plain ink that underlines on hover and focus, like a row title, because the
-affordance rule keeps a resting underline for links inside sentences. "Add a goal" is a quiet
-green underlined action rather than a hatched absence. The goal source stays in the label, as
+affordance rule keeps a resting underline for links inside sentences. The owner also ruled that
+a row with no goal shows no "Add a goal" action, though the canvas draws one: the list cannot add
+a goal, so the reader opens the row and adds it on the session page. The goal cell says "No goal
+yet" in plain 13 px quiet grey text, with no pill, icon or link, and Help's explanation of that
+word now says to open the session and add a goal there. The goal source stays in the label, as
 [NUI-16](design-next-ui.md#amended-2026-11-24-owner-the-sessions-list-sits-in-one-card) and the
 goal-source amendment require. A row says its end and git facts once: an unmeasured git state
 and a git line the outcome already states are dropped, and a bare end is left to the tile, the
@@ -185,7 +188,7 @@ through contextual help. The absence line and the progress pill occupy the same 
 
 | Word | Evidence it preserves | Explanation |
 |---|---|---|
-| No goal yet | No goal typed or adopted. | Add a goal to give Compass something to read against. |
+| No goal yet | No goal typed or adopted. | Open the session and add a goal there to give Compass something to read against. |
 | Not checked yet | A goal exists and a progress check has yet to run. | Check progress to ask Compass to read the record against the goal. |
 | Too early to tell | Too little recorded evidence, including the live `not_enough` state. | The session has recorded too little for a reading. |
 | Can't tell | No departure found and no check shows the goal was done. | What Compass read found no departure and gives too little evidence to say the goal was met. |

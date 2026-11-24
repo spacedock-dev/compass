@@ -22,7 +22,9 @@ measured", drops a git line the outcome already states, and leaves a bare "Sessi
 tile, the end age and the Now line. A dirty end, a known git state and a changed-entry count stay.
 `frontend/test/sessionCanvasRowDeviation.ts` joins the recorded outcome and git line through the
 same `outcomeLine` the page uses, so both recorded sentences still decide the compared text. The
-ended outcome's check mark repeated the Ended tile and is gone. The recorded answers stay fixed.
+ended outcome's check mark repeated the Ended tile and is gone. A row with no goal says "No goal
+yet" with no link where the recorded row offered "Add a goal"; the same mask makes that one
+substitution in the recorded goal cell. The recorded answers stay fixed.
 
 Departure (2026-11-24): Sessions rows follow the redesign canvas. A row is its status tile,
 title, a descriptor line (harness, project, start, and end once there is one), the Now line, any

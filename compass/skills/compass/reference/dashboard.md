@@ -77,7 +77,7 @@ limited state or progress evidence, look for the matching text below.
 | Slightly off course | (Medium) | Some work wandered from the goal. |
 | Off course | (High) | The work no longer serves the goal. |
 | Way off course | (Extreme) | The work has gone far from the goal. |
-| No goal yet | (Not checked) | Add a goal to give Compass something to read against. |
+| No goal yet | (Not checked) | Open the session and add a goal there to give Compass something to read against. |
 | Not checked yet | (Not checked) | Check progress to ask Compass to read the record against the goal. |
 | Too early to tell | (Not enough recorded yet) | The session has recorded too little for a reading. |
 | Can't tell | (Goal-only reading with no level) | Compass couldn't establish progress. The card gives the reason, such as an unreadable saved check, a failed check or too little evidence. |
