@@ -16,7 +16,8 @@ name: Release
 #                    release may have completed in between. Both refuse a version tagged
 #                    under both spellings (`0.2.0` and `v0.2.0`). A resume needs more than
 #                    the commit's title: one parent, the release bot as committer, and a
-#                    diff of the owned manifests' version values only.
+#                    diff of the owned manifests' version values only. A new run from the
+#                    tag move stops here once the whole CLI asset set is published.
 #   verify-frontend  read-only token, checkout WITHOUT persisted credentials, no key.
 #                    The only job that installs frontend dependencies and runs them.
 #                    Rebuilds the React bundle from exactly the target and compares it
@@ -148,13 +149,15 @@ jobs:
         timeout-minutes: 2
         env:
           TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 scripts/release_transition.py resolve --tag "$TAG" --github-output "$GITHUB_OUTPUT"
+          python3 scripts/release_transition.py resolve --tag "$TAG" --run-attempt "$GITHUB_RUN_ATTEMPT" --github-output "$GITHUB_OUTPUT"
 
   verify-frontend:
     name: Verify the frontend at the target
     needs: resolve
+    if: needs.resolve.outputs.mode == 'fresh' || needs.resolve.outputs.mode == 'resume'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
@@ -259,6 +262,7 @@ jobs:
   verify-tree:
     name: Validate the release tree
     needs: resolve
+    if: needs.resolve.outputs.mode == 'fresh' || needs.resolve.outputs.mode == 'resume'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
@@ -315,6 +319,7 @@ jobs:
   build-cli:
     name: Build the CLI (${{ matrix.target }})
     needs: resolve
+    if: needs.resolve.outputs.mode == 'fresh' || needs.resolve.outputs.mode == 'resume'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     permissions:

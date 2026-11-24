@@ -203,6 +203,41 @@ class PublishCliTest(unittest.TestCase):
             [str(start.resolve())], self.cwd.read_text(encoding="utf-8").strip().splitlines()
         )
 
+    def test_a_second_two_argument_upload_replaces_archives_and_checksums(self) -> None:
+        self.fill()
+        published = self.root / "published"
+        published.mkdir()
+        write_program(
+            Path(self.env["PATH"].split(os.pathsep)[0]) / "gh",
+            f"""shift 3
+clobber=false
+for arg do
+    if [ "$arg" = --clobber ]; then clobber=true; fi
+done
+for arg do
+    [ "$arg" != --clobber ] || continue
+    dest='{published}'/"${{arg##*/}}"
+    if [ -e "$dest" ] && ! "$clobber"; then
+        printf 'already_exists: %s\n' "$dest" >&2
+        exit 1
+    fi
+    cp "$arg" "$dest"
+done""",
+        )
+        first = self.publish("v1.2.3", str(self.archives))
+        self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+        old_checksums = (published / "checksums.txt").read_bytes()
+        archive = self.archives / f"compass_1.2.3_{TARGETS[0]}.tar.gz"
+        archive.write_bytes(b"replacement build")
+
+        second = self.publish("v1.2.3", str(self.archives))
+
+        self.assertEqual(0, second.returncode, second.stdout + second.stderr)
+        self.assertEqual(archive.read_bytes(), (published / archive.name).read_bytes())
+        checksums = (published / "checksums.txt").read_bytes()
+        self.assertNotEqual(old_checksums, checksums)
+        self.assertEqual((self.archives / "checksums.txt").read_bytes(), checksums)
+
     def test_the_checksums_are_the_lines_the_installer_reads(self) -> None:
         self.fill()
 

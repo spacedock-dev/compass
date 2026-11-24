@@ -318,6 +318,9 @@ The bump commit is the one outcome that is conditional: the workflow skips it wh
 already carry the tagged version, which is the initial-release path and the resume path. Step 1's
 parity check is what makes it unconditional on every normal release.
 
+The tag move queues a second run. On its first attempt it ends at `resolve` with `mode=complete`
+when the tag points to its own validated release commit, the release is published and final,
+and `checksums.txt` agrees with GitHub's digests for all four archives.
 
 If the run failed part way, do not cut a new number and do not push the tag again: the tag
 already exists on the remote, so a second push is `Everything up-to-date` and starts nothing, and
@@ -338,6 +341,8 @@ Read which job failed first:
 - **`resolve` failed with "name the same version".** The version is tagged as both `X.Y.Z` and
   `vX.Y.Z`. Delete the tag pushed by mistake (an owner action, because the tag ruleset blocks it),
   then Re-run all jobs.
+- **`resolve` failed to read published assets or download checksums.** Check the GitHub error
+  in the log. Re-run all jobs to rebuild and reattach the assets after access recovers.
 - **`verify-frontend` or `verify-tree` failed.** Nothing was pushed, tagged or published; the tree
   that was verified is not releasable. Fix it on `main` through a PR, then Re-run all jobs on the
   same run: `resolve` takes the new main tip and both verifiers cover it. The run uses the workflow
@@ -358,9 +363,8 @@ Read which job failed first:
   pull request touching the runtime, so a break here that it did not catch is usually a runner
   image change. A fix goes through a PR, then Re-run all jobs; a fix to `release.yml` itself needs
   the next version number.
-- **`attach-cli` failed.** The release exists and is correct; it only lacks its archives, so the
-  Spacedock installer skips Compass until they are there. Re-run all jobs: the workflow resumes, finds
-  the release already published, and attaches again (`--clobber` makes that safe).
+- **`attach-cli` failed.** Re-run all jobs. The workflow rebuilds and uploads all four archives
+  with their new `checksums.txt`, replacing any existing copies.
 - **`marketplace` failed.** The release is published and `stable` serves it, so installs already get
   the new version; only the listing's displayed version is behind. Re-run that job alone: it never
   moves the version backwards, so it is safe. If the log says the entry must point at `stable`, or
@@ -370,12 +374,10 @@ Read which job failed first:
 - **`homebrew` failed.** The release and `stable` are fine; only `brew` users lag. If the log says
   `HOMEBREW_TAP_DEPLOY_KEY is empty`, add the secret, then re-run that job alone: the formula never
   moves backwards, so it is safe. A rejected push three times means the tap's `main` is busy or the
-  deploy key was removed; check the key on that repository. After **Re-run all jobs** the archives
-  are rebuilt, so `brew install` fails on a sha256 mismatch until `homebrew` succeeds again. If the
-  log says `checksums.txt` "does not match the digest attach-cli published", the file GitHub served
-  is not the one `attach-cli` uploaded in this run. Re-run that job alone once (a just-replaced
-  asset can be served stale for a moment); if it still differs, stop and have an owner compare the
-  release's `checksums.txt` with the `attach-cli` log before anything else.
+  deploy key was removed, so check the key on that repository. If the log says
+  `checksums.txt` "does not match the digest attach-cli
+  published", re-run Homebrew alone once to allow GitHub time to serve the current file. If it still
+  differs, stop and have an owner compare the release's `checksums.txt` with the `attach-cli` log.
 - **A later step failed (push, tag, `stable`, publish).** Re-run all jobs: the workflow finds this
   tag's release commit on `main`, verifies that commit, and publishes it, never a newer `main`. It
   moves `stable` forward only, so resuming an older release after a newer one leaves `stable` where

@@ -84,9 +84,8 @@ require a refreshed integrity record even when the rendered page bytes stay unch
 The Select story uses shadcn Base UI Select with a reserved fixture width. It exercises opening,
 keyboard choice, titled long labels, disabled and loading items, and keyboard scrolling through thirty
 choices. The page's PromptSelect tests and Intent browser proof own the async prompt loader. The fixture does not certify the
-page's prompt loader. Stories are how the interface is verified. The browser proofs, retired from the
-gate, remain runnable on demand for routing, refresh continuity, backend behavior and installed-page
-investigation, but no pull request needs them.
+page's prompt loader. Stories verify the interface. The older parity proofs remain available on
+demand for routing, refresh continuity and backend behavior.
 
 ### Frontend development
 
@@ -185,8 +184,8 @@ check both writers against a read-only copy.
 Every proof above serves the React side through the development server by default. `pnpm test:production:browser`
 runs the same twelve proofs with `COMPASS_E2E_BUNDLE=production`, which has the Python backend serve the minified
 `react.html` that readers get (no Vite child, no hot refresh, no StrictMode double effect), so a difference only the
-shipped bytes show fails a proof. Pass `--shard a` or `--shard b` to run half of them; CI runs the two halves as
-separate jobs. Every surface proof is driven through the shipped page's own mount points (the capacity strip in
+shipped bytes show fails a proof. Pass `--shard a` or `--shard b` to run half of them on demand.
+Every surface proof is driven through the shipped page's own mount points (the capacity strip in
 the Sessions view, the consent and observer controls and the terminal in the Console tab, the timeline in the
 Decisions tab). Two things stay harness-hosted: the controls proof mounts the controls gallery, which composes
 shared controls no one page draws together and is served a production build of a scratch copy, and the storage
@@ -344,9 +343,10 @@ same directories through the relative symlinks under `.agents/skills/`.
   `coverage-exception` label is the only bypass.
 - `Frontend production bundle`, which rebuilds and compares the tracked artifact on Linux and runs no
   proof.
-- `Storybook (ubuntu-latest)`, which builds the offline explorer and runs every story's assertions in
-  pinned Chromium. The interface is verified here. The Playwright browser proofs were retired from CI
-  and from the pre-PR suite on 2026-10-12; they remain runnable on demand.
+- `Storybook (ubuntu-latest)` builds the offline explorer and runs every story's assertions in
+  pinned Chromium on frontend changes. On frontend or runtime contract changes it also runs
+  `pnpm test:parser` and `pnpm test:installed`, the release checks for the shipped HTML and
+  installed Python-only package. The older Playwright parity proofs remain runnable on demand.
 - `Lint workflows (actionlint)`, a pinned, checksummed actionlint over every workflow, for any change
   under `.github/workflows/`. Run `actionlint` from the repository root to check the same thing
   locally; `scripts/pre_pr.py` runs it when it is installed. A change to a local action under
@@ -743,6 +743,10 @@ marketplace listing. A last job, once the archives are attached, holds a read-on
 the Homebrew tap alone, and writes `Formula/compass.rb` there from the release's published
 `checksums.txt`, once its SHA-256 matches the one the attaching job reported. The `CLI package`
 workflow runs the same build on pull requests that touch the runtime, so a break shows up in review.
+On its first attempt, the run started by the workflow's tag move stops at resolution if the tag
+points to its own release commit, the GitHub Release is published and final, and all four archive
+digests match the uploaded `checksums.txt`. **Re-run all jobs** rebuilds the archives and replaces
+them with their new checksum file before retrying distribution.
 The bump is skipped when the manifests already carry the tagged version, which is also how you
 release the current version as-is. Every step is idempotent, so a partially failed release is
 finished by **Re-run all jobs** on the same run. That is the only re-run that resolves the release

@@ -15,8 +15,9 @@ runs only when a lane it belongs to is on. There are seven lanes:
 - ``lint``: ruff alone, which also formats the Python blocks inside Markdown. On with ``python``
   and for a Markdown file that holds one.
 - ``contract``: the frontend tests that start or read the Python runtime (``pnpm test:dev``, the
-  build tests and the Vitest files that name it). On when the runtime changed and the whole
-  frontend lane is not already running.
+  build tests and the Vitest files that name it). The Storybook job also runs ``pnpm test:parser``
+  and ``pnpm test:installed`` on either the contract or frontend lane. The contract lane runs
+  when the runtime changed and the whole frontend lane is not already running.
 - ``frontend_docs``: only the Vitest files that read the changed documents, named in
   ``frontend_docs_tests``. On for a document no other frontend file reads, when the whole frontend
   lane is not already running. A citation in any frontend file is read by the citation check
