@@ -145,6 +145,8 @@ try {
       // Attention is real too: it draws its own sections from the board, and nothing stands in for it.
       await probe.page.goto(probe.origin + '/#n=attention');
       await probe.page.getByRole('heading', { level: 1, name: 'Needs you' }).waitFor();
+      // The redesign keeps what the board cannot see behind this disclosure, closed by default.
+      await probe.page.getByRole('button', { name: "What Compass can't see" }).click();
       await probe.page.getByRole('heading', { name: 'Not on this board yet' }).waitFor();
       assert.equal(
         await probe.page.getByText(/not available in the React interface yet/i).count(),
@@ -197,7 +199,11 @@ try {
   await backend(plugin, true, async (ready) => {
     const probe = await contextFor(ready.port);
     try {
-      await probe.page.goto(probe.origin + '/' + ready.terminal_fragment);
+      // A project link that names a session now opens that session's page, so open the project
+      // itself: its technical details hold the read-only terminal for its one session.
+      const project = ready.terminal_fragment.split(':').slice(0, 2).join(':');
+      await probe.page.goto(probe.origin + '/' + project);
+      await probe.page.getByRole('button', { name: 'Show technical details' }).click();
       await probe.page.getByRole('button', { name: 'Open terminal', exact: true }).click();
       await probe.page.locator('#pc-terminal-screen .xterm').waitFor();
       await probe.page.waitForFunction(() =>
