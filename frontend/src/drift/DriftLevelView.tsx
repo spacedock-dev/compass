@@ -5,12 +5,12 @@ import { Fragment } from 'react';
 import { GLOSSARY, PROGRESS_LEVEL_WORDS } from '../language/glossary';
 import { formatDurationWords, formatTimestamp } from '../shell/format';
 import { useFocusKey } from '../controls';
-import { annotationLines, storeUnreadable } from '../intent/annotation';
+import { annotationLines, goalUnavailable, storeUnreadable } from '../intent/annotation';
 import { intentUnsaved } from '../intent/derive';
 import { useDrift } from './context';
 import { analysisRow, meterSegments, readingStored, type Signals } from './level';
 import { driftAnswer, earlyReadingSeconds, verdictNamesLevel, verdictShape } from './result';
-import { routeRefusal } from './route';
+import { readingRoute, routeRefusal } from './route';
 import {
   HARNESS_LIMIT,
   WORK_HARNESSES,
@@ -283,6 +283,8 @@ function absence(model: ReturnType<typeof useDrift>['model']) {
       'The record did not give Compass enough evidence to place the work on the scale.',
     ];
   }
+  // Words that exist and cannot be read are neither a goal to check nor none: say nothing, as the row does.
+  if (goalUnavailable(model.session)) return null;
   if (!annotation)
     return [
       GLOSSARY.cantTell.plain,
@@ -303,6 +305,8 @@ function absence(model: ReturnType<typeof useDrift>['model']) {
         ? 'The Live monitor had too little recorded work to check progress.'
         : 'The record has too little work to estimate progress yet.',
     ];
+  // Not checked yet points at Check progress, which no harness without a reading route offers: say nothing.
+  if (!readingRoute(model.payload, model.session)) return null;
   return [
     GLOSSARY.notCheckedYet.plain,
     model.liveOn

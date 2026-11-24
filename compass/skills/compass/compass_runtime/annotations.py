@@ -835,6 +835,12 @@ def _locked_store(
             if held == runtime_io.LOCK_UNSUPPORTED:
                 _name_unlockable(config, diagnostic_sink)
             store = _read_store(config)
+            # Kept from every whole read, not only a collection's: a save sees entries another
+            # dashboard wrote since, and the next row published must say which of them are held.
+            if state is not None:
+                state.annotations_held = frozenset(
+                    _key(value.get("harness"), value.get("sid")) for value in store.kept_raw
+                )
             yield store._replace(writable=False) if held == runtime_io.LOCK_UNCREATABLE else store
             return
         runtime_io.diag(said, diagnostic_sink)

@@ -215,6 +215,13 @@ export function storeUnreadable(payload: Row | null | undefined): string {
   return String(payload?.['annotate_unreadable'] || '');
 }
 
+/* "Saved goal unavailable" for one session: its entry was written by a newer build and this one cannot show
+   it (`annotation_goal_unreadable`, read from the same pass as the store). The row says the same, and
+   nothing here may draft a prompt or say no goal was typed over words that exist. */
+export const GOAL_UNAVAILABLE = 'Saved goal unavailable';
+export const goalUnavailable = (session: Row | null | undefined): boolean =>
+  session?.['annotation_goal_unreadable'] === true;
+
 export function annotateOn(payload: Row | null | undefined): boolean {
   return isRecord(payload) && payload['annotate'] === true;
 }

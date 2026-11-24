@@ -21,7 +21,7 @@ checked yet), which no recorded row had. `frontend/test/sessionCanvasRowDeviatio
 sets the page's line aside (`data-next-row-absence`), and the mounted tests, `rowAbsence.test.ts` and the
 canvas row story hold it instead. Over an annotation store that cannot be read, the recorded row said No
 goal yet or offered a prompt as the goal, which was wrong, and the page says Saved goal unavailable; the
-mask sets the goal fact aside on both sides for that board. Both "No goal yet" filter chips now keep the
+mask sets the goal fact aside on both sides for that board. A session with saved outcome lines and no goal reads "Expected outcome" in its Goal cell, where the recorded row said "No goal yet". Both "No goal yet" filter chips now keep the
 rows whose Goal cell reads it, through one predicate, so the Progress check chip no longer keeps a
 drafted row. The session page's progress card says Not checked yet for a draft a check would adopt. The
 recorded answers stay fixed.

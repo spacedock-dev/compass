@@ -721,7 +721,18 @@ def _goal(source: Row, *, annotate: bool, unreadable: bool) -> tuple[str, str]:
         }.get(draft[1], "Goal · your latest prompt")
         return label, draft[0]
     text = "" if _opened_with_control(source) else prompt
-    return ("Goal · your latest prompt", text) if text else ("Goal", "")
+    if text:
+        return "Goal · your latest prompt", text
+    # Saved outcome lines and no goal: name what the reader wrote, as the board's goal cell does.
+    line = next(
+        (
+            _text(source.get(f"annotation_line_{n}")).strip()
+            for n in range(1, 7)
+            if _has_text(source.get(f"annotation_line_{n}"))
+        ),
+        "",
+    )
+    return ("Expected outcome", line) if line else ("Goal", "")
 
 
 def _has_text(value: object) -> bool:

@@ -114,7 +114,9 @@ Quiet  Claude Code  beta-api
 - `Not checked yet` under a goal is the word the board draws at the right of the row: a saved goal,
   or a draft the first check would save, that no check has read. No line means Compass cannot show
   one for that session, which includes every Codex session. A session with no goal and no draft has
-  no goal line at all. `Goal: Saved goal unavailable` means the saved goals could not be read, so
+  no goal line at all. A prompt you picked as the goal in the dashboard is held only in that browser,
+  so a session whose only draft is that choice shows no `Not checked yet` line here, though the
+  board shows one. `Goal: Saved goal unavailable` means the saved goals could not be read, so
   Compass shows no goal and no prompt.
 - Run [`--drift`](#check-a-session-for-drift) to see the stored reading in detail.
 - `Resume:` is the command to reopen a stopped session, and it holds the session's id. For a session

@@ -381,6 +381,13 @@ class AbsenceWordTest(unittest.TestCase):
                 one = self.entry(fields, **top)
                 self.assertEqual(("Goal", "Saved goal unavailable"), (one.goal_label, one.goal))
 
+    def test_saved_lines_without_a_goal_name_the_expected_outcome_not_no_goal(self) -> None:
+        one = self.entry({**self.ABSENT, "annotation_line_2": "Done when it ships"})
+        self.assertEqual(("Expected outcome", "Done when it ships"), (one.goal_label, one.goal))
+        self.assertEqual("Not checked yet", one.absence)
+        drafted = self.entry({**self.ABSENT, **self.DRAFT, "annotation_line_2": "Done"})
+        self.assertEqual("Goal · your first prompt", drafted.goal_label)
+
     def test_the_listing_prints_the_word_under_the_goal(self) -> None:
         payload = {
             "generated": 5_000,

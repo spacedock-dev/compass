@@ -461,24 +461,31 @@ published data proves ship:
   (a goal or outcome lines) or the draft Check progress would adopt by the session page's own draft
   rule, with nothing recording a check: no stored reading, refusal, withheld reading, press, unasked
   check or raised departure, and a reading route for its harness. A row whose unasked check found
-  nothing says nothing, because it was checked. A prompt the page would not draft (no time, or a
+  nothing says nothing, because it was checked. The session page's progress card follows the same
+  rule: it says Not checked yet for a draft, and says nothing where no check can run for the harness. A prompt the page would not draft (no time, or a
   session that opened with a harness control) counts as no goal here.
 - **No goal yet** is never drawn in that cell. It lives in the Goal cell, once, for a session with
-  nothing saved and nothing to draft. A draft row shows its prompt in the Goal cell and reads Not
+  nothing saved and nothing to draft. A session with saved outcome lines and no goal is not that: its
+  Goal cell reads **Expected outcome** with the first saved line, and it reads Not checked yet at the
+  right, as its page does. A draft row shows its prompt in the Goal cell and reads Not
   checked yet at the right, because pressing Check progress saves the draft and then checks it. The
   session page's progress card now says the same for a draft, where it used to say No goal yet.
 - **Saved goal unavailable** replaces the Goal cell when the annotation store, or this session's own
   entry, cannot be read. The row never says No goal yet or offers a prompt as the goal over words
   that exist. A newer build's entry is detected from the read the board already makes
-  (`annotation_goal_unreadable`, a bool that names no text and enters no history).
+  (`annotation_goal_unreadable`, a bool that names no text and enters no history). The session page
+  and Goal history read the same flag: no draft is offered, the Goal card says Saved goal unavailable,
+  and the progress card says no absence word.
 
 Left off the row, and why: Too early to tell and Can't tell need the analysis level, which reads
 transcript evidence on every poll, so a row cannot prove them. Goal too vague to check and Out of
 date need a freshness record the stored-departure pill issue builds, because the session page says
 Out of date before it. A refused or withheld reading is a failed check, not "nothing departs", so
-it shows nothing. A Codex row and a live-estimate row show nothing. A Live monitor lease held by
-another tab or the terminal can hold a live estimate the list cannot see; that gap is recorded,
-not closed, and adds no field.
+it shows nothing. A Codex row shows nothing. The row cannot see a live estimate: it rides the focused
+session's project context, which the list does not load. So a Claude draft row can read Not checked
+yet while its own page, with the Live monitor on and an estimate of too little recorded, reads Too
+early to tell. The row never names a level, and the same gap covers a lease held by another tab or
+the terminal. It is recorded, not closed, and adds no field.
 
 Both "No goal yet" filter chips (Progress check and Goal source) read one predicate, `noGoalYet` in
 `rows.ts`, and keep exactly the rows whose Goal cell reads it. The Progress check chip used to keep

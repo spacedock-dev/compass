@@ -275,14 +275,24 @@ export function goalCell(
           : text
             ? 'Goal · your latest prompt'
             : 'Goal';
-  return typed
-    ? { label, kind: 'link', text, known: true }
-    : text
-      ? { label, kind: 'link', text, known: true }
-      : { label, kind: 'none', text: SESSION_ROW_WORDS.noGoalYet, known: false };
+  if (typed || text) return { label, kind: 'link', text, known: true };
+  /* Saved outcome lines and no goal: the cell names what the reader wrote rather than "No goal yet", which
+     would contradict words that exist. The session page reads such a row as having words to check. */
+  const line = firstSavedLine(source);
+  return line
+    ? { label: 'Expected outcome', kind: 'link', text: line, known: true }
+    : { label, kind: 'none', text: SESSION_ROW_WORDS.noGoalYet, known: false };
 }
 
 const hasText = (value: unknown): boolean => typeof value === 'string' && value.trim() !== '';
+
+function firstSavedLine(source: Row | undefined): string {
+  for (const n of [1, 2, 3, 4, 5, 6]) {
+    const line = source?.[`annotation_line_${String(n)}`];
+    if (hasText(line)) return String(line).trim();
+  }
+  return '';
+}
 
 /* Saved words the reader typed for this session: a goal, or any of the six expected-outcome lines. */
 export function hasSavedWords(source: Row | undefined): boolean {
@@ -304,8 +314,7 @@ export function noGoalYet(
 ): boolean {
   if (!context.annotate || context.unreadable || !source || goal.kind !== 'none') return false;
   if (source['annotation_goal_unreadable'] === true) return false;
-  if (typeof source['annotation_goal'] !== 'string' || hasText(source['annotation_goal']))
-    return false;
+  if (typeof source['annotation_goal'] !== 'string' || hasSavedWords(source)) return false;
   const discarded = nextNumber(source['annotation_discarded_at']);
   return hasText(source['annotation_goal_why']) || (discarded !== null && discarded > 0);
 }

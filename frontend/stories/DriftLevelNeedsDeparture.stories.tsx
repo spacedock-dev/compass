@@ -542,6 +542,29 @@ export const Progress05DraftIsNotCheckedYet = absenceStory(
   'Check progress',
 );
 
+// A newer build wrote this session's entry: the row says Saved goal unavailable, and so does the page. It
+// drafts no prompt, and the card says no word about a goal that may exist.
+export const SavedGoalUnavailableDraftsNothingAndSaysNoWord: Story = {
+  name: 'Saved goal unavailable · no draft, no word',
+  ...scenario({
+    unsaved: true,
+    session: {
+      annotation_goal: '',
+      annotation_goal_why: '',
+      annotation_goal_unreadable: true,
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const progress = await progressCard(canvasElement);
+    const view = within(canvasElement);
+    await expect(await view.findByText('Saved goal unavailable')).toBeVisible();
+    await expect(view.queryByText(/Drafted from your first prompt/)).toBeNull();
+    await expect(progress.querySelector('[data-next-progress-absence]')).toBeNull();
+    await expect(progress).not.toHaveTextContent(/No goal yet|Not checked yet/);
+    await expectNoLevel(progress);
+  },
+};
+
 export const Progress06NotCheckedYet = absenceStory(
   '06 · Not checked yet',
   {},

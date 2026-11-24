@@ -1154,6 +1154,19 @@ class TheStoreNamesTheSessionsItHoldsRawTest(ASessionHeldRawIsNeverWrittenOverTe
         self.assertEqual(frozenset(), self.state.annotations_held)
 
 
+class AWriteKeepsTheHeldKeysCurrentTest(ASessionHeldRawIsNeverWrittenOverTest):
+    """A save reads the file whole under its lock, so it keeps the held keys that read saw."""
+
+    def test_a_save_after_another_dashboard_wrote_a_held_entry_publishes_it_as_held(self) -> None:
+        annotation_store.refresh(self.config, self.state)
+        self.assertEqual(frozenset(), self.state.annotations_held)
+        self.seed()  # a newer build's dashboard writes a held entry between this one's reads
+
+        annotation_store.annotate(self.config, self.state, "claude", "s-1", goal="mine", now=NOW)
+
+        self.assertEqual(frozenset({("claude", "future")}), self.state.annotations_held)
+
+
 class AnUnreadableStoreNamesTheFileAndTheStepTest(_StoreCase):
     """Round 2, F2 and F3: every sentence about an unreadable store names the file and a step."""
 

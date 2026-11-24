@@ -110,6 +110,24 @@ describe('the row absence word', () => {
   });
 });
 
+describe('a row with saved outcome lines and no goal', () => {
+  it('shows the expected outcome in the Goal cell and never No goal yet', () => {
+    const { row } = rowFor({ ...absent, annotation_line_2: 'Done when it ships' });
+    expect(row.goal).toMatchObject({
+      label: 'Expected outcome',
+      kind: 'link',
+      text: 'Done when it ships',
+      known: true,
+    });
+    expect(row.absence).toBe('notCheckedYet');
+  });
+
+  it('prefers a draft the page would offer, as before', () => {
+    const { row } = rowFor({ ...absent, ...draft, annotation_line_1: 'Done when it ships' });
+    expect(row.goal.label).toBe('Goal · your first prompt');
+  });
+});
+
 describe('the Goal cell when the saved goal cannot be read', () => {
   it.each([
     ['the store', {}, { annotate_unreadable: 'The store cannot be read' }],
@@ -136,7 +154,7 @@ describe('noGoalYet, the one predicate the Goal cell word and both filter chips 
     [
       'lines only, with no prompt to show',
       { ...absent, annotation_line_2: 'Done when it ships' },
-      true,
+      false,
     ],
     ['a draft only (the cell shows the prompt)', { ...absent, ...draft }, false],
     ['saved', saved, false],
@@ -161,8 +179,7 @@ describe('noGoalYet, the one predicate the Goal cell word and both filter chips 
     expect(noGoalYet(absent, { ...base, annotate: false }, none)).toBe(false);
   });
 
-  it('never draws No goal yet as a row absence, whatever the row', () => {
-    for (const fields of [absent, { ...absent, ...draft }, saved])
-      expect(rowFor(fields).row.absence).not.toBe('noGoalYet');
+  it('draws no row absence for a row whose only word is the Goal cell No goal yet', () => {
+    expect(rowFor(absent).row.absence).toBeNull();
   });
 });

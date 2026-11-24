@@ -3,7 +3,12 @@ import { compatSessKey } from '../api/identity';
 import { isRecord, records, type Row } from '../observed';
 import { SESSION_GOAL } from '../sessions/intent';
 import { formatTimestamp } from '../shell/format';
-import { annotationDiscarded, annotationLines, discardAccount } from './annotation';
+import {
+  annotationDiscarded,
+  annotationLines,
+  discardAccount,
+  goalUnavailable,
+} from './annotation';
 
 export const READING_NOT_A_VERIFICATION =
   'A reading is never a verification that the work was done.';
@@ -144,8 +149,13 @@ export function intentLogView({ payload, board, rows, load }: LogInput) {
         ? stamp('Discarded', record['discarded_at'], payload['generated'])
         : (first?.time ??
           (outcomes.length ? stamp('Saved', record?.['at'], payload['generated']) : '')),
-      absence: discarded || first ? '' : readable ? 'No goal yet.' : 'Saved goal unavailable.',
-      canAdd: !discarded && !first && readable && session !== null,
+      absence:
+        discarded || first
+          ? ''
+          : readable && !goalUnavailable(session)
+            ? 'No goal yet.'
+            : 'Saved goal unavailable.',
+      canAdd: !discarded && !first && readable && !goalUnavailable(session) && session !== null,
       outcomes,
       additionalGoals,
       caveats,

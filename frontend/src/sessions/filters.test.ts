@@ -443,9 +443,10 @@ describe('the facets', () => {
     // The Goal cell's own word decides both chips, through one predicate, so a drafted row (a goal the
     // reader can check) is in neither. This replaces the earlier chip, which kept the draft too.
     const noGoal = kept({ progress: ['no-goal'] });
-    expect(noGoal).toEqual(['discarded', 'lines', 'never']);
+    expect(noGoal).toEqual(['discarded', 'never']);
     expect(kept({ goal: ['none'] })).toEqual(noGoal);
-    expect(kept({ goal: ['saved'] })).toEqual(['adopted', 'saved']);
+    // Saved lines are saved words: in Goal saved, and in neither No goal yet chip.
+    expect(kept({ goal: ['saved'] })).toEqual(['adopted', 'lines', 'saved']);
     expect(kept({ goal: ['drafted'] })).toEqual(['draft']);
     // Each kept row reads No goal yet in its Goal cell, and no other row does.
     const reads = (sid: string) =>

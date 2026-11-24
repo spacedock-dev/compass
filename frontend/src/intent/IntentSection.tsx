@@ -10,7 +10,14 @@ import { endedAt } from '../observed';
 import { GLOSSARY, GOAL_LABEL } from '../language/glossary';
 import { useDisplayed } from '../shell/context';
 import { ActionButton } from './ActionButton';
-import { annotationDiscarded, discardStamp, heldCap, storeUnreadable } from './annotation';
+import {
+  annotationDiscarded,
+  discardStamp,
+  GOAL_UNAVAILABLE,
+  goalUnavailable,
+  heldCap,
+  storeUnreadable,
+} from './annotation';
 import { heldSentence } from './cues';
 import {
   directionLinesQuestion,
@@ -44,7 +51,7 @@ function Footer() {
   const { ctx, input, session, payload } = usePanel();
   const key = intentKey(session);
   const changes = intentChanges(input);
-  const unreadable = Boolean(storeUnreadable(payload));
+  const unreadable = Boolean(storeUnreadable(payload)) || goalUnavailable(session);
   const absent = unreadable
     ? []
     : (
@@ -180,7 +187,7 @@ export function IntentSection({ editable }: { readonly editable: boolean }) {
   const stamp = discardStamp(annotation, generated);
   const drafted = intentDrafted(input);
   const why = drafted ? '' : noDraftWhy(session, annotation, payload);
-  const unreadable = storeUnreadable(payload);
+  const unreadable = storeUnreadable(payload) || (goalUnavailable(session) ? GOAL_UNAVAILABLE : '');
   const key = goalKey(session);
   const saved =
     !editable || unreadable || annotationDiscarded(annotation)

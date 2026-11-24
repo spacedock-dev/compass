@@ -114,6 +114,37 @@ describe('the progress answer without a level', () => {
     expect(textOf('[data-next-progress-absence]')).toMatch(/^No goal yet.*Give Compass a goal/);
   });
 
+  it('says the saved goal is unavailable, with no draft and no word, for an entry it cannot read', async () => {
+    // A newer build wrote this session's entry: the row says Saved goal unavailable, and the page agrees.
+    const board = driftBoard();
+    const page = mountDrift({
+      payload: {
+        sessions: [
+          {
+            ...(board.sessions[0] ?? {}),
+            annotation_goal: '',
+            annotation_goal_why: '',
+            annotation_goal_unreadable: true,
+          },
+        ],
+      },
+      store: { goal: '', lines: [], revision: 0 },
+    });
+    await page.settle();
+    expect(document.body.textContent).toContain('Saved goal unavailable');
+    expect(document.body.textContent).not.toMatch(/Drafted from your first prompt/);
+    expect(textOf('[data-next-progress-absence]') || '').not.toMatch(/No goal yet|Not checked yet/);
+  });
+
+  it('says nothing about a check where no check can run for the harness', async () => {
+    const page = mountDrift({
+      payload: { reading_routes: {} },
+      store: { goal: 'Ship the queue', lines: [], revision: 1 },
+    });
+    await page.settle();
+    expect(document.querySelector('[data-next-progress-absence]')).toBeNull();
+  });
+
   it('explains a reading shape this version cannot interpret', async () => {
     const page = mountDrift({
       session: stored({ annotation_assessment: { ...ASSESSMENT, future_field: true } }),

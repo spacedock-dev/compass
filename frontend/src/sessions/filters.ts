@@ -305,13 +305,7 @@ export function indexRow(row: SessionRow, context: SessionsContext): IndexedRow 
     progress,
     drift: !readable ? null : row.drift ? 'recorded' : checked ? 'checked' : 'unchecked',
     goal:
-      progress === null
-        ? null
-        : trimmed(source?.['annotation_goal'])
-          ? 'saved'
-          : goal.known
-            ? 'drafted'
-            : 'none',
+      progress === null ? null : hasSavedWords(source) ? 'saved' : goal.known ? 'drafted' : 'none',
     started: startStamp(source),
     active: activityStamp(source),
   };

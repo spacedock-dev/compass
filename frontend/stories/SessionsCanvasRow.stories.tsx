@@ -504,7 +504,7 @@ export const AbsenceWord: Story = {
     );
     const word = (sid: string) =>
       rowOf(canvasElement, sid).querySelector<HTMLElement>('[data-next-row-absence]');
-    for (const width of [1280, 400]) {
+    for (const width of [1280, 700, 400]) {
       await atWidth(width, async () => {
         for (const sid of ['acme-unchecked', 'acme-draft', 'acme-lines']) {
           const row = rowOf(canvasElement, sid);
@@ -529,12 +529,13 @@ export const AbsenceWord: Story = {
           const goal = part(row, '[data-next-operation-fact="goal"]');
           await expect(goal.contains(found)).toBe(false);
           const box = found.getBoundingClientRect();
-          if (width === 1280) {
-            // The far right, top-aligned with the title.
+          if (width >= 700) {
+            // The far right, top-aligned with the title, and the goal beside it is not squeezed away.
             const title = part(row, '.next-operation-route').getBoundingClientRect();
             await near(box.top, title.top, 4);
             await expect(box.left).toBeGreaterThanOrEqual(goal.getBoundingClientRect().right - 1);
             await expect(box.right).toBeLessThanOrEqual(row.getBoundingClientRect().right);
+            await expect(goal.getBoundingClientRect().width).toBeGreaterThanOrEqual(150);
           } else {
             // A phone stacks it under the Goal cell, still on the screen.
             await expect(box.top).toBeGreaterThanOrEqual(goal.getBoundingClientRect().bottom - 1);
@@ -551,9 +552,11 @@ export const AbsenceWord: Story = {
           rowOf(canvasElement, 'acme-empty').textContent?.match(/No goal yet/g),
         ).toHaveLength(1);
         for (const sid of ['acme-draft', 'acme-unchecked', 'acme-lines'])
-          await expect(sid === 'acme-lines' ? 1 : 0).toBe(
-            rowOf(canvasElement, sid).textContent?.match(/No goal yet/g)?.length ?? 0,
-          );
+          await expect(rowOf(canvasElement, sid).textContent).not.toMatch(/No goal yet/);
+        // Saved outcome lines and no goal name the expected outcome, never No goal yet beside Not checked yet.
+        await expect(
+          part(rowOf(canvasElement, 'acme-lines'), '[data-next-operation-fact="goal"]').textContent,
+        ).toContain('Expected outcome');
         // A goal that cannot be read says so, never No goal yet or its prompt.
         const held = rowOf(canvasElement, 'acme-held');
         await expect(part(held, '[data-next-operation-fact="goal"]').textContent).toContain(
@@ -586,7 +589,7 @@ export const NoGoalChips: Story = {
     const progress = within(panel.getByRole('group', { name: 'Progress check' }));
     const chip = progress.getByRole('button', { name: 'No goal yet' });
     await userEvent.click(chip);
-    await waitFor(() => expect(shown()).toEqual(['acme-empty', 'acme-lines']));
+    await waitFor(() => expect(shown()).toEqual(['acme-empty']));
     const kept = shown() as string[];
     for (const sid of kept)
       await expect(

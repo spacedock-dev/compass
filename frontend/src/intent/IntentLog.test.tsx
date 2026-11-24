@@ -70,6 +70,17 @@ describe('the Intent log route', () => {
     expect(screen.getAllByText('No goal yet.')).toHaveLength(1);
   });
 
+  it('says the saved goal is unavailable, never No goal yet, for a session whose entry is held', async () => {
+    const board = {
+      ...BOARD,
+      sessions: [{ ...BOARD.sessions[0], annotation_goal_unreadable: true }, BOARD.sessions[1]],
+    };
+    const page = mountIntent({ data: board, routes: annotations([]) });
+    await page.settle();
+    expect(screen.getAllByText('Saved goal unavailable.')).toHaveLength(1);
+    expect(screen.getAllByText('No goal yet.')).toHaveLength(1);
+  });
+
   it('waits while hidden: a board that arrives on another route fetches no retained words', async () => {
     const page = mountIntent({ hash: '#n=sessions', data: BOARD, routes: annotations() });
     await page.settle();
