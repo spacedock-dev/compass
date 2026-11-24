@@ -177,8 +177,8 @@ class Lines:
         self._said = False
         self._monitor = monitor
         self._model_calls_paused = model_calls_paused
-        self._pause_serial = 0
-        self._pause_accepted = 0
+        self._publication_serial = 0
+        self._publication: tuple[int, float] = (0, 0)
         self._paused: bool | None = None
         self._sessions: dict[str, Mapping[str, Any]] = {}
         self._ambiguous: set[str] = set()
@@ -188,6 +188,7 @@ class Lines:
         self._retired: set[str] = set()
         self._validate_progress: Callable[[float, tuple[str, str]], bool] | None = None
         self._validate_stores: Callable[[], bool] | None = None
+        self._validate_prefixes: Callable[[], set[str]] | None = None
 
     def update(
         self,
@@ -196,6 +197,7 @@ class Lines:
         *,
         validate_progress: Callable[[float, tuple[str, str]], bool] | None = None,
         validate_stores: Callable[[], bool] | None = None,
+        validate_prefixes: Callable[[], set[str]] | None = None,
     ) -> None:
         """Publish the board's stored progress and cheap lease state."""
         try:
@@ -214,9 +216,10 @@ class Lines:
                 if short_ids[row["sid"]] != 1 or file_ids[_identity(row)] != 1
             }
             with self._lock:
-                self._accept_pause(sample)
+                now = self._accept_publication(sample, now)
                 self._validate_progress = validate_progress
                 self._validate_stores = validate_stores
+                self._validate_prefixes = validate_prefixes
                 for name in self._current - sessions.keys():
                     body = self._desired[name]
                     previous = self._written.get(name)
@@ -245,15 +248,18 @@ class Lines:
                     self._desired[name] = body
                     row = sessions[name]
                     self._apply_state(name, self._state(row) if name not in self._ambiguous else {})
-                self._flush(now)
+                unambiguous = self._unambiguous_progress()
+                if validate_progress is not None:
+                    self._recheck_progress(now)
+                self._flush(now, unambiguous=unambiguous)
         except Exception as exc:  # noqa: BLE001 — a status line file must never fail a request
             self._report(exc)
 
     def _pause_state(self) -> tuple[int, bool | None]:
-        # Number before I/O: an older read that returns late cannot replace a newer sample.
+        # Number before I/O so a late read cannot replace a newer timestamp or permission.
         with self._lock:
-            self._pause_serial += 1
-            serial = self._pause_serial
+            self._publication_serial += 1
+            serial = self._publication_serial
         try:
             answer = self._model_calls_paused() if self._model_calls_paused is not None else None
         except Exception as exc:  # noqa: BLE001 - unknown clears a previously confirmed pause
@@ -261,12 +267,15 @@ class Lines:
             answer = None
         return serial, answer if type(answer) is bool else None
 
-    def _accept_pause(self, sample: tuple[int, bool | None]) -> None:
+    def _accept_publication(self, sample: tuple[int, bool | None], now: float) -> float:
         serial, answer = sample
-        if serial > self._pause_accepted:
-            self._pause_accepted, self._paused = serial, answer
+        if serial > self._publication[0]:
+            # A real clock setback still needs to replace a future-dated file.
+            self._publication = (serial, now)
+            self._paused = answer
             for body in self._desired.values():
                 body["model_calls_paused"] = answer
+        return self._publication[1]
 
     def _state(self, row: Mapping[str, Any]) -> Mapping[str, Any]:
         try:
@@ -281,10 +290,18 @@ class Lines:
         body["monitor"] = on
         body["last_end"] = None if on else lease.get("last_end")
 
-    def _flush(self, now: float) -> None:
+    def _flush(self, now: float, *, unambiguous: set[str] | None) -> None:
         wrote = False
         for name in sorted(self._current | self._retired):
             body = {**self._desired[name], "at": now}
+            # A transient namespace failure only withholds this write. The next idle touch
+            # can restore the candidate if its transcript and annotation proofs still hold.
+            if (
+                unambiguous is not None
+                and body["stored_progress"]
+                and self._sessions[name]["sid"] not in unambiguous
+            ):
+                body["stored_progress"] = None
             wrote |= self._write(name, body, now)
             previous = self._written.get(name)
             if (
@@ -302,24 +319,32 @@ class Lines:
         try:
             sample = self._pause_state()
             with self._lock:
-                self._accept_pause(sample)
-                retained: list[Body] = []
+                if sample[0] < self._publication[0]:
+                    return
+                now = self._accept_publication(sample, now)
                 for name, row in self._sessions.items():
-                    body = self._desired[name]
-                    if body["stored_progress"]:
-                        if self._progress_holds(row, now):
-                            retained.append(body)
-                        else:
-                            body["stored_progress"] = None
                     lease = self._state(row) if name not in self._ambiguous else {}
                     self._apply_state(name, lease)
-                # A clear during a later proof check can invalidate an earlier one.
-                if retained and not self._progress_stores_hold():
-                    for body in retained:
-                        body["stored_progress"] = None
-                self._flush(now)
+                unambiguous = self._unambiguous_progress()
+                self._recheck_progress(now)
+                self._flush(now, unambiguous=unambiguous)
         except Exception as exc:  # noqa: BLE001
             self._report(exc)
+
+    def _recheck_progress(self, now: float) -> None:
+        retained: list[Body] = []
+        for name, row in self._sessions.items():
+            body = self._desired[name]
+            if body["stored_progress"]:
+                if self._progress_holds(row, now):
+                    retained.append(body)
+                else:
+                    body["stored_progress"] = None
+        # The scan can outlast a transcript proof, and a clear during a later
+        # row's check can invalidate a shared stamp an earlier row relied on.
+        if retained and not self._progress_stores_hold():
+            for body in retained:
+                body["stored_progress"] = None
 
     def _progress_holds(self, row: Mapping[str, Any], now: float) -> bool:
         validate = self._validate_progress
@@ -337,6 +362,18 @@ class Lines:
             self._report(exc)
             return False
 
+    def _unambiguous_progress(self) -> set[str] | None:
+        validate = self._validate_prefixes
+        if validate is None or not any(
+            self._desired[name]["stored_progress"] for name in self._sessions
+        ):
+            return None
+        try:
+            return validate()
+        except Exception as exc:  # noqa: BLE001 - unknown prefix ownership clears the level
+            self._report(exc)
+            return set()
+
     def remove_all(self) -> None:
         """Remove what this instance wrote. A crash leaves the rest to the ceiling and the sweep."""
         with self._lock:
@@ -350,16 +387,16 @@ class Lines:
             self._desired.clear()
             self._retired.clear()
             self._validate_progress = None
+            self._validate_stores = None
+            self._validate_prefixes = None
 
     def _write(self, name: str, body: Body, now: float) -> bool:
         previous = self._written.get(name)
-        if previous is not None:
-            now = max(now, previous[1])
-            body = {**body, "at": now}
+        # After a setback the terminal reader can reject the old timestamp as future-dated.
         if (
             previous is not None
             and _content(previous[0]) == _content(body)
-            and now - previous[1] < REFRESH_SEC
+            and 0 <= now - previous[1] < REFRESH_SEC
         ):
             return False
         try:

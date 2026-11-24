@@ -613,14 +613,19 @@ the retry would wake before the next producer tick. Measured at 5194 ms before b
 A later replay found that a hook whose coalescing window expired inside the floor caused 877 to 930
 footer refreshes before collection was allowed. Eligibility and worker waits now use the same
 collection deadlines, so a coalesced hook or a reused revision waits until the floor permits a
-collection. The idle footer cadence is described in the
+collection. A separate replay stepped the wall clock back by 12 seconds and moved a floored
+collection from 2.5 to 14.5 seconds elapsed. The worker measures the floor, coalescing and
+unconditional probe reconciliation on monotonic time. The application also expires its response
+memo by elapsed time. A two-second setback had left the memo apparently half a second old at the
+worker's deadline, delaying publication to 5 seconds. The worker and application now publish at
+2.5 seconds in both replays. The idle footer cadence is described in the
 [runtime architecture](design-runtime-architecture.md#r-1-one-responsibility-per-file-and-the-launcher-owns-none).
 
 **Verdict on overlay-only republication: not worth building, and the earlier note pointed at the wrong
 obstacle.** Two corrections to what this document and the ticket both said:
 
-- Nothing retains a live collection today. `collect_json` serializes inline and retains only bytes in
-  an immutable `(revision, body, published_at)` tuple, so there is no existing mutability hazard to
+- Nothing retains a live collection today. `collect_json` serializes inline and retains the bytes
+  and their publication metadata in an immutable entry, so there is no existing mutability hazard to
   remove. The immutability work is the price of *starting* to retain a dict.
 - `assign_display_ids` is not the blocker it was named as. It derives `session["session"]` from `sid`
   every time and never from its own previous output, so it is idempotent over a fixed row set. The real
@@ -1421,19 +1426,18 @@ Instead it should:
 
 The coordinator coalesces an event burst for roughly 50 to 150 milliseconds. The window is fixed,
 not sliding: a sliding window never closes under a sustained burst and the board would stop updating
-entirely. Every overlay in a burst is reduced in `arrival_seq` order. A matched `input_requested` is
-exempt from the delay and publishes an overlay revision immediately; an unmatched request remains
-non-rendering in the pending map until a collector supplies its row. No event is assumed to arrive
-alone.
+entirely. Every overlay in a burst is reduced in `arrival_seq` order. A matched `input_requested`
+skips the coalescing delay and remains subject to the collection floor. An unmatched request
+waits in the pending map until a collector supplies its row.
 
 Coalescing bounds burst latency but sets no floor between collections, and removing the 2.5-second
 memo would remove the only rate limiter on store reads. A ten-agent fan-out emitting lifecycle events
 continuously would drive roughly 6.7 full collections per second against today's ceiling of 0.4.
 Keep an explicit minimum interval per harness, the role `collect_memo_sec` plays today. The first
 dirty event schedules collection at the later of the fixed coalescing deadline and the harness's next
-allowed collection time; subsequent events merge into the pending state. Semantic overlays may
-publish before that collection. The floor is the store-protection guarantee and must not be a derived
-side effect of the coalescing window.
+allowed collection time. Subsequent events merge into the pending state. The worker uses monotonic
+time for both deadlines and wall time for published observations and file timestamps. The floor
+protects store reads independently of the coalescing window.
 
 The bounded coordinator exists regardless of whether selective collection proves worthwhile: it
 serializes events and scans, enforces floors, and keeps collection off request threads. The existing

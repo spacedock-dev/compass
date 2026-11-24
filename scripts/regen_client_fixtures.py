@@ -273,7 +273,7 @@ class Rig:
         **config_changes: Any,
     ) -> None:
         self.dir = scratch.subdir(name)
-        self.focus_now = NOW
+        self.focus_elapsed = 0.0
         self.now = NOW
         if blocked_state:
             # A regular file where the state directory belongs, so no store can be created or
@@ -365,7 +365,10 @@ class Rig:
 
     def _attach_focus(self) -> None:
         self.observation = observation_module.Observation(
-            self.application, clock=lambda: self.focus_now, diagnostic_sink=lambda _line: None
+            self.application,
+            clock=lambda: self.now,
+            monotonic=lambda: self.focus_elapsed,
+            diagnostic_sink=lambda _line: None,
         )
         server_pid = "84321"
         self.observation.submit(
@@ -2380,7 +2383,7 @@ def focus_scenarios(recorder: Recorder, scratch: Scratch) -> None:
             post("/api/focus", SESSION, **capability),
             "A second press inside the floor is 429 and raises nothing.",
         )
-        rig.focus_now += 60
+        rig.focus_elapsed += 60
         recorder.capture(
             rig,
             "focus-declined",

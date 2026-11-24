@@ -185,12 +185,15 @@ class Observation:
         application: Application,
         *,
         clock: Callable[[], float] = time.time,
+        monotonic: Callable[[], float] = time.monotonic,
         diagnostic_sink: Callable[[str], None] = print,
         load_parent_claims: bool = True,
     ) -> None:
         self.application = application
         self.config: RuntimeConfig = application.config
         self.clock = clock
+        # A clock correction must not lengthen collection or idle footer deadlines.
+        self.monotonic = monotonic
         self.diagnostic_sink = diagnostic_sink
         self._lock = threading.Lock()
         self._wake = threading.Condition(self._lock)
@@ -313,7 +316,7 @@ class Observation:
         # `usage_poll_floor_sec` beside `usage_fetch_inflight`. A raise is the
         # one thing Compass does that it cannot undo and that is visible outside
         # Compass, so a looped request must not be able to repeat it.
-        self._focus_last_at = 0.0
+        self._focus_last_at = -float("inf")
         self._focus_inflight = False
         # This run's focus consumer key. Its own secret rather than a derived
         # per-harness token: those are byte-identical to the ones
@@ -333,8 +336,8 @@ class Observation:
         self._pending: dict[SessionKey, tuple[float, int]] = {}
         self._dirty: dict[str, int] = {}
         self._collected: dict[str, int] = {}
-        self._last_collect_at = 0.0
-        self._last_reconcile_at = 0.0
+        self._last_collect_at = float("-inf")
+        self._last_reconcile_at = float("-inf")
         self._coalesce_until: float | None = None
         # Set by a needs-input overlay, cleared by the collection that carries it.
         # A permission alert is the one transition a person is actively waiting on,
@@ -392,8 +395,8 @@ class Observation:
         """
         ceiling = float(self.config.event_burst_max)
         refill = self.config.event_rate_per_sec
-        now = self.clock()
         with self._lock:
+            now = self.monotonic()
             tokens, last = self._budget.get(harness, (ceiling, now))
             tokens = min(ceiling, tokens + (now - last) * refill)
             if tokens < 1.0:
@@ -463,7 +466,7 @@ class Observation:
                 # Force the next pass to be a real collection rather than one the
                 # probe may skip: a rewritten transcript is not repaired by
                 # replaying overlays over a cached read.
-                self._last_reconcile_at = 0.0
+                self._last_reconcile_at = float("-inf")
                 self._probe_stamp = None
             # A `session_started` lifts the stored end whether or not memory
             # held one, and the difference is a restart: memory starts empty on
@@ -484,11 +487,10 @@ class Observation:
                 # the collection, because the floor is the store-protection
                 # guarantee and may not become a derived side effect.
                 self._urgent = True
-            deadline = now + self.config.event_coalesce_sec
             if self._coalesce_until is None:
                 # Fixed, not sliding. A sliding window never closes under a
                 # sustained burst, and the board would stop updating entirely.
-                self._coalesce_until = deadline
+                self._coalesce_until = self.monotonic() + self.config.event_coalesce_sec
             self._wake.notify_all()
         self._flush_end_ops()
         if probe_cwd is not None:
@@ -789,8 +791,8 @@ class Observation:
 
     def claim_focus(self) -> bool:
         """Take the one focus slot, or refuse. Release it with `release_focus`."""
-        now = self.clock()
         with self._lock:
+            now = self.monotonic()
             if self._focus_inflight or now - self._focus_last_at < self.config.focus_floor_sec:
                 self._bump("focus.rate")
                 return False
@@ -948,7 +950,7 @@ class Observation:
             # just stopped to ask a person something has been working, and the
             # pass that renders its card should be a real read of the stores
             # rather than one the probe is allowed to skip.
-            self._last_reconcile_at = 0.0
+            self._last_reconcile_at = float("-inf")
             self._wake.notify_all()
 
     def _bump(self, name: str) -> None:
@@ -1178,14 +1180,13 @@ class Observation:
 
     def _run(self) -> None:
         footer_period = self.config.stream_producer_interval_sec
-        # Wall-clock corrections must not postpone an idle lease check.
-        footer_due_at = time.monotonic() + footer_period
+        footer_due_at = self.monotonic() + footer_period
         while True:
             with self._wake:
                 if self._stop.is_set():
                     return
                 due, reason = self._due()
-                footer_wait = footer_due_at - time.monotonic()
+                footer_wait = footer_due_at - self.monotonic()
                 if not due and footer_wait > 0:
                     self._wake.wait(min(self._sleep_for(), footer_wait))
                     continue
@@ -1193,7 +1194,7 @@ class Observation:
                 self._collect(reason)
             else:
                 self._touch_footer()
-            footer_due_at = time.monotonic() + footer_period
+            footer_due_at = self.monotonic() + footer_period
 
     def _touch_footer(self) -> None:
         """Keep the status line's files fresh while nothing is collecting.
@@ -1215,7 +1216,7 @@ class Observation:
 
     def _sleep_for(self) -> float:
         """How long to wait for collection, under `_lock`."""
-        now = self.clock()
+        now = self.monotonic()
         # Stream registration does not notify this condition.
         period = self.config.stream_producer_interval_sec
         deadline = min((at for at, _ in self._collection_deadlines()), default=now + period)
@@ -1223,7 +1224,7 @@ class Observation:
 
     def _due(self) -> tuple[bool, str]:
         """Whether to collect now, and why. Called under `_lock`."""
-        now = self.clock()
+        now = self.monotonic()
         for at, reason in self._collection_deadlines():
             if now >= at:
                 return True, reason
@@ -1271,10 +1272,10 @@ class Observation:
             # that arrives *during* this collection still forces the next one:
             # this read may have started before its event was recorded.
             self._urgent = False
-        now = self.clock()
-        if reason == "tick" and not self._worth_collecting(now):
+        started = self.monotonic()
+        if reason == "tick" and not self._worth_collecting(started):
             with self._lock:
-                self._last_collect_at = now
+                self._last_collect_at = started
                 self._bump("skipped.probe")
             self._touch_footer()
             return
@@ -1291,13 +1292,13 @@ class Observation:
             return
         finally:
             with self._lock:
-                self._last_collect_at = self.clock()
+                self._last_collect_at = self.monotonic()
             self._touch_footer()
         reused = revision == self._last_revision
         self._last_revision = revision
         if reused:
-            # The floor is enforced twice, by two clocks: this coordinator's
-            # `_last_collect_at` and the application's own snapshot age. A fresh
+            # The floor is enforced from two different points: this coordinator's
+            # `_last_collect_at` and the application's own snapshot publication. A fresh
             # coordinator has never collected, so its floor is open while the
             # application's is not, and `collect_json` then returns the revision it
             # published *before* this event existed. Marking the generation done
@@ -1318,15 +1319,15 @@ class Observation:
             # overlays over a read that predates it.
             self._collected.update(observed)
 
-    def _worth_collecting(self, now: float) -> bool:
+    def _worth_collecting(self, elapsed_now: float) -> bool:
         """Whether a periodic tick has to read the stores.
 
         Only ever used to skip. The probe's false negative means a probe-negative
         answer is not proof that nothing changed, so the unconditional
         reconciliation below is what bounds it.
         """
-        if now - self._last_reconcile_at >= self.config.reconcile_interval_sec:
-            self._last_reconcile_at = now
+        if elapsed_now - self._last_reconcile_at >= self.config.reconcile_interval_sec:
+            self._last_reconcile_at = elapsed_now
             self._probe_stamp = runtime_probe.stamp(self.config)
             return True
         current = runtime_probe.stamp(self.config)

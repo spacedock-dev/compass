@@ -4680,14 +4680,16 @@ The file holds no title, path, prompt, session id or tool output.
 
 The dashboard writes only the page-default snapshot, only while it is serving, and never fails a
 request over it (`test_footer_lines`). A file is rewritten when its content changes and otherwise
-every 15 seconds, so its time says it was confirmed recently. Refreshes with no change also check lease
+every 15 seconds, so its time says it was confirmed recently. A refresh after a wall-clock setback
+restamps a future-dated file. Refreshes with no change also check lease
 endings and sample the shared permission store outside the writer lock. Updates sample that store too,
 so an older collection cannot supply a stale pause answer. Samples are ordered before store I/O.
 A late older read cannot replace a newer answer. Unknown clears an earlier assertion.
 The client prints `AI use paused` only for exact `true`, independently of the monitor, and
 keeps waiting and quota segments. Resume AI use clears the pause segment on the next refresh.
-The writer clears stored progress when the next snapshot withholds it or an idle refresh finds
-that the snapshot's progress proof has failed or expired. A session with a stored departure or a
+The writer withholds stored progress when the snapshot lacks a current proof or the session's
+transcript prefix cannot be confirmed unique. A later refresh can restore a level after validating
+both. A session with a stored departure or a
 standing monitor that leaves the board gets one final write, retried if it fails. The client shows an end note for five
 minutes after the recorded end, except for the reader's own Off. A dashboard that stops removes the
 files it wrote, including on `--stop`; a crash leaves them to the client's one-minute freshness

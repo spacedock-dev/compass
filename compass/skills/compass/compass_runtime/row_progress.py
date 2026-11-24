@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import contextlib
+import errno
+import fnmatch
 import hashlib
 import json
 import os
+import select
 import stat
+import sys
+import weakref
 from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from . import annotations as annotation_store
 from . import declared_sessions, levels, reading_evidence, semantic_history
+from . import io as runtime_io
 from .state import bounded_put
 
 if TYPE_CHECKING:
@@ -134,6 +141,210 @@ def current_transcript(state: RuntimeState, owner: tuple[str, str], path: str) -
     ):
         return None
     return transcript(path)
+
+
+_MISSING_DIRECTORY = {errno.ENOENT, errno.ENOTDIR, errno.ELOOP}
+# A vnode filter holds a descriptor per directory. Leave room for the
+# dashboard's clients and stores even under macOS's low soft descriptor limit.
+_MAX_WATCHED_DIRECTORIES = 128
+
+
+def _claude_matches(directory: str, sids: frozenset[str]) -> dict[str, str | None]:
+    matches: dict[str, str | None] = {}
+    try:
+        names = os.listdir(directory)
+    except OSError as exc:
+        # Match the collector's glob when a project or its symlink target is inaccessible.
+        if isinstance(exc, PermissionError) or exc.errno in _MISSING_DIRECTORY:
+            return matches
+        raise
+    # An archived name can collide without contributing a board row. Check the held
+    # prefixes before applying the glob or allocating a path for a match.
+    for length in {len(sid) for sid in sids}:
+        for name in names:
+            sid = name[:length]
+            if (
+                sid in sids
+                and len(sid) == length
+                and len(name) >= length + len(".jsonl")
+                and not name.startswith(".")
+                and fnmatch.fnmatch(name, "*.jsonl")
+            ):
+                matches[sid] = None if sid in matches else os.path.join(directory, name)
+    return matches
+
+
+class _Namespace(NamedTuple):
+    roots: list[tuple[str, int, int]]
+    projects: list[str]
+    linked_projects: list[str]
+
+
+class _NameWatch:
+    def __init__(self, queue: select.kqueue, resources: contextlib.ExitStack) -> None:
+        self._queue = queue
+        self.close = weakref.finalize(self, resources.close)
+
+    @classmethod
+    def start(cls, namespace: _Namespace) -> _NameWatch | None:
+        if sys.platform != "darwin":
+            return None
+        root_ids = {path: (device, inode) for path, device, inode in namespace.roots}
+        directories = [*root_ids, *namespace.projects]
+        if len(directories) > _MAX_WATCHED_DIRECTORIES:
+            return None
+        try:
+            with contextlib.ExitStack() as resources:
+                queue = resources.enter_context(contextlib.closing(select.kqueue()))
+                root_fds: dict[str, int] = {}
+                for path in directories:
+                    root_id = root_ids.get(path)
+                    parent = root_fds[os.path.dirname(path)] if root_id is None else None
+                    # Keep the checked directory descriptor for the vnode filter.
+                    fd = runtime_io._directory_fd(  # noqa: SLF001
+                        path if parent is None else os.path.basename(path),
+                        parent_fd=parent,
+                        follow_links=parent is None,
+                    )
+                    resources.callback(os.close, fd)
+                    if root_id is not None:
+                        info = os.fstat(fd)
+                        if (info.st_dev, info.st_ino) != root_id:
+                            return None
+                        # Watch children relative to the held root, even if the
+                        # configured root path itself is a relocated store link.
+                        root_fds[os.path.dirname(os.path.join(path, "."))] = fd
+                    queue.control(
+                        [
+                            select.kevent(
+                                fd,
+                                filter=select.KQ_FILTER_VNODE,
+                                flags=select.KQ_EV_ADD | select.KQ_EV_CLEAR,
+                                fflags=(
+                                    select.KQ_NOTE_WRITE
+                                    | select.KQ_NOTE_RENAME
+                                    | select.KQ_NOTE_DELETE
+                                    | select.KQ_NOTE_ATTRIB
+                                    | select.KQ_NOTE_REVOKE
+                                ),
+                            )
+                        ],
+                        0,
+                        0,
+                    )
+                return cls(queue, resources.pop_all())
+        except OSError:
+            return None
+
+    def unchanged(self) -> bool:
+        try:
+            return not self._queue.control(None, 1, 0)
+        except OSError:
+            return False
+
+
+class _WatchedNames(NamedTuple):
+    namespace: _Namespace
+    paths: dict[str, str]
+    matches: dict[str, str | None]
+    watch: _NameWatch
+
+
+def _project_matches(projects: list[str], sids: frozenset[str]) -> dict[str, str | None]:
+    unique: dict[str, str | None] = {}
+    for directory in projects:
+        for sid, path in _claude_matches(directory, sids).items():
+            unique[sid] = None if sid in unique else path
+    return unique
+
+
+def _confirmed_names(
+    projects: list[str],
+    paths: Mapping[str, str],
+    *,
+    watched: Mapping[str, str | None] | None = None,
+) -> set[str]:
+    remaining = frozenset(paths)
+    # A second pass catches collisions introduced in an earlier project while
+    # a later project was read, even when the directory stamp did not move.
+    for _ in range(1 if watched is not None and len(projects) <= 1 else 2):
+        unique = _project_matches(projects, remaining)
+        if watched is not None:
+            for sid, path in watched.items():
+                unique[sid] = None if sid in unique else path
+        remaining = frozenset(sid for sid in remaining if unique.get(sid) == paths[sid])
+        if not remaining:
+            break
+    return set(remaining)
+
+
+class ClaudePrefixes:
+    """Filename evidence for the footer's Claude rows, serialized by the footer writer."""
+
+    def __init__(self, config: RuntimeConfig) -> None:
+        self._roots = config.store_roots.get("claude.projects", ())
+        self._names: _WatchedNames | None = None
+
+    def _project_paths(self) -> _Namespace | None:
+        roots: list[tuple[str, int, int]] = []
+        projects: list[str] = []
+        linked_projects: list[str] = []
+        for root in self._roots:
+            try:
+                info = os.stat(root)
+            except OSError as exc:
+                if exc.errno in _MISSING_DIRECTORY:
+                    continue
+                raise
+            if not stat.S_ISDIR(info.st_mode):
+                continue
+            # A footer proof must not mutate the configured store on an idle tick.
+            if not runtime_io.admit_harness_root(root, tighten_permissions=False):
+                return None
+            roots.append((root, info.st_dev, info.st_ino))
+            with os.scandir(root) as entries:
+                for entry in entries:
+                    if entry.name.startswith("."):
+                        continue
+                    if entry.is_symlink():
+                        linked_projects.append(entry.path)
+                    elif entry.is_dir(follow_symlinks=False):
+                        projects.append(entry.path)
+        return _Namespace(roots, sorted(projects), sorted(linked_projects))
+
+    def unambiguous(self, paths: Mapping[str, str]) -> set[str]:
+        namespace = self._project_paths() if paths else None
+        cached = self._names
+        if cached is not None and (
+            namespace != cached.namespace or paths != cached.paths or not cached.watch.unchanged()
+        ):
+            cached.watch.close()
+            self._names = None
+            cached = None
+        if namespace is None:
+            return set()
+
+        if cached is None:
+            watch = _NameWatch.start(namespace)
+            if watch is None:
+                remaining = _confirmed_names(
+                    sorted(namespace.projects + namespace.linked_projects), paths
+                )
+                return remaining if remaining and self._project_paths() == namespace else set()
+            matches = _project_matches(namespace.projects, frozenset(paths))
+            cached = _WatchedNames(namespace, dict(paths), matches, watch)
+
+        # A linked project's target can move through an unwatched ancestor.
+        remaining = _confirmed_names(namespace.linked_projects, paths, watched=cached.matches)
+        starting_watch = self._names is None
+        if (starting_watch and self._project_paths() != namespace) or (
+            (starting_watch or namespace.linked_projects) and not cached.watch.unchanged()
+        ):
+            cached.watch.close()
+            self._names = None
+            return set()
+        self._names = cached
+        return remaining
 
 
 def annotation_stamp(config: RuntimeConfig) -> tuple[int, ...] | None:
@@ -260,6 +471,7 @@ def _proof(
 class Validation(NamedTuple):
     proofs_hold: Callable[[float, tuple[str, str] | None], bool]
     stores_hold: Callable[[], bool]
+    claude_paths: dict[str, str]
 
 
 def publish(
@@ -312,4 +524,9 @@ def publish(
         selected = proofs.values() if owner is None else (proofs.get(owner),)
         return all(proof is not None and proof.holds(config, state, now) for proof in selected)
 
-    return Validation(proofs_hold, stores_hold)
+    claude_paths = {
+        sid: proof.memo.transcript.path
+        for (harness, sid), proof in proofs.items()
+        if harness == "claude"
+    }
+    return Validation(proofs_hold, stores_hold, claude_paths)

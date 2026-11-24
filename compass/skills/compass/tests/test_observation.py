@@ -27,6 +27,7 @@ from compass_runtime import (
     http_api,
     lifecycle,
     observation,
+    probe,
     project_context,
     reading,
 )
@@ -105,12 +106,19 @@ class ObservationTestCase(unittest.TestCase):
     def clock(self) -> float:
         return self.now
 
-    def build(self, *, reuse: bool = False, **changes: Any) -> observation.Observation:
+    def build(
+        self,
+        *,
+        reuse: bool = False,
+        monotonic: Callable[[], float] | None = None,
+        **changes: Any,
+    ) -> observation.Observation:
         config = dataclasses.replace(self.config, **changes) if changes else self.config
         self.app = FakeApplication(config, reuse=reuse)
         return observation.Observation(
             self.app,  # type: ignore[arg-type]
             clock=self.clock,
+            monotonic=self.clock if monotonic is None else monotonic,
             diagnostic_sink=lambda _message: None,
         )
 
@@ -697,6 +705,13 @@ class PendingTest(ObservationTestCase):
 
 
 class DueTest(ObservationTestCase):
+    def test_a_first_hook_can_collect_before_the_monotonic_clock_reaches_the_floor(self) -> None:
+        elapsed = 0.0
+        coordinator = self.build(event_coalesce_sec=0.1, monotonic=lambda: elapsed)
+        coordinator.submit("claude", self.envelope(event="store_changed"))
+        elapsed = 0.1
+        self.assertEqual((True, "event"), coordinator._due())
+
     def test_the_floor_gates_a_dirty_harness(self) -> None:
         # The floor is the store-protection guarantee. A burst of events must not
         # be able to drive collections faster than the memo ever allowed.
@@ -913,6 +928,38 @@ class CollectTest(ObservationTestCase):
 
 
 class ProbeTest(ObservationTestCase):
+    def test_a_wall_clock_setback_does_not_delay_probe_reconciliation(self) -> None:
+        elapsed = 0.0
+        coordinator = self.build(monotonic=lambda: elapsed)
+        with mock.patch.object(probe, "stamp", return_value=()):
+            coordinator._collect("tick")
+            self.assertEqual(1, self.app.collected)
+            elapsed = self.config.reconcile_interval_sec - 1
+            self.now = NOW + elapsed - 12
+            coordinator._collect("tick")
+            self.assertEqual(1, self.app.collected)
+            elapsed += 1
+            self.now += 1
+            coordinator._collect("tick")
+        self.assertEqual(2, self.app.collected)
+
+    def test_a_probe_skipped_tick_floors_the_next_hook_by_elapsed_time(self) -> None:
+        elapsed = 0.0
+        coordinator = self.build(event_coalesce_sec=0.1, monotonic=lambda: elapsed)
+        with mock.patch.object(probe, "stamp", return_value=()):
+            coordinator._collect("tick")
+            elapsed = 5
+            self.now += 5 - 12
+            coordinator._collect("tick")
+        self.assertEqual(1, coordinator.counters["skipped.probe"])
+        elapsed = 6
+        self.now += 1
+        coordinator.submit("claude", self.envelope(event="store_changed"))
+        elapsed = 7
+        self.assertEqual((False, ""), coordinator._due())
+        elapsed = 7.5
+        self.assertEqual((True, "event"), coordinator._due())
+
     def test_the_first_tick_reconciles_unconditionally(self) -> None:
         coordinator = self.build()
         self.assertTrue(coordinator._worth_collecting(self.now))
@@ -1062,7 +1109,6 @@ class WorkerLifecycleTest(ObservationTestCase):
             self.assertLess(self.now - started, 5, "the worker missed the collection floor")
 
         with (
-            mock.patch.object(time, "monotonic", side_effect=self.clock),
             mock.patch.object(coordinator._wake, "wait", side_effect=wait),
             mock.patch.object(self.app, "collect_json", side_effect=finish),
         ):
@@ -1073,11 +1119,117 @@ class WorkerLifecycleTest(ObservationTestCase):
         self.assertLessEqual(touches, 3)
         self.assertLessEqual(waits, 3)
 
+    def test_a_backward_wall_step_does_not_extend_the_collection_floor(self) -> None:
+        self._collect_after_wall_step(coalesce=0.1, expected=2.5)
+
+    def test_a_backward_wall_step_does_not_extend_the_coalescing_window(self) -> None:
+        self._collect_after_wall_step(coalesce=3.0, expected=4.0)
+
+    def test_a_wall_clock_setback_does_not_let_the_worker_reuse_stale_board_bytes(self) -> None:
+        for setback, hook_at, expected in ((2.0, 1.0, 2.5), (12.0, 12.5, 12.6)):
+            with self.subTest(setback=setback, hook_at=hook_at):
+                self._collect_real_snapshot_after_setback(setback, hook_at, expected)
+
+    def _collect_real_snapshot_after_setback(
+        self, setback: float, hook_at: float, expected: float
+    ) -> None:
+        elapsed = 0.0
+        self.now = NOW
+
+        def monotonic() -> float:
+            return elapsed
+
+        app = cli.build_application(
+            *support.make_runtime(
+                state_home=self.config.state_home,
+                state_dir=self.config.state_dir,
+                event_coalesce_sec=0.1,
+            ),
+            clock=self.clock,
+        )
+        app.monotonic = monotonic
+        coordinator = observation.Observation(app, clock=self.clock, monotonic=monotonic)
+        app.overlays = coordinator
+        coordinator._collect("event")
+        key = (app.config.window_hours, False)
+        before = app.snapshot.current(key)
+        assert before is not None
+        collect = app.collect_json
+
+        def finish(*, show_all: bool) -> tuple[tuple[float, int], bytes]:
+            answer = collect(show_all=show_all)
+            coordinator.stop()
+            return answer
+
+        def wait(timeout: float) -> None:
+            nonlocal elapsed
+            target = elapsed + timeout
+            if elapsed < hook_at <= target:
+                elapsed = hook_at
+                self.now = NOW + elapsed - setback
+                coordinator._wake.release()
+                try:
+                    coordinator.submit("claude", self.envelope(event="store_changed"))
+                finally:
+                    coordinator._wake.acquire()
+            else:
+                elapsed = target
+                self.now = NOW + elapsed - setback
+            self.assertLess(elapsed, 20.0, "the worker did not collect after the hook")
+
+        with (
+            mock.patch.object(coordinator._wake, "wait", side_effect=wait),
+            mock.patch.object(app, "collect_json", side_effect=finish),
+        ):
+            coordinator._run()
+        self.assertAlmostEqual(expected, elapsed)
+        after = app.snapshot.current(key)
+        assert after is not None
+        self.assertGreater(after[0][1], before[0][1])
+        self.assertEqual(0, coordinator.counters.get("reused.floor", 0))
+
+    def _collect_after_wall_step(self, *, coalesce: float, expected: float) -> None:
+        elapsed = 0.0
+        collected: list[float] = []
+        coordinator = self.build(event_coalesce_sec=coalesce, monotonic=lambda: elapsed)
+        coordinator._collect("event")
+        collect = self.app.collect_json
+
+        def finish(*, show_all: bool) -> tuple[tuple[float, int], bytes]:
+            collected.append(elapsed)
+            coordinator.stop()
+            return collect(show_all=show_all)
+
+        def wait(timeout: float) -> None:
+            nonlocal elapsed
+            if elapsed == 0:
+                elapsed = 1.0
+                self.now += elapsed
+                coordinator._wake.release()
+                try:
+                    coordinator.submit("claude", self.envelope(event="store_changed"))
+                finally:
+                    coordinator._wake.acquire()
+                self.now -= 12.0
+            else:
+                elapsed += timeout
+                self.now += timeout
+            self.assertLess(elapsed, 20.0, "the worker did not collect after the clock step")
+
+        with (
+            mock.patch.object(coordinator._wake, "wait", side_effect=wait),
+            mock.patch.object(self.app, "collect_json", side_effect=finish),
+        ):
+            coordinator._run()
+
+        (at,) = collected
+        self.assertAlmostEqual(expected, at, delta=0.01)
+
     def test_the_worker_wakes_on_an_event_rather_than_waiting_out_its_interval(self) -> None:
         # The producer interval is raised to an hour, so only the wake can collect
         # inside the wait below. At its default of five seconds the wait had to
         # stay under five, and a loaded runner missed it.
-        coordinator = self.build(stream_producer_interval_sec=3600.0)
+        coordinator = self.build(stream_producer_interval_sec=3600.0, monotonic=time.monotonic)
         collected = threading.Event()
         real = self.app.collect_json
 
@@ -1090,7 +1242,7 @@ class WorkerLifecycleTest(ObservationTestCase):
         # A real clock here: the worker actually sleeps, so a frozen clock would
         # leave the coalescing deadline permanently in the future.
         coordinator.clock = time.time
-        coordinator._last_reconcile_at = coordinator.clock()
+        coordinator._last_reconcile_at = coordinator.monotonic()
         coordinator.start()
         try:
             coordinator.submit("claude", self.envelope())
@@ -1163,7 +1315,8 @@ class AskWakeTest(ObservationTestCase):
         coordinator._last_collect_at = self.now - 3600
         coordinator._last_reconcile_at = self.now
         coordinator.note_ask()
-        self.assertEqual(0.0, coordinator._last_reconcile_at)
+        with mock.patch.object(probe, "changed", return_value=False):
+            self.assertTrue(coordinator._worth_collecting(self.now))
         self.assertEqual((True, "event"), coordinator._due())
 
     def test_note_ask_wakes_the_worker_rather_than_waiting_out_its_interval(self) -> None:
@@ -1171,7 +1324,7 @@ class AskWakeTest(ObservationTestCase):
         # is twenty, which is what a registered ask used to wait on: measured at
         # 18.2 to 22.3 seconds from register to a published revision. The interval
         # is raised to an hour so a regression cannot pass on the periodic tick.
-        coordinator = self.build(stream_producer_interval_sec=3600.0)
+        coordinator = self.build(stream_producer_interval_sec=3600.0, monotonic=time.monotonic)
         collected = threading.Event()
         real = self.app.collect_json
 
@@ -1182,7 +1335,7 @@ class AskWakeTest(ObservationTestCase):
 
         self.app.collect_json = signalling  # type: ignore[method-assign]
         coordinator.clock = time.time
-        coordinator._last_reconcile_at = coordinator.clock()
+        coordinator._last_reconcile_at = coordinator.monotonic()
         ask = self.open_ask(created=time.time())
         coordinator.start()
         try:

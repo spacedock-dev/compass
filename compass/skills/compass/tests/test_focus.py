@@ -833,12 +833,24 @@ class CoordinatorTargetTest(unittest.TestCase):
 class CoordinatorRaiseTest(CoordinatorTargetTest):
     """The floor, the in-flight gate, and what the raise leaves on disk."""
 
+    def test_a_backward_wall_step_does_not_stop_focus_admission(self) -> None:
+        coordinator = self.build(focus_floor_sec=1.0)
+        elapsed = 0.0
+        coordinator.monotonic = lambda: elapsed
+        self.assertTrue(coordinator.claim_focus())
+        coordinator.release_focus()
+        self.now -= 12
+        elapsed += 2
+        self.assertTrue(coordinator.claim_focus())
+
     def test_a_repeated_request_inside_the_floor_is_refused(self) -> None:
         coordinator = self.build(focus_floor_sec=60.0)
+        elapsed = 0.0
+        coordinator.monotonic = lambda: elapsed
         self.assertTrue(coordinator.claim_focus())
         coordinator.release_focus()
         self.assertFalse(coordinator.claim_focus())
-        self.now += 61.0
+        elapsed += 61.0
         self.assertTrue(coordinator.claim_focus())
 
     def test_a_second_request_while_one_is_in_flight_is_refused(self) -> None:

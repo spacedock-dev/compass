@@ -203,6 +203,7 @@ class FooterLane(Protocol):
         *,
         validate_progress: Callable[[float, tuple[str, str]], bool] | None = None,
         validate_stores: Callable[[], bool] | None = None,
+        validate_prefixes: Callable[[], set[str]] | None = None,
     ) -> None: ...
 
     def touch(self, now: float) -> None: ...
@@ -813,6 +814,7 @@ class Application:
         popup_notifier: Callable[[str, str], str | None],
         diagnostic_sink: Callable[[str], None],
         clock: Callable[[], float] = time.time,
+        monotonic: Callable[[], float] = time.monotonic,
         overlays: OverlaySource | None = None,
         frontend_page_bytes: bytes | None = None,
     ) -> None:
@@ -829,6 +831,7 @@ class Application:
         self.popup_notifier = popup_notifier
         self.diagnostic_sink = diagnostic_sink
         self.clock = clock
+        self.monotonic = monotonic
         # None until the coordinator is attached, and None forever under
         # --no-events. A collection with no overlay source is exactly the
         # scan-only behaviour that shipped before events existed, which is what
@@ -852,6 +855,7 @@ class Application:
         # without writing a file into the reader's home. Written from `collect_json`, the one
         # place the page-default snapshot is made.
         self.footer_lines: FooterLane | None = None
+        self._footer_prefixes = row_progress.ClaudePrefixes(config)
         self.warm_row_progress: Callable[[Collection], object] | None = None
         # Created on the first Live monitor start, so a board nobody monitors holds no table and
         # runs no thread. Never persisted: a restart starts with no lease.
@@ -1805,6 +1809,7 @@ class Application:
                 key,
                 body,
                 now=self.clock(),
+                monotonic_now=self.monotonic(),
                 generation=generation,
                 validate=(
                     lambda: validate.proofs_hold(self.clock(), None) and validate.stores_hold()
@@ -1845,10 +1850,20 @@ class Application:
                 self.clock(),
                 validate_progress=validate_progress.proofs_hold if validate_progress else None,
                 validate_stores=validate_progress.stores_hold if validate_progress else None,
+                validate_prefixes=(
+                    lambda: self._footer_prefixes.unambiguous(validate_progress.claude_paths)
+                )
+                if validate_progress
+                else None,
             )
 
     def _fresh_snapshot(
         self, key: runtime_snapshot.SnapshotKey
     ) -> tuple[runtime_snapshot.Revision, bytes] | None:
         """The published entry for `key` if it is inside the floor, else None."""
-        return self.snapshot.fresh(key, now=self.clock(), max_age=self.config.collect_memo_sec)
+        return self.snapshot.fresh(
+            key,
+            now=self.clock(),
+            max_age=self.config.collect_memo_sec,
+            monotonic_now=self.monotonic(),
+        )
