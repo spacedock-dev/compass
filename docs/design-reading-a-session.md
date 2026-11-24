@@ -8686,11 +8686,15 @@ the same entry write. It has five parts:
 
 A Not accurate mark is not a part. It is on the same entry already and is read live.
 
-A prune keeps a bucket's lineage and raises its generation. A deletion, an emptied or unreadable
-file, an eviction past the project cap or a rewrite by an older build starts a new lineage, and a
-restored older copy carries a lower generation. That split is what tells a legitimate 24-hour prune
-apart from a loss. The deferred read-time revalidation, which looked for saved event ids, could not
-make that distinction and was rejected for it.
+A prune keeps a bucket's lineage and raises its generation. That covers the 24-hour age prune, the
+512-event count prune, and the size prune that keeps the whole file under the store's own 1 MiB read
+cap by dropping the oldest events first. A deletion, an emptied or unreadable file, a file over that
+cap, an eviction past the project cap or a rewrite by an older build starts a new lineage. That split
+is what tells a legitimate prune apart from a loss. The deferred read-time revalidation, which looked
+for saved event ids, could not make that distinction and was rejected for it. The history store reads
+up to 1 MiB, not the 64 KiB cap its other state files share: one busy project's day of directions
+filed 123,903 bytes after a single check, and a file the reader refused would have withheld every
+stored level on that board.
 
 The gate runs once, on the focused route that serves the session page, and the page, the served
 Drift view and the terminal all read its row. A level is drawn only when the record is present and
@@ -8713,9 +8717,27 @@ store cannot be read, and a stored reading keeps the level slot even when it sup
 terminal's "Earlier level" line is gone with that: an out-of-date reading prints Out of date and no
 level, as the page draws none.
 
-One gap is accepted and named. A transcript rewritten to exactly its size at the check, with history
-intact and the later work recorded only as tool calls, leaves no trace the record compares. Closing
-it would need a durable transcript high-water mark in the history bucket.
+Four gaps are accepted and named. Each is a coordinator decision of 2026-11-24 that the owner may
+overrule.
+
+- A transcript rewritten to at least its size at the check, with history intact and the later work
+  recorded only as tool calls, leaves no trace the record compares: the size check passes any
+  transcript at or above the recorded size. Closing it would need a durable transcript high-water
+  mark in the history bucket.
+- A restored older copy of the history file is caught only on the polls before its generation climbs
+  back. A restored copy keeps its lineage and carries a lower generation, so the first poll after the
+  restore withholds the level. Every focused poll raises the generation, though, and once it reaches
+  the recorded one the level shows again. Reaching a missing direction that way takes a partial
+  restore of the history file together with a transcript rewrite. Closing it would need a
+  high-water mark kept outside the history file.
+- A project that changes key and changes back is read against its first key's bucket. A check
+  recorded under key A withholds while the project reads as key B. If the project returns to key A
+  after later work that only key B's bucket saw, and the transcript is back at its check-time size,
+  the level shows again.
+- Two dashboards that share one home can lose a history write to each other. The history store's
+  lock is per process, so one dashboard's write can replace the other's without breaking the lineage,
+  and the record cannot see events dropped that way. The annotation store holds an OS file lock for
+  this reason; the history store does not.
 
 ### Amended 2026-10-19 (owner): each departure is a card
 

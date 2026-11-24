@@ -5631,10 +5631,16 @@ unnecessarily. If replacement fails, the read still publishes redacted values, l
 without their contents, and retries the repair on the next load. Original bytes can remain
 until the filesystem permits replacement; this does not erase filesystem snapshots or backups.
 
+The store is read to its own cap of 1 MiB, not the 64 KiB cap the other state files share, and a
+larger file reads as empty. Every write keeps the file under that cap by dropping the oldest events
+first, across all projects, and then whole buckets by least-recent activity, so only a file another
+writer produced can be refused.
+
 Each project bucket also holds a `lineage`, 128 random bits minted when the bucket is first written,
-and a `generation` that every later write of the bucket raises. A prune or the joining of a display
-label keeps the lineage; a deleted, emptied, unreadable or oversized file, an eviction past the
-project cap, or a bucket an older build rewrote without these fields starts a new one. The
+and a `generation` that every later write of the bucket raises. A prune (by age, by count or by the
+size cap) or the joining of a display label keeps the lineage; a deleted, emptied, unreadable or
+oversized file, an eviction past the project cap, or a bucket an older build rewrote without these
+fields starts a new one. The
 redaction rewrite above keeps both unchanged and never mints a lineage. Neither field holds text.
 The focused project context publishes the bucket's current `{key, lineage, generation}` as
 `semantic.history.mark`, which a stored check's record is compared against.

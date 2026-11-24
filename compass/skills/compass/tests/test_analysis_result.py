@@ -658,7 +658,8 @@ class StoredLevelNeedsCurrentEvidenceTest(_Result):
             path.write_text("{", encoding="utf-8")
 
         def oversize(path: Path) -> None:
-            path.write_bytes(b" " * (self.config.state_read_cap_bytes + 1))
+            # The history itself, intact, and only too big to read.
+            path.write_bytes(path.read_bytes() + b" " * self.config.semantic_history_read_cap_bytes)
 
         for name, damage in (
             ("deleted", unlink),
@@ -1020,9 +1021,36 @@ class StoredLevelNeedsCurrentEvidenceTest(_Result):
             self.get(port, FOCUSED)
         self.record(self.departure())
         self.history_file().write_bytes(copy)
-        for poll, seen in self.each_poll():
-            with self.subTest(poll=poll):
-                self.assert_withheld(seen, reading_evidence.PART_HISTORY)
+        # Only the first poll after the restore is held: every focused poll raises the restored
+        # copy's generation, and once it reaches the recorded one the level shows again. That
+        # catch-up is an accepted gap, named in the design record's amendment of 2026-11-24.
+        with self.serving(self.cold()) as port:
+            self.assert_withheld(self.seen(port), reading_evidence.PART_HISTORY)
+
+    def test_a_busy_project_still_shows_its_level(self) -> None:
+        # A day of directions and writes files far more history than the old 64 KiB state cap held.
+        for k in range(150):
+            self.session.prompt(f"Please also tidy module number {k} " + "and its helpers " * 12)
+            self.session.write(self.session.cwd + f"/src/m{k}.py")
+        self.save_goal(lines=())
+        self.record(self.departure())
+        self.assertGreater(self.history_file().stat().st_size, 65_536)
+        with self.serving(self.cold()) as port:
+            first = self.seen(port)
+            self.warm_after()
+            second = self.seen(port)
+        again = self.departure()
+        again["read_at"] += 100
+        self.record(again)
+        with self.serving(self.cold()) as port:
+            third = self.seen(port)
+        for name, seen in (("cold", first), ("warm", second), ("checked again", third)):
+            with self.subTest(poll=name):
+                self.assertEqual(levels.MEDIUM, seen["shown"], seen)
+                self.assertIsNone(seen["part"], seen)
+        self.assertLessEqual(
+            self.history_file().stat().st_size, self.config.semantic_history_read_cap_bytes
+        )
 
     def test_a_label_two_projects_share_still_reads_this_projects_history(self) -> None:
         self.save_goal(lines=())

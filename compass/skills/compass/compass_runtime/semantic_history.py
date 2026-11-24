@@ -146,8 +146,8 @@ def _read(config: RuntimeConfig) -> dict[str, Any]:
         with os.fdopen(
             runtime_io.open_regular(store_path(config), root=str(config.state_home)), "rb"
         ) as handle:
-            raw = handle.read(config.state_read_cap_bytes + 1)
-        if len(raw) > config.state_read_cap_bytes:
+            raw = handle.read(config.semantic_history_read_cap_bytes + 1)
+        if len(raw) > config.semantic_history_read_cap_bytes:
             return {"v": SCHEMA_VERSION, "projects": {}}
         value = json.loads(raw)
     except (OSError, ValueError, RecursionError):
@@ -213,7 +213,81 @@ def reconcile_project(
                 "source_scans": {},
                 **_next_lineage(prior),
             }
+            _fit(payload, config.semantic_history_read_cap_bytes)
             _write(config, payload)
+
+
+def _fit(payload: dict[str, Any], cap: int) -> None:
+    """Trim a payload in place until it serializes within `cap` bytes, as `_write` writes it.
+
+    The globally oldest events go first, then whole buckets by least-recent activity. Dropping old
+    events is a prune: the bucket keeps its lineage, and a backfill scan that covered the bucket
+    before keeps covering it, so the next read does not re-earn what the trim dropped. A file the
+    writer could not bring under the cap is written anyway and read back as lost, which is what it
+    then is.
+    """
+
+    def size() -> int:
+        return len(json.dumps(payload, separators=(",", ":")))
+
+    if size() <= cap:
+        return
+    # Trimmed to a little under the cap: the per-event estimate below can miss by a byte at the end
+    # of a list, and falling one byte over would evict a whole bucket.
+    over = size() - (cap - 4096)
+    projects = payload["projects"]
+    before = {
+        key: list(bucket.get("events") or [])
+        for key, bucket in projects.items()
+        if isinstance(bucket, dict) and isinstance(bucket.get("events"), list)
+    }
+    ranked = sorted(
+        (
+            (float(event.get("at") or 0) if isinstance(event, dict) else 0.0, key, index)
+            for key, events in before.items()
+            for index, event in enumerate(events)
+        ),
+    )
+    dropped: dict[str, set[int]] = {}
+    for _at, key, index in ranked:
+        if over <= 0:
+            break
+        dropped.setdefault(key, set()).add(index)
+        over -= len(json.dumps(before[key][index], separators=(",", ":"))) + 1
+    for key, indexes in dropped.items():
+        _trimmed(projects[key], before[key], indexes)
+    while size() > cap and projects:
+        stalest = min(
+            projects,
+            key=lambda key: max(
+                (float(row.get("at") or 0) for row in projects[key].get("events", [])),
+                default=0,
+            ),
+        )
+        projects.pop(stalest)
+
+
+def _trimmed(bucket: dict[str, Any], events: list[Any], drop: set[int]) -> None:
+    """One bucket without the events `_fit` dropped, its cursors and covered scans to match."""
+    kept = [event for index, event in enumerate(events) if index not in drop]
+    scans = bucket.get("source_scans")
+    if isinstance(scans, dict):
+        bucket["source_scans"] = {
+            source: (
+                {**scan, "coverage": _coverage(kept, source)}
+                if isinstance(scan, dict) and scan.get("coverage") == _coverage(events, source)
+                else scan
+            )
+            for source, scan in scans.items()
+        }
+    cursors: dict[str, dict[str, Any]] = {}
+    for event in kept:
+        source = str(event.get("source_identity") or "source unavailable")
+        cursor = cursors.get(source)
+        if cursor is None or float(event.get("at") or 0) > float(cursor.get("at") or 0):
+            cursors[source] = {"at": event.get("at"), "event_id": event.get("event_id")}
+    bucket["events"] = kept
+    bucket["cursors"] = cursors
 
 
 def _write(config: RuntimeConfig, payload: dict[str, Any]) -> bool:
@@ -789,9 +863,13 @@ def update(
                 reverse=True,
             )[:MAX_PROJECTS]
             payload["projects"] = {key: projects[key] for key in ranked}
+        _fit(payload, config.semantic_history_read_cap_bytes)
         persisted = _write(config, payload)
         # What is on disk now: none when the write failed or the cap evicted this very bucket.
         mark = mark_of(payload, project) if persisted else None
+        kept = payload["projects"].get(project)
+        if isinstance(kept, dict):
+            merged, cursors = kept["events"], kept["cursors"]
     return {
         "events": merged,
         "cursors": cursors,
