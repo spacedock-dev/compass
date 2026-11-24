@@ -6307,6 +6307,11 @@ job that writes the Homebrew formula fetches that file over HTTPS only and uses 
 SHA-256 is the one the uploading job reported, so the formula carries the checksums this run
 uploaded and not whatever was served under that name.
 
+The resolve job uses its read-only token to check previously published assets. It streams the
+checksum file over HTTPS after checking the API URL and asset ID against the release metadata.
+The bearer header reaches curl through stdin. Curl ignores local configuration and follows only
+HTTPS redirects, dropping authorization when the origin changes.
+
 The marketplace and Homebrew publish steps use their read-only job tokens to look up GitHub's
 SSH host keys at `https://api.github.com/meta` before cloning. The bearer header reaches curl
 through stdin with shell tracing disabled. This lookup requires HTTPS and TLS 1.2 or newer, ignores

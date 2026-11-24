@@ -915,17 +915,19 @@ The archives are what Spacedock's installer reads. Each unpacks to one `compass/
 The Git transition decisions live in `scripts/release_transition.py` and are tested against temporary repositories with a bare origin (`scripts/tests/test_release_transition.py`, `scripts/tests/test_verify_release_archive.py`). The job boundaries are pinned by `compass/skills/compass/tests/test_release_workflow.py`. The React bundle is version-independent, so a bump must leave it untouched; a changed bundle byte after verification stops the release before `stable` moves.
 
 The final publish step queries GitHub by tag through GraphQL so it can see drafts. It creates a
-release only after a successful response confirms absence. A failed or unrecognized lookup stops
-the job before it calls `gh release create`.
+release only when the query succeeds and a single error-free response explicitly reports no
+release for that tag. A failed or ambiguous lookup stops the job before it calls
+`gh release create`.
 
 The tag move starts a second run. On its first attempt, read-only `resolve` returns `complete` when
 the tag is on its own validated bot release commit and GitHub reports a published, non-draft,
 non-prerelease release with one uploaded, nonempty asset for each expected filename. It compares
 the four LF-terminated lines in `checksums.txt` with GitHub's archive digests. The length of those
 four lines caps both the advertised asset size and the streamed body of a successful HTTP 200
-download. Missing assets or digests,
-oversized manifests and mismatched checksums permit a resume. Malformed asset records or failed
-GitHub reads fail the job.
+download. Resolve reads the release metadata with `gh` and streams the checksum bytes with
+`curl` because `gh` can buffer a JSON response until the download finishes. Missing assets or
+digests, oversized manifests and mismatched checksums permit a resume. Malformed asset records
+or failed GitHub reads fail the job.
 
 If the workflow stopped between moving the tag and attaching the new archives, an older,
 internally consistent set of assets can satisfy the completion check. GitHub's release metadata

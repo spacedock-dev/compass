@@ -9,6 +9,7 @@ Usage (each subcommand is one workflow step; see .github/workflows/release.yml):
     python3 scripts/release_transition.py assert-checkout --mode fresh --target <sha> \
         --verified <sha> --tag v0.2.0
     python3 scripts/release_transition.py latest --tag v0.2.0
+    gh api graphql ... | python3 scripts/release_transition.py publish-state
     python3 scripts/release_transition.py bump --tag v0.2.0
     python3 scripts/release_transition.py commit-bump --tag v0.2.0
     python3 scripts/release_transition.py final --mode fresh --target <sha>
@@ -35,7 +36,9 @@ target and verifies it.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -287,6 +290,31 @@ def _publication_read(repo: Path, operation: str, *args: str) -> subprocess.Comp
         raise ReleaseLookupError(operation) from exc
 
 
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value = dict(pairs)
+    if len(value) != len(pairs):
+        raise ValueError("duplicate JSON member")
+    return value
+
+
+def _publish_state(response: bytes) -> str:
+    # gh can exit zero for a partial GraphQL reply. Parse the whole envelope
+    # so repeated keys or a trailing document cannot masquerade as absence.
+    try:
+        payload = json.loads(response.decode("utf-8"), object_pairs_hook=_unique_json_object)
+        if not isinstance(payload, dict) or "errors" in payload:
+            return "invalid"
+        release = payload["data"]["repository"]["release"]
+        if release is None:
+            return "missing"
+        draft = release["isDraft"]
+    except (KeyError, TypeError, ValueError):
+        return "invalid"
+    if type(draft) is bool:
+        return "true" if draft else "false"
+    return "invalid"
+
+
 def _release_metadata(repo: Path, tag: str) -> dict[str, Any] | None:
     operation = f"could not read published assets for {tag}"
     result = _publication_read(
@@ -331,6 +359,12 @@ def _uploaded_cli_assets(
             message = f"could not read published assets for {tag}: unexpected GitHub asset response"
             raise ReleaseLookupError(message)
         name = asset["name"]
+        if name == "checksums.txt":
+            asset_id = asset.get("id")
+            if type(asset_id) is not int or asset_id <= 0:
+                raise ReleaseLookupError(
+                    f"could not download published checksums for {tag}: invalid GitHub asset ID"
+                )
         if name not in expected:
             continue
         if name in uploaded or asset["state"] != "uploaded" or asset["size"] <= 0:
@@ -341,42 +375,105 @@ def _uploaded_cli_assets(
 
 
 def _require_checksum_response(stream: IO[bytes], status_line: bytes, operation: str) -> None:
-    status = re.fullmatch(rb"HTTP/\d+(?:\.\d+)? (\d{3})(?: [^\r\n]*)?\r?\n", status_line)
-    if status and status[1] != b"200":
-        raise ReleaseLookupError(f"{operation}: HTTP {status[1].decode('ascii')}")
-    remaining = CHECKSUM_HEADER_LIMIT - len(status_line)
-    if status:
+    remaining = CHECKSUM_HEADER_LIMIT
+    # curl includes headers for redirects as well as the final response. A redirect
+    # without Location can have a body, so its next line cannot stand in for a status.
+    while status_line:
+        remaining -= len(status_line)
+        status = re.fullmatch(rb"HTTP/\d+(?:\.\d+)? (\d{3})(?: [^\r\n]*)?\r?\n", status_line)
+        if not status:
+            break
+        code = status[1]
+        redirect = code in {b"301", b"302", b"303", b"307", b"308"}
+        if not redirect and code not in {b"200", b"100", b"103"}:
+            raise ReleaseLookupError(f"{operation}: HTTP {code.decode('ascii')}")
+        location = False
         while line := stream.readline(remaining):
-            if line in {b"\r\n", b"\n"}:
-                return
             remaining -= len(line)
+            if line in {b"\r\n", b"\n"}:
+                break
+            name, _, value = line.partition(b":")
+            location |= name.lower() == b"location" and bool(value.strip())
+        else:
+            break
+        if code == b"200":
+            return
+        if redirect and not location:
+            raise ReleaseLookupError(f"{operation}: HTTP {code.decode('ascii')} without Location")
+        status_line = stream.readline(remaining)
     raise ReleaseLookupError(f"{operation}: invalid or oversized GitHub response headers")
 
 
-def _download_cli_checksums(repo: Path, tag: str, asset_id: int, max_size: int) -> bytes | None:
+def _checksum_request_auth(repo: Path, operation: str) -> tuple[bytes, dict[str, str]]:
+    env = os.environ.copy()
+    gh_token = env.pop("GH_TOKEN", "")
+    github_token = env.pop("GITHUB_TOKEN", "")
+    token = gh_token or github_token
+    if not token:
+        auth = run(["gh", "auth", "token"], repo)
+        if auth.returncode == 0:
+            token = auth.stdout.strip()
+    # curl reads one header per line from stdin. Keep the token out of argv and
+    # curl's environment. curl drops Authorization on redirects to another origin.
+    if token and not re.fullmatch(r"[a-zA-Z0-9._~+/=-]+", token):
+        raise ReleaseLookupError(f"{operation}: invalid GitHub token format")
+    return (f"Authorization: Bearer {token}\n".encode("ascii") if token else b""), env
+
+
+def _download_cli_checksums(
+    repo: Path, tag: str, asset: dict[str, Any], max_size: int
+) -> bytes | None:
     operation = f"could not download published checksums for {tag}"
-    endpoint = f"repos/{{owner}}/{{repo}}/releases/assets/{asset_id}"
-    # gh buffers textual bodies for terminal screening unless raw output is requested.
-    # Keep that output in a private pipe for the byte parser.
+    api = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+    url = asset.get("url")
+    asset_path = rf"/repos/[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+/releases/assets/{asset['id']}"
+    if not isinstance(url, str) or not re.fullmatch(re.escape(api) + asset_path, url):
+        raise ReleaseLookupError(f"{operation}: invalid GitHub asset URL")
+    # Even with escape sequence filtering disabled, gh can buffer JSON until EOF.
     argv = [
-        "gh",
-        "api",
+        "curl",
+        "--disable",
         "--include",
-        "--allow-escape-sequences",
-        "-H",
+        "--no-buffer",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--max-redirs",
+        "5",
+        "--suppress-connect-headers",
+        "--proto",
+        "=https",
+        "--proto-redir",
+        "=https",
+        "--tlsv1.2",
+        "--header",
+        "@-",
+        "--header",
         "Accept: application/octet-stream",
-        endpoint,
+        "--url",
+        url,
     ]
     try:
+        auth_header, env = _checksum_request_auth(repo, operation)
         # An unbuffered pipe lets us stop reading at the first byte beyond the limit.
         with (
             tempfile.TemporaryFile() as errors,
-            subprocess.Popen(  # noqa: S603 -- arguments are fixed apart from the validated ID
-                argv, cwd=repo, stdout=subprocess.PIPE, stderr=errors, bufsize=0, text=False
+            subprocess.Popen(  # noqa: S603 -- fixed options and a validated GitHub API URL
+                argv,
+                cwd=repo,
+                env=env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=errors,
+                bufsize=0,
+                text=False,
             ) as process,
         ):
+            assert process.stdin is not None  # noqa: S101 -- PIPE guarantees a stdin stream
             assert process.stdout is not None  # noqa: S101 -- PIPE guarantees a stdout stream
             try:
+                with process.stdin, contextlib.suppress(BrokenPipeError):
+                    process.stdin.write(auth_header)
                 status_line = process.stdout.readline(CHECKSUM_HEADER_LIMIT)
                 if status_line:
                     _require_checksum_response(process.stdout, status_line, operation)
@@ -389,7 +486,7 @@ def _download_cli_checksums(repo: Path, tag: str, asset_id: int, max_size: int) 
                     errors.seek(0)
                     detail = (
                         errors.read(4096).decode(errors="replace").strip()
-                        or f"gh exited {returncode}"
+                        or f"curl exited {returncode}"
                     )
                     raise ReleaseLookupError(f"{operation}: {detail}")
                 if not status_line:
@@ -431,13 +528,9 @@ def _cli_publication_complete(repo: Path, tag: str, version: str) -> bool:
 
     max_size = sum(len(line) + 1 for line in lines)
     checksums = uploaded["checksums.txt"]
-    asset_id = checksums.get("id")
-    if type(asset_id) is not int or asset_id <= 0:
-        message = f"could not download published checksums for {tag}: invalid GitHub asset ID"
-        raise ReleaseLookupError(message)
     if checksums["size"] > max_size:
         return False
-    body = _download_cli_checksums(repo, tag, asset_id, max_size)
+    body = _download_cli_checksums(repo, tag, checksums, max_size)
     if body is None or not body.endswith(b"\n"):
         return False
     published_lines = body[:-1].split(b"\n")
@@ -799,6 +892,7 @@ def build_parser() -> argparse.ArgumentParser:
     resolve_cmd.set_defaults(main_ref="origin/main")
     resolve_cmd.add_argument("--run-attempt", type=int)
     command("latest", "tag")
+    command("publish-state")
     command("assert-head", "expected")
     checkout = command("assert-checkout", "mode", "target", "tag")
     # Repeated: every credential-free job that checked something out reports its own
@@ -828,6 +922,8 @@ def dispatch(args: argparse.Namespace) -> int:  # noqa: C901, PLR0912 -- one arm
         case "latest":
             existing = run_git(repo, "tag", "-l", *TAG_GLOBS).split()
             print("true" if is_latest(args.tag, existing) else "false")
+        case "publish-state":
+            print(_publish_state(sys.stdin.buffer.read()))
         case "assert-head":
             assert_head(repo, args.expected)
         case "assert-checkout":
