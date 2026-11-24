@@ -10,6 +10,7 @@
 #
 # Usage: publish-cli.sh <tag> <archive-dir> [--dry-run]
 set -eu
+unset CDPATH
 tag="${1:?usage: publish-cli.sh <tag> <archive-dir> [--dry-run]}"
 dir="${2:?usage: publish-cli.sh <tag> <archive-dir> [--dry-run]}"
 dry="${3:-}"
