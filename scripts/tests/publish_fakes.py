@@ -1,4 +1,4 @@
-"""Stand-ins for `curl`, `jq` and `ssh` on PATH, for the publish script tests.
+"""Stand-ins for `curl` and `ssh` on PATH, for the publish script tests.
 
 The publish scripts talk to GitHub over HTTPS and SSH. These shims answer on the network's
 behalf and write down every argument they were given, so a test can assert the flags a
@@ -7,6 +7,8 @@ download carries and the exact argv `ssh` received, with no network and no real 
 
 from __future__ import annotations
 
+import json
+import shutil
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -15,7 +17,9 @@ if TYPE_CHECKING:
 RELEASES_URL = "https://github.com/spacedock-dev/compass/releases/download"
 META_URL = "https://api.github.com/meta"
 TEST_BEARER = "ghs_compass_test_token"
-HOST_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeHostKeyForTestsOnly"
+TEST_DEPLOY_KEY = "compass_fixture_deploy_key"
+# Wire-format Ed25519 public key from the host-key parser review fixture.
+HOST_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f"
 
 # One line per call, the arguments separated by a unit separator so a value with spaces
 # survives. A download is served from $FAKE_RELEASES when its URL is under RELEASES_URL;
@@ -51,25 +55,21 @@ esac
 printf '%s\\n' "$auth" >>"$FAKE_LOG/auth"
 case "$url" in
 {META_URL})
+	[ "$write_out" = '%{{http_code}}' ] || exit 2
 	printf '\\n' >>"$FAKE_LOG/meta"
 	call=$(wc -l <"$FAKE_LOG/meta")
 	set -- ${{FAKE_META_RESPONSES:-200}}
 	while [ "$call" -gt 1 ] && [ "$#" -gt 1 ]; do shift; call=$((call - 1)); done
 	if [ "$1" = timeout ]; then
-		[ -z "$write_out" ] || printf '000'
+		printf '000'
 		exit 28
 	fi
-	if [ "$1" = no-keys ]; then
-		[ -z "$write_out" ] || printf '200'
-		printf '{{"ssh_keys":[],"ssh_key_fingerprints":{{"SHA256_ED25519":"test"}}}}\\n' >"${{out:-/dev/stdout}}"
-		exit 0
-	fi
-	[ -z "$write_out" ] || printf '%s' "$1"
+	printf '%s' "$1"
 	case "$1:$fail" in
 	[45]??:yes) exit 22 ;;
 	esac
 	# The redirect also offers a keys-shaped body. Only a 200 should be usable.
-	printf '{{"ssh_keys":["{HOST_KEY}"]}}\\n' >"${{out:-/dev/stdout}}"
+	cp "$FAKE_LOG/github-meta.json" "$out"
 	;;
 {RELEASES_URL}/*)
 	file="$FAKE_RELEASES/${{url#{RELEASES_URL}/}}"
@@ -78,12 +78,6 @@ case "$url" in
 	;;
 *) exit 6 ;;
 esac
-"""
-
-JQ = f"""#!/bin/sh
-IFS= read -r body || exit 0
-[ "$body" = '{{"ssh_keys":["{HOST_KEY}"]}}' ] || exit 4
-printf '%s\\n' "github.com {HOST_KEY}"
 """
 
 # git runs GIT_SSH_COMMAND through the shell and appends the host and the remote command.
@@ -113,9 +107,15 @@ printf '%s\\n' "$1" >>"$FAKE_LOG/sleep"
 
 def install(bin_dir: Path, log_dir: Path) -> None:
     """Install the network and sleep shims and create their log directory."""
+    if shutil.which("jq") is None:
+        message = "jq is required on PATH for the publisher tests to exercise the host-key filter"
+        raise AssertionError(message)
     bin_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
-    for name, body in {"curl": CURL, "jq": JQ, "ssh": SSH, "sleep": SLEEP}.items():
+    (log_dir / "github-meta.json").write_text(
+        json.dumps({"ssh_keys": [HOST_KEY], "ssh_key_fingerprints": {}}) + "\n", encoding="utf-8"
+    )
+    for name, body in {"curl": CURL, "ssh": SSH, "sleep": SLEEP}.items():
         path = bin_dir / name
         path.write_text(body, encoding="utf-8")
         path.chmod(0o755)

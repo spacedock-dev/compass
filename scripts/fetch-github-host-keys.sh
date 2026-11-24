@@ -1,6 +1,7 @@
 #!/bin/sh
 
 fetch_github_host_keys() (
+	set +x # The caller can source this helper from a traced shell.
 	# Keep the header out of argv and the token out of curl's environment. Reject characters
 	# outside the bearer-token alphabet because curl reads one header per line from stdin.
 	unset github_meta_token
@@ -24,8 +25,11 @@ fetch_github_host_keys() (
 		) || result=$?
 		case "$result:$status" in
 		0:200)
-			jq -er '.ssh_keys | arrays | .[] | strings |
-				select(test("\\A[A-Za-z0-9@._+-]+ [A-Za-z0-9+/]+={0,2}\\z")) | "github.com " + .' \
+			jq -er '
+				"\\A[A-Za-z0-9@._+-]+ [A-Za-z0-9+/]+={0,2}( [^\\p{Cc}]+)?\\z" as $key |
+				.ssh_keys | arrays |
+				select(length > 0 and all(.[]; type == "string" and test($key))) |
+				.[] | split(" ") | .[0:2] | "github.com " + join(" ")' \
 				<"$body" 2>/dev/null
 			return $?
 			;;

@@ -173,6 +173,85 @@ class UpdateMarketplaceTest(unittest.TestCase):
         self.assertEqual("marketplace now lists compass 1.0.0\n", done.stdout)
 
 
+class HostKeyFetchTest(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.log = self.root / "log"
+        publish_fakes.install(self.root / "bin", self.log)
+
+    def fetch(
+        self, body: str | None = None, *, trace: bool = False
+    ) -> subprocess.CompletedProcess[bytes]:
+        if body is not None:
+            (self.log / "github-meta.json").write_text(body, encoding="utf-8")
+        return subprocess.run(
+            [
+                SH,
+                "-xc" if trace else "-c",
+                '. "$1"; fetch_github_host_keys "$2"',
+                "test-fetch",
+                str(SCRIPTS / "fetch-github-host-keys.sh"),
+                str(self.root),
+            ],
+            capture_output=True,
+            check=False,
+            timeout=15,
+            env={
+                **os.environ,
+                "PATH": f"{self.root / 'bin'}{os.pathsep}{os.environ['PATH']}",
+                "FAKE_LOG": str(self.log),
+                "FAKE_META_RESPONSES": "200",
+                "GITHUB_TOKEN": publish_fakes.TEST_BEARER,
+            },
+        )
+
+    def test_the_metadata_key_renders_the_exact_known_hosts_row(self) -> None:
+        done = self.fetch()
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual(f"github.com {publish_fakes.HOST_KEY}\n".encode(), done.stdout)
+
+    def test_direct_shell_tracing_does_not_expose_the_bearer(self) -> None:
+        done = self.fetch(trace=True)
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        marker = publish_fakes.TEST_BEARER.encode()
+        self.assertNotIn(marker, done.stdout)
+        self.assertNotIn(marker, done.stderr)
+
+    def test_a_commented_key_renders_the_same_known_hosts_row(self) -> None:
+        done = self.fetch(json.dumps({"ssh_keys": [f"{publish_fakes.HOST_KEY} fixture comment"]}))
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual(f"github.com {publish_fakes.HOST_KEY}\n".encode(), done.stdout)
+
+    def test_one_malformed_key_rejects_the_whole_array_before_rendering(self) -> None:
+        key = publish_fakes.HOST_KEY
+        for malformed in (42, f"{key}\n{key}", f"{key} a\tb", f"{key} a\x00b", f"{key} a\x85b"):
+            for keys in ([key, malformed], [malformed, key]):
+                with self.subTest(keys=keys):
+                    done = self.fetch(json.dumps({"ssh_keys": keys}))
+
+                    self.assertNotEqual(0, done.returncode)
+                    self.assertEqual(b"", done.stdout)
+
+    def test_missing_or_invalid_key_metadata_produces_no_rows(self) -> None:
+        for body in (
+            "",
+            "{}",
+            '{"ssh_keys":null}',
+            '{"ssh_keys":[]}',
+            json.dumps({"ssh_keys": publish_fakes.HOST_KEY}),
+            '{"ssh_keys":[',
+        ):
+            with self.subTest(body=body):
+                done = self.fetch(body)
+
+                self.assertNotEqual(0, done.returncode)
+                self.assertEqual(b"", done.stdout)
+
+
 class PublishMarketplaceTest(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -322,18 +401,20 @@ class PublishMarketplaceTest(unittest.TestCase):
         self.assertIn("MARKETPLACE_DEPLOY_KEY is empty", done.stderr)
 
     def ssh_publish(
-        self, responses: str, *, token: str = publish_fakes.TEST_BEARER
+        self, responses: str, *, token: str = publish_fakes.TEST_BEARER, body: str | None = None
     ) -> subprocess.CompletedProcess[str]:
         log = self.root / "log"
         bin_dir = self.root / "bin"
         publish_fakes.install(bin_dir, log)
+        if body is not None:
+            (log / "github-meta.json").write_text(body, encoding="utf-8")
         url = "git@github.com:spacedock-dev/marketplace.git"
         self.env.update(publish_fakes.ssh_publish_env(self.remote, url, log / "git", token=token))
         self.env.update(
             PATH=f"{bin_dir}{os.pathsep}{self.env['PATH']}",
             FAKE_LOG=str(log),
             MARKETPLACE_REMOTE=url,
-            MARKETPLACE_DEPLOY_KEY="placeholder, not a key",
+            MARKETPLACE_DEPLOY_KEY=publish_fakes.TEST_DEPLOY_KEY,
             FAKE_META_RESPONSES=responses,
         )
         return self.publish(trace=True)
@@ -350,9 +431,11 @@ class PublishMarketplaceTest(unittest.TestCase):
             self.assertEqual("--disable", call[0])
             self.assertEqual("=https", call[call.index("--proto") + 1])
             self.assertEqual("8", call[call.index("--max-time") + 1])
+            self.assertEqual("%{http_code}", call[call.index("--write-out") + 1])
             self.assertIn("--tlsv1.2", call)
             self.assertTrue({"--location", "--location-trusted", "-L"}.isdisjoint(call))
         self.assertNotIn(publish_fakes.TEST_BEARER, done.stdout + done.stderr)
+        self.assertNotIn(publish_fakes.TEST_DEPLOY_KEY, done.stdout + done.stderr)
         self.assertNotIn(publish_fakes.TEST_BEARER, str(calls))
         self.assertEqual(["compass 1.0.0", "seed"], self.commits())
         self.assertEqual([], list(self.scratch.iterdir()))
@@ -402,7 +485,16 @@ class PublishMarketplaceTest(unittest.TestCase):
         self.assertEqual([], publish_fakes.curl_calls(self.root / "log"))
 
     def test_the_meta_response_must_supply_ssh_keys(self) -> None:
-        done = self.ssh_publish("no-keys 200")
+        done = self.ssh_publish("200", body='{"ssh_keys":[],"ssh_key_fingerprints":{}}')
+
+        self.assertEqual(1, done.returncode)
+        self.assertIn("no GitHub host keys fetched", done.stderr)
+        log = self.root / "log"
+        self.assertEqual(1, len(publish_fakes.curl_calls(log)))
+        self.assertFalse((log / "git").exists())
+
+    def test_a_partially_malformed_host_key_response_stops_before_git(self) -> None:
+        done = self.ssh_publish("200", body=json.dumps({"ssh_keys": [publish_fakes.HOST_KEY, 42]}))
 
         self.assertEqual(1, done.returncode)
         self.assertIn("no GitHub host keys fetched", done.stderr)
@@ -413,7 +505,7 @@ class PublishMarketplaceTest(unittest.TestCase):
     def test_the_ssh_key_paths_reach_ssh_whole_whatever_the_scratch_path_holds(self) -> None:
         # git runs GIT_SSH_COMMAND through the shell. A scratch path spliced into it would be
         # split at the space and the `;` would end the ssh command; passed through the
-        # environment and quoted, it arrives as one argument. curl, jq and ssh are shims.
+        # environment and quoted, it arrives as one argument.
         log = self.root / "log"
         publish_fakes.install(self.root / "bin", log)
         odd = self.root / "scratch dir;x"

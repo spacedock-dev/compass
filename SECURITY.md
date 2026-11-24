@@ -6312,9 +6312,10 @@ SSH host keys at `https://api.github.com/meta` before cloning. The bearer header
 through stdin with shell tracing disabled. This lookup requires HTTPS and TLS 1.2 or newer, ignores
 curl configuration files, and stops on a redirect. It retries HTTP 403, 429, 5xx and transient
 transport failures, with up to four eight-second attempts and waits of one, two and four seconds.
-Local runs can use the same lookup anonymously. A successful response must supply SSH keys, and
-both scripts use them with strict SSH host verification. Homebrew's separate checksum download
-uses the public release URL anonymously.
+Local runs can use the same lookup anonymously. The helper requires a nonempty `ssh_keys` array,
+checks the format of every entry, and writes only the algorithm and key fields for `github.com` to
+`known_hosts`. OpenSSH uses strict host checking to verify the server against a usable key in that
+file. Homebrew's separate checksum download uses the public release URL anonymously.
 
 ## Merge queue re-queue (the queue token)
 

@@ -1,7 +1,7 @@
 """The Homebrew formula: what it renders, what it refuses, and the push it makes.
 
 `update_homebrew.py` is called directly. `publish-homebrew.sh` runs for real against a local bare
-repository standing in for spacedock-dev/homebrew-tap, with `curl`, `jq` and `ssh` replaced on PATH
+repository standing in for spacedock-dev/homebrew-tap, with `curl` and `ssh` replaced on PATH
 by the shims in publish_fakes.py, which serve the GitHub releases from a local directory. That
 exercises the fetch, the digest check, the clone, the commit and the push and needs no key or
 network: the script asks for a key only of an SSH remote.
@@ -471,7 +471,7 @@ class PublishHomebrewTest(unittest.TestCase):
         self.env.update(publish_fakes.ssh_publish_env(self.remote, url, self.log / "git"))
         self.env.update(
             HOMEBREW_TAP_REMOTE=url,
-            HOMEBREW_TAP_DEPLOY_KEY="placeholder, not a key",
+            HOMEBREW_TAP_DEPLOY_KEY=publish_fakes.TEST_DEPLOY_KEY,
             FAKE_META_RESPONSES=responses,
         )
         return self.publish(trace=True)
@@ -482,9 +482,12 @@ class PublishHomebrewTest(unittest.TestCase):
         self.assertEqual(0, done.returncode, done.stderr)
         calls = publish_fakes.curl_calls(self.log)
         self.assertEqual([publish_fakes.META_URL] * 2, [call[-1] for call in calls[:-1]])
+        for call in calls[:-1]:
+            self.assertEqual("%{http_code}", call[call.index("--write-out") + 1])
         self.assertEqual(["bearer", "bearer", "none"], (self.log / "auth").read_text().splitlines())
         self.assertEqual("1", (self.log / "sleep").read_text().strip())
         self.assertNotIn(publish_fakes.TEST_BEARER, done.stdout + done.stderr)
+        self.assertNotIn(publish_fakes.TEST_DEPLOY_KEY, done.stdout + done.stderr)
         self.assertNotIn(publish_fakes.TEST_BEARER, str(calls))
         self.assertEqual(["compass 1.3.0", "seed"], self.commits())
         self.assertEqual([], list(self.scratch.iterdir()))
