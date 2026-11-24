@@ -380,11 +380,12 @@ export function WorkListView() {
                   <div
                     key={entry.id}
                     className={cn(
-                      'next-cockpit-work-row grid grid-cols-[min(20%,4.375rem)_minmax(0,1fr)] items-baseline gap-x-2.5 border-t border-t-[var(--rule)] border-l-[3px] border-l-transparent py-1 pl-[7px]',
+                      // Forced colors paint transparent borders, so ordinary rows reserve the gutter with padding.
+                      'next-cockpit-work-row grid grid-cols-[min(20%,4.375rem)_minmax(0,1fr)] items-baseline gap-x-2.5 border-t border-t-[var(--rule)] py-1 pl-[10px]',
                       before && 'text-muted-foreground',
                       before && !highlighted && 'bg-muted',
                       highlighted &&
-                        'border-l-[var(--accent)] rounded-r-control bg-[color-mix(in_srgb,var(--accent)_13%,transparent)]',
+                        'border-l-[3px] border-l-[var(--accent)] pl-[7px] rounded-r-control bg-[color-mix(in_srgb,var(--accent)_13%,transparent)]',
                     )}
                     data-next-cited={highlighted ? '' : undefined}
                     role="listitem"

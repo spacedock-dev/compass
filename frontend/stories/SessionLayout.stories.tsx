@@ -807,12 +807,14 @@ async function activityLogPanel(canvasElement: HTMLElement): Promise<HTMLElement
 
 const forcedStatus = 'No status: a later command forces the exit status to 0';
 const longPath = `frontend/src/sessions/${'nested-layout-'.repeat(10)}fixture.ts`;
+const laterPrompt = 'Also check the layout at phone width.';
 const activityColumns = [
   ['Check the session layout.', 'You Prompt'],
   ['The session layout is ready to check.', 'Agent said'],
   ['pnpm test', 'Agent command'],
   [longPath, 'Agent file written'],
   ['pnpm lint || true', 'Agent command'],
+  [laterPrompt, 'You Prompt'],
 ] as const;
 const columnEntries = [
   { ...logEntries[0], summary: activityColumns[0][0] },
@@ -834,6 +836,7 @@ const columnEntries = [
     result: 'not-recorded',
     cannot_fail: true,
   },
+  { ...message(6), type: 'user_message', by: 'person:claude', summary: laterPrompt },
 ];
 
 async function openColumnExample(canvasElement: HTMLElement): Promise<HTMLElement> {
@@ -850,32 +853,91 @@ export const ActivityLogEvenColumns: Story = {
       const content = await Promise.all(
         activityColumns.map(async ([words, kind]) => ({ node: await log.findByText(words), kind })),
       );
-      const assertAligned = async () => {
+      const assertAligned = async (panel: ReturnType<typeof within>) => {
         const lefts = await Promise.all(
-          content.map(async ({ node }) => (await settledRect(node)).left),
+          activityColumns.map(async ([words]) => {
+            return (await settledRect(panel.getByText(words))).left;
+          }),
         );
-        await expect(Math.max(...lefts) - Math.min(...lefts)).toBeLessThanOrEqual(0.5);
+        await expect(
+          Math.max(...lefts) - Math.min(...lefts),
+          'Activity content shares a left edge',
+        ).toBeLessThanOrEqual(0.5);
+        return lefts;
       };
 
-      await expect(log.getByText(forcedStatus)).toBeVisible();
+      const status = log.getByText(forcedStatus);
+      await expect(status).toBeVisible();
       await expect(log.getByText('Exited 0')).toBeVisible();
-      await assertAligned();
+      const closedLefts = await assertAligned(log);
       for (const { node, kind } of content) {
         const label = node.previousElementSibling;
         if (!label) throw new Error('Missing activity label');
+        const [labelBox, contentBox] = await Promise.all([settledRect(label), settledRect(node)]);
+        await expect(contentBox.left, 'Content sits beside its kind label').toBeGreaterThanOrEqual(
+          labelBox.right,
+        );
+        await expect(contentBox.top).toBeLessThan(labelBox.bottom);
         await expect(label.textContent).toBe(kind);
         for (const part of [label, ...label.children]) {
           await expect(getComputedStyle(part).fontFamily).toMatch(/^Inter\b/i);
           await expect(getComputedStyle(part).fontWeight).toBe('400');
         }
       }
-      const forced = log.getByText(forcedStatus).closest<HTMLElement>('[role="listitem"]');
+      const forced = status.closest<HTMLElement>('[role="listitem"]');
       if (!forced) throw new Error('Missing forced-status row');
       const source = within(forced).getByRole('button', { name: /^Source of entry/ });
+      const [statusBox, sourceBox] = await Promise.all([settledRect(status), settledRect(source)]);
+      const plain = log.getByText(activityColumns[3][0]);
+      const plainRow = plain.closest<HTMLElement>('[role="listitem"]');
+      const later = log.getByText('A later direction you gave');
+      const laterRow = log.getByText(laterPrompt).closest<HTMLElement>('[role="listitem"]');
+      if (!plainRow || !laterRow) throw new Error('Missing plain or later-direction row');
+      await expect(laterRow).toContainElement(later);
+      const cluster = later.closest('[data-activity-head-right]');
+      if (!cluster) throw new Error('Missing later-direction details');
+      const plainSource = within(plainRow).getByRole('button', { name: /^Source of entry/ });
+      const [laterBox, plainBox, plainSourceBox] = await Promise.all([
+        settledRect(cluster),
+        settledRect(plain),
+        settledRect(plainSource),
+      ]);
+      const center = (box: DOMRect) => box.top + box.height / 2;
+      const trailingLayout = {
+        statusSharesLineWithSource: Math.abs(center(statusBox) - center(sourceBox)) <= 3,
+        laterDirectionStaysOnOneLine: laterBox.height <= 50,
+        plainContentReachesSource: plainSourceBox.left - plainBox.right <= 20,
+        detailsTextAlignsLeft: /^(left|start)$/.test(getComputedStyle(cluster).textAlign),
+      };
       await userEvent.click(source);
       await expect(source).toHaveAttribute('aria-expanded', 'true');
       await expect(within(forced).getByText('transcript · exact')).toBeVisible();
-      await assertAligned();
+      const openLefts = await assertAligned(log);
+      for (const [index, left] of openLefts.entries()) {
+        const closedLeft = closedLefts[index];
+        if (closedLeft === undefined) throw new Error('Missing closed content position');
+        await expect(
+          Math.abs(left - closedLeft),
+          'Opening Source preserves the content position',
+        ).toBeLessThanOrEqual(0.5);
+      }
+
+      await openSessionTechnicalTab('Evidence', canvasElement);
+      const citation = await within(canvasElement).findByRole('link', {
+        name: 'Show #2 in Activity log for Goal: Synthetic goal',
+      });
+      await seeInContext(citation);
+      const citedLog = within(await activityLogPanel(canvasElement));
+      const citedRow = citedLog.getByText(activityColumns[1][0]).closest('[role="listitem"]');
+      await waitFor(() => expect(citedRow).toHaveAttribute('data-next-cited'));
+      await assertAligned(citedLog);
+
+      await expect(trailingLayout).toEqual({
+        statusSharesLineWithSource: true,
+        laterDirectionStaysOnOneLine: true,
+        plainContentReachesSource: true,
+        detailsTextAlignsLeft: true,
+      });
     });
   },
 };
@@ -1497,6 +1559,28 @@ export const RetainedReadingCitesBeforeTheWindow: Story = {
     await expect(getComputedStyle(row).backgroundColor).toBe(tint);
     await expect(getComputedStyle(row).borderLeftColor).toBe(edge);
     await expect(within(row).getByText('Before reading window')).toBeVisible();
+    const ordinary = canvasElement.querySelector<HTMLElement>(
+      '[data-next-entry-id]:not([data-next-cited])',
+    );
+    const citedContent = row.querySelector('.next-cockpit-work-summary');
+    const ordinaryContent = ordinary?.querySelector('.next-cockpit-work-summary');
+    if (!ordinary || !citedContent || !ordinaryContent) throw new Error('Missing activity rows');
+
+    const browser = '__vitest_browser_runner__' in window ? await import('vitest/browser') : null;
+    if (browser) await browser.commands.storyForcedColors('active');
+    try {
+      if (browser) await expect(matchMedia('(forced-colors: active)').matches).toBe(true);
+      await expect(getComputedStyle(row).borderLeftWidth).toBe('3px');
+      await expect(getComputedStyle(ordinary).borderLeftWidth).toBe('0px');
+      const spread = await settledLayout(() =>
+        Math.abs(
+          citedContent.getBoundingClientRect().left - ordinaryContent.getBoundingClientRect().left,
+        ),
+      );
+      await expect(spread).toBeLessThanOrEqual(0.5);
+    } finally {
+      if (browser) await browser.commands.storyForcedColors(null);
+    }
   },
 };
 

@@ -23,7 +23,7 @@ export function ActivityHead({
   const turnWords = turnRange ? `${LAST_TURN_MARK.words}, ${turnRange}` : LAST_TURN_MARK.words;
   return (
     <div
-      className={`next-cockpit-work-head ${summary ? 'grid grid-cols-1 gap-x-3 @min-[40rem]:grid-cols-[7.5rem_minmax(0,1fr)_13rem]' : ''}`}
+      className={`next-cockpit-work-head ${summary ? 'grid grid-cols-1 gap-x-3 @min-[40rem]:grid-cols-[7.5rem_minmax(0,1fr)_fit-content(50%)]' : ''}`}
     >
       <span className="text-body font-normal wrap-anywhere">
         <span className="next-cockpit-work-actor">{row.head.actor}</span>{' '}
@@ -31,7 +31,7 @@ export function ActivityHead({
       </span>
       {summary}
       <span
-        className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-x-2 gap-y-1 text-right text-label wrap-anywhere [font-family:var(--mono)]"
+        className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-x-2 gap-y-1 text-label wrap-anywhere [font-family:var(--mono)]"
         data-activity-head-right
       >
         {'check' in row.head && row.head.check ? (
