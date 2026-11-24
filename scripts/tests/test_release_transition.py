@@ -841,12 +841,12 @@ case "$*" in
             fi
             exit "${FAKE_GH_EXIT:-1}"
         fi ;;
-    'api graphql -f query=query($owner: String!, $repo: String!, $tag: String!) { repository(owner: $owner, name: $repo) { release(tagName: $tag) { isDraft } } } -f owner=fixture -f repo=compass -f tag=v0.2.0')
+    'api graphql --include -f query=query($owner: String!, $repo: String!, $tag: String!) { repository(owner: $owner, name: $repo) { release(tagName: $tag) { isDraft } } } -f owner=fixture -f repo=compass -f tag=v0.2.0')
         if [ "${FAKE_LOOKUP_FAIL:-0}" = 1 ]; then
             printf 'HTTP 503\n' >&2
             exit 1
         fi
-        printf '%s' "$FAKE_PUBLISH_RESPONSE" ;;
+        printf 'HTTP/2.0 200 OK\nContent-Type: application/json\r\n\r\n%s' "$FAKE_PUBLISH_RESPONSE" ;;
     'release create v0.2.0 '*) ;;
     'release download v0.2.0 --pattern checksums.txt --output '*)
         cp "$FAKE_ASSETS/checksums.txt" "$7" ;;
@@ -1436,8 +1436,7 @@ cat "$FAKE_ASSETS/checksums.txt"
                 self.assertIn("Could not", result.stderr)
                 self.assertNotIn("release create", self.gh_calls.read_text(encoding="utf-8"))
 
-    @unittest.skipUnless(shutil.which("gh"), "requires the GitHub CLI")
-    def test_real_gh_publish_refuses_both_partial_error_responses(self) -> None:
+    def assert_real_gh_publish_refuses(self, *responses: tuple[int, str, bytes]) -> None:
         from socketserver import UnixStreamServer  # noqa: PLC0415 -- unavailable on Windows
 
         real_gh = shlex.quote(shutil.which("gh") or "gh")
@@ -1459,7 +1458,9 @@ cat "$FAKE_ASSETS/checksums.txt"
             def do_POST(self) -> None:
                 self.rfile.read(int(self.headers["Content-Length"]))
                 posts.append(self.path)
-                self.send_response(200)
+                self.send_response(status)
+                if status == 206:
+                    self.send_header("Content-Range", f"bytes 0-{len(body) - 1}/{len(body) + 1}")
                 self.send_header("Content-Type", mime)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
@@ -1468,35 +1469,61 @@ cat "$FAKE_ASSETS/checksums.txt"
         with contextlib.chdir(self.fx.work):
             server = UnixStreamServer(socket, Handler)
         env = self.local_gh_env(socket)
-        data = {"repository": {"release": None}}
         with server, ThreadPoolExecutor(max_workers=1) as worker:
             worker.submit(server.serve_forever)
             try:
-                for mime, response in (
-                    (
-                        "application/json",
-                        {
-                            "data": data,
-                            "errors": [{"message": "", "path": ["repository", "release"]}],
-                        },
-                    ),
-                    (
-                        "text/plain",
-                        {
-                            "errors": [{"message": "retry", "path": ["repository", "release"]}],
-                            "data": data,
-                        },
-                    ),
-                ):
-                    with self.subTest(mime=mime):
-                        body = json.dumps(response).encode("utf-8")
+                for status, mime, body in responses:
+                    with self.subTest(status=status, mime=mime, body=body):
+                        self.gh_calls.unlink(missing_ok=True)
                         result = self.run_publish(**env)
-                        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                        created = "release create" in self.gh_calls.read_text(encoding="utf-8")
+                        self.assertEqual((1, False), (result.returncode, created), result.stderr)
                         self.assertIn("Could not", result.stderr)
             finally:
                 server.shutdown()
-        self.assertEqual(["/graphql", "/graphql"], posts)
-        self.assertNotIn("release create", self.gh_calls.read_text(encoding="utf-8"))
+        self.assertEqual(["/graphql"] * len(responses), posts)
+
+    @unittest.skipUnless(shutil.which("gh"), "requires the GitHub CLI")
+    def test_real_gh_publish_refuses_both_partial_error_responses(self) -> None:
+        self.assert_real_gh_publish_refuses(
+            (
+                200,
+                "application/json",
+                (
+                    b'{"data":{"repository":{"release":null}},'
+                    b'"errors":[{"message":"","path":["repository","release"]}]}'
+                ),
+            ),
+            (
+                200,
+                "text/plain",
+                (
+                    b'{"errors":[{"message":"retry","path":["repository","release"]}],'
+                    b'"data":{"repository":{"release":null}}}'
+                ),
+            ),
+        )
+
+    @unittest.skipUnless(shutil.which("gh"), "requires the GitHub CLI")
+    def test_real_gh_publish_refuses_partial_http_content(self) -> None:
+        self.assert_real_gh_publish_refuses(
+            (206, "application/json", b'{"data":{"repository":{"release":null}}}'),
+        )
+
+    @unittest.skipUnless(shutil.which("gh"), "requires the GitHub CLI")
+    def test_real_gh_publish_refuses_non_json_numeric_constants(self) -> None:
+        self.assert_real_gh_publish_refuses(
+            *(
+                (
+                    200,
+                    "text/plain",
+                    b'{"data":{"repository":{"release":null}},"extensions":{"duration":'
+                    + constant
+                    + b"}}",
+                )
+                for constant in (b"NaN", b"Infinity", b"-Infinity")
+            ),
+        )
 
     def test_the_publish_step_creates_after_github_confirms_the_release_is_absent(self) -> None:
         self.github_release()

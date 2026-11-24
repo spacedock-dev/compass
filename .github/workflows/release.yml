@@ -578,7 +578,7 @@ jobs:
           # gh release view can report absence when one of its two lookups fails.
           # The dollar-prefixed GraphQL variables bind to the fields passed to gh.
           # shellcheck disable=SC2016
-          if ! STATE=$(gh api graphql \
+          if ! STATE=$(gh api graphql --include \
             -f query='query($owner: String!, $repo: String!, $tag: String!) { repository(owner: $owner, name: $repo) { release(tagName: $tag) { isDraft } } }' \
             -f owner="${GITHUB_REPOSITORY%%/*}" -f repo="${GITHUB_REPOSITORY#*/}" -f tag="$TAG" \
             | python3 scripts/release_transition.py publish-state); then

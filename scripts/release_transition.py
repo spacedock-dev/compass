@@ -9,7 +9,7 @@ Usage (each subcommand is one workflow step; see .github/workflows/release.yml):
     python3 scripts/release_transition.py assert-checkout --mode fresh --target <sha> \
         --verified <sha> --tag v0.2.0
     python3 scripts/release_transition.py latest --tag v0.2.0
-    gh api graphql ... | python3 scripts/release_transition.py publish-state
+    gh api graphql --include ... | python3 scripts/release_transition.py publish-state
     python3 scripts/release_transition.py bump --tag v0.2.0
     python3 scripts/release_transition.py commit-bump --tag v0.2.0
     python3 scripts/release_transition.py final --mode fresh --target <sha>
@@ -53,7 +53,7 @@ import verify_release_archive
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
-    from typing import IO, Any
+    from typing import IO, Any, Never
 
 SEMVER = bump_version.SEMVER_RE
 annotation = verify_release_archive.annotation
@@ -297,11 +297,22 @@ def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return value
 
 
+def _reject_json_constant(value: str) -> Never:
+    raise ValueError(f"non-JSON numeric constant: {value}")
+
+
 def _publish_state(response: bytes) -> str:
-    # gh can exit zero for a partial GraphQL reply. Parse the whole envelope
-    # so repeated keys or a trailing document cannot masquerade as absence.
+    # gh exits successfully for 206, and plain-text replies bypass its JSON decoder.
+    parts = re.split(rb"\r?\n\r?\n", response, maxsplit=1)
+    status_line = parts[0].partition(b"\n")[0].removesuffix(b"\r")
+    if len(parts) != 2 or not re.fullmatch(rb"HTTP/\d+(?:\.\d+)? 200(?: [^\r\n]*)?", status_line):
+        return "invalid"
     try:
-        payload = json.loads(response.decode("utf-8"), object_pairs_hook=_unique_json_object)
+        payload = json.loads(
+            parts[1].decode("utf-8"),
+            object_pairs_hook=_unique_json_object,
+            parse_constant=_reject_json_constant,
+        )
         if not isinstance(payload, dict) or "errors" in payload:
             return "invalid"
         release = payload["data"]["repository"]["release"]

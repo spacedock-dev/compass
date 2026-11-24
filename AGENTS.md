@@ -915,9 +915,9 @@ The archives are what Spacedock's installer reads. Each unpacks to one `compass/
 The Git transition decisions live in `scripts/release_transition.py` and are tested against temporary repositories with a bare origin (`scripts/tests/test_release_transition.py`, `scripts/tests/test_verify_release_archive.py`). The job boundaries are pinned by `compass/skills/compass/tests/test_release_workflow.py`. The React bundle is version-independent, so a bump must leave it untouched; a changed bundle byte after verification stops the release before `stable` moves.
 
 The final publish step queries GitHub by tag through GraphQL so it can see drafts. It creates a
-release only when the query succeeds and a single error-free response explicitly reports no
-release for that tag. A failed or ambiguous lookup stops the job before it calls
-`gh release create`.
+release only when the query succeeds with HTTP 200 and a single valid JSON response explicitly
+reports no release for that tag without GraphQL errors. A failed or ambiguous lookup stops the job
+before it calls `gh release create`.
 
 The tag move starts a second run. On its first attempt, read-only `resolve` returns `complete` when
 the tag is on its own validated bot release commit and GitHub reports a published, non-draft,
