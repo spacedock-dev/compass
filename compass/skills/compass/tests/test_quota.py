@@ -1914,12 +1914,103 @@ class ClaudeStatuslineReceiptTest(unittest.TestCase):
         self.assertEqual(1, len(self.shown(NOW + 23 * 3600)))
         self.assertEqual([], self.shown(NOW + 25 * 3600))
 
-    def test_a_resend_of_the_same_window_keeps_the_reading_current(self) -> None:
+    def test_a_resend_keeps_the_window_shown_and_its_read_time_where_the_figure_changed(
+        self,
+    ) -> None:
         self.receive(_claude_post(week=(30, NOW + 6 * 86_400)))
         self.receive(_claude_post(week=(30, NOW + 6 * 86_400)), NOW + 20 * 3600)
 
+        # Still reported ten hours ago, so still inside the activity window...
         (entry,) = self.shown(NOW + 30 * 3600)
-        self.assertEqual(int(NOW + 20 * 3600), entry["asOf"])
+        # ...and still labelled with when 30% was first seen, not when it was last resent.
+        self.assertEqual(int(NOW), entry["asOf"])
+
+    def test_idle_resends_move_neither_the_read_time_nor_the_pace(self) -> None:
+        reset = NOW + 4 * 3600
+        for tick in range(60):
+            at = NOW + tick * 10
+            self.receive(_claude_post((40, reset)), at)
+            entries = self.shown(at)
+            quota.observe_windows(self.config, self.state, entries)
+        (entry,) = self.shown(NOW + 600)
+        self.assertEqual(int(NOW), entry["asOf"])
+        self.assertEqual(1, len(self.state.usage_samples["claude:fiveH"]))
+        self.assertNotIn("recent", entries[0]["fiveH"])
+
+    def test_a_steady_rate_is_measured_at_that_rate_through_resends(self) -> None:
+        # One point every three minutes, a post every ten seconds and a collection every five, as
+        # several open sessions re-rendering would deliver it: the true rate is 1/3 point a minute.
+        reset = NOW + 5 * 3600
+        entries: list[dict[str, Any]] = []
+        for tick in range(0, 1800, 5):
+            at = NOW + tick
+            if tick % 10 == 0:
+                self.receive(_claude_post((10 + tick // 180, reset)), at)
+            entries = self.shown(at)
+            quota.observe_windows(self.config, self.state, entries)
+        recent = entries[0]["fiveH"]["recent"]
+        self.assertAlmostEqual(1 / 3, recent["pctPerMin"], places=3)
+
+    def test_an_earlier_reset_does_not_displace_a_window_still_being_reported(self) -> None:
+        self.receive(_claude_post((60, NOW + 3 * 3600)))
+        self.receive(_claude_post((90, NOW + 3600)), NOW + 60)
+
+        (entry,) = self.shown(NOW + 60)
+        self.assertEqual(
+            (60, int(NOW + 3 * 3600)), (entry["fiveH"]["pct"], entry["fiveH"]["resetAt"])
+        )
+
+    def test_a_later_reset_replaces_a_window_still_being_reported_even_lower(self) -> None:
+        self.receive(_claude_post((80, NOW + 600)))
+        self.receive(_claude_post((5, NOW + 600 + 3600)), NOW + 60)
+
+        (entry,) = self.shown(NOW + 60)
+        self.assertEqual((5, int(NOW + 4200)), (entry["fiveH"]["pct"], entry["fiveH"]["resetAt"]))
+
+    def test_resets_a_few_seconds_apart_are_one_window_and_a_minute_and_a_half_is_two(
+        self,
+    ) -> None:
+        reset = NOW + 3 * 3600
+        self.receive(_claude_post((50, reset)))
+        # Thirty seconds later is the same window: a lower figure does not replace a higher one.
+        self.receive(_claude_post((40, reset + 30)), NOW + 10)
+        self.assertEqual(50, self.shown(NOW + 10)[0]["fiveH"]["pct"])
+        # Thirty seconds earlier is the same window too: a higher figure replaces.
+        self.receive(_claude_post((55, reset - 30)), NOW + 20)
+        self.assertEqual(55, self.shown(NOW + 20)[0]["fiveH"]["pct"])
+        # Ninety seconds later is a new window, and replaces at any level.
+        self.receive(_claude_post((3, reset + 90)), NOW + 30)
+        self.assertEqual(3, self.shown(NOW + 30)[0]["fiveH"]["pct"])
+
+    def test_a_forged_later_reset_lasts_only_while_the_forger_keeps_posting(self) -> None:
+        self.receive(_claude_post((43, NOW + 3600), (62, WEEK_RESET)))
+        forged = NOW + 10 + 7 * 86_400 + 299
+        self.receive(_claude_post(week=(0, forged)), NOW + 10)
+        # A genuine post minutes later is refused while the forged window is fresh...
+        self.receive(_claude_post(week=(62, WEEK_RESET)), NOW + 120)
+        self.assertEqual(0, self.shown(NOW + 120)[0]["week"]["pct"])
+        # ...and replaces it once the forged window has gone unreported.
+        later = NOW + 10 + quota.RECEIPT_STALE_SEC + 1
+        self.receive(_claude_post(week=(62, WEEK_RESET)), later)
+        (entry,) = self.shown(later)
+        self.assertEqual((62, int(WEEK_RESET)), (entry["week"]["pct"], entry["week"]["resetAt"]))
+
+    def test_a_forger_posting_continually_still_holds_the_slot(self) -> None:
+        self.receive(_claude_post(week=(62, WEEK_RESET)))
+        forged = NOW + 7 * 86_400 + 299
+        for minute in range(1, 30):
+            self.receive(_claude_post(week=(0, forged)), NOW + minute * 60)
+            self.receive(_claude_post(week=(62, WEEK_RESET)), NOW + minute * 60 + 30)
+        self.assertEqual(0, self.shown(NOW + 30 * 60)[0]["week"]["pct"])
+
+    def test_a_lower_figure_for_the_same_window_never_replaces_however_old_the_higher(
+        self,
+    ) -> None:
+        reset = NOW + 4 * 3600
+        self.receive(_claude_post((50, reset)))
+        self.receive(_claude_post((40, reset)), NOW + 3 * 3600)
+
+        self.assertEqual(50, self.shown(NOW + 3 * 3600)[0]["fiveH"]["pct"])
 
     def test_antigravity_receipt_is_untouched_by_a_claude_post(self) -> None:
         quota.receive_statusline(
@@ -2011,6 +2102,85 @@ class ClaudeUsageMergeTest(unittest.TestCase):
 
         (entry,) = self.row(NOW + 60)
         self.assertEqual(42, entry["fiveH"]["pct"])
+        # The receipt won no window, so the fetch's stamp is the one published.
+        self.assertEqual(int(NOW), entry["asOf"])
+
+    def test_a_fetched_window_with_the_later_reset_is_kept_over_a_higher_receipt(self) -> None:
+        fetched = [
+            {
+                "harness": "claude",
+                "state": "ok",
+                "asOf": int(NOW),
+                "fiveH": {"pct": 42, "resetAt": int(NOW + 4 * 3600)},
+            }
+        ]
+        received = [
+            {
+                "harness": "claude",
+                "state": "ok",
+                "asOf": int(NOW + 60),
+                "fiveH": {"pct": 90, "resetAt": int(NOW + 3600)},
+            }
+        ]
+        (entry,) = quota.merge_claude_usage(fetched, received)
+        self.assertEqual(42, entry["fiveH"]["pct"])
+        self.assertEqual(int(NOW), entry["asOf"])
+
+    def test_split_winners_publish_the_newer_winning_stamp(self) -> None:
+        fetched = [
+            {
+                "harness": "claude",
+                "state": "ok",
+                "asOf": int(NOW),
+                "fiveH": {"pct": 10, "resetAt": int(NOW + 3600)},
+                "week": {"pct": 61, "resetAt": int(WEEK_RESET)},
+            }
+        ]
+        received = [
+            {
+                "harness": "claude",
+                "state": "ok",
+                "asOf": int(NOW + 300),
+                "fiveH": {"pct": 20, "resetAt": int(NOW + 3600)},
+                "week": {"pct": 50, "resetAt": int(WEEK_RESET)},
+            }
+        ]
+        (entry,) = quota.merge_claude_usage(fetched, received)
+        self.assertEqual((20, 61), (entry["fiveH"]["pct"], entry["week"]["pct"]))
+        self.assertEqual(int(NOW + 300), entry["asOf"])
+
+    def test_last_weeks_model_rows_leave_when_the_status_line_reports_a_new_week(self) -> None:
+        fetched = [
+            {
+                "harness": "claude",
+                "state": "ok",
+                "asOf": int(NOW),
+                "week": {"pct": 95, "resetAt": int(NOW + 30)},
+                "models": [{"label": "Opus", "pct": 90}],
+            }
+        ]
+        new_week = [
+            {
+                "harness": "claude",
+                "state": "ok",
+                "asOf": int(NOW + 60),
+                "week": {"pct": 1, "resetAt": int(NOW + 30 + 7 * 86_400)},
+            }
+        ]
+        (entry,) = quota.merge_claude_usage(fetched, new_week)
+        self.assertEqual(1, entry["week"]["pct"])
+        self.assertNotIn("models", entry)
+        same_week_higher = [
+            {
+                "harness": "claude",
+                "state": "ok",
+                "asOf": int(NOW + 60),
+                "week": {"pct": 97, "resetAt": int(NOW + 30)},
+            }
+        ]
+        (entry,) = quota.merge_claude_usage(fetched, same_week_higher)
+        self.assertEqual(97, entry["week"]["pct"])
+        self.assertEqual([{"label": "Opus", "pct": 90}], entry["models"])
 
     def test_a_status_line_window_that_has_moved_on_replaces_the_fetched_one(self) -> None:
         self.fetch(_keychain_runner(_credentials()))

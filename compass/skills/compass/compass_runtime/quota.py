@@ -1211,6 +1211,13 @@ RECEIPT_SAME_WINDOW_SEC: Final = 60.0
 # length from now, so a stamp beyond this is broken or forged, and refusing it stops one post
 # from pinning a slot to a made-up window that no genuine later post could displace.
 RECEIPT_RESET_SLACK_SEC: Final = 300.0
+# How long a kept window may go unreported before a post with an earlier reset may replace it.
+# Every open session re-renders on each refresh, so a window still being reported is never this
+# old. One that is was posted once and abandoned, which is what a forged reset looks like, and
+# holding it until that reset would refuse every genuine post for up to a week. Five minutes
+# outlasts a status line that redraws only on events, so an active window is not given up
+# between two of its own posts.
+RECEIPT_STALE_SEC: Final = 300.0
 
 
 def _claude_receipt_window(now: float, raw: Any, slot: str) -> dict[str, Any] | None:
@@ -1260,18 +1267,28 @@ def _merged_window(
     nothing. Every Claude Code session re-sends its last figures on each refresh, idle ones
     included, so the newest post is not the newest reading and must not simply win.
 
-    A resend of the same window at the same or a lower level refreshes `receivedAt` only: it
-    says the window is still being reported, which is what keeps it inside the activity window.
+    Two stamps per window. `receivedAt` moves on every post that reports the kept window, and is
+    what keeps it inside the activity window. `changedAt` moves only when the figure does: a new
+    window, a later reset or a higher level. It is what the entry publishes as `asOf`, so an idle
+    session's resend neither labels an old figure as read now nor adds a flat pace sample.
+
+    One exception to "an earlier reset changes nothing": when the kept window has gone unreported
+    for `RECEIPT_STALE_SEC`. A genuine older window cannot reach that branch, because a reset that
+    has passed is refused before this, so it is reached by a forged or early reset, or by a second
+    account still reporting after the first stopped. In each, the window still being reported is
+    the one to keep. The same-window max rule has no such exception: a lower figure for the same
+    window never replaces a higher one, however long ago the higher one arrived.
     """
+    changed = {**arrived, "receivedAt": now, "changedAt": now}
     if stored is None or stored["resetAt"] <= now:
-        return {**arrived, "receivedAt": now}
+        return changed
     gap = arrived["resetAt"] - stored["resetAt"]
     if gap > RECEIPT_SAME_WINDOW_SEC:
-        return {**arrived, "receivedAt": now}
+        return changed
     if gap < -RECEIPT_SAME_WINDOW_SEC:
-        return None
+        return changed if now - stored["receivedAt"] > RECEIPT_STALE_SEC else None
     if arrived["pct"] > stored["pct"]:
-        return {**arrived, "receivedAt": now}
+        return changed
     return {**stored, "receivedAt": max(stored["receivedAt"], now)}
 
 
@@ -1322,8 +1339,10 @@ def claude_receipt_entries(
     reset has passed describes a finished period, as the footer and Claude Code both treat it,
     and a window not reported within the activity window may belong to a session long gone.
     The reset words are formatted here for the same reason, so "14:00" is not left saying today
-    after midnight. `asOf` is when the newest kept window was last reported, not when it was
-    measured; design-usage-quota.md records why that is the honest stamp here.
+    after midnight. `asOf` is when the newest kept window's figure last changed, not when it was
+    last reported: an idle session's resend is byte-identical to a fresh unchanged reading, and
+    only a change is evidence of when the figure was true. The activity gate stays on
+    `receivedAt`, so a window still being reported is still shown.
     """
     with state.usage_fetch_lock:
         cached = state.usage_receipts.get("claude")
@@ -1341,7 +1360,8 @@ def claude_receipt_entries(
             "windowSec": SLOT_WINDOW_SEC[slot],
             **sessions.reset_fields(now, window["resetAt"]),
         }
-        newest = window["receivedAt"] if newest is None else max(newest, window["receivedAt"])
+        changed_at: float = window["changedAt" if "changedAt" in window else "receivedAt"]
+        newest = changed_at if newest is None else max(newest, changed_at)
     if newest is None:
         return []
     entry["asOf"] = int(newest)
@@ -1374,10 +1394,17 @@ def merge_claude_usage(
     """One Claude entry from the credential fetch and the status-line receipt.
 
     Two Claude entries would draw two Claude tiles, so the sources meet here, per window, by
-    the rule the receipt merges itself with. The fetch's per-model rows survive wherever the
-    fetch has them: the status line carries none. A fetch that read no figures (`lapsed`,
-    `refused`) yields to a receipt that has some, because a reading beats an explanation of why
-    one other route has none. `asOf` is the newer of the two sources' stamps.
+    the rule the receipt merges itself with. A fetch that read no figures (`lapsed`, `refused`)
+    yields to a receipt that has some, because a reading beats an explanation of why one other
+    route has none.
+
+    `asOf` is the newest stamp among the sources that won a window, not of both: a receipt that
+    won nothing must not move the stamp the pace ring samples a fetched window at.
+
+    The fetch's per-model rows are sub-limits of its weekly window and survive while that is the
+    weekly window shown, including when the receipt reports the same week higher. When the receipt
+    has moved on to a later week, last week's rows are dropped until the next fetch brings the new
+    week's: a sub-limit drawn under a week it was not measured in states a figure nobody read.
     """
     if not received:
         return fetched
@@ -1385,12 +1412,24 @@ def merge_claude_usage(
     ok = [entry for entry in fetched if entry.get("state") == "ok"]
     if not ok:
         return [receipt]
-    base = copy.deepcopy(ok[0])
+    fetch = ok[0]
+    base = copy.deepcopy(fetch)
+    winners: dict[str, str] = {}
     for _key, slot in _CLAUDE_RECEIPT_WINDOWS:
-        chosen = _later_window(base.get(slot), receipt.get(slot))
-        if chosen is not None:
-            base[slot] = chosen
-    stamps = [stamp for stamp in (_finite(base.get("asOf")), _finite(receipt.get("asOf"))) if stamp]
-    if stamps:
-        base["asOf"] = int(max(stamps))
+        chosen = _later_window(fetch.get(slot), receipt.get(slot))
+        if chosen is None:
+            continue
+        winners[slot] = "receipt" if chosen is receipt.get(slot) else "fetch"
+        base[slot] = copy.deepcopy(chosen)
+    if "models" in base and winners.get("week") == "receipt":
+        fetched_reset = _finite(records.as_dict(fetch.get("week")).get("resetAt"))
+        if fetched_reset is None or abs(receipt["week"]["resetAt"] - fetched_reset) > (
+            RECEIPT_SAME_WINDOW_SEC
+        ):
+            del base["models"]
+    sources = {"fetch": fetch, "receipt": receipt}
+    stamps = [_finite(sources[name].get("asOf")) for name in set(winners.values()) or sources]
+    known = [stamp for stamp in stamps if stamp is not None]
+    if known:
+        base["asOf"] = int(max(known))
     return [base]
