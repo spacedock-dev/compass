@@ -115,7 +115,8 @@ export function Help() {
           {STATUS_LEGEND.map(([word, icon]) => (
             <li className="help-row" key={word}>
               <span
-                className="help-icon grid h-9 basis-9 shrink-0 place-items-center rounded-card"
+                /* The neutral State not known tile: quiet ink on the page ground, as on a row. */
+                className={`help-icon grid h-9 basis-9 shrink-0 place-items-center rounded-card${icon === 'state-not-known' ? ' bg-[var(--bg)] text-[var(--ink2)]' : ''}`}
                 data-help-icon={icon}
               >
                 <Icon name={icon} size={20} />

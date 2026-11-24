@@ -38,6 +38,11 @@ export const Guide: Story = {
     );
     await expect(rows[3]).toHaveTextContent('The session reported that it ended.');
     await expect(rows[4]?.querySelector('[data-icon="state-not-known"]')).toBeVisible();
+    // The neutral tile: quiet ink on the page ground, as on a Sessions row.
+    await expect(rows[4]?.querySelector('.help-icon')).toHaveStyle({
+      backgroundColor: 'rgb(244, 246, 248)',
+      color: 'rgb(82, 96, 109)',
+    });
     await expect(rows[4]).toHaveTextContent(
       'The agent reports it is idle, but Compass saw no finished turn, so it cannot say whether it is quiet or stopped.',
     );

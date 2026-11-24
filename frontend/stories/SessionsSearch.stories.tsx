@@ -647,7 +647,7 @@ export const StatusLegend: Story = {
     await expect(unknown).toHaveTextContent('State not published');
     await expect(unknown?.querySelector('svg')).toBeNull();
     // Both rows still draw a tile: the neutral State not known one (owner, 2026-11-24).
-    for (const id of ['F', 'J']) {
+    for (const id of ['F', 'J'] as const) {
       const row = rowOf(canvasElement, id);
       if (!row) throw new Error(`Missing row ${id}`);
       await expect(within(row).getByRole('img', { name: 'State not known' })).toBeVisible();
