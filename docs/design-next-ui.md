@@ -1216,6 +1216,15 @@ it, and the goal to the right. Blocked is the Waiting on you tile, with any held
 the Now line. A pending step is read on the session page. The
 [Calm Compass record](design-calm-compass.md#status-language) keeps the ruling.
 
+### Amended 2026-11-24 (owner): the Sessions list sits in one card
+
+After testing the row above, the owner asked the list to follow the canvas more closely. Right
+now and the earlier group sit in one white card, each opening with a small header band, and the
+earlier group's band holds the Recent history disclosure. Rows are divided by hairlines and carry
+no tone stripe. A phone keeps one card with the same dividers instead of a card per row. Labels
+that would repeat a column header are still gone, and the goal source still stays visible in the
+goal's label. The [Calm Compass record](design-calm-compass.md#status-language) keeps the details.
+
 ## NUI-17: the gate queue hands over a command, and only where one was measured
 
 A gate-queue row names a session that is waiting and then leaves the reader to find its terminal.

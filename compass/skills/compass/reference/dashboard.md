@@ -40,8 +40,9 @@ Pi relocation: `PI_CODING_AGENT_SESSION_DIR` is an authoritative direct session-
 Sessions rows show the observed state in a named icon tile beside the title. Under the title,
 one line names the agent, the project and how long ago the session started, and when it ended
 once it has. A session that published no start says so. The next line says what the session is
-doing now, and a session waiting on you shows what it is waiting for under it. The goal sits to
-the right. The progress slot is blank. Open the session page to see the progress reading and any live estimate
+doing now, and a session waiting on you shows what it is waiting for under it. A stopped or
+ended session states how it ended and its git state once, leaving out a git state nobody
+measured. The goal sits to the right. The progress slot is blank. Open the session page to see the progress reading and any live estimate
 the session supports.
 
 The Sessions legend pairs Working with a pulse, Waiting on you with a clock, Quiet with a moon
@@ -125,7 +126,7 @@ The board uses a light palette and opens on **Sessions** with a greeting and a s
 **At a glance** cards count Waiting on you, Working now and Worth a look. Waiting on you and
 Worth a look open **Needs you**. Working now selects Working and takes you to the list.
 Press it again to clear that selection. The summary says when it covers only sources Compass
-could read. Below the cards, Right now comes before the earlier group. The status tabs count the whole loaded board in this order: All, Waiting on you, Worth a look,
+could read. Below the cards, one list card holds Right now and then the earlier group. The status tabs count the whole loaded board in this order: All, Waiting on you, Worth a look,
 Working, Quiet and Ended.
 Search reads titles, goals and prompts. Press `/` to jump to it or paste a session id to find it.
 Filters opens a panel for Project, Agent, Started and Progress check. The level chips are disabled.

@@ -181,7 +181,7 @@ even on a project page.
 
 | Tab | Key | What it shows |
 |---|---|---|
-| Sessions | `s` | Every session, with active work above recent history. Each row shows the session's state icon and title, a line naming its agent, project and when it started, what it is doing now, and its goal. A session waiting on you shows what it is waiting for. Clicking a goal opens that session at its Goal card. |
+| Sessions | `s` | Every session in one list, with active work above recent history. Each row shows the session's state icon and title, a line naming its agent, project and when it started, what it is doing now, and its goal. A session waiting on you shows what it is waiting for. Clicking a goal opens that session at its Goal card. |
 | Projects | `p` | Sessions grouped by project. Each project has a page with a briefing and the views Overview, Timeline, Decisions and Usage and alerts. |
 | Needs you | `n` | Waiting on you comes first, followed by Worth a look and Ready to wrap up. The badge counts the first two queues. Open What Compass can't see for coverage and its limits. |
 | Goal history | none | Search current and older goals by their text or by session title where available. Each goal shows its source and time. Open How long goals are kept for the limits. |

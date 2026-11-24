@@ -16,6 +16,14 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+Departure (2026-11-24, later): a Sessions row says its end and git facts once. The page joins the
+outcome and the git line into one line, drops "; git state not measured" and "Git state was not
+measured", drops a git line the outcome already states, and leaves a bare "Session ended" to the
+tile, the end age and the Now line. A dirty end, a known git state and a changed-entry count stay.
+`frontend/test/sessionCanvasRowDeviation.ts` joins the recorded outcome and git line through the
+same `outcomeLine` the page uses, so both recorded sentences still decide the compared text. The
+ended outcome's check mark repeated the Ended tile and is gone. The recorded answers stay fixed.
+
 Departure (2026-11-24): Sessions rows follow the redesign canvas. A row is its status tile,
 title, a descriptor line (harness, project, start, and end once there is one), the Now line, any
 held question or wait note, the outcome, the existing secondary lines, and then the goal. The

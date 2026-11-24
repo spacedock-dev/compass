@@ -145,6 +145,27 @@ header strip are gone. Blocked was exactly a session waiting on you, so the Wait
 carries it. The row keeps the question it holds, in three lines under the Now line. No state,
 icon or legend entry was added.
 
+Later on 2026-11-24 the owner tested that row and asked the list to follow the canvas more
+closely, because the rows sat straight on the grey ground and were harder to read. Both groups now
+sit in one white card with the 16 px radius and the `--rule` edge. Each group opens with a small
+header band: its name in 13 px bold quiet-tile ink and its count on the right. The earlier group
+sits under a divider on the `--raise` ground, with How session history works in its band. Rows
+are split by `--sunk` hairlines and carry no left-edge stripe, which the style board rules out.
+The title is 18 px bold, the descriptor sits 2 px under it and the Now line 8 px under that. The
+row is the title's 44 px target, so the title's own box keeps its line height. The goal is a small
+bold label over plain ink that underlines on hover and focus, like a row title, because the
+affordance rule keeps a resting underline for links inside sentences. "Add a goal" is a quiet
+green underlined action rather than a hatched absence. The goal source stays in the label, as
+[NUI-16](design-next-ui.md#amended-2026-11-24-owner-the-sessions-list-sits-in-one-card) and the
+goal-source amendment require. A row says its end and git facts once: an unmeasured git state
+and a git line the outcome already states are dropped, and a bare end is left to the tile, the
+end age and "Session reported its own end". A dirty end, a known git state and a changed-entry
+count stay. The status segments are one segmented control on the `--sunk` track: the chosen
+segment is white with a `--line` border, and the others are plain words that clear 4.5:1. A phone
+shows them as outlined pills with the chosen one filled. The search box reads "Search by title,
+goal or project". The canvas's short ages and row progress pills are not taken: the elapsed
+spelling above stands, and the progress slot stays blank.
+
 | Progress word | Recorded level |
 |---|---|
 | On track | None or low. "No departure found in what Compass read". |
