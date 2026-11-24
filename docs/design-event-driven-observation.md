@@ -1385,13 +1385,14 @@ interface.
 
 ### Session identity
 
-The envelope's `session_id` is not the key the collectors use. Claude's `sid` is the eight-character
-prefix of the transcript filename and `dedupe_sessions` keys on `(harness, sid)`, which is why the
-existing notification path truncates the hook payload's full UUID before looking anything up. An
-overlay keyed on the raw native id would never match its row.
+Claude normally publishes the eight-character transcript prefix as its `sid`. Since
+`dedupe_sessions` keys on `(harness, sid)`, the notification path truncates the hook payload's
+full UUID to match the usual row. If a collision would hide live workers or recent tasks, the
+collector can publish the other row with its full ID. That row takes its state from the store
+because a prefix-keyed overlay cannot distinguish the two sessions.
 
-The ingress therefore owns a per-harness identity normalizer that maps a native event id onto the
-exact `sid` its collector produces and rejects ambiguous mappings. A normalized id that matches no
+The ingress owns a per-harness identity normalizer that maps a native event ID onto the usual
+collector key and rejects ambiguous mappings. A normalized ID that matches no
 collected session goes into a small bounded, expiring pending map and triggers collection; it never
 renders and never creates a row. It attaches only if a later collection produces the matching
 `(harness, sid)`, otherwise it expires after bounded time and attempts with a diagnostic counter.

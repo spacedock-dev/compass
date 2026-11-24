@@ -413,7 +413,7 @@ class ClaudeCollectorTest(RuntimeTestCase):
             )
 
             with store_patch(TASKS_DIR=str(root)):
-                tasks = claude_collector.load_tasks(runtime()[0])
+                tasks = claude_collector.load_tasks(runtime()[0], native_ids=True)
 
         self.assertEqual({current.name, "abcdef12"}, set(tasks))
         self.assertEqual("Current", tasks[current.name][0]["subject"])
@@ -1190,7 +1190,7 @@ class ClaudeCollectorTest(RuntimeTestCase):
             with store_patch(TASKS_DIR=str(tmp)):
                 tasks = claude_collector.load_tasks(runtime()[0])
 
-        rows = tasks[root.name]
+        rows = tasks[root.name[:8]]
         self.assertEqual(1, len(rows))  # the non-dict record is skipped
         task = rows[0]
         self.assertEqual("(untitled)", task["subject"])
@@ -4105,30 +4105,323 @@ class DispatchedTeammateTest(RuntimeTestCase):
         )
         os.utime(worker, (now - 5, now - 5))
 
-    def test_two_copies_of_a_teammate_publish_one_member(self) -> None:
+    def test_an_unreadable_workflow_run_does_not_hide_a_healthy_sibling(self) -> None:
+        now = 1_700_000_000.0
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(tmp, now=now, parent_age=30 * 3600)
+            good = self.own_agent(project, label="good", age=3, now=now)
+            parked = self.own_agent(project, label="parked", age=30 * 3600, now=now)
+            good_run = good.parent / "workflows" / "good"
+            parked_run = parked.parent / "workflows" / "parked"
+            for worker, run in ((good, good_run), (parked, parked_run)):
+                run.mkdir(parents=True)
+                worker.rename(run / worker.name)
+                meta = worker.with_suffix(".meta.json")
+                meta.rename(run / meta.name)
+            real_stat = os.stat
+            unavailable = False
+
+            def directory_stat(path: str, *args: Any, **kwargs: Any) -> os.stat_result:
+                if unavailable and path == str(parked_run):
+                    raise PermissionError(str(parked_run))
+                return real_stat(path, *args, **kwargs)
+
+            with (
+                store_patch(PROJECTS_DIR=str(project.parent)),
+                mock.patch.object(os, "stat", side_effect=directory_stat),
+            ):
+                for attempt, unavailable in enumerate((True, False, True, False)):
+                    if attempt == 1:
+                        os.utime(parked_run / parked.name, (now - 4, now - 4))
+                    expected = [("good-lens", True)]
+                    if not unavailable:
+                        expected.append(("parked-lens", True))
+                    for show_all in (False, True):
+                        with self.subTest(unavailable=unavailable, show_all=show_all):
+                            rows = collect_claude(now, 24, show_all)
+                            self.assertEqual([self.PARENT], [row["resume_id"] for row in rows])
+                            self.assertEqual("working", rows[0]["state"])
+                            self.assertCountEqual(
+                                expected,
+                                [(a["name"], a["active"]) for a in rows[0]["subagents"]],
+                            )
+
+    def test_a_newer_teammate_copy_does_not_hide_workers_on_other_copies(self) -> None:
+        now = 1_700_000_000.0
+        child = "bbbb2222-0000-0000-0000-000000000000"
+        for resolved in (True, False):
+            with self.subTest(resolved=resolved), tempfile.TemporaryDirectory() as tmp:
+                project = self.project(tmp, now=now, parent_age=30 * 3600)
+                if not resolved:
+                    (project / f"{self.PARENT}.jsonl").unlink()
+                archive = project.with_name("archive")
+                archive.mkdir()
+                original = self.teammate(
+                    project, sid=child, name="reviewer", stamp=self.stamp(now - 60), age=60, now=now
+                )
+                mirror = self.teammate(
+                    archive, sid=child, name="reviewer", stamp=self.stamp(now - 10), age=10, now=now
+                )
+                self.worker_for(original, now)
+                worker = original.with_suffix("") / "subagents" / "agent-review.jsonl"
+                with store_patch(PROJECTS_DIR=str(project.parent)):
+                    for age in (20, 4):
+                        os.utime(worker, (now - age, now - age))
+                        for show_all in (False, True):
+                            with self.subTest(age=age, show_all=show_all):
+                                rows = collect_claude(now, 24, show_all)
+                                self.assertEqual(
+                                    [self.PARENT if resolved else None],
+                                    [row["resume_id"] for row in rows],
+                                )
+                                self.assertEqual(
+                                    [("reviewer", None, True), ("subagent", "reviewer", True)],
+                                    [
+                                        (a["name"], a["parent"], a["active"])
+                                        for a in rows[0]["subagents"]
+                                    ],
+                                )
+                    mirror_workers = mirror.with_suffix("") / "subagents"
+                    mirror_workers.mkdir(parents=True)
+                    duplicate = mirror_workers / worker.name
+                    duplicate.write_bytes(worker.read_bytes())
+                    os.utime(duplicate, (now + 3600, now + 3600))
+                    extra = mirror_workers / "agent-extra.jsonl"
+                    extra.write_bytes(worker.read_bytes())
+                    extra.with_suffix(".meta.json").write_text('{"name":"second-worker"}')
+                    os.utime(extra, (now - 2, now - 2))
+                    for show_all in (False, True):
+                        (row,) = collect_claude(now, 24, show_all)
+                        self.assertCountEqual(
+                            [
+                                ("reviewer", None, True),
+                                ("subagent", "reviewer", True),
+                                ("second-worker", "reviewer", True),
+                            ],
+                            [(a["name"], a["parent"], a["active"]) for a in row["subagents"]],
+                        )
+
+    def test_title_only_transcript_leaves_a_single_task_lead_in_charge(self) -> None:
+        now = 1_700_000_000.0
+        child = "bbbb2222-0000-0000-0000-000000000000"
+        for task_dir in (self.PARENT, f"session-{self.PARENT[:8]}"):
+            with self.subTest(task_dir=task_dir), tempfile.TemporaryDirectory() as tmp:
+                project = self.project(tmp, now=now, parent_age=30 * 3600)
+                lead = project / f"{self.PARENT}.jsonl"
+                lead.write_text('{"type":"ai-title","aiTitle":"Run the tests"}\n', encoding="utf-8")
+                os.utime(lead, (now - 30 * 3600, now - 30 * 3600))
+                teammate = self.teammate(
+                    project, sid=child, name="reviewer", stamp=self.stamp(now - 10), age=10, now=now
+                )
+                folder = Path(tmp) / "tasks" / task_dir
+                folder.mkdir(parents=True)
+                task = folder / "1.json"
+                task.write_text('{"id":"1","subject":"Run the tests","status":"pending"}')
+                os.utime(task, (now - 60, now - 60))
+                with store_patch(PROJECTS_DIR=str(project.parent), TASKS_DIR=str(folder.parent)):
+                    for live in (False, True):
+                        if live:
+                            self.worker_for(teammate, now)
+                        for show_all in (False, True):
+                            with self.subTest(live=live, show_all=show_all):
+                                rows = collect_claude(now, 24, show_all)
+                                self.assertEqual([self.PARENT[:8]], [row["sid"] for row in rows])
+                                row = rows[0]
+                                self.assertIsNone(row["resume_id"])
+                                self.assertEqual(
+                                    ["Run the tests"], [t["subject"] for t in row["tasks"]]
+                                )
+                                self.assertEqual(now - (5 if live else 10), row["last_activity"])
+                                self.assertEqual(
+                                    ["reviewer", "subagent"] if live else ["reviewer"],
+                                    [a["name"] for a in row["subagents"]],
+                                )
+                    self.own_agent(project, label="lead", age=8, now=now)
+                    for show_all in (False, True):
+                        (row,) = collect_claude(now, 24, show_all)
+                        self.assertIsNone(row["resume_id"])
+                        self.assertCountEqual(
+                            [("lead-lens", None), ("reviewer", None), ("subagent", "reviewer")],
+                            [(a["name"], a["parent"]) for a in row["subagents"]],
+                        )
+
+    def test_a_task_lead_does_not_claim_the_team_when_conversations_compete(self) -> None:
+        now = 1_700_000_000.0
+        child = "bbbb2222-0000-0000-0000-000000000000"
+        other = f"{self.PARENT[:8]}-1111-0000-0000-000000000000"
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(tmp, now=now, parent_age=30 * 3600)
+            lead = project / f"{self.PARENT}.jsonl"
+            (project / f"{other}.jsonl").write_text(lead.read_text().replace(self.PARENT, other))
+            orphan_dir = project.with_name("orphan")
+            orphan_dir.mkdir()
+            teammate = self.teammate(
+                orphan_dir, sid=child, name="reviewer", stamp=self.stamp(now - 10), age=10, now=now
+            )
+            self.worker_for(teammate, now)
+            folder = Path(tmp) / "tasks" / self.PARENT
+            folder.mkdir(parents=True)
+            task = folder / "1.json"
+            task.write_text('{"id":"1","subject":"Run the tests","status":"pending"}')
+            os.utime(task, (now - 60, now - 60))
+            with store_patch(PROJECTS_DIR=str(project.parent), TASKS_DIR=str(folder.parent)):
+                for show_all in (False, True):
+                    rows = collect_claude(now, 24, show_all)
+                    (task_row,) = (row for row in rows if row["tasks"])
+                    self.assertEqual([], task_row["subagents"])
+                    (orphan,) = (row for row in rows if row["subagents"])
+                    self.assertIsNone(orphan["resume_id"])
+                    self.assertEqual(child[:8], orphan["sid"])
+                    self.assertEqual(
+                        [("reviewer", None), ("subagent", "reviewer")],
+                        [(a["name"], a["parent"]) for a in orphan["subagents"]],
+                    )
+
+    def test_a_partial_teammate_copy_does_not_publish_a_standalone_row(self) -> None:
         now = 1_700_000_000.0
         child = "bbbb2222-0000-0000-0000-000000000000"
         with tempfile.TemporaryDirectory() as tmp:
             project = self.project(tmp, now=now, parent_age=30 * 3600)
-            archive = project.with_name("archive")
-            archive.mkdir()
-            for folder, age in ((archive, 30 * 3600), (project, 5)):
-                self.teammate(
-                    folder,
-                    sid=child,
-                    name="reviewer",
-                    stamp=self.stamp(now - age),
-                    age=age,
-                    now=now,
-                )
+            teammate = self.teammate(
+                project,
+                sid=child,
+                name="reviewer",
+                stamp=self.stamp(now - 30 * 3600),
+                age=30 * 3600,
+                now=now,
+                preamble=True,
+            )
+            copy = project.with_name("copy") / teammate.name
+            copy.parent.mkdir()
+            copy.write_bytes(b"".join(teammate.read_bytes().splitlines(keepends=True)[:-1]))
+            os.utime(copy, (now - 2, now - 2))
+            self.worker_for(teammate, now)
             with store_patch(PROJECTS_DIR=str(project.parent)):
                 for show_all in (False, True):
+                    with self.subTest(show_all=show_all):
+                        rows = collect_claude(now, 24, show_all)
+                        self.assertEqual([self.PARENT], [row["resume_id"] for row in rows])
+                        self.assertEqual(
+                            [("reviewer", None), ("subagent", "reviewer")],
+                            [(a["name"], a["parent"]) for a in rows[0]["subagents"]],
+                        )
+
+    def test_a_fresher_unrelated_lead_does_not_erase_live_work_on_a_colliding_prefix(self) -> None:
+        now = 1_700_000_000.0
+        child = "bbbb2222-0000-0000-0000-000000000000"
+        unrelated_id = f"{self.PARENT[:8]}-1111-0000-0000-000000000000"
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(tmp, now=now, parent_age=30 * 3600)
+            unrelated = project.with_name("unrelated") / f"{unrelated_id}.jsonl"
+            unrelated.parent.mkdir()
+            lead = project / f"{self.PARENT}.jsonl"
+            unrelated.write_text(lead.read_text().replace(self.PARENT, unrelated_id))
+            os.utime(unrelated, (now - 1, now - 1))
+            teammate = self.teammate(
+                project,
+                sid=child,
+                name="reviewer",
+                stamp=self.stamp(now - 30 * 3600),
+                age=30 * 3600,
+                now=now,
+            )
+            self.worker_for(teammate, now)
+            folder = Path(tmp) / "tasks" / self.PARENT
+            folder.mkdir(parents=True)
+            task = folder / "1.json"
+            task.write_text('{"id":"1","subject":"Run the tests","status":"pending"}')
+            os.utime(task, (now - 10, now - 10))
+            with store_patch(PROJECTS_DIR=str(project.parent), TASKS_DIR=str(folder.parent)):
+                for show_all in (False, True):
+                    with self.subTest(show_all=show_all):
+                        rows = collect_claude(now, 24, show_all)
+                        self.assertEqual(2, len({row["sid"] for row in rows}))
+                        (other,) = (row for row in rows if row["resume_id"] == unrelated_id)
+                        (team,) = (row for row in rows if row is not other)
+                        self.assertEqual(self.PARENT[:8], other["sid"])
+                        self.assertEqual(self.PARENT, team["sid"])
+                        self.assertEqual(self.PARENT, team["resume_id"])
+                        self.assertEqual([], other["subagents"])
+                        self.assertEqual([], other["tasks"])
+                        self.assertEqual(["Run the tests"], [t["subject"] for t in team["tasks"]])
+                        self.assertEqual(
+                            [("reviewer", None, True), ("subagent", "reviewer", True)],
+                            [(a["name"], a["parent"], a["active"]) for a in team["subagents"]],
+                        )
+                self.teammate(
+                    unrelated.parent,
+                    sid=child,
+                    name="reviewer",
+                    stamp=self.stamp(now - 2),
+                    age=2,
+                    now=now,
+                )
+                for show_all in (False, True):
                     rows = collect_claude(now, 24, show_all)
-                    self.assertEqual([self.PARENT], [row["resume_id"] for row in rows])
+                    (runner,) = (row for row in rows if row["subagents"])
+                    self.assertEqual(child[:8], runner["sid"])
+                    self.assertIsNone(runner["resume_id"])
                     self.assertEqual(
-                        [("reviewer", True)],
-                        [(agent["name"], agent["active"]) for agent in rows[0]["subagents"]],
+                        [("reviewer", None, True), ("subagent", "reviewer", True)],
+                        [(a["name"], a["parent"], a["active"]) for a in runner["subagents"]],
                     )
+                    (task_owner,) = (row for row in rows if row["tasks"])
+                    self.assertEqual(self.PARENT, task_owner["resume_id"])
+
+    def test_full_history_keeps_the_same_lead_copy_for_an_active_team(self) -> None:
+        now = 1_700_000_000.0
+        child = "bbbb2222-0000-0000-0000-000000000000"
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(tmp, now=now, parent_age=30 * 3600)
+            lead = project / f"{self.PARENT}.jsonl"
+            record = json.loads(lead.read_text())
+            record["cwd"] = "/work/active"
+            lead.write_text(json.dumps(record) + "\n")
+            archive = project.with_name("archive") / lead.name
+            archive.parent.mkdir()
+            archive.write_text(lead.read_text().replace("/work/active", "/work/archive"))
+            age = 30 * 3600
+            os.utime(lead, (now - age, now - age))
+            os.utime(archive, (now - age + 90, now - age + 90))
+            teammate = self.teammate(
+                project, sid=child, name="reviewer", stamp=self.stamp(now - age), age=age, now=now
+            )
+            self.worker_for(teammate, now)
+            with store_patch(PROJECTS_DIR=str(project.parent)):
+                views = [collect_claude(now, 24, show_all) for show_all in (False, True, False)]
+            for rows in views:
+                self.assertEqual([self.PARENT], [row["resume_id"] for row in rows])
+                self.assertEqual(
+                    [("reviewer", None), ("subagent", "reviewer")],
+                    [(a["name"], a["parent"]) for a in rows[0]["subagents"]],
+                )
+            self.assertEqual(["work/archive"] * 3, [rows[0]["project"] for rows in views])
+
+    def test_two_copies_of_a_teammate_publish_one_member(self) -> None:
+        now = 1_700_000_000.0
+        child = "bbbb2222-0000-0000-0000-000000000000"
+        for duplicate_age in (30 * 3600, 60):
+            with self.subTest(duplicate_age=duplicate_age), tempfile.TemporaryDirectory() as tmp:
+                project = self.project(tmp, now=now, parent_age=30 * 3600)
+                archive = project.with_name("archive")
+                archive.mkdir()
+                for folder, age in ((archive, duplicate_age), (project, 5)):
+                    self.teammate(
+                        folder,
+                        sid=child,
+                        name="reviewer",
+                        stamp=self.stamp(now - age),
+                        age=age,
+                        now=now,
+                    )
+                with store_patch(PROJECTS_DIR=str(project.parent)):
+                    for show_all in (False, True):
+                        rows = collect_claude(now, 24, show_all)
+                        self.assertEqual([self.PARENT], [row["resume_id"] for row in rows])
+                        self.assertEqual(
+                            [("reviewer", True)],
+                            [(agent["name"], agent["active"]) for agent in rows[0]["subagents"]],
+                        )
 
     def test_a_prefix_collision_does_not_make_an_archived_teammate_reachable(self) -> None:
         now = 1_700_000_000.0

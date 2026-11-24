@@ -7,7 +7,7 @@ import json
 import os
 import stat
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import chain
 from typing import TYPE_CHECKING, Any
 
@@ -140,8 +140,10 @@ def started_agent_ids(prefix: str, children: list[Teammate], paths: list[str]) -
     return started
 
 
-def load_tasks(config: RuntimeConfig) -> dict[str, list[dict[str, Any]]]:
-    """Task lists keyed by the native directory id, which can be a legacy prefix."""
+def load_tasks(
+    config: RuntimeConfig, *, native_ids: bool = False
+) -> dict[str, list[dict[str, Any]]]:
+    """Task lists by display prefix, or by directory id for identity joins."""
     by_session: dict[str, list[dict[str, Any]]] = {}
     for fp in runtime_io.glob_stores(config, "claude.tasks", "*", "*.json"):
         if os.path.basename(fp).startswith("."):
@@ -168,7 +170,7 @@ def load_tasks(config: RuntimeConfig) -> dict[str, list[dict[str, Any]]]:
         subject = task.get("subject")
         active_form = task.get("activeForm")
         status = task.get("status")
-        by_session.setdefault(sid, []).append(
+        by_session.setdefault(sid if native_ids else sid[:8], []).append(
             {
                 "id": task.get("id"),
                 "subject": subject if isinstance(subject, str) and subject else "(untitled)",
@@ -191,7 +193,7 @@ def directory_stamp(path: str) -> tuple[int, int, int, int] | None:
     return info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns
 
 
-def subagent_tree_stamp(sess_dir: str) -> tuple[SubagentTreeStamp, list[str]]:
+def subagent_tree_stamp(sess_dir: str) -> tuple[SubagentTreeStamp | None, list[str]]:
     subagents = os.path.join(sess_dir, "subagents")
     workflows = os.path.join(subagents, "workflows")
     stamp = {path: directory_stamp(path) for path in (sess_dir, subagents, workflows)}
@@ -199,15 +201,20 @@ def subagent_tree_stamp(sess_dir: str) -> tuple[SubagentTreeStamp, list[str]]:
         return stamp, []
     # A run can exist before its first worker or point to a target that is
     # still missing. Keep those names so each can change without its container.
+    complete = True
+    runs: list[str] = []
     with os.scandir(workflows) as entries:
-        run_dirs = sorted(
-            entry.path
-            for entry in entries
-            if not entry.name.startswith(".")
-            and (entry.is_symlink() or entry.is_dir(follow_symlinks=False))
-        )
-    stamp.update((path, directory_stamp(path)) for path in run_dirs)
-    return stamp, [path for path in run_dirs if stamp[path] is not None]
+        for entry in entries:
+            if entry.name.startswith("."):
+                continue
+            try:
+                if entry.is_symlink() or entry.is_dir(follow_symlinks=False):
+                    stamp[entry.path] = directory_stamp(entry.path)
+                    if stamp[entry.path] is not None:
+                        runs.append(entry.path)
+            except OSError:
+                complete = False
+    return (stamp if complete else None), sorted(runs)
 
 
 def worker_paths(directory: str) -> list[str]:
@@ -561,6 +568,26 @@ class TranscriptCopy:
         return self.activity, self.plausible_mtime, self.mtime
 
 
+def merge_worker_copies(
+    config: RuntimeConfig, now: float, copies: list[TranscriptCopy]
+) -> list[TranscriptCopy]:
+    # Mirrors can contain different workers or different versions of one worker.
+    # A newer parent transcript says nothing about which worker files it contains.
+    workers: dict[str, tuple[str, float]] = {}
+    plausible: dict[str, float] = {}
+    for copy in copies:
+        directory = copy.path.removesuffix(".jsonl")
+        for path, mtime in copy.workers:
+            relative = os.path.relpath(path, directory)
+            stamp = runtime_sessions.newest_plausible(config, now, (mtime,))
+            if relative not in workers or stamp > plausible[relative]:
+                workers[relative] = (path, mtime)
+                plausible[relative] = stamp
+    files = list(workers.values())
+    newest = max(plausible.values(), default=0)
+    return [replace(copy, workers=files, worker_mtime=newest) for copy in copies]
+
+
 @dataclass(frozen=True, slots=True)
 class Teammate:
     transcript: TranscriptCopy
@@ -584,7 +611,7 @@ def session_groups(
     show_all: bool,
     paths: list[str],
 ) -> dict[str, SessionGroup]:
-    tasks = load_tasks(config)
+    tasks = load_tasks(config, native_ids=True)
     task_mtimes = {
         sid: runtime_sessions.newest_plausible(config, now, (t["updated"] for t in entries))
         for sid, entries in tasks.items()
@@ -593,8 +620,11 @@ def session_groups(
     def fresh(stamp: float) -> bool:
         return runtime_sessions.is_fresh(config, now, stamp, window_sec)
 
+    def working(stamp: float) -> bool:
+        return runtime_sessions.is_fresh(config, now, stamp, config.working_threshold_sec)
+
     reachable = {sid[:8] for sid, mtime in task_mtimes.items() if fresh(mtime)}
-    candidates: dict[str, list[TranscriptCopy]] = {}
+    native_copies: dict[str, list[TranscriptCopy]] = {}
     for path in paths:
         sid = os.path.basename(path).removesuffix(".jsonl")
         if "-agent-" in sid or sid.startswith("agent-"):
@@ -608,53 +638,76 @@ def session_groups(
         worker_mtime = runtime_sessions.newest_plausible(config, now, (ts for _, ts in workers))
         plausible = runtime_sessions.newest_plausible(config, now, (mtime,))
         copy = TranscriptCopy(path, sid, mtime, plausible, workers, worker_mtime)
-        candidates.setdefault(sid[:8], []).append(copy)
+        native_copies.setdefault(sid, []).append(copy)
         if fresh(copy.activity):
             reachable.add(sid[:8])
 
+    candidates: dict[str, list[TranscriptCopy]] = {}
+    for sid, copies in native_copies.items():
+        merged = merge_worker_copies(config, now, copies) if len(copies) > 1 else copies
+        candidates.setdefault(sid[:8], []).extend(merged)
+
     identities: dict[str, tuple[str, str] | None] = {}
+    metadata: set[str] = set()
 
     def identity(copy: TranscriptCopy) -> tuple[str, str] | None:
-        # An empty parent denotes a lead. Metadata alone cannot own work.
         if copy.path not in identities:
             is_agent, name, parent = claude_data.agent_identity(config, state, copy.path)
-            identities[copy.path] = (
-                (name, parent)
-                if is_agent or claude_data.has_conversation(config, state, copy.path)
-                else None
+            conversation = (
+                True if is_agent else claude_data.has_conversation(config, state, copy.path)
             )
+            if conversation is False:
+                metadata.add(copy.path)
+            identities[copy.path] = (name, parent) if conversation else None
         return identities[copy.path]
 
     def sole_session(copies: list[TranscriptCopy]) -> TranscriptCopy | None:
-        known = [copy for copy in copies if identity(copy) is not None]
-        if len({copy.sid for copy in known}) == 1:
-            return max(known, key=TranscriptCopy.rank)
+        known = [(copy, role) for copy in copies if (role := identity(copy)) is not None]
+        if len({copy.sid for copy, _ in known}) == 1:
+            # A short copy can end before the record that identifies its team.
+            return max(known, key=lambda entry: (bool(entry[1][1]), entry[0].rank()))[0]
         return None
 
     def find_parent(copy: TranscriptCopy, prefix: str) -> TranscriptCopy | None:
         choices = candidates.get(prefix, [])
-        folder = os.path.dirname(copy.path)
-        local = [candidate for candidate in choices if os.path.dirname(candidate.path) == folder]
-        return sole_session(local) or sole_session(choices)
+        # A newer mirror may live beside an unrelated lead with the same
+        # prefix. Keep the evidence from the other copy's folder in the join.
+        folders = {os.path.dirname(candidate.path) for candidate in native_copies[copy.sid]}
+        local = [candidate for candidate in choices if os.path.dirname(candidate.path) in folders]
+        local_source = sole_session(local)
+        if local_source is not None:
+            # A folder can resolve a prefix collision. The resolved UUID still
+            # uses the same representative as the full-history scan.
+            choices = [candidate for candidate in choices if candidate.sid == local_source.sid]
+        return sole_session(choices)
 
     groups: dict[str, SessionGroup] = {}
     teammates: dict[str, TranscriptCopy] = {}
+    teammate_ids: set[str] = set()
     for prefix, copies in candidates.items():
         if not (show_all or prefix in reachable):
             continue
         for copy in copies:
             role = identity(copy)
             if role is None:
+                if copy.path in metadata and working(copy.worker_mtime):
+                    # The worker directory can still identify running work
+                    # when the parent file contains only title metadata.
+                    groups.setdefault(copy.sid, SessionGroup(source=copy, resumable=False))
                 continue
             if role[1]:
+                teammate_ids.add(copy.sid)
                 if fresh(copy.activity):
                     existing = teammates.get(copy.sid)
                     if existing is None or copy.rank() > existing.rank():
                         teammates[copy.sid] = copy
             else:
                 group = groups.setdefault(copy.sid, SessionGroup())
-                if group.source is None or copy.rank() > group.source.rank():
+                if group.source is None or not group.resumable or copy.rank() > group.source.rank():
                     group.source = copy
+                    group.resumable = True
+    for sid in teammate_ids:
+        groups.pop(sid, None)
 
     tasks_by_prefix: dict[str, list[str]] = {}
     for sid in tasks:
@@ -687,10 +740,21 @@ def session_groups(
             team.append((copy, name))
             lead = find_parent(copy, parent)
             if lead is None:
-                # A task-only lead can still own a team when no transcript names it.
+                # A title file cannot own the team. An unreadable conversation
+                # or two competing leads still leave its ownership uncertain.
                 task_leads = tasks_by_prefix.get(parent, [])
-                if len(task_leads) == 1 and not candidates.get(parent):
+                if len(task_leads) == 1 and all(
+                    candidate.path in metadata for candidate in candidates.get(parent, [])
+                ):
                     root = task_leads[0]
+                    if root == parent:
+                        worker_leads = {
+                            candidate.sid
+                            for candidate in candidates.get(parent, [])
+                            if working(candidate.worker_mtime)
+                        }
+                        if len(worker_leads) == 1:
+                            root = next(iter(worker_leads))
                     break
                 anchor = copy
             elif lead.sid in seen:
@@ -740,7 +804,11 @@ def session_groups(
         groups.setdefault(folded_into.get(key, key), SessionGroup()).tasks.extend(entries)
 
     def group_rank(group: SessionGroup) -> tuple[float, bool, float, float]:
-        source_rank = group.source.rank() if group.source is not None else (0, 0, 0)
+        source_rank = (0.0, 0.0, 0.0)
+        if group.source is not None:
+            source_rank = (
+                group.source.rank() if group.resumable else (group.source.worker_mtime, 0, 0)
+            )
         activity = runtime_sessions.newest_plausible(
             config,
             now,
@@ -752,11 +820,29 @@ def session_groups(
         )
         return activity, group.source is not None, source_rank[1], source_rank[2]
 
-    rows: dict[str, SessionGroup] = {}
+    winners: dict[str, str] = {}
     for sid, group in groups.items():
         prefix = sid[:8]
-        if prefix not in rows or group_rank(group) > group_rank(rows[prefix]):
-            rows[prefix] = group
+        if prefix not in winners or group_rank(group) > group_rank(groups[winners[prefix]]):
+            winners[prefix] = sid
+    rows = {prefix: groups[sid] for prefix, sid in winners.items()}
+    for sid, group in groups.items():
+        prefix = sid[:8]
+        winner = winners[prefix]
+        if sid == winner:
+            continue
+        group_workers = chain(
+            group.source.workers if group.source is not None else (),
+            (worker for child in group.children.values() for worker in child.transcript.workers),
+        )
+        if any(working(mtime) for _, mtime in group_workers) or any(
+            fresh(task["updated"]) for task in group.tasks
+        ):
+            # Keep the short key for the normal winner when possible. Folding a
+            # displaced roster into that row would attribute work to another UUID.
+            if sid == prefix:
+                rows[winner] = rows[prefix]
+            rows[sid] = group
     for prefix, entries in legacy_tasks.items():
         rows.setdefault(prefix, SessionGroup()).tasks.extend(entries)
     return rows
@@ -791,7 +877,8 @@ def collect(
             group.tasks,
             key=lambda t: int(t["id"]) if str(t["id"]).isdigit() else 0,
         )
-        agent_files = source.workers if transcript and source else []
+        # On an orphan team row the display source is already in the roster.
+        agent_files = source.workers if source and source.sid not in group.children else []
         children = list(group.children.values())
         # One analysis per child transcript, read once and shared by everything
         # below that wants it: the session's output rate, and the model published
@@ -1208,11 +1295,9 @@ def collect(
         s.update(
             {
                 # The transcript's own stem is the session id `claude --resume`
-                # takes; `prefix` above is its first eight characters and the CLI
-                # refuses those outright. It is the WINNING transcript's stem, so a
-                # prefix two transcripts share resumes the one whose state this row
-                # is showing. A row that reached this loop from the task store alone
-                # has no transcript and therefore no id, which is the None case.
+                # takes. The usual eight-character board key is too short for
+                # the CLI. Use the chosen transcript even when its prefix is
+                # shared. A task-only row has no transcript to resume.
                 "resume_id": (
                     runtime_sessions.resume_token(
                         os.path.basename(transcript).removesuffix(".jsonl")

@@ -1276,8 +1276,9 @@ The variable cannot declare a parent if the child's SessionStart hook never runs
 
 Outside those coordinator shells, use the published harness and session id in `/api/data`, keep
 `session_id` from the coordinator's SessionStart hook input, or choose its UUID before starting
-Claude Code with `--session-id UUID`. Full Claude UUIDs resolve to eight-character board keys;
-UUID hex matching ignores case and keeps the published identity. An ambiguous match is refused.
+Claude Code with `--session-id UUID`. A full Claude UUID can identify a row that uses an
+eight-character board key. UUID hex matching ignores case and keeps the published identity.
+Compass refuses ambiguous matches.
 The children keep their own goals and readings.
 
 The label is local display metadata, at most 40 characters, and never part of a model prompt.

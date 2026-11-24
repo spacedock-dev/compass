@@ -1440,19 +1440,19 @@ def hook_user_event(
 METADATA_RECORD_TYPES = frozenset({"ai-title", "agent-name", "pr-link"})
 
 
-def has_conversation(config: RuntimeConfig, state: RuntimeState, path: str) -> bool:
+def has_conversation(config: RuntimeConfig, state: RuntimeState, path: str) -> bool | None:
     """Whether a top-level transcript is a session rather than harness metadata.
 
     Only a file that fits inside the bounded prefix is ever classified as
     metadata, because a longer one cannot be judged without reading it all.
     A True answer read from a complete file is final (transcripts only
     append); an empty or mid-write file is re-read next pass, and a False
-    answer is keyed on the file's stat.
+    answer is keyed on the file's stat. None means the file could not be read.
     """
     try:
         stat = os.stat(path)
     except OSError:
-        return False
+        return None
     key = (stat.st_mtime_ns, stat.st_size)
     with state.cache_lock:
         cached = state.conversation_cache.get(path)
@@ -1463,7 +1463,7 @@ def has_conversation(config: RuntimeConfig, state: RuntimeState, path: str) -> b
             path, max_bytes=config.claude_agent_scan_bytes, harness=True
         )
     except OSError:
-        return False
+        return None
     if stat.st_size > len(data):
         result, settled = True, True
     else:

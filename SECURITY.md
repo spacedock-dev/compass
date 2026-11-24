@@ -4599,8 +4599,9 @@ macOS `/tmp` pointing to `/private/tmp`, remain usable.
 Harness discovery validates existing configured store roots, tightening owned roots to `0o700`
 on POSIX without creating absent stores. Claude applies the directory admission check to
 `subagents/` before enumerating worker directories or workflow runs and preserves its permissions.
-Refreshes reuse completed worker listings in memory while the directory stamps agree. A directory
-scan failure leaves the listing due for refresh.
+Refreshes reuse completed worker listings in memory while the directory stamps agree. If a
+workflow run is unreadable, Compass still reports workers from readable runs and retries the
+incomplete listing on the next refresh.
 Harness-store reads use a separate shared opener. Owned store directory and transcript links work,
 including a parent transcript on another disk. On POSIX, link traversal is bounded to 40 links;
 linked directory targets and the opened regular file must belong to the current user. Reads use
@@ -4651,11 +4652,11 @@ the same trust boundary described above, not a new one.
 
 `GET /api/overlays` reads the event overlay ledger and is a diagnostic, described in
 [`docs/design-needs-input.md`](docs/design-needs-input.md#n-5-two-different-faults-produce-the-same-row-so-the-ledger-is-now-readable).
-It carries no session content: an overlay is a harness name, the collector key for the session, a
-state kind, three timestamps, and a subagent id the hook supplied, capped at ingress. The collector
-key is Claude's eight-character transcript prefix and the whole session UUID for Codex, Antigravity
-and Gemini CLI, and `/api/data` already publishes both, along with titles and prompts this route
-never sees. It applies the strict same-origin check rather than the relaxed one `/api/data` uses for
+An overlay carries a harness name, the session's hook key, a state kind, three timestamps, and a
+subagent id the hook supplied, capped at ingress. The hook key is Claude's eight-character
+transcript prefix and the whole session UUID for Codex, Antigravity and Gemini CLI. `/api/data`
+already publishes both forms, along with titles and prompts this route never sees.
+It applies the strict same-origin check rather than the relaxed one `/api/data` uses for
 navigations, and answers 503 when the process runs without a coordinator.
 
 The same route serves the bounded record of state disputes, where an event overruled a session the
@@ -6186,9 +6187,9 @@ move together; `test_documentation.EventEnvelopeEnumerationTest` binds both pros
 One published field is derived from a transcript filename, and the sentence above is the one it has
 to be read against. `resume_id` carries the session id a harness's own CLI takes to re-enter that
 session, so the board can hand a reader the command rather than the hunt. It is the transcript's
-stem and never its path: no directory, no home, nothing a filesystem could be walked from, and the
-first eight characters of that same stem are already published as Claude's `sid`. `cwd` is not read
-for it and would not help if it were. Two harnesses fill it, Claude Code and Codex, and the other
+stem alone. Claude normally publishes the first eight characters as its `sid`. If a prefix
+collision would hide workers or tasks, Compass can use the whole stem for the additional row.
+The value comes from the filename. Two harnesses fill it, Claude Code and Codex, and the other
 eight publish `null`, which is what stops the page offering a command nobody has verified.
 
 The value is checked against `^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$` before it is published and again in

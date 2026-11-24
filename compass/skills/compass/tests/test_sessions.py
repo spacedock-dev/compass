@@ -1498,9 +1498,7 @@ class DurationAndEpochTest(unittest.TestCase):
             observed = {}
             for took in (29, 30, 60):
                 with (
-                    mock.patch.object(
-                        claude_collector, "load_tasks", lambda _config, t=took: tasks(t)
-                    ),
+                    mock.patch.object(claude_collector, "load_tasks", return_value=tasks(took)),
                     store_patch(PROJECTS_DIR=empty),
                 ):
                     observed[took] = collect_claude(now, 24, True)[0]["eta_h"]
