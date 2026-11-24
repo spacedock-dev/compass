@@ -23,7 +23,7 @@ set -eu
 version="${1:?usage: publish-marketplace.sh <X.Y.Z>}"
 remote="${MARKETPLACE_REMOTE:-git@github.com:spacedock-dev/marketplace.git}"
 delay="${MARKETPLACE_RETRY_DELAY:-5}"
-here="$(cd "$(dirname "$0")" && pwd)"
+here="$(CDPATH='' cd "$(dirname "$0")" && pwd)"
 
 umask 077
 scratch="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/marketplace.XXXXXX")"

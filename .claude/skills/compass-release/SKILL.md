@@ -320,7 +320,9 @@ parity check is what makes it unconditional on every normal release.
 
 The tag move queues a second run. On its first attempt it ends at `resolve` with `mode=complete`
 when the tag points to its own validated release commit, the release is published and final,
-and `checksums.txt` agrees with GitHub's digests for all four archives.
+and `checksums.txt` has four LF-terminated lines matching GitHub's archive digests. If the first run
+stopped between moving the tag and attaching its archives, re-run all jobs on the first run. An
+older set of matching archives can satisfy the [completion check](../../../AGENTS.md#versioning-and-releases).
 
 If the run failed part way, do not cut a new number and do not push the tag again: the tag
 already exists on the remote, so a second push is `Everything up-to-date` and starts nothing, and
@@ -365,6 +367,8 @@ Read which job failed first:
   the next version number.
 - **`attach-cli` failed.** Re-run all jobs. The workflow rebuilds and uploads all four archives
   with their new `checksums.txt`, replacing any existing copies.
+- **`release` stopped at an existing draft.** Review the draft and either publish it or remove it.
+  Then re-run all jobs to attach the archives and finish distribution.
 - **`marketplace` failed.** The release is published and `stable` serves it, so installs already get
   the new version; only the listing's displayed version is behind. Re-run that job alone: it never
   moves the version backwards, so it is safe. If the log says the entry must point at `stable`, or

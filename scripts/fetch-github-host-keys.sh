@@ -25,13 +25,22 @@ fetch_github_host_keys() (
 		) || result=$?
 		case "$result:$status" in
 		0:200)
-			jq -er '
+			rows=$(jq -ers '
 				"\\A[A-Za-z0-9@._+-]+ [A-Za-z0-9+/]+={0,2}( [^\\p{Cc}]+)?\\z" as $key |
-				.ssh_keys | arrays |
+				select(length == 1) | .[0].ssh_keys | arrays |
 				select(length > 0 and all(.[]; type == "string" and test($key))) |
 				.[] | split(" ") | .[0:2] | "github.com " + join(" ")' \
-				<"$body" 2>/dev/null
-			return $?
+				<"$body" 2>/dev/null) || return 1
+			# Fingerprinting a whole file can succeed even if OpenSSH skips an invalid row.
+			key_file="$1/github-host-key"
+			while IFS= read -r row; do
+				printf '%s\n' "$row" >"$key_file" || return 1
+				ssh-keygen -l -f "$key_file" >/dev/null 2>&1 || return 1
+			done <<EOF
+$rows
+EOF
+			printf '%s\n' "$rows"
+			return
 			;;
 		# A fresh request can clear DNS, connect, timeout, TLS handshake and stream I/O
 		# failures. Treat certificate verification and local I/O errors as terminal.

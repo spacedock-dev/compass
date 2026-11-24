@@ -40,6 +40,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -111,7 +112,7 @@ class Outcome:
 
 
 def run(argv: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    """Every command this module starts. Arguments are a list, never a shell string."""
+    """Run a command with captured text output."""
     return subprocess.run(  # noqa: S603 -- argv is built here from validated values
         argv, capture_output=True, text=True, check=False, cwd=cwd
     )
@@ -318,6 +319,7 @@ def _uploaded_cli_assets(
     release: dict[str, Any], expected: set[str], tag: str
 ) -> dict[str, dict[str, Any]]:
     uploaded: dict[str, dict[str, Any]] = {}
+    complete = True
     for asset in release["assets"]:
         if (
             not isinstance(asset, dict)
@@ -331,20 +333,46 @@ def _uploaded_cli_assets(
         if name not in expected:
             continue
         if name in uploaded or asset["state"] != "uploaded" or asset["size"] <= 0:
-            return {}
-        uploaded[name] = asset
-    return uploaded
+            complete = False
+        else:
+            uploaded[name] = asset
+    return uploaded if complete else {}
+
+
+def _download_cli_checksums(repo: Path, tag: str, asset_id: int, max_size: int) -> bytes | None:
+    operation = f"could not download published checksums for {tag}"
+    endpoint = f"repos/{{owner}}/{{repo}}/releases/assets/{asset_id}"
+    argv = ["gh", "api", "-H", "Accept: application/octet-stream", endpoint]
+    try:
+        # An unbuffered pipe lets us stop reading at the first byte beyond the limit.
+        with (
+            tempfile.TemporaryFile() as errors,
+            subprocess.Popen(  # noqa: S603 -- arguments are fixed apart from the validated ID
+                argv, cwd=repo, stdout=subprocess.PIPE, stderr=errors, bufsize=0
+            ) as process,
+        ):
+            assert process.stdout is not None  # noqa: S101 -- PIPE guarantees a stdout stream
+            body = bytearray()
+            while chunk := process.stdout.read(max_size + 1 - len(body)):
+                body.extend(chunk)
+                if len(body) > max_size:
+                    process.kill()
+                    return None
+            if returncode := process.wait():
+                errors.seek(0)
+                detail = (
+                    errors.read(4096).decode(errors="replace").strip() or f"gh exited {returncode}"
+                )
+                message = f"{operation}: {detail}"
+                raise ReleaseLookupError(message)
+    except OSError as exc:
+        raise ReleaseLookupError(operation) from exc
+    return bytes(body)
 
 
 def _cli_publication_complete(repo: Path, tag: str, version: str) -> bool:
     release = _release_metadata(repo, tag)
-    if (
-        release is None
-        or release["draft"]
-        or release["prerelease"]
-        or not isinstance(release.get("published_at"), str)
-        or not release["published_at"].strip()
-    ):
+    if release is None:
         return False
     archives = {
         f"compass_{version}_{target}.tar.gz"
@@ -352,7 +380,13 @@ def _cli_publication_complete(repo: Path, tag: str, version: str) -> bool:
     }
     expected = archives | {"checksums.txt"}
     uploaded = _uploaded_cli_assets(release, expected, tag)
-    if uploaded.keys() != expected:
+    if (
+        uploaded.keys() != expected
+        or release["draft"]
+        or release["prerelease"]
+        or not isinstance(release.get("published_at"), str)
+        or not release["published_at"].strip()
+    ):
         return False
 
     # A failed clobber can leave all the names in place with bytes from different builds.
@@ -361,23 +395,20 @@ def _cli_publication_complete(repo: Path, tag: str, version: str) -> bool:
         digest = uploaded[name].get("digest")
         if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", digest):
             return False
-        lines.add(f"{digest.removeprefix('sha256:').lower()}  {name}")
+        lines.add(f"{digest.removeprefix('sha256:').lower()}  {name}".encode("ascii"))
 
-    operation = f"could not download published checksums for {tag}"
-    asset_id = uploaded["checksums.txt"].get("id")
+    max_size = sum(len(line) + 1 for line in lines)
+    checksums = uploaded["checksums.txt"]
+    if checksums["size"] > max_size:
+        return False
+    asset_id = checksums.get("id")
     if type(asset_id) is not int or asset_id <= 0:
-        raise ReleaseLookupError(f"{operation}: invalid GitHub asset ID")
-    result = _publication_read(
-        repo,
-        operation,
-        "-H",
-        "Accept: application/octet-stream",
-        f"repos/{{owner}}/{{repo}}/releases/assets/{asset_id}",
-    )
-    if result.returncode:
-        detail = result.stderr.strip() or f"gh exited {result.returncode}"
-        raise ReleaseLookupError(f"{operation}: {detail}")
-    published_lines = result.stdout.splitlines()
+        message = f"could not download published checksums for {tag}: invalid GitHub asset ID"
+        raise ReleaseLookupError(message)
+    body = _download_cli_checksums(repo, tag, asset_id, max_size)
+    if body is None or not body.endswith(b"\n"):
+        return False
+    published_lines = body[:-1].split(b"\n")
     return len(published_lines) == len(lines) and set(published_lines) == lines
 
 

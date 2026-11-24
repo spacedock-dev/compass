@@ -745,8 +745,9 @@ the Homebrew tap alone, and writes `Formula/compass.rb` there from the release's
 workflow runs the same build on pull requests that touch the runtime, so a break shows up in review.
 On its first attempt, the run started by the workflow's tag move stops at resolution if the tag
 points to its own release commit, the GitHub Release is published and final, and all four archive
-digests match the uploaded `checksums.txt`. **Re-run all jobs** rebuilds the archives and replaces
-them with their new checksum file before retrying distribution.
+digests match the four LF-terminated lines in `checksums.txt`. **Re-run all jobs** rebuilds and
+reattaches the archives with their new checksum file before retrying distribution. See the
+[release completion limits](AGENTS.md#versioning-and-releases).
 The bump is skipped when the manifests already carry the tagged version, which is also how you
 release the current version as-is. Every step is idempotent, so a partially failed release is
 finished by **Re-run all jobs** on the same run. That is the only re-run that resolves the release

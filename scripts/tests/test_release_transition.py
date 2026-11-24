@@ -840,7 +840,14 @@ case "$*" in
             printf 'HTTP 403\n' >&2
             exit 1
         fi
+        if [ "${FAKE_DOWNLOAD_OVERFLOW:-0}" = 1 ]; then
+            dd if=/dev/zero bs=1024 count=1024 2>/dev/null
+            touch "$FAKE_ASSETS/download-exhausted"
+            exit 0
+        fi
         cat "$FAKE_ASSETS/checksums.txt" ;;
+    'release view v0.2.0'|'release view v0.2.0 --json isDraft --jq .isDraft')
+        printf '%s\n' "${FAKE_DRAFT:-true}" ;;
     'release download v0.2.0 --pattern checksums.txt --output '*)
         cp "$FAKE_ASSETS/checksums.txt" "$7" ;;
     'release delete-asset v0.2.0 checksums.txt --yes')
@@ -918,6 +925,9 @@ esac
 
     def test_a_draft_or_missing_github_release_still_resumes(self) -> None:
         self.github_release(draft=True)
+        payload = json.loads(self.response.read_bytes())
+        payload["published_at"] = "2026-11-24T10:50:00Z"
+        self.response.write_text(json.dumps(payload), encoding="utf-8")
         for status in ("200", "404"):
             with (
                 self.subTest(status=status),
@@ -937,15 +947,30 @@ esac
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertIn("mode=resume\n", result.stdout)
 
-    def test_expected_asset_names_must_be_unique_even_with_a_starter_duplicate(self) -> None:
+    def test_expected_uploaded_asset_names_must_be_unique(self) -> None:
         self.github_release()
         payload = json.loads(self.response.read_text(encoding="utf-8"))
-        duplicate = payload["assets"][0] | {"state": "starter", "size": 0, "id": 6}
+        duplicate = payload["assets"][0] | {"id": 6}
         payload["assets"].append(duplicate)
         self.response.write_text(json.dumps(payload), encoding="utf-8")
         result = self.resolve_attempt()
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn("mode=resume\n", result.stdout)
+
+    def test_a_malformed_asset_fails_before_or_after_a_partial_asset(self) -> None:
+        self.github_release()
+        payload = json.loads(self.response.read_bytes())
+        payload["assets"][0].update(state="starter", size=0)
+        assets = payload["assets"]
+        for records in ([*assets, None], [None, *assets]):
+            with self.subTest(malformed_first=records[0] is None):
+                self.response.write_text(
+                    json.dumps(payload | {"assets": records}), encoding="utf-8"
+                )
+                result = self.resolve_attempt()
+                self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                self.assertIn("unexpected GitHub asset response", result.stderr)
+                self.assertEqual("", result.stdout)
 
     def test_an_unrelated_asset_does_not_prevent_completion(self) -> None:
         self.github_release()
@@ -978,6 +1003,51 @@ esac
                 result = self.resolve_attempt()
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertIn("mode=resume\n", result.stdout)
+
+    def test_a_non_utf8_checksum_response_still_resumes(self) -> None:
+        self.github_release()
+        manifest = self.published / "checksums.txt"
+        manifest.write_bytes(b"\xff\xfe" + manifest.read_text(encoding="ascii").encode("utf-16-le"))
+
+        result = self.resolve_attempt()
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("mode=resume\n", result.stdout)
+        self.assertIn("releases/assets/5", self.gh_calls.read_text(encoding="utf-8"))
+
+    def test_the_completion_check_requires_lf_delimited_checksums(self) -> None:
+        self.github_release()
+        manifest = self.published / "checksums.txt"
+        good = manifest.read_bytes()
+        for ending in (b"\r\n", b"\r", "\u2028".encode()):
+            with self.subTest(ending=ending):
+                manifest.write_bytes(good.replace(b"\n", ending))
+                result = self.resolve_attempt()
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertIn("mode=resume\n", result.stdout)
+
+    def test_an_oversized_checksum_asset_resumes_without_downloading(self) -> None:
+        self.github_release()
+        payload = json.loads(self.response.read_bytes())
+        payload["assets"][-1]["size"] += 1
+        self.response.write_text(json.dumps(payload), encoding="utf-8")
+
+        result = self.resolve_attempt()
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("mode=resume\n", result.stdout)
+        self.assertEqual(
+            ["api --include repos/{owner}/{repo}/releases/tags/v0.2.0"],
+            self.gh_calls.read_text(encoding="utf-8").splitlines(),
+        )
+
+    def test_an_oversized_checksum_response_resumes_without_reading_to_eof(self) -> None:
+        self.github_release()
+        with mock.patch.dict(os.environ, {"FAKE_DOWNLOAD_OVERFLOW": "1"}):
+            result = self.resolve_attempt()
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("mode=resume\n", result.stdout)
+        self.assertIn("releases/assets/5", self.gh_calls.read_text(encoding="utf-8"))
+        self.assertFalse((self.published / "download-exhausted").exists())
 
     def test_an_explicit_rerun_can_recover_distribution_after_the_assets_were_uploaded(
         self,
@@ -1042,6 +1112,33 @@ esac
         self.assertIn("could not download published checksums", result.stderr)
         self.assertIn("HTTP 403", result.stderr)
         self.assertEqual("", result.stdout)
+
+    def test_the_publish_step_stops_for_a_draft_and_accepts_a_public_release(self) -> None:
+        self.github_release(draft=True)
+        release = SCRIPT.parents[1] / ".github/workflows/release.yml"
+        workflow = yaml.safe_load(release.read_text(encoding="utf-8"))
+        publish = next(
+            step["run"]
+            for step in workflow["jobs"]["release"]["steps"]
+            if step["name"] == "Publish the GitHub Release"
+        )
+        for draft, exit_code, message in (
+            ("true", 1, "exists as a draft"),
+            ("false", 0, "already exists"),
+        ):
+            with self.subTest(draft=draft):
+                result = subprocess.run(
+                    [shutil.which("bash") or "bash", "-c", publish],
+                    cwd=self.fx.work,
+                    env={**os.environ, "TAG": "v0.2.0", "FAKE_DRAFT": draft},
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=60,
+                )
+                self.assertEqual(exit_code, result.returncode, result.stdout + result.stderr)
+                self.assertIn(message, result.stdout + result.stderr)
+        self.assertNotIn("release create", self.gh_calls.read_text(encoding="utf-8"))
 
     def run_attach(self) -> tuple[subprocess.CompletedProcess[str], dict[str, bytes], Path]:
         release = SCRIPT.parents[1] / ".github/workflows/release.yml"

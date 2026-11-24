@@ -574,9 +574,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "Release $TAG already exists - nothing to publish."
-            exit 0
+          if DRAFT=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            case "$DRAFT" in
+              true)
+                echo "::error::Release $TAG exists as a draft. Review and publish or remove the draft, then re-run all jobs." >&2
+                exit 1 ;;
+              false)
+                echo "Release $TAG already exists - nothing to publish."
+                exit 0 ;;
+              *)
+                echo "::error::Could not determine whether release $TAG is a draft." >&2
+                exit 1 ;;
+            esac
           fi
           # Refresh here: a newer tag may have arrived since resolve or a failed attempt.
           git fetch --tags --force origin

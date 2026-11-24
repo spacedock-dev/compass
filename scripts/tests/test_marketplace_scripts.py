@@ -251,6 +251,23 @@ class HostKeyFetchTest(unittest.TestCase):
                 self.assertNotEqual(0, done.returncode)
                 self.assertEqual(b"", done.stdout)
 
+    def test_concatenated_metadata_documents_produce_no_rows(self) -> None:
+        valid = json.dumps({"ssh_keys": [publish_fakes.HOST_KEY]})
+        for body in ('{"ssh_keys":[]}\n' + valid, valid + "\n" + valid):
+            with self.subTest(body=body):
+                done = self.fetch(body)
+                self.assertNotEqual(0, done.returncode)
+                self.assertEqual(b"", done.stdout)
+
+    def test_an_unreadable_key_compromises_the_whole_response(self) -> None:
+        key = publish_fakes.HOST_KEY
+        _, blob = key.split()
+        for unreadable in ("example label", f"ssh-rsa {blob}", "ssh-ed25519 label"):
+            with self.subTest(key=unreadable):
+                done = self.fetch(json.dumps({"ssh_keys": [key, unreadable]}))
+                self.assertNotEqual(0, done.returncode)
+                self.assertEqual(b"", done.stdout)
+
 
 class PublishMarketplaceTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -335,6 +352,21 @@ class PublishMarketplaceTest(unittest.TestCase):
         self.assertEqual(
             render([sibling(), entry("1.0.0")]), self.git(self.remote, "show", f"main:{INDEX}")
         )
+
+    def test_a_relative_script_path_ignores_cdpath(self) -> None:
+        alternate = self.root / "alternate"
+        (alternate / "scripts").mkdir(parents=True)
+        done = subprocess.run(
+            [SH, "scripts/publish-marketplace.sh", "1.0.0"],
+            cwd=SCRIPTS.parent,
+            env=self.env | {"CDPATH": str(alternate)},
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual(["compass 1.0.0", "seed"], self.commits())
 
     def test_a_second_run_for_the_same_version_pushes_nothing(self) -> None:
         self.assertEqual(0, self.publish("1.0.0").returncode)
@@ -501,6 +533,13 @@ class PublishMarketplaceTest(unittest.TestCase):
         log = self.root / "log"
         self.assertEqual(1, len(publish_fakes.curl_calls(log)))
         self.assertFalse((log / "git").exists())
+
+    def test_an_unreadable_host_key_stops_before_clone(self) -> None:
+        done = self.ssh_publish("200", body='{"ssh_keys":["example label"]}')
+
+        self.assertEqual(1, done.returncode)
+        self.assertIn("no GitHub host keys fetched", done.stderr)
+        self.assertFalse((self.root / "log" / "git").exists())
 
     def test_the_ssh_key_paths_reach_ssh_whole_whatever_the_scratch_path_holds(self) -> None:
         # git runs GIT_SSH_COMMAND through the shell. A scratch path spliced into it would be
