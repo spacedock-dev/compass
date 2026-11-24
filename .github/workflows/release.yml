@@ -41,8 +41,8 @@ name: Release
 #                    `stable` and publishes.
 #   attach-cli       the write token, no deploy key. Downloads the four archives the
 #                    build jobs made and attaches them, with `checksums.txt`, to the
-#                    release by running scripts/publish-cli.sh, unless the full set already
-#                    exists. It reports the SHA-256 of the published `checksums.txt`.
+#                    release by running scripts/publish-cli.sh, and reports the SHA-256 of
+#                    the `checksums.txt` it uploaded as a job output.
 #   marketplace      read-only repository token and the marketplace deploy key, a different
 #                    credential from the release key that reaches only
 #                    spacedock-dev/marketplace. Runs after `release`, so `stable` already
@@ -602,7 +602,8 @@ jobs:
     # it checksums and uploads them, and never unpacks or runs one.
     permissions:
       contents: write
-    # A public digest, never a credential: homebrew uses it to verify the published checksums.
+    # A public digest, never a credential: homebrew uses it to refuse any checksums.txt but the
+    # one this job uploaded.
     outputs:
       checksums_sha256: ${{ steps.attach.outputs.checksums_sha256 }}
     env:
@@ -636,17 +637,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # A full rerun can still owe a tap or marketplace update after a successful attach.
-          ATTACHMENT=$(python3 scripts/release_transition.py prepare-attachment --tag "$TAG" --output "$RUNNER_TEMP/cli/checksums.txt")
-          case "$ATTACHMENT" in
-            complete) ;;
-            partial) scripts/publish-cli.sh "$TAG" "$RUNNER_TEMP/cli" ;;
-            partial-with-checksums) scripts/publish-cli.sh "$TAG" "$RUNNER_TEMP/cli" --replace-checksums ;;
-            *) echo "::error::could not determine the release attachment state"; exit 1 ;;
-          esac
+          # --clobber inside the script makes a re-run of an interrupted release safe.
+          scripts/publish-cli.sh "$TAG" "$RUNNER_TEMP/cli"
+          # The digest of the file just uploaded, for homebrew to hold its download to.
           DIGEST=$(sha256sum "$RUNNER_TEMP/cli/checksums.txt" | cut -d ' ' -f 1)
           if ! [[ "$DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "::error::could not hash the published checksums.txt"
+            echo "::error::could not hash the uploaded checksums.txt"
             exit 1
           fi
           echo "checksums_sha256=$DIGEST" >> "$GITHUB_OUTPUT"

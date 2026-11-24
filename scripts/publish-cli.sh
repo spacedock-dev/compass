@@ -8,11 +8,11 @@
 # Spacedock's installer reads releases/latest, one compass_<version>_<os>_<arch>.tar.gz per target
 # and a checksums.txt of `sha256  filename` lines, with <version> the tag without its `v`.
 #
-# Usage: publish-cli.sh <tag> <archive-dir> [--dry-run | --replace-checksums]
+# Usage: publish-cli.sh <tag> <archive-dir> [--dry-run]
 set -eu
-tag="${1:?usage: publish-cli.sh <tag> <archive-dir> [--dry-run | --replace-checksums]}"
-dir="${2:?usage: publish-cli.sh <tag> <archive-dir> [--dry-run | --replace-checksums]}"
-option="${3:-}"
+tag="${1:?usage: publish-cli.sh <tag> <archive-dir> [--dry-run]}"
+dir="${2:?usage: publish-cli.sh <tag> <archive-dir> [--dry-run]}"
+dry="${3:-}"
 version="${tag#v}"
 
 case "$version" in
@@ -43,28 +43,19 @@ else
 	(cd "$dir" && sha256sum "$@" >checksums.txt)
 fi
 
-if [ "$option" = --dry-run ]; then
-	echo "would run: gh release upload $tag $* --clobber"
-	echo "would run: gh release upload $tag checksums.txt"
+if [ "$dry" = --dry-run ]; then
+	echo "would run: gh release upload $tag $* checksums.txt --clobber"
 	exit 0
 fi
-case "$option" in
-"" | --replace-checksums) ;;
-*) echo "publish-cli.sh: unknown option $option" >&2; exit 1 ;;
-esac
+[ -z "$dry" ] || { echo "publish-cli.sh: unknown option $dry" >&2; exit 1; }
 # gh finds the repository from the working directory, so the upload runs where this script was
 # started, which is the checkout, and not inside $dir, which is not a repository: the first release
 # to use this failed that way. gh names each asset by its file name, so full paths attach the same
-# names. GitHub CLI uploads files concurrently, so a checksum left by an interrupted repair
-# could make a mixture of builds look complete. Publish it only after all four uploads succeed.
+# five names. --clobber makes a re-run attach again instead of failing on the first run's files.
 count=$#
 while [ "$count" -gt 0 ]; do
 	set -- "$@" "$dir/$1"
 	shift
 	count=$((count - 1))
 done
-if [ "$option" = --replace-checksums ]; then
-	gh release delete-asset "$tag" checksums.txt --yes
-fi
-gh release upload "$tag" "$@" --clobber
-gh release upload "$tag" "$dir/checksums.txt"
+gh release upload "$tag" "$@" "$dir/checksums.txt" --clobber

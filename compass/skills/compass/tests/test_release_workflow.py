@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -19,6 +20,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, ClassVar, cast
+from unittest import mock
 
 import yaml
 
@@ -211,6 +213,115 @@ class CiLimitsTest(unittest.TestCase):
                 self.assertIn(self.command(step), ci, "no CI twin, so no limit is held equal")
 
 
+SHELL_TOKEN = re.compile(
+    r"""(?P<comment>\#[^\n]*)|(?P<boundary>\n|&&|\|\||[;&|])"""
+    r"""|(?P<redirect><<<|<<-?|[<>]+)"""
+    r"""|(?P<word>(?:\$\{\{.*?\}\}|'[^']*'|"(?:\\.|[^"\\])*"|\\[^\n]|[^\s'";&|<>\\])+)""",
+    re.DOTALL,
+)
+SHELL_PREFIXES = {"if", "then", "elif", "else", "do", "!", "{"}
+SHELL_ASSIGNMENT = re.compile(r"([a-zA-Z_]\w*)=(.*)", re.DOTALL)
+PR_WORKFLOWS = ("quality-gate.yml", "validate.yml")
+
+
+def after_heredocs(run: str, cursor: int, heredocs: list[tuple[str, bool]]) -> int:
+    for delimiter, strip_tabs in heredocs:
+        for line in run[cursor:].splitlines(keepends=True):
+            cursor += len(line)
+            candidate = line.lstrip("\t") if strip_tabs else line
+            if candidate.rstrip("\n") == delimiter:
+                break
+    return cursor
+
+
+def shell_commands(run: str) -> list[list[str]]:
+    """Read simple shell commands without treating quoted text or heredoc bodies as commands."""
+    run = run.replace("\\\n", "")
+    commands = []
+    words: list[str] = []
+    heredocs: list[tuple[str, bool]] = []
+    cursor = 0
+    while match := SHELL_TOKEN.search(run, cursor):
+        cursor = match.end()
+        raw = match.group()
+        if match.lastgroup == "boundary":
+            if words:
+                commands.append(words)
+                words = []
+            if raw == "\n":
+                cursor = after_heredocs(run, cursor, heredocs)
+                heredocs.clear()
+        elif raw in {"<<", "<<-"} and (delimiter_match := SHELL_TOKEN.search(run, cursor)):
+            cursor = delimiter_match.end()
+            (delimiter,) = shlex.split(delimiter_match.group())
+            heredocs.append((delimiter, raw == "<<-"))
+        elif match.lastgroup == "word":
+            # GitHub expands an unquoted expression before the shell would split its source.
+            if "${{" in raw and not raw.startswith(("'", '"')):
+                words.append(raw)
+            else:
+                words.extend(shlex.split(raw))
+    if words:
+        commands.append(words)
+    return commands
+
+
+def step_commands(step: dict[str, Any], *, include_env: bool = True) -> set[str]:
+    commands = set()
+    for words in shell_commands(step.get("run", "")):
+        while words and words[0] in SHELL_PREFIXES:
+            words.pop(0)
+        env = {name: str(value) for name, value in step.get("env", {}).items()}
+        while words and (assignment := SHELL_ASSIGNMENT.fullmatch(words[0])):
+            name, value = assignment.groups()
+            env[name] = value
+            words.pop(0)
+        if not words or words[0] in {"set", "echo", "printf", "fi", "done", "exit"}:
+            continue
+        if words[:2] == ["pnpm", "run"]:
+            words.pop(1)
+        settings = [f"{key}={env[key]}" for key in sorted(env)] if include_env else []
+        commands.add(shlex.join([*settings, *words]))
+    return commands
+
+
+def _pr_atom(atom: str) -> str:
+    atom = atom.strip().lower()
+    negate = atom.startswith("!")
+    if negate:
+        atom = atom[1:].strip()
+    event = re.fullmatch(r"""github\.event_name\s*(==|!=)\s*(['"])([\w-]+)\2""", atom)
+    if event:
+        is_pr = event[3] == "pull_request"
+        atom = "true" if is_pr == (event[1] == "==") else "false"
+    if atom not in {"true", "false"}:
+        return "unknown"
+    return "true" if (atom == "true") != negate else "false"
+
+
+def _pr_expression(expression: str) -> str:
+    branches = []
+    for branch in expression.split("||"):
+        terms = {_pr_atom(atom) for atom in branch.split("&&")}
+        branches.append(
+            "false" if "false" in terms else "unknown" if "unknown" in terms else "true"
+        )
+    return "true" if "true" in branches else "unknown" if "unknown" in branches else "false"
+
+
+def can_run_on_pull_request(condition: str | bool) -> bool:
+    if isinstance(condition, bool):
+        return condition
+    expression = condition.strip().removeprefix("${{").removesuffix("}}").strip()
+    # A lane, runner, or status function can still allow the job to run on some PR.
+    expression = re.sub(r"\b[\w-]+\([^()]*\)", "unknown", expression)
+    while group := re.search(r"\(([^()]*)\)", expression):
+        expression = (
+            expression[: group.start()] + _pr_expression(group[1]) + expression[group.end() :]
+        )
+    return _pr_expression(expression) != "false"
+
+
 class CiVerifyCommandsTest(unittest.TestCase):
     RELEASE_ONLY: ClassVar[dict[str, str]] = {
         'python3 scripts/release_transition.py assert-head --expected "$TARGET"': "Release verifies the checkout of an earlier job's resolved SHA.",
@@ -247,23 +358,29 @@ echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
     def missing_pr_commands(self, release_jobs: dict[str, Any]) -> set[str]:
         ci = set()
-        for path in WORKFLOWS.glob("*.y*ml"):
-            workflow = load(path)
+        for name in PR_WORKFLOWS:
+            workflow = load(WORKFLOWS / name)
             triggers = cast("dict[Any, Any]", workflow).get(True, workflow.get("on", {}))
             events = [triggers] if isinstance(triggers, str) else triggers or ()
             if "pull_request" not in events:
                 continue
             for job in workflow["jobs"].values():
-                if job.get("if") is not False:
+                if can_run_on_pull_request(job.get("if", True)):
                     for step in job.get("steps", []):
-                        if step.get("if") is not False:
-                            ci.update(self.run_lines(step.get("run", "")))
+                        if can_run_on_pull_request(step.get("if", True)):
+                            ci.update(step_commands(step))
         missing = set()
+        exceptions = {
+            command
+            for rule in self.RELEASE_ONLY
+            if "\n" not in rule
+            for command in step_commands({"run": rule})
+        }
         for name in ("verify-frontend", "verify-tree"):
             for step in release_jobs[name]["steps"]:
                 lines = self.run_lines(step.get("run", ""))
                 if "\n".join(lines) not in self.RELEASE_ONLY:
-                    missing.update(set(lines) - ci - self.RELEASE_ONLY.keys())
+                    missing.update(step_commands(step) - ci - exceptions)
         return missing
 
     def test_release_verification_commands_run_on_pull_requests(self) -> None:
@@ -280,8 +397,105 @@ echo "sha=$SHA" >> "$GITHUB_OUTPUT"
         verify["run"] += f"\n{command}\n"
         self.assertEqual({command}, self.missing_pr_commands(changed))
 
+    def missing_with_counterpart(
+        self,
+        release_step: dict[str, Any],
+        ci_step: dict[str, Any],
+        *,
+        job_if: str | bool = True,
+        workflow: str = "quality-gate.yml",
+    ) -> set[str]:
+        changed = jobs()
+        changed["verify-tree"]["steps"].append(release_step)
+        target = WORKFLOWS / workflow
+        real_load = load
+
+        def with_counterpart(path: Path) -> dict[str, Any]:
+            document = real_load(path)
+            if path == target:
+                document["jobs"]["counterpart"] = {"if": job_if, "steps": [ci_step]}
+            return document
+
+        with mock.patch(f"{__name__}.load", side_effect=with_counterpart):
+            return self.missing_pr_commands(changed)
+
+    def test_push_only_or_disabled_jobs_and_steps_do_not_cover_a_release_command(self) -> None:
+        command = "python3 scripts/only_on_push.py"
+        for condition in (
+            "github.event_name == 'push'",
+            "${{ github.event_name != 'pull_request' }}",
+            False,
+            "${{ false }}",
+            "success() && (github.event_name == 'push' || false)",
+        ):
+            with self.subTest(condition=condition):
+                self.assertEqual(
+                    {command},
+                    self.missing_with_counterpart(
+                        {"run": command}, {"run": command}, job_if=condition
+                    ),
+                )
+                self.assertEqual(
+                    {command},
+                    self.missing_with_counterpart(
+                        {"run": command}, {"run": command, "if": condition}
+                    ),
+                )
+
+    def test_a_condition_with_a_pull_request_branch_can_cover_a_command(self) -> None:
+        step = {"run": "python3 scripts/two_events.py"}
+        self.assertEqual(
+            set(),
+            self.missing_with_counterpart(
+                step,
+                step,
+                job_if="github.event_name == 'push' || github.event_name == 'pull_request'",
+            ),
+        )
+
+    def test_only_required_pr_workflows_count_even_when_another_has_a_pr_trigger(self) -> None:
+        step = {"run": "claude plugin validate ./compass --strict"}
+        self.assertEqual(
+            {step["run"]},
+            self.missing_with_counterpart(step, step, workflow="plugin-compatibility.yml"),
+        )
+
+    def test_heredoc_and_echoed_mentions_do_not_cover_a_release_command(self) -> None:
+        command = "python3 scripts/printed_only.py"
+        for run in (
+            f"cat <<'INSTRUCTIONS'\n{command}\nINSTRUCTIONS",
+            f"cat <<-INSTRUCTIONS\n\t{command}\n\tINSTRUCTIONS",
+            f'echo "{command}"',
+            f"echo 'instructions:\n{command}\n'",
+        ):
+            with self.subTest(run=run):
+                self.assertEqual(
+                    {command}, self.missing_with_counterpart({"run": command}, {"run": run})
+                )
+
+    def test_pnpm_run_and_inline_env_match_the_equivalent_gate_command(self) -> None:
+        self.assertEqual(
+            set(),
+            self.missing_with_counterpart(
+                {"run": 'set -eu && COMPASS_PROOF_MODE="CI fixture" pnpm run test:new'},
+                {"env": {"COMPASS_PROOF_MODE": "CI fixture"}, "run": "pnpm test:new"},
+            ),
+        )
+        changed = jobs()
+        changed["verify-frontend"]["steps"].append({"run": "pnpm run typecheck"})
+        self.assertEqual(set(), self.missing_pr_commands(changed))
+
 
 class CiBrowserProofTest(unittest.TestCase):
+    def test_a_retired_browser_proof_is_rejected_through_the_pnpm_run_alias(self) -> None:
+        gate = load(GATE)
+        gate["jobs"]["storybook"]["steps"].append({"run": "pnpm run test:css:browser"})
+        with (
+            mock.patch(f"{__name__}.load", return_value=gate),
+            self.assertRaisesRegex(AssertionError, "retired browser proof"),
+        ):
+            self.test_storybook_runs_the_two_release_proofs_on_either_lane()
+
     def test_storybook_runs_the_two_release_proofs_on_either_lane(self) -> None:
         job = load(GATE)["jobs"]["storybook"]
         frontend = "needs.changes.outputs.frontend == 'true'"
@@ -301,13 +515,20 @@ class CiBrowserProofTest(unittest.TestCase):
             "${{ steps.python.outputs.python-path }}",
             run_steps["pnpm test:installed"]["env"]["COMPASS_TEST_PYTHON"],
         )
-        ci_commands = [
-            step.get("run", "")
-            for job in load(GATE)["jobs"].values()
+        ci_commands = {
+            command
+            for name in PR_WORKFLOWS
+            for job in load(WORKFLOWS / name)["jobs"].values()
             for step in job.get("steps", [])
-        ]
+            for command in step_commands(step, include_env=False)
+        }
         self.assertFalse(
-            any(re.search(r"pnpm test:(?:[\w-]+:)?browser\b", run) for run in ci_commands)
+            {
+                command
+                for command in ci_commands
+                if re.match(r"pnpm test:(?:[\w-]+:)*browser(?: |$)", command)
+            },
+            "retired browser proof in a required PR workflow",
         )
 
     @unittest.skipUnless(shutil.which("bash"), "the gate's aggregator is a bash script")
@@ -1203,12 +1424,8 @@ class BuildCliJobTest(unittest.TestCase):
         )
         step = next(s for s in steps("attach-cli") if s.get("id") == "attach")
         body = code(step["run"])
-        prepare = body.index(
-            'prepare-attachment --tag "$TAG" --output "$RUNNER_TEMP/cli/checksums.txt"'
-        )
         upload = body.index('scripts/publish-cli.sh "$TAG" "$RUNNER_TEMP/cli"')
         digest = body.index('sha256sum "$RUNNER_TEMP/cli/checksums.txt"')
-        self.assertLess(prepare, upload)
         self.assertLess(upload, digest, "the digest is of the published file")
         self.assertIn('"checksums_sha256=$DIGEST" >> "$GITHUB_OUTPUT"', body)
         self.assertIn("[0-9a-f]{64}", body)

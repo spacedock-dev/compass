@@ -184,8 +184,8 @@ check both writers against a read-only copy.
 Every proof above serves the React side through the development server by default. `pnpm test:production:browser`
 runs the same twelve proofs with `COMPASS_E2E_BUNDLE=production`, which has the Python backend serve the minified
 `react.html` that readers get (no Vite child, no hot refresh, no StrictMode double effect), so a difference only the
-shipped bytes show fails a proof. Pass `--shard a` or `--shard b` to run half of them; CI runs the two halves as
-separate jobs. Every surface proof is driven through the shipped page's own mount points (the capacity strip in
+shipped bytes show fails a proof. Pass `--shard a` or `--shard b` to run half of them on demand.
+Every surface proof is driven through the shipped page's own mount points (the capacity strip in
 the Sessions view, the consent and observer controls and the terminal in the Console tab, the timeline in the
 Decisions tab). Two things stay harness-hosted: the controls proof mounts the controls gallery, which composes
 shared controls no one page draws together and is served a production build of a scratch copy, and the storage
@@ -743,8 +743,10 @@ marketplace listing. A last job, once the archives are attached, holds a read-on
 the Homebrew tap alone, and writes `Formula/compass.rb` there from the release's published
 `checksums.txt`, once its SHA-256 matches the one the attaching job reported. The `CLI package`
 workflow runs the same build on pull requests that touch the runtime, so a break shows up in review.
-Once all five assets are published, the run started by the workflow's tag move stops at resolution.
-An explicit rerun can finish distribution using the checksum file already on the release.
+On its first attempt, the run started by the workflow's tag move stops at resolution if the tag
+points to its own release commit, the GitHub Release is published and final, and all four archive
+digests match the uploaded `checksums.txt`. **Re-run all jobs** rebuilds the archives and replaces
+them with their new checksum file before retrying distribution.
 The bump is skipped when the manifests already carry the tagged version, which is also how you
 release the current version as-is. Every step is idempotent, so a partially failed release is
 finished by **Re-run all jobs** on the same run. That is the only re-run that resolves the release

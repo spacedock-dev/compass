@@ -177,7 +177,7 @@ class PublishCliTest(unittest.TestCase):
     def publish(self, *args: str) -> subprocess.CompletedProcess[str]:
         return run([str(PUBLISH), *args], env=self.env)
 
-    def test_it_uploads_the_checksum_file_only_after_all_four_archives(self) -> None:
+    def test_it_uploads_the_four_archives_and_their_checksums_in_one_call(self) -> None:
         self.fill()
 
         result = self.publish("v1.2.3", str(self.archives))
@@ -185,10 +185,7 @@ class PublishCliTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         paths = [f"{self.archives}/compass_1.2.3_{target}.tar.gz" for target in TARGETS]
         self.assertEqual(
-            [
-                f"release upload v1.2.3 {' '.join(paths)} --clobber",
-                f"release upload v1.2.3 {self.archives}/checksums.txt",
-            ],
+            [f"release upload v1.2.3 {' '.join(paths)} {self.archives}/checksums.txt --clobber"],
             self.calls.read_text(encoding="utf-8").splitlines(),
         )
 
@@ -203,38 +200,43 @@ class PublishCliTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            [str(start.resolve())] * 2, self.cwd.read_text(encoding="utf-8").strip().splitlines()
+            [str(start.resolve())], self.cwd.read_text(encoding="utf-8").strip().splitlines()
         )
 
-    def test_a_partial_retry_with_stale_checksums_removes_them_before_uploading(self) -> None:
+    def test_a_second_two_argument_upload_replaces_archives_and_checksums(self) -> None:
         self.fill()
-
-        result = self.publish("v1.2.3", str(self.archives), "--replace-checksums")
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        delete, archives, checksums = self.calls.read_text(encoding="utf-8").splitlines()
-        self.assertEqual("release delete-asset v1.2.3 checksums.txt --yes", delete)
-        self.assertNotIn("checksums.txt", archives)
-        self.assertEqual(f"release upload v1.2.3 {self.archives}/checksums.txt", checksums)
-
-    def test_an_archive_upload_failure_leaves_checksums_unpublished(self) -> None:
-        self.fill()
+        published = self.root / "published"
+        published.mkdir()
         write_program(
             Path(self.env["PATH"].split(os.pathsep)[0]) / "gh",
-            f"""printf '%s\\n' "$*" >> '{self.calls}'
-case "$*" in
-    *checksums.txt*) exit 0 ;;
-    *) exit 1 ;;
-esac""",
+            f"""shift 3
+clobber=false
+for arg do
+    if [ "$arg" = --clobber ]; then clobber=true; fi
+done
+for arg do
+    [ "$arg" != --clobber ] || continue
+    dest='{published}'/"${{arg##*/}}"
+    if [ -e "$dest" ] && ! "$clobber"; then
+        printf 'already_exists: %s\n' "$dest" >&2
+        exit 1
+    fi
+    cp "$arg" "$dest"
+done""",
         )
+        first = self.publish("v1.2.3", str(self.archives))
+        self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+        old_checksums = (published / "checksums.txt").read_bytes()
+        archive = self.archives / f"compass_1.2.3_{TARGETS[0]}.tar.gz"
+        archive.write_bytes(b"replacement build")
 
-        result = self.publish("v1.2.3", str(self.archives), "--replace-checksums")
+        second = self.publish("v1.2.3", str(self.archives))
 
-        self.assertEqual(1, result.returncode, result.stderr)
-        self.assertTrue(self.calls.exists(), result.stderr)
-        delete, attempted_upload = self.calls.read_text(encoding="utf-8").splitlines()
-        self.assertEqual("release delete-asset v1.2.3 checksums.txt --yes", delete)
-        self.assertNotIn("checksums.txt", attempted_upload)
+        self.assertEqual(0, second.returncode, second.stdout + second.stderr)
+        self.assertEqual(archive.read_bytes(), (published / archive.name).read_bytes())
+        checksums = (published / "checksums.txt").read_bytes()
+        self.assertNotEqual(old_checksums, checksums)
+        self.assertEqual((self.archives / "checksums.txt").read_bytes(), checksums)
 
     def test_the_checksums_are_the_lines_the_installer_reads(self) -> None:
         self.fill()

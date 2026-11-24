@@ -5,7 +5,6 @@ Usage (each subcommand is one workflow step; see .github/workflows/release.yml):
 
     python3 scripts/release_transition.py resolve --tag v0.2.0 --run-attempt "$GITHUB_RUN_ATTEMPT" \
         --github-output "$GITHUB_OUTPUT"
-    python3 scripts/release_transition.py prepare-attachment --tag v0.2.0 --output <path>
     python3 scripts/release_transition.py assert-head --expected <sha>
     python3 scripts/release_transition.py assert-checkout --mode fresh --target <sha> \
         --verified <sha> --tag v0.2.0
@@ -20,7 +19,7 @@ Usage (each subcommand is one workflow step; see .github/workflows/release.yml):
 The decisions used to be inline shell in the workflow, where nothing could
 exercise them: a `exit` inside an awk pipe under `pipefail` once broke resuming and
 left a failed run on every release. Standard library only, because the
-credential-free `resolve` job runs it before any dependency is installed.
+read-only `resolve` job runs it before any dependency is installed.
 
 Why the release is split around a target SHA. The frontend is verified (rebuilt and
 compared, linted, tested) in a job that holds no credentials, and the version bump
@@ -50,6 +49,7 @@ import verify_release_archive
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
+    from typing import Any
 
 SEMVER = bump_version.SEMVER_RE
 annotation = verify_release_archive.annotation
@@ -79,6 +79,10 @@ PHASES = (
 
 class ReleaseError(Exception):
     """A release precondition failed; the message is safe to print and says what to do."""
+
+
+class ReleaseLookupError(ReleaseError):
+    """GitHub did not provide a trustworthy publication read."""
 
 
 @dataclass(frozen=True)
@@ -274,32 +278,46 @@ def assert_no_hold(repo: Path, main_ref: str) -> None:
         raise ReleaseError(message)
 
 
-def _cli_publication(repo: Path, tag: str, version: str) -> str:
-    result = run(["gh", "api", "--include", f"repos/{{owner}}/{{repo}}/releases/tags/{tag}"], repo)
-    headers, _, body = result.stdout.partition("\n\n")
-    status = headers.partition("\n")[0].split(maxsplit=2)
-    if len(status) >= 2 and status[0].startswith("HTTP/") and status[1] == "404":
-        return "partial"
-    message = f"could not read published assets for {tag}"
-    if result.returncode or not body:
-        raise ReleaseError(f"{message}: {result.stderr.strip() or 'no GitHub response body'}")
+def _publication_read(repo: Path, operation: str, *args: str) -> subprocess.CompletedProcess[str]:
+    try:
+        return run(["gh", "api", *args], repo)
+    except (OSError, UnicodeError) as exc:
+        raise ReleaseLookupError(operation) from exc
+
+
+def _release_metadata(repo: Path, tag: str) -> dict[str, Any] | None:
+    operation = f"could not read published assets for {tag}"
+    result = _publication_read(
+        repo, operation, "--include", f"repos/{{owner}}/{{repo}}/releases/tags/{tag}"
+    )
+    headers, separator, body = result.stdout.partition("\n\n")
+    status = re.fullmatch(r"HTTP/\d+(?:\.\d+)? (\d{3})(?: .*)?", headers.partition("\n")[0])
+    code = status[1] if status else None
+    if not separator or (code, result.returncode) not in {("200", 0), ("404", 1)}:
+        detail = result.stderr.strip() or (f"HTTP {code}" if code else "invalid GitHub response")
+        raise ReleaseLookupError(f"{operation}: {detail}")
     try:
         release = json.loads(body)
-    except json.JSONDecodeError as exc:
-        raise ReleaseError(f"{message}: invalid GitHub response") from exc
-    if (
-        not isinstance(release, dict)
-        or release.get("tag_name") != tag
-        or not isinstance(release.get("draft"), bool)
-        or not isinstance(release.get("assets"), list)
-    ):
-        raise ReleaseError(f"{message}: unexpected GitHub response")
-    expected = {"checksums.txt"} | {
-        f"compass_{version}_{target}.tar.gz"
-        for target in ("darwin_arm64", "darwin_amd64", "linux_arm64", "linux_amd64")
-    }
-    names: set[str] = set()
-    uploaded: set[str] = set()
+    except ValueError as exc:
+        raise ReleaseLookupError(f"{operation}: invalid GitHub JSON (HTTP {code})") from exc
+    if isinstance(release, dict):
+        if code == "404" and release.get("message") == "Not Found":
+            return None
+        if (
+            code == "200"
+            and release.get("tag_name") == tag
+            and isinstance(release.get("draft"), bool)
+            and isinstance(release.get("prerelease"), bool)
+            and isinstance(release.get("assets"), list)
+        ):
+            return release
+    raise ReleaseLookupError(f"{operation}: unexpected GitHub response (HTTP {code})")
+
+
+def _uploaded_cli_assets(
+    release: dict[str, Any], expected: set[str], tag: str
+) -> dict[str, dict[str, Any]]:
+    uploaded: dict[str, dict[str, Any]] = {}
     for asset in release["assets"]:
         if (
             not isinstance(asset, dict)
@@ -307,40 +325,60 @@ def _cli_publication(repo: Path, tag: str, version: str) -> str:
             or not isinstance(asset.get("state"), str)
             or type(asset.get("size")) is not int
         ):
-            raise ReleaseError(f"{message}: unexpected GitHub asset response")
-        names.add(asset["name"])
-        if asset["state"] == "uploaded" and asset["size"] > 0:
-            uploaded.add(asset["name"])
-    if not release["draft"] and release.get("published_at") and expected <= uploaded:
-        return "complete"
-    return "partial-with-checksums" if "checksums.txt" in names else "partial"
+            message = f"could not read published assets for {tag}: unexpected GitHub asset response"
+            raise ReleaseLookupError(message)
+        name = asset["name"]
+        if name not in expected:
+            continue
+        if name in uploaded or asset["state"] != "uploaded" or asset["size"] <= 0:
+            return {}
+        uploaded[name] = asset
+    return uploaded
 
 
-def prepare_attachment(repo: Path, tag: str, output: Path) -> str:
-    """Tell the publisher what is missing, or restore the checksums of a complete set."""
-    version, _ = parse_tag(tag)
-    publication = _cli_publication(repo, tag, version)
-    if publication != "complete":
-        return publication
-    path = output.absolute()
-    result = run(
-        [
-            "gh",
-            "release",
-            "download",
-            tag,
-            "--pattern",
-            "checksums.txt",
-            "--output",
-            str(path),
-            "--clobber",
-        ],
+def _cli_publication_complete(repo: Path, tag: str, version: str) -> bool:
+    release = _release_metadata(repo, tag)
+    if (
+        release is None
+        or release["draft"]
+        or release["prerelease"]
+        or not isinstance(release.get("published_at"), str)
+        or not release["published_at"].strip()
+    ):
+        return False
+    archives = {
+        f"compass_{version}_{target}.tar.gz"
+        for target in ("darwin_arm64", "darwin_amd64", "linux_arm64", "linux_amd64")
+    }
+    expected = archives | {"checksums.txt"}
+    uploaded = _uploaded_cli_assets(release, expected, tag)
+    if uploaded.keys() != expected:
+        return False
+
+    # A failed clobber can leave all the names in place with bytes from different builds.
+    lines = set()
+    for name in archives:
+        digest = uploaded[name].get("digest")
+        if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", digest):
+            return False
+        lines.add(f"{digest.removeprefix('sha256:').lower()}  {name}")
+
+    operation = f"could not download published checksums for {tag}"
+    asset_id = uploaded["checksums.txt"].get("id")
+    if type(asset_id) is not int or asset_id <= 0:
+        raise ReleaseLookupError(f"{operation}: invalid GitHub asset ID")
+    result = _publication_read(
         repo,
+        operation,
+        "-H",
+        "Accept: application/octet-stream",
+        f"repos/{{owner}}/{{repo}}/releases/assets/{asset_id}",
     )
-    if result.returncode or not path.is_file() or not path.stat().st_size:
-        message = f"could not download published checksums for {tag}: {result.stderr.strip()}"
-        raise ReleaseError(message)
-    return publication
+    if result.returncode:
+        detail = result.stderr.strip() or f"gh exited {result.returncode}"
+        raise ReleaseLookupError(f"{operation}: {detail}")
+    published_lines = result.stdout.splitlines()
+    return len(published_lines) == len(lines) and set(published_lines) == lines
 
 
 def resolve(
@@ -374,7 +412,7 @@ def resolve(
         if (
             first_attempt
             and tag_commit == release_commit
-            and _cli_publication(repo, tag, version) == "complete"
+            and _cli_publication_complete(repo, tag, version)
         ):
             return Resolution(tag, version, "complete", release_commit, release_commit, main_tip)
         return Resolution(tag, version, "resume", release_commit, release_commit, main_tip)
@@ -697,7 +735,6 @@ def build_parser() -> argparse.ArgumentParser:
     resolve_cmd = command("resolve", "tag", optional=("main-ref", "github-output"))
     resolve_cmd.set_defaults(main_ref="origin/main")
     resolve_cmd.add_argument("--run-attempt", type=int)
-    command("prepare-attachment", "tag", "output")
     command("latest", "tag")
     command("assert-head", "expected")
     checkout = command("assert-checkout", "mode", "target", "tag")
@@ -725,8 +762,6 @@ def dispatch(args: argparse.Namespace) -> int:  # noqa: C901, PLR0912 -- one arm
                 print(f"{key}={value}")
             if args.github_output:
                 github_output(Path(args.github_output), resolution.outputs())
-        case "prepare-attachment":
-            print(prepare_attachment(repo, args.tag, Path(args.output)))
         case "latest":
             existing = run_git(repo, "tag", "-l", *TAG_GLOBS).split()
             print("true" if is_latest(args.tag, existing) else "false")
@@ -770,6 +805,9 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return dispatch(args)
+    except ReleaseLookupError as exc:
+        print(annotation(str(exc)), file=sys.stderr)
+        return 1
     except ReleaseError as exc:
         print(annotation(str(exc)))
         return 1
