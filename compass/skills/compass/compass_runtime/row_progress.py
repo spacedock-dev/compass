@@ -177,7 +177,7 @@ def _claude_matches(directory: str, sids: frozenset[str]) -> dict[str, str | Non
 class _Namespace(NamedTuple):
     roots: list[tuple[str, int, int]]
     projects: list[str]
-    linked_projects: bool
+    linked_projects: list[str]
 
 
 class _NameWatch:
@@ -187,9 +187,7 @@ class _NameWatch:
 
     @classmethod
     def start(cls, namespace: _Namespace) -> _NameWatch | None:
-        # A project alias can change through an ancestor outside the watched
-        # namespace. The fresh name path handles these and unsupported platforms.
-        if sys.platform != "darwin" or namespace.linked_projects:
+        if sys.platform != "darwin":
             return None
         root_ids = {path: (device, inode) for path, device, inode in namespace.roots}
         directories = [*root_ids, *namespace.projects]
@@ -215,7 +213,7 @@ class _NameWatch:
                             return None
                         # Watch children relative to the held root, even if the
                         # configured root path itself is a relocated store link.
-                        root_fds[path] = fd
+                        root_fds[os.path.dirname(os.path.join(path, "."))] = fd
                     queue.control(
                         [
                             select.kevent(
@@ -248,23 +246,36 @@ class _NameWatch:
 class _WatchedNames(NamedTuple):
     namespace: _Namespace
     paths: dict[str, str]
-    remaining: frozenset[str]
+    matches: dict[str, str | None]
     watch: _NameWatch
 
 
-def _confirmed_names(projects: list[str], paths: Mapping[str, str]) -> frozenset[str]:
+def _project_matches(projects: list[str], sids: frozenset[str]) -> dict[str, str | None]:
+    unique: dict[str, str | None] = {}
+    for directory in projects:
+        for sid, path in _claude_matches(directory, sids).items():
+            unique[sid] = None if sid in unique else path
+    return unique
+
+
+def _confirmed_names(
+    projects: list[str],
+    paths: Mapping[str, str],
+    *,
+    watched: Mapping[str, str | None] | None = None,
+) -> set[str]:
     remaining = frozenset(paths)
     # A second pass catches collisions introduced in an earlier project while
     # a later project was read, even when the directory stamp did not move.
-    for _ in range(2):
-        unique: dict[str, str | None] = {}
-        for directory in projects:
-            for sid, path in _claude_matches(directory, remaining).items():
+    for _ in range(1 if watched is not None and len(projects) <= 1 else 2):
+        unique = _project_matches(projects, remaining)
+        if watched is not None:
+            for sid, path in watched.items():
                 unique[sid] = None if sid in unique else path
         remaining = frozenset(sid for sid in remaining if unique.get(sid) == paths[sid])
         if not remaining:
             break
-    return remaining
+    return set(remaining)
 
 
 class ClaudePrefixes:
@@ -277,7 +288,7 @@ class ClaudePrefixes:
     def _project_paths(self) -> _Namespace | None:
         roots: list[tuple[str, int, int]] = []
         projects: list[str] = []
-        linked_projects = False
+        linked_projects: list[str] = []
         for root in self._roots:
             try:
                 info = os.stat(root)
@@ -296,32 +307,44 @@ class ClaudePrefixes:
                     if entry.name.startswith("."):
                         continue
                     if entry.is_symlink():
-                        linked_projects = True
-                        projects.append(entry.path)
+                        linked_projects.append(entry.path)
                     elif entry.is_dir(follow_symlinks=False):
                         projects.append(entry.path)
-        return _Namespace(roots, sorted(projects), linked_projects)
+        return _Namespace(roots, sorted(projects), sorted(linked_projects))
 
     def unambiguous(self, paths: Mapping[str, str]) -> set[str]:
         namespace = self._project_paths() if paths else None
         cached = self._names
-        if cached is not None:
-            if namespace == cached.namespace and paths == cached.paths and cached.watch.unchanged():
-                return set(cached.remaining)
+        if cached is not None and (
+            namespace != cached.namespace or paths != cached.paths or not cached.watch.unchanged()
+        ):
             cached.watch.close()
             self._names = None
+            cached = None
         if namespace is None:
             return set()
 
-        watch = _NameWatch.start(namespace)
-        remaining = _confirmed_names(namespace.projects, paths)
-        if not remaining or self._project_paths() != namespace:
+        if cached is None:
+            watch = _NameWatch.start(namespace)
+            if watch is None:
+                remaining = _confirmed_names(
+                    sorted(namespace.projects + namespace.linked_projects), paths
+                )
+                return remaining if remaining and self._project_paths() == namespace else set()
+            matches = _project_matches(namespace.projects, frozenset(paths))
+            cached = _WatchedNames(namespace, dict(paths), matches, watch)
+
+        # A linked project's target can move through an unwatched ancestor.
+        remaining = _confirmed_names(namespace.linked_projects, paths, watched=cached.matches)
+        starting_watch = self._names is None
+        if (starting_watch and self._project_paths() != namespace) or (
+            (starting_watch or namespace.linked_projects) and not cached.watch.unchanged()
+        ):
+            cached.watch.close()
+            self._names = None
             return set()
-        if watch is not None:
-            if not watch.unchanged():
-                return set()
-            self._names = _WatchedNames(namespace, dict(paths), remaining, watch)
-        return set(remaining)
+        self._names = cached
+        return remaining
 
 
 def annotation_stamp(config: RuntimeConfig) -> tuple[int, ...] | None:

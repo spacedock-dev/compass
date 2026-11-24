@@ -411,6 +411,35 @@ class LinesTest(unittest.TestCase):
         self.assertIsNotNone(terminal_client.read_line(self.home, session, NOW + 70))
         self.assertEqual(NOW + 70, self.body("a")["at"])
 
+    def test_an_older_collection_uses_the_newer_idle_touch_stamp(self) -> None:
+        entered, release = threading.Event(), threading.Event()
+
+        def permission() -> bool:
+            if threading.current_thread() is worker:
+                entered.set()
+                release.wait(30)
+            return False
+
+        self.lines = footer_lines.Lines(self.home, model_calls_paused=permission)
+        initial = board([row("claude", "a")])
+        changed = board([row("claude", "a"), row("claude", "b", "needs_input")])
+        worker = threading.Thread(target=self.lines.update, args=(changed, NOW + 1))
+        session = terminal_client.Session("claude", "a", "status line")
+        self.lines.update(initial, NOW)
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(30))
+            self.lines.touch(NOW + 70)
+            self.assertEqual(NOW + 70, self.body("a")["at"])
+        finally:
+            release.set()
+            worker.join(30)
+        self.assertFalse(worker.is_alive())
+        line = terminal_client.read_line(self.home, session, NOW + 70)
+        assert line is not None
+        self.assertEqual(1, line.waiting)
+        self.assertEqual(NOW + 70, self.body("a")["at"])
+
     def test_removing_all_lines_releases_the_snapshot_validators(self) -> None:
         validators = {
             key: mock.Mock()
@@ -965,6 +994,43 @@ class FooterRowProgressTest(_RowProgress):
         archived.rename(archive / f"{SHORT}-older.jsonl")
         lines.touch(self.now + 17)
         self.assertIsNone(self._level(footer))
+
+    @unittest.skipUnless(sys.platform == "darwin", "uses the macOS directory event queue")
+    def test_a_linked_archive_leaves_ordinary_projects_watched_until_a_target_rename(self) -> None:
+        lines, footer = self._warm_footer()
+        projects = self.path.parent.parent
+        linked = projects / "-archived-project-37"
+        relocated = projects.with_name("relocated-project")
+        for index in range(120):
+            project = projects / f"-archived-project-{index}"
+            archive = relocated if project == linked else project
+            archive.mkdir()
+            for item in range(80):
+                stem = 0x80000000 + 80 * index + item
+                archived = archive / f"{stem:08x}-0000-4000-b000-000000000000.jsonl"
+                archived.touch()
+        linked.symlink_to(relocated, target_is_directory=True)
+        lines.touch(self.now)
+
+        with mock.patch.object(os, "listdir", wraps=os.listdir) as scanned:
+            lines.touch(self.now + 16)
+        self.assertEqual(1, scanned.call_count)
+        scanned.assert_called_with(str(linked))
+        self.assertEqual("medium", self._level(footer))
+
+        archived = linked / "80000b90-0000-4000-b000-000000000000.jsonl"
+        archived.rename(linked / f"{SHORT}-older.jsonl")
+        lines.touch(self.now + 17)
+        self.assertIsNone(self._level(footer))
+
+    def test_a_claude_projects_override_with_a_trailing_slash_keeps_the_idle_level(self) -> None:
+        projects = self.path.parent.parent
+        roots = dict(self.config.store_roots)
+        roots["claude.projects"] = (f"{projects}/",)
+        self.config = dataclasses.replace(self.config, store_roots=roots)
+        lines, footer = self._warm_footer()
+        lines.touch(self.now + 16)
+        self.assertEqual("medium", self._level(footer))
 
     def _rename_with_unchanged_stamp(self, *, project: bool) -> None:
         archive = self.path.parent.with_name(".archive" if project else "archive")

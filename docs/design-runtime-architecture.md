@@ -116,19 +116,22 @@ operation so the footer's no-socket rule stays whole ([Q-13](design-usage-quota.
 coordinator checks for footer changes every 5 s of monotonic time by default while idle, and after
 a collection or probe skip. It writes changed files at that check and refreshes unchanged files
 once they are 15 s old (`footer_lines.REFRESH_SEC`). A wall-clock setback restamps a future-dated
-file at the next touch so the terminal reader can use it. Updates and idle touches sample the
-shared permission store outside the writer lock. A touch that finishes that read after a newer
-publication leaves the newer file alone. The additive v1 `model_calls_paused` field is true, false or null.
+file at the next touch so the terminal reader can use it. Updates and idle touches take a sequence
+number before sampling the shared permission store outside the writer lock. A late touch leaves
+the newer file alone. A late collection writes its board data with the newer publication's time.
+The additive v1 `model_calls_paused` field is true, false or null.
 Unknown replaces an old assertion. The writer uses the snapshot's validated `stored_progress`
 token while annotations are enabled and readable. Before publishing or refreshing a level, the
 writer checks that its Claude transcript is still the only match for its prefix. An archived
 transcript in another project can make a prefix ambiguous. HFS+ can preserve the entire directory
 stamp when a transcript is renamed or a hidden project is renamed into view. On macOS a bounded
-kernel queue can vouch for a listing while the root and its projects are watched. Both kinds of
-rename delivered directory change events on APFS and HFS+. An unwatched namespace, including
-one with a project symlink, requires fresh name reads. The writer repeats the scan for the
-prefixes that still match and checks the project list again. This catches changes in an earlier
-project while a later one is read. The scan follows the collector's scope and skips project
+kernel queue can vouch for listings of the root and ordinary projects. Both kinds of rename
+delivered directory change events on APFS and HFS+. The writer reads linked projects through
+their current targets on every check because an ancestor outside the watched root can redirect
+them. It checks the watch again after those reads. Without a watch the writer reads all project
+names afresh. A second scan across unwatched projects catches changes in an earlier project
+while a later one is read. The writer rechecks the project list after a full scan. The scan
+follows the collector's scope and skips project
 symlink loops and projects it lacks permission to open. A failed scan or a change to the project
 list withholds the level for that write. A later idle touch can restore it if the evidence still
 holds. After the namespace check the writer

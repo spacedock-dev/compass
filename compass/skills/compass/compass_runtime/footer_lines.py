@@ -177,8 +177,8 @@ class Lines:
         self._said = False
         self._monitor = monitor
         self._model_calls_paused = model_calls_paused
-        self._pause_serial = 0
-        self._pause_accepted = 0
+        self._publication_serial = 0
+        self._publication: tuple[int, float] = (0, 0)
         self._paused: bool | None = None
         self._sessions: dict[str, Mapping[str, Any]] = {}
         self._ambiguous: set[str] = set()
@@ -216,7 +216,7 @@ class Lines:
                 if short_ids[row["sid"]] != 1 or file_ids[_identity(row)] != 1
             }
             with self._lock:
-                self._accept_pause(sample)
+                now = self._accept_publication(sample, now)
                 self._validate_progress = validate_progress
                 self._validate_stores = validate_stores
                 self._validate_prefixes = validate_prefixes
@@ -256,10 +256,10 @@ class Lines:
             self._report(exc)
 
     def _pause_state(self) -> tuple[int, bool | None]:
-        # Number before I/O: an older read that returns late cannot replace a newer sample.
+        # Number before I/O so a late read cannot replace a newer timestamp or permission.
         with self._lock:
-            self._pause_serial += 1
-            serial = self._pause_serial
+            self._publication_serial += 1
+            serial = self._publication_serial
         try:
             answer = self._model_calls_paused() if self._model_calls_paused is not None else None
         except Exception as exc:  # noqa: BLE001 - unknown clears a previously confirmed pause
@@ -267,12 +267,15 @@ class Lines:
             answer = None
         return serial, answer if type(answer) is bool else None
 
-    def _accept_pause(self, sample: tuple[int, bool | None]) -> None:
+    def _accept_publication(self, sample: tuple[int, bool | None], now: float) -> float:
         serial, answer = sample
-        if serial > self._pause_accepted:
-            self._pause_accepted, self._paused = serial, answer
+        if serial > self._publication[0]:
+            # A real clock setback still needs to replace a future-dated file.
+            self._publication = (serial, now)
+            self._paused = answer
             for body in self._desired.values():
                 body["model_calls_paused"] = answer
+        return self._publication[1]
 
     def _state(self, row: Mapping[str, Any]) -> Mapping[str, Any]:
         try:
@@ -316,11 +319,9 @@ class Lines:
         try:
             sample = self._pause_state()
             with self._lock:
-                # The permission read can finish after a newer writer, whose file
-                # the terminal reader would reject if we restamped it with this time.
-                if sample[0] <= self._pause_accepted:
+                if sample[0] < self._publication[0]:
                     return
-                self._accept_pause(sample)
+                now = self._accept_publication(sample, now)
                 for name, row in self._sessions.items():
                     lease = self._state(row) if name not in self._ambiguous else {}
                     self._apply_state(name, lease)
