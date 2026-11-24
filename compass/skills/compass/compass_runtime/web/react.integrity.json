@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2478431,
+    "bytes": 2478519,
     "file": "react.html",
-    "sha256": "686b571882b4b15a96af304cf75ff637dff27e5560174f7dccc8ac248794c643"
+    "sha256": "2752ce4aa59ec3a1b29ef37257251fa844b6c5194c307669b33d355cdfcf0db6"
   },
   "format": 1,
   "frontend": "react",
@@ -1727,7 +1727,7 @@
       },
       {
         "file": "frontend/src/ui/accordion.tsx",
-        "sha256": "a592d2dbc083680d918466484532fb9bfe1af2f5dd471aeab2b8eae8fa071bd0"
+        "sha256": "1787a84d1be60a2fff38ac9a7c31ae53c80165a290f615628c5ec0c1c6393276"
       },
       {
         "file": "frontend/src/ui/alert.tsx",
@@ -1751,7 +1751,7 @@
       },
       {
         "file": "frontend/src/ui/collapsible.tsx",
-        "sha256": "50952589eae926db51f4ddbabb3b95edbd173e1ea407d21970dba893ed17888c"
+        "sha256": "99b6e50f2429bf2144ea1489030d9ff16db7b3b5d845ca9a4c77a54a337c3aea"
       },
       {
         "file": "frontend/src/ui/disclosureChevron.tsx",
