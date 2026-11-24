@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2475615,
+    "bytes": 2477135,
     "file": "react.html",
-    "sha256": "b6644c0c0bd4814eac1a69e910ed67b7a011bc313c2dc85f4f352a77c2b3e89e"
+    "sha256": "b269adf2985cb2b84d647de77ecd12ca669792f246437a30f4da418b246eec59"
   },
   "format": 1,
   "frontend": "react",
@@ -1223,7 +1223,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionsFilters.tsx",
-        "sha256": "d7709c66c04499ec836b6556e84031d9ea1205fb3dde7d403c4b523355d8f52e"
+        "sha256": "c9443fa8ddef544b9a96453067e1749b638732cad1d8a021cba7a3028fdb3ab5"
       },
       {
         "file": "frontend/src/sessions/SessionsGlance.tsx",
@@ -1231,7 +1231,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionsView.tsx",
-        "sha256": "acadb1563b137aaab3b36a728585be849749c6587a6457fbb419f3ba6d6161d3"
+        "sha256": "5015538bec91b85542c0e4d6ba724f94db9533228b7287f6ed6e4e7619724e03"
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",
@@ -1287,11 +1287,11 @@
       },
       {
         "file": "frontend/src/sessions/rows.ts",
-        "sha256": "2eac0aac18d16aeb71a66ef8f7f042b66155f12dd3a7e25493fd52dc6b6ad4d1"
+        "sha256": "d3aa6131bcff65f14407bc1423c21ee011464ad3c8e07a629aa4d6c20348bfbd"
       },
       {
         "file": "frontend/src/sessions/sessions.css",
-        "sha256": "3c2da1b6a5a6305fe87144c4aafc4d3c9174ff17b22d747dd4c0c60d17491ec0"
+        "sha256": "2af069bd84a87af503ba578476aef5641ef4c54ae66b6b54a52c1dc47d6d64e4"
       },
       {
         "file": "frontend/src/sessions/steadyOutline.ts",
@@ -1739,11 +1739,11 @@
       },
       {
         "file": "frontend/src/ui/button.tsx",
-        "sha256": "e5244778c6fc40018f9c671297428232ebe7450cb74c08d0663d2ff77f53ab61"
+        "sha256": "70f9f2cc3f2c60de3334505e6388c8b1ed0295efa4e5bb173e0b9f4bc902f299"
       },
       {
         "file": "frontend/src/ui/card.tsx",
-        "sha256": "6a7a92c9b94cbaec11db9a6bd04b1464ba3856fff389ad47ab304536b8bc5a19"
+        "sha256": "a4e87283332883b3eb59b54cf47b5519e83d9bbe6fac2720923a147d65a3ea36"
       },
       {
         "file": "frontend/src/ui/checkbox.tsx",
