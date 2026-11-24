@@ -14,6 +14,7 @@ import threading
 import time
 import unittest
 import weakref
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
@@ -35,10 +36,11 @@ from compass_runtime import (
 from compass_runtime import annotations as annotation_store
 from compass_runtime import io as runtime_io
 
-from . import support
+from . import support, test_analysis_result, test_live_estimate
 from .test_analysis_result import _RowProgress
-from .test_claude_checks import SHORT
+from .test_claude_checks import SHORT, SID
 from .test_live_lease_http import LeaseRoute
+from .test_subagent_checks import Subagent
 
 if TYPE_CHECKING:
     from compass_runtime.reading import Assessment
@@ -906,6 +908,137 @@ class FooterRowProgressTest(_RowProgress):
             (view,) = self.get(port, focused)["sources"]["work"]["drift_views"]
             self.assertIsNone(view["pill"])
 
+    def test_a_full_uuid_collision_withholds_the_board_level_and_reuses_the_memo(self) -> None:
+        # A live worker keeps the older of two prefix-sharing UUIDs visible under its full id.
+        self.path = self.path.with_name(f"{SID}.jsonl")
+        with (
+            mock.patch.object(test_analysis_result, "SHORT", SID),
+            mock.patch.object(test_live_estimate, "SHORT", SID),
+        ):
+            self.save_goal(lines=())
+            reading = self.departure()
+        os.utime(self.path, (self.now - 4, self.now - 4))
+        worker = self.path.with_suffix("") / "subagents" / "agent-10000.jsonl"
+        subagent = Subagent(self.session, "10000")
+        subagent.prompt("Check the parser.")
+        subagent.save(worker)
+        os.utime(worker, (self.now - 3, self.now - 3))
+        neighbor = f"{SID[:-1]}2"
+        other = self.path.with_name(f"{neighbor}.jsonl")
+        other.write_text(self.path.read_text().replace(SID, neighbor))
+        os.utime(other, (self.now, self.now))
+        app, lines, footer, focused = self._footer_with_reading(SID, reading)
+        app.monotonic = lambda: 100.0
+
+        def level(port: int) -> str | None:
+            (session,) = [
+                row for row in self.get(port, "/api/data")["sessions"] if row["sid"] == SID
+            ]
+            return cast("str | None", session.get("stored_progress"))
+
+        with self.serving(app) as port:
+            self.get(port, focused)
+            self.assertEqual("medium", level(port))
+            self.assertEqual("medium", self._level(footer))
+            archive = self.path.parent.with_name("-work-archive")
+            archive.mkdir()
+            duplicate = archive / self.path.name
+            duplicate.write_bytes(self.path.read_bytes())
+            os.utime(duplicate, (1, 1))
+            lines.touch(self.now)
+            self.assertIsNone(self._level(footer))
+            with mock.patch.object(app, "collect", wraps=app.collect) as collect:
+                self.assertEqual([None] * 4, [level(port) for _ in range(4)])
+                collect.assert_called_once()
+            (view,) = self.get(port, focused)["sources"]["work"]["drift_views"]
+            self.assertIsNone(view["pill"])
+
+    def test_a_persistent_scan_error_withholds_the_board_level_until_recovery(self) -> None:
+        app, lines, footer, focused = self._departure_footer([])
+        app.monotonic = lambda: 100.0
+        archive = self.path.parent.with_name("-work-archive")
+        archive.mkdir()
+        scan = os.listdir
+
+        def unavailable(path: Any = None) -> Any:
+            if path == str(archive):
+                raise OSError(errno.EIO, "directory read failed")
+            return scan(path)
+
+        with (
+            mock.patch.object(row_progress._NameWatch, "start", return_value=None),
+            self.serving(app) as port,
+        ):
+            app.warm_row_progress = None
+            self.get(port, focused)
+            self.assertEqual("medium", self.poll(port))
+            with (
+                mock.patch.object(os, "listdir", side_effect=unavailable),
+                mock.patch.object(app, "collect", wraps=app.collect) as collect,
+            ):
+                lines.touch(self.now)
+                self.assertIsNone(self._level(footer))
+                self.assertEqual([None] * 4, [self.poll(port) for _ in range(4)])
+                collect.assert_called_once()
+                self.assertIsNone(
+                    self.get(port, "/api/data?all=1")["sessions"][0]["stored_progress"]
+                )
+            lines.touch(self.now)
+            self.assertEqual("medium", self._level(footer))
+            self.assertEqual("medium", self.poll(port))
+            self.assertEqual(
+                "medium", self.get(port, "/api/data?all=1")["sessions"][0]["stored_progress"]
+            )
+
+    def test_repeated_touches_leave_the_withheld_show_all_snapshot_in_place(self) -> None:
+        app, lines, footer, focused = self._departure_footer()
+        app.monotonic = lambda: 100.0
+        with (
+            self.serving(app) as port,
+            mock.patch.object(app, "collect", wraps=app.collect) as collect,
+        ):
+            app.warm_row_progress = None
+            self.get(port, focused)
+            self.assertEqual("medium", self.poll(port))
+            self.assertEqual(
+                "medium", self.get(port, "/api/data?all=1")["sessions"][0]["stored_progress"]
+            )
+            collect.reset_mock()
+            self._archive_collision(self.path.parent.with_name("-work-archive"))
+            generation = app.snapshot.generation()
+            lines.touch(self.now)
+            self.assertIsNone(self._level(footer))
+            self.assertEqual(generation + 1, app.snapshot.generation())
+            for _ in range(2):
+                lines.touch(self.now)
+                self.assertIsNone(
+                    self.get(port, "/api/data?all=1")["sessions"][0]["stored_progress"]
+                )
+            collect.assert_called_once()
+            self.assertEqual(generation + 1, app.snapshot.generation())
+
+    def test_a_repeated_touch_does_not_discard_a_clean_collection_in_flight(self) -> None:
+        app, lines, footer, focused = self._departure_footer()
+        app.monotonic = lambda: 100.0
+        collect = app.collect
+
+        def collect_then_touch(*, show_all: bool) -> aggregate.Collection:
+            collection = collect(show_all=show_all)
+            lines.touch(self.now)
+            return collection
+
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            self.get(port, focused)
+            self.assertEqual("medium", self.poll(port))
+            self._archive_collision(self.path.parent.with_name("-work-archive"))
+            lines.touch(self.now)
+            self.assertIsNone(self._level(footer))
+            with mock.patch.object(app, "collect", side_effect=collect_then_touch) as collected:
+                self.assertIsNone(self.poll(port))
+                self.assertIsNone(self.poll(port))
+                collected.assert_called_once()
+
     def test_an_archived_transcript_in_an_existing_project_clears_the_idle_level(self) -> None:
         self._archived_collision_clears_idle_level(new_project=False)
 
@@ -958,14 +1091,19 @@ class FooterRowProgressTest(_RowProgress):
         self.save_goal(lines=())
         reading = self.departure()
         os.utime(self.path, (self.now, self.now))
+        return self._footer_with_reading(SHORT, reading, diagnostics)
+
+    def _footer_with_reading(
+        self, sid: str, reading: dict[str, Any], diagnostics: list[str] | None = None
+    ) -> tuple[aggregate.Application, footer_lines.Lines, Path, str]:
         app = self.cold()
         app.harnesses = tuple(
             spec
             for spec in aggregate.default_harnesses(usage_fetch_enabled=False)
             if spec.key == "claude"
         )
-        (session,) = app.collect(show_all=False)["sessions"]
-        evidence = support.captured_evidence(app, "claude", SHORT, reading)
+        (session,) = [row for row in app.collect(show_all=False)["sessions"] if row["sid"] == sid]
+        evidence = support.captured_evidence(app, "claude", sid, reading)
         self.assertIsNotNone(evidence)
         self.assertEqual(
             annotation_store.OUTCOME_STORED,
@@ -973,14 +1111,14 @@ class FooterRowProgressTest(_RowProgress):
                 self.config,
                 app.state,
                 "claude",
-                SHORT,
+                sid,
                 assessment=cast("Assessment", reading),
                 evidence=evidence,
             ),
         )
         focused = (
             f"/api/project-context?project={reading_evidence.project_key(session)}"
-            f"&session=claude:{SHORT}"
+            f"&session=claude:{sid}"
         )
         lines = footer_lines.Lines(
             self.config.state_home,
@@ -1272,6 +1410,7 @@ class FooterRowProgressTest(_RowProgress):
 
     def test_a_collision_during_collection_publication_withholds_the_written_level(self) -> None:
         app, _, footer, focused = self._departure_footer()
+        app.monotonic = lambda: 100.0
         with self.serving(app) as port:
             app.warm_row_progress = None
             self.get(port, focused)
@@ -1283,13 +1422,71 @@ class FooterRowProgressTest(_RowProgress):
             self._archive_collision(archive)
             return validate(paths)
 
-        self.now += 16
-        with mock.patch.object(
-            app._footer_prefixes, "unambiguous", side_effect=insert_then_validate
+        app.snapshot.clear()
+        with (
+            mock.patch.object(
+                app._footer_prefixes, "unambiguous", side_effect=insert_then_validate
+            ),
+            mock.patch.object(
+                app.state.streams, "publish", wraps=app.state.streams.publish
+            ) as wake,
         ):
-            app.collect_json(show_all=False)
+            _, body = app.collect_json(show_all=False)
+        wake.assert_not_called()
+        self.assertIsNone(app.snapshot.current((app.config.window_hours, False)))
         self.assertIsNone(self._level(footer))
         self.assertEqual(self.now, json.loads(footer.read_text())["at"])
+        self.assertIsNone(json.loads(body)["sessions"][0].get("stored_progress"))
+        _, replacement = app.collect_json(show_all=False)
+        self.assertIsNone(json.loads(replacement)["sessions"][0].get("stored_progress"))
+
+    def test_a_reader_starting_after_an_idle_withdrawal_does_not_reuse_an_in_flight_level(
+        self,
+    ) -> None:
+        app, lines, footer, focused = self._departure_footer()
+        app.monotonic = lambda: 100.0
+        before_publish, release, reader_checked = (threading.Event() for _ in range(3))
+        publish, fresh = app.snapshot.publish, app._fresh_snapshot
+
+        def pause_first_publish(*args: Any, **kwargs: Any) -> Any:
+            if not before_publish.is_set():
+                before_publish.set()
+                self.assertTrue(release.wait(5))
+            return publish(*args, **kwargs)
+
+        def check_memo(key: tuple[float, bool]) -> Any:
+            result = fresh(key)
+            if before_publish.is_set() and not release.is_set():
+                reader_checked.set()
+            return result
+
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            self.get(port, focused)
+            self.assertEqual("medium", self.poll(port))
+            app.snapshot.clear()
+            with (
+                ThreadPoolExecutor(max_workers=2) as readers,
+                mock.patch.object(app.snapshot, "publish", side_effect=pause_first_publish),
+                mock.patch.object(app, "_fresh_snapshot", side_effect=check_memo),
+                mock.patch.object(
+                    app.state.streams, "publish", wraps=app.state.streams.publish
+                ) as wake,
+            ):
+                building = readers.submit(self.poll, port)
+                try:
+                    self.assertTrue(before_publish.wait(5))
+                    self._archive_collision(self.path.parent.with_name("-work-archive"))
+                    lines.touch(self.now)
+                    self.assertIsNone(self._level(footer))
+                    later = readers.submit(self.poll, port)
+                    self.assertTrue(reader_checked.wait(5))
+                finally:
+                    release.set()
+                self.assertEqual("medium", building.result(timeout=5))
+                self.assertIsNone(later.result(timeout=5))
+                self.assertIsNone(self.poll(port))
+                wake.assert_called_once()
 
     def test_an_annotation_clear_during_collection_publication_withholds_the_level(self) -> None:
         app, _, footer, focused = self._departure_footer()
