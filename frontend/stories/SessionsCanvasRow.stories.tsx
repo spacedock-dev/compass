@@ -346,6 +346,12 @@ export const ListCard: Story = {
         const goal = part(docs, '[data-next-operation-fact="goal"]');
         await expect(part(goal, 'small')).toHaveStyle({ fontSize: '13px', fontWeight: '600' });
         const link = part(goal, 'a');
+        /* An earlier story file can leave the real pointer where this link now sits, which underlines it;
+           park the pointer on the page heading before reading the resting style. */
+        if ('__vitest_browser_runner__' in window) {
+          const { page } = await import('vitest/browser');
+          await page.getByRole('heading', { level: 1 }).hover();
+        }
         await expect(link).toHaveStyle({
           fontSize: '15px',
           fontWeight: '400',
