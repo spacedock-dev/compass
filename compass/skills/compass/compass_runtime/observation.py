@@ -126,7 +126,7 @@ from compass_runtime import io as runtime_io
 from compass_runtime import probe as runtime_probe
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Iterator, Mapping
 
     from compass_runtime.aggregate import Application
     from compass_runtime.config import RuntimeConfig
@@ -1177,18 +1177,23 @@ class Observation:
             worker.join(timeout=timeout)
 
     def _run(self) -> None:
+        footer_period = self.config.stream_producer_interval_sec
+        # Wall-clock corrections must not postpone an idle lease check.
+        footer_due_at = time.monotonic() + footer_period
         while True:
             with self._wake:
                 if self._stop.is_set():
                     return
-                self._wake.wait(self._sleep_for())
-                if self._stop.is_set():
-                    return
                 due, reason = self._due()
+                footer_wait = footer_due_at - time.monotonic()
+                if not due and footer_wait > 0:
+                    self._wake.wait(min(self._sleep_for(), footer_wait))
+                    continue
             if due:
                 self._collect(reason)
             else:
                 self._touch_footer()
+            footer_due_at = time.monotonic() + footer_period
 
     def _touch_footer(self) -> None:
         """Keep the status line's files fresh while nothing is collecting.
@@ -1209,29 +1214,27 @@ class Observation:
             )
 
     def _sleep_for(self) -> float:
-        """How long to sleep, under `_lock`.
-
-        The periodic tick is the shorter bound while a stream is connected. A
-        pending coalesce is shorter still. Neither is allowed to be zero: a wait
-        of zero with nothing to do is a busy loop.
-        """
+        """How long to wait for collection, under `_lock`."""
+        now = self.clock()
+        # Stream registration does not notify this condition.
         period = self.config.stream_producer_interval_sec
-        if self._coalesce_until is not None:
-            period = min(period, max(0.001, self._coalesce_until - self.clock()))
-        return period
+        deadline = min((at for at, _ in self._collection_deadlines()), default=now + period)
+        return min(period, max(0.0, deadline - now))
 
     def _due(self) -> tuple[bool, str]:
-        """Whether to collect now, and why. Called under `_lock`.
-
-        The floor gates both paths. It is the store-protection guarantee, so it
-        may not be a derived side effect of the coalescing window.
-        """
+        """Whether to collect now, and why. Called under `_lock`."""
         now = self.clock()
-        if now - self._last_collect_at < self.config.collect_memo_sec:
-            return False, ""
-        dirty = any(self._dirty.get(key, 0) != self._collected.get(key, 0) for key in self._dirty)
-        if dirty and (self._urgent or self._coalesce_until is None or now >= self._coalesce_until):
-            return True, "event"
+        for at, reason in self._collection_deadlines():
+            if now >= at:
+                return True, reason
+        return False, ""
+
+    def _collection_deadlines(self) -> Iterator[tuple[float, str]]:
+        """Collection eligibility in priority order, under `_lock`."""
+        floor = self._last_collect_at + self.config.collect_memo_sec
+        if any(self._collected.get(key, 0) != value for key, value in self._dirty.items()):
+            coalesce = self._coalesce_until
+            yield (floor if self._urgent or coalesce is None else max(floor, coalesce)), "event"
         # An outstanding ask is its own reason to collect. `AskRegistry.pending`
         # is what renders the card and what sweeps the table, and a dashboard
         # with no browser tab open has neither a dirty generation nor a stream to
@@ -1239,7 +1242,7 @@ class Observation:
         # exists for. `count` is unresolved only, so an answered ask waiting for
         # its poller does not hold this open.
         #
-        # Rate-limited by the floor above and by nothing else. Gating it on
+        # Rate-limited by the floor and by nothing else. Gating it on
         # `stream_producer_interval_sec`, as the tick below is, would delay the
         # first render of a fresh ask by up to that interval, which is the
         # latency this seam exists to remove.
@@ -1248,12 +1251,10 @@ class Observation:
         # direction it ever runs: nothing in `asks` calls into this class, and
         # `note_ask` is called after `register` has returned.
         if self.application.state.asks.count:
-            return True, "ask"
-        if self.application.state.streams.count and (
-            now - self._last_collect_at >= self.config.stream_producer_interval_sec
-        ):
-            return True, "tick"
-        return False, ""
+            yield floor, "ask"
+        if self.application.state.streams.count:
+            tick = self._last_collect_at + self.config.stream_producer_interval_sec
+            yield max(floor, tick), "tick"
 
     def _collect(self, reason: str) -> None:
         """Run one collection outside the lock, then reconcile the bookkeeping.
@@ -1305,16 +1306,9 @@ class Observation:
             # arriving in that gap never rendered at all until an unrelated event
             # or a five-second stream tick came along.
             #
-            # So leave it dirty. `_last_collect_at` is already advanced above, so
-            # the retry is one floor away rather than a spin, and the wake is
-            # scheduled for exactly then: `_sleep_for` consults only
-            # `_coalesce_until`, so without this the worker would sleep a whole
-            # `stream_producer_interval_sec` and the retry would land at five
-            # seconds rather than at the floor. Measured at 5.2 s before this line
-            # existed and 2.5 s after it.
+            # Leave it dirty so the worker retries at the next collection floor.
             with self._lock:
                 self._bump("reused.floor")
-                self._coalesce_until = self._last_collect_at + self.config.collect_memo_sec
             return
         with self._lock:
             self._bump(f"collected.{reason}")

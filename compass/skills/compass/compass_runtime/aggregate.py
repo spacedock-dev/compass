@@ -201,7 +201,8 @@ class FooterLane(Protocol):
         collection: Mapping[str, Any],
         now: float,
         *,
-        validate_progress: Callable[[float], bool] | None = None,
+        validate_progress: Callable[[float, tuple[str, str]], bool] | None = None,
+        validate_stores: Callable[[], bool] | None = None,
     ) -> None: ...
 
     def touch(self, now: float) -> None: ...
@@ -1805,7 +1806,11 @@ class Application:
                 body,
                 now=self.clock(),
                 generation=generation,
-                validate=(lambda: validate(self.clock())) if validate else None,
+                validate=(
+                    lambda: validate.proofs_hold(self.clock(), None) and validate.stores_hold()
+                )
+                if validate
+                else None,
             )
             self._write_footer_lines(collection, show_all=show_all, validate_progress=validate)
             # Only a freshly minted revision that was kept is worth announcing. A
@@ -1825,7 +1830,7 @@ class Application:
         collection: Collection,
         *,
         show_all: bool,
-        validate_progress: Callable[[float], bool] | None,
+        validate_progress: row_progress.Validation | None,
     ) -> None:
         """The status line's files, from the page-default variant only.
 
@@ -1835,7 +1840,12 @@ class Application:
         if writer is None or show_all:
             return
         with contextlib.suppress(Exception):
-            writer.update(collection, self.clock(), validate_progress=validate_progress)
+            writer.update(
+                collection,
+                self.clock(),
+                validate_progress=validate_progress.proofs_hold if validate_progress else None,
+                validate_stores=validate_progress.stores_hold if validate_progress else None,
+            )
 
     def _fresh_snapshot(
         self, key: runtime_snapshot.SnapshotKey

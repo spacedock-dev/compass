@@ -257,18 +257,23 @@ def _proof(
     return Proof(row, entry, memo, annotation_store.direction_floor(entry, row))
 
 
+class Validation(NamedTuple):
+    proofs_hold: Callable[[float, tuple[str, str] | None], bool]
+    stores_hold: Callable[[], bool]
+
+
 def publish(
     collection: dict[str, Any],
     config: RuntimeConfig,
     state: RuntimeState,
     clock: Callable[[], float],
     stamp: tuple[int, ...] | None,
-) -> Callable[[float], bool] | None:
+) -> Validation | None:
     """Attach only proven tokens after the annotation and SessionEnd overlays.
 
     Reused snapshot bytes also need their proofs checked. Their row fields are immutable, so
     a cached response only has to recheck the stores and transcript metadata, without hashing
-    the row or deserializing the body again.
+    the row or deserializing the body again. A footer reuses only its own row's proof.
     """
     if not stamp or not collection.get("annotate") or collection.get("annotate_unreadable"):
         return None
@@ -282,7 +287,7 @@ def publish(
         (entry["harness"], entry["sid"]): entry for entry in annotation_store.active(config, state)
     }
     now = clock()
-    proofs = []
+    proofs = {}
     for row in rows:
         owner = identity(row)
         memo = memos.get(owner)
@@ -290,20 +295,21 @@ def publish(
             continue
         proof = _proof(row, collection, entries.get(owner), memo)
         if proof is not None and proof.holds(config, state, now):
-            proofs.append(proof)
+            proofs[owner] = proof
 
-    def stores_readable() -> bool:
+    def stores_hold() -> bool:
         # A chmod need not change the history parser's cached inode, size or mtime.
         return annotation_stamp(config) == stamp and os.access(
             semantic_history.store_path(config), os.R_OK
         )
 
-    if not proofs or not stores_readable():
+    if not proofs or not stores_hold():
         return None
-    for proof in proofs:
+    for proof in proofs.values():
         proof.row.update(published(proof.memo.token))
 
-    def valid(now: float) -> bool:
-        return all(proof.holds(config, state, now) for proof in proofs) and stores_readable()
+    def proofs_hold(now: float, owner: tuple[str, str] | None) -> bool:
+        selected = proofs.values() if owner is None else (proofs.get(owner),)
+        return all(proof is not None and proof.holds(config, state, now) for proof in selected)
 
-    return valid
+    return Validation(proofs_hold, stores_hold)
