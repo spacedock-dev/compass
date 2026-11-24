@@ -215,6 +215,10 @@ pnpm 12.19.0 packages the page at 2,478,431 bytes on Node 26.12.1, 1,276 bytes b
 2,479,707-byte page before it. The page bound follows that measurement. The fixture bound
 stays at 250,000 bytes.
 
+Later on 2026-11-24, letting an opened panel's text span the panel packages the page at
+2,478,519 bytes on Node 26.12.1 and pnpm 12.19.0, 88 bytes above the dependency bump's page. The
+page bound follows that measurement. The fixture bound stays at 250,000 bytes.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.
