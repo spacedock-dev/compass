@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2477391,
+    "bytes": 2479987,
     "file": "react.html",
-    "sha256": "81b8429f7addc4ddaacd4649c617c708208f8dd513a891ebe0f5b076cf17247c"
+    "sha256": "eada0d49c5b9db83097ee73238571b99bfab59bd3337f357e7c4ed3e1a0d9471"
   },
   "format": 1,
   "frontend": "react",
@@ -759,7 +759,7 @@
       },
       {
         "file": "frontend/src/help/Help.tsx",
-        "sha256": "44c4c1aad712822e1b6c2ced1aca63148ba836027a2a2f51b050c77430e52575"
+        "sha256": "15bc7fb3f75b0cf9256ea6c10837c64ae05c4a6d6e34facd98b0bcb5e4637280"
       },
       {
         "file": "frontend/src/help/agents.ts",
@@ -915,7 +915,7 @@
       },
       {
         "file": "frontend/src/language/glossary.ts",
-        "sha256": "eafdc58f2c1c075740803fc7e6426d013b1bbeb77fe7393c6074ab088a487a8e"
+        "sha256": "a4270e42b878afd92e6ff07d12aeabafbb540ef13742068513dc7dd0cfd1c399"
       },
       {
         "file": "frontend/src/lib/utils.ts",
@@ -955,7 +955,7 @@
       },
       {
         "file": "frontend/src/observed/index.ts",
-        "sha256": "3fe6537276809ef470c2461e3867f67dd50db31b446c14f8aef7d4a6a8457474"
+        "sha256": "32b61f2b544e9ab9e5a5ee43086e998c95fe8ea29056ecb24e9675f5c68e8615"
       },
       {
         "file": "frontend/src/observed/landing.ts",
@@ -987,7 +987,7 @@
       },
       {
         "file": "frontend/src/observed/session.ts",
-        "sha256": "3c8dc1d97bebcd1a9269d389a05f472dd5c2d669b62ff763b854b24163ba24fb"
+        "sha256": "e288248c5e9d71125fd31d41f4e913117c579bfe54b09126a7f51e5a09c056be"
       },
       {
         "file": "frontend/src/observed/values.ts",
@@ -1015,11 +1015,11 @@
       },
       {
         "file": "frontend/src/project/ProjectOverview.tsx",
-        "sha256": "a3e3e4fcfdf66fd7c6bafde234202cfd84f721bcb337b6620ae926722ba3629d"
+        "sha256": "156182f073f626f7fa8366a596b485ac23215afef4794d97e3a0f25fd70e39b0"
       },
       {
         "file": "frontend/src/project/ProjectsView.tsx",
-        "sha256": "f289d4a2e6c4d224f5843812457848442d4a519e0f64c3a15e1595727e36de81"
+        "sha256": "9b13ab825994ac6accdb9e8474751027ae9d425f4a72d85c4a20a4b30860e86f"
       },
       {
         "file": "frontend/src/project/RecoveryStrip.tsx",
@@ -1223,7 +1223,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionsFilters.tsx",
-        "sha256": "c9443fa8ddef544b9a96453067e1749b638732cad1d8a021cba7a3028fdb3ab5"
+        "sha256": "08fc6ac719330484ff08d348d2a69d4521184e541b0d886fae3f312f29948037"
       },
       {
         "file": "frontend/src/sessions/SessionsGlance.tsx",
@@ -1231,7 +1231,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionsView.tsx",
-        "sha256": "25150b6646200a5f66db6b1bac5c15fb1d612728ab752dada79e717ff0b92d1b"
+        "sha256": "13913fe8586682d4ec927806546f4631f7020ade94e2ac48109a7e64321e1d0e"
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",
@@ -1291,7 +1291,7 @@
       },
       {
         "file": "frontend/src/sessions/sessions.css",
-        "sha256": "2af069bd84a87af503ba578476aef5641ef4c54ae66b6b54a52c1dc47d6d64e4"
+        "sha256": "468b4344583ab3fd9813eb678a310380ddc5e0690acaf06e48dac7e2ba9e6d00"
       },
       {
         "file": "frontend/src/sessions/steadyOutline.ts",
@@ -1759,7 +1759,7 @@
       },
       {
         "file": "frontend/src/ui/icons.tsx",
-        "sha256": "a60236c146d0a62304f8c520ae3ef785fcbedbcc13892c658f11d84523baeecb"
+        "sha256": "f00644981169f104ba4a1f58a10d67b47efb2dbd9506f58fc2b652c25d544756"
       },
       {
         "file": "frontend/src/ui/input.tsx",
@@ -1799,11 +1799,11 @@
       },
       {
         "file": "frontend/src/ui/status-tile.tsx",
-        "sha256": "7827827c00e0bef1bbfe80d6e033f5a8b5bd7b8de3c4b949cc95fd76d3a92fc8"
+        "sha256": "213bdcdd9cd8d055f2780096fbb15b0c711a5bda16bd441ba01b4f0ebb958f03"
       },
       {
         "file": "frontend/src/ui/statusLegendEntries.ts",
-        "sha256": "6c7cc17f996ac01b5b8559ce01afebc27c6f18f1428fb1f8cebace02d7fa941b"
+        "sha256": "84bb033ca4fcc887f2ce5e2c462a5809ac4f68315e89705e549a81b1316febb9"
       },
       {
         "file": "frontend/src/ui/switch.tsx",
