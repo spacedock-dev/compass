@@ -7,6 +7,8 @@ import { assignmentOf, sessionInstruction } from './intent';
 import { SESSION_LIST_WORDS, SESSION_ROW_WORDS } from '../language/glossary';
 import {
   checkedAgainstCurrentWords,
+  hasSavedWords,
+  noGoalYet,
   rowState,
   type SessionRow,
   type SessionsContext,
@@ -113,21 +115,22 @@ export const PROGRESS_OPTIONS = [
 
 type ProgressValue = 'no-goal' | 'has-goal';
 
-function progressValue(source: Row | undefined): ProgressValue | null {
-  const saved = source?.['annotation_goal'];
-  if (typeof saved !== 'string') return null;
-  if (saved.trim()) return 'has-goal';
-  // The collector initializes an empty field. The annotation store publishes the reason for an absence.
-  const discarded = nextNumber(source?.['annotation_discarded_at']);
-  return trimmed(source?.['annotation_goal_why']) || (discarded !== null && discarded > 0)
-    ? 'no-goal'
-    : null;
+/* The Progress check chip's "No goal yet" is the row's own word: `noGoalYet` in rows.ts decides both, so the
+   chip keeps exactly the rows that read No goal yet (never typed, discarded, or a draft that was not saved)
+   and drops a row with only saved lines, which reads Not checked yet, and one whose goal cannot be read.
+   Null where the board publishes nothing to partition. */
+function progressValue(source: Row | undefined, context: SessionsContext): ProgressValue | null {
+  if (noGoalYet(source, context)) return 'no-goal';
+  return context.annotate && !context.unreadable && hasSavedWords(source) ? 'has-goal' : null;
 }
 
 export const GOAL_OPTIONS: readonly { readonly value: GoalValue; readonly label: string }[] = [
   { value: 'saved', label: 'Goal saved' },
   { value: 'drafted', label: 'Drafted from a prompt, not saved' },
-  { value: 'none', label: SESSION_ROW_WORDS.noGoalYet },
+  /* Not "No goal yet": this facet partitions goal sources, so "Drafted from a prompt" is its own sibling
+   and "none" is narrower than the row's word, which a drafted row also reads. Two chips reading alike but
+   keeping different rows was the defect; the narrower one now says what it keeps. */
+  { value: 'none', label: SESSION_LIST_WORDS.noGoalNoPrompt },
 ];
 export const HEADLESS_OPTIONS = [
   { value: 'headless', label: 'Headless' },
@@ -281,7 +284,7 @@ export function indexRow(row: SessionRow, context: SessionsContext): IndexedRow 
     ...outcome,
     ...tasks,
   ].filter((one): one is Field => one !== null);
-  const progress = readable ? progressValue(source) : null;
+  const progress = readable ? progressValue(source, context) : null;
   const checked = checkedAgainstCurrentWords(source, context);
   return {
     row,
@@ -292,13 +295,13 @@ export function indexRow(row: SessionRow, context: SessionsContext): IndexedRow 
     progress,
     drift: !readable ? null : row.drift ? 'recorded' : checked ? 'checked' : 'unchecked',
     goal:
-      progress === 'has-goal'
-        ? 'saved'
-        : progress === 'no-goal'
-          ? goal.known
+      progress === null
+        ? null
+        : trimmed(source?.['annotation_goal'])
+          ? 'saved'
+          : goal.known
             ? 'drafted'
-            : 'none'
-          : null,
+            : 'none',
     started: startStamp(source),
     active: activityStamp(source),
   };

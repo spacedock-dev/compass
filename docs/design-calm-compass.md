@@ -179,7 +179,8 @@ count stay. The status segments are one segmented control on the `--sunk` track:
 segment is white with a `--line` border, and the others are plain words that clear 4.5:1. A phone
 shows them as outlined pills with the chosen one filled. The search box reads "Search by title,
 goal or project". The canvas's short ages and row progress pills are not taken: the elapsed
-spelling above stands, and the progress slot stays blank.
+spelling above stands, and the row progress pill waits for a stored departure (the grey absence line
+that can stand in its place is the 2026-11-24 note below).
 
 Also on 2026-11-24 the owner found Sessions rows with no tile, their titles shifted left out of
 line: 14 Antigravity and 3 Codex sessions reported idle with no recorded turn stop, which reads
@@ -221,7 +222,8 @@ Mobile.dc.html does.
 
 The Session header and Is it on track? card can show full levels. The meter and Help explain
 all four. The owner allows one progress pill on a Sessions or Project row when a stored reading
-found a departure. The Sessions list currently leaves the progress slot blank.
+found a departure. The Sessions list draws no pill yet; the absence line under a goal is the
+[2026-11-24 note](#absence-words-on-a-sessions-row-2026-11-24).
 Goal history carries no level. The
 [progress amendment](design-reading-a-session.md#amended-2026-11-22-owner-progress-words-by-surface)
 specifies the eligible surfaces, including the terminal footer, and the Codex limit.
@@ -308,6 +310,8 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Way off course | Extreme | `extreme` | A dirty end | Row pill requires a stored departure |
 | No goal yet | Generic Not checked | Goal availability | Not checked yet | Also a Progress check filter chip |
 | Not checked yet | Generic Not checked | No check recorded | No goal yet or Out of date | Plain text |
+| No goal and no prompt | No goal yet (Goal source chip) | No saved goal and nothing to draft one from | No goal yet | Goal source filter chip only |
+| Saved goal unavailable | No goal yet over an unreadable store | The annotation store or this session entry cannot be read | No goal yet | Plain text. Goal history says it too |
 | Too early to tell | Not enough recorded yet | `not_enough` and the evidence floor | Can't tell | Plain text |
 | Can't tell | Goal-only reading with no level | Missing proof that the goal was met | On track | Plain text |
 | Goal too vague to check | Goal too vague to analyze against | Reading refusal and reason | Too early to tell | Plain text |
@@ -445,6 +449,35 @@ calm refused look of the shared Button above. No hatch is left on the first laye
 edges remain, none of them an absence: the switch track when a switch cannot be changed, the Add a
 line control in the Goal editor, and the rule beside a defined term in the session summary. The
 owner has not asked about them.
+
+### Absence words on a Sessions row, 2026-11-24
+
+A Sessions row draws one plain grey line at the foot of its Goal cell, or none. It is 13 px quiet
+ink with no pill, border, background or icon, and it offers no action. Only words the row's own
+published data proves ship:
+
+- **No goal yet** reads on a draft row, where the Goal cell shows an unsaved prompt. Where the cell
+  already says No goal yet, the line is not repeated.
+- **Not checked yet** reads on a non-Codex row that has saved words (a goal or outcome lines) and
+  nothing recording a check: no stored reading, refusal, withheld reading, press, unasked check or
+  raised departure, and a reading route for its harness. A row whose unasked check found nothing
+  says nothing, because it was checked.
+- **Saved goal unavailable** replaces the Goal cell when the annotation store, or this session's own
+  entry, cannot be read. The row never says No goal yet or offers a prompt as the goal over words
+  that exist. A newer build's entry is detected from the read the board already makes
+  (`annotation_goal_unreadable`, a bool that names no text and enters no history).
+
+Left off the row, and why: Too early to tell and Can't tell need the analysis level, which reads
+transcript evidence on every poll, so a row cannot prove them. Goal too vague to check and Out of
+date need a freshness record the stored-departure pill issue builds, because the session page says
+Out of date before it. A refused or withheld reading is a failed check, not "nothing departs", so
+it shows nothing. A Codex row and a live-estimate row show nothing. A Live monitor lease held by
+another tab or the terminal can hold a live estimate the list cannot see; that gap is recorded,
+not closed, and adds no field.
+
+The Progress check "No goal yet" chip and the row read one predicate (`noGoalYet` in `rows.ts`).
+The Goal source chip is narrower, because its drafted rows are a sibling option, so it is named
+**No goal and no prompt** and the two no longer read alike. `--sessions` prints the same line.
 
 ### The Session page follows the canvas, 2026-11-24
 

@@ -18,6 +18,7 @@ import {
   filtersActive,
   hasChoices,
   fixedOptions,
+  GOAL_OPTIONS,
   harnessMeta,
   harnessOptions,
   hiddenWaiting,
@@ -420,6 +421,14 @@ describe('the facets', () => {
         },
         { harness: 'droid', sid: 'unpublished' },
         { harness: 'cursor', sid: 'default', annotation_goal: '', annotation_goal_why: '' },
+        { harness: 'gemini', sid: 'lines', ...absent, annotation_line_1: 'A summary exists' },
+        {
+          harness: 'gemini',
+          sid: 'held',
+          annotation_goal: '',
+          annotation_goal_why: '',
+          annotation_goal_unreadable: true,
+        },
       ],
     };
     const indexed = indexScreen(buildSessionsScreen(payload, observe(payload)));
@@ -432,9 +441,24 @@ describe('the facets', () => {
         .sort();
     };
     expect(kept({ progress: ['no-goal'] })).toEqual(['discarded', 'draft', 'never']);
-    expect(kept({ goal: ['none'] })).toEqual(['discarded', 'never']);
+    expect(kept({ goal: ['none'] })).toEqual(['discarded', 'lines', 'never']);
     expect(kept({ goal: ['saved'] })).toEqual(['adopted', 'saved']);
     expect(kept({ goal: ['drafted'] })).toEqual(['draft']);
+    // The row's own word is the one both chips read: every kept row's Goal cell or progress line says it.
+    const says = (sid: string) => {
+      const one = indexed.find(({ row }) => row.session.sid === sid);
+      return one?.row.goal.text === 'No goal yet' || one?.row.absence === 'noGoalYet';
+    };
+    for (const sid of kept({ progress: ['no-goal'] })) expect(says(sid)).toBe(true);
+    // The Goal source chip is the narrower set and says so: never a drafted row, so a different name.
+    expect(GOAL_OPTIONS.map((one) => one.label)).toEqual([
+      'Goal saved',
+      'Drafted from a prompt, not saved',
+      'No goal and no prompt',
+    ]);
+    expect(
+      kept({ goal: ['none'] }).filter((sid) => kept({ progress: ['no-goal'] }).includes(sid)),
+    ).toEqual(['discarded', 'never']);
   });
 
   it('filter nothing on drift or goal while annotations are off', () => {

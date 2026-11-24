@@ -41,6 +41,7 @@ _LIST_FIELDS: Final = (
     "asks",
     "annotate",
     "annotate_unreadable",
+    "reading_routes",
 )
 _SESSION_FIELDS: Final = (
     "declared_parent",
@@ -86,7 +87,20 @@ _SESSION_FIELDS: Final = (
     "copied_prompts",
     "annotation_goal",
     "annotation_goal_source",
+    "annotation_goal_why",
+    "annotation_goal_unreadable",
+    "annotation_discarded_at",
+    "annotation_line_1",
+    "annotation_line_2",
+    "annotation_line_3",
+    "annotation_line_4",
+    "annotation_line_5",
+    "annotation_line_6",
     "annotation_assessment",
+    "annotation_reading_count",
+    "annotation_reading_withheld",
+    "annotation_reading_refused",
+    "departure_checked",
     "departures",
     "loop",
     "delegated_launches",
@@ -117,6 +131,14 @@ def _project(value: Any, fields: tuple[str, ...]) -> Any:
 def list_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     """The terminal list's fields from one published snapshot, without its observation history."""
     result = {key: payload[key] for key in _LIST_FIELDS if key in payload}
+    if "reading_routes" in result:
+        # Only which harnesses have a route: the absence word asks that and nothing the route holds.
+        routes = result["reading_routes"]
+        result["reading_routes"] = (
+            {key: {} for key, route in routes.items() if isinstance(route, dict)}
+            if isinstance(routes, dict)
+            else {}
+        )
     if isinstance(result.get("tripwires"), dict):
         result["tripwires"] = _project(result["tripwires"], ("enabled",))
     for key, fields in (
@@ -139,6 +161,9 @@ def list_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 GOAL_WIDTH: Final = 120
+NO_GOAL_YET: Final = "No goal yet"
+NOT_CHECKED_YET: Final = "Not checked yet"
+UNAVAILABLE_GOAL: Final = "Saved goal unavailable"
 
 # Ruled progress words from the board glossary, pinned by terminal-wording.json.
 STORED_DEPARTURE_LEVELS: Final = {
@@ -489,6 +514,7 @@ class Entry(NamedTuple):
     ended: str
     drift: str | None
     source: Row
+    absence: str | None = None
 
 
 class Waiter(NamedTuple):
@@ -668,6 +694,9 @@ def _goal(source: Row, *, annotate: bool, unreadable: bool) -> tuple[str, str]:
     """The goal cell the board draws, without a prompt the reader chose in their own browser."""
     if not annotate:
         return "Goal", "Annotations off"
+    # Words that exist and cannot be read are not words nobody typed: no prompt offered over them.
+    if unreadable or source.get("annotation_goal_unreadable") is True:
+        return "Goal", UNAVAILABLE_GOAL
     typed = _text(source.get("annotation_goal")).strip()
     harness = _text(source.get("harness"))
     asked = _asked(source) if harness == "claude" else ""
@@ -696,6 +725,55 @@ def _goal(source: Row, *, annotate: bool, unreadable: bool) -> tuple[str, str]:
         return label, draft[0]
     text = "" if _opened_with_control(source) else prompt
     return ("Goal · your latest prompt", text) if text else ("Goal", "")
+
+
+def _has_text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _has_saved_words(source: Row) -> bool:
+    return _has_text(source.get("annotation_goal")) or any(
+        _has_text(source.get(f"annotation_line_{n}")) for n in range(1, 7)
+    )
+
+
+def _no_goal_yet(source: Row, *, annotate: bool, unreadable: bool) -> bool:
+    """The board's one predicate: nothing saved, and the store's own reason for the absence."""
+    if not annotate or unreadable or source.get("annotation_goal_unreadable") is True:
+        return False
+    if not isinstance(source.get("annotation_goal"), str) or _has_saved_words(source):
+        return False
+    discarded = _num(source.get("annotation_discarded_at"))
+    return _has_text(source.get("annotation_goal_why")) or (discarded is not None and discarded > 0)
+
+
+def _absence(
+    source: Row, goal: str, *, annotate: bool, unreadable: bool, routes: frozenset[str]
+) -> str | None:
+    """The grey line the board draws under a row's goal, or None: only a word its data proves.
+
+    `sessions/rows.ts` `rowAbsence` is the oracle. No goal yet is not repeated where the goal cell
+    already says it (`goal` is empty then), nothing is said for Codex, a refused or withheld
+    reading, a harness with no reading route, or any recorded check.
+    """
+    if not annotate or unreadable or source.get("annotation_goal_unreadable") is True:
+        return None
+    if source.get("harness") == "codex":
+        return None
+    if _no_goal_yet(source, annotate=annotate, unreadable=unreadable):
+        return NO_GOAL_YET if goal else None
+    if not _has_saved_words(source):
+        return None
+    count = _num(source.get("annotation_reading_count"))
+    checked = (
+        source.get("annotation_assessment") is not None
+        or source.get("annotation_reading_refused") is True
+        or _has_text(source.get("annotation_reading_withheld"))
+        or (count is not None and count > 0)
+        or source.get("departure_checked") is True
+        or bool(_departures(source, annotate=annotate))
+    )
+    return None if checked or _text(source.get("harness")) not in routes else NOT_CHECKED_YET
 
 
 def _opened_with_control(source: Row) -> bool:
@@ -803,6 +881,7 @@ def _observe(
     generated: float | None,
     annotate: bool,
     unreadable: bool,
+    routes: frozenset[str] = frozenset(),
 ) -> _Seen:
     ended = _ended_at(source) is not None
     state = source.get("state")
@@ -842,6 +921,7 @@ def _observe(
         ),
         drift=STORED_DEPARTURE_LEVELS.get(progress or ""),
         source=source,
+        absence=_absence(source, goal, annotate=annotate, unreadable=unreadable, routes=routes),
     )
     return _Seen(
         source=source,
@@ -1064,6 +1144,12 @@ def board(payload: Mapping[str, Any], *, exclude: str | None = None) -> Board:
             owner = _owner(sources, ask) if _trimmed(ask.get("question")) else None
             if owner is not None:
                 held.setdefault(_key(owner), []).append(ask)
+    reading_routes = data.get("reading_routes")
+    routes = frozenset(
+        key
+        for key, route in (reading_routes.items() if isinstance(reading_routes, dict) else ())
+        if isinstance(route, dict)
+    )
     seen = [
         _observe(
             source,
@@ -1073,6 +1159,7 @@ def board(payload: Mapping[str, Any], *, exclude: str | None = None) -> Board:
             generated=generated,
             annotate=annotate,
             unreadable=bool(data.get("annotate_unreadable")),
+            routes=routes,
         )
         for source in sources
     ]
@@ -1169,6 +1256,9 @@ def _entry_lines(entry: Entry, sources: list[Row]) -> list[str]:
     detail.extend(f"  {printable(line)}" for line in relationship_lines(entry.source, sources))
     if entry.goal:
         detail.append(f"  {entry.goal_label}: {_cut(entry.goal)}")
+    if entry.absence is not None:
+        # The board's grey line at the foot of the goal cell.
+        detail.append(f"  {entry.absence}")
     now = printable(entry.now)
     if now or entry.ended:
         detail.append("  Now: " + " · ".join(part for part in (now, entry.ended) if part))

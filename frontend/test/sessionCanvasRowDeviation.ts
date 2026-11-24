@@ -6,7 +6,13 @@
    facts are said once, so the recorded outcome and git line are joined as the page joins them, and a row with
    no goal says "No goal yet" where the recorded row offered "Add a goal". The start age
    is new, with no recorded answer, so the page's copy is set aside; the mounted tests and the Sessions
-   canvas row story check it. */
+   canvas row story check it.
+
+   2026-11-24, absence words: a row may now draw one grey line at the foot of its goal (`data-next-row-absence`,
+   No goal yet or Not checked yet). The recorded rows never had it, so the page's copy is set aside, and the
+   mounted tests, `rowAbsence.test.ts` and the canvas row story check it. Over a store that cannot be read the
+   recorded row said No goal yet or offered a prompt as the goal; the page now says Saved goal unavailable
+   there. Neither wording is held to the other, so the goal fact is set aside on both sides for that board. */
 
 import { outcomeLine } from '../src/sessions/rows';
 
@@ -89,9 +95,13 @@ function recordedRow(row: Element) {
     retired?.remove();
 }
 
-export function maskCanvasRow(root: ParentNode, recorded = false) {
+export function maskCanvasRow(root: ParentNode, recorded = false, goalUnavailable = false) {
   for (const row of root.querySelectorAll('article.next-operation-row')) {
     if (recorded) recordedRow(row);
-    else row.querySelector('[data-next-row-started]')?.remove();
+    else {
+      row.querySelector('[data-next-row-started]')?.remove();
+      row.querySelector('[data-next-row-absence]')?.remove();
+    }
+    if (goalUnavailable) row.querySelector('[data-next-operation-fact="goal"]')?.remove();
   }
 }

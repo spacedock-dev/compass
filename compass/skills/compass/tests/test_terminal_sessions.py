@@ -177,6 +177,7 @@ class ListProjectionTest(unittest.TestCase):
                 "asks",
                 "annotate",
                 "annotate_unreadable",
+                "reading_routes",
             }
             & payload.keys(),
             projected.keys(),
@@ -224,6 +225,19 @@ class ListProjectionTest(unittest.TestCase):
             "session_goal",
             "copied_prompts",
             "annotation_goal",
+            "annotation_goal_why",
+            "annotation_goal_unreadable",
+            "annotation_discarded_at",
+            "annotation_line_1",
+            "annotation_line_2",
+            "annotation_line_3",
+            "annotation_line_4",
+            "annotation_line_5",
+            "annotation_line_6",
+            "annotation_reading_count",
+            "annotation_reading_withheld",
+            "annotation_reading_refused",
+            "departure_checked",
             "annotation_goal_source",
             "annotation_assessment",
             "departures",
@@ -255,6 +269,144 @@ class ListProjectionTest(unittest.TestCase):
         ):
             self.assertEqual(expected, projected["sessions"][0][field])
         self.assertLess(len(json.dumps(projected)), len(json.dumps(PAYLOAD)) // 3)
+
+
+class AbsenceWordTest(unittest.TestCase):
+    """The grey line under a row's goal, and the Goal cell when the saved goal cannot be read.
+
+    The same cases `frontend/src/sessions/rowAbsence.test.ts` holds the board to, with invented rows.
+    """
+
+    ABSENT: dict[str, Any] = {  # noqa: RUF012
+        "annotation_goal": "",
+        "annotation_goal_why": "No goal typed for this session.",
+    }
+    DRAFT: dict[str, Any] = {  # noqa: RUF012
+        "first_prompt": "Write the acme summary",
+        "first_prompt_at": 4_940,
+    }
+    SAVED: dict[str, Any] = {"annotation_goal": "Ship the acme release"}  # noqa: RUF012
+    READING: dict[str, Any] = {  # noqa: RUF012
+        "revision_read": 1,
+        "read_at": 4_900,
+        "scope": "last-turn",
+        "criteria": {"goal": {"result": "consistent with the evidence read", "cites": []}},
+    }
+
+    def entry(self, fields: dict[str, Any], **top: Any) -> terminal_sessions.Entry:
+        payload = {
+            "generated": 5_000,
+            "annotate": True,
+            "reading_routes": {"claude": {}, "codex": {}, "pi": {}},
+            "sessions": [
+                {"harness": "claude", "sid": "acme", "project": "acme", "state": "idle", **fields}
+            ],
+            **top,
+        }
+        (one,) = [
+            *terminal_sessions.board(payload).active,
+            *terminal_sessions.board(payload).history,
+        ]
+        return one
+
+    def test_the_words_the_board_proves(self) -> None:
+        for name, fields, word in (
+            ("saved goal never checked", self.SAVED, "Not checked yet"),
+            (
+                "saved lines only",
+                {**self.ABSENT, "annotation_line_1": "A summary exists"},
+                "Not checked yet",
+            ),
+            ("pi row", {"harness": "pi", **self.SAVED}, "Not checked yet"),
+            ("draft only", {**self.ABSENT, **self.DRAFT}, "No goal yet"),
+            (
+                "discarded draft",
+                {"annotation_goal": "", "annotation_discarded_at": 4_995, **self.DRAFT},
+                "No goal yet",
+            ),
+        ):
+            with self.subTest(name):
+                self.assertEqual(word, self.entry(fields).absence)
+
+    def test_the_rows_that_say_nothing(self) -> None:
+        departing = {
+            "result": "departure",
+            "cites": ["f1"],
+        }
+        for name, fields in (
+            ("no goal, no draft", self.ABSENT),
+            ("codex with a goal", {"harness": "codex", **self.SAVED}),
+            ("codex draft", {"harness": "codex", **self.ABSENT, **self.DRAFT}),
+            (
+                "stored departure",
+                {
+                    **self.SAVED,
+                    "annotation_assessment": {**self.READING, "criteria": {"goal": departing}},
+                },
+            ),
+            ("stored reading", {**self.SAVED, "annotation_assessment": self.READING}),
+            ("refused", {**self.SAVED, "annotation_reading_refused": True}),
+            ("withheld", {**self.SAVED, "annotation_reading_withheld": "idle-unknown"}),
+            ("pressed", {**self.SAVED, "annotation_reading_count": 1}),
+            ("checked, nothing found", {**self.SAVED, "departure_checked": True}),
+            ("raised", {**self.SAVED, "departures": [{"at": 4_999}]}),
+            (
+                "entry unreadable",
+                {
+                    **self.ABSENT,
+                    **self.DRAFT,
+                    "annotation_goal_why": "",
+                    "annotation_goal_unreadable": True,
+                },
+            ),
+        ):
+            with self.subTest(name):
+                self.assertIsNone(self.entry(fields).absence)
+
+    def test_no_route_annotations_off_or_an_unreadable_store_say_nothing(self) -> None:
+        self.assertIsNone(self.entry(self.SAVED, reading_routes={"codex": {}}).absence)
+        self.assertIsNone(self.entry(self.SAVED, annotate=False).absence)
+        for fields in (self.SAVED, {**self.ABSENT, **self.DRAFT}):
+            self.assertIsNone(self.entry(fields, annotate_unreadable="cannot read").absence)
+
+    def test_an_unreadable_goal_is_unavailable_and_never_no_goal_or_a_prompt(self) -> None:
+        for fields, top in (
+            ({**self.ABSENT, **self.DRAFT}, {"annotate_unreadable": "cannot read"}),
+            ({**self.ABSENT, **self.DRAFT, "annotation_goal_unreadable": True}, {}),
+            (self.SAVED, {"annotate_unreadable": "cannot read"}),
+        ):
+            with self.subTest(fields=fields, top=top):
+                one = self.entry(fields, **top)
+                self.assertEqual(("Goal", "Saved goal unavailable"), (one.goal_label, one.goal))
+
+    def test_the_listing_prints_the_word_under_the_goal(self) -> None:
+        payload = {
+            "generated": 5_000,
+            "annotate": True,
+            "reading_routes": {"claude": {}},
+            "sessions": [{"harness": "claude", "sid": "acme", "state": "idle", **self.SAVED}],
+        }
+        lines = terminal_sessions.render_sessions(payload)
+        at = lines.index("  Goal · your words: Ship the acme release")
+        self.assertEqual("  Not checked yet", lines[at + 1])
+
+    def test_the_list_keeps_what_the_word_reads_and_only_the_route_names(self) -> None:
+        payload = {
+            "annotate": True,
+            "reading_routes": {"claude": {"capacity": "x" * 1000}, "bad": "no"},
+            "sessions": [
+                {
+                    "harness": "claude",
+                    "sid": "a",
+                    "annotation_line_3": "x",
+                    "departure_checked": True,
+                }
+            ],
+        }
+        projected = terminal_sessions.list_payload(payload)
+        self.assertEqual({"claude": {}}, projected["reading_routes"])
+        for key in ("annotation_line_3", "departure_checked"):
+            self.assertIn(key, projected["sessions"][0])
 
 
 class BoardParityTest(unittest.TestCase):
@@ -296,6 +448,7 @@ class BoardParityTest(unittest.TestCase):
                             "command": expected["command"],
                             "ended": expected["ended"],
                             "drift": expected["drift"],
+                            "absence": expected["absence"],
                         },
                         {
                             "state": entry.state,
@@ -304,6 +457,7 @@ class BoardParityTest(unittest.TestCase):
                             "command": entry.command,
                             "ended": entry.ended,
                             "drift": entry.drift,
+                            "absence": entry.absence,
                         },
                     )
 

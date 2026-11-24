@@ -6,7 +6,7 @@ import { titleLink } from '../ui/link';
 import { Button } from '../ui/button';
 import { StatusTile } from '../ui/status-tile';
 import { TooltipProvider } from '../ui/tooltip';
-import { EXPLANATIONS, SESSION_LIST_WORDS } from '../language/glossary';
+import { EXPLANATIONS, SESSION_LIST_WORDS, SESSION_ROW_WORDS } from '../language/glossary';
 import { selectAttentionSelection } from '../attention/select';
 import { WorthALookFlag } from '../attention/WorthALookFlag';
 import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 'react';
@@ -312,6 +312,18 @@ function Identity({
   );
 }
 
+/* The one grey line the board can prove: plain text, no pill, no icon, no action (owner, 2026-11-24). */
+function AbsenceLine({ row }: { readonly row: SessionRow }) {
+  return row.absence ? (
+    <span
+      className="mt-1 block text-label leading-[1.5] text-muted-foreground"
+      data-next-row-absence={row.absence}
+    >
+      {SESSION_ROW_WORDS[row.absence]}
+    </span>
+  ) : null;
+}
+
 function GoalCellView({ row }: { readonly row: SessionRow }) {
   const shell = useShell();
   const { goal } = row;
@@ -328,6 +340,7 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
         >
           {goal.text}
         </span>
+        <AbsenceLine row={row} />
       </span>
     );
   const onGoal = () =>
@@ -347,6 +360,7 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
       >
         {goal.text}
       </RouteAnchor>
+      <AbsenceLine row={row} />
     </span>
   );
 }

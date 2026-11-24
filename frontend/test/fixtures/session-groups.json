@@ -11,7 +11,8 @@
         "git": null,
         "command": "claude --resume c3d4e5f6-11111111-2222-4333-8444-555500000003",
         "ended": "",
-        "drift": null
+        "drift": null,
+        "absence": "No goal yet"
       },
       {
         "key": [
@@ -23,7 +24,8 @@
         "git": null,
         "command": "claude --resume b2c3d4e5-11111111-2222-4333-8444-555500000002",
         "ended": "",
-        "drift": null
+        "drift": null,
+        "absence": "No goal yet"
       },
       {
         "key": [
@@ -35,7 +37,8 @@
         "git": null,
         "command": "codex resume 019c0000-1111-7222-8333-444455556666",
         "ended": "",
-        "drift": null
+        "drift": null,
+        "absence": null
       },
       {
         "key": [
@@ -47,7 +50,8 @@
         "git": null,
         "command": "claude --resume f6a7b8c9-11111111-2222-4333-8444-555500000006",
         "ended": "",
-        "drift": null
+        "drift": null,
+        "absence": "No goal yet"
       },
       {
         "key": [
@@ -59,7 +63,8 @@
         "git": null,
         "command": "claude --resume a1b2c3d4-11111111-2222-4333-8444-555500000001",
         "ended": "",
-        "drift": null
+        "drift": null,
+        "absence": "No goal yet"
       }
     ],
     "history": [
@@ -73,7 +78,8 @@
         "git": "2 changed entries",
         "command": "claude --resume b8c9d0e1-11111111-2222-4333-8444-555500000008",
         "ended": "ended 1 hour 8 minutes ago",
-        "drift": null
+        "drift": null,
+        "absence": "No goal yet"
       },
       {
         "key": [
@@ -85,7 +91,8 @@
         "git": "Git state reported clean",
         "command": "claude --resume a7b8c9d0-11111111-2222-4333-8444-555500000007",
         "ended": "ended 1 hour 6 minutes ago",
-        "drift": null
+        "drift": null,
+        "absence": "No goal yet"
       },
       {
         "key": [
@@ -97,7 +104,8 @@
         "git": "Git state reported clean",
         "command": "claude --resume e5f6a7b8-11111111-2222-4333-8444-555500000005",
         "ended": "ended 30 minutes ago",
-        "drift": null
+        "drift": null,
+        "absence": "No goal yet"
       },
       {
         "key": [
@@ -109,7 +117,8 @@
         "git": null,
         "command": "",
         "ended": "",
-        "drift": null
+        "drift": null,
+        "absence": "No goal yet"
       },
       {
         "key": [
@@ -121,7 +130,8 @@
         "git": "3 changed entries",
         "command": "claude --resume d4e5f6a7-11111111-2222-4333-8444-555500000004",
         "ended": "",
-        "drift": null
+        "drift": null,
+        "absence": "No goal yet"
       },
       {
         "key": [
@@ -133,7 +143,8 @@
         "git": null,
         "command": "",
         "ended": "",
-        "drift": null
+        "drift": null,
+        "absence": null
       },
       {
         "key": [
@@ -145,7 +156,8 @@
         "git": null,
         "command": "",
         "ended": "",
-        "drift": null
+        "drift": null,
+        "absence": null
       },
       {
         "key": [
@@ -157,7 +169,8 @@
         "git": "Git state was not measured",
         "command": "claude --resume c9d0e1f2-11111111-2222-4333-8444-555500000009",
         "ended": "",
-        "drift": null
+        "drift": null,
+        "absence": "No goal yet"
       }
     ],
     "waiting": [
@@ -257,14 +270,14 @@
       ]
     },
     {
-      "window_hours": 0.00001,
+      "window_hours": 1e-05,
       "labels": [
         "Right now",
         "Earlier in the last 0.00001 hours"
       ]
     },
     {
-      "window_hours": 1e-7,
+      "window_hours": 1e-07,
       "labels": [
         "Right now",
         "Earlier in the last 1e-7 hours"

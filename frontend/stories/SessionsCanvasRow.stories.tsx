@@ -78,10 +78,12 @@ function Board({
   sessions = CANVAS_SESSIONS,
   annotate = true,
   usage,
+  extra,
 }: {
   readonly sessions?: readonly Record<string, unknown>[];
   readonly annotate?: boolean;
   readonly usage?: readonly Record<string, unknown>[];
+  readonly extra?: Record<string, unknown>;
 }) {
   const [shell] = useState(() => {
     const history = fakeRouterEnvironment('#n=sessions');
@@ -123,6 +125,7 @@ function Board({
                 ],
                 sessions,
                 ...(usage ? { usage } : {}),
+                ...extra,
               })
             : json({}),
         ),
@@ -441,6 +444,160 @@ export const ListCard: Story = {
     await expect(cleanup.textContent?.match(/own end/g)).toHaveLength(1);
     await expect(cleanup.textContent?.match(/git state/gi)).toHaveLength(1);
     await expect(auditCalm(canvasElement)).toEqual([]);
+  },
+};
+
+/* The grey line under a row's goal (owner, 2026-11-24): Not checked yet where saved words have no check
+   recorded, No goal yet under a goal the reader has only been offered, and nothing where the board cannot
+   prove a word. A goal that cannot be read says so and never No goal yet. Invented rows throughout. */
+const ABSENT = { annotation_goal: '', annotation_goal_why: 'No goal typed for this session.' };
+const ABSENCE_ROUTES = { claude: { reason: '' }, codex: { reason: '' } };
+const base = (sid: string, title: string) => ({
+  harness: 'claude',
+  sid,
+  project: 'acme/api',
+  project_key: '/acme/api',
+  title,
+  state: 'idle',
+  started_at: G - 3600,
+  last_activity: G - 60,
+});
+const ABSENCE_SESSIONS: readonly Record<string, unknown>[] = [
+  {
+    ...base('acme-unchecked', 'Draft the release notes'),
+    annotation_goal: 'Publish the acme release notes',
+    annotation_revision: 1,
+  },
+  {
+    ...base('acme-draft', 'Tidy the invoice export'),
+    ...ABSENT,
+    first_prompt: 'Tidy the invoice export',
+    first_prompt_at: G - 3500,
+  },
+  { ...base('acme-empty', 'Open question'), ...ABSENT },
+  {
+    ...base('acme-lines', 'Write the changelog'),
+    ...ABSENT,
+    annotation_line_1: 'The changelog lists every fix',
+  },
+  {
+    ...base('acme-codex', 'Port the importer'),
+    harness: 'codex',
+    annotation_goal: 'Port the acme importer',
+    annotation_revision: 1,
+  },
+  {
+    ...base('acme-held', 'Rename the tables'),
+    annotation_goal: '',
+    annotation_goal_why: '',
+    annotation_goal_unreadable: true,
+    first_prompt: 'Rename the tables',
+    first_prompt_at: G - 3500,
+  },
+];
+
+export const AbsenceLines: Story = {
+  render: () => <Board sessions={ABSENCE_SESSIONS} extra={{ reading_routes: ABSENCE_ROUTES }} />,
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(6),
+    );
+    const line = (sid: string) =>
+      rowOf(canvasElement, sid).querySelector<HTMLElement>('[data-next-row-absence]');
+    for (const width of [1280, 400]) {
+      await atWidth(width, async () => {
+        for (const [sid, word] of [
+          ['acme-unchecked', 'Not checked yet'],
+          ['acme-draft', 'No goal yet'],
+          ['acme-lines', 'Not checked yet'],
+        ] as const) {
+          const row = rowOf(canvasElement, sid);
+          const found = line(sid);
+          if (!found) throw new Error(`No absence line on ${sid}`);
+          await expect(found.textContent).toBe(word);
+          // At the foot of the Goal cell, as plain quiet text: no pill, no border, no icon, no action.
+          const goal = part(row, '[data-next-operation-fact="goal"]');
+          await expect(goal.contains(found)).toBe(true);
+          await expect(found).toHaveStyle({
+            fontSize: '13px',
+            color: 'rgb(82, 96, 109)',
+            borderTopWidth: '0px',
+            borderTopLeftRadius: '0px',
+            paddingTop: '0px',
+            paddingLeft: '0px',
+            backgroundImage: 'none',
+            backgroundColor: 'rgba(0, 0, 0, 0)',
+          });
+          await expect(found.querySelector('svg, img')).toBeNull();
+          await expect(found.closest('a, button')).toBeNull();
+          await expect(found.className).not.toMatch(/badge|pill/i);
+          await expect(found.hasAttribute('data-slot')).toBe(false);
+          await expect(row.querySelector('[data-slot="badge"], [data-next-drift-pill]')).toBeNull();
+          // The foot of the cell: the last thing in it, below the goal words.
+          await expect(goal.lastElementChild).toBe(found);
+          await expect(goal.firstElementChild?.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+            found.getBoundingClientRect().top + 1,
+          );
+        }
+        // The Goal cell's own No goal yet is never repeated by a line.
+        const empty = rowOf(canvasElement, 'acme-empty');
+        await expect(line('acme-empty')).toBeNull();
+        await expect(empty.textContent?.match(/No goal yet/g)).toHaveLength(1);
+        // A draft row says it once too: the cell shows the prompt, the line says No goal yet.
+        await expect(
+          rowOf(canvasElement, 'acme-draft').textContent?.match(/No goal yet/g),
+        ).toHaveLength(1);
+        // Codex shows no word, and a goal that cannot be read never reads No goal yet or a prompt.
+        await expect(line('acme-codex')).toBeNull();
+        const held = rowOf(canvasElement, 'acme-held');
+        await expect(line('acme-held')).toBeNull();
+        await expect(part(held, '[data-next-operation-fact="goal"]').textContent).toContain(
+          'Saved goal unavailable',
+        );
+        await expect(held.textContent).not.toMatch(/No goal yet|Not checked yet/);
+        await expect(held.querySelector('[data-next-operation-fact="goal"] a')).toBeNull();
+        await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+      });
+    }
+    await expect(auditCalm(canvasElement)).toEqual([]);
+  },
+};
+
+/* Both "No goal yet" chips keep the rows whose goal cell or line says it (DRC-5542). The Progress check chip
+   reads the row's own word, so it keeps a draft row too. The Goal source chip is narrower, its draft rows
+   being a sibling option, so it says "No goal and no prompt" and the two no longer read alike. */
+export const NoGoalChips: Story = {
+  render: () => <Board sessions={ABSENCE_SESSIONS} extra={{ reading_routes: ABSENCE_ROUTES }} />,
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(6),
+    );
+    const shown = () =>
+      [...canvasElement.querySelectorAll('article.next-operation-row')]
+        .map((row) => row.getAttribute('data-next-session'))
+        .sort();
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'Filters' }));
+    const panel = within(canvas.getByRole('region', { name: 'Filters' }));
+    const progress = within(panel.getByRole('group', { name: 'Progress check' }));
+    const chip = progress.getByRole('button', { name: 'No goal yet' });
+    await userEvent.click(chip);
+    await waitFor(() => expect(shown()).toEqual(['acme-draft', 'acme-empty']));
+    // Each kept row says No goal yet once, in its goal cell or its line.
+    for (const sid of shown() as string[])
+      await expect(rowOf(canvasElement, sid).textContent?.match(/No goal yet/g)).toHaveLength(1);
+    await userEvent.click(chip);
+    await userEvent.click(panel.getByRole('button', { name: 'More filters for power users' }));
+    const goal = canvasElement.querySelector<HTMLElement>('[data-filter-facet="goal"]');
+    if (!goal) throw new Error('Missing the goal facet');
+    const labels = [...goal.querySelectorAll('[data-filter-label]')].map((one) => one.textContent);
+    await expect(labels).toEqual([
+      'Goal saved',
+      'Drafted from a prompt, not saved',
+      'No goal and no prompt',
+    ]);
+    await userEvent.click(within(goal).getByText('No goal and no prompt'));
+    await waitFor(() => expect(shown()).toEqual(['acme-empty', 'acme-lines']));
   },
 };
 

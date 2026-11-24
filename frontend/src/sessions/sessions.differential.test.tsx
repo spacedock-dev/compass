@@ -48,6 +48,12 @@ interface Summary {
 const norm = (node: Element | null): string =>
   node ? (node.textContent ?? '').replace(/\s+/g, ' ').trim() : '';
 
+// 2026-11-24, docs/design-frontend-migration.md#held-to-recorded-answers
+const goalUnavailable = (payload: unknown): boolean => {
+  const data = payload as Record<string, unknown>;
+  return data['annotate'] === true && Boolean(data['annotate_unreadable']);
+};
+
 const DEVIATIONS = {
   // 2026-11-22, docs/design-frontend-migration.md#held-to-recorded-answers
   rowPresentation: maskSessionRowPresentation,
@@ -237,7 +243,7 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
       }
     }
   }
-  DEVIATIONS.canvasRow(template.content, true);
+  DEVIATIONS.canvasRow(template.content, true, goalUnavailable(payload));
   return summarize(template.content);
 }
 
@@ -247,7 +253,7 @@ async function reactSummary(payload: unknown): Promise<Summary> {
   const root = page.container.querySelector('[data-next-view-body="sessions"]');
   if (!root) throw new Error('The Sessions screen did not draw.');
   DEVIATIONS.rowPresentation(root);
-  DEVIATIONS.canvasRow(root);
+  DEVIATIONS.canvasRow(root, false, goalUnavailable(payload));
   root.querySelector('[data-next-operation-group="history"] > [data-explanation]')?.remove();
   for (const text of root.querySelectorAll('[data-next-operation-fact="now"]')) {
     if (text.textContent === 'No recent activity') text.textContent = 'quiet';

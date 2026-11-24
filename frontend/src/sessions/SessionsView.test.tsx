@@ -478,6 +478,12 @@ describe('the groups', () => {
     ).toBe(false);
   });
 
+  const ROUTES = { claude: { reason: '' }, codex: { reason: '' } };
+  const absence = (sid = 'read') =>
+    document.querySelector<HTMLElement>(
+      `article[data-next-session="${sid}"] [data-next-row-absence]`,
+    );
+
   it.each([
     ['a row with no goal', {}],
     ['a Codex row without a goal', { harness: 'codex' }],
@@ -498,27 +504,108 @@ describe('the groups', () => {
     ['a Codex reading', { ...assessed, harness: 'codex' }],
     [
       'a withdrawn reading',
-      {
-        ...assessed,
-        annotation_assessment: { ...reading, scope: 'withdrawn' },
-      },
+      { ...assessed, annotation_assessment: { ...reading, scope: 'withdrawn' } },
     ],
     ['an inaccurate reading', { ...assessed, annotation_not_accurate: true }],
     ['a mismatched revision', { ...assessed, annotation_revision: 3 }],
     ['a refused reading', { annotation_goal: 'Ship it', annotation_reading_refused: true }],
-  ])('leaves the progress slot blank for %s', async (_kind, fields) => {
+    ['a withheld reading', { annotation_goal: 'Ship it', annotation_reading_withheld: 'idle' }],
+    ['a press with no reading', { annotation_goal: 'Ship it', annotation_reading_count: 1 }],
+    [
+      'an unasked check that found nothing',
+      { annotation_goal: 'Ship it', departure_checked: true },
+    ],
+  ])('draws no absence line and no pill for %s', async (_kind, fields) => {
     await open(
-      board([{ harness: 'claude', sid: 'read', state: 'working', ...fields }], { annotate: true }),
+      board([{ harness: 'claude', sid: 'read', state: 'working', ...fields }], {
+        annotate: true,
+        reading_routes: ROUTES,
+      }),
     );
     const row = document.querySelector('article[data-next-session="read"]');
     expect(row).toBeInTheDocument();
+    expect(absence()).toBeNull();
     expect(row?.querySelector('.next-operation-progress')).toBeNull();
     expect(row?.querySelector('[data-variant="progress"]')).toBeNull();
-    // The progress slot holds no absence word; the goal cell's own "No goal yet" is not the progress slot.
     expect(row?.querySelector('.next-operation-identity')?.textContent).not.toMatch(
       /No goal yet|Not checked yet/,
     );
   });
+
+  it('says Not checked yet under a saved goal nothing has checked, in the goal cell', async () => {
+    await open(
+      board([{ harness: 'claude', sid: 'read', state: 'working', annotation_goal: 'Ship it' }], {
+        annotate: true,
+        reading_routes: ROUTES,
+      }),
+    );
+    expect(absence()?.textContent).toBe('Not checked yet');
+    expect(absence()?.closest('[data-next-operation-fact="goal"]')).toBeInTheDocument();
+    expect(absence()?.querySelector('svg')).toBeNull();
+  });
+
+  it('says No goal yet once under a draft row, and not at all under a goal cell that says it', async () => {
+    await open(
+      board(
+        [
+          {
+            harness: 'claude',
+            sid: 'draft',
+            state: 'working',
+            annotation_goal: '',
+            annotation_goal_why: 'No goal typed for this session.',
+            first_prompt: 'Write the acme summary',
+            first_prompt_at: NOW - 60,
+          },
+          {
+            harness: 'gemini',
+            sid: 'never',
+            state: 'working',
+            annotation_goal: '',
+            annotation_goal_why: 'No goal typed for this session.',
+          },
+        ],
+        { annotate: true, reading_routes: ROUTES },
+      ),
+    );
+    expect(absence('draft')?.textContent).toBe('No goal yet');
+    expect(absence('never')).toBeNull();
+    for (const sid of ['draft', 'never'])
+      expect(
+        document
+          .querySelector(`article[data-next-session="${sid}"]`)
+          ?.textContent?.match(/No goal yet/g),
+      ).toHaveLength(1);
+  });
+
+  it.each([
+    ['the store', { annotate_unreadable: 'The store cannot be read' }, {}],
+    ['this session entry', {}, { annotation_goal_unreadable: true }],
+  ])(
+    'says the saved goal is unavailable when %s cannot be read',
+    async (_what, metadata, fields) => {
+      await open(
+        board(
+          [
+            {
+              harness: 'claude',
+              sid: 'read',
+              state: 'working',
+              annotation_goal: '',
+              first_prompt: 'Write the acme summary',
+              first_prompt_at: NOW - 60,
+              ...fields,
+            },
+          ],
+          { annotate: true, reading_routes: ROUTES, ...metadata },
+        ),
+      );
+      const row = document.querySelector('article[data-next-session="read"]');
+      expect(row?.textContent).toContain('Saved goal unavailable');
+      expect(row?.textContent).not.toMatch(/No goal yet|Not checked yet|Write the acme summary/);
+      expect(absence()).toBeNull();
+    },
+  );
 
   it('leaves the row blank for a live estimate before a stored check', async () => {
     const data = liveBoard.response.body;

@@ -8389,7 +8389,10 @@ level words and six distinct absences. DEC-17 rule 4, DEC-20 item 3 and DEC-26 i
 
 The Sessions implementation of 2026-11-23 leaves the progress slot blank. The session
 page holds the progress reading. The board snapshot uses ordinary collection. DRC-5533
-owns both the stored-departure pill and the row absence words.
+owns the stored-departure pill. DRC-5539 (2026-11-24) ships two of the row absence words,
+No goal yet and Not checked yet, as one grey line under the goal. Too early to tell and Can't
+tell stay off the row because they need the analysis level, which reads transcript evidence.
+Goal too vague to check and Out of date wait for the freshness record the row pill builds.
 
 Codex sessions show neither a level nor a correction. The
 [installed skill](../compass/skills/compass/SKILL.md) states the limit.

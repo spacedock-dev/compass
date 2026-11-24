@@ -17,6 +17,7 @@ import { riskSubject } from '../attention/subjects';
 import { resumeCommand } from '../controls/resumeCommand';
 import { observe, sessionKey, type Row } from '../observed';
 import { asPayload } from '../observed/values';
+import { SESSION_ROW_WORDS } from '../language/glossary';
 import { buildSessionsScreen } from './rows';
 import { groupLabel } from './declared';
 import { mountSessions } from './testing';
@@ -51,6 +52,7 @@ function boardView(payload: Row, root: HTMLElement, needsYou: HTMLElement) {
         command: resumeCommand(row.session.harness, String(row.session.resume_id ?? '')),
         ended: row.endedSince,
         drift: rowProgress(rendered),
+        absence: row.absence ? SESSION_ROW_WORDS[row.absence] : null,
       };
     });
   const attention = attentionModel(payload);

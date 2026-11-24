@@ -239,8 +239,10 @@ status tile beside the title, and the tiles line up in one column. The legend na
 including Quiet for an observed turn stop, Ended for a reported session end, and State not known
 when the agent reports it is idle but Compass saw no finished turn. A row waiting on a child
 shows the tile of its own state when Compass knows it. If scanning cannot see a turn end, the
-row also explains that in words. The progress slot on the row is
-blank. Open the session page to see the progress reading and any live estimate the session
+row also explains that in words. Under the goal, a row may carry one plain grey line: No goal
+yet under a draft goal nobody has saved, or Not checked yet under saved words that no check has
+read. It says nothing where Compass cannot prove either, and a goal it cannot read says Saved goal
+unavailable. Open the session page to see the progress reading and any live estimate the session
 supports.
 
 A Worth a look flag explains a reported risk or an end with uncommitted work. Use the Worth
