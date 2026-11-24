@@ -207,9 +207,8 @@ size at 600 weight in quiet ink `#52606D`, with no hatch, dashed border, backgro
 stays the row's link and 44 px target, so it lines up with every other title. The goal cell's
 "Annotations off" is plain 13 px quiet text, as "No goal yet" is. The descriptor's "start time not
 published" and the Now line's absence were already plain. The owner also asked for the toolbar to
-match the canvas. The search field takes the Filters button's `--r-card` radius token, so the two
-always match; the canvas draws both at 12 px, and sharing the token keeps them equal without a
-third radius. "All sessions" moves to the 24 px, 700 section-title step the canvas and the style
+match the canvas. The search field takes the Filters button's `--r-control` radius token, so the two
+always match at the canvas's 12 px once buttons move to that corner. "All sessions" moves to the 24 px, 700 section-title step the canvas and the style
 board give it, replacing an 18 px pin that no ruling set. A phone still hides that heading, as
 Mobile.dc.html does.
 

@@ -817,7 +817,7 @@ export function SessionsFilters({
             spellCheck={false}
             /* The Filters button's radius token, so the field and the button beside it always match (owner,
                2026-11-24). */
-            className="min-h-[48px] rounded-card bg-card pl-9 pr-24 max-[620px]:pr-12 [&::-webkit-search-cancel-button]:appearance-none"
+            className="min-h-[48px] rounded-control bg-card pl-9 pr-24 max-[620px]:pr-12 [&::-webkit-search-cancel-button]:appearance-none"
             onInput={(event) =>
               actions.change({ ...filters, query: event.currentTarget.value }, 'typing')
             }
