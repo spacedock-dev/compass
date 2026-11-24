@@ -260,4 +260,4 @@ agy plugin validate ./compass
      rendered board, and left the on-demand browser proof descriptions, which keep the retired
      view names their scripts use. -->
 
-<!-- docs-synced-through: 8c478559 (2026-11-24) -->
+<!-- docs-synced-through: e7cf3426 (2026-11-24) -->
