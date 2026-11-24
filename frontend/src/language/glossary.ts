@@ -662,6 +662,16 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       ],
       null,
     ),
+    recordChanged: ruled(
+      [
+        'What this check read has changed since, so it shows no level. Check progress again.',
+        'A stored level kept after its evidence was lost',
+        '`record-changed` and the part of the record that no longer matches',
+        'Out of date or Too early to tell',
+        'Plain text in place of a level',
+      ],
+      null,
+    ),
     pauseAi: ruled(
       [
         'Pause all AI use',

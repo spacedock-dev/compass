@@ -499,8 +499,8 @@ export function analysisLevel(input: AnalysisInput): DriftLevel | null {
   ) {
     return null;
   }
-  /* A level for words the reader has replaced yields to the live estimate, as the live one does for a
-     revision the panel does not show. */
+  /* A level for words the reader has replaced is not drawn, as the live one is not for a revision the panel
+     does not show. The reading still owns the slot (`buildModel`), so the estimate does not take it. */
   const current = nextNumber(annotation?.['revision']);
   if (current !== null && nextNumber(raw['revision_read']) !== current) return null;
   let level = String(row['level'] || '');

@@ -315,6 +315,7 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Can't tell | Goal-only reading with no level | Missing proof that the goal was met | On track | Plain text |
 | Goal too vague to check | Goal too vague to analyze against | Reading refusal and reason | Too early to tell | Plain text |
 | Out of date | Stale or withdrawn reading | Why the prior reading is stale or withdrawn | Never checked | Rerun still reads Check progress again |
+| What this check read has changed since, so it shows no level. Check progress again. | A stored level kept after its evidence was lost | `record-changed` and the part of the record that no longer matches | Out of date or Too early to tell | Plain text in place of a level |
 | Pause all AI use | Pause model calls | Shared server pause state | The Summaries switch or Live monitor | `--pause-model-calls` and skill action `pause` |
 | Resume AI use | Resume model calls | Shared server pause state | Starting a check, summary or monitor | Existing terminal flags |
 | Live monitor | Live monitor (kept) | Live monitor · Haiku, scope and cadence | A reader-requested check | Session's technical layer. Settings points there |

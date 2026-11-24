@@ -971,7 +971,7 @@ function levelCases(): DriftCase[] {
       facts: [M1, check('failed', 180, 'failed')],
       analysis: ANALYSIS({ level: 'high', reasons: ['failed-check'] }),
     }),
-    ...(['none_or_low', 'extreme'] as const).map((level) =>
+    ...(['none_or_low', 'high', 'extreme'] as const).map((level) =>
       build(`a-person-sees-an-active-${level}-live-estimate`, ['L1', 'L2'], {
         reading: null,
         lease: LEASE(),
@@ -1032,7 +1032,7 @@ function levelCases(): DriftCase[] {
       annotation: { not_accurate: true },
       analysis: ANALYSIS(),
     }),
-    build('a-reading-of-replaced-words-yields-its-level-to-the-estimate', ['L7', 'L4'], {
+    build('a-reading-of-replaced-words-draws-no-level-over-the-estimate', ['L7', 'L4'], {
       annotation: { revision: 4 },
       analysis: ANALYSIS(),
       lease: LEASE(),

@@ -158,6 +158,43 @@ export const ConsistentButHeldBackSaysWhyInTheSentence: Story = {
   },
 };
 
+/* A departure stored before the evidence that held it back was lost: the server withholds its level, the card and
+   the header draw none, the switched-on estimate does not stand in, and the sentence says why and what to do. */
+export const ARecordThatChangedDrawsNoLevelAndSaysWhy: Story = {
+  ...scenario({
+    session: READ({ goal: DEPARTS, line_1: CONSISTENT }),
+    facts: [PERSON, FAILED, PASSED, AGENT],
+    work: {
+      analysis_levels: [
+        {
+          ...analysisRow('claude', 'not_enough'),
+          reasons: ['record-changed'],
+          cites: [],
+          evidence: 'history',
+        },
+      ],
+      live_levels: [LIVE_MEDIUM],
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const progress = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
+    const privacy = await openSessionTechnicalTab('AI use and privacy', canvasElement);
+    const monitor = await privacy.findByRole('switch', { name: 'Live monitor' });
+    await userEvent.click(monitor);
+    await waitFor(() => expect(monitor).toHaveAttribute('aria-checked', 'true'));
+    const drift = await evidencePanel(canvasElement);
+    await expect(
+      await within(drift).findByText(
+        /What this check read has changed since, so it shows no level\. Check progress again\./,
+      ),
+    ).toBeVisible();
+    await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
+    await expect(progress.querySelector('.next-session-drift-meter')).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-drift-pill]')).toBeNull();
+    await expect(progress.textContent).not.toMatch(/Slightly off course|Off course|On track/);
+  },
+};
+
 /* A goal alone, nothing departing and no check showing it done: the sentence says so and says what would let a
    level be drawn (owner decision, 2026-10-23: the evidence floor stands). */
 export const GoalOnlyHeldBackNamesTheCheckItNeeds: Story = {
