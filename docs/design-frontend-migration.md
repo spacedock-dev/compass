@@ -694,6 +694,15 @@ sentences. The Activity log stories cover the filters, counts and reading-window
 Direction actions stay on the progress card. Clickable reading citations show the log's `#n`
 notation.
 
+2026-11-24. The Activity log reserves space for the entry number and kind so messages,
+commands and file paths start at the same left edge. Kind labels use the body face.
+On desktop, status, Source and time share a column sized to its content and capped at half the row.
+A fixed width squeezed long status lines and reserved unused space in plain rows. In a
+narrow log, those details follow the content below the kind label. A finding's cited entry
+has a border in the same space that ordinary rows reserve with padding, so the border still
+singles out the citation in forced colors. The Session page stories check the desktop columns
+after opening Source and following a citation, and check the log fits at phone width.
+
 The historical row-level placement below was permitted by the
 [2026-11-08 owner amendment](design-reading-a-session.md#amended-2026-11-08-owner-a-stored-departing-analysis-may-name-its-level-on-a-sessions-row).
 The 2026-11-23 entry above describes the current presentation.

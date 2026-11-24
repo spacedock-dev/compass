@@ -322,7 +322,7 @@ export function WorkListView() {
         ref={panel}
         variant="work-panel"
         as="section"
-        className="next-cockpit-work px-0"
+        className="next-cockpit-work @container px-0"
         data-next-cockpit-work
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -380,7 +380,8 @@ export function WorkListView() {
                   <div
                     key={entry.id}
                     className={cn(
-                      'next-cockpit-work-row border-t border-t-[var(--rule)] border-l-0 py-1',
+                      // Forced colors paint transparent borders, so ordinary rows reserve the gutter with padding.
+                      'next-cockpit-work-row grid grid-cols-[min(20%,4.375rem)_minmax(0,1fr)] items-baseline gap-x-2.5 border-t border-t-[var(--rule)] py-1 pl-[10px]',
                       before && 'text-muted-foreground',
                       before && !highlighted && 'bg-muted',
                       highlighted &&
@@ -399,7 +400,7 @@ export function WorkListView() {
                     tabIndex={-1}
                     onKeyDown={highlighted ? backOnEscape : undefined}
                   >
-                    <span className="next-cockpit-work-n">
+                    <span className="next-cockpit-work-n wrap-anywhere">
                       {row.n === null ? (
                         <span className="next-visually-hidden">not numbered</span>
                       ) : (
@@ -414,7 +415,9 @@ export function WorkListView() {
                         scope={model.key}
                         summary={
                           entry.modelDerived ? (
-                            <em className="next-cockpit-work-derived">{rowWords(entry)}</em>
+                            <em className="next-cockpit-work-summary text-muted-foreground italic">
+                              {rowWords(entry)}
+                            </em>
                           ) : (
                             <span
                               className={`next-cockpit-work-summary ${type === 'tool_report' ? '[font-family:var(--mono)]' : ''}`}
