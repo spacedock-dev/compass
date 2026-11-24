@@ -190,9 +190,10 @@ class ParentDeclarations(unittest.TestCase):
             for current in (native, held):
                 with tempfile.TemporaryDirectory() as home:
                     config, state = make_runtime(state_home=home, state_dir=Path(home))
-                    contexts.append(
-                        project_context.collect(config, state, [current], "project", now=NOW)
-                    )
+                    context = project_context.collect(config, state, [current], "project", now=NOW)
+                    # Each home mints its own history lineage; only its key and generation compare.
+                    context["semantic"]["history"]["mark"].pop("lineage")
+                    contexts.append(context)
             self.assertEqual(contexts[0], contexts[1])
 
     def test_a_completed_reading_stays_completed_while_its_session_waits_on_a_child(self) -> None:

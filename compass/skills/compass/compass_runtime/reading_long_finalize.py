@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from . import annotations as annotation_store
 from . import (
     reading,
+    reading_evidence,
     reading_final_call,
     reading_long_cleanup,
     reading_long_context,
@@ -317,6 +318,7 @@ def _write_completed(  # noqa: PLR0913 - one already-locked publication and its 
     on_a_check: frozenset[str],
     source_current: Callable[[], bool],
     diagnostic_sink: Callable[[str], None],
+    evidence: reading_evidence.Record | None = None,
 ) -> tuple[bool, str]:
     reason = ""
 
@@ -355,6 +357,7 @@ def _write_completed(  # noqa: PLR0913 - one already-locked publication and its 
             long_diagnostic=diagnostic,
             long_publish_guard=guard,
             diagnostic_sink=diagnostic_sink,
+            evidence=evidence,
         )
     acknowledged = outcome in (annotation_store.OUTCOME_STORED, annotation_store.OUTCOME_UNCHANGED)
     return acknowledged, "" if acknowledged else (reason or f"annotation-{outcome}")
@@ -373,6 +376,7 @@ def completed(  # noqa: PLR0913, PLR0911 - ordered closed publication gates and 
     now: float,
     on_a_check: Collection[str] = (),
     diagnostic_sink: Callable[[str], None] = print,
+    evidence: reading_evidence.Record | None = None,
 ) -> Finalized:
     """Publish a qualified completed/partial result, or retire a durable acknowledgment.
 
@@ -386,6 +390,8 @@ def completed(  # noqa: PLR0913, PLR0911 - ordered closed publication gates and 
     No receipt, unreadable state, or generic write refusal is an acknowledgment.
     on_a_check is caller-owned reading.lines_on_a_check output from all frozen
     facts/CI; packet ledger entries are not substituted for those facts.
+    evidence is the caller's `reading_evidence.capture` over the same frozen facts,
+    stored beside the reading; without one the reading draws no level.
     """
     acknowledged = False
     try:
@@ -431,6 +437,7 @@ def completed(  # noqa: PLR0913, PLR0911 - ordered closed publication gates and 
                     on_a_check=checked_lines,
                     source_current=source_current,
                     diagnostic_sink=diagnostic_sink,
+                    evidence=evidence,
                 )
                 if not acknowledged:
                     return Finalized(reason=reason)

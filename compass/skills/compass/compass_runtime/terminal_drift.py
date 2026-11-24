@@ -940,10 +940,14 @@ def adapt(view: Mapping[str, Any]) -> View:
         and view.get("so_far") is True
         and stale is None
         and not unsettled
+        and view.get("latest_check_withheld") is not True
     )
+    # A level is printed exactly where the page draws the reading's pill, which `derive` withholds
+    # while the reading is out of date, a newer check was withheld or the store is unreadable.
     drawn = (
         isinstance(level, str)
-        and (level != "not_enough" or too_early)
+        and stale is None
+        and ((_rec(pill) and pill.get("source") == "analysis") or too_early)
         and view.get("drafted") is not True
     )
     return View(
@@ -1070,8 +1074,7 @@ def render(  # noqa: C901, PLR0912 - one optional block per field, in the order 
         lines.append(said)
     lines.append(PROVENANCE)
     if view.level is not None:
-        label = "Earlier level" if view.stale is not None else "Level"
-        lines.append(f"{label}: {LEVEL_NAMES[view.level]}{' so far' if view.level_so_far else ''}")
+        lines.append(f"Level: {LEVEL_NAMES[view.level]}{' so far' if view.level_so_far else ''}")
     if view.lines:
         lines.append("Outcome lines:")
         lines.extend(_outcome_line(row, line) for line in view.lines)

@@ -620,7 +620,7 @@ class FreeReadTest(unittest.TestCase):
             "drift"
         ]
         self.assertEqual(
-            [words["outOfDate"], f"Earlier level: {words['levels']['medium']}"],
+            [words["outOfDate"]],
             [
                 line
                 for line in lines
@@ -737,6 +737,42 @@ class FreeReadTest(unittest.TestCase):
                 for line in asked:
                     self.assertIn("spends", line)
                     self.assertNotIn("check again", line)
+
+    def test_a_person_over_an_out_of_date_reading_reads_no_level_at_all(self) -> None:
+        # The page draws no level over a stale reading, so the terminal prints none either, under
+        # any label, even from a dashboard old enough to still publish the pill.
+        for kind in ("work", "intent"):
+            for pill in (None, {"level": "medium", "source": "analysis", "so_far": False}):
+                with self.subTest(kind=kind, pill=pill):
+                    board = stored()
+                    board.view = a_view(stale={"kind": kind, "before": None}, pill=pill)
+                    _code, out, _err = drift(board)
+                    self.assertIn("Out of date", out.splitlines())
+                    self.assertNotIn("Level:", out)
+                    self.assertNotIn("Earlier level", out)
+
+    def test_a_person_whose_latest_check_was_withheld_reads_no_level(self) -> None:
+        board = stored()
+        board.view = a_view(pill=None, latest_check_withheld=True)
+        _code, out, _err = drift(board)
+        self.assertNotIn("Level:", out)
+        view = a_view(
+            departures=[],
+            pill=None,
+            so_far=True,
+            latest_check_withheld=True,
+            analysis={"level": "not_enough", "reasons": ["outcome-not-reached"], "withheld": False},
+        )
+        self.assertIsNone(terminal_drift.adapt(view).level)
+
+    def test_a_person_whose_record_changed_reads_no_level(self) -> None:
+        board = stored()
+        board.view = a_view(
+            pill=None,
+            analysis={"level": "not_enough", "reasons": ["record-changed"], "withheld": False},
+        )
+        _code, out, _err = drift(board)
+        self.assertNotIn("Level:", out)
 
     def test_a_person_whose_words_changed_reads_that_their_intent_changed(self) -> None:
         board = stored()

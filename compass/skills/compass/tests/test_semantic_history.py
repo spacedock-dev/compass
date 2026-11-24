@@ -718,3 +718,114 @@ class SemanticHistoryTest(unittest.TestCase):
                 full_max_bytes=2_000_000,
             ),
         )
+
+
+class HistoryLineageTest(unittest.TestCase):
+    """Each project bucket carries a lineage a prune keeps and a loss replaces (DRC-5543).
+
+    A stored check compares its own record against it, so a prune must never look like a loss and
+    a loss must never look like a prune.
+    """
+
+    def setUp(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        self.config = build_runtime_config(
+            environ={"HOME": str(root), "COMPASS_HOME": str(root / "state")},
+            platform_name="linux",
+            os_name="posix",
+            launcher_path=root / "server.py",
+        )
+        self.state = build_runtime_state(self.config, started=1)
+        self.path = Path(semantic_history.store_path(self.config))
+
+    def update(self, project: str = "p", *, at: float = 100, now: float = 105) -> Any:
+        fact = {"fact_id": f"u{at}", "type": "user_message", "summary": "s", "at": at}
+        return semantic_history.update(
+            self.config, self.state, project, {"facts": [fact]}, [], now=now
+        )
+
+    def test_the_first_write_mints_a_lineage_and_each_later_one_keeps_it(self) -> None:
+        first = self.update()["mark"]
+        second = self.update(at=101)["mark"]
+        self.assertRegex(first["lineage"], r"\A[0-9a-f]{32}\Z")
+        self.assertEqual(
+            ("p", first["lineage"], 1, 2),
+            (second["key"], second["lineage"], first["generation"], second["generation"]),
+        )
+
+    def test_a_prune_that_empties_the_bucket_keeps_its_lineage(self) -> None:
+        first = self.update()["mark"]
+        pruned = self.update(at=100, now=100 + semantic_history.HISTORY_WINDOW_SEC + 60)
+        self.assertEqual([], pruned["events"])
+        self.assertEqual(first["lineage"], pruned["mark"]["lineage"])
+        self.assertGreater(pruned["mark"]["generation"], first["generation"])
+
+    def test_a_lost_or_unreadable_file_starts_a_new_lineage(self) -> None:
+        cases: dict[str, Any] = {
+            "deleted": self.path.unlink,
+            "emptied": lambda: self.path.write_text('{"projects": {}}'),
+            "corrupt": lambda: self.path.write_text("{"),
+            "oversize": lambda: self.path.write_bytes(
+                b" " * (self.config.state_read_cap_bytes + 1)
+            ),
+            "rewritten by an older build": lambda: self.path.write_text(
+                json.dumps(
+                    {
+                        "v": 1,
+                        "projects": {
+                            "p": {
+                                key: value
+                                for key, value in json.loads(self.path.read_text())["projects"][
+                                    "p"
+                                ].items()
+                                if key not in {"lineage", "generation"}
+                            }
+                        },
+                    }
+                )
+            ),
+        }
+        for name, damage in cases.items():
+            with self.subTest(history=name):
+                before = self.update()["mark"]
+                damage()
+                after = self.update(at=102)["mark"]
+                self.assertNotEqual(before["lineage"], after["lineage"])
+                self.assertEqual(1, after["generation"])
+
+    def test_a_read_that_rewrites_a_redaction_never_mints_or_moves_it(self) -> None:
+        mark = self.update()["mark"]
+        stored = json.loads(self.path.read_text())
+        stored["projects"]["p"]["events"][0]["summary"] = "cfg_ghp_" + "D" * 36
+        self.path.write_text(json.dumps(stored))
+        semantic_history.read(self.config, self.state, "p")
+        self.assertNotIn("D" * 36, self.path.read_text())
+        self.assertEqual(mark, semantic_history.mark_for(self.config, self.state, "p"))
+
+    def test_joining_a_display_label_keeps_the_lineage_and_moves_the_generation(self) -> None:
+        mark = self.update("key")["mark"]
+        self.update("label", at=99)
+        semantic_history.reconcile_project(self.config, self.state, "key", ("label",))
+        joined = semantic_history.mark_for(self.config, self.state, "key")
+        assert joined is not None
+        self.assertEqual(mark["lineage"], joined["lineage"])
+        self.assertGreater(joined["generation"], mark["generation"])
+
+    def test_a_write_that_fails_or_evicts_the_bucket_returns_no_mark(self) -> None:
+        with patch.object(semantic_history, "_write", return_value=False):
+            self.assertNotIn("mark", self.update())
+        for k in range(semantic_history.MAX_PROJECTS):
+            self.update(f"newer-{k}", at=200 + k, now=300)
+        self.assertNotIn("mark", self.update("p", at=1, now=300))
+        self.assertIsNone(semantic_history.mark_for(self.config, self.state, "p"))
+
+    def test_the_mark_read_back_parses_the_file_only_after_it_changes(self) -> None:
+        mark = self.update()["mark"]
+        with patch.object(semantic_history, "_read", wraps=semantic_history._read) as read:
+            self.assertEqual(mark, semantic_history.mark_for(self.config, self.state, "p"))
+            self.assertEqual(mark, semantic_history.mark_for(self.config, self.state, "p"))
+            self.assertEqual(1, read.call_count)
+        self.path.unlink()
+        self.assertIsNone(semantic_history.mark_for(self.config, self.state, "p"))

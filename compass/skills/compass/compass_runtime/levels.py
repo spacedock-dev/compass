@@ -89,6 +89,10 @@ REASON_SCAN_INCOMPLETE = "scan-incomplete"
 # claim no intent line speaks to; neither is a departure from the intent.
 REASON_CLAIM_CONTRADICTED = "claim-contradicted"
 REASON_CLAIM_NOT_SHOWN = "claim-not-shown"
+# What the stored check read no longer matches what Compass can read now: the history it measured
+# against was lost, the transcript shrank, the project key changed, or the reading carries no record
+# of what it read (`reading_evidence`). The level is withheld until the next check.
+REASON_RECORD_CHANGED = "record-changed"
 REASONS = (
     REASON_DRAFT_UNSAVED,
     REASON_FAILED_CHECK,
@@ -114,6 +118,7 @@ REASONS = (
     REASON_SCAN_INCOMPLETE,
     REASON_CLAIM_CONTRADICTED,
     REASON_CLAIM_NOT_SHOWN,
+    REASON_RECORD_CHANGED,
 )
 
 _NOT_RECORDED = "not-recorded"

@@ -7406,7 +7406,9 @@ rules that accepted the reading. A vanished citation or an aged-out entry cannot
 raised. The server supplies all current facts from the cited session, including the person's
 messages that may support a Goal departure; limiting the lookup to check rows would retract those
 legitimate departures. This revalidation reads the published facts and calls no model or output
-grant.
+grant. Since 2026-11-24 a level also stands only while
+[the record of what the check read](#amended-2026-11-24-a-stored-check-keeps-the-record-of-what-it-read)
+still matches.
 
 The owner answered two questions from review the same day, and both answers are part of this ruling
 rather than an amendment. A shell command that is neither a check nor read-only, run after any
@@ -8659,6 +8661,61 @@ it; a refused press takes the calm refused look in
 [the Calm Compass record](design-calm-compass.md#the-session-page-follows-the-canvas-2026-11-24).
 This narrows the [primary-control hierarchy](#what-the-session-page-build-had-to-decide) for the
 header only: the header and the card can each show one filled action.
+
+### Amended 2026-11-24: a stored check keeps the record of what it read
+
+The level of a stored check is recomputed on every request from what Compass can read now (DEC-26
+item 6, which stands: no level is stored). That failed open whenever the evidence that held a level
+back went missing. A later direction that only semantic history still held came back as "no
+direction" once the history file was deleted, emptied, corrupted, oversized or pruned at 24 hours.
+Later work that made a check out of date disappeared when the transcript was truncated and history
+was lost. A direction filed under a `path:` project key was never read again under the `git:` key
+that replaced it. Each case let a departure show Slightly off course again. The adopted direction
+(DRC-5543, designed and adopted 2026-11-24) is that a check saves a word-free record of what it read
+and a level stands only while that record still matches.
+
+The record, `reading_evidence`, sits on the annotation entry beside the assessment and is written in
+the same entry write. It has five parts:
+
+- `read_at`, which ties the record to its own reading;
+- `project`, a digest of the project key the check collected under;
+- `history`, the semantic-history bucket's lineage and generation after the check's own update;
+- `transcript_bytes`, the size of the transcript the check stamped before it read;
+- `direction_at`, the time of the reader's latest direction the check measured against, kept by
+  value so a prune cannot erase it.
+
+A Not accurate mark is not a part. It is on the same entry already and is read live.
+
+A prune keeps a bucket's lineage and raises its generation. A deletion, an emptied or unreadable
+file, an eviction past the project cap or a rewrite by an older build starts a new lineage, and a
+restored older copy carries a lower generation. That split is what tells a legitimate 24-hour prune
+apart from a loss. The deferred read-time revalidation, which looked for saved event ids, could not
+make that distinction and was rejected for it.
+
+The gate runs once, on the focused route that serves the session page, and the page, the served
+Drift view and the terminal all read its row. A level is drawn only when the record is present and
+readable, belongs to this reading, names the same project, the bucket keeps its lineage at a
+generation no lower than recorded, and the transcript has not shrunk. The recorded direction must
+also be settled, by the current goal floor or by a Keep given since. Any mismatch, missing part or
+error turns every level, On track included, into no level. The reason reads "A later direction of
+yours is unsettled." while a recorded direction is still open, and otherwise "What this check read
+has changed since, so it shows no level. Check progress again." A check that cannot capture every
+part stores no record, and its level is withheld. Board polls run no gate and read nothing new.
+
+Readings saved before this record existed carry none, so they show no level until the session is
+checked again; nothing migrates them. A migration would have had to guess what an old check measured
+against from evidence that might already be gone, which is the leak this closes. This was a
+coordinator decision on 2026-11-24, as was the wording above, and the owner may overrule either.
+
+The served Drift view and the terminal also take the page's own pill gates: no level while the
+reading is out of date, while a check newer than the reading was withheld, or while the annotation
+store cannot be read, and a stored reading keeps the level slot even when it supplies no level. The
+terminal's "Earlier level" line is gone with that: an out-of-date reading prints Out of date and no
+level, as the page draws none.
+
+One gap is accepted and named. A transcript rewritten to exactly its size at the check, with history
+intact and the later work recorded only as tool calls, leaves no trace the record compares. Closing
+it would need a durable transcript high-water mark in the history bucket.
 
 ### Amended 2026-10-19 (owner): each departure is a card
 

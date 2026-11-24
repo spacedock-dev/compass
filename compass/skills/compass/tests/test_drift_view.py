@@ -16,7 +16,7 @@ import unittest
 from typing import Any
 
 from compass_runtime import annotations as annotation_store
-from compass_runtime import correction, drift_view, levels, record_pages
+from compass_runtime import correction, drift_view, levels, record_pages, terminal_drift
 
 from .support import SERVER_PATH
 
@@ -220,6 +220,85 @@ class LevelPrecedenceTest(unittest.TestCase):
         shown = view(BY_NAME["a-codex-departure-reads-as-a-departure"])
         self.assertEqual(["goal"], shown["departures"])
         self.assertIsNone(shown["analysis"])
+
+
+class TheServedViewWithholdsWhatThePageWithholdsTest(unittest.TestCase):
+    """`derive` takes `buildModel`'s gates and its rule for who owns the level slot (DRC-5544).
+
+    Each case starts from a departure the page draws as Medium, with the Live monitor's lease on and
+    a live estimate of High beside it, so a gate that let the estimate through would show.
+    """
+
+    BASE = BY_NAME["a-departure-reading-draws-the-level-the-server-computed"]
+
+    def case(self, change: Any = None) -> dict[str, Any]:
+        case = copy.deepcopy(self.BASE)
+        work = case["context"]["sources"]["work"]
+        work["live_monitor"] = {"on": True, "level": None}
+        work["live_levels"] = [
+            {"harness": "claude", "sid": "s1", "level": "high", "revision": 3, "reasons": []}
+        ]
+        if change is not None:
+            change(case)
+        return case
+
+    def drawn(self, case: dict[str, Any]) -> tuple[Any, Any]:
+        shown = view(case)
+        return shown["pill"], terminal_drift.adapt(shown).level
+
+    def test_the_level_a_reader_sees_is_drawn_and_printed(self) -> None:
+        pill, printed = self.drawn(self.case())
+        self.assertEqual(
+            ({"level": "medium", "source": "analysis", "so_far": False}, "medium"), (pill, printed)
+        )
+
+    def test_no_level_is_drawn_or_printed_where_the_page_draws_none(self) -> None:
+        def stale(case: dict[str, Any]) -> None:
+            case["context"]["semantic"]["facts"].append(
+                {**case["context"]["semantic"]["facts"][0], "fact_id": "m2", "at": 250}
+            )
+
+        def withheld(case: dict[str, Any]) -> None:
+            case["session"]["annotation_reading_withheld"] = "The check did not finish."
+            case["session"]["annotation_reading_withheld_at"] = 300
+
+        def unreadable(case: dict[str, Any]) -> None:
+            case["payload"]["annotate_unreadable"] = "The annotation store could not be read."
+
+        def no_analysis(case: dict[str, Any]) -> None:
+            case["context"]["sources"]["work"]["analysis_levels"] = []
+
+        def record_changed(case: dict[str, Any]) -> None:
+            (row,) = case["context"]["sources"]["work"]["analysis_levels"]
+            row.update(level="not_enough", reasons=["record-changed"], cites=[], evidence="history")
+
+        for name, change in (
+            ("out of date", stale),
+            ("a newer check withheld", withheld),
+            ("the store unreadable", unreadable),
+            ("a stored reading with no level row", no_analysis),
+            ("a record that no longer matches", record_changed),
+        ):
+            with self.subTest(case=name):
+                self.assertEqual((None, None), self.drawn(self.case(change)))
+
+    def test_an_older_withheld_check_leaves_the_newer_reading_its_level(self) -> None:
+        def older(case: dict[str, Any]) -> None:
+            case["session"]["annotation_reading_withheld"] = "The check did not finish."
+            case["session"]["annotation_reading_withheld_at"] = 150
+
+        shown = view(self.case(older))
+        self.assertFalse(shown["latest_check_withheld"])
+        self.assertEqual("medium", shown["pill"]["level"])
+
+    def test_with_no_stored_reading_the_live_estimate_keeps_the_slot(self) -> None:
+        def unread(case: dict[str, Any]) -> None:
+            del case["session"]["annotation_assessment"]
+
+        pill, printed = self.drawn(self.case(unread))
+        self.assertEqual(
+            ({"level": "high", "source": "live", "so_far": False}, None), (pill, printed)
+        )
 
 
 class StaleReadingTest(unittest.TestCase):

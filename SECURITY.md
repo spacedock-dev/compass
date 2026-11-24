@@ -2142,6 +2142,20 @@ credential. Missing measurements stay unknown; neither those counts nor invocati
 source coverage, provider receipt or accuracy. The existing outcome, cancellation, late-result and
 Clear barriers govern publication. The same amendment defines the two durations and legacy data.
 
+A stored assessment also carries `reading_evidence`, the record of what that check read
+([the amendment](docs/design-reading-a-session.md#amended-2026-11-24-a-stored-check-keeps-the-record-of-what-it-read)).
+It holds no text: a format version, the reading's `read_at`, a 128-bit BLAKE2b digest of the
+project key (never the key, which can name a folder), the semantic-history bucket's random 128-bit
+lineage and its generation count, the transcript's size in bytes, and the time of the reader's latest
+direction the check measured against. A closed validator admits exactly those fields, so a prompt,
+an answer, a path or a credential has nowhere to go. It is written in the same annotation-store write
+as its assessment, only beside a reading it belongs to, and removed with that reading by Clear,
+eviction or a newer reading; `--forget` reaches it no more than it reaches the reading. It is never
+published on a row or a route, never sent to a model, never counted, and not admitted to session
+history (`history.OBSERVATION_FIELDS` names no part of it). A record this build cannot read withholds
+only the level, never the entry, so it cannot block a save. The focused route compares it against a
+stat of the transcript and the history mark it already holds; board polls read nothing for it.
+
 Amended 2026-10-05 by the owner through delegated adversarial acceptance
 ([the amendment](docs/design-reading-a-session.md#amended-2026-10-05-owner-the-newest-recorded-final-reply-is-read-whole)):
 the agent's newest message that its own transcript record marks as ending its turn
@@ -5616,6 +5630,14 @@ activity after an upgrade, so waiting for a later history update would retain kn
 unnecessarily. If replacement fails, the read still publishes redacted values, logs a warning
 without their contents, and retries the repair on the next load. Original bytes can remain
 until the filesystem permits replacement; this does not erase filesystem snapshots or backups.
+
+Each project bucket also holds a `lineage`, 128 random bits minted when the bucket is first written,
+and a `generation` that every later write of the bucket raises. A prune or the joining of a display
+label keeps the lineage; a deleted, emptied, unreadable or oversized file, an eviction past the
+project cap, or a bucket an older build rewrote without these fields starts a new one. The
+redaction rewrite above keeps both unchanged and never mints a lineage. Neither field holds text.
+The focused project context publishes the bucket's current `{key, lineage, generation}` as
+`semantic.history.mark`, which a stored check's record is compared against.
 
 The terminal is off unless both `--interaction-origin-session` and
 `--interaction-origin-registration-file` are supplied. When enabled, ten POST operations under

@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import secrets
 from typing import TYPE_CHECKING, Any
 
 from . import io as runtime_io
@@ -54,6 +55,69 @@ _FACT_EVENT_TYPES = {
     "decision": "gate_decision",
     "result": "result",
 }
+
+
+_LINEAGE = re.compile(r"[0-9a-f]{32}")
+# One past the largest integer a JSON reader in any client holds exactly.
+GENERATION_LIMIT = 2**53
+
+
+def _lineage_of(bucket: Any) -> tuple[str, int] | None:
+    """A bucket's lineage and generation, or None when either is absent or malformed."""
+    if not isinstance(bucket, dict):
+        return None
+    lineage, generation = bucket.get("lineage"), bucket.get("generation")
+    if (
+        isinstance(lineage, str)
+        and _LINEAGE.fullmatch(lineage)
+        and type(generation) is int
+        and 1 <= generation < GENERATION_LIMIT
+    ):
+        return lineage, generation
+    return None
+
+
+# How a stored check tells "the history it measured against was pruned" from "it was lost":
+# [the record of what a check read](docs/design-reading-a-session.md#amended-2026-11-24-a-stored-check-keeps-the-record-of-what-it-read)  # noqa: E501
+def _next_lineage(prior: Any) -> dict[str, Any]:
+    """The prior bucket's lineage one generation on, or a new lineage at its first generation.
+
+    A prune keeps the bucket and so its lineage; a deletion, an emptied or corrupt file, an eviction
+    or a bucket an older build rewrote without these keys starts a new one.
+    """
+    held = _lineage_of(prior)
+    if held is None or held[1] + 1 >= GENERATION_LIMIT:
+        return {"lineage": secrets.token_hex(16), "generation": 1}
+    return {"lineage": held[0], "generation": held[1] + 1}
+
+
+def mark_of(payload: Mapping[str, Any], project: str) -> dict[str, Any] | None:
+    """The `{key, lineage, generation}` of one project's bucket in a payload, or None."""
+    projects = payload.get("projects")
+    held = _lineage_of(projects.get(project) if isinstance(projects, dict) else None)
+    return {"key": project, "lineage": held[0], "generation": held[1]} if held else None
+
+
+def mark_for(config: RuntimeConfig, state: RuntimeState, project: str) -> dict[str, Any] | None:
+    """One project's bucket mark as the file holds it now, or None when it holds none.
+
+    Memoised on the file's identity, size and modification time, so a caller that asks per request
+    parses the file only after a write. A file that cannot be stated has no mark.
+    """
+    path = store_path(config)
+    with state.semantic_history_lock:
+        try:
+            info = os.stat(path)
+        except OSError:
+            return None
+        stamp = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+        memo = state.semantic_history_marks
+        if memo.get("stamp") != stamp:
+            memo.clear()
+            memo["stamp"] = stamp
+            memo["payload"] = _read(config)
+        payload = memo["payload"]
+    return mark_of(payload, project)
 
 
 def workflow_work_item_id(workflow: str, entity: str) -> str:
@@ -143,7 +207,12 @@ def reconcile_project(
                 changed = True
         if changed:
             # Merged coverage was not measured under this key. Earn it again.
-            projects[project] = {"events": existing, "cursors": {}, "source_scans": {}}
+            projects[project] = {
+                "events": existing,
+                "cursors": {},
+                "source_scans": {},
+                **_next_lineage(prior),
+            }
             _write(config, payload)
 
 
@@ -708,6 +777,7 @@ def update(
                 incoming,
                 merged,
             ),
+            **_next_lineage(prior),
         }
         if len(projects) > MAX_PROJECTS:
             ranked = sorted(
@@ -720,9 +790,12 @@ def update(
             )[:MAX_PROJECTS]
             payload["projects"] = {key: projects[key] for key in ranked}
         persisted = _write(config, payload)
+        # What is on disk now: none when the write failed or the cap evicted this very bucket.
+        mark = mark_of(payload, project) if persisted else None
     return {
         "events": merged,
         "cursors": cursors,
         "persisted": persisted,
         "window_sec": HISTORY_WINDOW_SEC,
+        **({"mark": mark} if mark else {}),
     }

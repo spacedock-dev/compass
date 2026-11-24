@@ -141,6 +141,11 @@
               "work_binding": null
             }
           ],
+          "mark": {
+            "generation": 1,
+            "key": "alpha-app",
+            "lineage": "55555555555555555555555555555555"
+          },
           "persisted": true,
           "window_sec": 86400
         },
@@ -342,6 +347,7 @@
               "entry_count": 2,
               "estimate": null,
               "harness": "claude",
+              "latest_check_withheld": false,
               "limited": true,
               "lines": [
                 {
@@ -365,11 +371,7 @@
               ],
               "live_on": false,
               "malformed": "",
-              "pill": {
-                "level": "medium",
-                "so_far": false,
-                "source": "analysis"
-              },
+              "pill": null,
               "priors": [],
               "reading": true,
               "revision": 1,
@@ -485,7 +487,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "8183",
+      "Content-Length": "8251",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json"
     },

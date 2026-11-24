@@ -20,20 +20,31 @@ import io
 import json
 import os
 import threading
-import unittest
+import types
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
 
-from compass_runtime import aggregate, history, http_api, levels, semantic_history, terminal_drift
+from compass_runtime import (
+    aggregate,
+    history,
+    http_api,
+    levels,
+    project_context,
+    reading_evidence,
+    reading_jobs,
+    semantic_history,
+    terminal_drift,
+)
 from compass_runtime import annotations as annotation_store
 from compass_runtime import io as runtime_io
 from compass_runtime import reading as runtime_reading
 from compass_runtime import sessions as runtime_sessions
 from compass_runtime.state import build_runtime_state
 
-from .support import make_server, serve_until_closed
+from .support import captured_evidence, make_server, serve_until_closed
 from .test_claude_checks import SHORT, START
+from .test_copied_corrections import _row
 from .test_live_estimate import GOAL, LINE, _Replay
 
 FOCUSED = f"/api/project-context?project=billing&session=claude:{SHORT}"
@@ -77,9 +88,26 @@ class _Result(_Replay):
         self.entries_saved.append(lines)
         self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
 
-    def record(self, assessment: dict[str, Any]) -> None:
+    def record(self, assessment: dict[str, Any], *, evidence: bool = True, **row: Any) -> None:
+        """Store a reading as a press does: with the record of what it read, captured over the
+        press's own collect in a process of its own, unless `evidence` is False (a reading an
+        older build stored). `row` is the board row the press read, as `app` takes it."""
+        record = None
+        if evidence:
+            mine = self.state
+            self.state = build_runtime_state(self.config, started=self.now)
+            try:
+                record = captured_evidence(self.app(**row), "claude", SHORT, assessment)
+            finally:
+                self.state = mine
+            self.assertIsNotNone(record, "the press captured no record")
         outcome = annotation_store.record_reading(
-            self.config, self.state, "claude", SHORT, assessment=cast("Any", assessment)
+            self.config,
+            self.state,
+            "claude",
+            SHORT,
+            assessment=cast("Any", assessment),
+            evidence=record,
         )
         self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
 
@@ -104,6 +132,11 @@ class _Result(_Replay):
             read_at=START.timestamp() + 500 if read_at is None else read_at,
             on=on,
         )
+
+    def cold(self, **row: Any) -> aggregate.Application:
+        """A fresh process: its own state, so no memo, no cache and no replay carries over."""
+        self.state = build_runtime_state(self.config, started=self.now)
+        return self.app(**row)
 
     @contextlib.contextmanager
     def serving(self, application: aggregate.Application | None = None) -> Any:
@@ -526,11 +559,6 @@ class StoredLevelNeedsCurrentEvidenceTest(_Result):
 
     DIRECTION = "Actually make the unrelated change first."
 
-    def cold(self, **row: Any) -> aggregate.Application:
-        """A fresh process: its own state, so no memo, no cache and no replay carries over."""
-        self.state = build_runtime_state(self.config, started=self.now)
-        return self.app(**row)
-
     def warm_after(self, seconds: float | None = None) -> None:
         """Let the board's collection memo expire so the next request collects again."""
         self.now += self.config.collect_memo_sec + 1 if seconds is None else seconds
@@ -561,21 +589,25 @@ class StoredLevelNeedsCurrentEvidenceTest(_Result):
             "shown": shown,
             "pill": pill["level"] if pill else None,
             "analysis": levels_now[0]["level"] if levels_now else None,
+            "reasons": levels_now[0]["reasons"] if levels_now else None,
+            "part": levels_now[0].get("evidence") if levels_now else None,
             "stale": (view.get("stale") or {}).get("kind"),
             "unsettled": view.get("unsettled_count"),
             "terminal": terminal_drift.adapt(view).level,
+            "goal": row.get("annotation_goal"),
+            "unreadable": row.get("annotate_unreadable"),
         }
 
     def long_gap(self) -> None:
         for _ in range(64):
             self.session._entry("assistant", [{"type": "text", "text": "x" * 8192}])
 
-    def direction_and_departure(self) -> None:
+    def direction_and_departure(self, **row: Any) -> None:
         """The reader's direction sits beyond the tail and the newest page: only history holds it."""
         self.save_goal(lines=())
         self.session.prompt(self.DIRECTION)
         self.long_gap()
-        self.record(self.departure())
+        self.record(self.departure(), **row)
 
     def drop_direction(self) -> None:
         """A compaction rewrote the file without the direction."""
@@ -615,7 +647,6 @@ class StoredLevelNeedsCurrentEvidenceTest(_Result):
             out.append(("warm", self.seen(port)))
         return out
 
-    @unittest.expectedFailure  # LEAK: unreadable or lost history reads as "never had a direction"
     def test_lost_history_after_compaction_shows_no_level(self) -> None:
         def unlink(path: Path) -> None:
             path.unlink()
@@ -640,7 +671,6 @@ class StoredLevelNeedsCurrentEvidenceTest(_Result):
                 for poll, seen in self.served_after_history_is(damage):
                     self.assertIsNone(seen["shown"], f"{name} {poll}: {seen}")
 
-    @unittest.expectedFailure  # LEAK: the 24 h history floor forgets a direction the page needed
     def test_an_aged_out_direction_shows_no_level(self) -> None:
         self.direction_and_departure()
         with self.serving(self.cold()) as port:
@@ -673,7 +703,6 @@ class StoredLevelNeedsCurrentEvidenceTest(_Result):
                 with self.serving(self.cold() if poll == "cold" else None) as port:
                     self.assertIsNone(self.seen(port)["shown"])
 
-    @unittest.expectedFailure  # LEAK: out of date, then back to Medium once the later work is gone
     def test_truncated_later_work_and_lost_history_show_no_level(self) -> None:
         for name in ("deleted", "emptied"):
             with self.subTest(history=name):
@@ -744,7 +773,7 @@ class StoredLevelNeedsCurrentEvidenceTest(_Result):
 
     def test_a_rekeyed_project_keeps_the_direction_it_can_still_read(self) -> None:
         before = runtime_sessions.project_identity(self.config, self.session.cwd)["key"]
-        self.direction_and_departure()
+        self.direction_and_departure(project_key=before)
         with self.serving(self.cold(project_key=before)) as port:
             self.assertIsNone(self.seen(port)["shown"])
         _before, after = self.rekeyed()
@@ -756,10 +785,9 @@ class StoredLevelNeedsCurrentEvidenceTest(_Result):
                 with self.serving(app) as port:
                     self.assertIsNone(self.seen(port)["shown"])
 
-    @unittest.expectedFailure  # LEAK: history is keyed by project, so a new key forgets the direction
     def test_a_rekeyed_project_with_the_direction_only_in_old_history_shows_no_level(self) -> None:
         before = runtime_sessions.project_identity(self.config, self.session.cwd)["key"]
-        self.direction_and_departure()
+        self.direction_and_departure(project_key=before)
         with self.serving(self.cold(project_key=before)) as port:
             self.assertIsNone(self.seen(port)["shown"])
         self.drop_direction()
@@ -803,7 +831,6 @@ class StoredLevelNeedsCurrentEvidenceTest(_Result):
         with self.serving(self.cold()) as port:
             self.assertIsNone(self.seen(port)["shown"], "cold")
 
-    @unittest.expectedFailure  # MISMATCH: the served pill and the terminal's level ignore a withheld latest check
     def test_the_served_view_withholds_what_the_page_withholds_after_a_peers_refusal(self) -> None:
         self.save_goal(lines=())
         self.record(self.departure())
@@ -813,6 +840,220 @@ class StoredLevelNeedsCurrentEvidenceTest(_Result):
         self.assertIsNone(seen["shown"])
         self.assertIsNone(seen["pill"], seen)
         self.assertIsNone(seen["terminal"], seen)
+
+    # --- The record of what the check read (DRC-5543) -------------------------------------------
+
+    def each_poll(self, **row: Any) -> list[tuple[str, dict[str, Any]]]:
+        """What the page reads in a fresh process, then again once the board's memo has expired."""
+        out: list[tuple[str, dict[str, Any]]] = []
+        with self.serving(self.cold(**row)) as port:
+            out.append(("cold", self.seen(port)))
+            self.warm_after()
+            out.append(("warm", self.seen(port)))
+        return out
+
+    def assert_withheld(
+        self, seen: dict[str, Any], part: str, reason: str = levels.REASON_RECORD_CHANGED
+    ) -> None:
+        self.assertIsNone(seen["shown"], seen)
+        self.assertIsNone(seen["terminal"], seen)
+        self.assertEqual(levels.NOT_ENOUGH, seen["analysis"], seen)
+        self.assertEqual([reason], seen["reasons"], seen)
+        self.assertEqual(part, seen["part"], seen)
+
+    def plant(self, change: Any) -> None:
+        """Rewrite the stored record on disk, as another process or a hand edit could."""
+        path = annotation_store.store_path(self.config)
+        with open(path, encoding="utf-8") as handle:
+            stored = json.load(handle)
+        (entry,) = [e for e in stored["entries"] if e.get("sid") == SHORT]
+        change(entry)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(stored, handle)
+
+    def bucket(self, key: str = "billing") -> dict[str, Any]:
+        stored = json.loads(self.history_file().read_text(encoding="utf-8"))
+        found = stored["projects"].get(key)
+        return found if isinstance(found, dict) else {}
+
+    def test_a_reading_saved_before_this_build_shows_no_level_until_checked_again(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure(), evidence=False)
+        for poll, seen in self.each_poll():
+            with self.subTest(poll=poll):
+                self.assert_withheld(seen, reading_evidence.PART_MISSING)
+                self.assertEqual(GOAL, seen["goal"])
+        self.now += 60
+        self.record(self.departure())
+        for poll, seen in self.each_poll():
+            with self.subTest(poll=poll, after="a new check"):
+                self.assertEqual(levels.MEDIUM, seen["shown"], seen)
+
+    def test_a_record_this_build_cannot_read_withholds_only_the_level(self) -> None:
+        def history(key: str, value: Any) -> Any:
+            return lambda record: record["history"].__setitem__(key, value)
+
+        damage: dict[str, Any] = {
+            "not a record": lambda e: e.__setitem__("reading_evidence", "yes"),
+            "an uppercase digest": lambda e: e["reading_evidence"].__setitem__(
+                "project", e["reading_evidence"]["project"].upper()
+            ),
+            "a short lineage": lambda e: history("lineage", "ab")(e["reading_evidence"]),
+            "an extra key": lambda e: e["reading_evidence"].__setitem__("why", "it read it"),
+            "another version": lambda e: e["reading_evidence"].__setitem__("v", 2),
+            "not a number": lambda e: e["reading_evidence"].__setitem__("read_at", float("nan")),
+            "a bool for a count": lambda e: history("generation", True)(e["reading_evidence"]),
+            "a bool for a size": lambda e: e["reading_evidence"].__setitem__(
+                "transcript_bytes", False
+            ),
+            "a word for a time": lambda e: e["reading_evidence"].__setitem__("direction_at", "now"),
+        }
+        for name, change in damage.items():
+            with self.subTest(record=name):
+                self.setUp()
+                self.save_goal(lines=())
+                self.record(self.departure())
+                self.plant(change)
+                for poll, seen in self.each_poll():
+                    self.assert_withheld(seen, reading_evidence.PART_UNREADABLE)
+                    self.assertEqual(GOAL, seen["goal"], poll)
+                    self.assertFalse(seen["unreadable"], poll)
+
+    def test_a_record_of_another_reading_withholds_the_level(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        self.plant(
+            lambda e: e["reading_evidence"].__setitem__(
+                "read_at", e["reading_evidence"]["read_at"] + 1
+            )
+        )
+        for poll, seen in self.each_poll():
+            with self.subTest(poll=poll):
+                self.assert_withheld(seen, reading_evidence.PART_OTHER_READING)
+
+    def test_a_rekeyed_project_withholds_the_level_with_no_direction_at_all(self) -> None:
+        before = runtime_sessions.project_identity(self.config, self.session.cwd)["key"]
+        self.save_goal(lines=())
+        self.record(self.departure(), project_key=before)
+        with self.serving(self.cold(project_key=before)) as port:
+            self.assertEqual(levels.MEDIUM, self.seen(port)["shown"])
+        _before, after = self.rekeyed()
+        for poll, seen in self.each_poll(project_key=after):
+            with self.subTest(poll=poll):
+                self.assert_withheld(seen, reading_evidence.PART_PROJECT)
+
+    def test_a_day_old_reading_with_no_open_direction_keeps_its_level(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        with self.serving(self.cold()) as port:
+            self.assertEqual(levels.MEDIUM, self.seen(port)["shown"])
+        lineage = self.bucket()["lineage"]
+        self.now += 25 * 3600
+        for poll, seen in self.each_poll():
+            with self.subTest(poll=poll):
+                self.assertEqual(levels.MEDIUM, seen["shown"], seen)
+                self.assertIsNone(seen["part"], seen)
+        # The prune emptied the bucket and kept its lineage.
+        self.assertEqual([], self.bucket()["events"])
+        self.assertEqual(lineage, self.bucket()["lineage"])
+
+    def test_a_keep_given_after_the_direction_aged_out_lets_the_level_stand(self) -> None:
+        self.direction_and_departure()
+        self.now += 25 * 3600
+        for poll, seen in self.each_poll():
+            with self.subTest(poll=poll, keep="none"):
+                self.assert_withheld(
+                    seen, reading_evidence.PART_DIRECTION, levels.REASON_LATER_DIRECTION
+                )
+        direction_at = self.raw_entry()["reading_evidence"]["direction_at"]
+        self.assertIsNotNone(direction_at)
+        outcome = annotation_store.settle(
+            self.config, self.state, "claude", SHORT, through=direction_at, now=self.now
+        )
+        self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
+        for poll, seen in self.each_poll():
+            with self.subTest(poll=poll, keep="through the direction"):
+                self.assertEqual(levels.MEDIUM, seen["shown"], seen)
+
+    def consistent_reading(self) -> dict[str, Any]:
+        check = self.passing_check()
+        consistent = {
+            "result": runtime_reading.RESULT_CONSISTENT,
+            "cites": [check],
+            "why": runtime_reading.WHY_STANDS,
+        }
+        return _reading({"goal": dict(consistent), "line_1": dict(consistent)}, window_start=None)
+
+    def test_a_transcript_cut_below_what_the_check_read_never_reads_on_track(self) -> None:
+        self.save_goal()
+        self.session._entry("assistant", [{"type": "text", "text": "All done."}])
+        self.session.save(self.path)
+        self.record(self.consistent_reading())
+        with self.serving(self.cold()) as port:
+            self.assertEqual(levels.NONE_OR_LOW, self.seen(port)["shown"])
+        self.session.rows = self.session.rows[:-1]
+        self.session.save(self.path)
+        for poll, seen in self.each_poll():
+            with self.subTest(poll=poll):
+                self.assert_withheld(seen, reading_evidence.PART_TRANSCRIPT)
+
+    def test_a_history_bucket_other_projects_pushed_out_withholds_the_level(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        for k in range(semantic_history.MAX_PROJECTS):
+            fact = {"fact_id": f"f{k}", "type": "user_message", "summary": "s", "at": self.now}
+            semantic_history.update(
+                self.config, self.state, f"other-{k}", {"facts": [fact]}, [], now=self.now
+            )
+        self.assertEqual({}, self.bucket())
+        for poll, seen in self.each_poll():
+            with self.subTest(poll=poll):
+                self.assert_withheld(seen, reading_evidence.PART_HISTORY)
+
+    def test_an_older_copy_of_history_put_back_withholds_the_level(self) -> None:
+        self.save_goal(lines=())
+        with self.serving(self.cold()) as port:
+            self.get(port, FOCUSED)
+        copy = self.history_file().read_bytes()
+        with self.serving(self.cold()) as port:
+            self.get(port, FOCUSED)
+            self.get(port, FOCUSED)
+        self.record(self.departure())
+        self.history_file().write_bytes(copy)
+        for poll, seen in self.each_poll():
+            with self.subTest(poll=poll):
+                self.assert_withheld(seen, reading_evidence.PART_HISTORY)
+
+    def test_a_label_two_projects_share_still_reads_this_projects_history(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure(), project_key="key-one")
+
+        def shared() -> aggregate.Application:
+            self.state = build_runtime_state(self.config, started=self.now)
+            rows = [_row(project_key="key-one"), _row(sid="b" * 36, project_key="key-two")]
+            spec = aggregate.HarnessSpec(
+                key="claude", label="Claude", discover=lambda *_: True, collect=lambda *_a: rows
+            )
+            return aggregate.Application(
+                self.config,
+                self.state,
+                (spec,),
+                native_notifier=lambda _p: "",
+                popup_notifier=lambda _t, _b: None,
+                diagnostic_sink=lambda _m: None,
+                clock=lambda: self.now,
+            )
+
+        with self.serving(shared()) as port:
+            mark = self.get(port, FOCUSED)["semantic"]["history"]["mark"]
+            self.assertEqual("billing", mark["key"])
+            cold = self.seen(port)
+            self.warm_after()
+            warm = self.seen(port)
+        for poll, seen in (("cold", cold), ("warm", warm)):
+            with self.subTest(poll=poll):
+                self.assertEqual(levels.MEDIUM, seen["shown"], seen)
+                self.assertIsNone(seen["part"], seen)
 
 
 class ConcurrentColdSessionPageTest(_Result):
@@ -847,11 +1088,290 @@ class ConcurrentColdSessionPageTest(_Result):
             self.assertEqual(levels.MEDIUM, view["pill"]["level"])
             self.assertTrue(work["live_levels"])
 
+    def test_history_lost_mid_burst_never_brings_a_withheld_level_back(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        self.state = build_runtime_state(self.config, started=self.now)
+        recorded = self.raw_entry()["reading_evidence"]["history"]["lineage"]
+        history_file = Path(semantic_history.store_path(self.config))
+        barrier = threading.Barrier(self.WORKERS + 1)
+        clock = threading.Lock()
+        ticks = iter(range(10**6))
+
+        def tick() -> int:
+            with clock:
+                return next(ticks)
+
+        def one(i: int) -> tuple[int, int, int, dict[str, Any]]:
+            barrier.wait(timeout=10)
+            started = tick()
+            status, body = self.hit(port, i)
+            return started, tick(), status, body
+
+        def delete() -> None:
+            barrier.wait(timeout=10)
+            history_file.unlink(missing_ok=True)
+
+        with (
+            self.serving() as port,
+            concurrent.futures.ThreadPoolExecutor(self.WORKERS + 1) as pool,
+        ):
+            deleter = pool.submit(delete)
+            burst = list(pool.map(one, range(self.WORKERS)))
+            deleter.result(timeout=10)
+            after = [self.hit(port, i) for i in range(self.WORKERS)]
+        answers = [(a, b, status, body) for a, b, status, body in burst]
+        self.assertEqual([200] * self.WORKERS, [status for _a, _b, status, _ in answers])
+
+        def kind(body: dict[str, Any]) -> str:
+            (row,) = [x for x in body["sources"]["work"]["analysis_levels"] if x["sid"] == SHORT]
+            (view,) = body["sources"]["work"]["drift_views"]
+            if row["level"] == levels.MEDIUM and "evidence" not in row:
+                self.assertEqual(levels.MEDIUM, view["pill"]["level"])
+                return "level"
+            self.assertEqual(
+                (levels.NOT_ENOUGH, reading_evidence.PART_HISTORY),
+                (row["level"], row.get("evidence")),
+            )
+            self.assertIsNone(view["pill"])
+            return "history"
+
+        lost = [end for _start, end, _status, body in answers if kind(body) == "history"]
+        for start, _end, _status, body in answers:
+            if lost and start > min(lost):
+                self.assertEqual("history", kind(body), "a level came back after it was lost")
+        # Whatever the burst left on disk decides every later answer, all alike.
+        expected = "level" if self.bucket_lineage(history_file) == recorded else "history"
+        self.assertEqual([expected] * self.WORKERS, [kind(body) for _status, body in after])
+
+    @staticmethod
+    def bucket_lineage(path: Path) -> str | None:
+        try:
+            stored = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        bucket = stored.get("projects", {}).get("billing")
+        return bucket.get("lineage") if isinstance(bucket, dict) else None
+
     @staticmethod
     def hit(port: int, _i: int) -> tuple[int, dict[str, Any]]:
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
         try:
             conn.request("GET", FOCUSED)
+            response = conn.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            conn.close()
+
+
+class APressKeepsTheRecordOfWhatItReadTest(_Result):
+    """The ordinary press stores the record beside its reading, in the one write (DRC-5543)."""
+
+    def press(self, assessment: dict[str, Any], **patches: Any) -> None:
+        app = self.app()
+        _rev, body = app.collect_json(show_all=True)
+        (row,) = [r for r in json.loads(body)["sessions"] if r["sid"] == SHORT]
+        entry = self.entry()
+        handler = types.SimpleNamespace(
+            server=types.SimpleNamespace(application=app),
+            _reading_arguments=lambda *_a, **_k: {},
+        )
+        job = reading_jobs.start_job(
+            self.config, f"claude:{SHORT}", provider="claude", label="Claude Code", now=self.now
+        )
+        assert job is not None
+        self.addCleanup(runtime_reading.end_job, self.config, f"claude:{SHORT}")
+
+        def compose(hooks: reading_jobs.Hooks) -> Any:
+            with contextlib.ExitStack() as stack:
+                stack.enter_context(
+                    patch.object(runtime_reading, "produce", return_value=(assessment, "", True))
+                )
+                for name, value in patches.items():
+                    stack.enter_context(patch.object(http_api, name, value))
+                compose_reading: Any = http_api._RequestHandler._compose_reading
+                return compose_reading(handler, row, entry, types.SimpleNamespace(), hooks)
+
+        thread = reading_jobs.launch(app, job, compose)
+        thread.join(timeout=30)
+        self.assertFalse(thread.is_alive())
+
+    def test_a_press_stores_what_it_read_beside_the_reading(self) -> None:
+        self.save_goal(lines=())
+        assessment = self.departure()
+        self.press(assessment)
+        stored = self.raw_entry()
+        record = reading_evidence.validate(stored.get("reading_evidence"))
+        assert record is not None, stored.get("reading_evidence")
+        bucket = json.loads(Path(semantic_history.store_path(self.config)).read_text())
+        held = bucket["projects"]["billing"]
+        self.assertEqual(
+            (
+                stored["assessment"]["read_at"],
+                reading_evidence.project_digest("billing"),
+                {"lineage": held["lineage"], "generation": held["generation"]},
+                self.path.stat().st_size,
+                None,
+            ),
+            (
+                record["read_at"],
+                record["project"],
+                record["history"],
+                record["transcript_bytes"],
+                record["direction_at"],
+            ),
+        )
+        self.assertNotIn("reading_evidence", json.dumps(annotation_store.published(self.entry())))
+        with self.serving(self.cold()) as port:
+            (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+            board = self.get(port, "/api/data")
+        self.assertEqual(levels.MEDIUM, view["pill"]["level"])
+        self.assertNotIn("reading_evidence", json.dumps(board))
+        self.assertNotIn(record["history"]["lineage"], json.dumps(board))
+
+    def test_a_press_records_the_open_direction_it_read_by_its_time_alone(self) -> None:
+        self.save_goal(lines=())
+        self.session.prompt("Actually make the unrelated change first.")
+        self.session.save(self.path)
+        (direction,) = [
+            f
+            for f in http_api._facts_of(http_api._session_context(self.app(), _row()))
+            if f.get("type") == "user_message" and "unrelated change" in str(f.get("summary"))
+        ]
+        self.press(self.departure())
+        record = self.raw_entry()["reading_evidence"]
+        self.assertEqual(direction["at"], record["direction_at"])
+        self.assertNotIn("unrelated", json.dumps(record))
+
+    def test_a_press_that_read_no_history_stores_no_record_and_draws_no_level(self) -> None:
+        self.save_goal(lines=())
+        self.press(self.departure(), _session_context=lambda *_a, **_k: {})
+        stored = self.raw_entry()
+        self.assertIn("assessment", stored)
+        self.assertNotIn("reading_evidence", stored)
+        with self.serving() as port:
+            (row,) = self.get(port, FOCUSED)["sources"]["work"]["analysis_levels"]
+        self.assertEqual(
+            (levels.NOT_ENOUGH, reading_evidence.PART_MISSING), (row["level"], row["evidence"])
+        )
+
+
+class TheRecordStaysWithItsReadingTest(_Result):
+    """Written with the reading, carried with it and removed with it, never alone."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.save_goal(lines=())
+        self.record(self.departure())
+        self.first = self.raw_entry()["reading_evidence"]
+
+    def test_a_withheld_check_keeps_the_standing_reading_and_its_record(self) -> None:
+        annotation_store.record_withheld(
+            self.config,
+            self.state,
+            "claude",
+            SHORT,
+            reason=runtime_reading.WITHHELD_MODEL_FAILED,
+            spent=True,
+        )
+        self.assertEqual(self.first, self.raw_entry()["reading_evidence"])
+
+    def test_a_late_reading_that_is_not_kept_leaves_the_standing_record(self) -> None:
+        late: dict[str, Any] = dict(self.entry()["assessment"])
+        late["read_at"] = float(late["read_at"]) - 10
+        record: Any = {**self.first, "read_at": late["read_at"]}
+        outcome = annotation_store.record_reading(
+            self.config, self.state, "claude", SHORT, assessment=cast("Any", late), evidence=record
+        )
+        self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
+        self.assertEqual(self.first["read_at"], self.raw_entry()["assessment"]["read_at"])
+        self.assertEqual(self.first, self.raw_entry()["reading_evidence"])
+
+    def test_a_new_reading_never_inherits_the_record_of_the_one_it_replaces(self) -> None:
+        self.now += 60
+        self.record(self.departure(), evidence=False)
+        self.assertNotIn("reading_evidence", self.raw_entry())
+
+    def test_a_record_of_another_reading_is_never_stored_with_this_one(self) -> None:
+        self.now += 60
+        newer = self.departure()
+        record: Any = {**self.first, "read_at": float(newer["read_at"]) + 1}
+        annotation_store.record_reading(
+            self.config, self.state, "claude", SHORT, assessment=cast("Any", newer), evidence=record
+        )
+        self.assertEqual(newer["read_at"], self.raw_entry()["assessment"]["read_at"])
+        self.assertNotIn("reading_evidence", self.raw_entry())
+
+    def test_a_goal_save_and_a_not_accurate_mark_carry_it(self) -> None:
+        self.save_goal(lines=(LINE,))
+        self.assertEqual(self.first, self.raw_entry()["reading_evidence"])
+        self.mark(read_at=self.first["read_at"])
+        self.assertEqual(self.first, self.raw_entry()["reading_evidence"])
+
+    def test_clearing_the_session_removes_it_with_the_reading(self) -> None:
+        annotation_store.forget(self.config)
+        self.assertEqual(self.first, self.raw_entry()["reading_evidence"])
+        annotation_store.clear(self.config, self.state, "claude", SHORT)
+        self.assertNotIn("reading_evidence", self.raw_entry())
+        self.assertNotIn("assessment", self.raw_entry())
+
+    def test_it_holds_no_words_and_never_enters_history_or_a_row(self) -> None:
+        self.assertEqual(
+            {"v", "read_at", "project", "history", "transcript_bytes", "direction_at"},
+            set(self.first),
+        )
+        self.assertNotIn("billing", json.dumps(self.first))
+        self.assertFalse(
+            [name for name in history.OBSERVATION_FIELDS if "evidence" in name or "lineage" in name]
+        )
+        _rev, body = self.app().collect_json(show_all=True)
+        self.assertNotIn(self.first["project"], body.decode())
+
+
+class TheGateCostsTheBoardNothingTest(_Result):
+    """The record is compared on the focused route alone: a board poll reads no transcript, no
+    history mark and runs no gate (DRC-5543)."""
+
+    def test_a_board_poll_answers_without_ever_reaching_the_gate(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        boom = AssertionError("a board poll reached the record's gate")
+        app = self.cold()
+        with (
+            patch.object(reading_evidence, "held", side_effect=boom) as held,
+            patch.object(semantic_history, "mark_for", side_effect=boom) as mark_for,
+            patch.object(project_context, "transcript_stamp", side_effect=boom) as stamp,
+            self.serving(app) as port,
+        ):
+            for poll in ("cold", "warm"):
+                status, body = self.get_status(port, "/api/data")
+                self.assertEqual(200, status, poll)
+                (row,) = [r for r in body["sessions"] if r["sid"] == SHORT]
+                self.assertIsNotNone(row["annotation_assessment"], poll)
+                self.now += self.config.collect_memo_sec + 1
+        self.assertEqual((0, 0, 0), (held.call_count, mark_for.call_count, stamp.call_count))
+
+    def test_a_gate_that_fails_withholds_the_level_and_keeps_the_page(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        with (
+            patch.object(reading_evidence, "held", side_effect=RuntimeError("boom")),
+            self.serving(self.cold()) as port,
+        ):
+            status, focused = self.get_status(port, FOCUSED)
+        self.assertEqual(200, status)
+        (row,) = focused["sources"]["work"]["analysis_levels"]
+        (view,) = focused["sources"]["work"]["drift_views"]
+        self.assertEqual(
+            (levels.NOT_ENOUGH, reading_evidence.PART_UNREADABLE, None),
+            (row["level"], row["evidence"], view["pill"]),
+        )
+
+    @staticmethod
+    def get_status(port: int, path: str) -> tuple[int, dict[str, Any]]:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.request("GET", path)
             response = conn.getresponse()
             return response.status, json.loads(response.read())
         finally:
