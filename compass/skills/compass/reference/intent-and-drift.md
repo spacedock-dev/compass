@@ -257,7 +257,11 @@ a stop or restart cut short is recorded as an interrupted attempt. The session p
 result with its time. Where the result supports a level, Compass derives it from the stored
 reading. Codex shows the evidence without a level. A level above On track requires a departure
 the reading shows. When Compass withholds a level, the card says what the reading found and
-gives the reason. The live estimate is not
+gives the reason. A check keeps a word-free record of what it read, and a level stands only while
+that record still matches what Compass can read: if history it relied on was lost, the transcript
+was cut or the project changed, the card says "What this check read has changed since, so it shows
+no level. Check progress again." A check saved before this version has no such record, so it shows
+no level until the session is checked again. `--drift` prints the same sentence and no level. The live estimate is not
 drawn beside a reading that stands, and where the switch is on and it has a level to draw, the card
 says so. A reading that could tell nothing about a session only minutes old says it is early and to
 read again once the session has run its checks. The header pill adds "so far" while the session runs.
