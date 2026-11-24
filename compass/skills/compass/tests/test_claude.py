@@ -6,8 +6,10 @@ import stat
 import tempfile
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Barrier
 from typing import Any
 from unittest import mock
 
@@ -413,8 +415,8 @@ class ClaudeCollectorTest(RuntimeTestCase):
             with store_patch(TASKS_DIR=str(root)):
                 tasks = claude_collector.load_tasks(runtime()[0])
 
-        self.assertEqual({"12345678", "abcdef12"}, set(tasks))
-        self.assertEqual("Current", tasks["12345678"][0]["subject"])
+        self.assertEqual({current.name, "abcdef12"}, set(tasks))
+        self.assertEqual("Current", tasks[current.name][0]["subject"])
         self.assertEqual("Legacy", tasks["abcdef12"][0]["subject"])
 
     def test_hook_user_event_accepts_matching_project_transcript(self) -> None:
@@ -1188,7 +1190,7 @@ class ClaudeCollectorTest(RuntimeTestCase):
             with store_patch(TASKS_DIR=str(tmp)):
                 tasks = claude_collector.load_tasks(runtime()[0])
 
-        rows = tasks["12345678"]
+        rows = tasks[root.name]
         self.assertEqual(1, len(rows))  # the non-dict record is skipped
         task = rows[0]
         self.assertEqual("(untitled)", task["subject"])
@@ -2044,9 +2046,9 @@ class SubagentListingCacheTest(RuntimeTestCase):
             first = claude_collector.agent_transcripts(parent, config=config, state=state)
             self.assertTrue(first)
             with mock.patch.object(
-                runtime_io,
-                "glob_under",
-                side_effect=AssertionError("re-globbed an unchanged directory"),
+                os,
+                "scandir",
+                side_effect=AssertionError("rescanned an unchanged directory"),
             ):
                 second = claude_collector.agent_transcripts(parent, config=config, state=state)
             self.assertEqual(first, second)
@@ -2080,9 +2082,9 @@ class SubagentListingCacheTest(RuntimeTestCase):
             moved = time.time() + 30
             os.utime(agent, (moved, moved))
             with mock.patch.object(
-                runtime_io,
-                "glob_under",
-                side_effect=AssertionError("re-globbed an unchanged directory"),
+                os,
+                "scandir",
+                side_effect=AssertionError("rescanned an unchanged directory"),
             ):
                 again = claude_collector.agent_transcripts(parent, config=config, state=state)
             self.assertEqual([(agent, moved)], again)
@@ -2094,6 +2096,95 @@ class SubagentListingCacheTest(RuntimeTestCase):
                 claude_collector.agent_transcripts(parent),
                 claude_collector.agent_transcripts(parent),
             )
+
+    def test_a_failed_worker_scan_is_retried_on_the_next_collection(self) -> None:
+        now = 1_700_000_000.0
+        old = now - 30 * 3600
+        for layout in ("", "workflows/run"):
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory() as root:
+                project = Path(root) / "projects" / "sample"
+                project.mkdir(parents=True)
+                parent = Path(self._fixture(str(project)))
+                os.utime(parent, (old, old))
+                folder = project / parent.stem / "subagents" / layout
+                folder.mkdir(parents=True, exist_ok=True)
+                worker = folder / "agent-a.jsonl"
+                worker.write_text('{"type":"assistant","message":{}}\n', encoding="utf-8")
+                os.utime(worker, (old, old))
+                real_scandir = os.scandir
+
+                def failed_scan(
+                    path: Any = ".", *, target: str = str(folder), scan: Any = real_scandir
+                ) -> Any:
+                    if path == target:
+                        raise PermissionError(path)
+                    return scan(path)
+
+                with store_patch(PROJECTS_DIR=str(project.parent)):
+                    with mock.patch.object(os, "scandir", side_effect=failed_scan):
+                        self.assertEqual([], collect_claude(now, 24, False))
+                    with worker.open("a", encoding="utf-8") as stream:
+                        stream.write('{"type":"assistant","message":{}}\n')
+                    os.utime(worker, (now, now))
+                    rows = collect_claude(now, 24, False)
+
+                self.assertEqual(["abcd1234"], [row["sid"] for row in rows])
+                self.assertEqual(now, rows[0]["last_activity"])
+
+    def test_removing_the_projects_store_releases_worker_listings(self) -> None:
+        now = time.time()
+        with tempfile.TemporaryDirectory() as root:
+            project = Path(root) / "projects" / "sample"
+            project.mkdir(parents=True)
+            self._fixture(str(project), "agent-a.jsonl")
+            with store_patch(PROJECTS_DIR=str(project.parent)):
+                config, state = runtime()
+                app = aggregate.Application(
+                    config,
+                    state,
+                    (
+                        aggregate.HarnessSpec(
+                            "claude", "Claude", claude_collector.discover, claude_collector.collect
+                        ),
+                    ),
+                    native_notifier=lambda _: "",
+                    popup_notifier=lambda *_: None,
+                    diagnostic_sink=lambda _: None,
+                    clock=lambda: now,
+                )
+                app.collect(show_all=False, notify=False)
+                self.assertTrue(state.claude_subagent_index)
+                project.parent.rename(Path(root) / "removed-projects")
+                app.collect(show_all=False, notify=False)
+                self.assertFalse(state.claude_subagent_index)
+
+    def test_overlapping_collections_can_prune_the_same_deleted_transcript(self) -> None:
+        now = time.time()
+        with tempfile.TemporaryDirectory() as root:
+            project = Path(root) / "projects" / "sample"
+            project.mkdir(parents=True)
+            parent = Path(self._fixture(str(project), "agent-a.jsonl"))
+            with store_patch(PROJECTS_DIR=str(project.parent)):
+                config, state = runtime()
+                self.assertTrue(claude_collector.collect(config, state, now, 24, False))
+                parent.unlink()
+                overlap = Barrier(2)
+
+                class SynchronizedKeys(dict[str, Any]):
+                    def keys(self) -> Any:
+                        snapshot = dict(self).keys()
+                        if not state.cache_lock.locked():
+                            overlap.wait(timeout=5)
+                        return snapshot
+
+                state.claude_subagent_index = SynchronizedKeys(state.claude_subagent_index)
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    results = [
+                        executor.submit(claude_collector.collect, config, state, now, 24, view)
+                        for view in (False, True)
+                    ]
+                    self.assertEqual([[], []], [result.result() for result in results])
+                self.assertFalse(state.claude_subagent_index)
 
     def test_a_parked_parent_keeps_its_subagent_activity(self) -> None:
         """The regression this cache design exists to avoid.
@@ -2220,8 +2311,42 @@ class SubagentWorkflowCacheTest(RuntimeTestCase):
                 self._names(claude_collector.agent_transcripts(parent, config=config, state=state)),
             )
 
-    def test_a_transcript_written_during_the_glob_is_not_cached_away(self) -> None:
-        """The stamp has to be taken before the listing, never after it.
+    def test_an_empty_workflow_listing_is_reused_without_statting_regular_files(self) -> None:
+        config, state = runtime()
+        with tempfile.TemporaryDirectory() as root:
+            parent, run = self._fixture(root)
+            note = Path(run).parent / "journal.jsonl"
+            note.write_text("{}\n", encoding="utf-8")
+            self.assertEqual(
+                [], claude_collector.agent_transcripts(parent, config=config, state=state)
+            )
+
+            with (
+                mock.patch.object(os, "stat", wraps=os.stat) as stats,
+                mock.patch.object(os, "scandir", wraps=os.scandir) as scans,
+            ):
+                self.assertEqual(
+                    [], claude_collector.agent_transcripts(parent, config=config, state=state)
+                )
+            self.assertNotIn(str(note), [call.args[0] for call in stats.call_args_list])
+            scans.assert_not_called()
+
+    def test_refused_worker_root_is_never_enumerated(self) -> None:
+        config, state = runtime()
+        with tempfile.TemporaryDirectory() as root:
+            parent, _ = self._fixture(root)
+            with (
+                mock.patch.object(runtime_io, "admit_harness_root", return_value=False),
+                mock.patch.object(os, "scandir", wraps=os.scandir) as scans,
+            ):
+                self.assertEqual(
+                    [], claude_collector.agent_transcripts(parent, config=config, state=state)
+                )
+            scans.assert_not_called()
+            self.assertNotIn(parent, state.claude_subagent_index)
+
+    def test_a_transcript_written_during_the_listing_is_not_cached_away(self) -> None:
+        """A later directory stamp would cache a listing that missed the new transcript.
 
         A stamp taken after the glob records the directory move the new
         transcript caused as already accounted for, so the listing that missed
@@ -2236,15 +2361,15 @@ class SubagentWorkflowCacheTest(RuntimeTestCase):
             Path(os.path.join(sub, "agent-a.jsonl")).write_text("{}\n", encoding="utf-8")
             self._park(sub)
             late = os.path.join(sub, "agent-b.jsonl")
-            real_glob = runtime_io.glob_under
+            list_workers = claude_collector.worker_paths
 
-            def racing(base: str, *pattern: str, tighten_permissions: bool = True) -> list[str]:
-                listed = real_glob(base, *pattern, tighten_permissions=tighten_permissions)
+            def racing(directory: str) -> list[str]:
+                listed = list_workers(directory)
                 if not os.path.exists(late):
                     Path(late).write_text("{}\n", encoding="utf-8")
                 return listed
 
-            with mock.patch.object(runtime_io, "glob_under", side_effect=racing):
+            with mock.patch.object(claude_collector, "worker_paths", side_effect=racing):
                 claude_collector.agent_transcripts(parent, config=config, state=state)
 
             self.assertEqual(
@@ -2273,18 +2398,18 @@ class SubagentScanCountTest(RuntimeTestCase):
             sess_dir = project / "abcd1234-3456-7890-abcd-ef1234567890"
             (sess_dir / "subagents").mkdir(parents=True)
             (sess_dir / "subagents" / "agent-a.jsonl").write_text("{}\n", encoding="utf-8")
-            real_glob = runtime_io.glob_under
+            real_scandir = os.scandir
             scans: list[str] = []
 
-            def counting(base: str, *pattern: str, tighten_permissions: bool = True) -> list[str]:
-                if base == str(sess_dir / "subagents"):
-                    scans.append(os.path.join(base, *pattern))
-                return real_glob(base, *pattern, tighten_permissions=tighten_permissions)
+            def counting(path: Any = ".") -> Any:
+                if path == str(sess_dir / "subagents"):
+                    scans.append(path)
+                return real_scandir(path)
 
             with (
                 store_patch(PROJECTS_DIR=str(projects)),
                 store_patch(TASKS_DIR=str(Path(tmp) / "tasks")),
-                mock.patch.object(runtime_io, "glob_under", side_effect=counting),
+                mock.patch.object(os, "scandir", side_effect=counting),
             ):
                 first = collect_claude(now, 24, False)
                 after_one = len(scans)
@@ -2293,7 +2418,7 @@ class SubagentScanCountTest(RuntimeTestCase):
         self.assertEqual(1, len(first), "fixture must produce exactly one session")
         self.assertEqual(1, len(second))
         self.assertEqual(
-            len(claude_collector.SUBAGENT_GLOBS),
+            1,
             after_one,
             f"one collection should list the subagent tree once, listed: {scans}",
         )
@@ -3925,6 +4050,281 @@ class DispatchedTeammateTest(RuntimeTestCase):
 
                 self.assertEqual([self.PARENT], [row["resume_id"] for row in rows])
                 self.assertEqual(recent, rows[0]["last_activity"])
+
+    def test_teammate_tasks_belong_to_the_lead_even_without_a_live_worker(self) -> None:
+        now = 1_700_000_000.0
+        child = "bbbb2222-0000-0000-0000-000000000000"
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(tmp, now=now, parent_age=30 * 3600)
+            teammate = self.teammate(
+                project,
+                sid=child,
+                name="reviewer",
+                stamp=self.stamp(now - 25 * 3600),
+                age=25 * 3600,
+                now=now,
+            )
+            tasks = Path(tmp) / "tasks"
+            folder = tasks / f"session-{child[:8]}"
+            folder.mkdir(parents=True)
+            task = folder / "1.json"
+            task.write_text('{"id":"1","subject":"Review the tests","status":"pending"}')
+            os.utime(task, (now - 10, now - 10))
+            with store_patch(PROJECTS_DIR=str(project.parent), TASKS_DIR=str(tasks)):
+                for live in (False, True):
+                    if live:
+                        self.worker_for(teammate, now)
+                    for show_all in (False, True):
+                        with self.subTest(live=live, show_all=show_all):
+                            rows = collect_claude(now, 24, show_all)
+                            self.assertEqual([self.PARENT], [row["resume_id"] for row in rows])
+                            self.assertEqual(
+                                ["Review the tests"], [t["subject"] for t in rows[0]["tasks"]]
+                            )
+                            self.assertEqual(now - (5 if live else 10), rows[0]["last_activity"])
+                            self.assertEqual(
+                                ["reviewer", "subagent"] if live else [],
+                                [agent["name"] for agent in rows[0]["subagents"]],
+                            )
+
+    def worker_for(self, transcript: Path, now: float) -> None:
+        folder = transcript.with_suffix("") / "subagents"
+        folder.mkdir(parents=True)
+        worker = folder / "agent-review.jsonl"
+        worker.write_text(
+            json.dumps(
+                {
+                    "type": "user",
+                    "isSidechain": True,
+                    "timestamp": self.stamp(now - 5),
+                    "message": {"role": "user", "content": "Review the tests"},
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        os.utime(worker, (now - 5, now - 5))
+
+    def test_two_copies_of_a_teammate_publish_one_member(self) -> None:
+        now = 1_700_000_000.0
+        child = "bbbb2222-0000-0000-0000-000000000000"
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(tmp, now=now, parent_age=30 * 3600)
+            archive = project.with_name("archive")
+            archive.mkdir()
+            for folder, age in ((archive, 30 * 3600), (project, 5)):
+                self.teammate(
+                    folder,
+                    sid=child,
+                    name="reviewer",
+                    stamp=self.stamp(now - age),
+                    age=age,
+                    now=now,
+                )
+            with store_patch(PROJECTS_DIR=str(project.parent)):
+                for show_all in (False, True):
+                    rows = collect_claude(now, 24, show_all)
+                    self.assertEqual([self.PARENT], [row["resume_id"] for row in rows])
+                    self.assertEqual(
+                        [("reviewer", True)],
+                        [(agent["name"], agent["active"]) for agent in rows[0]["subagents"]],
+                    )
+
+    def test_a_prefix_collision_does_not_make_an_archived_teammate_reachable(self) -> None:
+        now = 1_700_000_000.0
+        old = now - 30 * 3600
+        child = "bbbb2222-0000-0000-0000-000000000000"
+        stranger = "bbbb2222-1111-0000-0000-000000000000"
+        for source in ("conversation", "task", "metadata"):
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as tmp:
+                project = self.project(tmp, now=now, parent_age=30 * 3600)
+                parent = project / f"{self.PARENT}.jsonl"
+                teammate = self.teammate(
+                    project,
+                    sid=child,
+                    name="reviewer",
+                    stamp=self.stamp(old),
+                    age=30 * 3600,
+                    now=now,
+                )
+                fresh = project / f"{stranger}.jsonl"
+                fresh.write_text(
+                    parent.read_text().replace(self.PARENT, stranger)
+                    if source == "conversation"
+                    else '{"type":"ai-title"}\n',
+                    encoding="utf-8",
+                )
+                stamp = old if source == "task" else now - 5
+                os.utime(fresh, (stamp, stamp))
+                tasks = Path(tmp) / "tasks"
+                if source == "task":
+                    folder = tasks / stranger
+                    folder.mkdir(parents=True)
+                    task = folder / "1.json"
+                    task.write_text('{"id":"1","status":"pending","subject":"Unrelated"}')
+                    os.utime(task, (now - 5, now - 5))
+
+                with store_patch(PROJECTS_DIR=str(project.parent), TASKS_DIR=str(tasks)):
+                    with mock.patch.object(
+                        runtime_io, "read_prefix_bytes", wraps=runtime_io.read_prefix_bytes
+                    ) as reads:
+                        default = collect_claude(now, 24, False)
+                    historical = collect_claude(now, 24, True)
+                    self.assertNotIn(str(parent), [call.args[0] for call in reads.call_args_list])
+                    self.assertNotIn(self.PARENT, [row["resume_id"] for row in default])
+                    lead = next(row for row in historical if row["resume_id"] == self.PARENT)
+                    self.assertEqual([], lead["subagents"])
+                    self.assertEqual([], lead["tasks"])
+
+                    self.worker_for(teammate, now)
+                    rows = collect_claude(now, 24, False)
+                    lead = next(row for row in rows if row["resume_id"] == self.PARENT)
+                    self.assertEqual(
+                        ["reviewer", "subagent"], [agent["name"] for agent in lead["subagents"]]
+                    )
+
+    def test_live_team_work_survives_a_deleted_lead_or_a_parent_cycle(self) -> None:
+        now = 1_700_000_000.0
+        old = now - 30 * 3600
+        child = "bbbb2222-0000-0000-0000-000000000000"
+        other = "cccc3333-0000-0000-0000-000000000000"
+        for cycle in (False, True):
+            with self.subTest(cycle=cycle), tempfile.TemporaryDirectory() as tmp:
+                project = self.project(tmp, now=now, parent_age=30 * 3600)
+                parent = project / f"{self.PARENT}.jsonl"
+                teammate = self.teammate(
+                    project,
+                    sid=child,
+                    name="reviewer",
+                    stamp=self.stamp(old),
+                    age=30 * 3600,
+                    now=now,
+                    parent_prefix=other[:8] if cycle else self.PARENT[:8],
+                )
+                self.worker_for(teammate, now)
+                with store_patch(PROJECTS_DIR=str(project.parent)):
+                    if cycle:
+                        self.teammate(
+                            project,
+                            sid=other,
+                            name="writer",
+                            stamp=self.stamp(old),
+                            age=30 * 3600,
+                            now=now,
+                            parent_prefix=child[:8],
+                        )
+                    else:
+                        self.assertEqual(
+                            [self.PARENT],
+                            [row["resume_id"] for row in collect_claude(now, 24, False)],
+                        )
+                    parent.unlink()
+                    for show_all in (False, True):
+                        rows = collect_claude(now, 24, show_all)
+                        self.assertEqual([None], [row["resume_id"] for row in rows])
+                        self.assertEqual(child[:8], rows[0]["sid"])
+                        self.assertEqual(now - 5, rows[0]["last_activity"])
+                        self.assertEqual("working", rows[0]["state"])
+                        self.assertEqual(
+                            1,
+                            sum(
+                                agent["parent"] == "reviewer" and agent["active"]
+                                for agent in rows[0]["subagents"]
+                            ),
+                        )
+
+    def test_quiet_worker_mtimes_are_read_once_in_history_and_on_a_reached_lead(self) -> None:
+        now = 1_700_000_000.0
+        child = "bbbb2222-0000-0000-0000-000000000000"
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(tmp, now=now, parent_age=30 * 3600)
+            worker = self.own_agent(project, label="quiet", age=30 * 3600, now=now)
+            with store_patch(PROJECTS_DIR=str(project.parent)):
+                collect_claude(now, 24, True)
+                for show_all in (True, False):
+                    if not show_all:
+                        self.teammate(
+                            project,
+                            sid=child,
+                            name="reviewer",
+                            stamp=self.stamp(now - 5),
+                            age=5,
+                            now=now,
+                        )
+                    with mock.patch.object(os.path, "getmtime", wraps=os.path.getmtime) as reads:
+                        rows = collect_claude(now, 24, show_all)
+                    self.assertEqual([self.PARENT], [row["resume_id"] for row in rows])
+                    self.assertEqual(
+                        1, sum(call.args[0] == str(worker) for call in reads.call_args_list)
+                    )
+
+    def test_a_future_copy_or_quiet_newer_copy_does_not_hide_parent_work(self) -> None:
+        now = 1_700_000_000.0
+        for source in ("recent transcript", "live worker", "recent transcript and legacy task"):
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as tmp:
+                age = 30 * 3600 if source == "live worker" else 10
+                project = self.project(tmp, now=now, parent_age=age)
+                parent = project / f"{self.PARENT}.jsonl"
+                copy_id = f"{self.PARENT[:8]}-1111-0000-0000-000000000000"
+                copy = project / f"{copy_id}.jsonl"
+                copy.write_text(parent.read_text().replace(self.PARENT, copy_id), encoding="utf-8")
+                stamp = now - age + 10 if source == "live worker" else now + 3600
+                os.utime(copy, (stamp, stamp))
+                if source == "live worker":
+                    self.worker_for(parent, now)
+                tasks = Path(tmp) / "tasks"
+                if source == "recent transcript and legacy task":
+                    folder = tasks / f"session-{self.PARENT[:8]}"
+                    folder.mkdir(parents=True)
+                    task = folder / "1.json"
+                    task.write_text('{"id":"1","subject":"Review the tests","status":"pending"}')
+                    os.utime(task, (now - 5, now - 5))
+                with store_patch(PROJECTS_DIR=str(project.parent), TASKS_DIR=str(tasks)):
+                    for show_all in (False, True):
+                        rows = collect_claude(now, 24, show_all)
+                        self.assertEqual([self.PARENT], [row["resume_id"] for row in rows])
+                        self.assertEqual(
+                            now - (10 if source == "recent transcript" else 5),
+                            rows[0]["last_activity"],
+                        )
+                        self.assertEqual(
+                            ["Review the tests"]
+                            if source == "recent transcript and legacy task"
+                            else [],
+                            [task["subject"] for task in rows[0]["tasks"]],
+                        )
+
+    def test_a_teammate_prefers_its_project_when_lead_prefixes_collide(self) -> None:
+        now = 1_700_000_000.0
+        child = "bbbb2222-0000-0000-0000-000000000000"
+        for age in (5, 30 * 3600):
+            with self.subTest(age=age), tempfile.TemporaryDirectory() as tmp:
+                project = self.project(tmp, now=now, parent_age=30 * 3600)
+                other = project.with_name("other")
+                other.mkdir()
+                copy_id = f"{self.PARENT[:8]}-1111-0000-0000-000000000000"
+                copy = other / f"{copy_id}.jsonl"
+                parent = project / f"{self.PARENT}.jsonl"
+                copy.write_text(parent.read_text().replace(self.PARENT, copy_id), encoding="utf-8")
+                stamp = now - 30 * 3600 + 10
+                os.utime(copy, (stamp, stamp))
+                teammate = self.teammate(
+                    project,
+                    sid=child,
+                    name="reviewer",
+                    stamp=self.stamp(now - age),
+                    age=age,
+                    now=now,
+                )
+                self.worker_for(teammate, now)
+                with store_patch(PROJECTS_DIR=str(project.parent)):
+                    for show_all in (False, True):
+                        rows = collect_claude(now, 24, show_all)
+                        self.assertEqual([self.PARENT], [row["resume_id"] for row in rows])
+                        self.assertEqual(
+                            ["reviewer", "subagent"],
+                            [agent["name"] for agent in rows[0]["subagents"]],
+                        )
 
     def test_a_teammate_with_only_stale_workers_reads_as_not_running(self) -> None:
         # DRC-4346. When both teammate and its workers are quiet, the teammate
