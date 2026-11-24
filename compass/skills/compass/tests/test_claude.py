@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import tempfile
 import time
 import unittest
@@ -114,6 +115,109 @@ class ClaudeDataBoundTest(unittest.TestCase):
 
 
 class ClaudeCollectorTest(RuntimeTestCase):
+    @unittest.skipIf(os.name == "nt", "POSIX directory permissions")
+    def test_refresh_leaves_archived_worker_directory_permissions_intact(self) -> None:
+        now = 1_700_000_000.0
+        old = now - 30 * 3600
+        session_id = "00000001-0000-0000-0000-000000000000"
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            session_dir = projects / "sample" / session_id
+            workers = session_dir / "subagents"
+            workers.mkdir(parents=True)
+            transcript = session_dir.with_suffix(".jsonl")
+            transcript.write_text('{"type":"ai-title","aiTitle":"Archived"}\n')
+            worker = workers / "agent-worker.jsonl"
+            worker.write_text(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "isSidechain": True,
+                        "timestamp": datetime.fromtimestamp(old, UTC).isoformat(),
+                        "message": {"role": "user", "content": "Review this file"},
+                    }
+                )
+                + "\n"
+            )
+            for path in (transcript, worker):
+                os.utime(path, (old, old))
+            directories = (session_dir, workers)
+            for directory in directories:
+                directory.chmod(0o750)
+            owners = [directory.stat().st_uid for directory in directories]
+            projects.chmod(0o750)
+
+            with store_patch(PROJECTS_DIR=str(projects)):
+                self.assertEqual([], collect_claude(now, 24, False))
+
+            self.assertEqual([0o750, 0o750], [stat.S_IMODE(d.stat().st_mode) for d in directories])
+            self.assertEqual(owners, [directory.stat().st_uid for directory in directories])
+            self.assertEqual(0o700, stat.S_IMODE(projects.stat().st_mode))
+
+    def test_refresh_skips_absent_worker_tree_and_sees_its_first_worker_next_time(self) -> None:
+        now = 1_700_000_000.0
+        old = now - 30 * 3600
+        session_id = "00000001-0000-0000-0000-000000000000"
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            session_dir = projects / "sample" / session_id
+            session_dir.mkdir(parents=True)
+            transcript = session_dir.with_suffix(".jsonl")
+            prompt = {"role": "user", "content": "Review this file"}
+            transcript.write_text(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "sessionId": session_id,
+                        "timestamp": datetime.fromtimestamp(old, UTC).isoformat(),
+                        "message": prompt,
+                    }
+                )
+                + "\n"
+            )
+            os.utime(transcript, (old, old))
+
+            with store_patch(PROJECTS_DIR=str(projects)):
+                with (
+                    mock.patch.object(
+                        runtime_io, "glob_under", wraps=runtime_io.glob_under
+                    ) as glob,
+                    mock.patch.object(os, "scandir", wraps=os.scandir) as scandir,
+                ):
+                    self.assertEqual([], collect_claude(now, 24, False))
+                for operation in (glob, scandir):
+                    self.assertEqual(
+                        [],
+                        [
+                            call
+                            for call in operation.call_args_list
+                            if isinstance(call.args[0], (str, os.PathLike))
+                            and Path(call.args[0]).is_relative_to(session_dir)
+                        ],
+                    )
+
+                workers = session_dir / "subagents"
+                workers.mkdir()
+                worker = workers / "agent-worker.jsonl"
+                worker.write_text(
+                    json.dumps(
+                        {
+                            "type": "user",
+                            "sessionId": session_id,
+                            "isSidechain": True,
+                            "timestamp": datetime.fromtimestamp(now, UTC).isoformat(),
+                            "message": prompt,
+                        }
+                    )
+                    + "\n"
+                )
+                os.utime(worker, (now, now))
+                rows = collect_claude(now + 5, 24, False)
+
+        self.assertEqual([session_id], [row["resume_id"] for row in rows])
+        self.assertEqual(now, rows[0]["last_activity"])
+        self.assertEqual([True], [worker["active"] for worker in rows[0]["subagents"]])
+
     def test_a_large_archive_does_not_evict_the_boards_transcript_prefixes(self) -> None:
         now = time.time()
         old = now - 30 * 3600
@@ -2115,8 +2219,8 @@ class SubagentWorkflowCacheTest(RuntimeTestCase):
             late = os.path.join(sub, "agent-b.jsonl")
             real_glob = runtime_io.glob_under
 
-            def racing(base: str, *pattern: str) -> list[str]:
-                listed = real_glob(base, *pattern)
+            def racing(base: str, *pattern: str, tighten_permissions: bool = True) -> list[str]:
+                listed = real_glob(base, *pattern, tighten_permissions=tighten_permissions)
                 if not os.path.exists(late):
                     Path(late).write_text("{}\n", encoding="utf-8")
                 return listed
@@ -2153,10 +2257,10 @@ class SubagentScanCountTest(RuntimeTestCase):
             real_glob = runtime_io.glob_under
             scans: list[str] = []
 
-            def counting(base: str, *pattern: str) -> list[str]:
-                if base == str(sess_dir):
+            def counting(base: str, *pattern: str, tighten_permissions: bool = True) -> list[str]:
+                if base == str(sess_dir / "subagents"):
                     scans.append(os.path.join(base, *pattern))
-                return real_glob(base, *pattern)
+                return real_glob(base, *pattern, tighten_permissions=tighten_permissions)
 
             with (
                 store_patch(PROJECTS_DIR=str(projects)),

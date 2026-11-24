@@ -27,8 +27,8 @@ if TYPE_CHECKING:
 # one level deeper, under the run that owns it. Missing the second layout hid
 # every workflow agent, which is how a session driving ten of them read Idle.
 SUBAGENT_GLOBS = (
-    ("subagents", "agent-*.jsonl"),
-    ("subagents", "workflows", "*", "agent-*.jsonl"),
+    ("agent-*.jsonl",),
+    ("workflows", "*", "agent-*.jsonl"),
 )
 
 # The lead's own row in the teams registry. The lead IS the session, so it is
@@ -239,10 +239,10 @@ def agent_transcripts(
     sess_dir = os.path.join(
         os.path.dirname(transcript), os.path.basename(transcript)[: -len(".jsonl")]
     )
-    # Most historical prefixes never ran a subagent, so the directory is absent.
-    # One stat is cheaper than running every SUBAGENT_GLOBS pattern against a
-    # path that cannot match.
-    if not os.path.isdir(sess_dir):
+    subagents = os.path.join(sess_dir, "subagents")
+    # Claude can leave a session directory with no worker tree. Check again each
+    # refresh so the first worker can bring an archived parent back into view.
+    if not os.path.isdir(subagents):
         return []
     cache = None if state is None or config is None else state.claude_subagent_cache
     # Stamped before the listing, never after it. A transcript written while the
@@ -253,7 +253,11 @@ def agent_transcripts(
     hit = None if cache is None else cache.get(sess_dir)
     if hit is not None and hit[0] == stamp:
         return stamped(hit[1])
-    paths = [fp for pattern in SUBAGENT_GLOBS for fp in runtime_io.glob_under(sess_dir, *pattern)]
+    paths = [
+        fp
+        for pattern in SUBAGENT_GLOBS
+        for fp in runtime_io.glob_under(subagents, *pattern, tighten_permissions=False)
+    ]
     if cache is not None and config is not None and stamp is not None:
         runtime_state.bounded_put(
             cache, sess_dir, (stamp, list(paths)), limit=config.max_cache_entries
