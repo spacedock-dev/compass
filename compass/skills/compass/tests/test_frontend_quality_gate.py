@@ -127,6 +127,9 @@ LANES_OF = {
     "R_FRONTEND_DOCS": ("FRONTEND_DOCS",),
     "R_ACTIONLINT": ("WORKFLOWS",),
 }
+# Results whose job runs when ANY of these lanes is on. The Storybook job also carries the
+# release's two browser proofs, which the runtime-contract lane must run too.
+EITHER_LANE = {"R_STORYBOOK": ("FRONTEND", "CONTRACT")}
 ALL_ON = {
     "PYTHON": "true",
     "LINT": "true",
@@ -199,7 +202,11 @@ class FrontendAggregateControlsTest(unittest.TestCase):
                 )
         # One lane on: its jobs must have run, and every other job may skip.
         for lane in ALL_ON:
-            on = {name for name, owners in LANES_OF.items() if owners == (lane,)}
+            on = {
+                name
+                for name, owners in LANES_OF.items()
+                if owners == (lane,) and name not in EITHER_LANE
+            } | {name for name, either in EITHER_LANE.items() if lane in either}
             lanes = {**ALL_OFF, lane: "true"}
             with self.subTest(lane=lane):
                 ran = {name: ("success" if name in on else "skipped") for name in LANES_OF}
@@ -678,11 +685,16 @@ class FrontendWiringControlsTest(unittest.TestCase):
             "pnpm install --frozen-lockfile --ignore-scripts",
             "pnpm build:storybook",
             "pnpm exec playwright install chromium",
+            "pnpm test:parser",
+            "pnpm test:installed",
             "pnpm test:stories",
         ]
         self.assertEqual(len(ordered), len(commands), commands)
         for fragment, command in zip(ordered, commands, strict=True):
             self.assertIn(fragment, command)
+        # The job also runs on the contract lane for the release's two browser proofs; only the
+        # Storybook steps wait for the frontend lane, and nothing else may be skipped.
+        frontend_only = {"pnpm build:storybook", "pnpm test:stories"}
         # No host packages: the image carries every library Chromium needs (owner ruling, 2026-11-06).
         self.assertNotIn("--with-deps", json.dumps(job))
         self.assertNotIn("install-deps", json.dumps(job))
@@ -690,7 +702,10 @@ class FrontendWiringControlsTest(unittest.TestCase):
         for step in job["steps"]:
             if "run" in step:
                 self.assertGreater(step.get("timeout-minutes", 0), 0)
-                self.assertNotIn("if", step)
+                if step["run"] in frontend_only:
+                    self.assertEqual("needs.changes.outputs.frontend == 'true'", step["if"])
+                else:
+                    self.assertNotIn("if", step)
 
 
 @unittest.skipUnless(detector.BASH, "the shipped steps use Bash")
@@ -723,9 +738,12 @@ class StorybookChromiumInstallTest(unittest.TestCase):
         # `actions/setup-python` with `cache: pip`, restores through the same `tar -P` extraction.
         # A new action fails here until someone has read what it restores.
         self.assertEqual(
-            {"actions/checkout", "actions/setup-node"},
+            {"actions/checkout", "actions/setup-node", "actions/setup-python"},
             {step["uses"].split("@")[0] for step in steps if "uses" in step},
         )
+        # setup-python is here for the installed proof's interpreter; `cache: pip` would restore.
+        python = next(s for s in steps if s.get("uses", "").startswith("actions/setup-python@"))
+        self.assertNotIn("cache", python.get("with", {}))
         for step in steps:
             for key, value in step.get("with", {}).items():
                 with self.subTest(step=step.get("uses"), key=key):
@@ -762,7 +780,13 @@ class StorybookChromiumInstallTest(unittest.TestCase):
             ),
             ("frontend-coverage", "needs.changes.outputs.frontend == 'true'"),
             ("frontend-production", "needs.changes.outputs.frontend == 'true'"),
-            ("storybook", "needs.changes.outputs.frontend == 'true'"),
+            (
+                "storybook",
+                (
+                    "needs.changes.outputs.frontend == 'true' || "
+                    "needs.changes.outputs.contract == 'true'"
+                ),
+            ),
             ("frontend-contract", "needs.changes.outputs.contract == 'true'"),
             ("frontend-docs", "needs.changes.outputs.frontend_docs == 'true'"),
         ):
