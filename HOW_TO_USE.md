@@ -934,7 +934,8 @@ session content is sent.
 Choose Turn off quota reading in Your AI allowance at the top of Sessions to stop
 credential-backed fetches from this browser. You can also use **Turn off** under
 **Show my AI allowance** in Settings. Both controls save the same browser choice. Fresh Codex
-disk readings and Antigravity receipts can still appear. **Turn on quota reading** in Sessions
+disk readings and Antigravity receipts can still appear; Claude's figures from its status line are
+hidden too ([Show Claude's allowance on the board from your status line](#show-claudes-allowance-on-the-board-from-your-status-line)). **Turn on quota reading** in Sessions
 or **Allow** under **Show my AI allowance** in Settings resumes fetching without a restart.
 `--no-usage` disables credential-backed reads for a whole run.
 [SECURITY.md](SECURITY.md#usage-quota-reads-the-quota-fetcher) owns the contract, including what is
@@ -1061,6 +1062,74 @@ was touched: the bar showed Barista's row followed by the footer segment. The `r
 is a number of epoch seconds, and the [payload record](docs/captures/claude/status-line-2.1.317-macos.jsonl)
 holds the field names and types. [Checking it](#checking-it-worked-on-your-own-status-line) below shows how
 to see the same on yours.
+
+### Show Claude's allowance on the board from your status line
+
+Your AI allowance can leave Claude out even while Claude Code works normally. Compass reads Claude's
+figures with the login Claude Code stored, and on a Mac that login can sit in a Keychain item Compass
+does not read: Claude Code names the item after the folder it keeps its settings in, and Compass reads
+only the default name and never searches the Keychain for another. The board's log then says
+`[claude] usage fetch: no oauth token`.
+
+Claude Code also hands the same two figures to its status line, and `--forward-usage` passes them on to
+the board. It reads the status line's JSON on standard input and sends the five-hour and seven-day
+percentages and reset times to the running dashboard, and nothing else from that JSON: not the session
+id, the transcript path, the folder or the model. It reads no credential, prints nothing, never starts a
+dashboard and always exits `0`. [SECURITY.md](SECURITY.md#usage-quota-reads-the-quota-fetcher) owns
+what is sent and kept.
+
+A status line command has one slot, so add it to a wrapper beside your own command, as for the footer
+above. For a status line you already have, such as Cortado, save this as
+`~/.claude/statusline-with-compass.sh`, make it executable, and point `statusLine.command` at it:
+
+```bash
+#!/bin/bash
+input=$(cat)
+
+# Your existing status line command, unchanged. For Cortado, the cortado.sh you already run.
+printf '%s' "$input" | "$HOME/.claude/cortado/cortado.sh"
+# Claude's quota for the board. It prints nothing, so the line above is all the bar shows.
+printf '%s' "$input" | python3 /path/to/skills/compass/launch.py /path/to/skills/compass/server.py --forward-usage >/dev/null 2>&1
+```
+
+If you already use the Barista wrapper above, add only the last line to it. If your status line is
+`--footer` alone, use the Barista wrapper with `--footer` as the existing command and add the same
+line. The [standalone binary](README.md#standalone-binary) takes the same option:
+`/path/to/compass/compass --forward-usage`.
+
+What to expect:
+
+- Claude appears in Your AI allowance after a session's first reply. Claude Code sends no figures
+  before that, and a session that has not replied yet changes nothing on the board.
+- Claude Code sends these figures only for Claude subscriptions such as Pro and Max.
+- Every open session's status line sends its figures, idle ones included. The board keeps the higher
+  figure of each window and the newer window, so an idle session cannot pull it back.
+- A window leaves the board once it resets, or once no session has reported it for the activity
+  window, 24 hours by default.
+- Turn off quota reading hides Claude's figures from this source too. `--no-usage` makes the board
+  drop them on arrival.
+- Where Compass can also read the login, the two sources make one Claude row, and the per-model
+  weekly rows still come from the login.
+- Two Claude accounts on one machine share one Claude row, because the status line does not say
+  which account it reports.
+
+This was run with a stand-in for the existing command, against a dashboard on a spare port: the bar
+showed the stand-in's line alone, a payload without `rate_limits` changed nothing, and the next payload
+put Claude's two windows in `/api/data` with nothing else from it. In five runs each on a machine
+under heavy load, `--footer` took a median of about 0.9 seconds and `--forward-usage` about 1.2
+seconds; the 50 millisecond footer figure above was measured on an unloaded machine.
+
+To check yours without waiting for Claude Code, feed it a payload by hand while the dashboard runs,
+with a reset two minutes from now:
+
+```bash
+printf '{"rate_limits":{"five_hour":{"used_percentage":40,"resets_at":%d}}}' $(( $(date +%s) + 120 )) \
+  | python3 /path/to/skills/compass/launch.py /path/to/skills/compass/server.py --forward-usage
+```
+
+Claude shows 40% for the five-hour window in Your AI allowance on the next refresh. The test figure
+leaves the board when its two minutes are up, and a real session's report replaces it sooner, because
+a real window resets later.
 
 ### Checking it worked on your own status line
 
