@@ -112,7 +112,7 @@ async function attributed(summary: HTMLElement) {
       );
       // Whose words a bullet cites is read off the entry Activity log draws for it.
       await expect(entry).not.toBeNull();
-      if (kind === 'said') await expect(entry?.textContent).toMatch(/Agentsaid/);
+      if (kind === 'said') await expect(entry?.textContent).toMatch(/Agent said/);
       if (kind === 'asked') await expect(entry?.textContent).toMatch(/You/);
       if (entry) await expect(chip.textContent).toBe('Source');
     }

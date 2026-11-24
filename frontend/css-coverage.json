@@ -1833,7 +1833,6 @@
     "frontend/src/drift/drift.css||.next-cockpit-result .next-cockpit-reading-row+.next-cockpit-reading-row": "ReadingResult retains spacing for consecutive outcome or departure rows; the reached result fixtures contain single rows.",
     "frontend/src/drift/drift.css||.next-cockpit-result-folder": "WorkSection retains published written-file paths grouped by folder; the reached result fixtures publish no written paths.",
     "frontend/src/drift/drift.css||.next-cockpit-result-path": "WorkSection retains published written-file paths grouped by folder; the reached result fixtures publish no written paths.",
-    "frontend/src/drift/drift.css||.next-cockpit-work-derived": "WorkListView retains a derived summary under its raw event; the reached work rows have no derived summary.",
     "frontend/src/drift/drift.css||.next-cockpit-work-dropped": "WorkListView retains the bounded-list omission sentence when a work list is clipped.",
     "frontend/src/drift/drift.css||.next-session-drift-seg[data-on][data-level=\"medium\"]": "DriftLevelView retains low and medium segment colours; the reached reading fixtures exercise other levels.",
     "frontend/src/drift/drift.css||.next-session-drift-seg[data-on][data-level=\"none_or_low\"]": "DriftLevelView retains low and medium segment colours; the reached reading fixtures exercise other levels.",

@@ -805,6 +805,102 @@ async function activityLogPanel(canvasElement: HTMLElement): Promise<HTMLElement
   return panel;
 }
 
+const forcedStatus = 'No status: a later command forces the exit status to 0';
+const longPath = `frontend/src/sessions/${'nested-layout-'.repeat(10)}fixture.ts`;
+const activityColumns = [
+  ['Check the session layout.', 'You Prompt'],
+  ['The session layout is ready to check.', 'Agent said'],
+  ['pnpm test', 'Agent command'],
+  [longPath, 'Agent file written'],
+  ['pnpm lint || true', 'Agent command'],
+] as const;
+const columnEntries = [
+  { ...logEntries[0], summary: activityColumns[0][0] },
+  { ...message(2), summary: activityColumns[1][0] },
+  {
+    ...message(3),
+    type: 'tool_report',
+    subject: 'command',
+    summary: activityColumns[2][0],
+    result: 'passed',
+    result_source: 'flag',
+  },
+  { ...message(4), type: 'tool_report', subject: 'write', summary: longPath },
+  {
+    ...message(5),
+    type: 'tool_report',
+    subject: 'command',
+    summary: activityColumns[4][0],
+    result: 'not-recorded',
+    cannot_fail: true,
+  },
+];
+
+async function openColumnExample(canvasElement: HTMLElement): Promise<HTMLElement> {
+  const canvas = within(canvasElement);
+  await userEvent.click(await canvas.findByRole('button', { name: 'Show technical details' }));
+  return activityLogPanel(canvasElement);
+}
+
+export const ActivityLogEvenColumns: Story = {
+  render: () => <PageExample entries={columnEntries} cites={['e2']} evidence="model" />,
+  play: async ({ canvasElement }) => {
+    await atWidth(1280, async () => {
+      const log = within(await openColumnExample(canvasElement));
+      const content = await Promise.all(
+        activityColumns.map(async ([words, kind]) => ({ node: await log.findByText(words), kind })),
+      );
+      const assertAligned = async () => {
+        const lefts = await Promise.all(
+          content.map(async ({ node }) => (await settledRect(node)).left),
+        );
+        await expect(Math.max(...lefts) - Math.min(...lefts)).toBeLessThanOrEqual(0.5);
+      };
+
+      await expect(log.getByText(forcedStatus)).toBeVisible();
+      await expect(log.getByText('Exited 0')).toBeVisible();
+      await assertAligned();
+      for (const { node, kind } of content) {
+        const label = node.previousElementSibling;
+        if (!label) throw new Error('Missing activity label');
+        await expect(label.textContent).toBe(kind);
+        for (const part of [label, ...label.children]) {
+          await expect(getComputedStyle(part).fontFamily).toMatch(/^Inter\b/i);
+          await expect(getComputedStyle(part).fontWeight).toBe('400');
+        }
+      }
+      const forced = log.getByText(forcedStatus).closest<HTMLElement>('[role="listitem"]');
+      if (!forced) throw new Error('Missing forced-status row');
+      const source = within(forced).getByRole('button', { name: /^Source of entry/ });
+      await userEvent.click(source);
+      await expect(source).toHaveAttribute('aria-expanded', 'true');
+      await expect(within(forced).getByText('transcript · exact')).toBeVisible();
+      await assertAligned();
+    });
+  },
+};
+
+export const ActivityLogAtPhoneWidth: Story = {
+  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+  render: () => <PageExample entries={columnEntries} />,
+  play: async ({ canvasElement }) => {
+    await atWidth(320, async () => {
+      const panel = await openColumnExample(canvasElement);
+      const log = within(panel);
+      const file = await log.findByText(longPath);
+      const row = file.closest<HTMLElement>('[role="listitem"]');
+      if (!row) throw new Error('Missing file row');
+      const source = within(row).getByRole('button', { name: /^Source of entry/ });
+      await userEvent.click(source);
+      await expect(within(row).getByText('transcript · exact')).toBeVisible();
+      await expect(log.getByText(forcedStatus)).toBeVisible();
+      await expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth);
+      await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+    });
+  },
+};
+
 export const ActivityLogPartialCount: Story = {
   render: () => <PageExample />,
   play: async ({ canvasElement }) => {

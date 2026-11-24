@@ -12,8 +12,8 @@
       "tracking": 1
     },
     "frontend/src/drift/drift.css": {
-      "monospace": 10,
-      "tracking": 4
+      "monospace": 9,
+      "tracking": 3
     },
     "frontend/src/drift/ReadingResult.tsx": {
       "monospace": 1
