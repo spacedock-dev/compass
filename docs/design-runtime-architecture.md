@@ -118,10 +118,12 @@ probe skip. It writes changed files at that check and refreshes unchanged files 
 (`footer_lines.REFRESH_SEC`). Updates and idle touches sample the shared permission store
 outside the writer lock. The additive v1 `model_calls_paused` field is true, false or null.
 Unknown replaces an old assertion. The writer uses the snapshot's validated `stored_progress`
-token while annotations are enabled and readable. Each idle check revalidates that session's
-proof. An expired or missing proof clears its own level, and unreadable shared stores can clear
-all levels. The writer reads the lease independently. This path can run without focused context or
-record reads. Older files can still supply waits and monitor state.
+token while annotations are enabled and readable. During an idle refresh, the writer checks each
+session's proof. An expired or missing proof clears its own level. Before writing any retained levels,
+the writer checks the shared annotation stamp and history readability. A clear during a later
+proof check can invalidate a level that already passed, so a failed shared check clears every
+retained level. The writer reads the lease independently. This path can run without focused
+context or record reads. Older files can still supply waits and monitor state.
 The client ignores their live `level` token and drops any invalid or missing stored verdict.
 
 The writer looks up leases by row `sid` and names files by the full `resume_id` when available.
