@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2481691,
+    "bytes": 2482079,
     "file": "react.html",
-    "sha256": "0e0852400553a78a1e5ee2f3bc64033bc27797d73ed1c9844a818f17ee05bb02"
+    "sha256": "2e83535f4fd26a9b201bd17040984d6864f72d18703f8a0c99c32e174ec0cf9d"
   },
   "format": 1,
   "frontend": "react",
@@ -527,7 +527,7 @@
       },
       {
         "file": "frontend/src/drift/DriftBody.tsx",
-        "sha256": "60ea91494d2be752eb473ebe87a6cbda604d0f8eccdf3adbd4cc55a98f2873f3"
+        "sha256": "c5f3cb4eef06440bf7ea856107219ad20e78b40d2450f808dca5750f566c16c4"
       },
       {
         "file": "frontend/src/drift/DriftHead.tsx",
@@ -1235,7 +1235,7 @@
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",
-        "sha256": "6fea9432dea3758b7dc7154cc5953b104bf43ff894d2034f76c9f378cbcac207"
+        "sha256": "e518da951a76d75f0fb815e1d32ace1fc83aa659d5d1792c02412f08f56de8ad"
       },
       {
         "file": "frontend/src/sessions/WaitingBlock.tsx",
