@@ -232,6 +232,12 @@ Later on 2026-11-24, saying "No goal yet" on a Sessions row with no goal, in pla
 link, packages the page at 2,477,391 bytes on Node 26.12.1 and pnpm 12.19.0, 256 bytes above the list
 card's page. The page bound follows that measurement. The fixture bound stays at 250,000 bytes.
 
+Later on 2026-11-24, giving every Sessions row a status tile in a fixed column, with the new State not
+known tile, drawing the list's empty lines and in-row absences as plain quiet text, and matching the
+search field to the Filters button packages the page at 2,479,987 bytes on Node 26.12.1 and pnpm
+12.19.0, 2,596 bytes above the No goal yet page. The page bound follows that measurement. The fixture
+bound stays at 250,000 bytes.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.
