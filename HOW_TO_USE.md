@@ -148,8 +148,10 @@ What to expect:
 - The agent prints the answer in one code block and adds nothing.
 - The answer is now part of that session's context. The agent reads it on every later turn, and it
   goes to that session's model provider. `sessions` lists every session on the board, in any harness or project,
-  with its title, its goal or the start of its first prompt, what it is doing and its resume command, so a Codex or Cursor session's words can reach the provider of the
-  Claude Code session you typed this into. `drift` adds this session's reading: your goal and outcome lines, and any progress level the session page can show, and the model's reasons. [What can reach into a session](SECURITY.md#what-can-reach-into-a-session)
+  with its title, goal or opening prompt, current activity, any progress answer the board
+  publishes and its resume command. A Codex or Cursor session's words can reach the provider of
+  the Claude Code session you typed this into. `drift` adds this session's reading, including your
+  goal and outcome lines, any progress level the session page can show, and the model's reasons. [What can reach into a session](SECURITY.md#what-can-reach-into-a-session)
   has the full account. To keep a list out of a session, run the command above in a terminal outside the session instead.
 - On native Windows, the skill tells the agent to write `python` or `py -3` where this page writes
   `python3`. That was not measured.
@@ -957,6 +959,8 @@ What the line says, and when it says nothing:
 - `AI use paused` appears while the shared permission store confirms the pause. Choose Pause all AI
   use on the board or run `spacedock-compass --pause-model-calls` from any shell. Choose Resume AI
   use on the board to clear the message on the next footer refresh.
+- Slightly off course or Off course follows the session's Sessions row while the saved evidence
+  still matches.
 - `Live monitor on` means this session's monitor is on. Start it from the session page, type
   `/compass:compass monitor on` inside the session, or run
   `spacedock-compass --monitor --session claude:ID` from another terminal. A short reason such as

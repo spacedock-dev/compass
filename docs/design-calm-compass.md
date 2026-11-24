@@ -452,11 +452,10 @@ owner has not asked about them.
 
 ### Absence words on a Sessions row, 2026-11-24
 
-A Sessions row draws at most one plain grey word in a far-right cell, the third column of the row,
-top-aligned with the title and outside the row link. On a phone the cell stacks under the Goal cell.
-It is 13 px quiet ink with no pill, border, background or icon, and no action. Where there is no word
-nothing is drawn, and the stored-departure pill will use the same cell. Only words the row's own
-published data proves ship:
+The far-right progress cell is the third column of a Sessions row, top-aligned with the title
+and outside the row link. On a phone the cell stacks under the Goal cell. An absence word appears
+in 13 px quiet ink. A stored departure can use the same cell for its pill. When the board has no
+answer it can show, it leaves the cell empty.
 
 - **Not checked yet** reads on a non-Codex row whose goal a check could read, which means saved words
   (a goal or outcome lines) or the draft Check progress would adopt by the session page's own draft

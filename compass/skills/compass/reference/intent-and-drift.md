@@ -217,7 +217,8 @@ saved goals after sessions leave the board, subject to its retention limits.
 
 Sessions uses published goal evidence for its filters. A prompt can be shown without being
 saved, and its row is left out of No goal yet. Open the session's Goal card to read or edit it.
-See [Dashboard views](dashboard.md#dashboard-views) for the filters.
+A Sessions row can show a saved departure level while the check's evidence still matches. See
+[Dashboard views](dashboard.md#dashboard-views) for the filters.
 A recorded departure moves the session after blocked sessions and before working ones, even if it
 is quiet. At a glance counts session states and observed signals. Open the session to see the
 reading, its age and whether the goal has changed since the reading. With annotations off,

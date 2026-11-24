@@ -60,8 +60,9 @@ the active-versus-recent split that shipped with the session operations board in
 From any shell, `spacedock-compass --sessions` lists the running sessions, with recent ones under
 their own heading, and `--sessions waiting` lists only what waits on you. It reads the board's own
 snapshot and uses the board's groups and words. A row can say `Not checked yet` when it has
-words Compass can check and no record of a check or attempt. Progress levels belong on the
-session page. The list shows a duration only where the board states one, uses "Stop observed"
+words Compass can check and no record of a check or attempt. The row and terminal list can show
+Slightly off course or Off course while the saved evidence still matches. Out of date and Goal too
+vague to check appear as plain text. The list shows a duration only where the board states one, uses "Stop observed"
 for an observed stop, and offers a re-entry command only for Claude Code and Codex sessions
 that publish an id. If the dashboard is down, the command says so and exits non-zero.
 [Manual](../MANUAL.md#starting-and-inspecting-an-instance)
@@ -288,8 +289,8 @@ sessions are waiting on you. It counts by the same rule as the board's Needs you
 the board draws as a risk row does not. The number is left out when nothing could be measured and is
 never shown as zero, and a harness that cannot report a wait is named on the line instead of being
 counted as quiet. It needs the dashboard running and reads a small file the dashboard writes, so it
-can be about a minute behind. The footer can also say the Live monitor is on. Open the
-session page or use `--drift` to read a stored check. `spacedock-compass --monitor` turns the monitor on
+can be about a minute behind. The footer can also show the session row's saved departure level
+and say when the Live monitor is on. Open the session page or use `--drift` to read the check. `spacedock-compass --monitor` turns the monitor on
 for the session you run it in, or the session page does. [How to add it](../HOW_TO_USE.md#show-waiting-sessions-and-quota-in-the-claude-code-status-line)
 to a status line you already have.
 
