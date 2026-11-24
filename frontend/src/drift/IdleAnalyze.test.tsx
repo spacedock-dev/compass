@@ -91,12 +91,16 @@ describe('a press on a refused Analyze', () => {
           facts: SAID,
         });
         await page.settle();
-        const control = screen.getByRole('button', { name: label });
-        expect(control).toBeVisible();
-        expect(control.getAttribute('aria-disabled')).toBe('true');
+        // The header's control and its copy in Is it on track? refuse together, and either opens the reason.
+        const controls = screen.getAllByRole('button', { name: label });
+        expect(controls).toHaveLength(2);
+        for (const control of controls) {
+          expect(control).toBeVisible();
+          expect(control.getAttribute('aria-disabled')).toBe('true');
+        }
         expect(textOf('#next-cockpit-reading-refused')).toBe(short.replace('{control}', label));
         const why = screen.getByRole('button', { name: 'Why the progress check is off' });
-        await press(control);
+        await press(controls[hasReading ? 1 : 0] as HTMLElement);
         await page.settle();
         expect(why.getAttribute('aria-expanded')).toBe('true');
         expect(screen.getByText(sentence)).toBeVisible();
@@ -134,7 +138,8 @@ it('updates the cost from the measured daily count after a check', async () => {
   await page.settle();
   const cost = () => textOf('[data-next-check-cost]');
   expect(cost()).toBe('Uses AI');
-  await press(screen.getByRole('button', { name: 'Check progress' }));
+  expect(document.querySelectorAll('[data-next-check-cost]')).toHaveLength(2);
+  await press(screen.getAllByRole('button', { name: 'Check progress' })[0] as HTMLElement);
   expect(page.posts('/api/reading')).toBe(1);
   await page.poll({ ...(page.state.data as object), reading: { ...policy, used: 90 } });
   expect(cost()).toBe('Uses AI · 10 of 100 daily checks left');

@@ -200,14 +200,16 @@ export const CheckAgainBesideTheStaleBanner: Story = {
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
     const stale = await within(drift).findByText('Out of date');
-    const again = await within(canvasElement).findByRole('button', {
+    const [again, inCard] = await within(canvasElement).findAllByRole('button', {
       name: 'Check progress again',
     });
     await expect(stale).toBeVisible();
     await expect(again).toBeVisible();
-    await expect(again.closest('header')).not.toBeNull();
+    await expect(again?.closest('header')).not.toBeNull();
+    // The one label, in the header and again in the card beside the stale banner (owner, 2026-11-24).
+    await expect(drift.contains(inCard ?? null)).toBe(true);
     await expect(within(canvasElement).getAllByRole('button', { name: /^Check progress/ })).toEqual(
-      [again],
+      [again, inCard],
     );
   },
 };

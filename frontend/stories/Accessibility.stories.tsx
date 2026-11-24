@@ -404,13 +404,16 @@ export const FocusInTheSteerBackBox: Story = {
     if (!driver) return;
     const session = within(canvasElement);
     const card = await session.findByRole('region', { name: 'Is it on track?' });
+    /* One filled action below the header. The header's Check progress is filled wherever it can run (owner,
+       2026-11-24), so it is counted on its own. */
     const primaryActions = () =>
       session
         .getAllByRole('button')
-        .filter((button) =>
-          button.matches(
-            '[data-emphasis="primary"], [data-variant="primary"], [data-variant="raise-primary"]',
-          ),
+        .filter(
+          (button) =>
+            button.matches(
+              '[data-emphasis="primary"], [data-variant="primary"], [data-variant="raise-primary"]',
+            ) && !button.closest('.next-session-detail-header'),
         );
     await expect(
       primaryActions().length,

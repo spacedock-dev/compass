@@ -58,7 +58,9 @@ export const AnalyzeOpensOnAnIdleSessionWithNoRecordedFinish: Story = {
   ...scenario({ session: IDLE }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const analyze = await canvas.findByRole('button', { name: 'Check progress' });
+    const analyze = (
+      await canvas.findAllByRole('button', { name: 'Check progress' })
+    )[0] as HTMLElement;
     await expect(analyze).not.toHaveAttribute('aria-disabled');
     await expect(canvasElement.textContent).not.toContain(
       'Check progress opens while this session runs.',
@@ -119,7 +121,9 @@ export const AnalyzeOpensOnAStoppedCodexSession: Story = {
   ...scenario({ harness: 'codex', session: CODEX_STOPPED }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const analyze = await canvas.findByRole('button', { name: 'Check progress' });
+    const analyze = (
+      await canvas.findAllByRole('button', { name: 'Check progress' })
+    )[0] as HTMLElement;
     await expect(analyze).not.toHaveAttribute('aria-disabled');
     await expect(canvasElement.textContent).not.toContain(CODEX_REFUSED);
     await expect(canvasElement.textContent).not.toContain(WHY_OFF);
@@ -133,7 +137,9 @@ export const AnalyzeOpensOnAnIdleCodexSessionWithNoRecordedFinish: Story = {
   ...scenario({ harness: 'codex', session: IDLE }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const analyze = await canvas.findByRole('button', { name: 'Check progress' });
+    const analyze = (
+      await canvas.findAllByRole('button', { name: 'Check progress' })
+    )[0] as HTMLElement;
     await expect(analyze).not.toHaveAttribute('aria-disabled');
     await expect(canvasElement.textContent).not.toContain(CODEX_REFUSED);
     await expect(
@@ -182,7 +188,7 @@ function refusal(
     }),
     play: async ({ canvasElement }) => {
       const canvas = within(canvasElement);
-      const analyze = await canvas.findByRole('button', { name: label });
+      const analyze = (await canvas.findAllByRole('button', { name: label }))[0] as HTMLElement;
       await expect(analyze).toHaveAttribute('aria-disabled', 'true');
       await expect(await canvas.findByText(line)).toBeVisible();
       await expect(canvas.getByText(sentence)).not.toBeVisible();
@@ -313,7 +319,9 @@ export const SteerBackOffForAnEarlierIntent: Story = {
   }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const retry = await canvas.findByRole('button', { name: 'Check progress again' });
+    const retry = (
+      await canvas.findAllByRole('button', { name: 'Check progress again' })
+    )[0] as HTMLElement;
     await expect(retry).toBeVisible();
     await expect(
       await canvas.findByText(
@@ -342,9 +350,9 @@ export const AFailedAnalysisNamesItsCause: Story = {
     const canvas = within(canvasElement);
     await expect(await canvas.findByText(new RegExp(`^Last analysis.*${LOGIN}$`))).toBeVisible();
     await expect(canvasElement.textContent).not.toContain('a fresh press is the only retry');
-    await expect(canvas.getByRole('button', { name: 'Check progress' })).not.toHaveAttribute(
-      'aria-disabled',
-    );
+    await expect(
+      canvas.getAllByRole('button', { name: 'Check progress' })[0] as HTMLElement,
+    ).not.toHaveAttribute('aria-disabled');
   },
 };
 
@@ -367,7 +375,9 @@ export const AnOutOfDateCheckShowsTheEarlierFindingBesideSteering: Story = {
       'default',
     );
     await expect(
-      within(canvasElement).getByRole('button', { name: 'Check progress again' }),
+      within(canvasElement).getAllByRole('button', {
+        name: 'Check progress again',
+      })[0] as HTMLElement,
     ).toBeVisible();
   },
 };

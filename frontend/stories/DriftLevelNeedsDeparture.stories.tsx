@@ -427,9 +427,9 @@ function absenceStory(
       const progress = await progressCard(canvasElement);
       await expectAbsence(progress, label, reason);
       const view = within(canvasElement);
-      const button = view.getByRole('button', { name: check });
+      const button = view.getAllByRole('button', { name: check })[0] as HTMLElement;
       await expect(button.querySelector('svg[data-icon="check-progress"]')).not.toBeNull();
-      await expect(view.getByText(/^Uses AI/)).toBeVisible();
+      await expect(view.getAllByText(/^Uses AI/)[0]).toBeVisible();
       await expect(progress.textContent).not.toMatch(/\b(?:drift|analyze)\b/i);
     },
   };
@@ -594,7 +594,9 @@ export const Progress11Withdrawn: Story = {
     await expect(card.queryByRole('button', { name: 'Steer back' })).toBeNull();
     await expect(canvasElement.querySelector('[data-next-session-progress]')).toBeNull();
     await expect(
-      within(canvasElement).getByRole('button', { name: 'Check progress again' }),
+      within(canvasElement).getAllByRole('button', {
+        name: 'Check progress again',
+      })[0] as HTMLElement,
     ).toBeVisible();
   },
 };
@@ -643,7 +645,9 @@ export const Progress13NewerCheckFailed: Story = {
     await expect(card.queryByText(/^Checked .* against your goal$/)).toBeNull();
     await expect(canvasElement.querySelector('[data-next-session-progress]')).toBeNull();
     await expect(
-      within(canvasElement).getByRole('button', { name: 'Check progress again' }),
+      within(canvasElement).getAllByRole('button', {
+        name: 'Check progress again',
+      })[0] as HTMLElement,
     ).toBeVisible();
   },
 };
@@ -683,7 +687,7 @@ function monitorStory(name: string, run: boolean): Story {
         );
       }
       await expect(
-        within(canvasElement).getByRole('button', { name: 'Check progress' }),
+        within(canvasElement).getAllByRole('button', { name: 'Check progress' })[0] as HTMLElement,
       ).toBeVisible();
     },
   };

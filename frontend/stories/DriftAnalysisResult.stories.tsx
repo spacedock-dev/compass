@@ -173,9 +173,9 @@ export const PausedResultStillOffersResume: Story = {
     const resume = await within(root).findByRole('button', { name: 'Resume AI use' });
     await expect(resume).toBeVisible();
     await expect(within(root).getAllByRole('button', { name: 'Resume AI use' })).toHaveLength(1);
-    await expect(
-      within(root).getByRole('button', { name: 'Check progress again' }),
-    ).toHaveAttribute('aria-disabled', 'true');
+    // Inert in the header and in Is it on track? alike.
+    for (const press of within(root).getAllByRole('button', { name: 'Check progress again' }))
+      await expect(press).toHaveAttribute('aria-disabled', 'true');
   },
 };
 
@@ -246,7 +246,9 @@ export const MarkAsInaccurateSaysWhatItDoes: Story = {
     await expect(within(row).queryByRole('button', { name: RESULT_UNMARK })).toBeNull();
     await expect(within(notice).getAllByRole('status')).toHaveLength(1);
     const undo = within(notice).getByRole('button', { name: RESULT_UNMARK });
-    await expect(within(drift).getByRole('button', { name: 'Check progress again' })).toBeVisible();
+    await expect(
+      within(drift).getAllByRole('button', { name: 'Check progress again' })[0] as HTMLElement,
+    ).toBeVisible();
     // The level and Steer back left the column above; the foot stayed where the press was.
     await expect(Math.abs((await settledRect(row)).top - before)).toBeLessThan(4);
     await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
@@ -277,7 +279,9 @@ export const MarkedInaccurate: Story = {
     });
     await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
     await expect(within(notice).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
-    await expect(within(drift).getByRole('button', { name: 'Check progress again' })).toBeVisible();
+    await expect(
+      within(drift).getAllByRole('button', { name: 'Check progress again' })[0] as HTMLElement,
+    ).toBeVisible();
     // The verdicts stay readable and are set aside: drawn grey, and under the one message. Grey rather than
     // faded, because a faded clay label fell to 2.8:1 and the accessibility audit holds every text to 4.5:1.
     const disowned = drift.querySelector<HTMLElement>('[data-next-disowned]');
@@ -326,7 +330,9 @@ export const MarkedInaccurateWithTheLiveMonitorOn: Story = {
     });
     await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
     await expect(within(notice).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
-    await expect(within(drift).getByRole('button', { name: 'Check progress again' })).toBeVisible();
+    await expect(
+      within(drift).getAllByRole('button', { name: 'Check progress again' })[0] as HTMLElement,
+    ).toBeVisible();
     await openSessionTechnicalTab('Evidence', canvasElement);
     await expect(drift.querySelector('[data-next-disowned]')).not.toBeNull();
   },

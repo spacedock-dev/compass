@@ -375,7 +375,7 @@ export const NoNoteWithoutAMetVerdict: Story = {
   ...scenario({ session: { session_goal: GOAL } }),
   play: async ({ canvasElement }) => {
     await openSessionTechnicalTab('Evidence', canvasElement);
-    await within(canvasElement).findByRole('button', { name: 'Check progress' });
+    await within(canvasElement).findAllByRole('button', { name: 'Check progress' });
     await expect(canvasElement.querySelector('[data-next-goal-verdict]')).toBeNull();
   },
 };

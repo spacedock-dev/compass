@@ -158,7 +158,9 @@ export const StoredProgressWithoutALevel: Story = {
   play: async ({ canvasElement }) => {
     const progress = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
     await expect(
-      await within(canvasElement).findByRole('button', { name: 'Check progress again' }),
+      (
+        await within(canvasElement).findAllByRole('button', { name: 'Check progress again' })
+      )[0] as HTMLElement,
     ).toBeVisible();
     await expect(
       progress.querySelector(

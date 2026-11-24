@@ -120,9 +120,12 @@ const quietRow = (root: HTMLElement, key: string) =>
 const chips = (root: HTMLElement) => [
   ...root.querySelectorAll<HTMLElement>('[data-next-cite]:not([data-next-cite=""])'),
 ];
-const primaries = (root: HTMLElement) => [
-  ...root.querySelectorAll<HTMLElement>('[data-variant="primary"]'),
-];
+/* The primaries below the session header. The header's Check progress is filled wherever it can run (owner,
+   2026-11-24); these stories are about what the card itself emphasizes. */
+const primaries = (root: HTMLElement) =>
+  [...root.querySelectorAll<HTMLElement>('[data-variant="primary"]')].filter(
+    (node) => !node.closest('.next-session-detail-header'),
+  );
 
 /* Each number on a finding is the activity list's own: a button named for the number, the constraint and the
    reader's words, with the kind of entry Compass names beside it (on a departure card, the entry's own words,
@@ -1479,9 +1482,9 @@ export const ProgressBeforeEvidence: Story = {
     await expect(progress.querySelector('[data-next-cite], [data-next-cited-entries]')).toBeNull();
     await expect(progress.textContent).not.toMatch(/#\d|\b(?:drift|analyze)\b/i);
     await expect(
-      canvas
-        .getByRole('button', { name: 'Check progress again' })
-        .querySelector('svg[data-icon="check-progress"]'),
+      (
+        canvas.getAllByRole('button', { name: 'Check progress again' })[0] as HTMLElement
+      ).querySelector('svg[data-icon="check-progress"]'),
     ).not.toBeNull();
     await userEvent.click(first.getByRole('button', { name: /^What is sent/ }));
     await waitFor(() => expect(first.getByText(/512 KB/)).toBeVisible());

@@ -215,8 +215,8 @@ export const ParentPageShowsHelpersApartFromChildren: Story = {
     const right = within(await canvas.findByRole('region', { name: 'Right now' }));
     const helpers = right.getByRole('list', { name: 'Helpers (1)' });
     await expect(helpers).toHaveTextContent('Read release notes');
-    await expect(helpers).toHaveTextContent('Working');
-    await expect(helpers.querySelector('svg')).toBeNull();
+    // The helper's tile says Working; the row keeps only its elapsed time beside it.
+    await expect(within(helpers).getByRole('img', { name: 'Working' })).toBeVisible();
     await expect(helpers).not.toHaveTextContent('Check build');
     await expect(canvas.getByRole('region', { name: 'Linked children' })).toHaveTextContent(
       'Check build',

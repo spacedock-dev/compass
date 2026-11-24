@@ -5,11 +5,11 @@ import { nextNumber } from '../api/bootstrap';
 import { datedClock } from '../observed/values';
 import { useDrift } from './context';
 import { steerOffer, steerWithheld } from './correction';
-import { ProgressDisclosure } from './DriftStamp';
+import { CheckProgressPress, ProgressDisclosure } from './DriftStamp';
 import { ProgressAnswer } from './DriftLevelView';
 import { ReadingControl } from './ReadingControl';
 import { ReadingResult, ResultFoot } from './ReadingResult';
-import { routeRefusal } from './route';
+import { checkProgressShown, routeRefusal } from './route';
 import { steerFrom } from './sentences';
 import { SteerBox, SteerButton, SteerSection, UpdateGoalButton } from './SteerBack';
 import { useFollowCorrection } from './useFollowCorrection';
@@ -19,6 +19,7 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
   const { ctx, model } = useDrift();
   const { session, payload, annotation, key, annotate, shape, raw, job, stale } = model;
   const { board, refusal } = useRunBoard(true);
+  const press = checkProgressShown(model);
   const offered = steerOffer({
     session,
     annotation,
@@ -86,6 +87,18 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
       </div>
       <div className="next-session-drift-check">
         {annotate && (!job || !readable) ? <DirectionQuestion primary={primary} /> : null}
+        {/* The header's press, again here beside the answer it fills: the same component, board and gating, so
+            Not checked yet always sits next to the way to check (owner, 2026-11-24). The card's own primary
+            stays its own: a later direction's question, Steer back, or a raise while the session waits. */}
+        {press.shown ? (
+          <div className="flex flex-col items-start gap-1" data-next-drift-card-press>
+            <CheckProgressPress
+              board={board}
+              inCard
+              primary={primary && !model.unsettled && !press.again}
+            />
+          </div>
+        ) : null}
         {!job ? <ReadingControl board={board} refusalOf={refusal} /> : null}
         {steerLimit ? (
           <p className="next-cockpit-reading-why" data-next-steer-off>

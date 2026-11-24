@@ -1,3 +1,4 @@
+import type { DriftModel } from './model';
 import { nextNumber } from '../api/bootstrap';
 import { compatSessKey } from '../api/identity';
 import {
@@ -297,4 +298,18 @@ export function progressBudget(
   )
     return null;
   return { remaining: Math.max(0, limit - used), limit };
+}
+
+/* Whether Check progress is drawn and which label it carries. The session header and Is it on track? both ask
+   here, so the card's copy is drawn exactly when the header's is, with the same label. */
+export function checkProgressShown(
+  model: Pick<DriftModel, 'raw' | 'annotation' | 'annotate' | 'payload' | 'session' | 'job'>,
+): {
+  readonly shown: boolean;
+  readonly again: boolean;
+} {
+  const again = Boolean(model.raw || model.annotation?.['reading_refused'] === true);
+  const hidden =
+    (model.annotate && routeRefusal(model.payload, model.session)) || (model.job && !again);
+  return { shown: !hidden, again };
 }
