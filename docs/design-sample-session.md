@@ -224,6 +224,10 @@ at 2,475,615 bytes on Node 26.12.1 and pnpm 12.19.0, 2,904 bytes below the panel
 because the retired column rules come out of the stylesheet. The page bound follows that
 measurement. The fixture bound stays at 250,000 bytes.
 
+Later on 2026-11-24, putting the Sessions list in one card and saying a row's end and git facts once
+packages the page at 2,477,135 bytes on Node 26.12.1 and pnpm 12.19.0, 1,520 bytes above the canvas
+row's page. The page bound follows that measurement. The fixture bound stays at 250,000 bytes.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.
