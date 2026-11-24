@@ -8,6 +8,7 @@ bare origin; nothing reaches the real remote, a real tag or a version field.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -16,7 +17,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest import mock
@@ -835,19 +839,30 @@ case "$*" in
             fi
             exit "${FAKE_GH_EXIT:-1}"
         fi ;;
-    'api -H Accept: application/octet-stream repos/{owner}/{repo}/releases/assets/5')
+    'api --include --allow-escape-sequences -H Accept: application/octet-stream repos/{owner}/{repo}/releases/assets/5')
+        if [ "${FAKE_ASSET_REPLY+x}" = x ]; then
+            printf '%s' "$FAKE_ASSET_REPLY"
+            exit "${FAKE_ASSET_EXIT:-0}"
+        fi
         if [ "${FAKE_DOWNLOAD_FAIL:-0}" = 1 ]; then
             printf 'HTTP 403\n' >&2
             exit 1
         fi
+        printf 'HTTP/2.0 200 OK\nContent-Type: application/octet-stream\r\n\r\n'
         if [ "${FAKE_DOWNLOAD_OVERFLOW:-0}" = 1 ]; then
             dd if=/dev/zero bs=1024 count=1024 2>/dev/null
             touch "$FAKE_ASSETS/download-exhausted"
             exit 0
         fi
         cat "$FAKE_ASSETS/checksums.txt" ;;
-    'release view v0.2.0'|'release view v0.2.0 --json isDraft --jq .isDraft')
-        printf '%s\n' "${FAKE_DRAFT:-true}" ;;
+    'api graphql '*)
+        if [ "${FAKE_LOOKUP_FAIL:-0}" = 1 ]; then
+            printf 'HTTP 503\n' >&2
+            exit 1
+        fi
+        for filter do :; done
+        printf '%s' "$FAKE_PUBLISH_RESPONSE" | jq -r "$filter" ;;
+    'release create v0.2.0 '*) ;;
     'release download v0.2.0 --pattern checksums.txt --output '*)
         cp "$FAKE_ASSETS/checksums.txt" "$7" ;;
     'release delete-asset v0.2.0 checksums.txt --yes')
@@ -909,7 +924,10 @@ esac
         self.assertEqual(
             [
                 "api --include repos/{owner}/{repo}/releases/tags/v0.2.0",
-                "api -H Accept: application/octet-stream repos/{owner}/{repo}/releases/assets/5",
+                (
+                    "api --include --allow-escape-sequences -H Accept: application/octet-stream "
+                    "repos/{owner}/{repo}/releases/assets/5"
+                ),
             ],
             self.gh_calls.read_text(encoding="utf-8").splitlines(),
         )
@@ -1007,20 +1025,26 @@ esac
     def test_a_non_utf8_checksum_response_still_resumes(self) -> None:
         self.github_release()
         manifest = self.published / "checksums.txt"
-        manifest.write_bytes(b"\xff\xfe" + manifest.read_text(encoding="ascii").encode("utf-16-le"))
+        utf16 = b"\xff\xfe" + manifest.read_text(encoding="ascii").encode("utf-16-le")
+        for body in (utf16, b"\xff\xfea\x00\n\x00\n"):
+            with self.subTest(length=len(body)):
+                manifest.write_bytes(body)
 
-        result = self.resolve_attempt()
-        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-        self.assertIn("mode=resume\n", result.stdout)
-        self.assertIn("releases/assets/5", self.gh_calls.read_text(encoding="utf-8"))
+                result = self.resolve_attempt()
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertIn("mode=resume\n", result.stdout)
+        self.assertEqual(2, self.gh_calls.read_text(encoding="utf-8").count("releases/assets/5"))
 
     def test_the_completion_check_requires_lf_delimited_checksums(self) -> None:
         self.github_release()
         manifest = self.published / "checksums.txt"
         good = manifest.read_bytes()
-        for ending in (b"\r\n", b"\r", "\u2028".encode()):
+        invalid_bodies = [
+            (ending, good.replace(b"\n", ending)) for ending in (b"\r\n", b"\r", "\u2028".encode())
+        ]
+        for ending, body in [*invalid_bodies, (b"", good[:-1])]:
             with self.subTest(ending=ending):
-                manifest.write_bytes(good.replace(b"\n", ending))
+                manifest.write_bytes(body)
                 result = self.resolve_attempt()
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertIn("mode=resume\n", result.stdout)
@@ -1048,6 +1072,115 @@ esac
         self.assertIn("mode=resume\n", result.stdout)
         self.assertIn("releases/assets/5", self.gh_calls.read_text(encoding="utf-8"))
         self.assertFalse((self.published / "download-exhausted").exists())
+
+    def test_oversized_checksum_metadata_still_requires_a_valid_asset_id(self) -> None:
+        self.github_release()
+        payload = json.loads(self.response.read_bytes())
+        checksums = payload["assets"][-1]
+        checksums.update(id=None, size=checksums["size"] + 1)
+        for assets in (payload["assets"], payload["assets"][::-1]):
+            with self.subTest(first_asset=assets[0]["name"]):
+                self.response.write_text(json.dumps(payload | {"assets": assets}), encoding="utf-8")
+                result = self.resolve_attempt()
+                self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                self.assertIn("invalid GitHub asset ID", result.stderr)
+                self.assertEqual("", result.stdout)
+        self.assertNotIn("releases/assets/", self.gh_calls.read_text(encoding="utf-8"))
+
+    @unittest.skipUnless(shutil.which("gh"), "requires the GitHub CLI")
+    def test_real_gh_stops_a_textual_checksum_download_before_eof(self) -> None:
+        from socketserver import UnixStreamServer  # noqa: PLC0415 -- unavailable on Windows
+
+        self.github_release()
+        (self.fx.root / "gh").unlink()
+        config = self.fx.root / "gh-config"
+        config.mkdir()
+        socket = "fixture.sock"
+        (config / "config.yml").write_text(
+            f"version: 1\nhttp_unix_socket: {socket}\n", encoding="utf-8"
+        )
+        metadata = self.response.read_bytes()
+        requested, finish = threading.Event(), threading.Event()
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, _format: str, *args: object) -> None:
+                pass
+
+            def do_GET(self) -> None:
+                is_asset = self.path.endswith("/releases/assets/5")
+                body = b"a" * 65535 if is_asset else metadata
+                self.send_response(200)
+                self.send_header(
+                    "Content-Type", "application/octet-stream" if is_asset else "application/json"
+                )
+                self.send_header("Content-Length", str(len(body) + int(is_asset)))
+                self.end_headers()
+                if is_asset:
+                    requested.set()
+                with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+                    self.wfile.write(body)
+                    if is_asset:
+                        finish.wait()
+                        self.wfile.write(b"a")
+
+        # A relative socket path also works when TMPDIR exceeds the Unix socket path limit.
+        with contextlib.chdir(self.fx.work):
+            server = UnixStreamServer(socket, Handler)
+        with (
+            server,
+            ThreadPoolExecutor(max_workers=2) as workers,
+            mock.patch.dict(
+                os.environ,
+                {
+                    "GH_HOST": "github.com",
+                    "GH_REPO": "github.com/fixture/compass",
+                    "GH_TOKEN": "fixture-only",
+                    "GH_CONFIG_DIR": str(config),
+                    "GH_NO_UPDATE_NOTIFIER": "1",
+                    "GH_TELEMETRY": "false",
+                    "HTTP_PROXY": "http://127.0.0.1:1",
+                    "HTTPS_PROXY": "http://127.0.0.1:1",
+                    "NO_PROXY": "",
+                },
+            ),
+        ):
+            workers.submit(server.serve_forever)
+            try:
+                result = workers.submit(self.resolve_attempt)
+                self.assertTrue(requested.wait(10), "resolve did not request the checksum asset")
+                try:
+                    resolved = result.result(timeout=5)
+                except TimeoutError:
+                    self.fail("resolve waited for the final byte of an oversized response")
+            finally:
+                finish.set()
+                server.shutdown()
+        self.assertEqual(0, resolved.returncode, resolved.stderr)
+        self.assertIn("mode=resume\n", resolved.stdout)
+
+    def test_a_checksum_response_needs_complete_headers_and_a_successful_exit(self) -> None:
+        self.github_release()
+        for reply, exit_code, diagnostic in (
+            ("", "0", "missing GitHub response headers"),
+            ("", "1", "gh exited 1"),
+            (
+                "HTTP/2.0 200\nContent-Type: application/octet-stream\r\n",
+                "0",
+                "invalid or oversized",
+            ),
+            (f"HTTP/2.0 200\nX-Padding: {'a' * (32 * 1024)}\r\n\r\n", "0", "invalid or oversized"),
+            ("HTTP/2.0 200\n\nshort response", "1", "gh exited 1"),
+        ):
+            with (
+                self.subTest(reply_length=len(reply), exit_code=exit_code),
+                mock.patch.dict(
+                    os.environ, {"FAKE_ASSET_REPLY": reply, "FAKE_ASSET_EXIT": exit_code}
+                ),
+            ):
+                result = self.resolve_attempt()
+                self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                self.assertIn(diagnostic, result.stderr)
+                self.assertEqual("", result.stdout)
 
     def test_an_explicit_rerun_can_recover_distribution_after_the_assets_were_uploaded(
         self,
@@ -1113,8 +1246,20 @@ esac
         self.assertIn("HTTP 403", result.stderr)
         self.assertEqual("", result.stdout)
 
-    def test_the_publish_step_stops_for_a_draft_and_accepts_a_public_release(self) -> None:
-        self.github_release(draft=True)
+    def test_an_oversized_http_error_does_not_resume(self) -> None:
+        self.github_release()
+        limit = (self.published / "checksums.txt").stat().st_size
+        headers = "HTTP/2.0 503 Service Unavailable\nContent-Type: text/html\r\n\r\n"
+        reply = headers + "x" * (limit + 1)
+        with mock.patch.dict(os.environ, {"FAKE_ASSET_REPLY": reply, "FAKE_ASSET_EXIT": "1"}):
+            result = self.resolve_attempt()
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("could not download published checksums", result.stderr)
+        self.assertIn("HTTP 503", result.stderr)
+        self.assertEqual("", result.stdout)
+
+    def run_publish(self, **env: str) -> subprocess.CompletedProcess[str]:
         release = SCRIPT.parents[1] / ".github/workflows/release.yml"
         workflow = yaml.safe_load(release.read_text(encoding="utf-8"))
         publish = next(
@@ -1122,23 +1267,52 @@ esac
             for step in workflow["jobs"]["release"]["steps"]
             if step["name"] == "Publish the GitHub Release"
         )
-        for draft, exit_code, message in (
-            ("true", 1, "exists as a draft"),
-            ("false", 0, "already exists"),
+        return subprocess.run(
+            [shutil.which("bash") or "bash", "-c", publish],
+            cwd=self.fx.work,
+            env={
+                **os.environ,
+                "TAG": "v0.2.0",
+                "VERSION": "0.2.0",
+                "NOTES_FILE": "fixture",
+                "GITHUB_REPOSITORY": "fixture/compass",
+                **env,
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+
+    def test_the_publish_step_stops_for_a_draft_and_accepts_a_public_release(self) -> None:
+        self.github_release(draft=True)
+        for repository, exit_code, message in (
+            ({"release": {"isDraft": True}}, 1, "exists as a draft"),
+            ({"release": {"isDraft": False}}, 0, "already exists"),
+            ({"release": {"isDraft": None}}, 1, "Could not determine whether release"),
+            ({}, 1, "Could not determine whether release"),
+            (None, 1, "Could not determine whether release"),
         ):
-            with self.subTest(draft=draft):
-                result = subprocess.run(
-                    [shutil.which("bash") or "bash", "-c", publish],
-                    cwd=self.fx.work,
-                    env={**os.environ, "TAG": "v0.2.0", "FAKE_DRAFT": draft},
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=60,
+            with self.subTest(repository=repository):
+                result = self.run_publish(
+                    FAKE_PUBLISH_RESPONSE=json.dumps({"data": {"repository": repository}})
                 )
                 self.assertEqual(exit_code, result.returncode, result.stdout + result.stderr)
                 self.assertIn(message, result.stdout + result.stderr)
         self.assertNotIn("release create", self.gh_calls.read_text(encoding="utf-8"))
+
+    def test_the_publish_step_does_not_create_after_an_unproven_lookup(self) -> None:
+        self.github_release()
+        result = self.run_publish(FAKE_LOOKUP_FAIL="1")
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("HTTP 503", result.stderr)
+        self.assertNotIn("release create", self.gh_calls.read_text(encoding="utf-8"))
+
+    def test_the_publish_step_creates_after_github_confirms_the_release_is_absent(self) -> None:
+        self.github_release()
+        result = self.run_publish(FAKE_PUBLISH_RESPONSE='{"data":{"repository":{"release":null}}}')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("release create v0.2.0", self.gh_calls.read_text(encoding="utf-8"))
 
     def run_attach(self) -> tuple[subprocess.CompletedProcess[str], dict[str, bytes], Path]:
         release = SCRIPT.parents[1] / ".github/workflows/release.yml"

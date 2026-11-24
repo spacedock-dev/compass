@@ -369,6 +369,8 @@ Read which job failed first:
   with their new `checksums.txt`, replacing any existing copies.
 - **`release` stopped at an existing draft.** Review the draft and either publish it or remove it.
   Then re-run all jobs to attach the archives and finish distribution.
+- **`release` could not look up the release or determine its draft state.** Check the GitHub
+  error in the log and re-run all jobs once the lookup works again.
 - **`marketplace` failed.** The release is published and `stable` serves it, so installs already get
   the new version; only the listing's displayed version is behind. Re-run that job alone: it never
   moves the version backwards, so it is safe. If the log says the entry must point at `stable`, or

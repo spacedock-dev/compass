@@ -34,7 +34,7 @@ fetch_github_host_keys() (
 			# Fingerprinting a whole file can succeed even if OpenSSH skips an invalid row.
 			key_file="$1/github-host-key"
 			while IFS= read -r row; do
-				printf '%s\n' "$row" >"$key_file" || return 1
+				printf '%s\n' "$row" >|"$key_file" || return 1
 				ssh-keygen -l -f "$key_file" >/dev/null 2>&1 || return 1
 			done <<EOF
 $rows

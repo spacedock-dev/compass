@@ -912,13 +912,18 @@ client to check the keys before either clone. See the
 
 The archives are what Spacedock's installer reads. Each unpacks to one `compass/` directory holding the `compass` program and the interpreter and modules it carries, so a user needs no Python, and Spacedock's install table row for it is kind `tree` with program `compass/compass`. The `CLI package` workflow (`.github/workflows/cli-package.yml`) runs the same build and smoke run on all four targets for any pull request that touches the runtime, the packaging scripts or `requirements-cli.txt`, so a break is found in review instead of in a release; it is not a required check, because a path filter would leave a required context pending. COMPATIBILITY.md owns what the binary does and does not cover.
 
-The decisions live in `scripts/release_transition.py`, not in YAML, and are tested against temporary repositories with a bare origin (`scripts/tests/test_release_transition.py`, `scripts/tests/test_verify_release_archive.py`); the job boundaries are pinned by `compass/skills/compass/tests/test_release_workflow.py`. The React bundle is version-independent, so a bump must leave it untouched; a changed bundle byte after verification stops the release before `stable` moves.
+The Git transition decisions live in `scripts/release_transition.py` and are tested against temporary repositories with a bare origin (`scripts/tests/test_release_transition.py`, `scripts/tests/test_verify_release_archive.py`). The job boundaries are pinned by `compass/skills/compass/tests/test_release_workflow.py`. The React bundle is version-independent, so a bump must leave it untouched; a changed bundle byte after verification stops the release before `stable` moves.
+
+The final publish step queries GitHub by tag through GraphQL so it can see drafts. It creates a
+release only after a successful response confirms absence. A failed or unrecognized lookup stops
+the job before it calls `gh release create`.
 
 The tag move starts a second run. On its first attempt, read-only `resolve` returns `complete` when
 the tag is on its own validated bot release commit and GitHub reports a published, non-draft,
 non-prerelease release with one uploaded, nonempty asset for each expected filename. It compares
 the four LF-terminated lines in `checksums.txt` with GitHub's archive digests. The length of those
-four lines caps both the advertised asset size and the download. Missing assets or digests,
+four lines caps both the advertised asset size and the streamed body of a successful HTTP 200
+download. Missing assets or digests,
 oversized manifests and mismatched checksums permit a resume. Malformed asset records or failed
 GitHub reads fail the job.
 

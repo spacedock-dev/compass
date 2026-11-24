@@ -290,8 +290,9 @@ def step_commands(step: dict[str, Any], *, include_env: bool = True) -> set[str]
 
 def _pr_atom(atom: str) -> str:
     atom = atom.strip().lower()
-    negate = atom.startswith("!")
-    if negate:
+    negate = False
+    while atom.startswith("!"):
+        negate = not negate
         atom = atom[1:].strip()
     if comparison := re.fullmatch(r"(.*?)\s*(==|!=)\s*(.*?)", atom):
         left, operator, right = comparison.groups()
@@ -394,7 +395,7 @@ echo "sha=$SHA" >> "$GITHUB_OUTPUT"
                     continue
                 # The simple reader cannot tell which substitutions execute or how their output
                 # is used. Keep reviewed steps exact so edits to them get another review.
-                if "$(" in run or "`" in run:
+                if any(token in run for token in ("$(", "`", "<(", ">(")):
                     missing.add(f"review command substitution in {name}:\n{run}")
                 else:
                     missing.update(step_commands(step) - ci - exceptions)
@@ -419,6 +420,8 @@ echo "sha=$SHA" >> "$GITHUB_OUTPUT"
             'result="$(pnpm run test:release-example)"',
             "result=$(pnpm run test:release-example)",
             'result="`pnpm run test:release-example`"',
+            "echo <(pnpm run test:release-example)",
+            "printf '%s' >(pnpm run test:release-example)",
         ):
             with self.subTest(run=run):
                 changed = jobs()
@@ -459,6 +462,8 @@ echo "sha=$SHA" >> "$GITHUB_OUTPUT"
             "${{ github.event_name != 'pull_request' }}",
             False,
             "${{ false }}",
+            "!!false",
+            "!!('push' == github.event_name)",
             "success() && (github.event_name == 'push' || false)",
         ):
             with self.subTest(condition=condition):

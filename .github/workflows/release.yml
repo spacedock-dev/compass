@@ -574,19 +574,33 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if DRAFT=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
-            case "$DRAFT" in
-              true)
-                echo "::error::Release $TAG exists as a draft. Review and publish or remove the draft, then re-run all jobs." >&2
-                exit 1 ;;
-              false)
-                echo "Release $TAG already exists - nothing to publish."
-                exit 0 ;;
-              *)
-                echo "::error::Could not determine whether release $TAG is a draft." >&2
-                exit 1 ;;
-            esac
+          # REST lookup by tag misses drafts. Query the pending tag directly because
+          # gh release view can report absence when one of its two lookups fails.
+          # The dollar-prefixed GraphQL variables bind to the fields passed to gh.
+          # shellcheck disable=SC2016
+          if ! STATE=$(gh api graphql \
+            -f query='query($owner: String!, $repo: String!, $tag: String!) { repository(owner: $owner, name: $repo) { release(tagName: $tag) { isDraft } } }' \
+            -f owner="${GITHUB_REPOSITORY%%/*}" -f repo="${GITHUB_REPOSITORY#*/}" -f tag="$TAG" \
+            --jq 'if (.data.repository | type) != "object" then "invalid"
+                  elif (.data.repository | has("release") | not) then "invalid"
+                  elif .data.repository.release == null then "missing"
+                  elif (.data.repository.release.isDraft | type) == "boolean" then .data.repository.release.isDraft
+                  else "invalid" end'); then
+            echo "::error::Could not look up release $TAG. Re-run all jobs once GitHub is reachable." >&2
+            exit 1
           fi
+          case "$STATE" in
+            true)
+              echo "::error::Release $TAG exists as a draft. Review and publish or remove the draft, then re-run all jobs." >&2
+              exit 1 ;;
+            false)
+              echo "Release $TAG already exists - nothing to publish."
+              exit 0 ;;
+            missing) ;;
+            *)
+              echo "::error::Could not determine whether release $TAG is a draft." >&2
+              exit 1 ;;
+          esac
           # Refresh here: a newer tag may have arrived since resolve or a failed attempt.
           git fetch --tags --force origin
           LATEST=$(python3 scripts/release_transition.py latest --tag "$TAG")

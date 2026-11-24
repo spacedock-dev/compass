@@ -50,13 +50,14 @@ import verify_release_archive
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
-    from typing import Any
+    from typing import IO, Any
 
 SEMVER = bump_version.SEMVER_RE
 annotation = verify_release_archive.annotation
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 TRUTH_MANIFEST = bump_version.TRUTH.relative_to(bump_version.ROOT).as_posix()
 TAG_GLOBS = ("v[0-9]*.[0-9]*.[0-9]*", "[0-9]*.[0-9]*.[0-9]*")
+CHECKSUM_HEADER_LIMIT = 32 * 1024
 BOT_NAME = "github-actions[bot]"
 BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
 GIT = shutil.which("git") or "git"
@@ -339,32 +340,63 @@ def _uploaded_cli_assets(
     return uploaded if complete else {}
 
 
+def _require_checksum_response(stream: IO[bytes], status_line: bytes, operation: str) -> None:
+    status = re.fullmatch(rb"HTTP/\d+(?:\.\d+)? (\d{3})(?: [^\r\n]*)?\r?\n", status_line)
+    if status and status[1] != b"200":
+        raise ReleaseLookupError(f"{operation}: HTTP {status[1].decode('ascii')}")
+    remaining = CHECKSUM_HEADER_LIMIT - len(status_line)
+    if status:
+        while line := stream.readline(remaining):
+            if line in {b"\r\n", b"\n"}:
+                return
+            remaining -= len(line)
+    raise ReleaseLookupError(f"{operation}: invalid or oversized GitHub response headers")
+
+
 def _download_cli_checksums(repo: Path, tag: str, asset_id: int, max_size: int) -> bytes | None:
     operation = f"could not download published checksums for {tag}"
     endpoint = f"repos/{{owner}}/{{repo}}/releases/assets/{asset_id}"
-    argv = ["gh", "api", "-H", "Accept: application/octet-stream", endpoint]
+    # gh buffers textual bodies for terminal screening unless raw output is requested.
+    # Keep that output in a private pipe for the byte parser.
+    argv = [
+        "gh",
+        "api",
+        "--include",
+        "--allow-escape-sequences",
+        "-H",
+        "Accept: application/octet-stream",
+        endpoint,
+    ]
     try:
         # An unbuffered pipe lets us stop reading at the first byte beyond the limit.
         with (
             tempfile.TemporaryFile() as errors,
             subprocess.Popen(  # noqa: S603 -- arguments are fixed apart from the validated ID
-                argv, cwd=repo, stdout=subprocess.PIPE, stderr=errors, bufsize=0
+                argv, cwd=repo, stdout=subprocess.PIPE, stderr=errors, bufsize=0, text=False
             ) as process,
         ):
             assert process.stdout is not None  # noqa: S101 -- PIPE guarantees a stdout stream
-            body = bytearray()
-            while chunk := process.stdout.read(max_size + 1 - len(body)):
-                body.extend(chunk)
-                if len(body) > max_size:
+            try:
+                status_line = process.stdout.readline(CHECKSUM_HEADER_LIMIT)
+                if status_line:
+                    _require_checksum_response(process.stdout, status_line, operation)
+                body = bytearray()
+                while chunk := process.stdout.read(max_size + 1 - len(body)):
+                    body.extend(chunk)
+                    if len(body) > max_size:
+                        return None
+                if returncode := process.wait():
+                    errors.seek(0)
+                    detail = (
+                        errors.read(4096).decode(errors="replace").strip()
+                        or f"gh exited {returncode}"
+                    )
+                    raise ReleaseLookupError(f"{operation}: {detail}")
+                if not status_line:
+                    raise ReleaseLookupError(f"{operation}: missing GitHub response headers")
+            finally:
+                if process.returncode is None:
                     process.kill()
-                    return None
-            if returncode := process.wait():
-                errors.seek(0)
-                detail = (
-                    errors.read(4096).decode(errors="replace").strip() or f"gh exited {returncode}"
-                )
-                message = f"{operation}: {detail}"
-                raise ReleaseLookupError(message)
     except OSError as exc:
         raise ReleaseLookupError(operation) from exc
     return bytes(body)
@@ -399,12 +431,12 @@ def _cli_publication_complete(repo: Path, tag: str, version: str) -> bool:
 
     max_size = sum(len(line) + 1 for line in lines)
     checksums = uploaded["checksums.txt"]
-    if checksums["size"] > max_size:
-        return False
     asset_id = checksums.get("id")
     if type(asset_id) is not int or asset_id <= 0:
         message = f"could not download published checksums for {tag}: invalid GitHub asset ID"
         raise ReleaseLookupError(message)
+    if checksums["size"] > max_size:
+        return False
     body = _download_cli_checksums(repo, tag, asset_id, max_size)
     if body is None or not body.endswith(b"\n"):
         return False
