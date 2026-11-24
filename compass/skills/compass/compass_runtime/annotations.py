@@ -1992,6 +1992,7 @@ def refresh(
         with state.annotation_lock:
             state.annotations = ()
             state.annotations_trusted = True
+            state.annotations_held = frozenset()
         return ()
     # No file, so no handle to hold open, and a collection on a home that never
     # saved makes no lock file there (`--diagnose` writes nothing). Checked
@@ -2001,6 +2002,7 @@ def refresh(
         if not os.path.lexists(store_path(config)):
             state.annotations = ()
             state.annotations_trusted = True
+            state.annotations_held = frozenset()
             return ()
         cold = state.annotations is None
     wait = _STORE_LOCK_WAIT_SECONDS if cold else _REFRESH_LOCK_WAIT_SECONDS
@@ -2016,6 +2018,9 @@ def refresh(
         store = _read_store(config)
         state.annotations = _stored(store.entries)
         state.annotations_trusted = store.trusted
+        state.annotations_held = frozenset(
+            _key(value.get("harness"), value.get("sid")) for value in store.kept_raw
+        )
         return store.entries
 
 
@@ -2062,6 +2067,11 @@ def active(config: RuntimeConfig, state: RuntimeState) -> tuple[Annotation, ...]
     if cached is not None:
         return cast("tuple[Annotation, ...]", cached)
     return refresh(config, state)
+
+
+def held_key(held: frozenset[tuple[str, str]], harness: Any, sid: Any) -> bool:
+    """Whether the last read refused this session's own entry (`RuntimeState.annotations_held`)."""
+    return _key(harness, sid) in held
 
 
 def find(entries: Iterable[Annotation], harness: Any, sid: Any) -> Annotation | None:
@@ -2136,7 +2146,9 @@ def discarded_revision(entry: Annotation | None) -> int:
     return int(entry.get("discarded_revision") or 0)
 
 
-def published(entry: Annotation | None, *, binding_why: str = BINDING_EXACT) -> dict[str, Any]:
+def published(
+    entry: Annotation | None, *, binding_why: str = BINDING_EXACT, held: bool = False
+) -> dict[str, Any]:
     """The latest revision as the board renders it, absences named.
 
     One helper rather than three renderers, because the shared contract's first
@@ -2159,7 +2171,13 @@ def published(entry: Annotation | None, *, binding_why: str = BINDING_EXACT) -> 
     discarded = is_discarded(entry)
     return {
         "goal": goal,
-        "goal_why": (DISCARDED_GOAL if discarded else NO_GOAL_TYPED) if not goal else "",
+        # A session held raw has words this build cannot show. "No goal typed" would be a sentence
+        # about a session whose words exist, so it publishes no reason and says so in
+        # `goal_unreadable`.
+        "goal_why": (DISCARDED_GOAL if discarded else NO_GOAL_TYPED)
+        if not goal and not held
+        else "",
+        "goal_unreadable": held,
         "lines_why": (DISCARDED_LINES if discarded else NO_LINES_TYPED) if not lines else "",
         **_published_lines(lines),
         # When the act happened, and the record's own sentence. Two keys, for

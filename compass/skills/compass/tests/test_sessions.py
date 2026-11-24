@@ -134,6 +134,7 @@ DECLARED_SESSION_FIELDS = frozenset(
         # admits field names and a name cannot reach inside a dict.
         "annotation_goal",
         "annotation_goal_why",
+        "annotation_goal_unreadable",
         "annotation_lines_why",
         "annotation_line_1",
         "annotation_line_1_source",

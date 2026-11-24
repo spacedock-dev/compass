@@ -730,6 +730,9 @@ def base_session(harness: str, sid: Any, project: str) -> Session:
         # page paid for this once.
         "annotation_goal": "",
         "annotation_goal_why": "",
+        # True only for a session whose stored words a newer build wrote and this one cannot read.
+        # `annotation_goal_why` cannot say it: both read "" for a saved goal and an unreadable one.
+        "annotation_goal_unreadable": False,
         # The expected outcome's lines, one flat triple per slot, all six
         # declared (item 3 of the ruling `reading.MAX_OUTCOME_LINES` cites), and
         # the absence sentence for the list.

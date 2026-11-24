@@ -1141,6 +1141,19 @@ class ASessionHeldRawIsNeverWrittenOverTest(_StoreCase):
                     self.assertEqual(before, handle.read())
 
 
+class TheStoreNamesTheSessionsItHoldsRawTest(ASessionHeldRawIsNeverWrittenOverTest):
+    """A refresh keeps which sessions were refused on read, so the row can say its goal is unreadable."""
+
+    def test_a_refresh_keeps_the_held_key_and_a_clean_store_keeps_none(self) -> None:
+        self.seed()
+        annotation_store.refresh(self.config, self.state)
+        self.assertEqual(frozenset({("claude", "future")}), self.state.annotations_held)
+
+        self.write_raw({"v": 3, "entries": []})
+        annotation_store.refresh(self.config, self.state)
+        self.assertEqual(frozenset(), self.state.annotations_held)
+
+
 class AnUnreadableStoreNamesTheFileAndTheStepTest(_StoreCase):
     """Round 2, F2 and F3: every sentence about an unreadable store names the file and a step."""
 

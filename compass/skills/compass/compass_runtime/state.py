@@ -214,6 +214,10 @@ class RuntimeState:
     # means a file exists this build cannot read, which the board says rather
     # than showing every session as one nobody typed against.
     annotations_trusted: bool = True
+    # The (harness, sid) keys whose entries the last read refused and kept raw: words a newer build
+    # wrote that this one cannot show. Kept from the same read as `annotations`, so a row can say
+    # its goal is unreadable rather than that none was typed. Reads no file of its own.
+    annotations_held: frozenset[tuple[str, str]] = frozenset()
     # When a dashboard tab last reported a working notification lane in itself,
     # under
     # [DEC-19](docs/design-reading-a-session.md#dec-19-the-page-may-report-a-lane-never-a-delivery).
