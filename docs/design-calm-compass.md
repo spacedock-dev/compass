@@ -84,10 +84,12 @@ The lighter surfaces, dividers and fills can group content decoratively.
 | Worth a look flag on card | `#C2410C` | `#FFFFFF` | 5.18:1 | Off-course orange warning glyph and text. |
 | Quiet glyph on grey tile | `#3E4C59` | `#EEF1F4` | 7.77:1 | Moon shape carries state. |
 | Ended glyph on green tile | `#21573F` | `#E6F2EC` | 7.31:1 | Checkmark shape carries state. |
+| State not known glyph on neutral tile | `#52606D` | `#F4F6F8` | 5.96:1 | Dashed circle shape carries state. |
 | Working tile fill on card | `#E8F0FE` | `#FFFFFF` | 1.15:1 | Below 3:1. Decorative under NUI-18. The glyph identifies the state. |
 | Waiting tile fill on card | `#FEF3E2` | `#FFFFFF` | 1.10:1 | Below 3:1. Decorative under NUI-18. The glyph identifies the state. |
 | Quiet tile fill on card | `#EEF1F4` | `#FFFFFF` | 1.13:1 | Below 3:1. Decorative under NUI-18. The glyph identifies the state. |
 | Ended tile fill on card | `#E6F2EC` | `#FFFFFF` | 1.15:1 | Below 3:1. Decorative under NUI-18. The glyph identifies the state. |
+| State not known tile fill on card | `#F4F6F8` | `#FFFFFF` | 1.08:1 | Below 3:1. Decorative under NUI-18. The glyph identifies the state. |
 | On track text on card | `#21573F` | `#FFFFFF` | 8.40:1 | Text inside the green outline. |
 | Slightly off course text on card | `#9A3412` | `#FFFFFF` | 7.31:1 | Text inside the orange outline. |
 | Off-course orange on card | `#C2410C` | `#FFFFFF` | 5.18:1 | Outlined boundary and filled pill against its surround. |
@@ -127,12 +129,13 @@ against the goal. Worth a look is a flag that can coexist with a state.
 | Waiting on you | Needs input, has an exact request or reports a workflow gate. | Clock tile. Count a gate-reporting session once. |
 | Quiet | The agent finished its turn and is waiting for your next message. | Moon tile on observed quiet state. A scan-only absence does not establish a turn end. |
 | Ended | The session reported that it ended. | Checkmark tile. Ended alone carries no claim about success. |
+| State not known | The agent reports it is idle, but Compass saw no finished turn, so it cannot say whether it is quiet or stopped. Also shown when no state is published. | Dashed circle on a neutral grey tile. |
 | Worth a look | A published at-risk signal or a dirty end. | Orange warning flag with a reason. |
 
-On Sessions, Project and Needs you rows, the tile carries the state with an accessible name.
-The Session page header keeps the written state. A second text line keeps **State not published**,
-**Waiting on child**, or **Read by scanning: no turn end can be observed here** where the source
-calls for it. The [dashboard reference](../compass/skills/compass/reference/dashboard.md#session-states)
+On Sessions, Project and Needs you rows, the tile carries the state with an accessible name, and
+every session row draws one of the five tiles. The Session page header keeps the written state. A
+second text line keeps **State not published**, **Waiting on child**, or **Read by scanning: no
+turn end can be observed here** where the source calls for it. The [dashboard reference](../compass/skills/compass/reference/dashboard.md#session-states)
 explains the scanning limit. Helpers are subagents. Declared child sessions retain their own
 rows and relationships.
 
@@ -168,6 +171,25 @@ segment is white with a `--line` border, and the others are plain words that cle
 shows them as outlined pills with the chosen one filled. The search box reads "Search by title,
 goal or project". The canvas's short ages and row progress pills are not taken: the elapsed
 spelling above stands, and the progress slot stays blank.
+
+Also on 2026-11-24 the owner found Sessions rows with no tile, their titles shifted left out of
+line: 14 Antigravity and 3 Codex sessions reported idle with no recorded turn stop, which reads
+as State not published. The owner ruled five tiles. The fifth, **State not known**, is a neutral
+grey tile with a Phosphor Bold dashed circle: quiet ink `#52606D` on the page ground `#F4F6F8`,
+lighter than Quiet's pair so not knowing never reads as Quiet. A question mark was passed over
+because Help already uses it. Its accessible name and tooltip are "State not known". A row whose
+state is State not published shows it and keeps its text line. A row waiting on a child shows the
+tile of its own state: Working when the session is working, Quiet when it is idle with a recorded
+turn stop, and State not known otherwise. Its Waiting on child line stays, and the row's state
+word is unchanged, so the terminal parity fixture still reads Waiting on child. The tile sits in a
+fixed 44 px column on every row, so titles, descriptors and Now lines line up whatever the tile.
+The project page's session rows take the same tiles, and a project whose sessions publish no state
+shows State not known on Projects. The Sessions legend and Help list the new tile with its
+explanation. The same day the owner asked the list's empty lines to match the calm list: "No exact
+session has active evidence right now.", the earlier group's empty line and the filtered-to-nothing
+line are plain quiet ink at the 15 px body size, padded as a row inside the list card, with no
+hatch, dashed border or tinted box, as the canvas style board draws absences. The global absence
+treatment is unchanged for the surfaces that still use it.
 
 | Progress word | Recorded level |
 |---|---|
@@ -600,6 +622,9 @@ The owner-approved scope repair assigns the public promise sentence and its test
 
 > * **Quiet icon:** Phosphor Moon, Bold. The canvas's pause bars are not used.
 > * **Absence words** (No goal yet, Not checked yet, Too early to tell, Can't tell, Goal too vague to check, Out of date) get no icons; they are plain grey text. The Sessions icon legend has five entries: Working, Waiting on you, Quiet, Ended, and the Worth a look flag.
+
+Amended 2026-11-24 (owner): the legend has six entries; State not known joins before the Worth a
+look flag. See [Status language](#status-language).
 > * **Sessions tab order:** All, Waiting on you, Worth a look, Working, Quiet, Ended.
 
 ### DRC-5482 Owner follow-up rulings, 2026-11-22
@@ -626,6 +651,10 @@ The owner-approved scope repair assigns the public promise sentence and its test
 > * Sessions gets a visible on-page icon legend. A tooltip never carries the only copy.
 > * Helpers never absorb declared child sessions.
 > * Icon weight: Phosphor Bold.
+
+Amended 2026-11-24 (owner): no session row is left without a tile. State not published rows,
+and scan-only rows, show the State not known tile; Waiting on child rows show their own state's
+tile, or State not known. The text lines stay. See [Status language](#status-language).
 
 ### DRC-5485 Owner follow-up ruling, 2026-11-22
 

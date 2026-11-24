@@ -917,6 +917,11 @@ class DocumentVocabularyTest(unittest.TestCase):
                 "A flag for a session that may need a closer look, "
                 "such as one that ended with uncommitted work."
             ),
+            "State not known": (
+                "The agent reports it is idle, but Compass saw no finished turn, so it cannot "
+                "say whether it is quiet or stopped. It also shows when the agent publishes no "
+                "state at all."
+            ),
             "State not published": "Compass has no published state for this session.",
             "Waiting on child": "Compass has evidence that a linked child is still working.",
             "Read by scanning: no turn end can be observed here": (

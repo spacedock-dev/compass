@@ -229,10 +229,12 @@ Linked children follow their visible parent on Sessions and name it with a page 
 parent gets a second line, `Waiting on child "title"`. Sessions and the session page link it to the
 child even when a filter hides the child. An open question takes precedence over the child wait.
 A reported session end takes precedence in the state label. If the board still publishes a
-question for that session, you can answer it on the session page. Sessions shows a status tile
-beside the title when the harness publishes enough evidence. The legend names each tile,
-including Quiet for an observed turn stop and Ended for a reported session end. If scanning
-cannot see a turn end, the row explains that in words. The progress slot on the row is
+question for that session, you can answer it on the session page. Every Sessions row shows a
+status tile beside the title, and the tiles line up in one column. The legend names each tile,
+including Quiet for an observed turn stop, Ended for a reported session end, and State not known
+when the agent reports it is idle but Compass saw no finished turn. A row waiting on a child
+shows the tile of its own state when Compass knows it. If scanning cannot see a turn end, the
+row also explains that in words. The progress slot on the row is
 blank. Open the session page to see the progress reading and any live estimate the session
 supports.
 

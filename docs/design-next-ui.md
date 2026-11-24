@@ -1225,6 +1225,14 @@ no tone stripe. A phone keeps one card with the same dividers instead of a card 
 that would repeat a column header are still gone, and the goal source still stays visible in the
 goal's label. The [Calm Compass record](design-calm-compass.md#status-language) keeps the details.
 
+### Amended 2026-11-24 (owner): every row has a tile in a fixed column
+
+Every Sessions row now draws one of five tiles in a fixed 44 px column, so titles line up. A row
+whose state is not published shows the neutral State not known tile, and a row waiting on a child
+shows its own state's tile; both keep their text line. An empty group says so in plain quiet text
+inside the card. The [Calm Compass record](design-calm-compass.md#status-language) keeps the
+ruling.
+
 ## NUI-17: the gate queue hands over a command, and only where one was measured
 
 A gate-queue row names a session that is waiting and then leaves the reader to find its terminal.
