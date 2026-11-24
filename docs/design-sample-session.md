@@ -251,10 +251,10 @@ bytes.
 Moving Your AI allowance to the top of Sessions packages the page at 2,482,083 bytes, 4 bytes above
 the spacing build, on the same toolchain. The page bound follows that measurement.
 
-Later on 2026-11-24, drawing an absence line under a Sessions row's goal (No goal yet, Not checked yet),
-saying Saved goal unavailable for a goal that cannot be read, and renaming the narrower Goal source chip
-packages the page at 2,484,299 bytes on Node 26.12.1 and pnpm 12.19.0, 2,216 bytes above the preceding
-build. The page bound follows that measurement. The fixture bound stays at 250,000 bytes.
+Later on 2026-11-24, drawing a Not checked yet word in a far-right Sessions row cell, saying Saved goal
+unavailable for a goal that cannot be read, and sharing one No goal yet predicate between the filter
+chips packages the page at 2,484,503 bytes on Node 26.12.1 and pnpm 12.19.0, 2,420 bytes above the
+preceding build. The page bound follows that measurement. The fixture bound stays at 250,000 bytes.
 
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
