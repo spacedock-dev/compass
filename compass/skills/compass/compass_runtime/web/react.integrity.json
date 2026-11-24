@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2482083,
+    "bytes": 2484299,
     "file": "react.html",
-    "sha256": "5672bd81a76de9fab962a95c58bfc11f8e05fcb60272e38b3266622bd0017130"
+    "sha256": "fdc1da9c0a785b1efcfad7d3c1e5fa1c9aefc7bf0aba8a3703d3f80f92f4fd31"
   },
   "format": 1,
   "frontend": "react",
@@ -915,7 +915,7 @@
       },
       {
         "file": "frontend/src/language/glossary.ts",
-        "sha256": "a4270e42b878afd92e6ff07d12aeabafbb540ef13742068513dc7dd0cfd1c399"
+        "sha256": "e0113459cfc9037103918a401c308667b3e914faaf29f2cd256523f3eee3ad17"
       },
       {
         "file": "frontend/src/lib/utils.ts",
@@ -1231,7 +1231,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionsView.tsx",
-        "sha256": "dfabf520361693706fac7124af7890010a2da9e0b892a6f982365d11b37c76d0"
+        "sha256": "85afafce4ff05cb79fc75e79feadf143f81e2649b2fbb8404babcfb111785482"
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",
@@ -1259,7 +1259,7 @@
       },
       {
         "file": "frontend/src/sessions/filters.ts",
-        "sha256": "ecf814ddc68d95dd604bb5517244a75b75fd127564c02cb5f2311728f8065a2a"
+        "sha256": "9f1b770de8d4dcfbe33712bfbaba9fced622d02a904879423ef8c3513fa632cc"
       },
       {
         "file": "frontend/src/sessions/fullActivityKey.ts",
@@ -1287,7 +1287,7 @@
       },
       {
         "file": "frontend/src/sessions/rows.ts",
-        "sha256": "eaad7510ca4902676aabdc47566aa797dff8c0770b4a79a90142ed566b19e5c0"
+        "sha256": "209caeeae2d26ff4307087d73efdab7769dc419ae853955f9dc3d6931b0db082"
       },
       {
         "file": "frontend/src/sessions/sessions.css",
