@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { sessionFigures, sessionMeta, turnEndedSentence } from './detail';
+import {
+  helperTile,
+  helperWords,
+  sessionFigures,
+  sessionMeta,
+  sessionSubagents,
+  turnEndedSentence,
+} from './detail';
 
 describe('the entries clause of the line under the title', () => {
   const session = { harness: 'claude', sid: 's', state: 'idle' };
@@ -100,5 +107,33 @@ describe('At a glance', () => {
     expect(
       sessionFigures({ session_output_tokens: null, turn_output_tokens: '0' }, null, false),
     ).toEqual([]);
+  });
+});
+
+/* A helper publishes only `active`. Nothing records a helper's finish, so the tile is Working or State not
+   known, and the words keep what the tile cannot say. */
+describe("a helper's tile in Right now", () => {
+  it.each([
+    [true, 'Working', ''],
+    [false, 'State not known', 'Not running'],
+    [null, 'State not known', 'Activity not published'],
+  ] as const)('maps active %s to %s', (live, tile, word) => {
+    expect(helperTile(live)).toBe(tile);
+    expect(helperWords({ live, elapsed: null })).toBe(word);
+  });
+  it('keeps the elapsed time beside every tile, and never draws Ended', () => {
+    const generated = 10_000;
+    const rows = sessionSubagents(
+      [
+        { name: 'Docs writer', active: true, started_at: generated - 360 },
+        { name: 'Test runner', active: false, started_at: generated - 360 },
+      ],
+      0,
+      generated,
+    )?.rows;
+    const words = rows?.map(helperWords) ?? [];
+    expect(words[0]).toMatch(/^\d/);
+    expect(words[1]).toMatch(/^Not running · \d/);
+    expect(rows?.map((row) => helperTile(row.live))).not.toContain('Ended');
   });
 });

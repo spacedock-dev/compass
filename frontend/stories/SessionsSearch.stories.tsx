@@ -567,6 +567,7 @@ export const StatusLegend: Story = {
       ['Waiting on you', 'waiting'],
       ['Quiet', 'quiet'],
       ['Ended', 'ended'],
+      ['State not known', 'state-not-known'],
       ['Worth a look', 'worth-a-look'],
     ];
     await expect(within(legend).getAllByRole('listitem')).toHaveLength(entries.length);
@@ -645,6 +646,12 @@ export const StatusLegend: Story = {
     const unknown = rowOf(canvasElement, 'J')?.querySelector('[data-next-row-state]');
     await expect(unknown).toHaveTextContent('State not published');
     await expect(unknown?.querySelector('svg')).toBeNull();
+    // Both rows still draw a tile: the neutral State not known one (owner, 2026-11-24).
+    for (const id of ['F', 'J'] as const) {
+      const row = rowOf(canvasElement, id);
+      if (!row) throw new Error(`Missing row ${id}`);
+      await expect(within(row).getByRole('img', { name: 'State not known' })).toBeVisible();
+    }
     await expect(canvas.getByRole('status', { name: 'Working sessions' })).toHaveTextContent(
       '2 sessions working',
     );
@@ -680,8 +687,9 @@ export const StatusTilesWithoutProgress: Story = {
       const active = rowOf(canvasElement, 'B');
       const history = canvasElement.querySelector('[data-next-operation-history]');
       if (!active || !history) throw new Error('Missing desktop session rows');
-      await expect(getComputedStyle(active).gridTemplateColumns.split(' ')).toHaveLength(6);
-      await expect(getComputedStyle(history).gridTemplateColumns.split(' ')).toHaveLength(4);
+      // The session beside its goal; the Project, Next and Blocked columns are gone.
+      await expect(getComputedStyle(active).gridTemplateColumns.split(' ')).toHaveLength(2);
+      await expect(getComputedStyle(history).gridTemplateColumns.split(' ')).toHaveLength(2);
     });
   },
 };
@@ -954,14 +962,11 @@ export const CompassLabelsAndPayloadWordsCoexist: Story = {
     const row = canvas
       .getByRole('link', { name: 'Open session Parser cleanup' })
       .closest('article');
-    for (const words of [
-      'Review deadbeef [4]',
-      'Ship deadbeef [5]',
-      'project [6]',
-      'worktree branch [7]',
-    ]) {
+    for (const words of ['Review deadbeef [4]', 'project [6]', 'worktree branch [7]']) {
       await expect(row).toHaveTextContent(words);
     }
+    // The pending step was the Next column, which the row no longer has; the session page keeps it.
+    await expect(row).not.toHaveTextContent('Ship deadbeef [5]');
     await expect(auditCalm(canvasElement)).toEqual([]);
   },
 };
@@ -985,9 +990,8 @@ export const DefaultBoard: Story = {
     await expect(search.compareDocumentPosition(active) & FOLLOWS).toBeTruthy();
     await expect(chips(canvasElement)).toEqual([]);
     const rows = canvasElement.querySelectorAll('[data-next-operation-group]');
-    await expect(rows[0]?.querySelector('.next-operations-columns')?.textContent).toBe(
-      'SessionProjectGoalNowNextBlocked',
-    );
+    // Rows follow the redesign canvas: no column header strip.
+    await expect(rows[0]?.querySelector('.next-operations-columns')).toBeNull();
     await expect(auditCalm(canvasElement)).toEqual([]);
     await expect(canvas.getByRole('button', { name: 'All 12' })).toHaveAttribute(
       'aria-pressed',
@@ -1020,8 +1024,14 @@ export const TitlesOpenSessions: Story = {
       backgroundColor: 'rgb(230, 242, 236)',
       borderLeftWidth: '1px',
     });
-    await expect(title.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
-    await expect(title.getBoundingClientRect().width).toBeGreaterThanOrEqual(44);
+    // The row is the title's 44 px target (owner, 2026-11-24): the link covers the whole card, so the title's
+    // own box can keep its line height and the descriptor sits directly under it.
+    const row = title.closest('article') as HTMLElement;
+    row.scrollIntoView({ block: 'center' });
+    const box = row.getBoundingClientRect();
+    await expect(box.height).toBeGreaterThanOrEqual(44);
+    await expect(box.width).toBeGreaterThanOrEqual(44);
+    await expect(document.elementFromPoint(box.left + 6, box.top + 6)).toBe(title);
     if ('__vitest_browser_runner__' in window) {
       const { page } = await import('vitest/browser');
       await page
@@ -1766,14 +1776,23 @@ export const MixedGoalEvidence: Story = {
   },
 };
 
-export const UnselectedSegmentHasVisibleBoundary: Story = {
+/* The segmented control as the redesign canvas draws it (owner, 2026-11-24): the chosen segment is a white
+   tab whose border clears 3:1 against the track, and the rest are plain words on the track, which clear the
+   4.5:1 text bar instead of carrying a border of their own. */
+export const SegmentBoundaries: Story = {
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
+    const chosen = canvas.getByRole('button', { name: /^All \d/ });
+    await expect(chosen).toHaveAttribute('aria-pressed', 'true');
+    const edge = paintedControlColors(chosen, getComputedStyle(chosen).borderTopColor, 'border');
+    if (!edge) throw new Error('The chosen segment has no measurable boundary.');
+    await expect(contrastOf(edge.foreground, edge.background)).toBeGreaterThanOrEqual(3);
     const tab = canvas.getByRole('button', { name: /^Quiet \d/ });
     await expect(tab).toHaveAttribute('aria-pressed', 'false');
-    const edge = paintedControlColors(tab, getComputedStyle(tab).borderTopColor);
-    if (!edge) throw new Error('The segment boundary has no measurable backdrop.');
-    await expect(contrastOf(edge.foreground, edge.background)).toBeGreaterThanOrEqual(3);
+    await expect(getComputedStyle(tab).borderTopColor).toBe('rgba(0, 0, 0, 0)');
+    const words = paintedColors(tab);
+    if (!words) throw new Error('The segment words have no measurable backdrop.');
+    await expect(contrastOf(words.foreground, words.background)).toBeGreaterThanOrEqual(4.5);
   },
 };
 
@@ -1809,7 +1828,21 @@ export const SessionsHeadingUsesTypeScale: Story = {
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
     const heading = canvas.getByRole('heading', { name: 'All sessions' });
-    await expect(getComputedStyle(heading).fontSize).toBe('18px');
+    // The section-title step the canvas draws it at (owner, 2026-11-24).
+    await expect(heading).toHaveStyle({ fontSize: '24px', fontWeight: '700' });
+  },
+};
+
+/* The search field and the Filters button stay matched on the 12 px control radius they share (owner,
+   2026-11-24), and the button's label takes the 600 weight every button now has. */
+export const SearchAndFiltersShareTheControlRadius: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = await ready(canvasElement);
+    const search = getComputedStyle(canvas.getByRole('searchbox', { name: 'Search sessions' }));
+    const filters = getComputedStyle(filtersButton(canvasElement));
+    await expect(search.borderTopLeftRadius).toBe('12px');
+    await expect(filters.borderTopLeftRadius).toBe(search.borderTopLeftRadius);
+    await expect(filters.fontWeight).toBe('600');
   },
 };
 
@@ -1821,8 +1854,10 @@ export const UnavailableSegmentsLookDisabled: Story = {
     await expect(tab).toBeDisabled();
     const style = getComputedStyle(tab);
     await expect(style.cursor).toBe('not-allowed');
-    await expect(style.borderTopStyle).toBe('dashed');
-    await expect(style.backgroundImage).toMatch(/gradient/);
+    // Calm, not hatched (owner, 2026-11-24): a solid outline over the muted fill.
+    await expect(style.borderTopStyle).toBe('solid');
+    await expect(style.backgroundImage).toBe('none');
+    await expect(style.backgroundColor).toBe('rgb(238, 241, 244)');
     await expect(style.color).not.toBe(
       getComputedStyle(canvas.getByRole('button', { name: 'All unavailable' })).color,
     );

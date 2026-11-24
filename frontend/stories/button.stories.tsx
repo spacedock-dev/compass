@@ -52,6 +52,30 @@ function emphasisStory(kind: keyof typeof emphasis, label: string): Story {
   };
 }
 
+/* The canvas `.btn` (owner, 2026-11-24): the 12 px control radius, a 600-weight 15 px label, 18 px either side and
+   8 px between a glyph and its words, in every weight. */
+export const CanvasButtonShape: Story = {
+  render: () => (
+    <>
+      <Button emphasis="primary">Check progress</Button>
+      <Button emphasis="secondary">Edit goal</Button>
+      <Button>Undo changes</Button>
+      <Button variant="primary">Save</Button>
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    for (const button of within(canvasElement).getAllByRole('button')) {
+      const style = getComputedStyle(button);
+      await expect(style.borderTopLeftRadius).toBe('12px');
+      await expect(style.fontWeight).toBe('600');
+      await expect(style.fontSize).toBe('15px');
+      await expect(style.paddingInlineStart).toBe('18px');
+      await expect(style.columnGap).toBe('8px');
+      await expect(button.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+    }
+  },
+};
+
 export const PrimaryEmphasis = emphasisStory('primary', 'Check progress');
 export const Secondary = emphasisStory('secondary', 'Edit goal');
 export const QuietEmphasis = emphasisStory('quiet', 'Not now');
@@ -102,12 +126,23 @@ export const UnavailableEmphasis: Story = {
     const focusable = canvas.getByRole('button', { name: 'Clear filters' });
     await expect(native).toBeDisabled();
     await expect(focusable).toHaveAttribute('aria-disabled', 'true');
+    /* Calm, not hatched (owner, 2026-11-24): the muted fill, a solid outline and muted ink, still a button. */
     for (const button of [native, focusable]) {
       const style = getComputedStyle(button);
-      await expect(style.backgroundImage).toContain('repeating-linear-gradient');
-      await expect(style.borderTopStyle).toBe('dashed');
+      await expect(style.backgroundImage).toBe('none');
+      await expect(style.borderTopStyle).toBe('solid');
       await expect(style.borderTopColor).toBe('rgb(123, 135, 148)');
+      await expect(style.backgroundColor).toBe('rgb(238, 241, 244)');
+      await expect(style.color).toBe('rgb(92, 105, 118)');
+      await expect(contrastOf(rgbOf(style.color), rgbOf(style.backgroundColor))).toBeGreaterThan(
+        4.5,
+      );
+      await expect(
+        contrastOf(rgbOf(style.borderTopColor), rgbOf(style.backgroundColor)),
+      ).toBeGreaterThan(3);
     }
+    focusable.focus();
+    await expect(focusable).toHaveFocus();
   },
 };
 

@@ -10,6 +10,7 @@ import { noTitleText, pageTitleOf, type ObservedSession, type Row } from '../obs
 import { selectObserved } from '../observed/select';
 import type { SessionRoute } from '../router/grammar';
 import { isSampleRoute } from '../sample/ids';
+import { projectCompanions } from '../project/projectList';
 import { useDisplayed, useShell } from '../shell/context';
 import type { PayloadData } from '../api/types';
 import { AnswerBlock } from './AnswerBlock';
@@ -322,6 +323,10 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
       ? payload['generated']
       : null;
   const asks = useMemo(() => sessionAsks(payload, session), [payload, session]);
+  const companions = useMemo(
+    () => (observed ? projectCompanions(payload, observed) : null),
+    [payload, observed],
+  );
   usePruneAnswerNotes(payload);
   const scope = `${route.harness ?? ''}:${route.session}`;
   const wide = useSyncExternalStore(subscribeToColumns, hasTwoColumns);
@@ -390,7 +395,11 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
           <div className="next-session-column">
             {wide ? rightNow : null}
             <SessionFigures session={session} />
-            <SessionProject project={observed.project} viewOnly={isSampleRoute(route)} />
+            <SessionProject
+              project={observed.project}
+              viewOnly={isSampleRoute(route)}
+              companions={companions}
+            />
           </div>
           <SessionTechnicalDetails
             project={route.project}

@@ -27,6 +27,7 @@ import {
   type PromptCandidate,
 } from './intent';
 import { datedClock } from '../observed/values';
+import { SESSION_ROW_WORDS } from '../language/glossary';
 
 /* What the Sessions screen draws, as data: a pure function of one payload and the model read from it, so
    every sentence is testable without a DOM and the screen cannot say something the rows do not. The
@@ -208,8 +209,9 @@ export function checkedAgainstCurrentWords(
 
 export interface GoalCell {
   readonly label: string;
-  /** Every available goal opens the session at its goal, including saved words. */
-  readonly kind: 'off' | 'link';
+  /** Every available goal opens the session at its goal, including saved words. A row with no goal says
+      so in plain words and offers no action: the goal is added on the session page (owner, 2026-11-24). */
+  readonly kind: 'off' | 'link' | 'none';
   readonly text: string;
   readonly known: boolean;
 }
@@ -256,7 +258,30 @@ export function goalCell(
             : 'Goal';
   return typed
     ? { label, kind: 'link', text, known: true }
-    : { label, kind: 'link', text: text || 'Add a goal', known: Boolean(text) };
+    : text
+      ? { label, kind: 'link', text, known: true }
+      : { label, kind: 'none', text: SESSION_ROW_WORDS.noGoalYet, known: false };
+}
+
+/* A row's end and git facts, said once (owner, 2026-11-24). The model words them twice, as an outcome
+   ("Stop observed; git state clean") and a git line ("Git state reported clean"), and adds a sentence
+   saying git was not measured. The row keeps every measured fact and drops what only repeats one: an
+   unmeasured git state, a git line the outcome already states, and a bare end the Now line ("Session
+   reported its own end"), the tile and the descriptor's end age already carry. A changed-entry count is
+   the one git fact the outcome lacks, so it follows. */
+const GIT_NOT_MEASURED = '; git state not measured';
+const ENDED_FACTS: Readonly<Record<string, string>> = {
+  'Session ended': '',
+  'Session ended; git state clean': 'Git state reported clean',
+  'Session ended with uncommitted work': 'Ended with uncommitted work',
+};
+export function outcomeLine(outcome: string, git: string): string {
+  const said = outcome.endsWith(GIT_NOT_MEASURED)
+    ? outcome.slice(0, -GIT_NOT_MEASURED.length)
+    : outcome;
+  const end = ENDED_FACTS[said] ?? said;
+  const changed = /^\d+ changed entries$/.test(git) ? git : '';
+  return end && changed ? `${end} · ${changed}` : end || changed;
 }
 
 export type StateSegment = 'waiting' | 'working' | 'quiet' | 'ended';
@@ -272,9 +297,12 @@ export interface SessionRow {
   readonly projectKey: string;
   readonly goal: GoalCell;
   readonly drift: DriftMark | null;
+  /** "started <duration> ago"; empty when a published start has no usable age. */
+  readonly startedSince: string;
+  /** Whether the session published a start at all. A row without one says so rather than leaving it out. */
+  readonly startPublished: boolean;
   /** "ended <duration> ago", or empty. */
   readonly endedSince: string;
-  readonly responsibility: string;
   readonly history: boolean;
   readonly worthALook: string | undefined;
   readonly showOutcome: boolean;
@@ -328,7 +356,6 @@ export function buildSessionsScreen(
   const context = sessionsContext(payload);
   const rows = payloadSessionRows(payload);
   const sources = new Map(rows.map((session) => [sessionKey(session), session] as const));
-  const asks = operationsAsks(payload, rows);
   const labels = harnessLabels(payload);
   const worthALook = selection?.worthALook;
   const flaggedRows = [...(worthALook?.keys() ?? [])];
@@ -385,7 +412,8 @@ export function buildSessionsScreen(
   };
   const row = (session: ObservedSession, history: boolean): SessionRow => {
     const source = sources.get(sessionKey(session));
-    const ask = source ? askFor(payload, source, asks) : null;
+    const startedAt = nextNumber(source?.['started_at']);
+    const started = formatDurationWords(observationAge(context.generated, startedAt));
     const since =
       session.isEnded && source
         ? formatDurationWords(observationAge(context.generated, endedAt(source)))
@@ -404,13 +432,14 @@ export function buildSessionsScreen(
       projectKey: projectKey(String(source?.['project'] ?? '')),
       goal: goalCell(source, context, source && chosenFor ? chosenFor(source) : null),
       drift: driftMark(source, context),
+      startedSince: started ? `started ${started} ago` : '',
+      startPublished: startedAt !== null && startedAt > 0,
       endedSince: since ? `ended ${since} ago` : '',
       worthALook: worthALook?.get(session),
       showOutcome:
         session.outcomeKnown &&
         (session.outcomeIcon !== 'worth-a-look' || dirtyOutcomes.has(session)),
       stateSegments: segments.get(session),
-      responsibility: ask ? ` · ${askResponsibility(payload, ask).toLowerCase()}` : '',
       history,
       relations: declaredRelations(payload, source),
     };

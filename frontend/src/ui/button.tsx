@@ -10,16 +10,18 @@ import { cn } from '../lib/utils';
 
 const action =
   'inline-flex items-center justify-center rounded-control border border-solid border-[var(--line)] bg-transparent text-foreground font-[family-name:var(--sans)] text-body leading-[1.55] px-3.5 py-[.5625rem] cursor-pointer hover:border-[var(--line-hi)] [.next-rail-wait-controls_&]:px-2.5 [.next-rail-wait-controls_&]:py-[5px]';
+/* A refused control rests calm: a muted fill, the control border kept solid so it still reads as a button,
+   and muted ink. No hatch and no dashed edge, which the owner rejected on 2026-11-24
+   ([calm disabled look](../../../docs/design-calm-compass.md#buttons-and-the-calm-disabled-look-2026-11-24)). */
 const refused =
-  'disabled:border-dashed disabled:bg-[image:var(--hatch)] disabled:text-[color:var(--ink3)] disabled:cursor-not-allowed aria-disabled:not-aria-busy:border-dashed aria-disabled:not-aria-busy:bg-[image:var(--hatch)] aria-disabled:not-aria-busy:text-[color:var(--ink3)] aria-disabled:not-aria-busy:cursor-not-allowed aria-busy:border-solid aria-busy:bg-none aria-busy:text-foreground aria-busy:cursor-progress';
+  'disabled:border-solid disabled:border-[var(--line)] disabled:bg-muted disabled:text-[color:var(--ink3)] disabled:cursor-not-allowed aria-disabled:not-aria-busy:border-solid aria-disabled:not-aria-busy:border-[var(--line)] aria-disabled:not-aria-busy:bg-muted aria-disabled:not-aria-busy:text-[color:var(--ink3)] aria-disabled:not-aria-busy:cursor-not-allowed aria-busy:border-solid aria-busy:bg-none aria-busy:text-foreground aria-busy:cursor-progress';
 const solidLabel = 'text-primary-foreground aria-busy:text-primary-foreground';
-const solid = `border-[var(--accent)] bg-primary hover:border-[var(--accent)] disabled:bg-transparent aria-disabled:not-aria-busy:bg-transparent ${solidLabel}`;
+const solid = `border-[var(--accent)] bg-primary hover:border-[var(--accent)] ${solidLabel}`;
 const dangerEdge = 'border-destructive hover:border-destructive';
-const emphasized = cn(
-  action,
-  refused,
-  'rounded-card font-semibold disabled:border-border disabled:bg-transparent aria-disabled:not-aria-busy:border-border aria-disabled:not-aria-busy:bg-transparent',
-);
+/* The canvas `.btn`: 600-weight label, 18 px either side and 8 px between a glyph and its words, on the
+   12 px control radius every button and field shares. */
+const button = cn(action, 'gap-2 px-[18px] font-semibold');
+const emphasized = cn(button, refused);
 const raiseState =
   'data-[raise-state=sent]:border-[var(--accent)] data-[raise-state=declined]:border-[var(--line)] data-[raise-state=failed]:border-[var(--line)] data-[raise-state=throttled]:border-[var(--amber)] data-[raise-state=stale]:border-[var(--amber)] data-[raise-state=refused]:border-[var(--amber)] data-[raise-state]:not-data-[raise-state=sent]:not-data-[raise-state=sending]:text-muted-foreground data-[raise-state]:not-data-[raise-state=sent]:not-data-[raise-state=sending]:bg-muted aria-disabled:not-aria-busy:bg-none aria-disabled:not-aria-busy:bg-transparent data-[raise-state=sending]:cursor-progress';
 const buttonVariants = cva(
@@ -27,15 +29,15 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: cn(action, refused),
+        default: cn(button, refused),
         retry: cn(
-          action,
+          button,
           refused,
           'aria-disabled:not-aria-busy:border-solid aria-disabled:not-aria-busy:cursor-wait disabled:border-solid disabled:cursor-wait',
         ),
         answer: cn(action, refused, 'px-[11px] py-[7px] hover:border-[var(--accent)]'),
-        primary: cn(action, refused, solid),
-        quiet: cn(action, refused),
+        primary: cn(button, refused, solid),
+        quiet: cn(button, refused),
         bare: cn(
           action,
           'bg-[var(--sunk)] [display:flow-root] [line-height:normal] justify-normal items-normal',
@@ -56,7 +58,9 @@ const buttonVariants = cva(
         segment: cn(
           action,
           refused,
-          'px-3 py-1 hover:not-disabled:bg-accent aria-pressed:bg-card aria-pressed:font-semibold',
+          /* The canvas's segmented control: plain words on the track, the chosen one a white bordered tab.
+             A refused segment takes the calm refused look with its border drawn. */
+          'rounded-card border-transparent px-4 py-1 font-medium text-[var(--status-quiet-ink)] hover:border-transparent hover:not-disabled:bg-accent disabled:border-[var(--line)] aria-pressed:border-[var(--line)] aria-pressed:bg-card aria-pressed:font-semibold aria-pressed:text-foreground aria-pressed:shadow-[0_1px_2px_rgb(31_41_51/12%)]',
         ),
         'filter-option': cn(
           action,
@@ -69,7 +73,7 @@ const buttonVariants = cva(
           'inline-flex gap-1.5 px-2.5 py-1 rounded-pill border-[var(--line)] bg-[var(--sunk)] text-body leading-[1.4] text-start hover:border-[var(--accent)]',
         ),
         copy: cn(
-          action,
+          button,
           refused,
           'text-muted-foreground hover:border-[var(--accent)] hover:text-foreground data-[copy-state=copied]:border-[var(--accent)] data-[copy-state=copied]:text-foreground data-[copy-state=failed]:border-[var(--amber)] data-[copy-state=failed]:text-muted-foreground',
         ),

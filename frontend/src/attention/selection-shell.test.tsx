@@ -110,8 +110,8 @@ it('keeps an exact request and one dirty-end fact when the same session counts a
   expect(
     row.querySelector('[data-next-row-worth-a-look], .next-operation-outcome--bad'),
   ).toBeNull();
-  expect(within(row).getByText('Session ended with uncommitted work')).toBeVisible();
-  expect(within(row).getByText('2 changed entries')).toBeVisible();
+  // The end and git facts are said once: the dirty end, then the one git fact it lacks.
+  expect(within(row).getByText('Ended with uncommitted work · 2 changed entries')).toBeVisible();
 });
 
 it('counts the same rows in the cards, list segments and header', async () => {

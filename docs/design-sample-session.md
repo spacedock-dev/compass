@@ -215,6 +215,42 @@ pnpm 12.19.0 packages the page at 2,478,431 bytes on Node 26.12.1, 1,276 bytes b
 2,479,707-byte page before it. The page bound follows that measurement. The fixture bound
 stays at 250,000 bytes.
 
+Later on 2026-11-24, letting an opened panel's text span the panel packages the page at
+2,478,519 bytes on Node 26.12.1 and pnpm 12.19.0, 88 bytes above the dependency bump's page. The
+page bound follows that measurement. The fixture bound stays at 250,000 bytes.
+
+Later on 2026-11-24, laying out Sessions rows as the redesign canvas draws them packages the page
+at 2,475,615 bytes on Node 26.12.1 and pnpm 12.19.0, 2,904 bytes below the panel-width page,
+because the retired column rules come out of the stylesheet. The page bound follows that
+measurement. The fixture bound stays at 250,000 bytes.
+
+Later on 2026-11-24, putting the Sessions list in one card and saying a row's end and git facts once
+packages the page at 2,477,135 bytes on Node 26.12.1 and pnpm 12.19.0, 1,520 bytes above the canvas
+row's page. The page bound follows that measurement. The fixture bound stays at 250,000 bytes.
+
+Later on 2026-11-24, saying "No goal yet" on a Sessions row with no goal, in place of its Add a goal
+link, packages the page at 2,477,391 bytes on Node 26.12.1 and pnpm 12.19.0, 256 bytes above the list
+card's page. The page bound follows that measurement. The fixture bound stays at 250,000 bytes.
+
+Later on 2026-11-24, giving every Sessions row a status tile in a fixed column, with the new State not
+known tile, drawing the list's empty lines and in-row absences as plain quiet text, and matching the
+search field to the Filters button packages the page at 2,479,987 bytes on Node 26.12.1 and pnpm
+12.19.0, 2,596 bytes above the No goal yet page. The page bound follows that measurement. The fixture
+bound stays at 250,000 bytes.
+
+Later on 2026-11-24, the canvas buttons and their calm disabled look, the Session page's helper
+tiles, Project counts and in-card Check progress, and drawing every absence as plain quiet text
+package the page at 2,481,691 bytes on Node 26.12.1 and pnpm 12.19.0, 1,704 bytes above the tile
+column page. The page bound follows that measurement. The fixture bound stays at 250,000 bytes.
+
+Later on 2026-11-24, giving the card's Check progress room and keeping the summary's time column
+packages the page at 2,482,079 bytes on Node 26.12.1 and pnpm 12.19.0, 388 bytes above the Session
+page canvas build. The page bound follows that measurement. The fixture bound stays at 250,000
+bytes.
+
+Moving Your AI allowance to the top of Sessions packages the page at 2,482,083 bytes, 4 bytes above
+the spacing build, on the same toolchain. The page bound follows that measurement.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.

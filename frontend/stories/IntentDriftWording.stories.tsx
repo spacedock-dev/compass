@@ -8,7 +8,7 @@ import { fakeRouterEnvironment } from '../src/router/testing';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
 import { GLOSSARY } from '../src/language/glossary';
-import { openInFlow } from './disclosure.flow';
+import { atWidth, expectSpansPanel, openInFlow } from './disclosure.flow';
 import { openSessionTechnicalTab } from './sessionTechnical';
 
 /* The words a reader meets at the edges of a reading: why a line reads "Can't tell", what the how-to says a
@@ -241,6 +241,13 @@ export const HowToSaysWhatAReadingCanSettleAndHowFarToTrustIt: Story = {
     await expect(popup.querySelector('[data-next-intent-howto-accuracy]')).toHaveTextContent(
       "The Claude reader's accuracy check has not passed, and its latest correction is unmeasured, so read a level as an account of the evidence, not a measurement.",
     );
+    const restore = await atWidth(1280);
+    try {
+      await waitFor(() => expect(popup.getBoundingClientRect().width).toBeGreaterThan(540));
+      await expectSpansPanel(settle, popup);
+    } finally {
+      await restore();
+    }
   },
 };
 

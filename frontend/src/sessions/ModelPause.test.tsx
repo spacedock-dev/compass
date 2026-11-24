@@ -43,8 +43,12 @@ it('links paused progress and the unsaved direction choice to their own reasons'
   await page.settle();
 
   const reasonFor = (label: string) => {
-    const control = screen.getByRole('button', { name: label });
-    const id = control.getAttribute('aria-describedby') ?? '';
+    // Check progress is drawn in the header and in Is it on track?; every copy names the same reason.
+    const ids = screen
+      .getAllByRole('button', { name: label })
+      .map((control) => control.getAttribute('aria-describedby') ?? '');
+    expect(new Set(ids).size).toBe(1);
+    const id = ids[0] ?? '';
     expect(id).not.toBe('');
     expect(document.querySelectorAll(`[id="${id}"]`)).toHaveLength(1);
     return document.getElementById(id)?.textContent;

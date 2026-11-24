@@ -75,6 +75,8 @@ The lighter surfaces, dividers and fills can group content decoratively.
 | Primary action text on green | `#FFFFFF` | `#2F7D5B` | 4.99:1 | Filled action. |
 | Control border on card | `#7B8794` | `#FFFFFF` | 3.66:1 | Required outline for outlined controls. |
 | Control border on ground | `#7B8794` | `#F4F6F8` | 3.38:1 | Required outline on the page ground. |
+| Refused control label on muted fill | `#5C6976` | `#EEF1F4` | 4.96:1 | Calm disabled label. |
+| Control border on muted fill | `#7B8794` | `#EEF1F4` | 3.23:1 | A refused control keeps its outline. |
 | Card border on card | `#E3E7EB` | `#FFFFFF` | 1.24:1 | Below 3:1. Decorative edge under NUI-18. |
 | Card border on ground | `#E3E7EB` | `#F4F6F8` | 1.15:1 | Below 3:1. Decorative edge under NUI-18. |
 | Row divider on card | `#EEF1F4` | `#FFFFFF` | 1.13:1 | Below 3:1. Decorative edge under NUI-18. |
@@ -84,10 +86,12 @@ The lighter surfaces, dividers and fills can group content decoratively.
 | Worth a look flag on card | `#C2410C` | `#FFFFFF` | 5.18:1 | Off-course orange warning glyph and text. |
 | Quiet glyph on grey tile | `#3E4C59` | `#EEF1F4` | 7.77:1 | Moon shape carries state. |
 | Ended glyph on green tile | `#21573F` | `#E6F2EC` | 7.31:1 | Checkmark shape carries state. |
+| State not known glyph on neutral tile | `#52606D` | `#F4F6F8` | 5.96:1 | Dashed circle shape carries state. |
 | Working tile fill on card | `#E8F0FE` | `#FFFFFF` | 1.15:1 | Below 3:1. Decorative under NUI-18. The glyph identifies the state. |
 | Waiting tile fill on card | `#FEF3E2` | `#FFFFFF` | 1.10:1 | Below 3:1. Decorative under NUI-18. The glyph identifies the state. |
 | Quiet tile fill on card | `#EEF1F4` | `#FFFFFF` | 1.13:1 | Below 3:1. Decorative under NUI-18. The glyph identifies the state. |
 | Ended tile fill on card | `#E6F2EC` | `#FFFFFF` | 1.15:1 | Below 3:1. Decorative under NUI-18. The glyph identifies the state. |
+| State not known tile fill on card | `#F4F6F8` | `#FFFFFF` | 1.08:1 | Below 3:1. Decorative under NUI-18. The glyph identifies the state. |
 | On track text on card | `#21573F` | `#FFFFFF` | 8.40:1 | Text inside the green outline. |
 | Slightly off course text on card | `#9A3412` | `#FFFFFF` | 7.31:1 | Text inside the orange outline. |
 | Off-course orange on card | `#C2410C` | `#FFFFFF` | 5.18:1 | Outlined boundary and filled pill against its surround. |
@@ -105,9 +109,23 @@ light outline so the marker stays visible on both the filled bar and the empty t
 
 One bundled variable Inter face supplies the five steps. The style board uses 800 for the
 34 px page title, 700 for 24 px section and 18 px card titles, and 400 at 15 px for body
-text. Use 13 px for supporting text, tags and badges. It is the floor. Technical details
+text. Button labels use 600 at 15 px, and the Session page's At a glance numbers use the 24 px
+step at 800. Use 13 px for supporting text, tags and badges. It is the floor. Technical details
 can use `ui-monospace` for logs, identifiers and commands. Use sentence case on the first
 layer. Interactive targets are at least 44 px.
+
+Every button and text field shares one control radius, `--r-control`, 12 px, as the style
+board's `.btn` draws it. A button is at least 44 px tall with 18 px either side and 8 px
+between a glyph and its words. Cards keep the 16 px radius and status tiles their own. The
+Sessions search field and its Filters button share the control radius, so they stay matched.
+A checkbox keeps a 4 px corner, because 12 px would round its 16 px box into a radio's circle.
+
+Sentences on the page stop at `--measure`, 540 px, about 72 characters at the body step.
+Inside an opened accordion or collapsible panel they span the panel instead: the panel resets
+`--measure` to its own width, so the explanation behind How goals work or What is sent fills the
+card it opens in. The owner asked for this on 2026-11-24, after testing main, because a capped
+panel left the right half of a wide card empty. Popovers draw outside the panel and keep the
+cap.
 
 ## Status language
 
@@ -120,14 +138,79 @@ against the goal. Worth a look is a flag that can coexist with a state.
 | Waiting on you | Needs input, has an exact request or reports a workflow gate. | Clock tile. Count a gate-reporting session once. |
 | Quiet | The agent finished its turn and is waiting for your next message. | Moon tile on observed quiet state. A scan-only absence does not establish a turn end. |
 | Ended | The session reported that it ended. | Checkmark tile. Ended alone carries no claim about success. |
+| State not known | The agent reports it is idle, but Compass saw no finished turn, so it cannot say whether it is quiet or stopped. Also shown when no state is published. | Dashed circle on a neutral grey tile. |
 | Worth a look | A published at-risk signal or a dirty end. | Orange warning flag with a reason. |
 
-On Sessions, Project and Needs you rows, the tile carries the state with an accessible name.
-The Session page header keeps the written state. A second text line keeps **State not published**,
-**Waiting on child**, or **Read by scanning: no turn end can be observed here** where the source
-calls for it. The [dashboard reference](../compass/skills/compass/reference/dashboard.md#session-states)
+On Sessions, Project and Needs you rows, the tile carries the state with an accessible name, and
+every session row draws one of the five tiles. The Session page header keeps the written state. A
+second text line keeps **State not published**, **Waiting on child**, or **Read by scanning: no
+turn end can be observed here** where the source calls for it. The [dashboard reference](../compass/skills/compass/reference/dashboard.md#session-states)
 explains the scanning limit. Helpers are subagents. Declared child sessions retain their own
 rows and relationships.
+
+The owner asked on 2026-11-24, after testing main, for Sessions rows to follow the canvas. Under
+the title, one quiet line names the harness, the project and how long ago the session started,
+as in "Claude · acme/dashboard · started 1 hour 30 minutes ago". An ended row adds "ended 25
+minutes ago", and a row with no published start says "start time not published". The Now line
+sits under that line and the goal to the right. The Project, Next and Blocked columns and their
+header strip are gone. Blocked was exactly a session waiting on you, so the Waiting on you tile
+carries it. The row keeps the question it holds, in three lines under the Now line. No state,
+icon or legend entry was added.
+
+Later on 2026-11-24 the owner tested that row and asked the list to follow the canvas more
+closely, because the rows sat straight on the grey ground and were harder to read. Both groups now
+sit in one white card with the 16 px radius and the `--rule` edge. Each group opens with a small
+header band: its name in 13 px bold quiet-tile ink and its count on the right. The earlier group
+sits under a divider on the `--raise` ground, with How session history works in its band. Rows
+are split by `--sunk` hairlines and carry no left-edge stripe, which the style board rules out.
+The title is 18 px bold, the descriptor sits 2 px under it and the Now line 8 px under that. The
+row is the title's 44 px target, so the title's own box keeps its line height. The goal is a small
+bold label over plain ink that underlines on hover and focus, like a row title, because the
+affordance rule keeps a resting underline for links inside sentences. The owner also ruled that
+a row with no goal shows no "Add a goal" action, though the canvas draws one: the list cannot add
+a goal, so the reader opens the row and adds it on the session page. The goal cell says "No goal
+yet" in plain 13 px quiet grey text, with no pill, icon or link, and Help's explanation of that
+word now says to open the session and add a goal there. The goal source stays in the label, as
+[NUI-16](design-next-ui.md#amended-2026-11-24-owner-the-sessions-list-sits-in-one-card) and the
+goal-source amendment require. A row says its end and git facts once: an unmeasured git state
+and a git line the outcome already states are dropped, and a bare end is left to the tile, the
+end age and "Session reported its own end". A dirty end, a known git state and a changed-entry
+count stay. The status segments are one segmented control on the `--sunk` track: the chosen
+segment is white with a `--line` border, and the others are plain words that clear 4.5:1. A phone
+shows them as outlined pills with the chosen one filled. The search box reads "Search by title,
+goal or project". The canvas's short ages and row progress pills are not taken: the elapsed
+spelling above stands, and the progress slot stays blank.
+
+Also on 2026-11-24 the owner found Sessions rows with no tile, their titles shifted left out of
+line: 14 Antigravity and 3 Codex sessions reported idle with no recorded turn stop, which reads
+as State not published. The owner ruled five tiles. The fifth, **State not known**, is a neutral
+grey tile with a Phosphor Bold dashed circle: quiet ink `#52606D` on the page ground `#F4F6F8`,
+lighter than Quiet's pair so not knowing never reads as Quiet. A question mark was passed over
+because Help already uses it. Its accessible name and tooltip are "State not known". A row whose
+state is State not published shows it and keeps its text line. A row waiting on a child shows the
+tile of its own state: Working when the session is working, Quiet when it is idle with a recorded
+turn stop, and State not known otherwise. Its Waiting on child line stays, and the row's state
+word is unchanged, so the terminal parity fixture still reads Waiting on child. The tile sits in a
+fixed 44 px column on every row, so titles, descriptors and Now lines line up whatever the tile.
+The project page's session rows take the same tiles, and a project whose sessions publish no state
+shows State not known on Projects. The Sessions legend and Help list the new tile with its
+explanation. The same day the owner asked the list's empty lines to match the calm list: "No exact
+session has active evidence right now.", the earlier group's empty line and the filtered-to-nothing
+line are plain quiet ink at the 15 px body size, padded as a row inside the list card, with no
+hatch, dashed border or tinted box, as the canvas style board draws absences. Later that day the
+owner extended this to the whole board; see the
+[calm absence note](#absences-are-plain-quiet-ink-across-the-board-2026-11-24).
+
+Later that day the owner rejected the hatched box on Sessions a second time, so no absence inside a
+Sessions row or the list draws it. An unknown title, "Title not published", keeps the title's 18 px
+size at 600 weight in quiet ink `#52606D`, with no hatch, dashed border, background or inset, and
+stays the row's link and 44 px target, so it lines up with every other title. The goal cell's
+"Annotations off" is plain 13 px quiet text, as "No goal yet" is. The descriptor's "start time not
+published" and the Now line's absence were already plain. The owner also asked for the toolbar to
+match the canvas. The search field takes the Filters button's `--r-control` radius token, so the two
+always match at the canvas's 12 px once buttons move to that corner. "All sessions" moves to the 24 px, 700 section-title step the canvas and the style
+board give it, replacing an 18 px pin that no ruling set. A phone still hides that heading, as
+Mobile.dc.html does.
 
 | Progress word | Recorded level |
 |---|---|
@@ -148,7 +231,7 @@ through contextual help. The absence line and the progress pill occupy the same 
 
 | Word | Evidence it preserves | Explanation |
 |---|---|---|
-| No goal yet | No goal typed or adopted. | Add a goal to give Compass something to read against. |
+| No goal yet | No goal typed or adopted. | Open the session and add a goal there to give Compass something to read against. |
 | Not checked yet | A goal exists and a progress check has yet to run. | Check progress to ask Compass to read the record against the goal. |
 | Too early to tell | Too little recorded evidence, including the live `not_enough` state. | The session has recorded too little for a reading. |
 | Can't tell | No departure found and no check shows the goal was done. | What Compass read found no departure and gives too little evidence to say the goal was met. |
@@ -254,8 +337,9 @@ wording when its redesign ships. Route tokens still belong to the router.
 | All | Unfiltered Sessions list | Published Sessions population | Working sessions alone | First Sessions tab |
 | Active today | Active | Evidence of recent project activity | A session's Working state | Projects group |
 | No recent activity | Recently observed | Published project activity history | The Quiet session state | Projects group |
-| State not published | Keeps current label | The missing state field | The Quiet session state | Text only |
-| Waiting on child | Keeps current label | The reported child and relationship | Waiting on you | Text only |
+| State not known | Blank tile slot | An idle report with no recorded turn end, or no published state | The Quiet session state | Neutral grey tile with a dashed circle |
+| State not published | Keeps current label | The missing state field | The Quiet session state | Text line beside the State not known tile |
+| Waiting on child | Keeps current label | The reported child and relationship | Waiting on you | Text line; the tile shows the session's own state |
 | Read by scanning: no turn end can be observed here | Keeps current label | Collector scope | The Quiet session state | Text only |
 | Show technical details | Separate technical controls | Activity log, AI use, limits and raw evidence | What Compass can't see | Opens in place on the surfaces with technical evidence |
 | Hide technical details | Keeps the same subject as Show technical details | Closes the inline disclosure | Other collapsible sections | Only while the layer is open |
@@ -303,7 +387,9 @@ record the control decisions.
 ## Affordances
 
 Use a filled green primary action, a bordered secondary action and a quiet text action,
-for example Check progress, Edit goal and Not now. The style board uses 16 px card radius,
+for example Check progress, Edit goal and Not now. A control that cannot be pressed rests calm:
+a muted fill, its outline kept and muted ink, never a hatch or a dashed edge. The style board
+uses 16 px card radius,
 a 1 px decorative border and 24 px padding, with a flat edge in place of stripes or deep
 shadows. The shared Button also provides outlined and filled danger actions. Keyboard focus adds
 a 2 px Compass green outline with a 2 px offset. Sessions row titles underline on hover and
@@ -325,6 +411,80 @@ The command clears observation history, recorded session ends, parent declaratio
 correction digests and annotation discard records. It keeps typed goals and group labels,
 readings, dismissals, read choices and spend guards. It sets AI use to paused and summaries
 to off. Goal history explains that typed goals and readings survive.
+
+### Buttons and the calm disabled look, 2026-11-24
+
+The owner compared the live Session page with the canvas on 2026-11-24 and asked for buttons
+with "more border radius" and a "stronger" font weight. Buttons now take the canvas `.btn`: the
+12 px `--r-control` radius (it was 4 px, with emphasized buttons on the 10 px card radius), a
+600-weight label and 18 px side padding. The change is in the shared Button and its token, so
+every page takes it, text fields and popovers included. The owner has also rejected the hatched,
+dashed box for a control that cannot be pressed, on several surfaces that day. A refused button
+now draws the muted `--sunk` fill, the solid `--line` outline at 3.23:1 against that fill and
+`--ink3` text at 4.96:1. It stays in the tab order with `aria-disabled` where it did before and
+keeps the sentence that says why. A busy button is unchanged: it keeps its own fill and spinner.
+[NUI-18](design-next-ui.md#amended-2026-11-24-owner-a-refused-control-rests-calm) records the
+amendment to "disabled is dashed".
+
+### Absences are plain quiet ink across the board, 2026-11-24
+
+The owner asked for the hatched absence box to go everywhere, not just on Sessions. The shared
+`.next-absence` rule, in both stylesheets that carry it, now draws only quiet ink `#52606D`
+(`--ink-absence`): no hatch, no dashed border, no background. That covers the board-status lines
+("The first payload has not arrived yet.", "No data has been received in this tab.", "The board
+published no session collection.", "This session is not in the current payload.", "Not present in
+the current payload."), the three on Needs you, Settings while it reads or fails to read its
+limits, the project console's "This project is not in the current payload." and the project
+`Absence` part that Needs you, the observer controls and the terminal surface use. A view-level
+absence keeps the body size and its top margin but drops the 10 by 12 px inset, which only made
+sense inside a box, so its words start where the heading above them does; inside an empty project
+or session card it keeps its bottom margin only. The text measures 6.46:1 on a card and 5.96:1 on
+the page ground, as plain text, so the story audit no longer special-cases a hatched background,
+and the `--hatch` token and its pins are gone. Refused status segments and filter options take the
+calm refused look of the shared Button above. No hatch is left on the first layer. Three dashed
+edges remain, none of them an absence: the switch track when a switch cannot be changed, the Add a
+line control in the Goal editor, and the rule beside a defined term in the session summary. The
+owner has not asked about them.
+
+### The Session page follows the canvas, 2026-11-24
+
+Five more changes came from the same comparison.
+
+- **Check progress is filled wherever it can be pressed.** The header's button had dropped to
+  the outlined weight while a later direction was unsettled, and Check progress again was
+  always outlined. Both are now the green primary with white text whenever a press can run,
+  as the canvas draws them. A refused press takes the calm refused look above.
+- **Is it on track? has its own Check progress.** A goal with no check said Not checked yet and
+  offered no way to check. The card now draws the header's button: Check progress before any
+  reading, Check progress again after one, with the same Uses AI note. It is the same component
+  with the same board, refusals, daily cap, pause and pending key, so it shows exactly when the
+  header's does, and pressing either leaves both busy, then both inert while the check runs. The
+  card's copy is primary only before a reading and when the card has no other primary: a later
+  direction's question, Steer back and a raise for a waiting session keep theirs. The canvas
+  draws no button in the card; the owner asked for it. It sits 16 px below the explanation above it
+  and 16 px above the next line, the room the canvas gives the card's button rows, because 4 px
+  read as cramped (owner, 2026-11-24).
+- **What's happened so far keeps a fixed time column.** Each phase's time sits in a 5 rem column
+  (4.25 rem on a phone) that stays empty when the phase has no time, so every title starts at the
+  same place, as the canvas draws the list. An automatic column had moved each title by its
+  time's width and put an untimed title at the card's left edge (owner, 2026-11-24).
+- **Your AI allowance leads Sessions.** The card moved from the foot of the page to the top, under
+  the example invite and above the greeting, so a reader sees how much AI use is left before the
+  sessions (owner, 2026-11-24).
+- **Helpers in Right now have tiles.** Each helper has the 28 px tile from the canvas, the shared
+  StatusTile at its small size, named for screen readers and not a tab stop. A helper publishes
+  only whether it is running. Running gets Working. The canvas draws Ended for a finished
+  helper, but no harness records a helper's finish, so a helper that stopped gets State not
+  known and keeps the words Not running or Activity not published beside it, under the honesty
+  rules. Working says itself, so its row keeps only the elapsed time.
+- **At a glance numbers lead.** The values use the 24 px step at 800. The canvas draws 24 px at
+  800; the type-step ruling keeps the five steps, so no 26 px step was added.
+- **Project counts the project's other sessions today.** Under the project link a quiet 13 px line
+  reads "2 other sessions today · 1 working", counted from the board's rows for the same project,
+  leaving this session out. Today is the Projects group's Active today rule: Working, Waiting on
+  you, or a reported end on the board's calendar day. One session is singular. The working clause
+  is left out at zero, and the whole line when no other session was active today. The gap under
+  the Project heading is 8 px, as the canvas draws it.
 
 ## Contextual help
 
@@ -559,6 +719,9 @@ The owner-approved scope repair assigns the public promise sentence and its test
 
 > * **Quiet icon:** Phosphor Moon, Bold. The canvas's pause bars are not used.
 > * **Absence words** (No goal yet, Not checked yet, Too early to tell, Can't tell, Goal too vague to check, Out of date) get no icons; they are plain grey text. The Sessions icon legend has five entries: Working, Waiting on you, Quiet, Ended, and the Worth a look flag.
+
+Amended 2026-11-24 (owner): the legend has six entries; State not known joins before the Worth a
+look flag. See [Status language](#status-language).
 > * **Sessions tab order:** All, Waiting on you, Worth a look, Working, Quiet, Ended.
 
 ### DRC-5482 Owner follow-up rulings, 2026-11-22
@@ -585,6 +748,10 @@ The owner-approved scope repair assigns the public promise sentence and its test
 > * Sessions gets a visible on-page icon legend. A tooltip never carries the only copy.
 > * Helpers never absorb declared child sessions.
 > * Icon weight: Phosphor Bold.
+
+Amended 2026-11-24 (owner): no session row is left without a tile. State not published rows,
+and scan-only rows, show the State not known tile; Waiting on child rows show their own state's
+tile, or State not known. The text lines stay. See [Status language](#status-language).
 
 ### DRC-5485 Owner follow-up ruling, 2026-11-22
 

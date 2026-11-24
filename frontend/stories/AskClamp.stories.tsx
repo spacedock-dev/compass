@@ -114,7 +114,7 @@ export const SessionsRow: Story = {
     for (const width of [1280, 400]) {
       await atWidth(width, () =>
         clampedToThreeLines(() =>
-          canvasElement.querySelector<HTMLElement>('[data-next-operation-fact="blocked"] em'),
+          canvasElement.querySelector<HTMLElement>('[data-next-row-block-note]'),
         ),
       );
     }

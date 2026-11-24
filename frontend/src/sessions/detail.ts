@@ -307,6 +307,21 @@ function subagentActivity(subagent: unknown): boolean | null {
   return typeof active === 'boolean' ? active : null;
 }
 
+/* The tile beside a helper in Right now. A helper publishes only `active`: true while its transcript is fresh,
+   false once it has gone quiet past the working threshold, null where the harness reports nothing. No harness
+   records a helper's finish, so false is "not running", never Ended, and gets State not known with its words
+   kept beside it. */
+export function helperTile(live: boolean | null): 'Working' | 'State not known' {
+  return live === true ? 'Working' : 'State not known';
+}
+
+/* The words beside the tile: what the tile cannot say. Working says itself, so only the elapsed time stays. */
+export function helperWords(row: Pick<SubagentRow, 'live' | 'elapsed'>): string {
+  const word =
+    row.live === true ? '' : row.live === false ? 'Not running' : 'Activity not published';
+  return [word, row.elapsed ?? ''].filter(Boolean).join(' · ');
+}
+
 export interface SubagentRow {
   readonly index: number;
   readonly live: boolean | null;

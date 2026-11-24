@@ -138,9 +138,11 @@ describe('the sample session', () => {
     });
     expect(view.queryByRole('textbox', { name: 'Goal' })).toBeNull();
     expect(held()).toBe('View only: this sample cannot be edited, saved or run.');
-    await act(async () => {
-      fireEvent.click(view.getByRole('button', { name: 'Check progress again' }));
-    });
+    for (const press of view.getAllByRole('button', { name: 'Check progress again' })) {
+      await act(async () => {
+        fireEvent.click(press);
+      });
+    }
     expect(page.posts()).toBe(0);
   });
 

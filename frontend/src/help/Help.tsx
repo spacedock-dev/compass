@@ -21,6 +21,8 @@ const ICON_MEANINGS: Readonly<Record<string, string>> = {
   [SESSION_ROW_WORDS.waitingOnYou]: 'The session needs your input or approval to continue.',
   [SESSION_ROW_WORDS.quiet]: 'The agent finished its turn and is waiting for your next message.',
   [SESSION_ROW_WORDS.ended]: 'The session reported that it ended.',
+  [SESSION_ROW_WORDS.stateNotKnown]:
+    'The agent reports it is idle, but Compass saw no finished turn, so it cannot say whether it is quiet or stopped. It also shows when the agent publishes no state at all.',
   [SESSION_ROW_WORDS.worthALook]:
     'A flag for a session that may need a closer look, such as one that ended with uncommitted work.',
 };
@@ -33,7 +35,10 @@ const LEVELS = [
 ] as const;
 
 const ABSENCES = [
-  [SESSION_ROW_WORDS.noGoalYet, 'Add a goal to give Compass something to read against.'],
+  [
+    SESSION_ROW_WORDS.noGoalYet,
+    'Open the session and add a goal there to give Compass something to read against.',
+  ],
   [
     SESSION_ROW_WORDS.notCheckedYet,
     'Check progress to ask Compass to read the record against the goal.',
@@ -110,7 +115,8 @@ export function Help() {
           {STATUS_LEGEND.map(([word, icon]) => (
             <li className="help-row" key={word}>
               <span
-                className="help-icon grid h-9 basis-9 shrink-0 place-items-center rounded-card"
+                /* The neutral State not known tile: quiet ink on the page ground, as on a row. */
+                className={`help-icon grid h-9 basis-9 shrink-0 place-items-center rounded-card${icon === 'state-not-known' ? ' bg-[var(--bg)] text-[var(--ink2)]' : ''}`}
                 data-help-icon={icon}
               >
                 <Icon name={icon} size={20} />

@@ -168,9 +168,13 @@ describe('a stored reading', () => {
     });
     await page.settle();
     expect(screen.getByText(failure, { exact: false })).toBeVisible();
-    const retry = screen.getByRole('button', { name: 'Check progress again' });
-    expect(retry).toBeVisible();
-    expect(retry.nextElementSibling?.textContent).toBe('Uses AI');
+    // The header's retry and its copy in Is it on track?, each with its cost beside it.
+    const retries = screen.getAllByRole('button', { name: 'Check progress again' });
+    expect(retries).toHaveLength(2);
+    for (const retry of retries) {
+      expect(retry).toBeVisible();
+      expect(retry.nextElementSibling?.textContent).toBe('Uses AI');
+    }
     expect(document.querySelector('[data-next-drift-stamp]')).toBeNull();
   });
 
@@ -298,7 +302,8 @@ describe('a stored reading', () => {
     expect(status.querySelector('[data-next-cockpit-action="reading-ask"]')?.textContent).toBe(
       'Check progress again',
     );
-    expect(document.querySelectorAll('[data-next-cockpit-action="reading-ask"]')).toHaveLength(1);
+    // One press, drawn in the header and again in Is it on track?.
+    expect(document.querySelectorAll('[data-next-cockpit-action="reading-ask"]')).toHaveLength(2);
   });
 
   it('says new work arrived after the reading read, and what kind', async () => {
@@ -315,7 +320,8 @@ describe('a stored reading', () => {
     await page.settle();
     const stale = document.querySelector('[data-next-evidence-stale="work"]') as HTMLElement;
     expect(stale.textContent).toContain('New work since this analysis.');
-    expect(document.querySelectorAll('[data-next-cockpit-action="reading-ask"]')).toHaveLength(1);
+    // One press, drawn in the header and again in Is it on track?.
+    expect(document.querySelectorAll('[data-next-cockpit-action="reading-ask"]')).toHaveLength(2);
     expect(textOf('[data-next-result]')).toContain(
       '1 check, 1 message arrived since this analysis.',
     );
@@ -359,8 +365,10 @@ describe('a current result while model calls are paused', () => {
     expect(resume.closest('[hidden]')).toBeNull();
     expect(resume.closest('[data-closed]')).toBeNull();
     expect(screen.queryAllByRole('button', { name: 'Resume AI use' })).toHaveLength(1);
-    expect(byAction('reading-ask')?.getAttribute('aria-disabled')).toBe('true');
-    expect(document.querySelectorAll('[data-next-cockpit-action="reading-ask"]')).toHaveLength(1);
+    for (const control of document.querySelectorAll('[data-next-cockpit-action="reading-ask"]'))
+      expect(control.getAttribute('aria-disabled')).toBe('true');
+    // One press, drawn in the header and again in Is it on track?.
+    expect(document.querySelectorAll('[data-next-cockpit-action="reading-ask"]')).toHaveLength(2);
   });
 });
 

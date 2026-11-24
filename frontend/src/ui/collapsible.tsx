@@ -7,7 +7,7 @@
 import type { ReactNode } from 'react';
 import { Collapsible as CollapsiblePrimitive } from '@base-ui/react/collapsible';
 import { cn } from '../lib/utils';
-import { disclosureMotion, disclosureTrigger } from './accordion';
+import { disclosureMotion, disclosurePanelMeasure, disclosureTrigger } from './accordion';
 import { DisclosureChevron } from './disclosureChevron';
 
 export function Collapsible(props: CollapsiblePrimitive.Root.Props) {
@@ -34,7 +34,12 @@ export function CollapsibleContent({ className, ...props }: CollapsiblePrimitive
   return (
     <CollapsiblePrimitive.Panel
       data-slot="collapsible-content"
-      className={cn(disclosureMotion, 'h-[var(--collapsible-panel-height)]', className)}
+      className={cn(
+        disclosureMotion,
+        disclosurePanelMeasure,
+        'h-[var(--collapsible-panel-height)]',
+        className,
+      )}
       {...props}
     />
   );

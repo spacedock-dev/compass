@@ -1,4 +1,3 @@
-import { Icon } from '../ui/icons';
 import { StatusLegend } from '../ui/status-legend';
 import { groupName, groupOf, nestRows } from './declared';
 import { RelationshipLabels } from './DeclaredRelationships';
@@ -13,7 +12,13 @@ import { WorthALookFlag } from '../attention/WorthALookFlag';
 import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 'react';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
-import { SESSION_TEXT_ORIGIN, gapNames, sessionStateLimit, type Row } from '../observed';
+import {
+  SESSION_TEXT_ORIGIN,
+  gapNames,
+  sessionStateLimit,
+  sessionTile,
+  type Row,
+} from '../observed';
 import { selectObserved } from '../observed/select';
 import { selectHarnessSources } from '../store/selectors';
 import { useDisplayed, useShell } from '../shell/context';
@@ -41,12 +46,11 @@ import {
   type FilterActions,
   type FilterBoard,
 } from './SessionsFilters';
-import { buildSessionsScreen, rowState, type SessionRow } from './rows';
+import { buildSessionsScreen, outcomeLine, rowState, type SessionRow } from './rows';
 import { SessionsGlance } from './SessionsGlance';
 import { assignmentOf, type PromptCandidate } from './intent';
 import { goalFocusFor } from './heldState';
 import { worktreeOf } from './worktree';
-import type { ReactNode } from 'react';
 import {
   BOARD_WHY,
   DUPLICATE_LABEL_LIMIT,
@@ -62,76 +66,104 @@ import './sessions.css';
    it was given. Every summary figure comes from the shared selection over the rows being drawn.
    Nothing here fetches, polls or acts; a row's controls act only when pressed. */
 
+/* The goal cell's label, as the redesign canvas draws it: a small bold line over the goal. */
+const GOAL_LABEL = 'block text-label font-semibold leading-[1.5] text-muted-foreground';
+
+/* The goal cell's label and its stated absence, while annotations are off and there is no goal to link. */
 function Fact({
   kind,
   label,
   value,
-  valueAuthored,
-  detail,
-  detailAuthored,
-  tone = '',
 }: {
   readonly kind: string;
   readonly label: string;
   readonly value: string;
-  readonly valueAuthored?: boolean;
-  readonly detail?: ReactNode;
-  readonly detailAuthored?: boolean;
-  readonly tone?: string;
 }) {
   return (
     <span
-      className={tone ? `next-operation-fact next-operation-fact--${tone}` : 'next-operation-fact'}
+      className="next-operation-fact next-operation-fact--unknown"
       data-next-operation-fact={kind}
     >
-      <small>{label}</small>
-      <strong
-        className={tone === 'unknown' ? 'next-absence' : undefined}
-        data-authored={valueAuthored || undefined}
-      >
+      <small className={GOAL_LABEL}>{label}</small>
+      {/* Plain quiet text, as "No goal yet" is drawn: no hatch or dashed box inside the list (owner, 2026-11-24). */}
+      <strong className="mt-0.5 block text-label leading-[1.5] font-normal text-[var(--ink2)]">
         {value}
       </strong>
-      {/* A held question can run to 2,000 characters: the row shows its opening, the session page all of it. */}
-      {detail ? (
-        <em className="line-clamp-3" data-authored={detailAuthored || undefined}>
-          {detail}
-        </em>
+    </span>
+  );
+}
+
+/* One line under the title, as the redesign canvas gives it: harness, project, worktree, when the session
+   started and, once it has, when it ended. Every row says when it started: a session that published no start
+   says so in quiet text. A start with no usable age is left out, as every other age is. */
+function Descriptor({ row }: { readonly row: SessionRow }) {
+  const { session } = row;
+  const worktree = worktreeOf(row.source);
+  return (
+    <span
+      className="next-operation-descriptor mt-0.5 block text-label text-muted-foreground"
+      data-next-row-descriptor
+    >
+      <span className="next-operation-harness">{row.harnessLabel}</span>
+      {session.project.trim() ? (
+        <>
+          {' · '}
+          <span data-authored>{session.project}</span>
+        </>
+      ) : null}
+      {worktree ? (
+        <>
+          {' · worktree '}
+          <span data-authored>{worktree}</span>
+        </>
+      ) : null}
+      {row.startedSince || !row.startPublished ? (
+        <span data-next-row-started>
+          {' · '}
+          {row.startedSince || 'start time not published'}
+        </span>
+      ) : null}
+      {row.endedSince ? (
+        <>
+          {' · '}
+          <span data-next-row-ended>{row.endedSince}</span>
+        </>
       ) : null}
     </span>
   );
 }
 
-/* A fact is toned only while it is known: an unknown value is a stated absence and wears `.next-absence`,
-   so "not published" never reads as a quieter version of a value. */
-function ObservedFact({
-  kind,
-  label,
-  text,
-  known,
-  authored = false,
-  note = '',
-  noteAuthored = false,
-  tone = '',
-}: {
-  readonly kind: string;
-  readonly label: string;
-  readonly text: string;
-  readonly known: boolean;
-  readonly authored?: boolean;
-  readonly note?: string;
-  readonly noteAuthored?: boolean;
-  readonly tone?: string;
-}) {
+/* What the session is doing now, under the descriptor. With nothing published about now, a current task
+   stands in for it; with neither, the absence words, in plain quiet text. */
+function NowLine({ row, assignment }: { readonly row: SessionRow; readonly assignment: string }) {
+  const { session } = row;
+  if (session.nowWordsKnown)
+    return (
+      <span
+        className="next-operation-now mt-2 block text-body leading-[1.5] text-foreground"
+        data-next-operation-fact="now"
+        data-authored={session[SESSION_TEXT_ORIGIN].now || undefined}
+      >
+        {session.nowWords}
+      </span>
+    );
+  if (assignment)
+    return (
+      <span
+        className="next-operation-now mt-2 line-clamp-2 text-body leading-[1.5] text-foreground"
+        data-next-operation-fact="now"
+      >
+        {'Current task · '}
+        <span data-authored>{assignment}</span>
+      </span>
+    );
   return (
-    <Fact
-      kind={kind}
-      label={label}
-      value={text}
-      valueAuthored={authored}
-      detail={note}
-      detailAuthored={noteAuthored}
-      tone={known ? tone : 'unknown'}
-    />
+    <span
+      className="next-operation-now mt-2 block text-body leading-[1.5] text-muted-foreground"
+      data-next-operation-fact="now"
+    >
+      {session.nowWords}
+    </span>
   );
 }
 
@@ -142,38 +174,86 @@ function Identity({
   readonly row: SessionRow;
   readonly hints: readonly RowHint[];
 }) {
+  const shell = useShell();
   const { session, source, history } = row;
   const assignment = history ? '' : assignmentOf(source);
   const names = source ? gapNames(source) : [];
+  /* A row with no goal offers no goal action; opening it lands in the empty goal box instead, where the goal
+     is added (owner, 2026-11-24). */
+  const toGoal =
+    row.goal.kind === 'none'
+      ? () => goalFocusFor(shell.controls).request({ harness: session.harness, sid: session.sid })
+      : undefined;
   const state = rowState(session);
   const limit = sessionStateLimit(session, state);
-  const tile = state !== 'State not published' && state !== 'Waiting on child';
+  /* Every row draws a tile (owner, 2026-11-24). A row whose state word is a text line (State not published,
+     Waiting on child) keeps that line as its state, and its tile shows what Compass can say underneath. */
+  const wordIsTile = state !== 'State not published' && state !== 'Waiting on child';
+  const tile = sessionTile(session, state);
+  /* The Waiting on you tile carries the block; what the session is waiting on stays under the Now line. A held
+     question can run to 2,000 characters: the row shows three lines, the session page all of it. A note that
+     only repeats the Now line is said once. */
+  const note =
+    !history && session.blockNote.trim() && session.blockNote.trim() !== session.nowWords.trim()
+      ? session.blockNote
+      : '';
+  const outcomeTone =
+    session.outcomeIcon === 'worth-a-look' ? '' : ` next-operation-outcome--${session.tone}`;
+  const facts = row.showOutcome ? outcomeLine(session.outcomeText, session.gitText) : '';
   return (
-    <div className="next-operation-identity flex items-start gap-3 pl-3 max-[620px]:grid max-[620px]:gap-1">
-      {tile ? <StatusTile state={state} live={session.isLive && state === 'Working'} /> : null}
+    <div className="next-operation-identity flex items-start gap-4 max-[620px]:gap-3">
+      {/* A fixed 44 px column, so titles, descriptors and Now lines line up whatever a row's tile is. */}
+      <span
+        className="next-operation-tile flex w-11 shrink-0 justify-center"
+        data-next-row-tile-slot
+      >
+        <StatusTile
+          state={tile}
+          rowState={wordIsTile ? state : null}
+          live={session.isLive && tile === 'Working'}
+        />
+      </span>
       <div className="min-w-0">
         <RouteAnchor
           route={row.route}
-          className={`next-operation-route block ${titleLink}`}
+          /* The row is the 44 px target: the link's ::after covers the whole card. The title's own box keeps
+             its line height, so the descriptor sits directly under it. */
+          className={`next-operation-route block [min-block-size:0]! ${titleLink}`}
           label={`Open session ${session.titleText}`}
+          {...(toGoal ? { before: toGoal } : {})}
           focusKey={`sessions-row:${row.key}`}
           fallback={SEARCH_KEY}
         >
+          {/* An unknown title is a calm absence: the title's size in quiet ink, with no hatch, dashed edge or
+              box, and still the row's link (owner, 2026-11-24). */}
           <strong
             data-authored={session.titleKnown || undefined}
-            className={`mt-0 font-semibold${session.titleKnown ? '' : ' next-operation-title--unknown next-absence'}`}
+            className={`mt-0 text-value leading-[1.4]${session.titleKnown ? ' font-bold' : ' next-operation-title--unknown font-semibold text-[var(--ink2)]'}`}
           >
             {session.titleText}
           </strong>
-          <span className="next-operation-harness block text-label text-muted-foreground">
-            {row.harnessLabel}
-          </span>
         </RouteAnchor>
+        <Descriptor row={row} />
+        <NowLine row={row} assignment={assignment} />
+        {note ? (
+          <span
+            className="next-operation-block-note mt-1 line-clamp-3 text-body leading-[1.5] text-muted-foreground"
+            data-next-row-block-note
+            data-authored={session[SESSION_TEXT_ORIGIN].blockNote || undefined}
+          >
+            {note}
+          </span>
+        ) : null}
+        {facts ? (
+          <span className={`next-operation-outcome${outcomeTone}`} data-next-row-outcome>
+            {facts}
+          </span>
+        ) : null}
         {limit && state !== 'Waiting on child' ? (
           <span
             className="next-operation-scan-only"
             title={session.scanOnly ? SCAN_ONLY_NOTE : undefined}
-            data-next-row-state={tile ? undefined : state}
+            data-next-row-state={wordIsTile ? undefined : state}
           >
             {limit}
           </span>
@@ -209,7 +289,8 @@ function Identity({
             )}
           </span>
         ))}
-        {assignment ? (
+        {/* Where the Now line already says what the session is doing, the task keeps its own line. */}
+        {assignment && session.nowWordsKnown ? (
           <span className="next-operation-assignment block">
             {'Current task · '}
             <span data-authored>{assignment}</span>
@@ -234,22 +315,32 @@ function Identity({
 function GoalCellView({ row }: { readonly row: SessionRow }) {
   const shell = useShell();
   const { goal } = row;
-  if (goal.kind === 'off')
-    return <Fact kind="goal" label="Goal" value={goal.text} tone="unknown" />;
+  if (goal.kind === 'off') return <Fact kind="goal" label="Goal" value={goal.text} />;
+  /* No goal: the ruled absence word in plain quiet text, and no action. The list cannot add a goal; the
+     reader opens the row and adds one on the session page (owner, 2026-11-24). */
+  if (goal.kind === 'none')
+    return (
+      <span className="next-operation-fact" data-next-operation-fact="goal">
+        <small className={GOAL_LABEL}>{goal.label}</small>
+        <span
+          className="mt-0.5 block text-label leading-[1.5] text-muted-foreground"
+          data-next-goal-absent
+        >
+          {goal.text}
+        </span>
+      </span>
+    );
   const onGoal = () =>
     goalFocusFor(shell.controls).request({ harness: row.session.harness, sid: row.session.sid });
   return (
     <span className="next-operation-fact" data-next-operation-fact="goal">
-      <small>{goal.label}</small>
+      <small className={GOAL_LABEL}>{goal.label}</small>
       <RouteAnchor
         route={row.route}
-        /* A goal holds 1,000 characters since 2026-10-27: the list shows three lines, the session page the rest. */
-        className={
-          goal.known
-            ? 'next-operation-goal-link line-clamp-3'
-            : 'next-operation-goal-link line-clamp-3 next-absence'
-        }
-        extra={{ 'data-next-goal-focus': '', ...(goal.known ? { 'data-authored': '' } : {}) }}
+        /* A goal holds 1,000 characters since 2026-10-27: the list shows three lines, the session page the rest.
+           Plain ink at rest, as the canvas draws it; like a row title it underlines on hover and focus. */
+        className={`next-operation-goal-link relative z-[1] mt-0.5 line-clamp-3 text-body font-normal leading-[1.5] [overflow-wrap:anywhere] ${titleLink}`}
+        extra={{ 'data-next-goal-focus': '', 'data-authored': '' }}
         before={onGoal}
         focusKey={`sessions-row-goal:${row.key}`}
         fallback={SEARCH_KEY}
@@ -274,96 +365,29 @@ const RowView = memo(function RowView({
   readonly depth?: number;
 }) {
   const { session, history } = row;
-  const worktree = worktreeOf(row.source);
-  const outcomeTone =
-    session.outcomeIcon === 'worth-a-look' ? '' : ` next-operation-outcome--${session.tone}`;
-  const outcome = row.showOutcome ? (
-    <span className={`next-operation-outcome${outcomeTone}`}>
-      {session.outcomeIcon === 'ended' ? (
-        <Icon name={session.outcomeIcon} className="mr-1 inline-block align-text-bottom" />
-      ) : null}
-      {session.outcomeText}
-      <span
-        className={
-          session.gitKnown
-            ? 'next-operation-outcome'
-            : 'next-operation-outcome next-operation-outcome--unknown'
-        }
-      >
-        {session.gitText}
-      </span>
-    </span>
-  ) : null;
-  const now = (
-    <ObservedFact
-      kind="now"
-      label="Now"
-      text={session.nowWords}
-      known={session.nowWordsKnown}
-      authored={session[SESSION_TEXT_ORIGIN].now}
-      note={row.endedSince}
-    />
-  );
+  /* Two columns, as the redesign canvas draws a row: the session and what it is doing on the left, its goal on
+     the right. A phone stacks them. A declared child is indented, never striped: the style board allows no
+     left-border stripes. */
   return (
     <Card
       as="article"
       variant="session-row"
-      className={`next-operation-row relative cursor-pointer no-underline next-operation-row--${session.tone}${depth ? ' ml-4 w-auto border-l-2 border-l-border' : ''}`}
+      className={`next-operation-row relative cursor-pointer no-underline grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] max-[620px]:grid-cols-1 next-operation-row--${session.tone}${depth ? ' pl-12 max-[620px]:pl-8' : ''}`}
       {...(depth ? { 'data-declared-depth': depth } : {})}
       data-next-harness={session.harness}
       data-next-session={session.sid}
       {...(history ? { 'data-next-operation-history': 'true' } : {})}
     >
       <Identity row={row} hints={hints} />
-      {/* The project label alone: "Exact location not published" sat hatched on every row and read as an
-          error, for a location no harness publishes here. */}
-      <Fact
-        kind="where"
-        label="Project"
-        value={session.project}
-        valueAuthored={Boolean(session.project.trim())}
-        detail={
-          worktree ? (
-            <>
-              {'worktree '}
-              <span data-authored>{worktree}</span>
-            </>
-          ) : null
-        }
-      />
       <GoalCellView row={row} />
-      {history ? (
-        <>
-          <div className="next-operation-history-now">
-            {now}
-            {outcome}
-          </div>
-        </>
-      ) : (
-        <>
-          {now}
-          <ObservedFact
-            kind="next"
-            label="Next"
-            text={session.nextText}
-            known={session.nextKnown}
-            authored={session.nextKnown}
-          />
-          <ObservedFact
-            kind="blocked"
-            label={`Blocked${row.responsibility}`}
-            text={session.blockText}
-            known={session.blockKnown}
-            note={session.blockNote}
-            noteAuthored={session[SESSION_TEXT_ORIGIN].blockNote}
-            tone={session.isNeeds || session.askKnown ? 'blocked' : 'clear'}
-          />
-          {outcome ? <div className="next-operation-end-note">{outcome}</div> : null}
-        </>
-      )}
     </Card>
   );
 });
+
+/* An empty group says so in plain quiet text, padded as a row inside the list card, with no hatch, dashed edge
+   or tinted box: the style board draws absences as plain grey text (owner, 2026-11-24). */
+const EMPTY_LINE =
+  'm-0 border-0 border-t border-solid border-[var(--sunk)] px-6 py-5 text-body leading-[1.5] text-[var(--ink2)] max-[620px]:p-4';
 
 const Group = memo(function Group({
   kind,
@@ -398,12 +422,17 @@ const Group = memo(function Group({
         .map((group) => ({ group, rows: kept.filter((row) => groupOf(row.source) === group) }))
     : [{ group: '', rows: kept }];
   return (
+    /* One band of the list card: a small header, then rows split by hairline dividers. History sits on the
+       card's tinted ground, under a divider. */
     <section
-      className={`next-operation-group next-operation-group--${kind}`}
+      className={`next-operation-group next-operation-group--${kind}${kind === 'history' ? ' border-0 border-t border-solid border-[var(--rule)] bg-[var(--raise)]' : ''}`}
       data-next-operation-group={kind}
     >
-      <header className="flex flex-wrap items-center justify-between gap-x-2">
-        <h2>{title}</h2>
+      <header
+        className={`flex flex-wrap items-baseline justify-between gap-x-3 px-6 pb-2 max-[620px]:px-4 ${kind === 'history' ? 'pt-6 max-[620px]:pt-4' : 'pt-4 max-[620px]:pt-3'}`}
+      >
+        {/* The canvas draws group names in the quiet tile's ink. */}
+        <h2 className="m-0 text-label font-bold text-[var(--status-quiet-ink)]">{title}</h2>
         {countsAvailable ? (
           <span className="text-label text-muted-foreground" data-sessions-group-count>
             {kept.length} {kept.length === 1 ? 'session' : 'sessions'}
@@ -411,7 +440,10 @@ const Group = memo(function Group({
         ) : null}
       </header>
       {noMatches && kind === 'active' ? (
-        <div className="flex flex-wrap items-center gap-x-2" data-sessions-nothing>
+        <div
+          className="flex flex-wrap items-center gap-x-2 border-0 border-t border-solid border-[var(--sunk)] px-6 py-3 max-[620px]:px-4"
+          data-sessions-nothing
+        >
           <p className="m-0 text-body text-muted-foreground">{SESSION_LIST_WORDS.nothingMatches}</p>
           <Button
             type="button"
@@ -432,6 +464,7 @@ const Group = memo(function Group({
           })}
           summary={EXPLANATIONS.sessionHistory}
           explanation
+          className="px-6 pb-2 max-[620px]:px-4"
         >
           {caveat.map((sentence) => (
             <p key={sentence} className="next-why-body">
@@ -443,7 +476,7 @@ const Group = memo(function Group({
       {/* A sibling after the header, never inside it, so a filtered header reads exactly as an unfiltered one. */}
       {filter?.filtered.active && !noMatches && rows.length ? (
         <p
-          className="m-0 flex flex-wrap items-center gap-x-2 text-body text-muted-foreground"
+          className="m-0 flex flex-wrap items-center gap-x-2 px-6 pb-2 text-body text-muted-foreground max-[620px]:px-4"
           data-next-sessions-shown={kind}
         >
           <span
@@ -455,20 +488,6 @@ const Group = memo(function Group({
           </Button>
         </p>
       ) : null}
-      {!countsAvailable || noMatches ? null : (
-        <div className="next-operations-columns" aria-hidden="true">
-          <span>Session</span>
-          <span>Project</span>
-          <span>Goal</span>
-          <span>Now</span>
-          {kind === 'history' ? null : (
-            <>
-              <span>Next</span>
-              <span>Blocked</span>
-            </>
-          )}
-        </div>
-      )}
       <TooltipProvider>
         <div className="next-operation-rows">
           {kept.length ? (
@@ -476,7 +495,7 @@ const Group = memo(function Group({
               <Fragment key={bucket.group}>
                 {byGroup ? (
                   <h3
-                    className="my-2 text-label font-semibold [overflow-wrap:anywhere]"
+                    className="m-0 border-0 border-t border-solid border-[var(--sunk)] px-6 pt-4 pb-2 text-label font-semibold [overflow-wrap:anywhere] max-[620px]:px-4"
                     data-authored={Boolean(bucket.group) || undefined}
                   >
                     {groupName(bucket.group)}
@@ -493,11 +512,13 @@ const Group = memo(function Group({
               </Fragment>
             ))
           ) : !countsAvailable || noMatches ? null : rows.length ? (
-            <p data-next-sessions-filtered-empty className="next-absence">
+            <p data-next-sessions-filtered-empty className={EMPTY_LINE}>
               {groupEmptyLine(rows.length, title)}
             </p>
           ) : (
-            <p className="next-sessions-empty next-absence">{empty}</p>
+            <p className={`next-sessions-empty ${EMPTY_LINE}`} data-next-sessions-empty={kind}>
+              {empty}
+            </p>
           )}
         </div>
       </TooltipProvider>
@@ -681,6 +702,9 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
   if (!screen || !board) return null;
   return (
     <section className="next-operations" data-next-view-body="sessions">
+      {/* The allowance leads the page, under the example invite and above the greeting (owner, 2026-11-24): a
+          reader deciding what to start next reads how much AI use is left before the sessions. */}
+      <CapacityStrip />
       {attention ? (
         <SessionsGlance
           selection={attention}
@@ -713,7 +737,9 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
         id={SESSIONS_LIST_ID}
         aria-label={SESSION_LIST_WORDS.all}
         tabIndex={-1}
-        className="scroll-mt-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        /* The whole list, both groups, sits in one white card, as the redesign canvas draws it. */
+        className="mt-4 scroll-mt-2 overflow-hidden rounded-standard-card border border-solid border-[var(--rule)] bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        data-sessions-list-card
       >
         <Group
           kind="active"
@@ -737,7 +763,6 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
       </section>
       <SessionsWindowLink board={board} />
       <StatusLegend />
-      <CapacityStrip />
     </section>
   );
 }

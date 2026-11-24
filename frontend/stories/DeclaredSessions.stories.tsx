@@ -215,8 +215,8 @@ export const ParentPageShowsHelpersApartFromChildren: Story = {
     const right = within(await canvas.findByRole('region', { name: 'Right now' }));
     const helpers = right.getByRole('list', { name: 'Helpers (1)' });
     await expect(helpers).toHaveTextContent('Read release notes');
-    await expect(helpers).toHaveTextContent('Working');
-    await expect(helpers.querySelector('svg')).toBeNull();
+    // The helper's tile says Working; the row keeps only its elapsed time beside it.
+    await expect(within(helpers).getByRole('img', { name: 'Working' })).toBeVisible();
     await expect(helpers).not.toHaveTextContent('Check build');
     await expect(canvas.getByRole('region', { name: 'Linked children' })).toHaveTextContent(
       'Check build',
@@ -334,7 +334,13 @@ function containedChild(width: number): Story {
         const bounds = list.getBoundingClientRect();
         const parent = row(canvasElement, 'parent').getBoundingClientRect();
         const nested = child.getBoundingClientRect();
-        await expect(nested.left).toBeGreaterThan(parent.left);
+        // Rows span the list card; a child is indented inside its row rather than striped or shifted.
+        const start = (sid: string) =>
+          (
+            row(canvasElement, sid).querySelector('.next-operation-identity') as HTMLElement
+          ).getBoundingClientRect().left;
+        await expect(start('child')).toBeGreaterThan(start('parent') + 8);
+        await expect(nested.left).toBeGreaterThanOrEqual(parent.left);
         await expect(nested.left).toBeGreaterThanOrEqual(bounds.left);
         await expect(nested.right).toBeLessThanOrEqual(bounds.right + 1);
       } finally {
@@ -450,7 +456,8 @@ export const ProjectChildWait: Story = {
     const sessions = within(await canvas.findByRole('region', { name: 'Sessions' }));
     const parent = within(sessions.getByRole('link', { name: /Coordinate release/ }));
     await expect(parent.getByText('Waiting on child "Check build"')).toBeVisible();
-    await expect(parent.queryByRole('img', { name: 'Working' })).toBeNull();
+    // The parent is itself working, so its tile is the Working one (owner, 2026-11-24).
+    await expect(parent.getByRole('img', { name: 'Working' })).toBeVisible();
   },
 };
 
@@ -507,7 +514,9 @@ export const ProjectDisplayedStateRollup: Story = {
     const sessions = within(await canvas.findByRole('region', { name: 'Sessions' }));
     const parent = within(sessions.getByRole('link', { name: /Coordinate release/ }));
     await expect(parent.getByText('Waiting on child "Check build"')).toBeVisible();
-    await expect(parent.queryByRole('img')).toBeNull();
+    await expect(parent.getAllByRole('img').map((tile) => tile.getAttribute('aria-label'))).toEqual(
+      ['Working'],
+    );
   },
 };
 

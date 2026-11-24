@@ -71,11 +71,16 @@ Right now, At a glance and Project are on the right. On narrower windows, the ca
 order: Goal, Is it on track?, Right now, What's happened so far, At a glance and Project.
 
 - Goal shows your saved goal and what done looks like. How goals work explains what Compass reads.
-- Is it on track? shows the progress answer and the actions you can take.
-- Right now shows the latest published activity and helpers. Open the session to see its next
-  step and whether it is blocked. When it reports its own end, the current next step and block
-  rows disappear. At a glance shows published figures and labels an incomplete entry count
-  "At least".
+- Is it on track? shows the progress answer and the actions you can take. It repeats the header's
+  Check progress button, so Not checked yet always sits beside the way to check. The two buttons
+  are one control: pressing either starts one check, and both wait while it runs.
+- Right now shows the latest published activity and helpers. Each helper has a small tile:
+  Working while it runs, and State not known once it stops, because no agent records when a
+  helper finished. Open the session to see its next step and whether it is blocked. When it
+  reports its own end, the current next step and block rows disappear. At a glance shows
+  published figures and labels an incomplete entry count "At least".
+- Project links to the project and counts its other sessions that were active today, as in
+  "2 other sessions today · 1 working".
 - What's happened so far starts with Compass's outline, made from the record without a model.
   Codex outlines only your messages. A Claude Code summary adds an opening paragraph and short
   phases. Open one phase at a time. Off course here opens the matching evidence. A flag from an
@@ -181,7 +186,7 @@ even on a project page.
 
 | Tab | Key | What it shows |
 |---|---|---|
-| Sessions | `s` | Every session, with active work above recent history. Each active session shows where it is, what it is doing now, what it does next and whether it is blocked. Clicking a goal opens that session at its Goal card. |
+| Sessions | `s` | Every session in one list, with active work above recent history. Each row shows the session's state icon and title, a line naming its agent, project and when it started, what it is doing now, and its goal. A session waiting on you shows what it is waiting for. Clicking a goal opens that session at its Goal card. |
 | Projects | `p` | Sessions grouped by project. Each project has a page with a briefing and the views Overview, Timeline, Decisions and Usage and alerts. |
 | Needs you | `n` | Waiting on you comes first, followed by Worth a look and Ready to wrap up. The badge counts the first two queues. Open What Compass can't see for coverage and its limits. |
 | Goal history | none | Search current and older goals by their text or by session title where available. Each goal shows its source and time. Open How long goals are kept for the limits. |
@@ -217,7 +222,7 @@ history works explains what those rows can tell you. If every discovered source 
 results and session counts are unavailable.
 The [Find sessions design record](design-sessions-search.md) owns the counting rules.
 
-At the foot of Sessions, Your AI allowance shows the selected quota window, its published reset
+At the top of Sessions, Your AI allowance shows the selected quota window, its published reset
 and the amount used. The bar marks how far the window has elapsed when the clock is available.
 Open How the AI allowance works for the pace, local reset date and time, and source. Turning off
 quota reading stops credential-backed fetches in this browser. Fresh Codex disk readings and
@@ -229,10 +234,12 @@ Linked children follow their visible parent on Sessions and name it with a page 
 parent gets a second line, `Waiting on child "title"`. Sessions and the session page link it to the
 child even when a filter hides the child. An open question takes precedence over the child wait.
 A reported session end takes precedence in the state label. If the board still publishes a
-question for that session, you can answer it on the session page. Sessions shows a status tile
-beside the title when the harness publishes enough evidence. The legend names each tile,
-including Quiet for an observed turn stop and Ended for a reported session end. If scanning
-cannot see a turn end, the row explains that in words. The progress slot on the row is
+question for that session, you can answer it on the session page. Every Sessions row shows a
+status tile beside the title, and the tiles line up in one column. The legend names each tile,
+including Quiet for an observed turn stop, Ended for a reported session end, and State not known
+when the agent reports it is idle but Compass saw no finished turn. A row waiting on a child
+shows the tile of its own state when Compass knows it. If scanning cannot see a turn end, the
+row also explains that in words. The progress slot on the row is
 blank. Open the session page to see the progress reading and any live estimate the session
 supports.
 

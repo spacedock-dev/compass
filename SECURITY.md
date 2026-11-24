@@ -1560,7 +1560,7 @@ Token handling is read-only, one way, and never expands:
   that vendor stays out of the band as it does when no token can be read.
 
 Consent and the off switch: the feature is on until the reader turns it off, and the line saying so is
-on screen whenever it can act. Your AI allowance at the foot of Sessions and the project's Usage
+on screen whenever it can act. Your AI allowance at the top of Sessions and the project's Usage
 and alerts view say that quota is read with the Claude Code and Cursor logins on this machine and
 that no session content is sent. Choose Turn off quota reading to stop it for this browser origin.
 The line then states the off state and offers Turn on quota reading. In Settings, **Show my AI

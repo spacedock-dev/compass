@@ -577,7 +577,7 @@ export const RegionsInOrder: Story = {
       name: 'Synthetic layout session',
     });
     const header = title.closest('header') as HTMLElement;
-    const progress = canvas.getByRole('button', { name: 'Check progress' });
+    const progress = canvas.getAllByRole('button', { name: 'Check progress' })[0] as HTMLElement;
     await expect(header).toContainElement(progress);
     await expect(header).toHaveTextContent('State: Working');
     await expect(header.querySelector('[data-next-session-status] svg')).toBeNull();
@@ -1204,7 +1204,9 @@ export const MoreIsRetired: Story = {
     await expect(inDrift.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
     await expect(inDrift.queryByRole('button', { name: 'Drift settings' })).toBeNull();
     await expect(inDrift.queryByText(/^Delegated work:/)).toBeNull();
-    await expect(canvas.getByRole('button', { name: 'Check progress' })).toBeVisible();
+    await expect(
+      canvas.getAllByRole('button', { name: 'Check progress' })[0] as HTMLElement,
+    ).toBeVisible();
     await userEvent.click(inDrift.getByRole('button', { name: 'What is sent' }));
     await waitFor(() =>
       expect(inDrift.getByText('Estimated prompt ceiling for this route: 512 KB.')).toBeVisible(),
@@ -1726,16 +1728,18 @@ export const HelperActivity: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const helpers = canvas.getByRole('list', { name: 'Helpers (3)' });
-    await expect(helpers).toHaveTextContent('Working');
-    await expect(helpers.querySelector('svg')).toBeNull();
-    for (const [name, word] of [
-      ['Read documentation', 'Not running'],
-      ['Check types', 'Activity not published'],
-    ]) {
-      const helper = canvas.getByText(name ?? '').closest('[data-next-session-subagent]');
-      await expect(helper).toHaveTextContent(word ?? '');
-      await expect(helper?.querySelector('svg')).toBeNull();
+    /* Each helper has a named tile. No harness records a helper's finish, so one that is not running is State
+       not known with its words kept beside it (owner, 2026-11-24). */
+    for (const [name, tile, word] of [
+      ['Review results', 'Working', ''],
+      ['Read documentation', 'State not known', 'Not running'],
+      ['Check types', 'State not known', 'Activity not published'],
+    ] as const) {
+      const helper = canvas.getByText(name).closest('[data-next-session-subagent]') as HTMLElement;
+      await expect(within(helper).getByRole('img', { name: tile })).toBeVisible();
+      if (word) await expect(helper).toHaveTextContent(word);
     }
+    await expect(within(helpers).queryByRole('img', { name: 'Ended' })).toBeNull();
   },
 };
 
@@ -1769,7 +1773,7 @@ export const UnnamedHelper: Story = {
     await expect(now.getByText('Unnamed helper', { exact: true })).not.toHaveAttribute(
       'data-authored',
     );
-    await expect(now.getByText('Working', { exact: true })).toBeVisible();
+    await expect(now.getByRole('img', { name: 'Working' })).toBeVisible();
     await expect(now.queryByText('subagent', { exact: true })).toBeNull();
   },
 };

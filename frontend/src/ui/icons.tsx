@@ -15,6 +15,7 @@ import {
   PiCheckBold,
   PiCheckCircleBold,
   PiCircleBold,
+  PiCircleDashedBold,
   PiClockBold,
   PiClockCounterClockwiseBold,
   PiCompassBold,
@@ -57,6 +58,7 @@ const ICONS = {
   waiting: PiClockBold,
   quiet: PiMoonBold,
   ended: PiCheckBold,
+  'state-not-known': PiCircleDashedBold,
   'worth-a-look': PiWarningBold,
   'go-to-page': PiArrowRightBold,
   'show-below': PiArrowDownBold,
@@ -79,6 +81,13 @@ export const SESSION_STATE_ICONS = {
   [SESSION_ROW_WORDS.waitingOnYou]: 'waiting',
   [SESSION_ROW_WORDS.quiet]: 'quiet',
   [SESSION_ROW_WORDS.ended]: 'ended',
+} as const;
+
+/* The tiles a session row can draw: the four states, and the neutral State not known tile for a row whose
+   own state Compass cannot say (owner, 2026-11-24). A dashed circle, not a question mark, which is Help's. */
+export const SESSION_TILE_ICONS = {
+  ...SESSION_STATE_ICONS,
+  [SESSION_ROW_WORDS.stateNotKnown]: 'state-not-known',
 } as const;
 
 export type IconName = keyof typeof ICONS;

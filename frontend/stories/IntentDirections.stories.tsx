@@ -258,7 +258,7 @@ export const QuotedBeforeAnyPress: Story = {
       ),
     );
     for (const name of ['Add as a line', 'Make it the goal', 'Leave it', 'Check progress'])
-      await expect(canvas.getByRole('button', { name })).toBeVisible();
+      await expect(canvas.getAllByRole('button', { name })[0]).toBeVisible();
     // One press settles it: no second press to "read it first".
     await userEvent.click(canvas.getByRole('button', { name: 'Leave it' }));
     await waitFor(() =>
@@ -277,7 +277,9 @@ export const AnalyzeStaysAvailable: Story = {
     await canvas.findByText(
       'You sent 2 messages after your goal. Choose one to add or make the goal, or leave them all:',
     );
-    await expect(await canvas.findByRole('button', { name: 'Check progress' })).toBeVisible();
+    await expect(
+      (await canvas.findAllByRole('button', { name: 'Check progress' }))[0] as HTMLElement,
+    ).toBeVisible();
     await expect(canvas.getByRole('button', { name: 'Leave it' })).toBeVisible();
   },
 };

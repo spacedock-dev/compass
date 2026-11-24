@@ -1,9 +1,10 @@
 import {
   toBeInTheDocument,
+  toBeVisible,
   toHaveAttribute,
   toHaveTextContent,
 } from '@testing-library/jest-dom/matchers';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { expect, it } from 'vitest';
 import { payloadSessionRows } from '../observed';
 import { scenarios } from '../project/generate.test.helper';
@@ -11,7 +12,7 @@ import { mountProject } from '../project/testing';
 import { SubagentsView } from './DetailParts';
 import { sessionSubagents } from './detail';
 
-expect.extend({ toBeInTheDocument, toHaveAttribute, toHaveTextContent });
+expect.extend({ toBeInTheDocument, toBeVisible, toHaveAttribute, toHaveTextContent });
 
 it('counts the helpers shown and keeps working, inactive and unmeasured helpers distinct', () => {
   const helpers = sessionSubagents(
@@ -26,18 +27,22 @@ it('counts the helpers shown and keeps working, inactive and unmeasured helpers 
   if (!helpers) throw new Error('Expected three helpers');
   const { container } = render(<SubagentsView subagents={helpers} />);
   expect.soft(screen.queryByRole('list', { name: 'Helpers (3)' })).toBeInTheDocument();
-  for (const [name, word] of [
-    ['unmeasured helper', 'Activity not published'],
-    ['inactive helper', 'Not running'],
-  ]) {
-    const row = screen.getByText(name ?? '').closest('[data-next-session-subagent]');
-    expect.soft(row).toHaveTextContent(word ?? '');
-    expect.soft(row?.querySelector('svg')).toBeNull();
+  /* Each helper's tile is a named picture of its published state. No harness records a helper's finish, so a
+     helper that is not running is State not known, never Ended, and keeps the words that say why. */
+  for (const [name, tile, word] of [
+    ['unmeasured helper', 'State not known', 'Activity not published'],
+    ['inactive helper', 'State not known', 'Not running'],
+    ['working helper', 'Working', ''],
+  ] as const) {
+    const row = screen.getByText(name).closest('[data-next-session-subagent]') as HTMLElement;
+    expect.soft(within(row).getByRole('img', { name: tile })).toBeVisible();
+    if (word) expect.soft(row).toHaveTextContent(word);
+    else expect.soft(row.textContent).toBe(name);
   }
-  const working = screen.getByText('working helper').parentElement;
-  if (!working) throw new Error('Expected a working helper row');
-  expect.soft(working).toHaveTextContent('Working');
-  expect.soft(container.querySelectorAll('svg')).toHaveLength(0);
+  expect
+    .soft(container.querySelectorAll('[data-next-row-tile][data-size="small"]'))
+    .toHaveLength(3);
+  expect.soft(container.querySelectorAll('[tabindex]')).toHaveLength(0);
 });
 
 it('names plan status in words beside decorative icons', async () => {

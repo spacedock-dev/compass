@@ -16,6 +16,28 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+Departure (2026-11-24, later): a Sessions row says its end and git facts once. The page joins the
+outcome and the git line into one line, drops "; git state not measured" and "Git state was not
+measured", drops a git line the outcome already states, and leaves a bare "Session ended" to the
+tile, the end age and the Now line. A dirty end, a known git state and a changed-entry count stay.
+`frontend/test/sessionCanvasRowDeviation.ts` joins the recorded outcome and git line through the
+same `outcomeLine` the page uses, so both recorded sentences still decide the compared text. The
+ended outcome's check mark repeated the Ended tile and is gone. A row with no goal says "No goal
+yet" with no link where the recorded row offered "Add a goal"; the same mask makes that one
+substitution in the recorded goal cell. The recorded answers stay fixed.
+
+Departure (2026-11-24): Sessions rows follow the redesign canvas. A row is its status tile,
+title, a descriptor line (harness, project, start, and end once there is one), the Now line, any
+held question or wait note, the outcome, the existing secondary lines, and then the goal. The
+Project, Next and Blocked columns and the column strip are gone; the Waiting on you tile carries a
+block. With nothing published about now, the current task stands in for the Now line. The
+Sessions differential applies `frontend/test/sessionCanvasRowDeviation.ts`, which rearranges the
+recorded row in that order and drops its Next value, Blocked label and block word. It still
+compares every title, harness, project, end age, Now value, held question, outcome, goal, group
+and link. The start age has no recorded answer, so the comparison sets the page's copy aside;
+the mounted Sessions tests and the Sessions canvas row story check it. The recorded answers stay
+fixed.
+
 Departure (2026-11-23): Goal history uses searchable On the board now and Older sessions
 groups. Rows show each published goal's source and time, and the binding and standing-quotation
 caveats stay next to the saved or discarded record. Older records can lack a title because the

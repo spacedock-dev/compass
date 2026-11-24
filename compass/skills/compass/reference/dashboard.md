@@ -37,20 +37,29 @@ Pi relocation: `PI_CODING_AGENT_SESSION_DIR` is an authoritative direct session-
 
 ## Session states
 
-Sessions rows show the observed state in a named icon tile beside the title. The progress
-slot is blank. Open the session page to see the progress reading and any live estimate
+Every Sessions row shows a named icon tile beside the title, in a column that lines up from row
+to row. Under the title,
+one line names the agent, the project and how long ago the session started, and when it ended
+once it has. A session that published no start says so. The next line says what the session is
+doing now, and a session waiting on you shows what it is waiting for under it. A stopped or
+ended session states how it ended and its git state once, leaving out a git state nobody
+measured. The goal sits to the right. The progress slot is blank. Open the session page to see the progress reading and any live estimate
 the session supports.
 
-The Sessions legend pairs Working with a pulse, Waiting on you with a clock, Quiet with a moon
-and Ended with a checkmark. The warning triangle means Worth a look. Open What the icons mean in Help for the full legend.
+The Sessions legend pairs Working with a pulse, Waiting on you with a clock, Quiet with a moon,
+Ended with a checkmark and State not known with a dashed circle. The warning triangle means Worth a look. Open What the icons mean in Help for the full legend.
 A wait on a child, an
-unpublished state or a scan without a turn stop is explained in a secondary text line.
+unpublished state or a scan without a turn stop is explained in a secondary text line. Such a
+row still has a tile. A row waiting on a child shows the tile of its own state when Compass knows
+it, Working or Quiet. Otherwise, and for an unpublished state or a scan, it shows State not known:
+the agent reports it is idle, but Compass saw no finished turn, so it cannot say whether the
+session is quiet or stopped.
 
 | State | Meaning | Derived from |
 |---|---|---|
 | **Waiting on you** | The session needs your input or approval to continue. | Best effort, never guaranteed, and six harnesses can report it at all. **Claude** has four sources that cover different things rather than ranking cleanly: the bundled `PermissionRequest` hook is the main one for tool gates, seen directly for `ExitPlanMode` and in the wild for `AskUserQuestion`; an actionable Notification-hook POST is the *only* source for an MCP elicitation or a worker's permission or network request; and a pending input tool seen in the transcript is an opportunistic extra, because Claude Code flushes that record on its own schedule and sometimes not until the gate has been answered; the fourth is about a subagent rather than the session, and is a member on the teams roster that was dispatched and never wrote a transcript, described on the teams-registry bullet above. **Codex** has one, its own bundled `PermissionRequest` hook, measured firing interactively with the prompt still on screen. A Codex row says a gate is open and cannot say which, because the event envelope drops the tool name at the hook; it raises a popup on the same terms a Claude one does. **Copilot** has one too, and it is the only one that needs nothing installed: the CLI writes `permission.requested` to its own `events.jsonl` when the dialog opens and `permission.completed` only once the human answers, so the collector reads a request with no answer behind it as a standing gate. A Copilot row says whether a command or a URL is being asked about, and never which command or which URL. **Cursor** takes the same route on a different store: a standing tool-call gate leaves `pendingToolExecutionContracts` non-empty on the newest blob of the chat's SQLite store, and answering it — either way — appends a blob with the map emptied. Its store closes nothing on its own, so the wait is published only while the row is fresh enough to be trusted; the reason is on the Cursor store bullet above. A Cursor row says a permission request is open and how long it has stood, and nothing about what was asked. **OpenCode** reports parent permission waits through its per-project passive plugin. **Pi** reports extension UI prompts in persisted sessions through its adapter on 0.85.1; startup trust is excluded. Both require events enabled and lose standing observations on restart. The other four harnesses have no gate detection; Needs you reports that coverage gap so a quiet row cannot be read as an all-clear |
 | **Working** | The agent is working. | transcript/subagent/DB activity within the last 90s; detail = in-progress task's activeForm, else running subagents, else `thinking` where the harness can see the model holding the turn with no tool call open, else last tool, else `generating…`. Claude also keeps an unanswered non-input call in the current step Working as `running <tool>` for at most 900 seconds from that call. A foreground builder still running after 15 minutes falls back to the usual activity window. Only the newest assistant message id qualifies; parallel calls sharing it may remain pending independently. A later assistant message, a human prompt, compaction, a validated Stop or an interruption ends this foreground wait. Injected task notifications, system reminders and hook feedback do not end it. Codex also keeps a shell-capable call (`exec`, `exec_command`, `shell_command` or `write_stdin`) Working as `running <tool>` for up to 900 seconds from the call while its turn is open. The bounded rollout tail must contain the call and no matching output; parallel calls retire independently. The tool name is shown without inferring shell commands from JavaScript. Once its output arrives or the call expires, Codex uses the plan step, running subagents or `generating…` instead of the last tool name. A killed process with no recorded end can read Working until the cap; a still-running process past the cap falls back to the usual activity rules. A new turn, a genuine user message, a recorded finish or an interruption clears pending calls. Injected context and subagent notifications preserve them. Custom `exec` needs nonblank JavaScript input; direct function calls need JSON-object arguments with a nonblank `cmd` or `command`, or an integer `session_id` for `write_stdin`. An observed session end or a remembered Stop that still stands makes the row idle and inactive, even with a pending call. In headless sessions only, outstanding background Agent/Task subagents and explicit Bash calls with `run_in_background: true` acknowledged by a parent-owned tool result in the current turn read `waiting on 1 background task` or `waiting on N background tasks`, for at most 900 seconds from the newest qualifying outstanding launch. These background tasks can make the parent's Stop yield; a later interruption or new user prompt retires their wait. A recorded task completion ends its wait. Ordinary shell `&` jobs and calls automatically moved to the background do not qualify. Interactive sessions and sessions whose entrypoint is unknown keep the usual background activity and Stop rules. Each cap is independent, an input request still wins, and an observed session end ends both waits. A session killed mid-tool without an observed end (SIGKILL) can read Working until the 900-second cap instead of the usual 90-second activity window; this is an accepted limit. Every other measured ending sent SessionEnd. Pi also has exceptions to recency in both directions; see its store bullet above |
-| **Quiet** | The agent finished its turn and is waiting for your next message. | An idle session with a turn stop published by the harness can show Quiet. Without a stop, the board shows State not published. A scan-only row without turn-end evidence says `Read by scanning: no turn end can be observed here`. |
+| **Quiet** | The agent finished its turn and is waiting for your next message. | An idle session with a turn stop published by the harness can show Quiet. Without a stop, the board shows State not published beside the State not known tile. A scan-only row without turn-end evidence says `Read by scanning: no turn end can be observed here`. |
 | **Ended** | The session reported that it ended. | The session published an end timestamp. A turn stop can leave a resumable session open. |
 
 ## Words on the board
@@ -66,6 +75,7 @@ limited state or progress evidence, look for the matching text below.
 | Quiet | (Idle) | The agent finished its turn and is waiting for your next message. |
 | Ended | (Finished, Finished cleanly) | The session reported that it ended. |
 | Worth a look | (At risk) | A flag for a session that may need a closer look, such as one that ended with uncommitted work. |
+| State not known | (Blank tile slot) | The agent reports it is idle, but Compass saw no finished turn, so it cannot say whether it is quiet or stopped. It also shows when the agent publishes no state at all. |
 | State not published | Same wording | Compass has no published state for this session. |
 | Waiting on child | Same wording | Compass has evidence that a linked child is still working. |
 | Read by scanning: no turn end can be observed here | Same wording | A scan reports activity without evidence of whether the turn ended. |
@@ -73,7 +83,7 @@ limited state or progress evidence, look for the matching text below.
 | Slightly off course | (Medium) | Some work wandered from the goal. |
 | Off course | (High) | The work no longer serves the goal. |
 | Way off course | (Extreme) | The work has gone far from the goal. |
-| No goal yet | (Not checked) | Add a goal to give Compass something to read against. |
+| No goal yet | (Not checked) | Open the session and add a goal there to give Compass something to read against. |
 | Not checked yet | (Not checked) | Check progress to ask Compass to read the record against the goal. |
 | Too early to tell | (Not enough recorded yet) | The session has recorded too little for a reading. |
 | Can't tell | (Goal-only reading with no level) | Compass couldn't establish progress. The card gives the reason, such as an unreadable saved check, a failed check or too little evidence. |
@@ -122,7 +132,7 @@ The board uses a light palette and opens on **Sessions** with a greeting and a s
 **At a glance** cards count Waiting on you, Working now and Worth a look. Waiting on you and
 Worth a look open **Needs you**. Working now selects Working and takes you to the list.
 Press it again to clear that selection. The summary says when it covers only sources Compass
-could read. Below the cards, Right now comes before the earlier group. The status tabs count the whole loaded board in this order: All, Waiting on you, Worth a look,
+could read. Below the cards, one list card holds Right now and then the earlier group. The status tabs count the whole loaded board in this order: All, Waiting on you, Worth a look,
 Working, Quiet and Ended.
 Search reads titles, goals and prompts. Press `/` to jump to it or paste a session id to find it.
 Filters opens a panel for Project, Agent, Started and Progress check. The level chips are disabled.
@@ -196,13 +206,21 @@ starts "● Needs you" while a request waits.
 At 1100 px and wider the header spans two columns. Goal, Is it on track? and What's happened so
 far sit on the left. Right now, At a glance and Project sit on the right. In a narrower window
 the cards stack, with Right now following Is it on track? before the story. Right now shows the
-published activity, helpers, next step and reported block. The next-step and block rows disappear
-when the session reports its own end. At a glance shows published figures and says "At least"
-when Compass holds an incomplete entry count.
+published activity, helpers, next step and reported block. Each helper has a small tile beside its
+name: Working while it runs, and State not known once it stops, because no agent records when a
+helper finished. The words beside the tile say Not running or Activity not published. The next-step
+and block rows disappear when the session reports its own end. At a glance shows published figures
+and says "At least" when Compass holds an incomplete entry count. Project links to the project's
+page and, when other sessions in the project were active today, counts them, as in "2 other
+sessions today · 1 working". Active today means working, waiting on you or ended today; the line is
+left out when no other session was.
 
 Goal shows what you want the session to do, including the outcome lines you set. Is it on track?
-shows what a progress check reads. Open What is sent before pressing Check progress to see what
-the check sends. If you gave a later direction and have yet to settle it, the page asks about that direction. See [recording what a session should achieve](intent-and-drift.md#recording-what-a-session-should-achieve).
+shows what a progress check reads and repeats the header's button inside the card: Check progress
+before any reading, Check progress again after one, with the same Uses AI note. The two buttons
+are one control: pressing either starts one check, both wait while it runs, and both refuse for the
+same reason, such as paused AI use, the daily limit or a goal that is not saved. Open What is sent
+before pressing Check progress to see what the check sends. If you gave a later direction and have yet to settle it, the page asks about that direction. See [recording what a session should achieve](intent-and-drift.md#recording-what-a-session-should-achieve).
 Codex sessions keep the evidence without a progress level.
 
 What's happened so far starts with an outline grouped by your messages, made without a model call.
@@ -311,7 +329,7 @@ sources cannot support.
 
 ## Usage and rate limits
 
-Your AI allowance sits below the session groups. It names the selected plan window and reset
+Your AI allowance sits at the top of Sessions, above the greeting. It names the selected plan window and reset
 beside the percentage used and a bar. The tick marks how much of the window has elapsed when
 the vendor published a clock. Choose another window when several are available. How the AI
 allowance works shows the pace, reset time, source, and the projected budget end. It also

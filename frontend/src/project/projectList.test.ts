@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { projectList } from './projectList';
+import { companionsLine, projectCompanions, projectList } from './projectList';
 
 const TODAY = new Date(2026, 10, 23, 13).getTime() / 1000;
 
@@ -110,4 +110,58 @@ it('preserves each visibility limit in a project with a working session', () => 
       'Read by scanning: no turn end can be observed here',
     ]),
   });
+});
+
+/* The Session page's Project card: this project's other sessions today, counted from the rows. */
+const companionBoard = (others: readonly Record<string, unknown>[]) => ({
+  generated: TODAY,
+  sessions: [
+    { project: 'acme/dashboard', harness: 'claude', sid: 'self', state: 'working' },
+    { project: 'acme/other', harness: 'claude', sid: 'elsewhere', state: 'working' },
+    ...others.map((fields, index) => ({
+      project: 'acme/dashboard',
+      harness: 'codex',
+      sid: `other-${String(index)}`,
+      ...fields,
+    })),
+  ],
+});
+const self = { project: 'acme/dashboard', harness: 'claude', sid: 'self' };
+
+it.each([
+  ['none', [], { today: 0, working: 0 }, ''],
+  [
+    'one working',
+    [{ state: 'working' }],
+    { today: 1, working: 1 },
+    '1 other session today · 1 working',
+  ],
+  [
+    'two, one working and one ended today',
+    [{ state: 'working' }, { state: 'idle', ended_at: TODAY - 60 }],
+    { today: 2, working: 1 },
+    '2 other sessions today · 1 working',
+  ],
+  [
+    'one waiting on you and none working',
+    [{ state: 'needs_input' }],
+    { today: 1, working: 0 },
+    '1 other session today',
+  ],
+  [
+    'only sessions outside today',
+    [{ state: 'idle', ended_at: TODAY - 86400 }, { state: 'idle' }],
+    { today: 0, working: 0 },
+    '',
+  ],
+] as const)('counts %s beside this session', (_, others, counts, line) => {
+  const found = projectCompanions(companionBoard(others), self);
+  expect(found).toEqual(counts);
+  expect(companionsLine(found)).toBe(line);
+});
+
+it('never counts the session the page is about, or another project', () => {
+  const found = projectCompanions(companionBoard([]), self);
+  expect(found.today).toBe(0);
+  expect(companionsLine(null)).toBe('');
 });

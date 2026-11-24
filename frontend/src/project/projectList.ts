@@ -1,7 +1,7 @@
 import { nextNumber } from '../api/bootstrap';
 import { GLOSSARY } from '../language/glossary';
 import { observedFor } from '../observed/select';
-import { endedAt, sessionStateLimit, type Row } from '../observed';
+import { endedAt, sessionStateLimit, type ObservedSession, type Row } from '../observed';
 import { formatTimestamp, observationAge } from '../shell/format';
 import {
   PROJECT_STATES,
@@ -21,6 +21,39 @@ export function endedToday(ended: number | null, generated: number | null): bool
     observationAge(generated, ended) !== null &&
     new Date(ended * 1000).toDateString() === new Date(generated * 1000).toDateString()
   );
+}
+
+export interface ProjectCompanions {
+  /** Other sessions in the project that are active today: working, waiting on you, or ended today. */
+  readonly today: number;
+  /** Of those, the ones working. */
+  readonly working: number;
+}
+
+/* The Session page's Project card line, counted from the same rows Projects groups. A session counts as today
+   by the Active today rule above: Waiting on you or Working, or a reported end on the board's calendar day. The
+   session the page is about is left out by its exact harness and id. */
+export function projectCompanions(
+  payload: Row,
+  session: Pick<ObservedSession, 'project' | 'harness' | 'sid'>,
+): ProjectCompanions {
+  const now = nextNumber(payload['generated']);
+  const others = (projectSessionGroups(payload).get(session.project) ?? []).filter(
+    (member) => !(member.session.harness === session.harness && member.session.sid === session.sid),
+  );
+  const today = others.filter(
+    ({ state, source }) =>
+      state === 'Waiting on you' || state === 'Working' || endedToday(endedAt(source), now),
+  );
+  return { today: today.length, working: today.filter(({ state }) => state === 'Working').length };
+}
+
+/* "2 other sessions today · 1 working". Nothing when no other session was active today, and no working clause
+   when none is working: a zero would be a count of nothing on a line that exists to point somewhere. */
+export function companionsLine(companions: ProjectCompanions | null): string {
+  if (!companions || companions.today < 1) return '';
+  const head = `${String(companions.today)} other session${companions.today === 1 ? '' : 's'} today`;
+  return companions.working > 0 ? `${head} · ${String(companions.working)} working` : head;
 }
 
 export function projectList(payload: Row) {

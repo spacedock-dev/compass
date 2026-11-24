@@ -50,7 +50,8 @@ const sessionHead = (canvas: HTMLElement) =>
   canvas.querySelector('.next-session-detail-header') as HTMLElement;
 
 /* The re-run controls the card draws, by name: Check progress again over a current reading, Check progress again over one
-   that new work or a changed intent left behind. */
+   that new work or a changed intent left behind. Page-wide there are two: the header's and its copy in Is it on
+   track? (owner, 2026-11-24). */
 const rerun = (root: HTMLElement) =>
   within(root).queryAllByRole('button', { name: /^(Check progress again)$/ });
 
@@ -176,7 +177,7 @@ export const ReRunning: Story = {
     const again = rerun(sessionHead(canvasElement));
     await expect(again).toHaveLength(1);
     await expect(again[0]).toHaveAttribute('aria-disabled', 'true');
-    await expect(rerun(canvasElement)).toHaveLength(1);
+    await expect(rerun(canvasElement)).toHaveLength(2);
   },
 };
 
@@ -200,7 +201,7 @@ export const Result: Story = {
       name: 'Check progress again',
     });
     await expect(again).not.toHaveAttribute('aria-disabled', 'true');
-    await expect(rerun(canvasElement)).toHaveLength(1);
+    await expect(rerun(canvasElement)).toHaveLength(2);
     await expect(within(card).getByRole('button', { name: 'Steer back' })).toBeVisible();
     await expect(card).not.toHaveTextContent('Delegated work');
     // Moved under What the check read, folded until it is opened.
@@ -358,7 +359,7 @@ export const NewWork: Story = {
       'reading-stale',
     );
     const again = rerun(canvasElement);
-    await expect(again).toHaveLength(1);
+    await expect(again).toHaveLength(2);
     await expect(again[0]).toHaveAccessibleName('Check progress again');
     await expect(sessionHead(canvasElement).contains(again[0] ?? null)).toBe(true);
     await expect(stale).not.toHaveTextContent(/drift checks? requested/);
@@ -389,7 +390,7 @@ export const IntentChanged: Story = {
       'Your intent changed after this analysis.',
     );
     const again = rerun(canvasElement);
-    await expect(again).toHaveLength(1);
+    await expect(again).toHaveLength(2);
     await expect(again[0]).toHaveAccessibleName('Check progress again');
     await expect(sessionHead(canvasElement).contains(again[0] ?? null)).toBe(true);
     await expect(sentButtons(card)).toHaveLength(1);
@@ -411,7 +412,7 @@ export const Paused: Story = {
     const again = rerun(sessionHead(canvasElement));
     await expect(again).toHaveLength(1);
     await expect(again[0]).toHaveAttribute('aria-disabled', 'true');
-    await expect(rerun(canvasElement)).toHaveLength(1);
+    await expect(rerun(canvasElement)).toHaveLength(2);
     await expect(
       within(card).getAllByText('AI use is paused. Nothing is sent until you resume.')[0],
     ).toBeVisible();
@@ -466,6 +467,6 @@ export const NoticeCollapsesOnceRead: Story = {
     await waitFor(() =>
       expect(within(panel).getByRole('button', { name: 'Pause all AI use' })).toBeVisible(),
     );
-    await expect(rerun(canvasElement)).toHaveLength(1);
+    await expect(rerun(canvasElement)).toHaveLength(2);
   },
 };

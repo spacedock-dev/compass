@@ -49,9 +49,11 @@ type Story = StoryObj<typeof meta>;
 
 const scenario = (value: Scenario): Pick<Story, 'args'> => ({ args: { scenario: value } });
 
-/* The button the page draws as its one primary. `data-variant` has no accessible equivalent: weight is only
-   visual, so this is the one way to count it. The count is over the whole page: the Raise control is the only
-   other primary the page owns, and only for a session that is waiting on the reader. */
+/* The buttons the page draws as primary. `data-variant` has no accessible equivalent: weight is only visual, so
+   this is the one way to count it. The count is over the whole page. The header's Check progress is filled
+   wherever it can run, and Is it on track? holds at most one primary of its own: its copy of Check progress
+   before a reading, or Steer back (owner, 2026-11-24). The Raise control is the only other primary, and only
+   for a session that is waiting on the reader. */
 const primaries = (root: HTMLElement): HTMLElement[] => [
   ...root.querySelectorAll<HTMLElement>('[data-variant="primary"]'),
 ];
@@ -139,7 +141,7 @@ export const IdleWithADraftedGoal: Story = {
     const analyze = await analyzeButton(card);
     await expect(analyze).not.toHaveAttribute('aria-disabled');
     await expect(within(card).queryByText(INTENT_EDITED)).toBeNull();
-    await expect(primaries(canvasElement)).toEqual([analyze]);
+    await expect(primaries(canvasElement)).toEqual([analyze, button(card, /^Check progress$/)]);
     await neverRetired(canvasElement);
   },
 };
@@ -156,7 +158,7 @@ export const IdleWithAnEditedDraft: Story = {
     await within(card).findByText(INTENT_EDITED);
     const analyze = button(sessionHeader(card), /^Check progress$/);
     await expect(analyze).toHaveAttribute('aria-disabled', 'true');
-    await expect(primaries(canvasElement)).toEqual([analyze]);
+    await expect(primaries(canvasElement)).toEqual([analyze, button(card, /^Check progress$/)]);
     await neverRetired(canvasElement);
   },
 };
@@ -210,7 +212,7 @@ export const LiveMonitorAtHigh: Story = {
     const analyze = await analyzeButton(card);
     // A failed check with no departure from the intent offers no Steer back.
     await expect(within(card).queryByRole('button', { name: 'Steer back' })).toBeNull();
-    await expect(primaries(canvasElement)).toEqual([analyze]);
+    await expect(primaries(canvasElement)).toEqual([analyze, button(card, /^Check progress$/)]);
     await neverRetired(canvasElement);
   },
 };
@@ -317,10 +319,12 @@ export const ResultUnderADeparture: Story = {
     await expect(within(result).getByText(/src\/queue/)).toBeVisible();
     const steer = await steerBack(card);
     await expect(button(card, 'Update my goal instead')).toBeVisible();
-    await expect(primaries(canvasElement)).toEqual([steer]);
+    const again = button(sessionHeader(card), 'Check progress again');
+    await expect(primaries(canvasElement)).toEqual([again, steer]);
+    // One press in two places: the header's and its outlined copy in the card.
     await expect(
       within(canvasElement).getAllByRole('button', { name: /^Check progress/ }),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     await expect(button(sessionHeader(card), 'Check progress again')).toBeVisible();
     await neverDone(result);
     await neverRetired(canvasElement);
@@ -346,7 +350,7 @@ export const StaleResult: Story = {
     await expect(card.querySelector('[data-next-drift-pill]')).toBeNull();
     const again = await findButton(sessionHeader(card), 'Check progress again');
     await expect(within(canvasElement).getAllByRole('button', { name: /^Check progress/ })).toEqual(
-      [again],
+      [again, button(card, 'Check progress again')],
     );
     const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
     await expect(await evidence.findByText('New work since this analysis.')).toBeVisible();
@@ -399,7 +403,7 @@ function routeStory(reason: string): Story {
       const sent = button(card, found.fallback ? `What is sent to ${found.label}` : 'What is sent');
       await userEvent.click(sent);
       await waitFor(() => expect(note).toBeVisible());
-      await expect(primaries(canvasElement)).toEqual([analyze]);
+      await expect(primaries(canvasElement)).toEqual([analyze, button(card, /^Check progress$/)]);
       await neverRetired(canvasElement);
     },
   };
@@ -444,8 +448,10 @@ export const PiShowsAnalysisLevelWithNoSwitchAndNoSteerBack: Story = {
     await expect(within(card).queryByRole('button', { name: 'Steer back' })).toBeNull();
     await expect(evidence.queryByText(HARNESS_LIMIT)).toBeNull();
     await expect(card).not.toHaveTextContent('Live estimate');
-    // A current result draws no run control and Pi has nothing to steer with, so no control is primary.
-    await expect(primaries(canvasElement)).toHaveLength(0);
+    // Pi has nothing to steer with, so the only primary is the header's Check progress again.
+    await expect(primaries(canvasElement)).toEqual([
+      button(sessionHeader(card), 'Check progress again'),
+    ]);
     await neverRetired(canvasElement);
   },
 };
@@ -612,7 +618,7 @@ const limited = (harness: 'antigravity'): Story => ({
     await expect(privacy.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
     await expect(within(card).queryByRole('button', { name: 'Steer back' })).toBeNull();
     const analyze = await analyzeButton(card);
-    await expect(primaries(canvasElement)).toEqual([analyze]);
+    await expect(primaries(canvasElement)).toEqual([analyze, button(card, /^Check progress$/)]);
     await neverRetired(canvasElement);
   },
 });

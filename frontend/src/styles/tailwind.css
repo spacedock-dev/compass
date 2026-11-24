@@ -131,7 +131,7 @@
   --measure: 33.75rem;
   --sans: Inter, system-ui, -apple-system, sans-serif;
   --mono: ui-monospace, monospace;
-  --r-control: 0.25rem;
+  --r-control: 0.75rem;
   --r-card: 0.625rem;
   --r-standard-card: 1rem;
   --r-shell: 1rem;
@@ -141,7 +141,6 @@
   --e-raise: 0 1px 2px rgb(31 41 51 / 12%);
   --e-pop: 0 8px 24px rgb(31 41 51 / 18%);
   --e-dialog: 0 16px 48px rgb(31 41 51 / 24%);
-  --hatch: repeating-linear-gradient(135deg, transparent 0 5px, rgb(31 41 51 / 9%) 5px 6px);
   --sp-1: 0.25rem;
   --sp-2: 0.5rem;
   --sp-3: 0.75rem;

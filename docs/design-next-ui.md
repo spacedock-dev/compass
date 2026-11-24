@@ -141,7 +141,8 @@ inventory and stylesheet cleanup.
 `frontend/src/styles/tailwind.css` owns the 42 page tokens in `@theme static`, preserving their
 names and values even when no utility names them. They cover surfaces, boundaries, inks and role
 registers, observed colours, five type steps, reading measure, fonts, radii, control padding,
-elevation, hatch, spacing and disclosure motion. The same block declares six bridge and Base UI
+elevation, spacing and disclosure motion. The hatch token left on 2026-11-24, when absences became
+plain quiet ink. The same block declares six bridge and Base UI
 defaults: `--foreground`, `--secondary`, the two panel heights, `--transform-origin` and
 `--available-height`. All eighteen `--ctl-*` aliases are removed; components read the page tokens
 directly. `shell.css` retains the native dark colour scheme and the `100%` root font size.
@@ -1207,6 +1208,32 @@ without an observed end, or an exact request. A reported workflow gate now suppl
 Waiting on you state. The Working count uses its own population. A reading against the goal
 supplies no Needs you count.
 
+### Amended 2026-11-24 (owner): Sessions rows follow the canvas
+
+The WHERE, NEXT and BLOCKED columns and the column header strip above are retired. After testing
+main, the owner asked that each row match the redesign canvas: the status tile, the title, one
+descriptor line naming the harness, the project and when the session started, the Now line under
+it, and the goal to the right. Blocked is the Waiting on you tile, with any held question under
+the Now line. A pending step is read on the session page. The
+[Calm Compass record](design-calm-compass.md#status-language) keeps the ruling.
+
+### Amended 2026-11-24 (owner): the Sessions list sits in one card
+
+After testing the row above, the owner asked the list to follow the canvas more closely. Right
+now and the earlier group sit in one white card, each opening with a small header band, and the
+earlier group's band holds the Recent history disclosure. Rows are divided by hairlines and carry
+no tone stripe. A phone keeps one card with the same dividers instead of a card per row. Labels
+that would repeat a column header are still gone, and the goal source still stays visible in the
+goal's label. The [Calm Compass record](design-calm-compass.md#status-language) keeps the details.
+
+### Amended 2026-11-24 (owner): every row has a tile in a fixed column
+
+Every Sessions row now draws one of five tiles in a fixed 44 px column, so titles line up. A row
+whose state is not published shows the neutral State not known tile, and a row waiting on a child
+shows its own state's tile; both keep their text line. An empty group says so in plain quiet text
+inside the card. The [Calm Compass record](design-calm-compass.md#status-language) keeps the
+ruling.
+
 ## NUI-17: the gate queue hands over a command, and only where one was measured
 
 A gate-queue row names a session that is waiting and then leaves the reader to find its terminal.
@@ -1410,6 +1437,22 @@ button is drawn. A machine with no reading producer has no press to refuse, and 
 back from the recorded facts in that slot as its primary. Every other refusal (annotations off,
 model calls off, the build gate, the daily cap, no saved words) keeps the inert control with its
 reason, as above.
+
+### Amended 2026-11-24 (owner): a refused control rests calm
+
+"Disabled is dashed, not dimmer" is replaced. The owner rejected the hatched, dashed box for a
+control that cannot be pressed on several surfaces on 2026-11-24. A refused control now keeps a
+solid `--line` outline, which still clears 3:1 against its new muted `--sunk` fill (3.23:1), and
+draws its label in `--ink3` (4.96:1 on that fill). The fill, not the border style, separates it
+from a pressable control in greyscale. The rest of this ruling stands: the control stays on the
+page, stays reachable through `aria-disabled` where it was, refuses its own press and keeps the
+sentence that says why. The same day the shared control radius became 12 px and button labels 600
+weight; [the Calm Compass record](design-calm-compass.md#buttons-and-the-calm-disabled-look-2026-11-24)
+has the tokens.
+
+The same comparison put Check progress in two places, the session header and Is it on track?.
+Both copies are the one shared press, so the handler-gate rule above holds: each refuses on the
+same expression, from the same function, and neither can start a check the other would refuse.
 
 ## NUI-19: a caveat has three tiers
 

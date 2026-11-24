@@ -4,7 +4,7 @@ import { mountSessions } from './testing';
 import { rowState } from './rows';
 import declared from '../../test/fixtures/declared-sessions.json';
 import liveBoard from '../../test/fixtures/client-contract/data-live-row.json';
-import { observe } from '../observed';
+import { observe, sessionTile } from '../observed';
 import { GLOSSARY } from '../language/glossary';
 
 const NOW = 5000;
@@ -201,6 +201,55 @@ describe('the groups', () => {
     expect(rows('history')).toEqual(['claude/done', 'claude/idle-new', 'claude/idle-old']);
   });
 
+  it('says a history row’s end and git facts once, keeping every measured one', async () => {
+    await open(
+      board([
+        // A stop with git unmeasured, a clean stop, a dirty stop with a count, and the three kinds of end.
+        { harness: 'claude', sid: 'stop', project: 'p', state: 'idle', finished_at: NOW - 60 },
+        {
+          harness: 'claude',
+          sid: 'stop-clean',
+          project: 'p',
+          state: 'idle',
+          finished_at: NOW - 60,
+          dirty: false,
+        },
+        {
+          harness: 'claude',
+          sid: 'stop-dirty',
+          project: 'p',
+          state: 'idle',
+          finished_at: NOW - 60,
+          dirty: true,
+          changed: 3,
+        },
+        { harness: 'claude', sid: 'end', project: 'p', ended_at: NOW - 20 },
+        { harness: 'claude', sid: 'end-clean', project: 'p', ended_at: NOW - 20, dirty: false },
+      ]),
+    );
+    const facts = (sid: string) =>
+      document.querySelector(`[data-next-session="${sid}"] [data-next-row-outcome]`)?.textContent ??
+      null;
+    expect(facts('stop')).toBe('Stop observed');
+    expect(facts('stop-clean')).toBe('Stop observed; git state clean');
+    expect(facts('stop-dirty')).toBe('Stop observed with uncommitted work · 3 changed entries');
+    // A bare end is the tile, the descriptor's end age and the Now line; nothing repeats it.
+    expect(facts('end')).toBeNull();
+    expect(facts('end-clean')).toBe('Git state reported clean');
+    for (const sid of ['stop', 'stop-clean', 'stop-dirty', 'end', 'end-clean']) {
+      const row = document.querySelector(`[data-next-session="${sid}"]`);
+      expect(row?.textContent, sid).not.toMatch(
+        /git state not measured|Git state was not measured|Uncommitted work observed/,
+      );
+      expect(row?.textContent?.match(/git state|Git state/gi)?.length ?? 0).toBeLessThanOrEqual(1);
+    }
+    expect(
+      within(document.querySelector('[data-next-session="end"]') as HTMLElement).getByText(
+        'Session reported its own end',
+      ),
+    ).toBeVisible();
+  });
+
   it('spells out the elapsed time on quiet and ended rows', async () => {
     await open(data);
     expect(screen.getByText('last active 5 seconds ago')).toBeVisible();
@@ -299,7 +348,7 @@ describe('the groups', () => {
     );
   });
 
-  it('names the state tile and shows the project label alone as where', async () => {
+  it('names the state tile and puts the project in the descriptor under the title, with no column strip', async () => {
     await open(data);
     for (const [sid, name] of [
       ['gate', 'Waiting on you'],
@@ -314,9 +363,94 @@ describe('the groups', () => {
     for (const group of groups) expect(group.textContent).not.toMatch(/NOW · |QUIET/);
     expect(document.body.textContent).not.toContain('Exact location not published');
     expect(
-      document.querySelector('article[data-next-session="work"] [data-next-operation-fact="where"]')
+      document.querySelector('article[data-next-session="work"] [data-next-row-descriptor]')
         ?.textContent,
-    ).toBe('Projectp');
+    ).toBe('claude · p · start time not published');
+    expect(
+      document.querySelector('article[data-next-session="done"] [data-next-row-descriptor]')
+        ?.textContent,
+    ).toBe('claude · p · start time not published · ended 20 seconds ago');
+    expect(
+      document.querySelectorAll(
+        '.next-operations-columns, [data-next-operation-fact="where"], [data-next-operation-fact="next"], [data-next-operation-fact="blocked"]',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('says how long ago each session started, and that a start was not published', async () => {
+    await open(
+      board([
+        {
+          harness: 'claude',
+          sid: 'a',
+          project: 'acme/api',
+          state: 'working',
+          started_at: NOW - 4500,
+        },
+        { harness: 'claude', sid: 'b', project: 'acme/api', state: 'working' },
+        // A start ahead of the board's clock has no age to give, so it is left out rather than guessed.
+        {
+          harness: 'claude',
+          sid: 'c',
+          project: 'acme/api',
+          state: 'working',
+          started_at: NOW + 60,
+        },
+      ]),
+    );
+    const descriptor = (sid: string) =>
+      document.querySelector(`article[data-next-session="${sid}"] [data-next-row-descriptor]`)
+        ?.textContent;
+    expect(descriptor('a')).toBe('claude · acme/api · started 1 hour 15 minutes ago');
+    expect(descriptor('b')).toBe('claude · acme/api · start time not published');
+    expect(descriptor('c')).toBe('claude · acme/api');
+  });
+
+  it('draws the Now line under the descriptor, with a current task standing in when nothing is published about now', async () => {
+    await open(
+      board([
+        {
+          harness: 'claude',
+          sid: 'doing',
+          project: 'acme/api',
+          title: 'Docs pass',
+          state: 'working',
+          state_detail: 'writing the docs pull request',
+          instruction: { label: 'asked', text: 'Write the docs' },
+        },
+        {
+          harness: 'claude',
+          sid: 'task',
+          project: 'acme/api',
+          title: 'Release notes',
+          state: 'working',
+          instruction: { label: 'asked', text: 'Draft the release notes' },
+        },
+        { harness: 'claude', sid: 'bare', project: 'acme/api', title: 'Bare', state: 'working' },
+      ]),
+    );
+    const now = (sid: string) =>
+      document.querySelector<HTMLElement>(
+        `article[data-next-session="${sid}"] [data-next-operation-fact="now"]`,
+      );
+    const doing = now('doing');
+    expect(doing?.textContent).toBe('writing the docs pull request');
+    const descriptor = doing?.parentElement?.querySelector('[data-next-row-descriptor]');
+    expect(descriptor?.nextElementSibling).toBe(doing);
+    // The task keeps its own line when the Now line already says what the session is doing.
+    expect(
+      document.querySelector('article[data-next-session="doing"] .next-operation-assignment')
+        ?.textContent,
+    ).toBe('Current task · Write the docs');
+    expect(now('task')?.textContent).toBe('Current task · Draft the release notes');
+    expect(now('task')?.querySelector('[data-authored]')?.textContent).toBe(
+      'Draft the release notes',
+    );
+    expect(
+      document.querySelector('article[data-next-session="task"] .next-operation-assignment'),
+    ).toBeNull();
+    expect(now('bare')?.textContent).toBe('Activity not published');
+    expect(now('bare')?.classList.contains('next-absence')).toBe(false);
   });
 
   const reading = {
@@ -380,7 +514,10 @@ describe('the groups', () => {
     expect(row).toBeInTheDocument();
     expect(row?.querySelector('.next-operation-progress')).toBeNull();
     expect(row?.querySelector('[data-variant="progress"]')).toBeNull();
-    expect(row?.textContent).not.toMatch(/No goal yet|Not checked yet/);
+    // The progress slot holds no absence word; the goal cell's own "No goal yet" is not the progress slot.
+    expect(row?.querySelector('.next-operation-identity')?.textContent).not.toMatch(
+      /No goal yet|Not checked yet/,
+    );
   });
 
   it('leaves the row blank for a live estimate before a stored check', async () => {
@@ -416,7 +553,11 @@ describe('the groups', () => {
     const title = within(row).getByRole('link', { name: 'Open session Unmeasured' });
     const absence = within(row).getByText('State not published');
     expect(title.compareDocumentPosition(absence) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(row).queryByRole('img')).toBeNull();
+    /* The row still draws a tile, the neutral one, and the text line stays the row's state word. */
+    const tile = within(row).getByRole('img', { name: 'State not known' });
+    expect(tile.querySelector('[data-icon="state-not-known"]')).toBeInTheDocument();
+    expect(tile.getAttribute('data-next-row-state')).toBeNull();
+    expect(row.querySelector('[data-next-row-state]')).toBe(absence);
   });
 
   it('keeps Waiting on child in the line below the title', async () => {
@@ -426,7 +567,48 @@ describe('the groups', () => {
     const title = within(row).getByRole('link', { name: 'Open session Coordinate release' });
     const absence = within(row).getByText(/Waiting on child/);
     expect(title.compareDocumentPosition(absence) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(row).queryByRole('img')).toBeNull();
+    /* The parent is itself working, so its tile says Working; the child wait stays its state line. */
+    const tile = within(row).getByRole('img', { name: 'Working' });
+    expect(tile.getAttribute('data-next-row-state')).toBeNull();
+    expect(row.querySelector('[data-next-row-state]')?.getAttribute('data-next-row-state')).toBe(
+      'Waiting on child',
+    );
+  });
+
+  it("gives every row a tile: a child wait takes the session's own state, an unpublished state the State not known tile", () => {
+    const child = { harness: 'codex', sid: 'kid' };
+    const sessions = observe(
+      board([
+        { ...child, state: 'working' },
+        { harness: 'claude', sid: 'w', state: 'working', waiting_on_child: child },
+        {
+          harness: 'claude',
+          sid: 'q',
+          state: 'idle',
+          finished_at: NOW - 2,
+          waiting_on_child: child,
+        },
+        { harness: 'claude', sid: 'u', state: 'idle', waiting_on_child: child },
+        { harness: 'claude', sid: 'i', state: 'idle' },
+        { harness: 'claude', sid: 'x', state: 'dozing' },
+        { harness: 'claude', sid: 'n' },
+      ]),
+    ).sessions;
+    const bySid = new Map(sessions.map((session) => [session.sid, session]));
+    const read = (sid: string) => {
+      const session = bySid.get(sid);
+      if (!session) throw new Error(`Missing ${sid}`);
+      return [rowState(session), sessionTile(session)];
+    };
+    expect(['kid', 'w', 'q', 'u', 'i', 'x', 'n'].map(read)).toEqual([
+      ['Working', 'Working'],
+      ['Waiting on child', 'Working'],
+      ['Waiting on child', 'Quiet'],
+      ['Waiting on child', 'State not known'],
+      ['State not published', 'State not known'],
+      ['State not published', 'State not known'],
+      ['State not published', 'State not known'],
+    ]);
   });
 
   it('shows Quiet only for a published idle with a measured turn stop', () => {
@@ -480,11 +662,12 @@ describe('the groups', () => {
       '#n=session:p:claude:typed',
     );
     expect(goal('drafted')?.textContent).toBe('Goal · your first promptDo the thing');
-    expect(goal('empty')?.textContent).toBe('GoalAdd a goal');
-    expect(goal('empty')?.querySelector('a')?.classList.contains('next-absence')).toBe(true);
+    // No goal: the absence word, and nothing to press (owner, 2026-11-24).
+    expect(goal('empty')?.textContent).toBe('GoalNo goal yet');
+    expect(goal('empty')?.querySelector('a, button')).toBeNull();
   });
 
-  it('says who a held request is addressed to', async () => {
+  it('shows a held question under the Now line, behind the Waiting on you tile', async () => {
     await open(
       board(
         [
@@ -506,12 +689,38 @@ describe('the groups', () => {
         },
       ),
     );
-    const blocked = (sid: string) =>
-      document.querySelector(
-        `article[data-next-session="${sid}"] [data-next-operation-fact="blocked"] small`,
-      )?.textContent;
-    expect(blocked('a')).toBe('Blocked · needs you');
-    expect(blocked('b')).toBe('Blocked · captain');
+    for (const [sid, question] of [
+      ['a', 'One?'],
+      ['b', 'Two?'],
+    ] as const) {
+      const row = document.querySelector<HTMLElement>(`article[data-next-session="${sid}"]`);
+      if (!row) throw new Error(`Missing row ${sid}`);
+      expect(within(row).getByRole('img', { name: 'Waiting on you' })).toBeVisible();
+      const note = row.querySelector('[data-next-row-block-note]');
+      expect(note?.textContent).toBe(question);
+      expect(note?.hasAttribute('data-authored')).toBe(true);
+      expect(note?.classList.contains('line-clamp-3')).toBe(true);
+      expect(row.querySelector('[data-next-operation-fact="now"]')?.nextElementSibling).toBe(note);
+    }
+  });
+
+  it('says a reported wait once when its note only repeats the Now line', async () => {
+    await open(
+      board([
+        {
+          harness: 'claude',
+          sid: 'gate',
+          project: 'acme/api',
+          state: 'needs_input',
+          state_detail: 'Waiting for you to approve a command',
+        },
+      ]),
+    );
+    const row = document.querySelector('article[data-next-session="gate"]');
+    expect(row?.querySelector('[data-next-operation-fact="now"]')?.textContent).toBe(
+      'Waiting for you to approve a command',
+    );
+    expect(row?.querySelector('[data-next-row-block-note]')).toBeNull();
   });
 });
 
@@ -562,7 +771,9 @@ describe('the goal link opens the session at its goal', () => {
       annotate: true,
     });
     const page = await open(data);
-    fireEvent.click(document.querySelector('a[data-next-goal-focus]') as Element);
+    // A row with no goal has no goal link; opening the row itself lands in the empty goal box.
+    expect(document.querySelector('a[data-next-goal-focus]')).toBeNull();
+    fireEvent.click(document.querySelector('a.next-operation-route') as Element);
     await page.settle();
     expect(page.router.getRoute().view).toBe('session');
     expect(focused()).toBe('held:cursor:x:goal');
@@ -679,15 +890,14 @@ describe('two sessions in two worktrees of one repository', () => {
   it('files both under one project and names each worktree on its row', async () => {
     await open(board([tree('s1', 'haiku-a'), tree('s2', 'haiku-b'), tree('s3', null)]));
     const facts = (sid: string) =>
-      document.querySelector(
-        `article[data-next-session="${sid}"] [data-next-operation-fact="where"]`,
-      )?.textContent;
+      document.querySelector(`article[data-next-session="${sid}"] [data-next-row-descriptor]`)
+        ?.textContent;
     expect(facts('s1')).toContain('one/compass');
     expect(facts('s2')).toContain('one/compass');
     expect(facts('s1')).toContain('worktree haiku-a');
     expect(facts('s2')).toContain('worktree haiku-b');
     // A main checkout publishes no worktree, so no worktree is drawn for it.
-    expect(facts('s3')).toBe('Projectone/compass');
+    expect(facts('s3')).toBe('claude · one/compass · start time not published');
   });
 });
 

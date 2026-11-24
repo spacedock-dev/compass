@@ -193,7 +193,7 @@ describe('the words', () => {
   });
 
   it('never match a placeholder sentence', () => {
-    expect(run({ query: 'Add a goal' }).letters).toBe('');
+    expect(run({ query: '"No goal yet"' }).letters).toBe('');
     expect(run({ query: '"Title not published"' }, { showAll: true }).letters).toBe('');
     expect(run({ query: 'Annotations off' }, { annotate: false }).letters).toBe('');
   });

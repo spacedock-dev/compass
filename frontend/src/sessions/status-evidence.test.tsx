@@ -122,14 +122,19 @@ it.each([
 it.each([
   ['#n=sessions', 'article[data-next-session=parent]'],
   ['#n=project:demo', 'a.project-overview-row[href^="#n=session:demo:claude:parent"]'],
-])('keeps the declared child wait as text on %s', async (hash, selector) => {
-  const page = mountSessions({ hash, data: declared.payload });
-  await page.settle();
-  const parent = node(selector);
-  expect.soft(parent).toHaveTextContent('Waiting on child "Check build"');
-  expect.soft(parent.querySelector('[data-icon=working]')).toBeNull();
-  expect.soft(within(parent).queryByRole('img', { name: 'Working' })).toBeNull();
-});
+])(
+  "keeps the declared child wait as text on %s, beside the session's own Working tile",
+  async (hash, selector) => {
+    const page = mountSessions({ hash, data: declared.payload });
+    await page.settle();
+    const parent = node(selector);
+    expect.soft(parent).toHaveTextContent('Waiting on child "Check build"');
+    /* The owner ruled on 2026-11-24 that a child wait takes the tile of the session's own state. */
+    const tile = within(parent).getByRole('img', { name: 'Working' });
+    expect.soft(tile.getAttribute('data-next-row-tile')).toBe('Working');
+    expect.soft(tile.getAttribute('data-next-row-state')).toBeNull();
+  },
+);
 
 it('keeps the same child wait when a retired project focus opens the parent session', async () => {
   const page = mountSessions({

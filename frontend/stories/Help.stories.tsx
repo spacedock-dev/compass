@@ -29,6 +29,7 @@ export const Guide: Story = {
       words.waitingOnYou,
       words.quiet,
       words.ended,
+      words.stateNotKnown,
       words.worthALook,
     ]);
     await expect(rows[2]?.querySelector('[data-icon="quiet"]')).toBeVisible();
@@ -36,6 +37,15 @@ export const Guide: Story = {
       'The agent finished its turn and is waiting for your next message.',
     );
     await expect(rows[3]).toHaveTextContent('The session reported that it ended.');
+    await expect(rows[4]?.querySelector('[data-icon="state-not-known"]')).toBeVisible();
+    // The neutral tile: quiet ink on the page ground, as on a Sessions row.
+    await expect(rows[4]?.querySelector('.help-icon')).toHaveStyle({
+      backgroundColor: 'rgb(244, 246, 248)',
+      color: 'rgb(82, 96, 109)',
+    });
+    await expect(rows[4]).toHaveTextContent(
+      'The agent reports it is idle, but Compass saw no finished turn, so it cannot say whether it is quiet or stopped.',
+    );
     const progress = within(canvas.getByRole('region', { name: 'Goals and progress checks' }));
     for (const word of [
       GLOSSARY.onTrack.plain,
@@ -48,7 +58,10 @@ export const Guide: Story = {
       progress.getByText('No departure found in what Compass read', { exact: true }),
     ).toBeVisible();
     for (const [word, explanation] of [
-      [words.noGoalYet, 'Add a goal to give Compass something to read against.'],
+      [
+        words.noGoalYet,
+        'Open the session and add a goal there to give Compass something to read against.',
+      ],
       [words.notCheckedYet, 'Check progress to ask Compass to read the record against the goal.'],
       [words.tooEarlyToTell, 'The session has recorded too little for a reading.'],
       [

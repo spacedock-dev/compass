@@ -900,6 +900,21 @@ class DocumentVocabularyTest(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, flat)
 
+    def test_session_page_cards_describe_the_card_press_helper_tiles_and_project_counts(
+        self,
+    ) -> None:
+        """The Session page's Is it on track?, Right now and Project cards, as the page draws them."""
+        root = SERVER_PATH.parents[3]
+        for relative in (_DASHBOARD_REFERENCE, "docs/how-it-works.md"):
+            flat = " ".join((root / relative).read_text(encoding="utf-8").split())
+            for phrase in (
+                "pressing either starts one check",
+                "State not known once it stops, because no agent records when a helper finished",
+                "2 other sessions today · 1 working",
+            ):
+                with self.subTest(file=relative, phrase=phrase):
+                    self.assertIn(phrase, flat)
+
     def test_words_on_the_board_carries_the_ruled_states_levels_and_absences(self) -> None:
         root = SERVER_PATH.parents[3]
         dashboard = (root / _DASHBOARD_REFERENCE).read_text(encoding="utf-8")
@@ -917,6 +932,11 @@ class DocumentVocabularyTest(unittest.TestCase):
                 "A flag for a session that may need a closer look, "
                 "such as one that ended with uncommitted work."
             ),
+            "State not known": (
+                "The agent reports it is idle, but Compass saw no finished turn, so it cannot "
+                "say whether it is quiet or stopped. It also shows when the agent publishes no "
+                "state at all."
+            ),
             "State not published": "Compass has no published state for this session.",
             "Waiting on child": "Compass has evidence that a linked child is still working.",
             "Read by scanning: no turn end can be observed here": (
@@ -926,7 +946,7 @@ class DocumentVocabularyTest(unittest.TestCase):
             "Slightly off course": "Some work wandered from the goal.",
             "Off course": "The work no longer serves the goal.",
             "Way off course": "The work has gone far from the goal.",
-            "No goal yet": "Add a goal to give Compass something to read against.",
+            "No goal yet": "Open the session and add a goal there to give Compass something to read against.",
             "Not checked yet": "Check progress to ask Compass to read the record against the goal.",
             "Too early to tell": "The session has recorded too little for a reading.",
             "Can't tell": (

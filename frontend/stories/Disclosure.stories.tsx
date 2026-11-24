@@ -6,6 +6,7 @@ import { ControlsProvider } from '../src/controls/ControlsProvider';
 import { testControls } from '../src/controls/testControls';
 import { ABSENT, SummaryPage, grant } from './summary.scenario';
 import { Button } from '../src/ui/button';
+import { atWidth, expectSpansPanel } from './disclosure.flow';
 const meta = { title: 'Controls/Disclosure', component: Example } satisfies Meta<typeof Example>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -87,5 +88,36 @@ export const WhatIsSentSize: Story = {
     await expect(canvas.queryByText('16,384 bytes per part.')).not.toBeVisible();
     await userEvent.click(await canvas.findByText('Exact byte limits', { exact: true }));
     await waitFor(() => expect(canvas.getByText('16,384 bytes per part.')).toBeVisible());
+  },
+};
+
+/* Owner, 2026-11-24: an opened panel's sentences span the card on a wide screen. They used to stop at the page's
+   540px reading cap, leaving the right half of the card empty. */
+export const PanelTextSpansTheCard: Story = {
+  render: () => (
+    <SummaryPage
+      ended={false}
+      grant={grant({
+        disclosure:
+          'Sends to Anthropic through your Claude Code, at most 16 KB at a time: your messages, text relayed in your turn, the agent replies, test and build names with their result, and the paths of files written. Titles of earlier parts go along as context. Everything is redacted first.',
+      })}
+      summary={ABSENT}
+    />
+  ),
+  args: { variant: 'accordion' },
+  play: async ({ canvasElement }) => {
+    const restore = await atWidth(1280);
+    try {
+      const canvas = within(canvasElement);
+      const trigger = await canvas.findByRole('button', { name: 'What is sent to Claude Code' });
+      await userEvent.click(trigger);
+      const panel = document.getElementById(trigger.getAttribute('aria-controls') ?? '');
+      if (!panel) throw new Error('The expanded button has no panel');
+      const text = await within(panel).findByText(/Everything is redacted first/);
+      await waitFor(() => expect(panel.getBoundingClientRect().width).toBeGreaterThan(540));
+      await expectSpansPanel(text, panel);
+    } finally {
+      await restore();
+    }
   },
 };

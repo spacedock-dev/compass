@@ -18,9 +18,11 @@ export const SessionStates: Story = {
       'Waiting on you',
       'Quiet',
       'Ended',
+      'State not known',
       'Worth a look',
     ]);
     await expect(rows[2]?.querySelector('[data-icon="quiet"]')).toBeVisible();
-    await expect(rows[4]?.querySelector('[data-icon="worth-a-look"]')).toBeVisible();
+    await expect(rows[4]?.querySelector('[data-icon="state-not-known"]')).toBeVisible();
+    await expect(rows[5]?.querySelector('[data-icon="worth-a-look"]')).toBeVisible();
   },
 };

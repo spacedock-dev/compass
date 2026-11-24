@@ -6,7 +6,7 @@ import { RouteLink } from '../shell/RouteLink';
 import { stageData } from '../steering/stage';
 import { useDisplayed } from '../shell/context';
 import { Button } from '../ui/button';
-import { Icon, SESSION_STATE_ICONS } from '../ui/icons';
+import { Icon, SESSION_STATE_ICONS, type SESSION_TILE_ICONS } from '../ui/icons';
 import { Input } from '../ui/input';
 import { StatusLegend } from '../ui/status-legend';
 import { StatusTile } from '../ui/status-tile';
@@ -16,23 +16,22 @@ import { PROJECT_GROUPS, projectList, type ProjectListRow } from './projectList'
 import './project.css';
 
 const INITIAL_RECENT = 3;
-type State = keyof typeof SESSION_STATE_ICONS;
+type State = keyof typeof SESSION_TILE_ICONS;
 
 const stateLimitsAuthored = (limit: string) => limit.startsWith('Waiting on child');
 
 function ProjectRow({ row }: { readonly row: ProjectListRow }) {
-  const hasState = Object.hasOwn(SESSION_STATE_ICONS, row.state);
+  /* A project whose sessions publish no state draws the State not known tile, so the tile column lines up. */
+  const tile: State = Object.hasOwn(SESSION_STATE_ICONS, row.state)
+    ? (row.state as keyof typeof SESSION_STATE_ICONS)
+    : SESSION_ROW_WORDS.stateNotKnown;
   return (
     <li className="project-list-item" data-next-project={row.key}>
       <RouteLink
         route={row.key ? { view: 'project', project: row.key } : { view: 'sessions' }}
         className="project-list-row"
       >
-        {hasState ? (
-          <StatusTile state={row.state as State} focusable={false} />
-        ) : (
-          <span className="project-list-no-icon" />
-        )}
+        <StatusTile state={tile} focusable={false} />
         <span className="project-list-identity">
           <strong data-authored>{row.name}</strong>
           {row.headline ? (

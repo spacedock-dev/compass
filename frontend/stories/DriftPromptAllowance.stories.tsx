@@ -68,7 +68,9 @@ export const AnUnsentPromptKeepsItsRefusalAndCountsNoAnalysis: Story = {
       'do not confirm model availability or that a prompt will fit',
     );
     await userEvent.click(
-      await within(canvasElement).findByRole('button', { name: 'Check progress' }),
+      (
+        await within(canvasElement).findAllByRole('button', { name: 'Check progress' })
+      )[0] as HTMLElement,
     );
     await waitFor(() => expect(card.querySelector('[data-next-analyzing]')).toBeVisible());
     await expect(READING.posts).toHaveLength(1);
@@ -92,9 +94,9 @@ export const AnUnsentPromptKeepsItsRefusalAndCountsNoAnalysis: Story = {
     await expect(args.scenario.session?.['annotation_assessment']).toBeUndefined();
     await expect(card.querySelector('[data-next-result]')).toBeNull();
     await expect(card.querySelector('.next-cockpit-reading-count')).toBeNull();
-    await expect(
-      within(canvasElement).getByRole('button', { name: 'Check progress' }),
-    ).toBeVisible();
+    // Still offered in the header and in the card.
+    for (const press of within(canvasElement).getAllByRole('button', { name: 'Check progress' }))
+      await expect(press).toBeVisible();
 
     if (!BOARD.refresh) throw new Error('the board refresh seam was not mounted');
     await BOARD.refresh();
@@ -115,7 +117,9 @@ export const AnOlderServerLeavesTheNextAllowanceUnknown: Story = {
     await expect(allowance).toHaveTextContent('Next Analyze prompt: Allowance unknown.');
     await expect(allowance).not.toHaveTextContent(/0 KB|refused before a model call/);
     await expect(
-      await within(canvasElement).findByRole('button', { name: 'Check progress' }),
+      (
+        await within(canvasElement).findAllByRole('button', { name: 'Check progress' })
+      )[0] as HTMLElement,
     ).toBeVisible();
   },
 };

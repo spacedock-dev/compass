@@ -521,7 +521,9 @@ export function RunPress({
   const enabled = !off && !reason && !request?.pending && !blocked;
   const disclosure = provider && route?.['disclosure'] ? String(route['disclosure']) : '';
   const described = describedBy ?? (off || reason ? REFUSED_ID : disclosure ? DISCLOSURE_ID : '');
-  const pressWeight = weight === 'primary' && (!provider || inert || off) ? 'secondary' : weight;
+  /* Filled wherever the press can run (owner, 2026-11-24); a refused press takes the calm refused look whatever
+     its weight, so the downgrade is only for a press with no reader route to name. */
+  const pressWeight = weight === 'primary' && !provider ? 'secondary' : weight;
   return (
     <>
       <ActionButton
@@ -571,26 +573,33 @@ function CheckCost() {
   );
 }
 
-/* The session header's re-run control uses the same label over a current or stale reading.
+/* The re-run control uses the same label over a current or stale reading, in the session header and in Is it on
+   track?.
    Inert, never gone, where a press cannot run: calls paused, an analysis running (Cancel is that state's
    control), an unsaved edit, or a later direction's question, which owns the one run path while it stands
    ([DEC-27](../../../docs/design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)).
    Not drawn with no reader on this machine, where an inert press has nothing to refuse
    ([NUI-18](../../../docs/design-next-ui.md#nui-18-one-control-primitive-and-an-inert-control-stays-on-the-page)). */
-export function RerunControl({ board }: { readonly board: Board }) {
+export function RerunControl({
+  board,
+  weight = 'primary',
+  focusKey,
+}: {
+  readonly board: Board;
+  readonly weight?: 'primary' | 'secondary';
+  readonly focusKey?: string;
+}) {
   const { model } = useDrift();
   if (model.annotate && routeRefusal(model.payload, model.session)) return null;
   const key = model.key;
   return (
-    <>
-      <RunPress
-        board={board}
-        weight="secondary"
-        label={GLOSSARY.checkProgressAgain.plain}
-        focusKey={`reading-again:${key}`}
-        fallbackKey={`reading:${key}`}
-        blocked={Boolean(model.job)}
-      />
-    </>
+    <RunPress
+      board={board}
+      weight={weight}
+      label={GLOSSARY.checkProgressAgain.plain}
+      focusKey={focusKey ?? `reading-again:${key}`}
+      fallbackKey={`reading:${key}`}
+      blocked={Boolean(model.job)}
+    />
   );
 }

@@ -763,18 +763,20 @@ export function SessionsFilters({
       data-next-sessions-search
     >
       <div className="next-sessions-segments flex flex-wrap items-center justify-between gap-2 max-[620px]:contents">
-        <h2 className="m-0 text-value font-semibold">{SESSION_LIST_WORDS.all}</h2>
+        {/* The canvas's section-title step, Inter 700 at 24 px (owner, 2026-11-24). */}
+        <h2 className="m-0 text-head font-bold">{SESSION_LIST_WORDS.all}</h2>
         <div
           role="group"
           aria-label={SESSION_LIST_WORDS.status}
-          className="next-sessions-status flex gap-1 rounded-card bg-muted p-1"
+          className="next-sessions-status flex gap-1 rounded-[0.75rem] bg-muted p-1 max-[620px]:gap-2 max-[620px]:rounded-none max-[620px]:bg-transparent max-[620px]:p-0"
         >
           {SESSION_SEGMENTS.map((segment) => (
             <Button
               key={segment}
               type="button"
               variant="segment"
-              className="max-[620px]:rounded-pill max-[620px]:aria-pressed:bg-foreground max-[620px]:aria-pressed:text-card"
+              /* A phone draws the segments as outlined pills, the chosen one filled, as Mobile.dc.html does. */
+              className="max-[620px]:rounded-pill max-[620px]:border-[var(--line)] max-[620px]:bg-card max-[620px]:text-foreground max-[620px]:aria-pressed:border-foreground max-[620px]:aria-pressed:bg-foreground max-[620px]:aria-pressed:text-card max-[620px]:aria-pressed:shadow-none"
               aria-pressed={filters.segment === segment}
               disabled={
                 segment !== 'all' &&
@@ -809,11 +811,13 @@ export function SessionsFilters({
             focusKey={SEARCH_KEY}
             defaultValue={filters.query}
             maxLength={QUERY_LIMIT}
-            placeholder="Search titles, goals or projects"
+            placeholder="Search by title, goal or project"
             aria-keyshortcuts="/"
             autoComplete="off"
             spellCheck={false}
-            className="min-h-[48px] bg-card pl-9 pr-24 max-[620px]:pr-12 [&::-webkit-search-cancel-button]:appearance-none"
+            /* The Filters button's radius token, so the field and the button beside it always match (owner,
+               2026-11-24). */
+            className="min-h-[48px] rounded-control bg-card pl-9 pr-24 max-[620px]:pr-12 [&::-webkit-search-cancel-button]:appearance-none"
             onInput={(event) =>
               actions.change({ ...filters, query: event.currentTarget.value }, 'typing')
             }
@@ -853,7 +857,7 @@ export function SessionsFilters({
           aria-expanded={panelOpen}
           aria-controls={panelId}
           data-hold-paint
-          className="gap-2"
+          className="min-h-[48px] gap-2"
           onClick={togglePanel}
           onKeyDown={dismissPanel}
         >

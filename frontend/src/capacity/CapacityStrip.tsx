@@ -281,7 +281,7 @@ export function CapacityStrip() {
   return (
     <Card
       as="section"
-      className="mt-5 grid min-w-0 gap-3 [overflow-wrap:anywhere]"
+      className="mb-6 grid min-w-0 gap-3 [overflow-wrap:anywhere]"
       data-next-capacity=""
       aria-labelledby="next-ai-allowance-heading"
     >

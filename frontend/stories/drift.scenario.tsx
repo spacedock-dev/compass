@@ -170,6 +170,8 @@ export interface Scenario {
   /** A clipboard that takes every write, so Copy's answer is the page's and not the browser's permission. */
   readonly clipboard?: boolean;
   readonly payload?: Record<string, unknown>;
+  /** Other sessions the board publishes after this one, for a story about the Project card's counts. */
+  readonly others?: readonly Record<string, unknown>[];
   readonly facts?: readonly unknown[];
   readonly work?: Record<string, unknown>;
   /** The route for this harness, where a story is about a machine that is not the healthy one. */
@@ -494,6 +496,7 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
                 ...(adoptedGoal ?? {}),
                 ...(marked === null ? {} : { annotation_not_accurate: marked }),
               },
+              ...(scenario.others ?? []),
             ],
           });
           response.headers.set('X-Compass-Revision', scenario.permissionReply?.boardRevision ?? '');

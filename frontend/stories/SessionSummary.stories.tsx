@@ -119,6 +119,41 @@ async function attributed(summary: HTMLElement) {
   }
 }
 
+/* A phase whose cited entries carry no time keeps the time column empty, so its title starts where every other
+   title does (owner, 2026-11-24): the column had collapsed and pulled that title to the card's left edge. */
+export const UntimedPhaseKeepsTheTimeColumn: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        blocks: [
+          block('p1', 'c2', 4, [
+            FIRST_PHASE,
+            {
+              title: 'Waiting on the go-ahead',
+              bullets: [
+                bullet('Said it needed a go-ahead before pushing.', 'said', ['zz-untimed']),
+              ],
+            },
+          ]),
+          block('p2', 'a2', 2, [SECOND_PHASE]),
+        ],
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const titles = await waitFor(() => {
+      const found = [...summary.querySelectorAll<HTMLElement>('[data-next-summary-phase-title]')];
+      if (found.length !== 3) throw new Error(`expected 3 phase titles, saw ${found.length}`);
+      return found;
+    });
+    await expect(summary.querySelectorAll('[data-next-summary-no-time]')).toHaveLength(1);
+    const lefts = titles.map((title) => Math.round(title.getBoundingClientRect().left));
+    await expect(new Set(lefts).size).toBe(1);
+  },
+};
+
 /* Ready: the lede, then the phases as headings with their bullets, the model and the time in the header, and the
    card says nothing is done. */
 export const Ready: Story = {

@@ -2,12 +2,16 @@ import { Alert } from '../ui/alert';
 import { Card } from '../ui/card';
 import { Separator } from '../ui/separator';
 import { Disclosure } from '../controls';
-import { GLOSSARY, SESSION_LIST_WORDS, SESSION_ROW_WORDS, SHOWN } from '../language/glossary';
+import { GLOSSARY, SESSION_LIST_WORDS, SHOWN } from '../language/glossary';
 import { SESSION_TEXT_ORIGIN, type Landing, type ObservedSession } from '../observed';
 import { RouteAnchor } from './RouteAnchor';
 import { durationSince, gapNames, isRecord, promptCopied, type Row } from '../observed';
 import { Icon } from '../ui/icons';
+import { StatusTile } from '../ui/status-tile';
+import { companionsLine, type ProjectCompanions } from '../project/projectList';
 import {
+  helperTile,
+  helperWords,
   sessionFigures,
   turnEndedSentence,
   type CommandReports,
@@ -153,36 +157,40 @@ export function SubagentsView({ subagents }: { readonly subagents: Subagents }) 
   return (
     <div className="grid gap-1.5" data-next-session-subagents>
       <h3 className="m-0 text-label font-semibold">{heading}</h3>
-      <ul aria-label={heading} className="m-0 grid list-none gap-1 p-0">
-        {subagents.rows.map((row) => (
-          <li
-            key={row.index}
-            className="flex flex-wrap justify-between gap-x-2 [overflow-wrap:anywhere]"
-            data-next-session-subagent={row.index}
-          >
-            {row.name ? (
-              <span data-authored>{row.parent ? `${row.name} · ${row.parent}` : row.name}</span>
-            ) : (
-              <span>
-                Unnamed helper
-                {row.parent ? (
-                  <>
-                    {' '}
-                    · <span data-authored>{row.parent}</span>
-                  </>
-                ) : null}
+      <ul aria-label={heading} className="m-0 grid list-none gap-2.5 p-0">
+        {subagents.rows.map((row) => {
+          const words = helperWords(row);
+          return (
+            <li
+              key={row.index}
+              className="flex items-center gap-2.5"
+              data-next-session-subagent={row.index}
+            >
+              <StatusTile
+                state={helperTile(row.live)}
+                size="small"
+                focusable={false}
+                rowState={null}
+              />
+              <span className="flex min-w-0 flex-1 flex-wrap justify-between gap-x-2 [overflow-wrap:anywhere]">
+                {row.name ? (
+                  <span data-authored>{row.parent ? `${row.name} · ${row.parent}` : row.name}</span>
+                ) : (
+                  <span>
+                    Unnamed helper
+                    {row.parent ? (
+                      <>
+                        {' '}
+                        · <span data-authored>{row.parent}</span>
+                      </>
+                    ) : null}
+                  </span>
+                )}
+                {words ? <span className="text-label text-muted-foreground">{words}</span> : null}
               </span>
-            )}
-            <span className="text-label text-muted-foreground">
-              {row.live === true
-                ? SESSION_ROW_WORDS.working
-                : row.live === false
-                  ? 'Not running'
-                  : 'Activity not published'}
-              {row.elapsed ? ` · ${row.elapsed}` : ''}
-            </span>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
       {subagents.omitted > 0 ? (
         <p className="m-0 text-label text-muted-foreground">
@@ -273,7 +281,8 @@ export function AtAGlance({ figures }: { readonly figures: ReturnType<typeof ses
           {figures.map(({ label, value }) => (
             <div key={label} className="flex flex-col-reverse">
               <dt className="text-label text-muted-foreground">{label}</dt>
-              <dd className="m-0 text-value font-semibold">{value}</dd>
+              {/* The canvas's hero step: the 24 px head size at 800, so the numbers lead their quiet labels. */}
+              <dd className="m-0 text-head font-extrabold leading-tight">{value}</dd>
             </div>
           ))}
         </dl>
@@ -287,30 +296,41 @@ export function AtAGlance({ figures }: { readonly figures: ReturnType<typeof ses
 export function SessionProject({
   project,
   viewOnly,
+  companions = null,
 }: {
   readonly project: string;
   readonly viewOnly: boolean;
+  /** This project's other sessions today, counted from the board's rows (`projectCompanions`). */
+  readonly companions?: ProjectCompanions | null;
 }) {
+  const line = companionsLine(companions);
   return (
     <Card
       as="section"
       variant="drift-panel"
-      className="next-session-project grid gap-3 p-4"
+      className="next-session-project grid gap-2 p-4"
       aria-labelledby="session-project"
     >
       <h2 id="session-project" className="m-0 text-value font-semibold">
         Project
       </h2>
       {project ? (
-        <p className="m-0 [overflow-wrap:anywhere]">
-          {viewOnly ? (
-            <span data-authored>{project}</span>
-          ) : (
-            <RouteAnchor route={{ view: 'project', project }} className="text-primary">
+        <div className="grid gap-0.5">
+          <p className="m-0 [overflow-wrap:anywhere]">
+            {viewOnly ? (
               <span data-authored>{project}</span>
-            </RouteAnchor>
-          )}
-        </p>
+            ) : (
+              <RouteAnchor route={{ view: 'project', project }} className="text-primary">
+                <span data-authored>{project}</span>
+              </RouteAnchor>
+            )}
+          </p>
+          {line ? (
+            <p className="m-0 text-label text-muted-foreground" data-next-session-project-today>
+              {line}
+            </p>
+          ) : null}
+        </div>
       ) : (
         <p className="m-0 text-muted-foreground">Project not published.</p>
       )}

@@ -332,7 +332,9 @@ export const AFoundGoalIsAnalyzedWithoutASaveFirst: Story = {
     const view = within(card);
     await userEvent.click(await view.findByRole('button', { name: 'Find goal' }));
     await waitFor(() => expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(GOAL));
-    const analyze = await within(canvasElement).findByRole('button', { name: 'Check progress' });
+    const analyze = (
+      await within(canvasElement).findAllByRole('button', { name: 'Check progress' })
+    )[0] as HTMLElement;
     await waitFor(() => expect(analyze).not.toHaveAttribute('aria-disabled', 'true'));
     await expect(analyze).not.toBeDisabled();
     await expect(canvasElement).not.toHaveTextContent('Save your intent, or undo your edit');

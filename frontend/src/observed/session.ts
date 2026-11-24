@@ -366,6 +366,20 @@ export function sessionState(
     : 'State not published';
 }
 
+/** The tile a session row draws. Every row draws one, so the tile column always lines up (owner, 2026-11-24):
+ * a row waiting on a child shows its own underlying state, and a row whose state is not published shows the
+ * State not known tile. The row's state word, which the terminal parity fixture holds, stays sessionState's. */
+export function sessionTile(
+  session: ObservedSession,
+  state = sessionState(session),
+): 'Ended' | 'Waiting on you' | 'Working' | 'Quiet' | 'State not known' {
+  if (state === 'Waiting on child') {
+    if (session.isWorking) return 'Working';
+    return session.isQuiet && session.landing.endKind === 'turn-stop' ? 'Quiet' : 'State not known';
+  }
+  return state === 'State not published' ? 'State not known' : state;
+}
+
 export function sessionStateLimit(session: ObservedSession, state = sessionState(session)): string {
   if (state === 'Waiting on child') return session.childWait;
   if (session.scanOnly) return SCAN_ONLY_LINE;
