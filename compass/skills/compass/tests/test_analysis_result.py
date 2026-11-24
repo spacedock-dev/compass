@@ -13,19 +13,24 @@ stored with the annotation entry and nothing else: removed with the entry, untou
 from __future__ import annotations
 
 import builtins
+import concurrent.futures
 import contextlib
 import http.client
 import io
 import json
 import os
+import threading
+import unittest
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
 
-from compass_runtime import aggregate, history, http_api, levels
+from compass_runtime import aggregate, history, http_api, levels, semantic_history, terminal_drift
 from compass_runtime import annotations as annotation_store
 from compass_runtime import io as runtime_io
 from compass_runtime import reading as runtime_reading
+from compass_runtime import sessions as runtime_sessions
+from compass_runtime.state import build_runtime_state
 
 from .support import make_server, serve_until_closed
 from .test_claude_checks import SHORT, START
@@ -101,8 +106,8 @@ class _Result(_Replay):
         )
 
     @contextlib.contextmanager
-    def serving(self) -> Any:
-        httpd = make_server(application=self.app())
+    def serving(self, application: aggregate.Application | None = None) -> Any:
+        httpd = make_server(application=application or self.app())
         thread = serve_until_closed(httpd)
         try:
             yield httpd.server_port
@@ -149,6 +154,24 @@ class _Result(_Replay):
         ]
         self.assertEqual(1, len(checks))
         return str(checks[0])
+
+    def departure(self) -> dict[str, Any]:
+        self.session.write(str(Path(self.session.cwd) / "unrelated.py"))
+        cite = next(f["fact_id"] for f in self.facts_now() if f["subject"] == "write")
+        through = START.timestamp() + self.session.seconds
+        return _reading(
+            {
+                "goal": {
+                    "result": runtime_reading.RESULT_DEPARTURE,
+                    "cites": [cite],
+                    "why": runtime_reading.WHY_RECORDED_WRITE,
+                }
+            },
+            window_start=START.timestamp(),
+            revision_read_at=START.timestamp(),
+            read_at=through + 1,
+            evidence_through=through,
+        )
 
 
 class NotAccurateIsATokenAndNothingElseTest(_Result):
@@ -352,24 +375,6 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
         self.assertNotIn("analysis_levels", json.dumps(board))
         self.assertNotIn('"level"', json.dumps(board["sessions"]))
 
-    def departure(self) -> dict[str, Any]:
-        self.session.write(str(Path(self.session.cwd) / "unrelated.py"))
-        cite = next(f["fact_id"] for f in self.facts_now() if f["subject"] == "write")
-        through = START.timestamp() + self.session.seconds
-        return _reading(
-            {
-                "goal": {
-                    "result": runtime_reading.RESULT_DEPARTURE,
-                    "cites": [cite],
-                    "why": runtime_reading.WHY_RECORDED_WRITE,
-                }
-            },
-            window_start=START.timestamp(),
-            revision_read_at=START.timestamp(),
-            read_at=through + 1,
-            evidence_through=through,
-        )
-
     def test_board_polls_do_not_reopen_evidence_for_a_saved_departure(self) -> None:
         self.save_goal(lines=())
         self.record(self.departure())
@@ -506,3 +511,348 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
         _rev, body = app.collect_json(show_all=True)
         row = json.loads(body)["sessions"][0]
         self.assertNotIn("analysis_levels", json.dumps(http_api._session_context(app, row)))
+
+
+class StoredLevelNeedsCurrentEvidenceTest(_Result):
+    """A session's page draws no level once the evidence that held it back is gone (DRC-5533).
+
+    The page's own gates are `buildModel` in `frontend/src/drift/model.ts`: no pill while the
+    reading is out of date, while the latest check was withheld, or while the store is unreadable.
+    `shown_level` applies the same gates to the served answers, so a test reads what a reader
+    sees. A departure whose own citation still resolves is not enough: a stale or withdrawn
+    reading draws no current level
+    ([the goal and progress cards](docs/design-reading-a-session.md#the-goal-and-progress-cards-2026-11-23)).
+    """
+
+    DIRECTION = "Actually make the unrelated change first."
+
+    def cold(self, **row: Any) -> aggregate.Application:
+        """A fresh process: its own state, so no memo, no cache and no replay carries over."""
+        self.state = build_runtime_state(self.config, started=self.now)
+        return self.app(**row)
+
+    def warm_after(self, seconds: float | None = None) -> None:
+        """Let the board's collection memo expire so the next request collects again."""
+        self.now += self.config.collect_memo_sec + 1 if seconds is None else seconds
+
+    def seen(self, port: int) -> dict[str, Any]:
+        """What the Session page reads, and what it draws from it."""
+        board = self.get(port, "/api/data")
+        (row,) = [r for r in board["sessions"] if r["sid"] == SHORT]
+        work = self.get(port, FOCUSED)["sources"]["work"]
+        (view,) = work["drift_views"]
+        levels_now = [x for x in work.get("analysis_levels", []) if x["sid"] == SHORT]
+        pill = view.get("pill")
+        raw = row.get("annotation_assessment") or {}
+        withheld_at = row.get("annotation_reading_withheld_at")
+        read_at = raw.get("read_at")
+        withheld = bool(row.get("annotation_reading_withheld")) and (
+            not raw
+            or (
+                isinstance(withheld_at, (int, float))
+                and isinstance(read_at, (int, float))
+                and withheld_at > read_at
+            )
+        )
+        shown = pill["level"] if pill and not view.get("stale") and not withheld else None
+        if row.get("annotate_unreadable"):
+            shown = None
+        return {
+            "shown": shown,
+            "pill": pill["level"] if pill else None,
+            "analysis": levels_now[0]["level"] if levels_now else None,
+            "stale": (view.get("stale") or {}).get("kind"),
+            "unsettled": view.get("unsettled_count"),
+            "terminal": terminal_drift.adapt(view).level,
+        }
+
+    def long_gap(self) -> None:
+        for _ in range(64):
+            self.session._entry("assistant", [{"type": "text", "text": "x" * 8192}])
+
+    def direction_and_departure(self) -> None:
+        """The reader's direction sits beyond the tail and the newest page: only history holds it."""
+        self.save_goal(lines=())
+        self.session.prompt(self.DIRECTION)
+        self.long_gap()
+        self.record(self.departure())
+
+    def drop_direction(self) -> None:
+        """A compaction rewrote the file without the direction."""
+        self.session.rows = [
+            r for r in self.session.rows if self.DIRECTION not in json.dumps(r.get("message"))
+        ]
+        self.session.save(self.path)
+
+    def history_file(self) -> Path:
+        return Path(semantic_history.store_path(self.config))
+
+    def test_a_retained_direction_keeps_the_departure_withheld_after_compaction(self) -> None:
+        self.direction_and_departure()
+        with self.serving(self.cold()) as port:
+            first = self.seen(port)
+        self.assertIsNone(first["shown"])
+        self.assertIn(self.DIRECTION, self.history_file().read_text(encoding="utf-8"))
+        self.drop_direction()
+        for poll in ("cold", "warm"):
+            with self.subTest(poll=poll):
+                if poll == "warm":
+                    self.warm_after()
+                with self.serving(self.cold() if poll == "cold" else None) as port:
+                    self.assertIsNone(self.seen(port)["shown"])
+
+    def served_after_history_is(self, damage: Any) -> list[tuple[str, dict[str, Any]]]:
+        self.direction_and_departure()
+        with self.serving(self.cold()) as port:
+            self.assertIsNone(self.seen(port)["shown"])
+        self.drop_direction()
+        damage(self.history_file())
+        out: list[tuple[str, dict[str, Any]]] = []
+        app = self.cold()
+        with self.serving(app) as port:
+            out.append(("cold", self.seen(port)))
+            self.warm_after()
+            out.append(("warm", self.seen(port)))
+        return out
+
+    @unittest.expectedFailure  # LEAK: unreadable or lost history reads as "never had a direction"
+    def test_lost_history_after_compaction_shows_no_level(self) -> None:
+        def unlink(path: Path) -> None:
+            path.unlink()
+
+        def emptied(path: Path) -> None:
+            path.write_text('{"projects": {}}', encoding="utf-8")
+
+        def corrupt(path: Path) -> None:
+            path.write_text("{", encoding="utf-8")
+
+        def oversize(path: Path) -> None:
+            path.write_bytes(b" " * (self.config.state_read_cap_bytes + 1))
+
+        for name, damage in (
+            ("deleted", unlink),
+            ("emptied", emptied),
+            ("corrupt", corrupt),
+            ("oversize", oversize),
+        ):
+            with self.subTest(history=name):
+                self.setUp()
+                for poll, seen in self.served_after_history_is(damage):
+                    self.assertIsNone(seen["shown"], f"{name} {poll}: {seen}")
+
+    @unittest.expectedFailure  # LEAK: the 24 h history floor forgets a direction the page needed
+    def test_an_aged_out_direction_shows_no_level(self) -> None:
+        self.direction_and_departure()
+        with self.serving(self.cold()) as port:
+            self.assertIsNone(self.seen(port)["shown"])
+        self.now += 25 * 3600
+        for poll in ("cold", "warm"):
+            with self.subTest(poll=poll):
+                if poll == "warm":
+                    self.warm_after()
+                with self.serving(self.cold() if poll == "cold" else None) as port:
+                    self.assertIsNone(self.seen(port)["shown"])
+
+    def test_truncated_later_work_stays_out_of_date_while_history_holds_it(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        original = self.path.read_bytes()
+        with self.serving(self.cold()) as port:
+            self.assertEqual(levels.MEDIUM, self.seen(port)["shown"])
+            self.session.prompt("Actually work on something else now.")
+            self.session.save(self.path)
+            self.warm_after()
+            later = self.seen(port)
+            self.assertEqual("work", later["stale"])
+            self.assertIsNone(later["shown"])
+        self.path.write_bytes(original)
+        for poll in ("cold", "warm"):
+            with self.subTest(poll=poll):
+                if poll == "warm":
+                    self.warm_after()
+                with self.serving(self.cold() if poll == "cold" else None) as port:
+                    self.assertIsNone(self.seen(port)["shown"])
+
+    @unittest.expectedFailure  # LEAK: out of date, then back to Medium once the later work is gone
+    def test_truncated_later_work_and_lost_history_show_no_level(self) -> None:
+        for name in ("deleted", "emptied"):
+            with self.subTest(history=name):
+                self.setUp()
+                self.save_goal(lines=())
+                self.record(self.departure())
+                original = self.path.read_bytes()
+                with self.serving(self.cold()) as port:
+                    self.seen(port)
+                    self.session.prompt("Actually work on something else now.")
+                    self.session.save(self.path)
+                    self.warm_after()
+                    self.assertIsNone(self.seen(port)["shown"])
+                self.path.write_bytes(original)
+                if name == "deleted":
+                    self.history_file().unlink()
+                else:
+                    self.history_file().write_text('{"projects": {}}', encoding="utf-8")
+                app = self.cold()
+                with self.serving(app) as port:
+                    self.assertIsNone(self.seen(port)["shown"], "cold")
+                    self.warm_after()
+                    self.assertIsNone(self.seen(port)["shown"], "warm")
+
+    def test_a_departure_citing_only_a_message_held_by_history_raises_no_level(self) -> None:
+        self.save_goal(lines=())
+        through = START.timestamp() + self.session.seconds
+        self.long_gap()
+        self.session.save(self.path)
+        with self.serving(self.cold()) as port:
+            facts = self.get(port, FOCUSED)["semantic"]["facts"]
+        (message,) = [f for f in facts if str(f.get("summary")).startswith("Add retry")]
+        self.record(
+            _reading(
+                {
+                    "goal": {
+                        "result": runtime_reading.RESULT_DEPARTURE,
+                        "cites": [message["fact_id"]],
+                        "why": runtime_reading.WHY_RECORDED_WRITE,
+                    }
+                },
+                window_start=START.timestamp(),
+                revision_read_at=START.timestamp(),
+                read_at=through + 1,
+                evidence_through=through,
+            )
+        )
+        with self.serving(self.cold()) as port:
+            held = self.seen(port)
+        self.assertNotEqual(levels.MEDIUM, held["analysis"], held)
+        self.session.rows = self.session.rows[1:3]
+        self.session.save(self.path)
+        for poll in ("cold", "warm"):
+            with self.subTest(poll=poll):
+                if poll == "warm":
+                    self.warm_after()
+                with self.serving(self.cold() if poll == "cold" else None) as port:
+                    seen = self.seen(port)
+                self.assertIsNone(seen["shown"], seen)
+                self.assertNotEqual(levels.MEDIUM, seen["analysis"], seen)
+
+    def rekeyed(self) -> tuple[str, str]:
+        before = runtime_sessions.project_identity(self.config, self.session.cwd)["key"]
+        (Path(self.session.cwd) / ".git").mkdir()
+        after = runtime_sessions.project_identity(self.config, self.session.cwd)["key"]
+        self.assertNotEqual(before, after)
+        return before, after
+
+    def test_a_rekeyed_project_keeps_the_direction_it_can_still_read(self) -> None:
+        before = runtime_sessions.project_identity(self.config, self.session.cwd)["key"]
+        self.direction_and_departure()
+        with self.serving(self.cold(project_key=before)) as port:
+            self.assertIsNone(self.seen(port)["shown"])
+        _before, after = self.rekeyed()
+        for poll in ("cold", "warm"):
+            with self.subTest(poll=poll):
+                if poll == "warm":
+                    self.warm_after()
+                app = self.cold(project_key=after) if poll == "cold" else None
+                with self.serving(app) as port:
+                    self.assertIsNone(self.seen(port)["shown"])
+
+    @unittest.expectedFailure  # LEAK: history is keyed by project, so a new key forgets the direction
+    def test_a_rekeyed_project_with_the_direction_only_in_old_history_shows_no_level(self) -> None:
+        before = runtime_sessions.project_identity(self.config, self.session.cwd)["key"]
+        self.direction_and_departure()
+        with self.serving(self.cold(project_key=before)) as port:
+            self.assertIsNone(self.seen(port)["shown"])
+        self.drop_direction()
+        _before, after = self.rekeyed()
+        self.assertIn(self.DIRECTION, self.history_file().read_text(encoding="utf-8"))
+        for poll in ("cold", "warm"):
+            with self.subTest(poll=poll):
+                if poll == "warm":
+                    self.warm_after()
+                app = self.cold(project_key=after) if poll == "cold" else None
+                with self.serving(app) as port:
+                    self.assertIsNone(self.seen(port)["shown"])
+
+    def test_a_peers_pending_check_leaves_the_standing_level(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        with self.serving(self.cold()) as port:
+            self.assertEqual(levels.MEDIUM, self.seen(port)["shown"])
+            self.warm_after()
+            self.assertEqual(levels.MEDIUM, self.seen(port)["shown"])
+
+    def peer_withholds(self) -> None:
+        annotation_store.record_withheld(
+            self.config,
+            build_runtime_state(self.config, started=self.now),
+            "claude",
+            SHORT,
+            reason=runtime_reading.WITHHELD_JOB_UNRECORDED,
+            spent=False,
+            job_id="a" * 32,
+        )
+
+    def test_a_peers_withheld_check_leaves_the_earlier_level_out(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        with self.serving(self.cold()) as port:
+            self.assertEqual(levels.MEDIUM, self.seen(port)["shown"])
+            self.peer_withholds()
+            self.warm_after()
+            self.assertIsNone(self.seen(port)["shown"], "after the memo")
+        with self.serving(self.cold()) as port:
+            self.assertIsNone(self.seen(port)["shown"], "cold")
+
+    @unittest.expectedFailure  # MISMATCH: the served pill and the terminal's level ignore a withheld latest check
+    def test_the_served_view_withholds_what_the_page_withholds_after_a_peers_refusal(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        self.peer_withholds()
+        with self.serving(self.cold()) as port:
+            seen = self.seen(port)
+        self.assertIsNone(seen["shown"])
+        self.assertIsNone(seen["pill"], seen)
+        self.assertIsNone(seen["terminal"], seen)
+
+
+class ConcurrentColdSessionPageTest(_Result):
+    """Cold requests to the Session page's focused route, all at once."""
+
+    REQUESTS = 24
+    WORKERS = 12
+
+    def test_concurrent_cold_requests_answer_completely(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        self.state = build_runtime_state(self.config, started=self.now)
+        barrier = threading.Barrier(self.WORKERS)
+
+        def one(i: int) -> tuple[int, dict[str, Any]]:
+            if i < self.WORKERS:
+                barrier.wait(timeout=10)
+            return self.hit(port, i)
+
+        with (
+            self.serving() as port,
+            concurrent.futures.ThreadPoolExecutor(self.WORKERS) as pool,
+        ):
+            answers = list(pool.map(one, range(self.REQUESTS)))
+        self.assertEqual([200] * self.REQUESTS, [status for status, _ in answers])
+        for _status, body in answers:
+            work = body["sources"]["work"]
+            (row,) = [x for x in work["analysis_levels"] if x["sid"] == SHORT]
+            self.assertEqual(levels.MEDIUM, row["level"])
+            (view,) = work["drift_views"]
+            self.assertNotEqual("unavailable", view.get("state"))
+            self.assertEqual(levels.MEDIUM, view["pill"]["level"])
+            self.assertTrue(work["live_levels"])
+
+    @staticmethod
+    def hit(port: int, _i: int) -> tuple[int, dict[str, Any]]:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        try:
+            conn.request("GET", FOCUSED)
+            response = conn.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            conn.close()
