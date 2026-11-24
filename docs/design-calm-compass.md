@@ -461,7 +461,13 @@ Five more changes came from the same comparison.
   header's does, and pressing either leaves both busy, then both inert while the check runs. The
   card's copy is primary only before a reading and when the card has no other primary: a later
   direction's question, Steer back and a raise for a waiting session keep theirs. The canvas
-  draws no button in the card; the owner asked for it.
+  draws no button in the card; the owner asked for it. It sits 16 px below the explanation above it
+  and 16 px above the next line, the room the canvas gives the card's button rows, because 4 px
+  read as cramped (owner, 2026-11-24).
+- **What's happened so far keeps a fixed time column.** Each phase's time sits in a 5 rem column
+  (4.25 rem on a phone) that stays empty when the phase has no time, so every title starts at the
+  same place, as the canvas draws the list. An automatic column had moved each title by its
+  time's width and put an untimed title at the card's left edge (owner, 2026-11-24).
 - **Helpers in Right now have tiles.** Each helper has the 28 px tile from the canvas, the shared
   StatusTile at its small size, named for screen readers and not a tab stop. A helper publishes
   only whether it is running. Running gets Working. The canvas draws Ended for a finished

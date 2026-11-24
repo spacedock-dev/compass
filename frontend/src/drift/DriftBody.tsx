@@ -91,7 +91,9 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
             Not checked yet always sits next to the way to check (owner, 2026-11-24). The card's own primary
             stays its own: a later direction's question, Steer back, or a raise while the session waits. */}
         {press.shown ? (
-          <div className="flex flex-col items-start gap-1" data-next-drift-card-press>
+          /* Room above and below, as the canvas spaces the card's button rows (owner, 2026-11-24): the press
+             sat 4px under the explanation and read as cramped. */
+          <div className="flex flex-col items-start gap-1.5 pt-4 pb-2" data-next-drift-card-press>
             <CheckProgressPress
               board={board}
               inCard

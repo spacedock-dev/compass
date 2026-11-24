@@ -664,9 +664,10 @@ function PhaseHeading({ phase }: { readonly phase: SummaryPhase }) {
       : null;
   const at = formatTimestamp(start, model.generated, { style: 'clock' });
   return (
-    <span
-      className={`grid w-full min-w-0 items-baseline gap-x-3 text-left [overflow-wrap:anywhere] ${at ? 'grid-cols-[auto_minmax(0,1fr)]' : ''}`}
-    >
+    /* The time sits in a fixed column that stays when a phase has no time, so every title starts at the same
+       place, as the canvas draws the list (owner, 2026-11-24). An auto column moved each title by its time's
+       width and put an untimed title at the left edge. */
+    <span className="grid w-full min-w-0 grid-cols-[5rem_minmax(0,1fr)] items-baseline gap-x-3 text-left [overflow-wrap:anywhere] max-[620px]:grid-cols-[4.25rem_minmax(0,1fr)]">
       {at ? (
         <time
           className="text-label font-normal text-muted-foreground"
@@ -674,7 +675,9 @@ function PhaseHeading({ phase }: { readonly phase: SummaryPhase }) {
         >
           {at.replace(/^at /, '')}
         </time>
-      ) : null}
+      ) : (
+        <span aria-hidden="true" data-next-summary-no-time />
+      )}
       <span className="grid min-w-0 gap-1">
         {'text' in phase.title ? (
           <span data-authored data-next-summary-phase-title>

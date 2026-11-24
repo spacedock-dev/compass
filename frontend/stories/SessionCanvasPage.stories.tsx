@@ -92,6 +92,19 @@ export const CardOffersCheckProgressBeforeAnyReading: Story = {
     ).toBeVisible();
     await expect(inCard).toBeVisible();
     await expect(within(await cardPress(canvasElement)).getByText('Uses AI')).toBeVisible();
+    // The press has room around it (owner, 2026-11-24): at least 16px from the explanation above it, and from
+    // "Uses AI" to the next line below.
+    const above = within(drift).getByText('How this works').closest('p, div') as HTMLElement;
+    const press = await cardPress(canvasElement);
+    const below = press.nextElementSibling as HTMLElement | null;
+    await expect(
+      inCard.getBoundingClientRect().top - above.getBoundingClientRect().bottom,
+    ).toBeGreaterThanOrEqual(16);
+    if (below)
+      await expect(
+        below.getBoundingClientRect().top -
+          within(press).getByText('Uses AI').getBoundingClientRect().bottom,
+      ).toBeGreaterThanOrEqual(16);
     // Before a reading, with no other primary in the card, the card's copy is filled too.
     await expect(getComputedStyle(inCard).backgroundColor).toBe(GREEN);
     await userEvent.click(inCard);
