@@ -139,9 +139,10 @@ Press it again to clear that selection. The summary says when it covers only sou
 could read. Below the cards, one list card holds Right now and then the earlier group. The status tabs count the whole loaded board in this order: All, Waiting on you, Worth a look,
 Working, Quiet and Ended.
 Search reads titles, goals and prompts. Press `/` to jump to it or paste a session id to find it.
-Filters opens a panel for Project, Agent, Started and Progress check. The level chips select rows
-with the matching progress pill. No goal yet keeps rows whose Goal cell reads No goal yet.
-The Progress check chips carry no counts.
+Filters opens a panel for Project, Agent, Started and Progress check. The Progress check choices
+are Slightly off course, Off course, Way off course and No goal yet. The level chips select rows
+with the matching progress pill. No goal yet keeps rows whose Goal cell reads No goal yet. All
+four chips are enabled when annotations are available. The Progress check chips carry no counts.
 Filters explains when some sessions have unpublished goal data. More filters for power users holds
 the full project list, date ranges,
 Group, Headless, State, Progress records and Goal source.

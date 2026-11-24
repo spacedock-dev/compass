@@ -625,7 +625,7 @@ class MonitorLinesTest(unittest.TestCase):
         source = self.collection["sessions"][0]
         source["stored_progress"] = "high"
         self.end()
-        self.publish()
+        self.lines.update(self.collection, NOW)
         self.assertFalse(self.body()["monitor"])
         self.assertEqual("high", self.body()["stored_progress"])
         for value in ("out-of-date", "future-level", None):
@@ -637,7 +637,9 @@ class MonitorLinesTest(unittest.TestCase):
     def test_a_failed_lease_lookup_cannot_refresh_another_sessions_old_departure(self) -> None:
         row_with_progress = row("claude", "other") | {"stored_progress": "high"}
         self.collection["sessions"].append(row_with_progress)
-        self.publish()
+        proof = mock.Mock(return_value=True)
+        self.lines.update(self.collection, NOW, validate_progress=proof)
+        self.lines.touch(NOW)
         self.assertEqual("high", self.body("other")["stored_progress"])
         del row_with_progress["stored_progress"]
         original = self.source.state
@@ -647,11 +649,13 @@ class MonitorLinesTest(unittest.TestCase):
                 raise OSError("lease unavailable")
             return original(session)
 
+        proof.return_value = False
         with mock.patch.object(self.source, "state", side_effect=lease):
-            self.lines.update(self.collection, NOW + 1)
             self.lines.touch(NOW + 70)
-        self.assertIsNone(self.body("other")["stored_progress"])
-        self.assertEqual(NOW + 70, self.body("other")["at"])
+            self.assertIsNone(self.body("other")["stored_progress"])
+            self.assertEqual(NOW + 70, self.body("other")["at"])
+            self.lines.update(self.collection, NOW + 71)
+            self.assertIsNone(self.body("other")["stored_progress"])
 
     def test_unavailable_annotations_clear_the_footer_level_without_stopping_the_monitor(
         self,
@@ -662,7 +666,7 @@ class MonitorLinesTest(unittest.TestCase):
             {"annotate_unreadable": "Annotations store could not be read."},
         ):
             with self.subTest(availability=availability):
-                self.publish()
+                self.lines.update(self.collection, NOW)
                 self.assertEqual("high", self.body()["stored_progress"])
                 self.lines.update(self.collection | availability, NOW + 1)
                 self.assertIsNone(self.body()["stored_progress"])
@@ -719,10 +723,10 @@ class MonitorLinesTest(unittest.TestCase):
     def test_a_person_never_gets_a_guessed_monitor_for_duplicate_session_rows(self) -> None:
         source = self.collection["sessions"][0]
         source["stored_progress"] = "high"
-        self.publish()
+        self.lines.update(self.collection, NOW)
         self.assertEqual("high", self.body()["stored_progress"])
         self.collection["sessions"].append(dict(source))
-        self.publish()
+        self.lines.update(self.collection, NOW + 1)
         self.assertIs(self.body()["monitor"], False)
         self.assertIsNone(self.body()["stored_progress"])
         self.assertEqual([], self.source.calls)
@@ -732,12 +736,13 @@ class MonitorLinesTest(unittest.TestCase):
     ) -> None:
         self.source.leases.clear()
         self.collection["sessions"][0]["stored_progress"] = "high"
-        self.publish()
+        self.lines.update(self.collection, NOW)
         self.assertEqual("high", self.body()["stored_progress"])
         self.assertFalse(self.body()["monitor"])
         with mock.patch.object(runtime_io, "atomic_write_owner_only", side_effect=OSError("full")):
             self.lines.update(board([]), NOW + 1)
         self.assertEqual("high", self.body()["stored_progress"])
+        self.assertEqual(NOW, self.body()["at"])
         self.lines.touch(NOW + 2)
         final = self.body()
         self.assertIsNone(final["stored_progress"])

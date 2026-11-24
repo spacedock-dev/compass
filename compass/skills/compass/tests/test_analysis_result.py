@@ -16,7 +16,7 @@ import builtins
 import concurrent.futures
 import contextlib
 import dataclasses
-import datetime
+import datetime as dt
 import http.client
 import io
 import json
@@ -689,7 +689,7 @@ class RowProgressFollowsThePageTest(_RowProgress):
             before = self.path.stat()
             passage = self.session.rows[0]
             passage["timestamp"] = (
-                (START + datetime.timedelta(seconds=self.session.seconds + 3))
+                (START + dt.timedelta(seconds=self.session.seconds + 3))
                 .isoformat()
                 .replace("+00:00", "Z")
             )
@@ -713,12 +713,15 @@ class RowProgressFollowsThePageTest(_RowProgress):
             self.assertEqual(levels.MEDIUM, self.poll(port))
             session = terminal_client.Session("claude", SHORT, "fixture")
             home = self.config.state_home
-            first = terminal_client.read_line(home, session, self.now)
+            expires_at = self.now + row_progress.MAX_AGE_SEC
+            self.now += row_progress.MAX_AGE_SEC / 2
+            lines.touch(self.now)
+            refreshed = terminal_client.read_line(home, session, self.now)
             self.assertIn(
-                "Slightly off course", terminal_client.compose_footer(None, first, self.now)
+                "Slightly off course", terminal_client.compose_footer(None, refreshed, self.now)
             )
-            Path(semantic_history.store_path(self.config)).unlink()
-            self.now += 320
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            self.now = expires_at
             lines.touch(self.now)
             last = terminal_client.read_line(home, session, self.now)
             self.assertIsNotNone(last)
@@ -727,6 +730,7 @@ class RowProgressFollowsThePageTest(_RowProgress):
             self.assertNotIn(
                 "Slightly off course", terminal_client.compose_footer(None, last, self.now)
             )
+            self.assertIsNone(self.poll(port))
 
     def test_a_new_departure_warms_inside_the_retry_interval(self) -> None:
         self.save_goal(lines=())

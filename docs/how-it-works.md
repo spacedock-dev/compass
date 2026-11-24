@@ -208,10 +208,11 @@ Waiting on you and Worth a look open Needs you. Working now selects Working and 
 the list. The status tabs are All, Waiting on you, Worth a look, Working, Quiet and Ended. The tabs
 and At a glance count the whole loaded board while you filter it.
 Search reads titles, goals, prompts and project names. Press `/` to jump to the field.
-Open Filters for Project, Agent, Started and Progress check. Choose Slightly off course or Off
-course to see rows carrying that saved progress pill. The Progress check chips carry no counts.
-No goal yet finds the rows whose Goal cell says No goal yet. Filters explains when some sessions have
-unpublished goal data.
+Open Filters for Project, Agent, Started and Progress check. The Progress check choices are
+Slightly off course, Off course, Way off course and No goal yet. Choose a level to see rows carrying
+that saved progress pill. No goal yet finds the rows whose Goal cell says No goal yet. All four
+chips are enabled when annotations are available. The Progress check chips carry no counts.
+Filters explains when some sessions have unpublished goal data.
 More filters for power users holds the complete list of choices, including
 Last active, Group, Headless and Goal source.
 Headless offers Headless and Interactive or unknown. Claude Code and Codex publish headless status;

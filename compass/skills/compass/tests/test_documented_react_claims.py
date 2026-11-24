@@ -99,14 +99,17 @@ class TheSessionsProgressFiltersTest(unittest.TestCase):
             ("docs/how-it-works.md", "to see rows carrying that saved progress pill"),
             (
                 "compass/skills/compass/reference/dashboard.md",
-                "filter the progress pills on the rows",
+                "The level chips select rows with the matching progress pill",
             ),
         ):
             with self.subTest(file=filename):
                 text = " ".join((ROOT / filename).read_text(encoding="utf-8").split())
                 self.assertIn(basis, text)
-                self.assertIn("Way off course has a count of zero", text)
-                self.assertNotIn("level chips are disabled", text)
+                self.assertIn(
+                    "Slightly off course, Off course, Way off course and No goal yet", text
+                )
+                self.assertIn("All four chips are enabled when annotations are available", text)
+                self.assertIn("The Progress check chips carry no counts", text)
 
 
 class TheReaderStateRecordCitesRealOwnersTest(unittest.TestCase):
