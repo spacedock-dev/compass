@@ -606,9 +606,15 @@ republished. A permission alert arriving in that gap did not render at all until
 a five-second stream tick happened along.
 
 Fixed by comparing the revision `collect_json` returns against the last one this coordinator produced:
-an unchanged revision is not progress, so the generation stays dirty. And the retry is scheduled at the
-floor, because `_sleep_for` consults only `_coalesce_until` and without that the retry landed at
-`stream_producer_interval_sec`. Measured at 5194 ms before both fixes and 2864 ms after.
+a reused revision leaves the generation dirty. The first fix set `_coalesce_until` to the floor so
+the retry would wake before the next producer tick. Measured at 5194 ms before both fixes and
+2864 ms after.
+
+A later replay found that a hook whose coalescing window expired inside the floor caused 877 to 930
+footer refreshes before collection was allowed. Eligibility and worker waits now use the same
+collection deadlines, so a coalesced hook or a reused revision waits until the floor permits a
+collection. The idle footer cadence is described in the
+[runtime architecture](design-runtime-architecture.md#r-1-one-responsibility-per-file-and-the-launcher-owns-none).
 
 **Verdict on overlay-only republication: not worth building, and the earlier note pointed at the wrong
 obstacle.** Two corrections to what this document and the ticket both said:

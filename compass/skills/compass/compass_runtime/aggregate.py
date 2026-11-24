@@ -201,7 +201,7 @@ class FooterLane(Protocol):
         collection: Mapping[str, Any],
         now: float,
         *,
-        validate_progress: Callable[[float], bool] | None = None,
+        validate_progress: Callable[[float, tuple[str, str]], bool] | None = None,
     ) -> None: ...
 
     def touch(self, now: float) -> None: ...
@@ -1805,7 +1805,7 @@ class Application:
                 body,
                 now=self.clock(),
                 generation=generation,
-                validate=(lambda: validate(self.clock())) if validate else None,
+                validate=(lambda: validate(self.clock(), None)) if validate else None,
             )
             self._write_footer_lines(collection, show_all=show_all, validate_progress=validate)
             # Only a freshly minted revision that was kept is worth announcing. A
@@ -1825,7 +1825,7 @@ class Application:
         collection: Collection,
         *,
         show_all: bool,
-        validate_progress: Callable[[float], bool] | None,
+        validate_progress: Callable[[float, tuple[str, str]], bool] | None,
     ) -> None:
         """The status line's files, from the page-default variant only.
 

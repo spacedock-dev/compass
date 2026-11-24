@@ -112,13 +112,16 @@ runs on the same refresh and is the footer's opposite on one point: it posts. It
 bounded stdin, rebuilds a body from Claude's two `rate_limits` windows alone, and posts it to
 `/api/usage/claude` on the newest-started dashboard, with discovery and the post sharing one
 one-second budget; it never starts a dashboard, prints nothing and exits 0. It is a separate
-operation so the footer's no-socket rule stays whole ([Q-13](design-usage-quota.md#q-13)). The coordinator
-refreshes the files every 15 s (`footer_lines.REFRESH_SEC`) and checks lease endings on every pass,
-including idle and probe-skip paths. Updates and idle touches sample the shared permission store
+operation so the footer's no-socket rule stays whole ([Q-13](design-usage-quota.md#q-13)). The
+coordinator checks for footer changes every 5 s by default while idle, and after a collection or
+probe skip. It writes changed files at that check and refreshes unchanged files once they are 15 s old
+(`footer_lines.REFRESH_SEC`). Updates and idle touches sample the shared permission store
 outside the writer lock. The additive v1 `model_calls_paused` field is true, false or null.
 Unknown replaces an old assertion. The writer uses the snapshot's validated `stored_progress`
-token while annotations are enabled and readable. It reads the lease independently. This path can
-run without focused context or record reads. Older files can still supply waits and monitor state.
+token while annotations are enabled and readable. Each idle check revalidates that session's
+proof. An expired or missing proof clears its own level, and unreadable shared stores can clear
+all levels. The writer reads the lease independently. This path can run without focused context or
+record reads. Older files can still supply waits and monitor state.
 The client ignores their live `level` token and drops any invalid or missing stored verdict.
 
 The writer looks up leases by row `sid` and names files by the full `resume_id` when available.

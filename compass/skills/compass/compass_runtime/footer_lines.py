@@ -186,14 +186,14 @@ class Lines:
         # restamping the previous live body when a replacement fails.
         self._desired: dict[str, Body] = {}
         self._retired: set[str] = set()
-        self._validate_progress: Callable[[float], bool] | None = None
+        self._validate_progress: Callable[[float, tuple[str, str]], bool] | None = None
 
     def update(
         self,
         collection: Mapping[str, Any],
         now: float,
         *,
-        validate_progress: Callable[[float], bool] | None = None,
+        validate_progress: Callable[[float, tuple[str, str]], bool] | None = None,
     ) -> None:
         """Publish the board's stored progress and cheap lease state."""
         try:
@@ -300,17 +300,24 @@ class Lines:
             sample = self._pause_state()
             with self._lock:
                 self._accept_pause(sample)
-                validate = self._validate_progress
-                if validate is None or not validate(now):
-                    self._validate_progress = None
-                    for body in self._desired.values():
-                        body["stored_progress"] = None
                 for name, row in self._sessions.items():
+                    body = self._desired[name]
+                    if body["stored_progress"] and not self._progress_holds(row, now):
+                        body["stored_progress"] = None
                     lease = self._state(row) if name not in self._ambiguous else {}
                     self._apply_state(name, lease)
                 self._flush(now)
         except Exception as exc:  # noqa: BLE001
             self._report(exc)
+
+    def _progress_holds(self, row: Mapping[str, Any], now: float) -> bool:
+        validate = self._validate_progress
+        try:
+            # The proof belongs to the board row's sid. The filename can use a longer resume id.
+            return validate is not None and validate(now, (row["harness"], row["sid"]))
+        except Exception as exc:  # noqa: BLE001 - a proof failure must clear this row's level
+            self._report(exc)
+            return False
 
     def remove_all(self) -> None:
         """Remove what this instance wrote. A crash leaves the rest to the ceiling and the sweep."""

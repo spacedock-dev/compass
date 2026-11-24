@@ -69,6 +69,7 @@ class FakeApplication:
     ) -> None:
         self.config = config
         self.state = FakeState(FakeStreams(streams))
+        self.footer_lines: Any = None
         self.collected = 0
         self.fail = fail
         # Stand in for the application's own collection floor: a real
@@ -839,15 +840,11 @@ class FloorReuseTest(ObservationTestCase):
         self.assertEqual(1, coordinator.counters.get("reused.floor"))
 
     def test_the_retry_is_scheduled_at_the_floor_not_a_producer_interval(self) -> None:
-        # `_sleep_for` consults only `_coalesce_until`, so without scheduling the
-        # wake the retry lands at stream_producer_interval_sec. Measured 5.2 s
-        # before, 2.5 s after.
         coordinator = self._reusing()
         coordinator._collect(coordinator._due()[1])
-        self.assertIsNotNone(coordinator._coalesce_until)
-        self.assertLessEqual(
-            coordinator._sleep_for(),
+        self.assertEqual(
             self.config.collect_memo_sec,
+            coordinator._sleep_for(),
             "the worker must wake at the floor rather than at the producer interval",
         )
 
@@ -1033,6 +1030,48 @@ class WorkerLifecycleTest(ObservationTestCase):
         coordinator.start()
         coordinator.stop(timeout=5)
         coordinator.stop(timeout=1)
+
+    def test_a_floored_hook_does_not_keep_refreshing_the_footer(self) -> None:
+        coordinator = self.build()
+        started = self.now
+        coordinator._collect("event")
+        footer_touches: list[float] = []
+        self.app.footer_lines = SimpleNamespace(touch=footer_touches.append)
+        collection: list[tuple[float, int]] = []
+        waits = 0
+        collect = self.app.collect_json
+
+        def finish(*, show_all: bool) -> tuple[tuple[float, int], bytes]:
+            collection.append((self.now - started, len(footer_touches)))
+            coordinator.stop()
+            return collect(show_all=show_all)
+
+        def wait(timeout: float) -> None:
+            nonlocal waits
+            waits += 1
+            arrives_at = started + 1
+            if self.now < arrives_at <= self.now + timeout:
+                self.now = arrives_at
+                coordinator._wake.release()
+                try:
+                    coordinator.submit("claude", self.envelope(event="store_changed"))
+                finally:
+                    coordinator._wake.acquire()
+            else:
+                self.now += timeout
+            self.assertLess(self.now - started, 5, "the worker missed the collection floor")
+
+        with (
+            mock.patch.object(time, "monotonic", side_effect=self.clock),
+            mock.patch.object(coordinator._wake, "wait", side_effect=wait),
+            mock.patch.object(self.app, "collect_json", side_effect=finish),
+        ):
+            coordinator._run()
+
+        ((elapsed, touches),) = collection
+        self.assertAlmostEqual(2.5, elapsed, delta=0.01)
+        self.assertLessEqual(touches, 3)
+        self.assertLessEqual(waits, 3)
 
     def test_the_worker_wakes_on_an_event_rather_than_waiting_out_its_interval(self) -> None:
         # The producer interval is raised to an hour, so only the wake can collect

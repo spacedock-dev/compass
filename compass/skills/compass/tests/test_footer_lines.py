@@ -29,6 +29,7 @@ from compass_runtime import (
 from compass_runtime import io as runtime_io
 
 from . import support
+from .test_analysis_result import _RowProgress
 from .test_live_lease_http import LeaseRoute
 
 NOW = 1_800_000_000.0
@@ -657,6 +658,23 @@ class MonitorLinesTest(unittest.TestCase):
             self.lines.update(self.collection, NOW + 71)
             self.assertIsNone(self.body("other")["stored_progress"])
 
+    def test_a_progress_proof_that_raises_clears_only_its_own_level(self) -> None:
+        rows = self.collection["sessions"]
+        rows[0]["stored_progress"] = "medium"
+        rows.append(row("claude", "other") | {"stored_progress": "high"})
+
+        def broken_proof(_now: float, owner: tuple[str, str]) -> bool:
+            if owner != ("claude", "other"):
+                raise OSError("proof unavailable")
+            return True
+
+        self.lines.update(self.collection, NOW, validate_progress=broken_proof)
+        self.assertEqual("medium", self.body()["stored_progress"])
+        self.assertEqual("high", self.body("other")["stored_progress"])
+        self.lines.touch(NOW + 1)
+        self.assertIsNone(self.body()["stored_progress"])
+        self.assertEqual("high", self.body("other")["stored_progress"])
+
     def test_unavailable_annotations_clear_the_footer_level_without_stopping_the_monitor(
         self,
     ) -> None:
@@ -758,6 +776,53 @@ class MonitorLinesTest(unittest.TestCase):
         self.lines.update(board([]), NOW + 2)
         self.assertIs(self.body()["monitor"], False)
         self.assertIsNone(self.body()["stored_progress"])
+
+
+class FooterRowProgressTest(_RowProgress):
+    def test_an_expired_proof_clears_only_its_own_footer(self) -> None:
+        older, newer = self.seed_projects(held=2)
+        for row in (older, newer):
+            row["resume_id"] = f"{row['sid']}-full"
+        app = self.projects_app([older, newer])
+        lines = footer_lines.Lines(self.config.state_home)
+        app.footer_lines = lines
+        self.addCleanup(lines.remove_all)
+
+        def footer_progress() -> dict[str, str | None]:
+            result = {}
+            for row in (older, newer):
+                name = footer_lines.line_name("claude", row["resume_id"])
+                result[row["sid"]] = json.loads((Path(lines.directory) / name).read_text())[
+                    "stored_progress"
+                ]
+            return result
+
+        def board_progress(port: int) -> dict[str, str | None]:
+            return {
+                row["sid"]: row["stored_progress"]
+                for row in self.get(port, "/api/data")["sessions"]
+            }
+
+        started = self.now
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            for row in (older, newer):
+                focused = (
+                    f"/api/project-context?project={row['project']}&session=claude:{row['sid']}"
+                )
+                (view,) = self.get(port, focused)["sources"]["work"]["drift_views"]
+                self.assertEqual("medium", view["pill"]["level"])
+                self.now += 100
+
+            both = {older["sid"]: "medium", newer["sid"]: "medium"}
+            self.assertEqual(both, board_progress(port))
+            self.assertEqual(both, footer_progress())
+            self.now = started + 310
+            lines.touch(self.now)
+            touched = footer_progress()
+            current = board_progress(port)
+            self.assertEqual({older["sid"]: None, newer["sid"]: "medium"}, current)
+            self.assertEqual(current, touched)
 
 
 class FooterProviderTest(unittest.TestCase):
@@ -904,24 +969,38 @@ class _Stub:
 class CoordinatorRefreshTest(unittest.TestCase):
     """An idle dashboard with no tab collects nothing, so the coordinator keeps the file fresh."""
 
-    def coordinator(self, writer: Any) -> observation.Observation:
-        config = support.make_config()
+    def coordinator(self, writer: Any, **changes: Any) -> observation.Observation:
+        config = support.make_config(**changes)
         return observation.Observation(
             _Stub(config, writer),  # type: ignore[arg-type]
             clock=lambda: NOW,
             diagnostic_sink=lambda _m: None,
         )
 
-    def test_the_worker_touches_the_writer_when_nothing_is_due(self) -> None:
-        touched = threading.Event()
-        writer = mock.Mock()
-        writer.touch.side_effect = lambda _now: touched.set()
-        coordinator = self.coordinator(writer)
-        with mock.patch.object(coordinator, "_sleep_for", return_value=0.01):
-            coordinator.start()
-            self.addCleanup(coordinator.stop)
+    def test_the_idle_worker_touches_the_writer_every_five_seconds(self) -> None:
+        elapsed = 0.0
+        touches = []
 
-            self.assertTrue(touched.wait(30.0), "the idle worker never touched the footer lines")
+        def touch(now: float) -> None:
+            touches.append(now)
+            if len(touches) == 2:
+                coordinator.stop()
+
+        def wait(timeout: float) -> None:
+            nonlocal elapsed
+            # A wake before the deadline must not pull the footer refresh forward.
+            elapsed += 1.0 if elapsed == 0.0 else timeout
+            self.assertLessEqual(elapsed, 12.0, "the idle footer was not refreshed")
+
+        coordinator = self.coordinator(SimpleNamespace(touch=touch))
+        coordinator.clock = lambda: NOW + elapsed
+        with (
+            mock.patch.object(time, "monotonic", side_effect=lambda: elapsed),
+            mock.patch.object(coordinator._wake, "wait", side_effect=wait),
+        ):
+            coordinator._run()
+
+        self.assertEqual([NOW + 5.0, NOW + 10.0], touches)
 
     def test_a_writer_that_raises_cannot_stop_the_worker(self) -> None:
         calls = threading.Semaphore(0)
@@ -932,13 +1011,12 @@ class CoordinatorRefreshTest(unittest.TestCase):
 
         writer = mock.Mock()
         writer.touch.side_effect = boom
-        coordinator = self.coordinator(writer)
-        with mock.patch.object(coordinator, "_sleep_for", return_value=0.01):
-            coordinator.start()
-            self.addCleanup(coordinator.stop)
+        coordinator = self.coordinator(writer, stream_producer_interval_sec=0.01)
+        coordinator.start()
+        self.addCleanup(coordinator.stop)
 
-            self.assertTrue(calls.acquire(timeout=30.0))
-            self.assertTrue(calls.acquire(timeout=30.0), "the worker died after one failure")
+        self.assertTrue(calls.acquire(timeout=30.0))
+        self.assertTrue(calls.acquire(timeout=30.0), "the worker died after one failure")
 
     def test_a_persons_monitor_is_refreshed_even_when_a_probe_skips_collection(self) -> None:
         writer = mock.Mock()

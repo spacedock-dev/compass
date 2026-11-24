@@ -572,6 +572,80 @@ class _RowProgress(_Result):
         (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
         return cast("dict[str, Any]", view)
 
+    def projects_app(self, rows: list[dict[str, Any]]) -> aggregate.Application:
+        app = self.cold()
+        (spec,) = app.harnesses
+        app.harnesses = (
+            dataclasses.replace(spec, collect=lambda *_: [row.copy() for row in rows]),
+        )
+        return app
+
+    def seed_projects(
+        self, *, held: int, legacy: int = 0, on_track: bool = False
+    ) -> list[dict[str, Any]]:
+        rows = []
+        for index in range(held + legacy):
+            sid = f"{index:08d}"
+            project = f"fixture-{index}"
+            cwd = self.root / "work" / project
+            cwd.mkdir()
+            session = Transcript(cwd)
+            if index >= held:
+                session.seconds = 100
+            session.prompt(GOAL)
+            if on_track:
+                session.bash("pytest", "5 passed")
+            else:
+                session.write(str(cwd / "unrelated.py"))
+            path = self.path.with_name(f"{sid}-full.jsonl")
+            session.save(path)
+            row = _row(sid=sid, project=project)
+            rows.append(row)
+            through = START.timestamp() + session.seconds
+            self.assertEqual(
+                annotation_store.OUTCOME_STORED,
+                annotation_store.annotate(
+                    self.config, self.state, "claude", sid, goal=GOAL, lines=[], now=through - 6
+                ),
+            )
+            facts, _ = project_context.claude_tool_reports(self.config, str(path), sid)
+            (fact,) = facts
+            reading = _reading(
+                {
+                    "goal": {
+                        "result": runtime_reading.RESULT_CONSISTENT
+                        if on_track
+                        else runtime_reading.RESULT_DEPARTURE,
+                        "cites": [
+                            project_context._semantic_fact_from_event(
+                                fact, fact["kind"], "tool_report", ""
+                            )["fact_id"]
+                        ],
+                        "why": runtime_reading.WHY_STANDS
+                        if on_track
+                        else runtime_reading.WHY_RECORDED_WRITE,
+                    }
+                },
+                read_at=through + 1,
+                evidence_through=through,
+            )
+            evidence = None
+            if index < held:
+                evidence = captured_evidence(self.projects_app([row]), "claude", sid, reading)
+                self.assertIsNotNone(evidence)
+            self.assertEqual(
+                annotation_store.OUTCOME_STORED,
+                annotation_store.record_reading(
+                    self.config,
+                    self.state,
+                    "claude",
+                    sid,
+                    assessment=cast("Any", reading),
+                    evidence=evidence,
+                ),
+            )
+        return rows
+
 
 class RowProgressFollowsThePageTest(_RowProgress):
     def test_a_reader_loses_the_final_pill_if_the_end_is_withdrawn(self) -> None:
@@ -682,10 +756,17 @@ class RowProgressFollowsThePageTest(_RowProgress):
         self.save_goal(lines=())
         self.record(self.departure())
         app = self.cold()
+        lines = footer_lines.Lines(self.config.state_home)
+        app.footer_lines = lines
+        self.addCleanup(lines.remove_all)
+        session = terminal_client.Session("claude", SHORT, "fixture")
         with self.serving(app) as port:
             app.warm_row_progress = None
             self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
             self.assertEqual(levels.MEDIUM, self.poll(port))
+            first = terminal_client.read_line(self.config.state_home, session, self.now)
+            assert first is not None
+            self.assertEqual(levels.MEDIUM, first.stored_progress)
             before = self.path.stat()
             passage = self.session.rows[0]
             passage["timestamp"] = (
@@ -698,6 +779,10 @@ class RowProgressFollowsThePageTest(_RowProgress):
             after = self.path.stat()
             self.assertEqual((before.st_size, before.st_ino), (after.st_size, after.st_ino))
             self.assertNotEqual(before.st_ctime_ns, after.st_ctime_ns)
+            lines.touch(self.now)
+            refreshed = terminal_client.read_line(self.config.state_home, session, self.now)
+            assert refreshed is not None
+            self.assertIsNone(refreshed.stored_progress)
             self.assertIsNone(self.poll(port))
             self.assertIsNone(self.page(port)["pill"])
 
@@ -804,80 +889,6 @@ class RowProgressFollowsThePageTest(_RowProgress):
             )
             (view,) = page["sources"]["work"]["drift_views"]
             self.assertEqual(levels.MEDIUM, view["pill"]["level"])
-
-    def projects_app(self, rows: list[dict[str, Any]]) -> aggregate.Application:
-        app = self.cold()
-        (spec,) = app.harnesses
-        app.harnesses = (
-            dataclasses.replace(spec, collect=lambda *_: [row.copy() for row in rows]),
-        )
-        return app
-
-    def seed_projects(
-        self, *, held: int, legacy: int = 0, on_track: bool = False
-    ) -> list[dict[str, Any]]:
-        rows = []
-        for index in range(held + legacy):
-            sid = f"{index:08d}"
-            project = f"fixture-{index}"
-            cwd = self.root / "work" / project
-            cwd.mkdir()
-            session = Transcript(cwd)
-            if index >= held:
-                session.seconds = 100
-            session.prompt(GOAL)
-            if on_track:
-                session.bash("pytest", "5 passed")
-            else:
-                session.write(str(cwd / "unrelated.py"))
-            path = self.path.with_name(f"{sid}-full.jsonl")
-            session.save(path)
-            row = _row(sid=sid, project=project)
-            rows.append(row)
-            through = START.timestamp() + session.seconds
-            self.assertEqual(
-                annotation_store.OUTCOME_STORED,
-                annotation_store.annotate(
-                    self.config, self.state, "claude", sid, goal=GOAL, lines=[], now=through - 6
-                ),
-            )
-            facts, _ = project_context.claude_tool_reports(self.config, str(path), sid)
-            (fact,) = facts
-            reading = _reading(
-                {
-                    "goal": {
-                        "result": runtime_reading.RESULT_CONSISTENT
-                        if on_track
-                        else runtime_reading.RESULT_DEPARTURE,
-                        "cites": [
-                            project_context._semantic_fact_from_event(
-                                fact, fact["kind"], "tool_report", ""
-                            )["fact_id"]
-                        ],
-                        "why": runtime_reading.WHY_STANDS
-                        if on_track
-                        else runtime_reading.WHY_RECORDED_WRITE,
-                    }
-                },
-                read_at=through + 1,
-                evidence_through=through,
-            )
-            evidence = None
-            if index < held:
-                evidence = captured_evidence(self.projects_app([row]), "claude", sid, reading)
-                self.assertIsNotNone(evidence)
-            self.assertEqual(
-                annotation_store.OUTCOME_STORED,
-                annotation_store.record_reading(
-                    self.config,
-                    self.state,
-                    "claude",
-                    sid,
-                    assessment=cast("Any", reading),
-                    evidence=evidence,
-                ),
-            )
-        return rows
 
     def on_track_reading(self) -> dict[str, Any]:
         through = START.timestamp() + self.session.seconds
