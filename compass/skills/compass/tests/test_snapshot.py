@@ -270,6 +270,25 @@ class ApplicationSnapshotTest(support.RuntimeTestCase):
         second_rev, _ = app.collect_json(show_all=False)
         self.assertGreater(second_rev[1], first_rev[1])
 
+    def test_elapsed_snapshot_age_stays_bounded_after_wall_clock_catches_up(self) -> None:
+        app = support.build_app()
+        base = app.clock()
+        wall, elapsed = base, 0.0
+        app.clock = lambda: wall
+        app.monotonic = lambda: elapsed
+        first = app.collect_json(show_all=False)
+
+        wall, elapsed = base + 1, 13.0
+        key = (app.config.window_hours, False)
+        self.assertEqual(1.0, app.snapshot.age(key, now=wall))
+        new = app.collect_json(show_all=False)
+        self.assertGreater(new[0][1], first[0][1])
+        self.assertEqual(first[0][0], new[0][0])
+        self.assertEqual(0.0, app.snapshot.age(key, now=wall))
+        wall += 1
+        elapsed += 1
+        self.assertEqual(new, app.collect_json(show_all=False))
+
 
 if __name__ == "__main__":
     unittest.main()

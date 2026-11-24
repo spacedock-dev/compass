@@ -337,7 +337,7 @@ class Observation:
         self._dirty: dict[str, int] = {}
         self._collected: dict[str, int] = {}
         self._last_collect_at = float("-inf")
-        self._last_reconcile_at = 0.0
+        self._last_reconcile_at = float("-inf")
         self._coalesce_until: float | None = None
         # Set by a needs-input overlay, cleared by the collection that carries it.
         # A permission alert is the one transition a person is actively waiting on,
@@ -466,7 +466,7 @@ class Observation:
                 # Force the next pass to be a real collection rather than one the
                 # probe may skip: a rewritten transcript is not repaired by
                 # replaying overlays over a cached read.
-                self._last_reconcile_at = 0.0
+                self._last_reconcile_at = float("-inf")
                 self._probe_stamp = None
             # A `session_started` lifts the stored end whether or not memory
             # held one, and the difference is a restart: memory starts empty on
@@ -950,7 +950,7 @@ class Observation:
             # just stopped to ask a person something has been working, and the
             # pass that renders its card should be a real read of the stores
             # rather than one the probe is allowed to skip.
-            self._last_reconcile_at = 0.0
+            self._last_reconcile_at = float("-inf")
             self._wake.notify_all()
 
     def _bump(self, name: str) -> None:
@@ -1273,7 +1273,7 @@ class Observation:
             # this read may have started before its event was recorded.
             self._urgent = False
         started = self.monotonic()
-        if reason == "tick" and not self._worth_collecting(self.clock()):
+        if reason == "tick" and not self._worth_collecting(started):
             with self._lock:
                 self._last_collect_at = started
                 self._bump("skipped.probe")
@@ -1297,8 +1297,8 @@ class Observation:
         reused = revision == self._last_revision
         self._last_revision = revision
         if reused:
-            # The floor is enforced twice, by two clocks: this coordinator's
-            # `_last_collect_at` and the application's own snapshot age. A fresh
+            # The floor is enforced from two different points: this coordinator's
+            # `_last_collect_at` and the application's own snapshot publication. A fresh
             # coordinator has never collected, so its floor is open while the
             # application's is not, and `collect_json` then returns the revision it
             # published *before* this event existed. Marking the generation done
@@ -1319,15 +1319,15 @@ class Observation:
             # overlays over a read that predates it.
             self._collected.update(observed)
 
-    def _worth_collecting(self, now: float) -> bool:
+    def _worth_collecting(self, elapsed_now: float) -> bool:
         """Whether a periodic tick has to read the stores.
 
         Only ever used to skip. The probe's false negative means a probe-negative
         answer is not proof that nothing changed, so the unconditional
         reconciliation below is what bounds it.
         """
-        if now - self._last_reconcile_at >= self.config.reconcile_interval_sec:
-            self._last_reconcile_at = now
+        if elapsed_now - self._last_reconcile_at >= self.config.reconcile_interval_sec:
+            self._last_reconcile_at = elapsed_now
             self._probe_stamp = runtime_probe.stamp(self.config)
             return True
         current = runtime_probe.stamp(self.config)

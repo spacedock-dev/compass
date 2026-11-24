@@ -814,6 +814,7 @@ class Application:
         popup_notifier: Callable[[str, str], str | None],
         diagnostic_sink: Callable[[str], None],
         clock: Callable[[], float] = time.time,
+        monotonic: Callable[[], float] = time.monotonic,
         overlays: OverlaySource | None = None,
         frontend_page_bytes: bytes | None = None,
     ) -> None:
@@ -830,6 +831,7 @@ class Application:
         self.popup_notifier = popup_notifier
         self.diagnostic_sink = diagnostic_sink
         self.clock = clock
+        self.monotonic = monotonic
         # None until the coordinator is attached, and None forever under
         # --no-events. A collection with no overlay source is exactly the
         # scan-only behaviour that shipped before events existed, which is what
@@ -1807,6 +1809,7 @@ class Application:
                 key,
                 body,
                 now=self.clock(),
+                monotonic_now=self.monotonic(),
                 generation=generation,
                 validate=(
                     lambda: validate.proofs_hold(self.clock(), None) and validate.stores_hold()
@@ -1858,4 +1861,9 @@ class Application:
         self, key: runtime_snapshot.SnapshotKey
     ) -> tuple[runtime_snapshot.Revision, bytes] | None:
         """The published entry for `key` if it is inside the floor, else None."""
-        return self.snapshot.fresh(key, now=self.clock(), max_age=self.config.collect_memo_sec)
+        return self.snapshot.fresh(
+            key,
+            now=self.clock(),
+            max_age=self.config.collect_memo_sec,
+            monotonic_now=self.monotonic(),
+        )

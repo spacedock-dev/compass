@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import errno
 import json
 import os
 import re
@@ -11,6 +12,7 @@ import tempfile
 import threading
 import time
 import unittest
+import weakref
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
@@ -26,6 +28,7 @@ from compass_runtime import (
     reading_evidence,
     reading_policy,
     row_progress,
+    terminal_client,
     terminal_sessions,
 )
 from compass_runtime import annotations as annotation_store
@@ -374,6 +377,24 @@ class LinesTest(unittest.TestCase):
         ) as h:
             loaded: dict[str, Any] = json.load(h)
         return loaded
+
+    def test_idle_touch_keeps_the_footer_readable_after_a_wall_clock_setback(self) -> None:
+        self.lines.update(board([row("claude", "a")]), NOW)
+        self.lines.touch(NOW - 12)
+        session = terminal_client.Session("claude", "a", "status line")
+        self.assertIsNotNone(terminal_client.read_line(self.home, session, NOW - 12))
+        self.assertEqual(NOW - 12, self.body("a")["at"])
+
+    def test_removing_all_lines_releases_the_snapshot_validators(self) -> None:
+        validators = {
+            key: mock.Mock()
+            for key in ("validate_progress", "validate_stores", "validate_prefixes")
+        }
+        references = [weakref.ref(validate) for validate in validators.values()]
+        self.lines.update(board([row("claude", "a")]), NOW, **validators)
+        validators.clear()
+        self.lines.remove_all()
+        self.assertEqual([None, None, None], [reference() for reference in references])
 
     def test_a_person_sees_pause_resume_and_unknown_on_the_next_idle_refresh(self) -> None:
         paused: bool | None = False
@@ -805,12 +826,55 @@ class FooterRowProgressTest(_RowProgress):
         self._archived_collision_clears_idle_level(new_project=False)
 
     def _archived_collision_clears_idle_level(self, *, new_project: bool) -> None:
-        self.save_goal(lines=())
-        reading = self.departure()
-        os.utime(self.path, (self.now, self.now))
         archive = self.path.parent.with_name("-work-archive")
         if not new_project:
             archive.mkdir()
+        app, lines, footer, focused = self._departure_footer()
+        # Give the archive directory stamps a settled sample even on a fast machine.
+        with (
+            mock.patch.object(time, "time_ns", return_value=time.time_ns() + 3_000_000_000),
+            self.serving(app) as port,
+        ):
+            app.warm_row_progress = None
+            (view,) = self.get(port, focused)["sources"]["work"]["drift_views"]
+            self.assertEqual("medium", view["pill"]["level"])
+            self.assertEqual("medium", self.poll(port))
+            self.assertEqual("medium", json.loads(footer.read_text())["stored_progress"])
+
+            self.now += 16
+            with mock.patch.object(os, "scandir", wraps=os.scandir) as scanned:
+                lines.touch(self.now)
+            refreshed = json.loads(footer.read_text())
+            self.assertEqual(("medium", self.now), (refreshed["stored_progress"], refreshed["at"]))
+            self.assertFalse(
+                any(
+                    Path(call.args[0]).is_relative_to(self.path.parent.parent)
+                    for call in scanned.call_args_list
+                    if call.args and isinstance(call.args[0], (str, Path))
+                )
+            )
+
+            self._archive_collision(archive)
+            self.now += 16
+            lines.touch(self.now)
+            refreshed = json.loads(footer.read_text())
+            self.assertEqual((None, self.now), (refreshed["stored_progress"], refreshed["at"]))
+            self.assertIsNone(self.poll(port))
+            (view,) = self.get(port, focused)["sources"]["work"]["drift_views"]
+            self.assertIsNone(view["pill"])
+
+    def _archive_collision(self, archive: Path) -> None:
+        archive.mkdir(exist_ok=True)
+        older = archive / f"{SHORT}-older.jsonl"
+        older.write_bytes(self.path.read_bytes())
+        os.utime(older, (1, 1))
+
+    def _departure_footer(
+        self, diagnostics: list[str] | None = None
+    ) -> tuple[aggregate.Application, footer_lines.Lines, Path, str]:
+        self.save_goal(lines=())
+        reading = self.departure()
+        os.utime(self.path, (self.now, self.now))
         app = self.cold()
         app.harnesses = tuple(
             spec
@@ -835,42 +899,183 @@ class FooterRowProgressTest(_RowProgress):
             f"/api/project-context?project={reading_evidence.project_key(session)}"
             f"&session=claude:{SHORT}"
         )
-        lines = footer_lines.Lines(self.config.state_home)
+        lines = footer_lines.Lines(
+            self.config.state_home,
+            diagnostic_sink=diagnostics.append if diagnostics is not None else None,
+        )
         app.footer_lines = lines
         self.addCleanup(lines.remove_all)
         name = footer_lines.line_name("claude", session["resume_id"])
-        footer = Path(lines.directory) / name
+        return app, lines, Path(lines.directory) / name, focused
+
+    def _warm_footer(self, diagnostics: list[str] | None = None) -> tuple[footer_lines.Lines, Path]:
+        app, lines, footer, focused = self._departure_footer(diagnostics)
         with self.serving(app) as port:
             app.warm_row_progress = None
-            (view,) = self.get(port, focused)["sources"]["work"]["drift_views"]
-            self.assertEqual("medium", view["pill"]["level"])
+            self.get(port, focused)
             self.assertEqual("medium", self.poll(port))
-            self.assertEqual("medium", json.loads(footer.read_text())["stored_progress"])
+        self.assertEqual("medium", self._level(footer))
+        return lines, footer
 
-            self.now += 16
-            with mock.patch.object(os, "scandir", wraps=os.scandir) as scanned:
-                lines.touch(self.now)
-            refreshed = json.loads(footer.read_text())
-            self.assertEqual(("medium", self.now), (refreshed["stored_progress"], refreshed["at"]))
-            self.assertFalse(
-                any(
-                    Path(call.args[0]).is_relative_to(self.path.parent.parent)
-                    for call in scanned.call_args_list
-                    if call.args and isinstance(call.args[0], (str, Path))
-                )
-            )
+    @staticmethod
+    def _level(footer: Path) -> str | None:
+        return cast("str | None", json.loads(footer.read_text())["stored_progress"])
 
-            archive.mkdir(exist_ok=True)
-            older = archive / f"{SHORT}-older.jsonl"
-            older.write_bytes(self.path.read_bytes())
-            os.utime(older, (1, 1))
-            self.now += 16
+    def test_same_tick_transcript_in_an_existing_project_clears_the_idle_level(self) -> None:
+        self._same_tick_collision(new_project=False)
+
+    def test_same_tick_transcript_in_a_new_project_clears_the_idle_level(self) -> None:
+        self._same_tick_collision(new_project=True)
+
+    def _same_tick_collision(self, *, new_project: bool) -> None:
+        archive = self.path.parent.with_name("-work-archive")
+        if not new_project:
+            archive.mkdir()
+        lines, footer = self._warm_footer()
+        watched = archive.parent if new_project else archive
+        (watched / "prime").touch()
+        sampled = watched.stat()
+        real_stat = os.stat
+
+        def coarse_stat(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+            # HFS+ can leave every fingerprint field unchanged within a single tick.
+            return sampled if path == str(watched) else real_stat(path, *args, **kwargs)
+
+        with (
+            mock.patch.object(os, "stat", side_effect=coarse_stat),
+            mock.patch.object(time, "time_ns", return_value=sampled.st_ctime_ns) as clock,
+        ):
             lines.touch(self.now)
-            refreshed = json.loads(footer.read_text())
-            self.assertEqual((None, self.now), (refreshed["stored_progress"], refreshed["at"]))
-            self.assertIsNone(self.poll(port))
-            (view,) = self.get(port, focused)["sources"]["work"]["drift_views"]
-            self.assertIsNone(view["pill"])
+            self.assertEqual("medium", self._level(footer))
+            self._archive_collision(archive)
+            clock.return_value += 3_000_000_000
+            lines.touch(self.now + 16)
+        self.assertIsNone(self._level(footer))
+
+    @unittest.skipUnless(os.name == "posix", "creating a directory symlink requires POSIX")
+    def test_an_unrelated_symlink_loop_leaves_the_idle_level_intact(self) -> None:
+        diagnostics: list[str] = []
+        lines, footer = self._warm_footer(diagnostics)
+        loop = self.path.parent.with_name("loop")
+        loop.symlink_to(loop.name, target_is_directory=True)
+        lines.touch(self.now + 16)
+        self.assertEqual("medium", self._level(footer))
+        self.assertEqual([], diagnostics)
+
+    @unittest.skipUnless(os.name == "posix", "a mode-000 directory requires POSIX")
+    def test_an_unrelated_unreadable_project_leaves_the_idle_level_intact(self) -> None:
+        lines, footer = self._warm_footer()
+        archive = self.path.parent.with_name("-work-archive")
+        archive.mkdir(mode=0)
+        self.addCleanup(archive.chmod, 0o700)
+        if os.access(archive, os.R_OK | os.X_OK):
+            self.skipTest("this user can enumerate a mode-000 directory")
+        lines.touch(self.now + 16)
+        self.assertEqual("medium", self._level(footer))
+
+    @unittest.skipUnless(os.name == "posix", "changing a directory mode requires POSIX")
+    def test_idle_root_admission_preserves_a_readable_root_and_its_level(self) -> None:
+        lines, footer = self._warm_footer()
+        projects = self.path.parent.parent
+        projects.chmod(0o755)
+        lines.touch(self.now + 16)
+        self.assertEqual("medium", self._level(footer))
+        self.assertEqual(0o755, stat.S_IMODE(projects.stat().st_mode))
+
+    def test_a_root_change_during_a_touch_withholds_then_restores_the_level(self) -> None:
+        lines, footer = self._warm_footer()
+        archive = self.path.parent.with_name("-work-archive")
+        archive.mkdir()
+        scan = row_progress._claude_matches
+
+        def change_root(directory: str, sids: frozenset[str]) -> Any:
+            if directory == str(archive):
+                archive.with_name("unrelated").mkdir()
+            return scan(directory, sids)
+
+        with mock.patch.object(row_progress, "_claude_matches", side_effect=change_root):
+            lines.touch(self.now + 16)
+        self.assertIsNone(self._level(footer))
+        lines.touch(self.now + 17)
+        self.assertEqual("medium", self._level(footer))
+
+    def test_a_project_change_during_enumeration_withholds_the_level(self) -> None:
+        lines, footer = self._warm_footer()
+        archive = self.path.parent.with_name("-work-archive")
+        archive.mkdir()
+        scan = row_progress._claude_matches
+
+        def change_project(directory: str, sids: frozenset[str]) -> Any:
+            matches = scan(directory, sids)
+            if directory == str(archive):
+                self._archive_collision(archive)
+            return matches
+
+        with mock.patch.object(row_progress, "_claude_matches", side_effect=change_project):
+            lines.touch(self.now + 16)
+        self.assertIsNone(self._level(footer))
+
+    def test_a_collision_after_a_project_was_sampled_withholds_that_touch(self) -> None:
+        archive = self.path.parent.with_name("-work-archive")
+        archive.mkdir()
+        lines, footer = self._warm_footer()
+        visited: list[str] = []
+        sample = row_progress._directory_stamp
+        projects = self.path.parent.parent
+
+        def sample_then_insert(path: str) -> Any:
+            if Path(path).parent == projects and len(visited) < 2:
+                visited.append(path)
+                if len(visited) == 2:
+                    self._archive_collision(Path(visited[0]))
+            return sample(path)
+
+        with mock.patch.object(row_progress, "_directory_stamp", side_effect=sample_then_insert):
+            lines.touch(self.now + 16)
+        self.assertIsNone(self._level(footer))
+
+    def test_a_scan_error_withholds_the_level_until_the_next_good_touch(self) -> None:
+        lines, footer = self._warm_footer([])
+        archive = self.path.parent.with_name("-work-archive")
+        archive.mkdir()
+        scan = os.scandir
+
+        def unavailable(path: Any = None) -> Any:
+            if path == str(archive):
+                raise OSError(errno.EIO, "directory read failed")
+            return scan(path)
+
+        with mock.patch.object(os, "scandir", side_effect=unavailable):
+            lines.touch(self.now + 16)
+        self.assertIsNone(self._level(footer))
+        lines.touch(self.now + 17)
+        self.assertEqual("medium", self._level(footer))
+
+    def test_an_annotation_clear_during_the_namespace_scan_withholds_the_level(self) -> None:
+        lines, footer = self._warm_footer()
+        archive = self.path.parent.with_name("-work-archive")
+        archive.mkdir()
+        scan = row_progress._claude_matches
+
+        def clear_during_scan(directory: str, sids: frozenset[str]) -> Any:
+            if directory == str(archive):
+                self.assertEqual(
+                    annotation_store.OUTCOME_STORED,
+                    annotation_store.clear(self.config, self.state, "claude", SHORT, now=self.now),
+                )
+            return scan(directory, sids)
+
+        with mock.patch.object(row_progress, "_claude_matches", side_effect=clear_during_scan):
+            lines.touch(self.now + 16)
+        self.assertIsNone(self._level(footer))
+
+    def test_failed_root_admission_withholds_the_level(self) -> None:
+        lines, footer = self._warm_footer()
+        projects = self.path.parent.parent
+        (projects / "prime").touch()
+        with mock.patch.object(runtime_io, "admit_harness_root", return_value=False):
+            lines.touch(self.now + 16)
+        self.assertIsNone(self._level(footer))
 
     def test_a_prefix_collision_leaves_the_other_sessions_level_intact(self) -> None:
         rows = self.seed_projects(held=2)

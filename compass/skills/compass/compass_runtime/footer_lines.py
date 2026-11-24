@@ -248,8 +248,7 @@ class Lines:
                     self._desired[name] = body
                     row = sessions[name]
                     self._apply_state(name, self._state(row) if name not in self._ambiguous else {})
-                self._clear_ambiguous_progress()
-                self._flush(now)
+                self._flush(now, unambiguous=self._unambiguous_progress())
         except Exception as exc:  # noqa: BLE001 — a status line file must never fail a request
             self._report(exc)
 
@@ -285,10 +284,18 @@ class Lines:
         body["monitor"] = on
         body["last_end"] = None if on else lease.get("last_end")
 
-    def _flush(self, now: float) -> None:
+    def _flush(self, now: float, *, unambiguous: set[str] | None) -> None:
         wrote = False
         for name in sorted(self._current | self._retired):
             body = {**self._desired[name], "at": now}
+            # A transient namespace failure only withholds this write. The next idle touch
+            # can restore the candidate if its transcript and annotation proofs still hold.
+            if (
+                unambiguous is not None
+                and body["stored_progress"]
+                and self._sessions[name]["sid"] not in unambiguous
+            ):
+                body["stored_progress"] = None
             wrote |= self._write(name, body, now)
             previous = self._written.get(name)
             if (
@@ -317,12 +324,13 @@ class Lines:
                             body["stored_progress"] = None
                     lease = self._state(row) if name not in self._ambiguous else {}
                     self._apply_state(name, lease)
-                self._clear_ambiguous_progress()
-                # A clear during a later proof check can invalidate an earlier one.
+                unambiguous = self._unambiguous_progress()
+                # A clear during a later proof check or the namespace scan can invalidate
+                # an earlier proof.
                 if retained and not self._progress_stores_hold():
                     for body in retained:
                         body["stored_progress"] = None
-                self._flush(now)
+                self._flush(now, unambiguous=unambiguous)
         except Exception as exc:  # noqa: BLE001
             self._report(exc)
 
@@ -342,25 +350,17 @@ class Lines:
             self._report(exc)
             return False
 
-    def _clear_ambiguous_progress(self) -> None:
+    def _unambiguous_progress(self) -> set[str] | None:
         validate = self._validate_prefixes
-        if validate is None:
-            return
-        levels = [
-            (row["sid"], self._desired[name])
-            for name, row in self._sessions.items()
-            if self._desired[name]["stored_progress"]
-        ]
-        if not levels:
-            return
+        if validate is None or not any(
+            self._desired[name]["stored_progress"] for name in self._sessions
+        ):
+            return None
         try:
-            unambiguous = validate()
+            return validate()
         except Exception as exc:  # noqa: BLE001 - unknown prefix ownership clears the level
             self._report(exc)
-            unambiguous = set()
-        for sid, body in levels:
-            if sid not in unambiguous:
-                body["stored_progress"] = None
+            return set()
 
     def remove_all(self) -> None:
         """Remove what this instance wrote. A crash leaves the rest to the ceiling and the sweep."""
@@ -375,16 +375,16 @@ class Lines:
             self._desired.clear()
             self._retired.clear()
             self._validate_progress = None
+            self._validate_stores = None
+            self._validate_prefixes = None
 
     def _write(self, name: str, body: Body, now: float) -> bool:
         previous = self._written.get(name)
-        if previous is not None:
-            now = max(now, previous[1])
-            body = {**body, "at": now}
+        # After a setback the terminal reader can reject the old timestamp as future-dated.
         if (
             previous is not None
             and _content(previous[0]) == _content(body)
-            and now - previous[1] < REFRESH_SEC
+            and 0 <= now - previous[1] < REFRESH_SEC
         ):
             return False
         try:

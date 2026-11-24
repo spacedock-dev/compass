@@ -13,7 +13,7 @@ published state a client could hold a cursor against.
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
     from _thread import LockType
@@ -25,7 +25,14 @@ SnapshotKey = tuple[float, bool]
 # The server start stamp paired with a per-process counter. See the module
 # docstring for why a bare counter is not enough.
 Revision = tuple[float, int]
-Entry = tuple[Revision, bytes, float, "Callable[[], bool] | None"]
+
+
+class Entry(NamedTuple):
+    revision: Revision
+    body: bytes
+    published_at: float
+    published_monotonic: float | None
+    validate: Callable[[], bool] | None
 
 
 def format_revision(revision: Revision) -> str:
@@ -60,6 +67,7 @@ class Snapshot:
         body: bytes,
         *,
         now: float = 0.0,
+        monotonic_now: float | None = None,
         generation: int | None = None,
         validate: Callable[[], bool] | None = None,
     ) -> tuple[Revision, bool]:
@@ -81,7 +89,7 @@ class Snapshot:
             revision = (self.server_started, self._counter)
             kept = generation is None or generation == self._generation
             if kept:
-                self._entries[key] = (revision, body, now, validate)
+                self._entries[key] = Entry(revision, body, now, monotonic_now, validate)
             return revision, kept
 
     def current(self, key: SnapshotKey) -> tuple[Revision, bytes] | None:
@@ -89,28 +97,32 @@ class Snapshot:
             entry = self._entries.get(key)
         if entry is None:
             return None
-        revision, body, _published_at, _validate = entry
-        return revision, body
+        return entry.revision, entry.body
 
     def fresh(
-        self, key: SnapshotKey, *, now: float, max_age: float
+        self, key: SnapshotKey, *, now: float, max_age: float, monotonic_now: float | None = None
     ) -> tuple[Revision, bytes] | None:
         """Check evidence outside the lock and never reuse a response cleared during that check."""
         with self._lock:
             entry = self._entries.get(key)
         if entry is None:
             return None
-        revision, body, published_at, validate = entry
-        # A wall-clock setback can leave old bytes dated ahead of the next eligible collection.
-        if not 0 <= now - published_at < max_age:
+        # After a setback, an old response can appear recent again once the wall clock catches up.
+        if not 0 <= now - entry.published_at < max_age:
             return None
-        if validate is not None:
-            if not validate():
+        if (
+            monotonic_now is not None
+            and entry.published_monotonic is not None
+            and not 0 <= monotonic_now - entry.published_monotonic < max_age
+        ):
+            return None
+        if entry.validate is not None:
+            if not entry.validate():
                 return None
             with self._lock:
                 if self._entries.get(key) is not entry:
                     return None
-        return revision, body
+        return entry.revision, entry.body
 
     def clear(self) -> None:
         """Drop every published variant, so the next read collects.
@@ -134,4 +146,4 @@ class Snapshot:
             entry = self._entries.get(key)
         if entry is None:
             return None
-        return now - entry[2]
+        return now - entry.published_at

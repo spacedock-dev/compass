@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import errno
 import fnmatch
 import hashlib
 import json
 import os
 import stat
+import time
 from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -138,29 +140,58 @@ def current_transcript(state: RuntimeState, owner: tuple[str, str], path: str) -
     return transcript(path)
 
 
-_DirectoryStamp = tuple[int, int, int, int, int]
+class _DirectoryStamp(NamedTuple):
+    device: int
+    inode: int
+    mode: int
+    size: int
+    links: int
+    modified_ns: int
+    changed_ns: int
+
+    def settled(self, now_ns: int) -> bool:
+        # HFS+ can retain the whole stamp across a same-second insertion. FAT mtime can
+        # have a two-second tick, so reuse starts with a listing made outside that window.
+        return now_ns - max(self.modified_ns, self.changed_ns) >= 2_000_000_000
 
 
 class _ProjectNames(NamedTuple):
     stamp: _DirectoryStamp | None
     matches: dict[str, str | None]
+    reusable: bool
 
 
 def _directory_stamp(path: str) -> _DirectoryStamp | None:
     try:
         info = os.stat(path)
-    except (FileNotFoundError, NotADirectoryError):
-        return None
+    except OSError as exc:
+        if exc.errno in {errno.ENOENT, errno.ENOTDIR, errno.ELOOP}:
+            return None
+        raise
     if not stat.S_ISDIR(info.st_mode):
         return None
-    return (info.st_dev, info.st_ino, info.st_mode, info.st_mtime_ns, info.st_ctime_ns)
+    return _DirectoryStamp(
+        info.st_dev,
+        info.st_ino,
+        info.st_mode,
+        info.st_size,
+        info.st_nlink,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
 
 
-def _claude_matches(directory: str, sids: frozenset[str]) -> dict[str, str | None]:
+def _claude_matches(directory: str, sids: frozenset[str]) -> dict[str, str | None] | None:
     matches: dict[str, str | None] = {}
     lengths = {len(sid) for sid in sids}
+    try:
+        listing = os.scandir(directory)
+    except PermissionError:
+        # The board's glob skips a project it cannot open. Retry if access is restored,
+        # since an ancestor can grant it without changing this project's metadata.
+        return None
     # Archived names can make a prefix ambiguous even when the board omits their rows.
-    with os.scandir(directory) as entries:
+    with listing as entries:
         for entry in entries:
             if entry.name.startswith(".") or not fnmatch.fnmatch(entry.name, "*.jsonl"):
                 continue
@@ -177,21 +208,24 @@ class ClaudePrefixes:
 
     def __init__(self, config: RuntimeConfig) -> None:
         self._roots = config.store_roots.get("claude.projects", ())
-        self._root_stamps: dict[str, _DirectoryStamp | None] = {}
+        self._root_stamps: dict[str, _DirectoryStamp | None] | None = None
         self._projects: dict[str, _ProjectNames] = {}
         self._sids: frozenset[str] = frozenset()
 
     def _sample_roots(self) -> dict[str, _DirectoryStamp | None]:
         return {root: _directory_stamp(root) for root in self._roots}
 
-    def _project_paths(self, roots: Mapping[str, _DirectoryStamp | None]) -> list[str] | None:
-        if roots == self._root_stamps:
+    def _project_paths(
+        self, roots: Mapping[str, _DirectoryStamp | None], *, settled: bool
+    ) -> list[str] | None:
+        if settled and roots == self._root_stamps:
             return list(self._projects)
         directories: list[str] = []
         for root, stamp in roots.items():
             if stamp is None:
                 continue
-            if not runtime_io.admit_harness_root(root):
+            # Tightening here changes the very metadata the validation brackets.
+            if not runtime_io.admit_harness_root(root, tighten_permissions=False):
                 return None
             with os.scandir(root) as entries:
                 directories.extend(
@@ -205,31 +239,44 @@ class ClaudePrefixes:
     def unambiguous(self, paths: Mapping[str, str]) -> set[str]:
         if not paths:
             return set()
+        now_ns = time.time_ns()
         roots = self._sample_roots()
-        directories = self._project_paths(roots)
+        roots_settled = all(stamp is None or stamp.settled(now_ns) for stamp in roots.values())
+        directories = self._project_paths(roots, settled=roots_settled)
         if directories is None:
             return set()
         sids = frozenset(paths)
         projects = {}
         unique: dict[str, str | None] = {}
-        # An append does not change the namespace. Stat each project once and enumerate names
-        # only where entries could have changed since the last successful check.
+        # An append does not change the namespace. A settled listing can carry its name
+        # evidence across touches, while a listing made inside the timestamp tick cannot.
         for directory in directories:
             stamp = _directory_stamp(directory)
+            settled = stamp is None or stamp.settled(now_ns)
             cached = self._projects.get(directory)
-            if cached is not None and cached.stamp == stamp and sids == self._sids:
+            if (
+                settled
+                and cached is not None
+                and cached.reusable
+                and cached.stamp == stamp
+                and sids == self._sids
+            ):
                 project = cached
             else:
                 matches = _claude_matches(directory, sids) if stamp is not None else {}
-                if stamp is not None and _directory_stamp(directory) != stamp:
-                    return set()
-                project = _ProjectNames(stamp, matches)
+                project = _ProjectNames(stamp, matches or {}, settled and matches is not None)
             projects[directory] = project
             for sid, path in project.matches.items():
                 unique[sid] = None if sid in unique else path
+        # A later project can take long enough for an earlier one's cached proof to change.
+        if any(
+            _directory_stamp(directory) != project.stamp for directory, project in projects.items()
+        ):
+            return set()
         if self._sample_roots() != roots:
             return set()
-        self._root_stamps, self._projects, self._sids = roots, projects, sids
+        self._root_stamps = roots if roots_settled else None
+        self._projects, self._sids = projects, sids
         return {sid for sid, path in paths.items() if unique.get(sid) == path}
 
 
