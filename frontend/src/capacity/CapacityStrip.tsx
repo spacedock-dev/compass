@@ -7,6 +7,7 @@ import { ALLOWANCE_LABEL, EXPLANATIONS } from '../language/glossary';
 import type { Row } from '../observed';
 import { useDisplayed, useShell } from '../shell/context';
 import { heldFor, useConsent, useSelectedWindow, useUsageOffered } from './held';
+import { quotaShown } from './visibility';
 import {
   allowanceSentence,
   clockWords,
@@ -250,15 +251,10 @@ export function CapacityStrip() {
   const key = useSelectedWindow();
   const offered = useUsageOffered();
   const off = useConsent('usage') === 'declined';
-  // The browser switch gates credential fetches. Codex reads disk and Antigravity receives quota locally.
-  const rows = off
-    ? published.filter(({ harness }) => harness === 'codex' || harness === 'antigravity')
-    : published;
+  const rows = published.filter(({ harness }) => quotaShown(harness, off));
   const picked = selectRows(rows, key);
   const cached =
-    off && !picked
-      ? published.find(({ harness }) => harness === 'claude' || harness === 'cursor')
-      : undefined;
+    off && !picked ? published.find(({ harness }) => !quotaShown(harness, off)) : undefined;
   const lane = heldFor(runtime).selection;
   const selectedKey = picked ? rowKey(picked.selected) : '';
   /* A refresh keeps the vendor and window key while it is still published. Before the first

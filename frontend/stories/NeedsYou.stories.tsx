@@ -182,6 +182,7 @@ function Example({
   collection = 'loaded',
   removeOnWrite = false,
   beforeWrite,
+  quota,
 }: {
   readonly missingClock?: boolean;
   readonly waitingForBoard?: boolean;
@@ -199,12 +200,29 @@ function Example({
   readonly beforeWrite?: () => Promise<void>;
   readonly canDismiss?: boolean;
   readonly onRefresh?: (refresh: () => Promise<void>) => void;
+  /** Codex's pressure beside Claude's, with Turn off quota reading as this browser recorded it. */
+  readonly quota?: 'on' | 'off';
 }) {
   const [shell] = useState(() => {
-    const backend = fakeBackend();
+    const backend = fakeBackend(
+      quota === 'off' ? { 'compass.next.usage.consent': 'declined' } : {},
+    );
     let revision = 0;
     const failed = { key: 'claude', discovered: true, error: 'Read failed' };
     let payload: object = { ...board, dismiss: canDismiss };
+    if (quota)
+      payload = {
+        ...board,
+        dismiss: canDismiss,
+        usage: [
+          ...board.usage,
+          {
+            harness: 'codex',
+            state: 'ok',
+            fiveH: { pct: 88, resetAt: generated + 3960, windowSec: 18000 },
+          },
+        ],
+      };
     if (collection === 'empty') payload = { generated, window_hours: 24, sessions: [] };
     if (collection === 'missing') payload = { generated, usage: board.usage };
     if (collection === 'failed')
@@ -809,3 +827,26 @@ function fit(width: number): Story {
 export const Fits390 = fit(390);
 export const Fits375 = fit(375);
 export const Fits320 = fit(320);
+
+/* Turn off quota reading hides Claude's quota pressure in Needs you as it does on the Sessions strip, whichever
+   source published the figure, and Codex's local reading stays. With the switch on, both are listed. */
+export const QuotaPressureWithReadingOn: Story = {
+  args: { quota: 'on' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // Board-level warnings sit under Other warnings, so presence is what is asserted.
+    await expect(await canvas.findByText('codex · 5-hour window')).toBeInTheDocument();
+    await expect(canvas.getByText('claude · 5-hour window')).toBeInTheDocument();
+    await expect(canvas.getByText('source · claude vendor quota')).toBeInTheDocument();
+  },
+};
+
+export const QuotaReadingOffHidesClaudesPressure: Story = {
+  args: { quota: 'off' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText('codex · 5-hour window')).toBeInTheDocument();
+    await expect(canvas.queryByText('claude · 5-hour window')).toBeNull();
+    await expect(canvas.queryByText(/claude vendor quota/)).toBeNull();
+  },
+};

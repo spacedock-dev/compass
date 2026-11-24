@@ -40,14 +40,23 @@ export function UsageSwitch({ offNote }: { readonly offNote: string }) {
   );
 }
 
-/** What the Console rail draws under its windows. */
-export function RailUsage({ windows }: { readonly windows: boolean }) {
+/** What the Console rail draws under its windows: whether any is drawn above, and whether the switch is
+    hiding one that was read. The wording matches the Sessions strip's. */
+export function RailUsage({
+  windows,
+  hidden = false,
+}: {
+  readonly windows: boolean;
+  readonly hidden?: boolean;
+}) {
   return (
     <UsageSwitch
       offNote={
         windows
-          ? 'Quota reading is off. Windows above are the last cached read and will lapse.'
-          : 'Quota reading is off. No window has been read.'
+          ? 'Quota reading is off for Claude Code and Cursor. Local readings are still shown.'
+          : hidden
+            ? 'Quota reading is off. The last cached read will lapse.'
+            : 'Quota reading is off. No window has been read.'
       }
     />
   );

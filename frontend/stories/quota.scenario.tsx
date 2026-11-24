@@ -3,6 +3,7 @@ import { CapacityStrip } from '../src/capacity/CapacityStrip';
 import { CapacityPanel } from '../src/delegation/CapacityPanel';
 import { observe } from '../src/observed';
 import { RailUsage } from '../src/capacity/UsageConsent';
+import { useConsent } from '../src/capacity/held';
 import { createShell } from '../src/shell/createShell';
 import { ShellContext } from '../src/shell/context';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
@@ -89,18 +90,21 @@ export function QuotaExample({
   return (
     <ShellContext.Provider value={shell}>
       <ControlsProvider controls={shell.controls}>
-        {strip ? (
-          <CapacityStrip />
-        ) : rail ? (
-          <CapacityPanel
-            payload={railPayload}
-            model={observe(railPayload)}
-            usage={(windows) => <RailUsage windows={windows} />}
-          />
-        ) : (
-          <RailUsage windows />
-        )}
+        {strip ? <CapacityStrip /> : rail ? <Rail payload={railPayload} /> : <RailUsage windows />}
       </ControlsProvider>
     </ShellContext.Provider>
+  );
+}
+
+/* The Console rail as `ProjectConsole` mounts it: the panel is told the switch this browser recorded. */
+function Rail({ payload }: { readonly payload: Record<string, unknown> }) {
+  const quotaOff = useConsent('usage') === 'declined';
+  return (
+    <CapacityPanel
+      payload={payload}
+      model={observe(payload)}
+      quotaOff={quotaOff}
+      usage={(windows, hidden) => <RailUsage windows={windows} hidden={hidden} />}
+    />
   );
 }
