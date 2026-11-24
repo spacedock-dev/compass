@@ -76,8 +76,10 @@ const CANVAS_SESSIONS: readonly Record<string, unknown>[] = [
 
 function Board({
   sessions = CANVAS_SESSIONS,
+  annotate = true,
 }: {
   readonly sessions?: readonly Record<string, unknown>[];
+  readonly annotate?: boolean;
 }) {
   const [shell] = useState(() => {
     const history = fakeRouterEnvironment('#n=sessions');
@@ -95,7 +97,7 @@ function Board({
           url.startsWith('/api/data')
             ? json({
                 generated: G,
-                annotate: true,
+                annotate,
                 window_hours: 24,
                 harnesses: [
                   {
@@ -510,6 +512,17 @@ const TILE_SESSIONS: readonly Record<string, unknown>[] = [
   },
   {
     harness: 'claude',
+    sid: 'acme-untitled',
+    project: 'acme/website',
+    project_key: '/acme/website',
+    state: 'working',
+    active: true,
+    state_detail: 'Editing the footer',
+    started_at: G - 900,
+    last_activity: G - 20,
+  },
+  {
+    harness: 'claude',
     sid: 'acme-audit',
     project: 'acme/api',
     project_key: '/acme/api',
@@ -546,6 +559,26 @@ export const TileColumn: Story = {
       await expect(within(row).getByRole('img', { name: tile })).toBe(tileOf(sid));
       await expect(row).toHaveTextContent('Waiting on child "Write the dashboard docs"');
     }
+    // An unknown title is a calm absence: the title's size in quiet ink, no hatch, dashed edge or box, and
+    // still the row's link (owner, 2026-11-24).
+    const untitled = rowOf(canvasElement, 'acme-untitled');
+    const missing = part(untitled, '.next-operation-route strong');
+    await expect(missing.textContent).toBe('Title not published');
+    await expect(missing).toHaveStyle({
+      fontSize: '18px',
+      fontWeight: '600',
+      color: 'rgb(82, 96, 109)',
+      backgroundImage: 'none',
+      backgroundColor: 'rgba(0, 0, 0, 0)',
+      borderTopWidth: '0px',
+      borderLeftWidth: '0px',
+      paddingTop: '0px',
+      paddingLeft: '0px',
+    });
+    await expect(missing.classList.contains('next-absence')).toBe(false);
+    await expect(
+      within(untitled).getByRole('link', { name: 'Open session Title not published' }),
+    ).toBeVisible();
     // The neutral tile is grey: quiet ink on the page ground, distinct from Quiet's pair.
     await expect(part(unknown, ':scope > span')).toHaveStyle({
       backgroundColor: 'rgb(244, 246, 248)',
@@ -673,5 +706,62 @@ export const EmptyHistory: Story = {
     await expect(line.textContent).toBe('No recent-history rows in this payload.');
     for (const width of [1280, 400]) await atWidth(width, () => calmLine(line));
     await expect(auditCalm(canvasElement)).toEqual([]);
+  },
+};
+
+/* With annotations off the goal cell says so in plain quiet text, as No goal yet is drawn, with no hatch or
+   dashed box (owner, 2026-11-24). */
+export const AnnotationsOffGoal: Story = {
+  render: () => <Board annotate={false} />,
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(4),
+    );
+    for (const width of [1280, 400]) {
+      await atWidth(width, async () => {
+        for (const row of canvasElement.querySelectorAll<HTMLElement>(
+          'article.next-operation-row',
+        )) {
+          const value = part(row, '[data-next-operation-fact="goal"] strong');
+          await expect(value.textContent).toBe('Annotations off');
+          await expect(value).toHaveStyle({
+            fontSize: '13px',
+            color: 'rgb(82, 96, 109)',
+            backgroundImage: 'none',
+            borderTopWidth: '0px',
+            paddingLeft: '0px',
+          });
+          await expect(value.classList.contains('next-absence')).toBe(false);
+        }
+      });
+    }
+    await expect(auditCalm(canvasElement)).toEqual([]);
+  },
+};
+
+/* The search field and the Filters button beside it share one radius token, and All sessions sits at the
+   canvas's section-title step (owner, 2026-11-24). */
+export const SearchToolbar: Story = {
+  render: () => <Board />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const search = await canvas.findByRole('searchbox', { name: 'Search sessions' });
+    const filters = canvas.getByRole('button', { name: 'Filters' });
+    for (const width of [1280, 400]) {
+      await atWidth(width, async () => {
+        const field = getComputedStyle(search);
+        const button = getComputedStyle(filters);
+        await expect(field.borderTopLeftRadius).toBe(button.borderTopLeftRadius);
+        await expect(field.borderBottomRightRadius).toBe(button.borderBottomRightRadius);
+        await expect(Number.parseFloat(field.borderTopLeftRadius)).toBeGreaterThan(4);
+      });
+    }
+    // A phone hides the heading, as Mobile.dc.html does; a wide screen draws it at 24 px, 700.
+    await atWidth(1280, () =>
+      expect(canvas.getByRole('heading', { name: 'All sessions' })).toHaveStyle({
+        fontSize: '24px',
+        fontWeight: '700',
+      }),
+    );
   },
 };

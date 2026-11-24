@@ -85,7 +85,10 @@ function Fact({
       data-next-operation-fact={kind}
     >
       <small className={GOAL_LABEL}>{label}</small>
-      <strong className="next-absence mt-0.5 block text-body font-normal">{value}</strong>
+      {/* Plain quiet text, as "No goal yet" is drawn: no hatch or dashed box inside the list (owner, 2026-11-24). */}
+      <strong className="mt-0.5 block text-label leading-[1.5] font-normal text-[var(--ink2)]">
+        {value}
+      </strong>
     </span>
   );
 }
@@ -221,9 +224,11 @@ function Identity({
           focusKey={`sessions-row:${row.key}`}
           fallback={SEARCH_KEY}
         >
+          {/* An unknown title is a calm absence: the title's size in quiet ink, with no hatch, dashed edge or
+              box, and still the row's link (owner, 2026-11-24). */}
           <strong
             data-authored={session.titleKnown || undefined}
-            className={`mt-0 text-value font-bold leading-[1.4]${session.titleKnown ? '' : ' next-operation-title--unknown next-absence'}`}
+            className={`mt-0 text-value leading-[1.4]${session.titleKnown ? ' font-bold' : ' next-operation-title--unknown font-semibold text-[var(--ink2)]'}`}
           >
             {session.titleText}
           </strong>

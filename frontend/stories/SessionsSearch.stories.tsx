@@ -1828,7 +1828,8 @@ export const SessionsHeadingUsesTypeScale: Story = {
   play: async ({ canvasElement }) => {
     const canvas = await ready(canvasElement);
     const heading = canvas.getByRole('heading', { name: 'All sessions' });
-    await expect(getComputedStyle(heading).fontSize).toBe('18px');
+    // The section-title step the canvas draws it at (owner, 2026-11-24).
+    await expect(heading).toHaveStyle({ fontSize: '24px', fontWeight: '700' });
   },
 };
 

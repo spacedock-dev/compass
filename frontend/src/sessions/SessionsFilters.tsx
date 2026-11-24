@@ -763,7 +763,8 @@ export function SessionsFilters({
       data-next-sessions-search
     >
       <div className="next-sessions-segments flex flex-wrap items-center justify-between gap-2 max-[620px]:contents">
-        <h2 className="m-0 text-value font-semibold">{SESSION_LIST_WORDS.all}</h2>
+        {/* The canvas's section-title step, Inter 700 at 24 px (owner, 2026-11-24). */}
+        <h2 className="m-0 text-head font-bold">{SESSION_LIST_WORDS.all}</h2>
         <div
           role="group"
           aria-label={SESSION_LIST_WORDS.status}
@@ -814,7 +815,9 @@ export function SessionsFilters({
             aria-keyshortcuts="/"
             autoComplete="off"
             spellCheck={false}
-            className="min-h-[48px] bg-card pl-9 pr-24 max-[620px]:pr-12 [&::-webkit-search-cancel-button]:appearance-none"
+            /* The Filters button's radius token, so the field and the button beside it always match (owner,
+               2026-11-24). */
+            className="min-h-[48px] rounded-card bg-card pl-9 pr-24 max-[620px]:pr-12 [&::-webkit-search-cancel-button]:appearance-none"
             onInput={(event) =>
               actions.change({ ...filters, query: event.currentTarget.value }, 'typing')
             }
