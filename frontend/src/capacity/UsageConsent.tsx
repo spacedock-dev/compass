@@ -11,6 +11,11 @@ import { useConsent, useUsageAnswer, useUsageOffered } from './held';
 
 const SWITCH_KEY = 'usage:switch';
 
+/* Said wherever Turn off quota reading hides a window that was read. Not "will lapse": a figure Claude Code's
+   status line forwards keeps arriving while its wrapper runs, so only the hiding is certain. */
+export const QUOTA_HIDDEN_NOTE =
+  'Quota reading is off. Figures read for Claude Code and Cursor are hidden.';
+
 /* An unanswered origin reads as on, as `transport/runtime` sends it. */
 export function UsageSwitch({ offNote }: { readonly offNote: string }) {
   const offered = useUsageOffered();
@@ -55,7 +60,7 @@ export function RailUsage({
         windows
           ? 'Quota reading is off for Claude Code and Cursor. Local readings are still shown.'
           : hidden
-            ? 'Quota reading is off. The last cached read will lapse.'
+            ? QUOTA_HIDDEN_NOTE
             : 'Quota reading is off. No window has been read.'
       }
     />

@@ -31,7 +31,9 @@ export const OnUntilTurnedOff: Story = {
     await expect(requests.at(-1)).toMatch(/usage=1/);
     await userEvent.click(canvas.getByRole('button', { name: 'Turn off quota reading' }));
     await expect(
-      await canvas.findByText('Quota reading is off. The last cached read will lapse.'),
+      await canvas.findByText(
+        'Quota reading is off. Figures read for Claude Code and Cursor are hidden.',
+      ),
     ).toBeVisible();
     await expect(canvas.queryByRole('progressbar')).toBeNull();
     await expect(requests.at(-1)).not.toMatch(/usage=/);
@@ -76,7 +78,9 @@ export const TurnedOffWithWindowsShown: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
-      await canvas.findByText('Quota reading is off. The last cached read will lapse.'),
+      await canvas.findByText(
+        'Quota reading is off. Figures read for Claude Code and Cursor are hidden.',
+      ),
     ).toBeVisible();
     await expect(canvas.queryByRole('progressbar')).toBeNull();
     await expect(canvas.getByRole('button', { name: 'Turn on quota reading' })).toBeVisible();
@@ -141,10 +145,14 @@ export const ConsoleRailTurnedOffWithAWindowRead: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
-      await canvas.findByText('Quota reading is off. The last cached read will lapse.'),
+      await canvas.findByText(
+        'Quota reading is off. Figures read for Claude Code and Cursor are hidden.',
+      ),
     ).toBeVisible();
     await expect(canvas.queryByText('34%')).toBeNull();
     await expect(canvasElement.querySelector('[data-next-rail-window]')).toBeNull();
+    await expect(canvas.queryByText('No plan usage has been reported yet.')).toBeNull();
+    await expect(canvas.queryByText(/will lapse/)).toBeNull();
   },
 };
 

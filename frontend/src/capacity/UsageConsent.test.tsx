@@ -1,4 +1,4 @@
-import { act, fireEvent } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { mountPanels, type MountOptions } from '../steering/testing';
 import { CapacityStrip } from './CapacityStrip';
@@ -83,7 +83,9 @@ describe('the quota fetch is on until it is turned off', () => {
     await page.advance(120_000);
     expect(dataUrls(page).length).toBeGreaterThan(1);
     expect(withUsage(page)).toEqual([]);
-    expect(line()?.textContent).toContain('Quota reading is off. The last cached read will lapse.');
+    expect(line()?.textContent).toContain(
+      'Quota reading is off. Figures read for Claude Code and Cursor are hidden.',
+    );
     expect(line()?.querySelector('button')?.textContent).toBe('Turn on quota reading');
   });
 
@@ -98,7 +100,9 @@ describe('the quota fetch is on until it is turned off', () => {
   it('names a cached credential window without displaying its figures', async () => {
     const page = mount({ storage: { [CONSENT]: 'declined' } });
     await page.settle();
-    expect(line()?.textContent).toContain('Quota reading is off. The last cached read will lapse.');
+    expect(line()?.textContent).toContain(
+      'Quota reading is off. Figures read for Claude Code and Cursor are hidden.',
+    );
     expect(document.querySelector('[data-next-capacity]')?.textContent).toContain(
       'Last cached window: Claude Code 5-hour',
     );
@@ -114,12 +118,27 @@ describe('the quota fetch is on until it is turned off', () => {
     expect(line()?.querySelector('button')?.textContent).toBe('Turn on quota reading');
   });
 
-  it('the Console rail, declined with a Claude window read, hides it and says the read will lapse', async () => {
+  it('the Console rail, declined with a Claude window read, says it is hidden and never that none was reported', async () => {
     const full = board();
     const page = mountPanels(rail(full), { data: full, storage: { [CONSENT]: 'declined' } });
     await page.settle();
-    expect(line()?.textContent).toContain('Quota reading is off. The last cached read will lapse.');
+    expect(line()?.textContent).toContain(
+      'Quota reading is off. Figures read for Claude Code and Cursor are hidden.',
+    );
     expect(document.querySelector('[data-next-rail-window]')).toBeNull();
+    const panel = document.querySelector('[data-next-rail-panel="capacity"]')?.textContent ?? '';
+    expect(panel).not.toContain('No plan usage has been reported yet.');
+    expect(panel).not.toContain('will lapse');
+  });
+
+  it('a capacity panel with no switch slot says the hidden figure itself', () => {
+    const full = board();
+    render(<CapacityPanel payload={full} model={observe(full)} quotaOff />);
+    const panel = document.querySelector('[data-next-rail-panel="capacity"]')?.textContent ?? '';
+    expect(panel).toContain(
+      'Quota reading is off. Figures read for Claude Code and Cursor are hidden.',
+    );
+    expect(panel).not.toContain('No plan usage has been reported yet.');
   });
 
   it('the Console rail, declined beside a Codex reading, keeps Codex and says local readings stay', async () => {

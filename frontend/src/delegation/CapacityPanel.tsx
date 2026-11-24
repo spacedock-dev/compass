@@ -4,6 +4,7 @@ import type { CapacityWindow, Observed, Row } from '../observed';
 import { isRecord } from '../observed';
 import { RailHeader } from '../steering/RailHeader';
 import { ALLOWANCE_LABEL } from '../language/glossary';
+import { QUOTA_HIDDEN_NOTE } from '../capacity/UsageConsent';
 import { hidesQuota, withoutHiddenQuota } from '../capacity/visibility';
 import { SLOT_LABELS, capacityRows, type CapacityRailRow } from './capacityRows';
 import './delegation.css';
@@ -108,6 +109,7 @@ export function CapacityPanel({
 }) {
   const windows = new Map(model.windows.map((window) => [window.key, window]));
   const rows = capacityRows(withoutHiddenQuota(payload, quotaOff));
+  const hidden = hidesQuota(payload, quotaOff);
   return (
     <Card
       as="section"
@@ -130,10 +132,16 @@ export function CapacityPanel({
             label={harnessLabel(payload, row.harness)}
           />
         ))
+      ) : hidden ? (
+        // A window was read and the switch hides it, so "nothing reported" would be false. The
+        // switch's own line says so when the panel draws one; without it, the panel says it here.
+        usage ? null : (
+          <p className="next-rail-reason">{QUOTA_HIDDEN_NOTE}</p>
+        )
       ) : (
         <p className="next-rail-reason">{model.capacityEmptyText}</p>
       )}
-      {usage?.(rows.length > 0, hidesQuota(payload, quotaOff))}
+      {usage?.(rows.length > 0, hidden)}
     </Card>
   );
 }

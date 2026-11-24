@@ -25,7 +25,7 @@ import {
   type Spread,
   type StripRow,
 } from './model';
-import { UsageSwitch } from './UsageConsent';
+import { QUOTA_HIDDEN_NOTE, UsageSwitch } from './UsageConsent';
 import './capacity.css';
 
 /* The board publishes the reading. The tab holds the window selection and disclosure state. */
@@ -348,7 +348,7 @@ export function CapacityStrip() {
           selected
             ? 'Quota reading is off for Claude Code and Cursor. Local readings are still shown.'
             : cached
-              ? 'Quota reading is off. The last cached read will lapse.'
+              ? QUOTA_HIDDEN_NOTE
               : 'Quota reading is off. No window has been read.'
         }
       />
