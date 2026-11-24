@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2488355,
+    "bytes": 2488315,
     "file": "react.html",
-    "sha256": "5281a0cd40b4a7dad358ac84bfbc8e44c85e46adf06d3bfe0ac0b9488682e798"
+    "sha256": "c9e691c8c67ea3eda3df90da3921ffdff9484347e1e6f37687e2b2d61939acb0"
   },
   "format": 1,
   "frontend": "react",
@@ -503,7 +503,7 @@
       },
       {
         "file": "frontend/src/drift/ActivityHead.tsx",
-        "sha256": "c58701d7d524d3ad5f9928a9a389a55e253b7b162fb4ca1695ebed17bdeaa3b5"
+        "sha256": "599df44dc3375d8db28f3887232422007d94e7bfb2ac03ade5f0210609f856fe"
       },
       {
         "file": "frontend/src/drift/ActivityMarks.tsx",
@@ -631,7 +631,7 @@
       },
       {
         "file": "frontend/src/drift/WorkListView.tsx",
-        "sha256": "986793f284bf53cd49c1778cbf9b5fc39c6ae89131161c2b8583d14859692070"
+        "sha256": "068b1a9b0bbb7c93426ed89308267e075424413dde555ee71c70b9eb57bac46d"
       },
       {
         "file": "frontend/src/drift/actions.ts",
