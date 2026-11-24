@@ -983,6 +983,7 @@ class ForgetIsACommandAndNotARouteTest(HistoryStoreTestCase):
         # `/api/settings` writes the reader's reading limits and nothing of history.
         # `/api/reading-long-discard` retires an eligible recovery marker after
         # explicit acknowledgment; it neither serves nor forgets session history.
+        # `/api/usage/claude` keeps two quota windows in memory and touches no history.
         import ast  # noqa: PLC0415
         from pathlib import Path  # noqa: PLC0415
 
@@ -1002,7 +1003,7 @@ class ForgetIsACommandAndNotARouteTest(HistoryStoreTestCase):
             for key in tables[0].keys
             if isinstance(key, ast.Constant) and isinstance(key.value, str)
         ]
-        self.assertEqual(23, len(routes))
+        self.assertEqual(24, len(routes))
         self.assertIn("/api/reading-long-discard", routes)
         prefixes = [
             node
