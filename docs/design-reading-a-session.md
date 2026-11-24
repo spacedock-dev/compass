@@ -8717,19 +8717,20 @@ store cannot be read, and a stored reading keeps the level slot even when it sup
 terminal's "Earlier level" line is gone with that: an out-of-date reading prints Out of date and no
 level, as the page draws none.
 
-Four gaps are accepted and named. Each is a coordinator decision of 2026-11-24 that the owner may
-overrule.
+Four gaps are accepted and named. The restore gap is the owner's decision of 2026-11-24; the other
+three are coordinator decisions of the same day that the owner may overrule.
 
 - A transcript rewritten to at least its size at the check, with history intact and the later work
   recorded only as tool calls, leaves no trace the record compares: the size check passes any
   transcript at or above the recorded size. Closing it would need a durable transcript high-water
   mark in the history bucket.
-- A restored older copy of the history file is caught only on the polls before its generation climbs
-  back. A restored copy keeps its lineage and carries a lower generation, so the first poll after the
-  restore withholds the level. Every focused poll raises the generation, though, and once it reaches
-  the recorded one the level shows again. Reaching a missing direction that way takes a partial
-  restore of the history file together with a transcript rewrite. Closing it would need a
-  high-water mark kept outside the history file.
+- A restored older copy of history catches up within a few polls; the owner accepted this as a gap
+  on 2026-11-24, since restoring Compass's history from a backup is rare and deliberate. A restored
+  copy keeps its lineage and carries a lower generation, so the first poll after the restore
+  withholds the level. Every focused poll raises the generation, though, and once it reaches the
+  recorded one the level shows again. Reaching a missing direction that way takes a partial restore
+  of the history file together with a transcript rewrite. Closing it would need a high-water mark
+  kept outside the history file.
 - A project that changes key and changes back is read against its first key's bucket. A check
   recorded under key A withholds while the project reads as key B. If the project returns to key A
   after later work that only key B's bucket saw, and the transcript is back at its check-time size,

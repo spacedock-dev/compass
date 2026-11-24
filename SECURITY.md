@@ -5643,7 +5643,11 @@ oversized file, an eviction past the project cap, or a bucket an older build rew
 fields starts a new one. The
 redaction rewrite above keeps both unchanged and never mints a lineage. Neither field holds text.
 The focused project context publishes the bucket's current `{key, lineage, generation}` as
-`semantic.history.mark`, which a stored check's record is compared against.
+`semantic.history.mark`, which a stored check's record is compared against. A restored older copy
+of history catches up within a few polls; the owner accepted this as a gap on 2026-11-24, since
+restoring Compass's history from a backup is rare and deliberate. The first poll after such a
+restore withholds stored levels, and each later poll raises the restored generation until it
+reaches the one a check recorded.
 
 The terminal is off unless both `--interaction-origin-session` and
 `--interaction-origin-registration-file` are supplied. When enabled, ten POST operations under
