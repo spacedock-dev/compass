@@ -154,6 +154,11 @@
               "work_binding": null
             }
           ],
+          "mark": {
+            "generation": 2,
+            "key": "key-cd674a45b6fc04fe",
+            "lineage": "55555555555555555555555555555555"
+          },
           "persisted": true,
           "window_sec": 86400
         },
@@ -343,6 +348,7 @@
             {
               "cites": [],
               "computed_at": 1900000000.0,
+              "evidence": "direction",
               "harness": "claude",
               "level": "not_enough",
               "read_at": 1899999400.0,
@@ -371,6 +377,7 @@
               "entry_count": 3,
               "estimate": null,
               "harness": "claude",
+              "latest_check_withheld": false,
               "limited": true,
               "lines": [
                 {
@@ -502,7 +509,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "8777",
+      "Content-Length": "8928",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json"
     },

@@ -12,6 +12,7 @@ import { analysisRow, meterSegments, readingStored, type Signals } from './level
 import { driftAnswer, earlyReadingSeconds, verdictNamesLevel, verdictShape } from './result';
 import { readingRoute, routeRefusal } from './route';
 import {
+  BLOCKER_LINES,
   HARNESS_LIMIT,
   WORK_HARNESSES,
   LEVEL_SCALE,
@@ -244,6 +245,19 @@ export function DriftLevelView() {
   );
 }
 
+/* Why the server withheld a stored reading's level, when the reason is about the reading as a whole rather than
+   its rows: what the check read has changed since, or a later direction of yours it measured against is still
+   unsettled. Read from the published analysis row, so the card says what the Evidence tab says. */
+function withheldReason(model: ReturnType<typeof useDrift>['model']): string {
+  const published = analysisRow(model.input.contexts, model.projectKey, model.session);
+  const reasons = Array.isArray(published?.['reasons']) ? (published['reasons'] as unknown[]) : [];
+  if (published?.['level'] !== 'not_enough') return '';
+  for (const token of ['record-changed', 'later-direction'] as const) {
+    if (reasons.includes(token)) return BLOCKER_LINES[token] ?? '';
+  }
+  return '';
+}
+
 function absence(model: ReturnType<typeof useDrift>['model']) {
   const { annotation, raw, shape, entries, source, analysis, estimate, stale } = model;
   if (stale) {
@@ -259,6 +273,9 @@ function absence(model: ReturnType<typeof useDrift>['model']) {
   if (raw && shape) {
     if (shape.malformed) return [GLOSSARY.cantTell.plain, UNKNOWN_KEY];
     const answer = driftAnswer(shape, entries, source.scan);
+    const held = withheldReason(model);
+    // On a departure the finding stays the answer; `ProgressAnswer` says why it carries no level.
+    if (held && answer.kind !== 'departs') return [GLOSSARY.cantTell.plain, held];
     // The cited finding itself is the answer when a supported level is unavailable.
     if (answer.kind === 'departs') return null;
     if (answer.kind === 'goal-unclear')
@@ -344,6 +361,7 @@ export function ProgressAnswer({ focus }: { readonly focus: boolean }) {
   const unreadable = storeUnreadable(model.payload);
   if (model.job && !raw && !unreadable) return null;
   const missing = !level ? absence(model) : null;
+  const held = !level && !missing && raw && !stale ? withheldReason(model) : '';
   const detail = level?.analysis
     ? level.line
     : level?.monitor
@@ -405,6 +423,10 @@ export function ProgressAnswer({ focus }: { readonly focus: boolean }) {
             <span className="font-semibold">How this works</span> · {missing[1]}
           </p>
         </div>
+      ) : held ? (
+        <p className="m-0 text-label text-muted-foreground" data-next-progress-withheld>
+          {held}
+        </p>
       ) : null}
     </div>
   );

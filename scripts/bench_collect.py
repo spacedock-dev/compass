@@ -58,6 +58,9 @@ SIMULATIONS: dict[str, dict[str, int]] = {
     "claude-heavy": {"claude": 40, "codex": 4, "pi": 4, "copilot": 4, "droid": 4},
     "two-harness": {"claude": 20, "codex": 20},
     "balanced-five": {"claude": 12, "codex": 12, "pi": 12, "copilot": 12, "droid": 12},
+    # The Sessions board a reader polls with two dozen Claude Code sessions, each of which can
+    # carry a stored reading (--stored-readings): the poll the stored-reading record is held to.
+    "board-24": {"claude": 24},
 }
 
 SIM_NOTE = """
@@ -518,6 +521,14 @@ def main(argv: list[str]) -> int:
         default=0,
         help="out-of-window sessions per harness: walked on every collect, never read",
     )
+    parser.add_argument(
+        "--stored-readings",
+        action="store_true",
+        help=(
+            "with --simulate, give every simulated Claude Code session a saved goal and a stored "
+            "reading, with the record of what it read where this build keeps one"
+        ),
+    )
     parser.add_argument("--list-simulations", action="store_true")
     args = parser.parse_args(argv[1:])
 
@@ -571,6 +582,8 @@ def main(argv: list[str]) -> int:
             clock=time.time,
             diagnostic_sink=lambda _message: None,
         )
+        if args.stored_readings and simulation is not None:
+            seed_stored_readings(config, state, int(simulation["counts"].get("claude", 0)))
         if args.profile:
             profiler = cProfile.Profile()
             profiler.enable()
@@ -580,6 +593,68 @@ def main(argv: list[str]) -> int:
             return 0
         print(format_report(measure(app, repeat=args.repeat), simulation))
     return 0
+
+
+def seed_stored_readings(config: Any, state: Any, count: int) -> None:
+    """A saved goal and a stored reading on each simulated Claude Code session.
+
+    The reading is stored with a `reading_evidence` record where the runtime has that seam, so the
+    same script measures a build without one and a build with one: the poll reads the annotation
+    store on every collection, and the record is what grows it.
+    """
+    import inspect  # noqa: PLC0415
+
+    from compass_runtime import annotations as annotation_store  # noqa: PLC0415
+    from compass_runtime import reading  # noqa: PLC0415
+
+    keeps_record = "evidence" in inspect.signature(annotation_store.record_reading).parameters
+    now = time.time()
+    for index in range(count):
+        sid = _sid(index)
+        annotation_store.annotate(
+            config, state, "claude", sid, goal="Add retry with backoff", now=now - 600
+        )
+        read_at = now - 300.0
+        # `Any`: an `Assessment` TypedDict to the runtime, built here as plain JSON.
+        assessment: Any = {
+            "revision_read": 1,
+            "stamp": "bench",
+            "cutoff": "",
+            "scope": reading.SCOPE_LAST_TURN,
+            "scope_text": reading.SCOPE_TEXT[reading.SCOPE_LAST_TURN],
+            "ended_at_read": None,
+            "read_at": read_at,
+            "evidence_through": read_at - 1,
+            "revision_read_at": now - 600,
+            "window_start": now - 600,
+            "criteria": {
+                "goal": {
+                    "result": reading.RESULT_UNVERIFIABLE,
+                    "cites": [],
+                    "why": reading.WHY_UNCITED,
+                }
+            },
+        }
+        extra: dict[str, Any] = {}
+        if keeps_record:
+            extra["evidence"] = {
+                "v": 1,
+                "read_at": read_at,
+                "project": "a" * 32,
+                "history": {"lineage": "b" * 32, "generation": 7},
+                "transcript_bytes": 123_456,
+                "direction_at": None,
+            }
+        stored = annotation_store.record_reading(
+            config, state, "claude", sid, assessment=assessment, **extra
+        )
+        if stored != annotation_store.OUTCOME_STORED:
+            raise RuntimeError(f"bench_collect: could not seed a reading ({stored})")
+        # Stored is not enough: a reading the store refuses on load polls as a refusal, which is not
+        # the published reading this measures.
+        entry = annotation_store.find(annotation_store.load(config), "claude", sid)
+        if not entry or not entry.get("assessment") or entry.get("refused"):
+            raise RuntimeError("bench_collect: a seeded reading does not load as a reading")
 
 
 def build_runtime(

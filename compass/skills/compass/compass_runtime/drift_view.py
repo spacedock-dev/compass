@@ -1742,7 +1742,7 @@ def analysis_level(
         or _number(row.get("revision_read")) != _number(raw.get("revision_read"))
     ):
         return None
-    # A level for words the reader has replaced yields to the live estimate.
+    # A level for words the reader has replaced is not drawn; the reading still owns the slot.
     current = _number(_get(annotation, "revision"))
     if current is not None and _number(raw.get("revision_read")) != current:
         return None
@@ -1864,10 +1864,14 @@ def derive(
 
     The level is the page's precedence
     ([DEC-27](docs/design-reading-a-session.md#amended-2026-10-21-a-level-needs-a-departure)): a
-    reading that stands owns the slot, with a level or with none, so the live estimate reads checks
-    and paths and never what the intent says, and draws no Medium beside a reading that found no
-    departure. A drafted intent draws no pill. The Live monitor counts as on exactly while the
-    server's lease stands, since a terminal has no tab to hold the switch.
+    stored reading, or a refused one, owns the slot, with a level or with none, so the live estimate
+    reads checks and paths and never what the intent says, and draws no Medium beside a reading that
+    found no departure. The pill then takes `buildModel`'s gates: none while the intent is drafted,
+    the annotation store unreadable, the reading out of date, or a check newer than the reading was
+    withheld, because a stale or withdrawn reading draws no current level
+    ([the cards](docs/design-reading-a-session.md#the-goal-and-progress-cards-2026-11-23)).
+    The Live monitor counts as on exactly while the server's lease stands, since a terminal has no
+    tab to hold the switch.
     """
     session = declared_sessions.model_row(session)
     view, parts = _read(session, payload, context, record)
@@ -1886,12 +1890,34 @@ def derive(
         session=session,
         annotation=parts.annotation,
     )
-    shown = analysis if analysis is not None else estimate
+    raw = _get(parts.annotation, "assessment")
+    stale = (
+        result_stale(parts.shape, raw, parts.annotation, parts.entries)
+        if parts.annotate
+        and parts.shape is not None
+        and not parts.shape.malformed
+        and _truthy(raw)
+        and parts.annotation is not None
+        else None
+    )
+    withheld = latest_check_withheld(parts.annotation)
+    owned = _truthy(raw) or _get(parts.annotation, "reading_refused") is True
+    shown = analysis if owned else estimate
     pill = None
-    if shown and "level" in shown and not parts.drafted and shown["level"] in _LEVEL_SCALE:
+    if (
+        shown
+        and "level" in shown
+        and shown["level"] in _LEVEL_SCALE
+        and parts.annotate
+        and parts.annotation is not None
+        and not _text(payload.get("annotate_unreadable"))
+        and not parts.drafted
+        and stale is None
+        and not withheld
+    ):
         pill = {
             "level": shown["level"],
-            "source": "analysis" if analysis is not None else shown["source"],
+            "source": "analysis" if owned else shown["source"],
         }
         state = session.get("state")
         running = isinstance(state, str) and state != "idle" and _ended_at(session) is None
@@ -1903,16 +1929,6 @@ def derive(
                 and parts.shape.scope == "mid-flight"
             )
         )
-    raw = _get(parts.annotation, "assessment")
-    stale = (
-        result_stale(parts.shape, raw, parts.annotation, parts.entries)
-        if parts.annotate
-        and parts.shape is not None
-        and not parts.shape.malformed
-        and _truthy(raw)
-        and parts.annotation is not None
-        else None
-    )
     return {
         **view,
         "live_on": live_on,
@@ -1925,7 +1941,21 @@ def derive(
         # pill, not inside it.
         "so_far": parts.shape is not None and parts.shape.scope == "mid-flight",
         "stale": stale,
+        "latest_check_withheld": withheld,
     }
+
+
+def latest_check_withheld(annotation: dict[str, Json] | None) -> bool:
+    """`latestCheckWithheld`: the newest check produced no reading, after the one shown or with
+    none shown, so the earlier level is left out."""
+    if not _truthy(_get(annotation, "reading_withheld")):
+        return False
+    raw = _get(annotation, "assessment")
+    if not _truthy(raw):
+        return True
+    withheld_at = _number(_get(annotation, "reading_withheld_at"))
+    read_at = _number(_get(raw, "read_at"))
+    return withheld_at is not None and read_at is not None and withheld_at > read_at
 
 
 def _ended_at(session: dict[str, Json]) -> float | None:

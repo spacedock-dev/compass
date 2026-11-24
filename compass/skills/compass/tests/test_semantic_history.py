@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -679,7 +681,9 @@ class SemanticHistoryTest(unittest.TestCase):
         )
         path = Path(semantic_history.store_path(self.config))
         path.parent.mkdir(exist_ok=True)
-        path.write_bytes(b" " * (self.config.state_read_cap_bytes + 1))
+        path.write_bytes(
+            b'{"v": 1, "projects": {}}' + b" " * self.config.semantic_history_read_cap_bytes
+        )
         self.assertEqual(
             1_000_000,
             semantic_history.backfill_scan_bytes(
@@ -718,3 +722,214 @@ class SemanticHistoryTest(unittest.TestCase):
                 full_max_bytes=2_000_000,
             ),
         )
+
+
+class HistoryLineageTest(unittest.TestCase):
+    """Each project bucket carries a lineage a prune keeps and a loss replaces (DRC-5543).
+
+    A stored check compares its own record against it, so a prune must never look like a loss and
+    a loss must never look like a prune.
+    """
+
+    def setUp(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        self.config = build_runtime_config(
+            environ={"HOME": str(root), "COMPASS_HOME": str(root / "state")},
+            platform_name="linux",
+            os_name="posix",
+            launcher_path=root / "server.py",
+        )
+        self.state = build_runtime_state(self.config, started=1)
+        self.path = Path(semantic_history.store_path(self.config))
+
+    def update(self, project: str = "p", *, at: float = 100, now: float = 105) -> Any:
+        fact = {"fact_id": f"u{at}", "type": "user_message", "summary": "s", "at": at}
+        return semantic_history.update(
+            self.config, self.state, project, {"facts": [fact]}, [], now=now
+        )
+
+    def test_the_first_write_mints_a_lineage_and_each_later_one_keeps_it(self) -> None:
+        first = self.update()["mark"]
+        second = self.update(at=101)["mark"]
+        self.assertRegex(first["lineage"], r"\A[0-9a-f]{32}\Z")
+        self.assertEqual(
+            ("p", first["lineage"], 1, 2),
+            (second["key"], second["lineage"], first["generation"], second["generation"]),
+        )
+
+    def test_a_prune_that_empties_the_bucket_keeps_its_lineage(self) -> None:
+        first = self.update()["mark"]
+        pruned = self.update(at=100, now=100 + semantic_history.HISTORY_WINDOW_SEC + 60)
+        self.assertEqual([], pruned["events"])
+        self.assertEqual(first["lineage"], pruned["mark"]["lineage"])
+        self.assertGreater(pruned["mark"]["generation"], first["generation"])
+
+    def test_a_lost_or_unreadable_file_starts_a_new_lineage(self) -> None:
+        cases: dict[str, Any] = {
+            "deleted": self.path.unlink,
+            "emptied": lambda: self.path.write_text('{"projects": {}}'),
+            "corrupt": lambda: self.path.write_text("{"),
+            # The same history, intact, and only too big to read: a foreign or damaged writer.
+            "oversize": lambda: self.path.write_bytes(
+                self.path.read_bytes() + b" " * self.config.semantic_history_read_cap_bytes
+            ),
+            "rewritten by an older build": lambda: self.path.write_text(
+                json.dumps(
+                    {
+                        "v": 1,
+                        "projects": {
+                            "p": {
+                                key: value
+                                for key, value in json.loads(self.path.read_text())["projects"][
+                                    "p"
+                                ].items()
+                                if key not in {"lineage", "generation"}
+                            }
+                        },
+                    }
+                )
+            ),
+        }
+        for name, damage in cases.items():
+            with self.subTest(history=name):
+                before = self.update()["mark"]
+                damage()
+                after = self.update(at=102)["mark"]
+                self.assertNotEqual(before["lineage"], after["lineage"])
+                self.assertEqual(1, after["generation"])
+
+    def test_a_read_that_rewrites_a_redaction_never_mints_or_moves_it(self) -> None:
+        mark = self.update()["mark"]
+        stored = json.loads(self.path.read_text())
+        stored["projects"]["p"]["events"][0]["summary"] = "cfg_ghp_" + "D" * 36
+        self.path.write_text(json.dumps(stored))
+        semantic_history.read(self.config, self.state, "p")
+        self.assertNotIn("D" * 36, self.path.read_text())
+        self.assertEqual(mark, semantic_history.mark_for(self.config, self.state, "p"))
+
+    def test_joining_a_display_label_keeps_the_lineage_and_moves_the_generation(self) -> None:
+        mark = self.update("key")["mark"]
+        self.update("label", at=99)
+        semantic_history.reconcile_project(self.config, self.state, "key", ("label",))
+        joined = semantic_history.mark_for(self.config, self.state, "key")
+        assert joined is not None
+        self.assertEqual(mark["lineage"], joined["lineage"])
+        self.assertGreater(joined["generation"], mark["generation"])
+
+    def test_a_write_that_fails_or_evicts_the_bucket_returns_no_mark(self) -> None:
+        with patch.object(semantic_history, "_write", return_value=False):
+            self.assertNotIn("mark", self.update())
+        for k in range(semantic_history.MAX_PROJECTS):
+            self.update(f"newer-{k}", at=200 + k, now=300)
+        self.assertNotIn("mark", self.update("p", at=1, now=300))
+        self.assertIsNone(semantic_history.mark_for(self.config, self.state, "p"))
+
+    @unittest.skipUnless(os.name == "posix", "requires stat change time")
+    def test_the_mark_read_back_parses_the_file_only_after_it_changes(self) -> None:
+        mark = self.update()["mark"]
+        with patch.object(semantic_history, "_read", wraps=semantic_history._read) as read:
+            self.assertEqual(mark, semantic_history.mark_for(self.config, self.state, "p"))
+            self.assertEqual(mark, semantic_history.mark_for(self.config, self.state, "p"))
+            self.assertEqual(1, read.call_count)
+        self.path.unlink()
+        self.assertIsNone(semantic_history.mark_for(self.config, self.state, "p"))
+
+    def test_a_same_size_history_rewrite_with_its_old_mtime_has_no_old_mark(self) -> None:
+        mark = self.update()["mark"]
+        original = self.path.stat()
+        self.assertEqual(mark, semantic_history.mark_for(self.config, self.state, "p"))
+
+        empty = b'{"v":1,"projects":{}}'
+        self.path.write_bytes(empty.ljust(original.st_size))
+        os.utime(self.path, ns=(original.st_atime_ns, original.st_mtime_ns))
+        rewritten = self.path.stat()
+        self.assertEqual(original.st_ino, rewritten.st_ino)
+        self.assertEqual(original.st_size, rewritten.st_size)
+        self.assertEqual(original.st_mtime_ns, rewritten.st_mtime_ns)
+        self.assertIsNone(semantic_history.mark_for(self.config, self.state, "p"))
+
+    def test_a_bucket_over_the_old_cap_keeps_its_lineage_and_fits_the_cap(self) -> None:
+        # 300 facts of about the size a real operator direction files: far past the old 64 KiB.
+        marks = []
+        for round_ in range(3):
+            facts = [
+                {
+                    "fact_id": f"u{round_}-{k}",
+                    "type": "user_message",
+                    "summary": "Please also tidy the helpers " + "x" * 200,
+                    "at": 100 + round_ * 100 + k * 0.1,
+                    "evidence": {"source": "transcript " + "y" * 600, "confidence": "exact"},
+                }
+                for k in range(100)
+            ]
+            marks.append(
+                semantic_history.update(
+                    self.config, self.state, "p", {"facts": facts}, [], now=500
+                )["mark"]
+            )
+        size = self.path.stat().st_size
+        self.assertGreater(size, 65_536)
+        self.assertLessEqual(size, self.config.semantic_history_read_cap_bytes)
+        self.assertEqual(1, len({mark["lineage"] for mark in marks}))
+        self.assertEqual([1, 2, 3], [mark["generation"] for mark in marks])
+        self.assertEqual(marks[-1], semantic_history.mark_for(self.config, self.state, "p"))
+
+    def test_a_size_trim_drops_oldest_first_and_keeps_the_lineage(self) -> None:
+        self.config = dataclasses.replace(self.config, semantic_history_read_cap_bytes=65_536)
+        first = self.update("p", at=1, now=10)["mark"]
+        self.update("q", at=2, now=10)
+        scans = {"claude:s": {"size": 10, "mtime_ns": 1}}
+        for k in range(200):
+            fact = {
+                "fact_id": f"big{k}",
+                "type": "user_message",
+                "summary": "s" * 200,
+                "at": 3 + k,
+                "evidence": {"source": "z" * 400, "confidence": "exact"},
+                "source_session": {"harness": "claude", "sid": "s"},
+            }
+            last = semantic_history.update(
+                self.config, self.state, "p", {"facts": [fact]}, [], now=300, source_scans=scans
+            )
+        # One more write, large enough that it must trim whatever headroom the last trim left.
+        before = len(json.loads(self.path.read_text())["projects"]["p"]["events"])
+        fact = {
+            "fact_id": "big-last",
+            "type": "user_message",
+            "summary": "s" * 200,
+            "at": 500,
+            "evidence": {"source": "z" * 8000, "confidence": "exact"},
+            "source_session": {"harness": "claude", "sid": "s"},
+        }
+        last = semantic_history.update(
+            self.config, self.state, "p", {"facts": [fact]}, [], now=600, source_scans=scans
+        )
+        stored = json.loads(self.path.read_text())
+        bucket = stored["projects"]["p"]
+        kept = [event["event_id"] for event in bucket["events"]]
+        self.assertLess(len(kept), before + 1, "the last write did not trim")
+        self.assertLessEqual(self.path.stat().st_size, 65_536)
+        self.assertIn("big-last", kept)
+        self.assertIn("big199", kept)
+        self.assertNotIn("big0", kept)
+        self.assertNotIn("u1", kept)
+        # The other project's older bucket gave its old event up before this one's newer ones.
+        self.assertEqual([], stored["projects"].get("q", {}).get("events", []))
+        self.assertEqual(first["lineage"], last["mark"]["lineage"])
+        self.assertEqual(kept, [event["event_id"] for event in last["events"]])
+        # The trim is a prune, so the scan that covered the bucket still covers what is left.
+        plan = semantic_history.backfill_plan(
+            self.config, self.state, "p", "claude:s", {"size": 10, "mtime_ns": 1}, full_max_bytes=99
+        )
+        self.assertEqual(0, plan[0])
+
+    def test_a_foreign_file_over_the_cap_reads_as_lost_and_starts_a_new_lineage(self) -> None:
+        before = self.update()["mark"]
+        self.path.write_bytes(
+            self.path.read_bytes() + b" " * self.config.semantic_history_read_cap_bytes
+        )
+        self.assertIsNone(semantic_history.mark_for(self.config, self.state, "p"))
+        after = self.update(at=101)["mark"]
+        self.assertNotEqual(before["lineage"], after["lineage"])

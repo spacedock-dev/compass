@@ -263,6 +263,12 @@ a hidden figure is hidden, packages the page at 2,485,899 bytes on Node 26.12.1 
 bytes above the Not checked yet page. The page bound follows that measurement. The fixture bound stays
 at 250,000 bytes.
 
+Later on 2026-11-24, saying why a stored check shows no level once what it read has changed since,
+on the Is it on track? card and in the Evidence tab, and saying the same for a later direction that
+holds a departure back, packages the page at 2,487,303 bytes on Node 26.12.1 and pnpm 12.19.0, 1,404
+bytes above the quota-reading page. The page bound follows that measurement. The fixture bound stays
+at 250,000 bytes.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.

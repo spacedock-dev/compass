@@ -28,6 +28,11 @@
           "cursors": {},
           "event_count": 0,
           "events": [],
+          "mark": {
+            "generation": 1,
+            "key": "key-cd674a45b6fc04fe",
+            "lineage": "55555555555555555555555555555555"
+          },
           "persisted": true,
           "window_sec": 86400
         },
@@ -115,7 +120,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "1830",
+      "Content-Length": "1928",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json"
     },

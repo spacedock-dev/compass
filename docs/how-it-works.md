@@ -55,8 +55,13 @@ A check goes like this:
    yourself. Compass never sends it for you.
 5. Once a reading is saved, the button reads Check progress again. New work, a changed goal
    or a withdrawn reading can make the card show Out of date. If a newer check fails to produce a
-   reading, the card identifies any finding it shows from the earlier check. Uses AI stays
-   beside the button. The line "N of 100 daily checks left" appears when 10 or fewer remain.
+   reading, the card identifies any finding it shows from the earlier check. A check also keeps a
+   small record of what it read, with no words in it. If that no longer matches, because session
+   history was lost or the transcript was cut, the card shows no level and says "What this check
+   read has changed since, so it shows no level. Check progress again." Checks saved before this
+   version kept no such record, so each of them shows no level until you check that session again.
+   Uses AI stays beside the button. The line "N of 100 daily checks left" appears when 10 or fewer
+   remain.
 
 Read a level as an account of the evidence, not a verdict you can rely on: the reader's accuracy
 check has not passed. A citation such as `[41]` lets you see the evidence for yourself. Hover over it

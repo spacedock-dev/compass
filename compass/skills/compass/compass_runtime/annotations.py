@@ -42,7 +42,14 @@ import uuid
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, NotRequired, TypedDict, cast
 
-from compass_runtime import analyze_diagnostics, ci_read, reading, reading_long_diagnostics, records
+from compass_runtime import (
+    analyze_diagnostics,
+    ci_read,
+    reading,
+    reading_evidence,
+    reading_long_diagnostics,
+    records,
+)
 from compass_runtime import io as runtime_io
 
 if TYPE_CHECKING:
@@ -600,6 +607,10 @@ class Annotation(TypedDict):
     # Latest kept outcome, which can be a refusal beside an older assessment.
     # Absent/None means no measurement, including readings stored by older builds.
     reading_diagnostic: NotRequired[dict[str, Any] | None]
+    # What the stored reading read (`reading_evidence`), written with it and removed with it.
+    # Missing is a reading stored without one, by an older build or a producer that could not
+    # capture it; None is a record this build cannot read. Either withholds the level.
+    reading_evidence: NotRequired[reading_evidence.Record | None]
     # Latest long outcome, independent of the legacy one-invocation measurement.
     long_diagnostic: NotRequired[dict[str, Any] | None]
     # Set on read-back when a stored reading was refused whole, never written
@@ -1460,7 +1471,15 @@ def _entry(
         entry["not_accurate"] = True
     if "assessment" in entry or entry.get("refused"):
         _read_priors(entry, value.get("prior_departures"), detail_cap, goal_cap, text_cap)
+        _read_evidence(entry, value)
     return _counters(entry, value)
+
+
+def _read_evidence(entry: Annotation, value: dict[str, Any]) -> None:
+    """The record beside a reading. One this build cannot read withholds only the level: it never
+    makes the entry unreadable, which would block every save to the store."""
+    if "reading_evidence" in value:
+        entry["reading_evidence"] = reading_evidence.validate(value["reading_evidence"])
 
 
 def _read_priors(
@@ -1609,8 +1628,21 @@ def _on_disk(entry: Annotation) -> dict[str, Any]:
         **{
             name: field
             for name, field in entry.items()
-            if name not in {"refused", "refused_raw", "reading_diagnostic", "long_diagnostic"}
+            if name
+            not in {
+                "refused",
+                "refused_raw",
+                "reading_diagnostic",
+                "long_diagnostic",
+                "reading_evidence",
+            }
         },
+        **(
+            {"reading_evidence": evidence}
+            if (evidence := reading_evidence.validate(entry.get("reading_evidence"))) is not None
+            and ("assessment" in entry or "refused_raw" in entry)
+            else {}
+        ),
         **(
             {"reading_diagnostic": diagnostic}
             if (diagnostic := analyze_diagnostics.validate(entry.get("reading_diagnostic")))
@@ -2301,6 +2333,7 @@ def _carried(existing: Annotation, updated: Annotation) -> Annotation:
         "long_receipts",
         "settled",
         "assessment",
+        "reading_evidence",
         "reading_diagnostic",
         "long_diagnostic",
         "readings",
@@ -2310,7 +2343,8 @@ def _carried(existing: Annotation, updated: Annotation) -> Annotation:
         "not_accurate",
         "prior_departures",
     ):
-        if name in {"not_accurate", "prior_departures"} and fresh:
+        # The record is the replaced reading's, never the new one's (`_record` sets the new one's).
+        if name in {"not_accurate", "prior_departures", "reading_evidence"} and fresh:
             continue
         if name not in updated and name in existing:
             updated[name] = existing[name]
@@ -2592,6 +2626,7 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
     long_target: Any = _UNGUARDED_LONG_TARGET,
     long_publication: bool = False,
     long_publish_guard: Callable[[Annotation], bool] | None = None,
+    evidence: reading_evidence.Record | None = None,
 ) -> str:
     """Store one reading beside the words it read. Returns an `OUTCOMES` token.
 
@@ -2615,6 +2650,10 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
     current entry under the annotation lock, before any write or replay answer.
     It must be a short read-only check returning exactly True; no nested writers,
     policy writes, source scans or model work. Exceptions refuse the new outcome.
+
+    `evidence` is the record of what this reading read (`reading_evidence.capture`), stored beside
+    it in the same write and only with it: a reading that is not kept leaves the standing one's
+    record, and a reading stored without one draws no level.
     """
     return _record(
         config,
@@ -2632,6 +2671,7 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
         long_target=long_target,
         long_publication=long_publication,
         long_publish_guard=long_publish_guard,
+        evidence=evidence,
     )
 
 
@@ -2711,6 +2751,7 @@ def _with_reading(
     existing: Annotation,
     assessment: reading.Assessment,
     on_a_check: Collection[str],
+    evidence: reading_evidence.Record | None = None,
 ) -> bool:
     """Put a new reading on the entry, with what it leaves earlier. False when it was not kept.
 
@@ -2734,6 +2775,10 @@ def _with_reading(
         ):
             return False
     updated["assessment"] = assessment
+    # Only a record of this very reading; any other leaves it with none, which draws no level.
+    checked = reading_evidence.validate(evidence)
+    if checked is not None and checked["read_at"] == assessment.get("read_at"):
+        updated["reading_evidence"] = checked
     priors = _departures_cleared(existing, assessment, existing["revisions"][-1], on_a_check)
     if priors:
         updated["prior_departures"] = priors
@@ -2766,6 +2811,7 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
     long_target: Any = _UNGUARDED_LONG_TARGET,
     long_publication: bool = False,
     long_publish_guard: Callable[[Annotation], bool] | None = None,
+    evidence: reading_evidence.Record | None = None,
 ) -> str:
     """The shared write behind `record_reading` and `record_withheld`.
 
@@ -2838,7 +2884,7 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
         _recorded_job(updated, existing, job_id, receipts)
         stored = True
         if assessment is not None:
-            stored = _with_reading(updated, existing, assessment, on_a_check)
+            stored = _with_reading(updated, existing, assessment, on_a_check, evidence)
         # Explicit None clears a previous attempt's measurement. A late
         # assessment that was not kept cannot replace its diagnostic either.
         updated["reading_diagnostic"] = (

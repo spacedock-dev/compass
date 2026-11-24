@@ -4,7 +4,7 @@
 import { nextNumber } from '../api/bootstrap';
 import { contextKey } from '../api/identity';
 import { createHeld } from '../intent/held';
-import { isRecord, type Row } from '../observed';
+import type { Row } from '../observed';
 import { EMPTY_RECORD, type RecordEntry } from '../store/board';
 import type { SemanticFact } from '../api/types';
 import { createAnnouncer } from '../shell/announcer';
@@ -151,6 +151,7 @@ export function pageView(item: DriftCase): unknown {
     /* ReadingResult prefixes "So far:" on the shape's own scope, independent of any level pill. */
     so_far: shape?.scope === 'mid-flight',
     stale: stale ? { kind: stale.kind, before: stale.before } : null,
+    latest_check_withheld: model.latestCheckWithheld,
     harness: model.harness,
     sid: String(session['sid']),
     annotate: model.annotate,
@@ -192,14 +193,4 @@ export function pageView(item: DriftCase): unknown {
     })),
   };
   return JSON.parse(JSON.stringify(view)) as unknown;
-}
-
-/* The terminal recording predates the board's current-answer rule. The board withholds a stale
-   pill and leaves an unlevelled stored reading in charge of the slot instead of substituting live data. */
-export function boardProgressFromRecordedView(view: unknown): unknown {
-  if (!isRecord(view) || !isRecord(view['pill'])) return view;
-  if (view['stale'] || (view['reading'] && view['pill']['source'] !== 'analysis')) {
-    return { ...view, pill: null };
-  }
-  return view;
 }

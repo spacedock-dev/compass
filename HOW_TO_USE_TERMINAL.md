@@ -221,8 +221,10 @@ spacedock-compass --drift again --session codex:ID    # a new reading, or wait o
 ```
 
 Plain `--drift` costs nothing when a reading is stored. If the reading is stale, it says Out of date
-and labels any level as Earlier level. A Claude Code reading looks like this. A Codex reading has
-no `Level:` and no correction:
+and prints no level, as the session page draws none. It also prints no level where the page shows
+none: after a newer check that produced no reading, or once what the check read has changed since.
+Run `--drift again` for a fresh one. A Claude Code reading looks like this. A Codex reading has no
+`Level:` and no correction:
 
 ```text
 Progress check · claude:abc · Fix the parser

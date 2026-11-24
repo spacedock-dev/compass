@@ -42,6 +42,7 @@ from compass_runtime import (
     live_monitor,
     notifications,
     quota,
+    reading_evidence,
     reading_long_admission,
     reading_long_coordinator,
     reading_long_history,
@@ -5351,6 +5352,18 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 for record in read_ci:
                     read.extend(ci_read.facts(record, harness, sid))
                 hooks.on_a_check = runtime_reading.lines_on_a_check(assessment, read)
+                # What this check read, from the facts and the history update it read them with,
+                # so its level stands only while that still holds (`reading_evidence`).
+                semantic = context.get("semantic")
+                history = semantic.get("history") if isinstance(semantic, dict) else None
+                hooks.evidence = reading_evidence.capture(
+                    row,
+                    facts,
+                    assessment,
+                    floor=annotation_store.direction_floor(entry, row),
+                    transcript_bytes=press_stamp[2] if press_stamp is not None else None,
+                    mark=history.get("mark") if isinstance(history, dict) else None,
+                )
             return outcome
 
     def _session_facts(self, row: dict[str, Any]) -> list[Any]:

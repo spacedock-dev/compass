@@ -40,9 +40,12 @@ from compass_runtime import (
     http_api,
     notifications,
     observer,
+    project_context,
+    reading_evidence,
     terminal_client,
     update_check,
 )
+from compass_runtime import annotations as annotation_store
 from compass_runtime.collectors import claude as claude_collector
 from compass_runtime.config import COMPASS_HOME_ENV, RuntimeConfig, build_runtime_config
 from compass_runtime.state import RuntimeState, build_runtime_state
@@ -339,6 +342,35 @@ def collect_claude(
     """
     config, state = runtime()
     return claude_collector.collect(config, state, now, window_hours, show_all)
+
+
+def captured_evidence(application: Any, harness: str, sid: str, assessment: Any) -> Any:
+    """The record a real press stores beside `assessment`, through the production capture.
+
+    Over the press's own inputs: the published row, the transcript stamp taken before the facts,
+    and the facts and semantic-history update of `_session_context`, the collect the press reads
+    with. Run against an application whose state no later request shares, as a press elsewhere
+    would be, so its collection memo cannot hand a test a row from before the reading.
+    """
+    _rev, body = application.collect_json(show_all=True)
+    (row,) = [
+        r
+        for r in json.loads(body)["sessions"]
+        if (r.get("harness"), r.get("sid")) == (harness, sid)
+    ]
+    transcript = observer.resolve_transcript(application.config, application.state, harness, sid)
+    stamp = project_context.transcript_stamp(transcript or "")
+    context = http_api._session_context(application, row)
+    entry = annotation_store.find(annotation_store.load(application.config), harness, sid)
+    history = context["semantic"].get("history") or {}
+    return reading_evidence.capture(
+        row,
+        http_api._facts_of(context),
+        assessment,
+        floor=annotation_store.direction_floor(entry, row),
+        transcript_bytes=stamp[2] if stamp else None,
+        mark=history.get("mark"),
+    )
 
 
 def make_server(

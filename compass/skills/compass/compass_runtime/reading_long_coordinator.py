@@ -10,7 +10,8 @@ from dataclasses import replace
 from itertools import chain
 from typing import TYPE_CHECKING, Any
 
-from . import ci_read, reading, reading_preparation, supervise
+from . import annotations as annotation_store
+from . import ci_read, reading, reading_evidence, reading_preparation, semantic_history, supervise
 from . import reading_long_admission as admission
 from . import reading_long_context as context_owner
 from . import reading_long_control as control
@@ -279,12 +280,33 @@ def finish_withheld(
         application.state.snapshot.clear()
 
 
+def _evidence(
+    started: admission.Started,
+    collected: source.Collection,
+    assessment: reading.Assessment,
+    mark: dict[str, Any] | None,
+) -> reading_evidence.Record | None:
+    """What this long check read: the frozen facts it read, the parent transcript's size at its
+    verified stamp, and the history mark taken before collection began."""
+    inputs = started.inputs
+    streams = collected.snapshot.streams if collected.snapshot is not None else ()
+    return reading_evidence.capture(
+        inputs["row"],
+        collected.evidence.facts if collected.evidence is not None else (),
+        assessment,
+        floor=annotation_store.direction_floor(inputs["entry"], inputs["row"]),
+        transcript_bytes=streams[0].stamp[2] if streams else None,
+        mark=mark,
+    )
+
+
 def _completed(
     application: Application,
     started: admission.Started,
     collected: source.Collection,
     mapped: worker.Mapped,
     finished: reconcile.Finished,
+    mark: dict[str, Any] | None = None,
 ) -> None:
     active, config = started.context.active, application.config
     if not _clean(started):
@@ -373,6 +395,7 @@ def _completed(
         now=application.clock(),
         on_a_check=on_a_check,
         diagnostic_sink=application.diagnostic_sink,
+        evidence=_evidence(started, collected, finished.assessment, mark),
     )
     # A durable acknowledgment may outlive retirement failure. Never overwrite it
     # with a second outcome merely because cleanup did not finish.
@@ -406,6 +429,10 @@ def _run(
         if checkpoint(force=True):
             finish_withheld(application, started, checkpoint.reason)
             return
+        # Before collection, so history lost while the job runs reads as lost.
+        mark = semantic_history.mark_for(
+            application.config, application.state, reading_evidence.project_key(inputs["row"])
+        )
         collection = _collect(application, started, inputs, checkpoint, prepare_started)
         checkpoint(force=True)
         if checkpoint.reason or collection.reason or collection.snapshot is None:
@@ -436,7 +463,7 @@ def _run(
                 f"{time.strftime('%H:%M', time.localtime(application.clock()))}"
             ),
         )
-        _completed(application, started, collection, mapped, finished)
+        _completed(application, started, collection, mapped, finished, mark)
     except Exception:  # noqa: BLE001 - thread failures retain durable accounting, never raw exception words
         finish_withheld(
             application, started, checkpoint.reason or "preparation-failed", collection=collection

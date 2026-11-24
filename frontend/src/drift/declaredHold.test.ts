@@ -8,7 +8,7 @@ import {
   nativeData,
   nativeParent,
 } from '../../test/declaredHold';
-import { boardProgressFromRecordedView, pageView } from './terminalParity.view.test.helper';
+import { pageView } from './terminalParity.view.test.helper';
 import { buildRegistry, readSemantic } from '../timeline/semantic';
 import { readHint, observe, observeSession, nativeSession, type Row } from '../observed';
 import { sessionFigures, turnEndedSentence } from '../sessions/detail';
@@ -49,8 +49,9 @@ it('a serialized display hold preserves the terminal reading with the board’s 
     unknown
   >;
   const [recorded] = work['drift_views'] as unknown[];
-  expect(recorded).toMatchObject({ pill: { so_far: false } });
-  expect(boardProgressFromRecordedView(recorded)).toEqual(view(heldParent));
+  /* Completed, so never "so far"; out of date once the session worked on, so it draws no level. */
+  expect(recorded).toMatchObject({ pill: null, so_far: false, stale: { kind: 'work' } });
+  expect(recorded).toEqual(view(heldParent));
 });
 
 it('a serialized display hold retains the server context final result', () => {

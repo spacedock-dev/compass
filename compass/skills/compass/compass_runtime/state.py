@@ -50,6 +50,9 @@ class RuntimeState:
     cache_lock: LockType = field(default_factory=threading.Lock)
     scanner_lock: LockType = field(default_factory=threading.Lock)
     semantic_history_lock: LockType = field(default_factory=threading.Lock)
+    # `semantic_history.mark_for`'s parse of the history file, keyed by the file's stat; held
+    # under `semantic_history_lock`.
+    semantic_history_marks: dict[str, Any] = field(default_factory=dict)
     # Named for the memo it used to guard, and still doing that memo's real job:
     # held across collection so concurrent readers share one filesystem and
     # SQLite scan. The published bytes moved to `snapshot`, which has its own

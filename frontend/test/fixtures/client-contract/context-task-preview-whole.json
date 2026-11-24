@@ -75,6 +75,11 @@
               "work_binding": null
             }
           ],
+          "mark": {
+            "generation": 1,
+            "key": "key-15b717500a52ef2d",
+            "lineage": "55555555555555555555555555555555"
+          },
           "persisted": true,
           "window_sec": 86400
         },
@@ -201,7 +206,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "3567",
+      "Content-Length": "3665",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json"
     },

@@ -85,7 +85,7 @@
         }
       ],
       "in_quiet_hours": false,
-      "intent_revision": "821e77a9b9771ec1f529b84def63aa9185397d48fd7daa0f6df11a2e16e871c5",
+      "intent_revision": "a48639fcdcce5d48705fa3dd2487e1feada9beefdbd2b5951fcdcd8c7b3d1f05",
       "irreversible_enabled": false,
       "native_notify": "disabled",
       "rate_window_sec": 600,

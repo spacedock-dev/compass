@@ -1645,7 +1645,7 @@ class DriftCommandTest(HomeCase):
         "harness": "claude",
         "sid": "abc",
         "malformed": "",
-        "pill": {"level": "medium", "so_far": False},
+        "pill": {"level": "medium", "source": "analysis", "so_far": False},
         "analysis": {"level": "medium"},
         "lines": [
             {

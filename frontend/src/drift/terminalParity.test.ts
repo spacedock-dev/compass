@@ -3,8 +3,8 @@
    loaded page receives: the session row, the payload bits the page reads and the focused context's body, with
    no unsaved typing, no Show-more pages and the live monitor off. The expected view is what THIS page derives
    from it, written by `COMPASS_WRITE_DRIFT_PARITY=1 pnpm exec vitest run frontend/src/drift/terminalParity` and
-   reviewed by hand. `tests/test_drift_view.py` reads the same two files. The board's current-pill exception is
-   projected onto the recorded view before comparison.
+   reviewed by hand. `tests/test_drift_view.py` reads the same two files, and the server's `drift_view.derive`
+   applies the page's own pill gates, so no projection stands between them.
 
    The expected values must never be regenerated from the Python port: a file the port wrote would agree with
    the port by construction and prove nothing. A change to the page's rules rewrites them from the page, and the
@@ -20,7 +20,7 @@ import {
   RULES,
   type DriftCase,
 } from './terminalParity.corpus.test.helper';
-import { boardProgressFromRecordedView, pageView } from './terminalParity.view.test.helper';
+import { pageView } from './terminalParity.view.test.helper';
 
 const NAMED_FILE = new URL('../../test/fixtures/drift-parity.json', import.meta.url);
 const GENERATED_FILE = new URL(
@@ -102,7 +102,7 @@ describe('the shape the terminal is held to', () => {
     });
 
     it.each(cases.map((item) => [item.name, item] as const))('%s', (_name, item) => {
-      expect(pageView(item)).toEqual(boardProgressFromRecordedView(item.expected));
+      expect(pageView(item)).toEqual(item.expected);
     });
   });
 
@@ -118,9 +118,7 @@ describe('the shape the terminal is held to', () => {
 
     it('agrees with the page on every case', () => {
       const wrong = cases.filter(
-        (item) =>
-          JSON.stringify(pageView(item)) !==
-          JSON.stringify(boardProgressFromRecordedView(item.expected)),
+        (item) => JSON.stringify(pageView(item)) !== JSON.stringify(item.expected),
       );
       expect(wrong.map((item) => item.name)).toEqual([]);
     });

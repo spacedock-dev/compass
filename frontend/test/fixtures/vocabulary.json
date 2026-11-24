@@ -235,7 +235,8 @@
     "reading-malformed",
     "scan-incomplete",
     "claim-contradicted",
-    "claim-not-shown"
+    "claim-not-shown",
+    "record-changed"
   ],
   "levelSources": {
     "analysis": "From the progress check at {time}: each line of your goal against the tests, builds and messages it cited.",

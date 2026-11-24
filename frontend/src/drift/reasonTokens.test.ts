@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { GLOSSARY } from '../language/glossary';
 import { driftReasons, liveTokens } from './level';
-import { readScopeLine } from './sentences';
+import { BLOCKER_LINES, readScopeLine } from './sentences';
 
 /* Malformed analysis data may name a token the page never registered, including names every plain object
    inherits. Those must render nothing and throw nothing: the page reads only the closed tables. */
@@ -70,6 +71,7 @@ describe('registered reasons keep their explanation and level', () => {
     'pass-older-than-read',
     'later-direction',
     'entries-not-listed',
+    'record-changed',
   ])('%s is held back as a blocker at not_enough', (token) => {
     const result = reasons('not_enough', [token]);
     expect(result.first).toBe('');
@@ -79,5 +81,17 @@ describe('registered reasons keep their explanation and level', () => {
 
   it('keeps the not_enough level text for an intent that names no folder out of the blockers', () => {
     expect(reasons('not_enough', ['intent-names-no-folder'])).toEqual(NONE);
+  });
+});
+
+describe('a level withheld because what the check read has changed since', () => {
+  it('a person reads the glossary sentence, which says there is no level and what to do', () => {
+    expect(reasons('not_enough', ['record-changed'])).toEqual({
+      first: '',
+      blockers: [GLOSSARY.recordChanged.plain],
+    });
+    expect(BLOCKER_LINES['record-changed']).toBe(
+      'What this check read has changed since, so it shows no level. Check progress again.',
+    );
   });
 });

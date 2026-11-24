@@ -744,6 +744,10 @@ export const BLOCKER_LINES: Readonly<Record<string, string>> = {
   'no-outcome-line': 'No expected outcome line was saved.',
   'goal-unclear': GOAL_UNCLEAR,
   'reading-malformed': 'Part of the stored analysis could not be read.',
+  /* What a stored check read no longer matches what Compass can read now (`reading_evidence`): its history was
+     lost, its transcript shrank, its project changed, or it was saved before checks kept that record. */
+  'record-changed':
+    'What this check read has changed since, so it shows no level. Check progress again.',
 };
 
 /* The attribute that says which kind of absence a refusal is, only for the sentences that are one. */

@@ -1,6 +1,6 @@
 import { LatestLongOutcome } from './LatestLongOutcome';
 import { olderThanLongAttempt } from './longOutcome';
-import { LONG_LATEST_OLDER } from './sentences';
+import { BLOCKER_LINES, LONG_LATEST_OLDER } from './sentences';
 import { DeparturesSection } from './Departures';
 import { DriftLevelView } from './DriftLevelView';
 import { GoalVerdictNote } from './GoalVerdictNote';
@@ -1026,10 +1026,14 @@ export function DriftVerdict({ focus }: { readonly focus: boolean }) {
   const answer = driftAnswer(shape, entries, source.scan);
   const analysis = model.analysis;
   const standing = analysis && analysis.level !== 'not_enough' ? analysis : null;
+  /* A level the server withheld because what the check read has changed since (`record-changed`) is said in
+     its own sentence under any answer, departures included, since it is about the record and not the rows. */
+  const heldBack = analysis && !standing ? analysis.reasons.blockers : [];
+  const recordChanged = heldBack.find((line) => line === BLOCKER_LINES['record-changed']) ?? '';
   const text = verdictLine({
     answer,
     level: standing?.label ?? '',
-    heldBack: analysis && !standing ? analysis.reasons.blockers : [],
+    heldBack: heldBack.filter((line) => line !== recordChanged),
     byId: model.byId,
     midFlight: shape.scope === 'mid-flight',
   });
@@ -1069,6 +1073,14 @@ export function DriftVerdict({ focus }: { readonly focus: boolean }) {
       >
         {text}
       </p>
+      {recordChanged ? (
+        <p
+          className="mx-4 my-0 max-w-[var(--measure)] text-value leading-[1.45] text-foreground"
+          data-next-drift-record-changed
+        >
+          {recordChanged}
+        </p>
+      ) : null}
       {hidesLive ? (
         <p
           className="mx-4 my-0 max-w-[var(--measure)] text-value leading-[1.45] text-foreground"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import http.client
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -18,8 +19,10 @@ from compass_runtime import (
     aggregate,
     observer,
     reading,
+    reading_evidence,
     reading_route,
     reading_source_collect,
+    semantic_history,
     supervise,
 )
 from compass_runtime import annotations as annotation_store
@@ -521,6 +524,36 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         self.assertEqual(reading.RESULT_UNVERIFIABLE, assessment["criteria"]["goal"]["result"])
         self.assertEqual(reading.RESULT_DEPARTURE, assessment["criteria"]["line_1"]["result"])
 
+    def test_a_completed_long_reading_keeps_the_record_of_what_it_read(self) -> None:
+        saved = self.actual_case(history=True)
+        self.assertIn("assessment", saved)
+        record = reading_evidence.validate(saved.get("reading_evidence"))
+        assert record is not None, saved.get("reading_evidence")
+        fixture = self.fixture
+        key = reading_evidence.project_key(fixture.row)
+        mark = semantic_history.mark_for(fixture.config, fixture.env.state, key)
+        assert mark is not None
+        path = fixture.source.path
+        self.assertEqual(
+            (
+                saved["assessment"]["read_at"],
+                reading_evidence.project_digest(key),
+                {"lineage": mark["lineage"], "generation": mark["generation"]},
+                os.stat(path).st_size,
+            ),
+            (
+                record["read_at"],
+                record["project"],
+                record["history"],
+                record["transcript_bytes"],
+            ),
+        )
+
+    def test_a_long_reading_with_no_history_to_compare_stores_no_record(self) -> None:
+        saved = self.actual_case()
+        self.assertIn("assessment", saved)
+        self.assertNotIn("reading_evidence", saved)
+
     def test_a_reading_whose_context_changes_before_its_first_pass_says_the_context_changed(
         self,
     ) -> None:
@@ -702,6 +735,7 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         refuse_call: str = "",
         preflight: str = "",
         target_change: str = "",
+        history: bool = False,
     ) -> annotation_store.Annotation:
         fixture = worker_tests.GuardedNativeWorkerTest()
         fixture.setUp()
@@ -711,6 +745,19 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         fixture.make_case(
             ci_state="ready" if unstopped == "ci" else "unbound", large=unstopped == "evidence"
         )
+        if history:
+            # A published row names its project, and the Session page a reader pressed from has
+            # already filed the project's history.
+            fixture.row["project_key"] = "git:/work/billing"
+            semantic_history.update(
+                fixture.config,
+                fixture.env.state,
+                reading_evidence.project_key(fixture.row),
+                {"facts": []},
+                [],
+                now=fixture.now,
+            )
+        self.fixture = fixture
         entry = annotation_store.find(
             annotation_store.load(fixture.config), "claude", fixture.row["sid"]
         )

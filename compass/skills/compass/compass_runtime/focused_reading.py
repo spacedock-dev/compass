@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import stat
 from typing import TYPE_CHECKING, Any
 
 from . import annotations as annotation_store
@@ -12,7 +14,9 @@ from . import (
     correction,
     entry_numbers,
     levels,
+    reading_evidence,
     record_pages,
+    semantic_history,
 )
 from . import observer as runtime_observer
 from . import project_context as runtime_project_context
@@ -206,6 +210,51 @@ def with_message_ordinals(
     return {**context, "semantic": {**semantic, "facts": facts}}
 
 
+def _transcript_bytes(application: Any, row: Mapping[str, Any]) -> int | None:
+    """The size of the session's transcript now: one stat, no read. None when it is not a file."""
+    path = runtime_observer.resolve_transcript(
+        application.config, application.state, str(row.get("harness")), str(row.get("sid"))
+    )
+    try:
+        info = os.stat(path) if path else None
+    except OSError:
+        return None
+    return info.st_size if info is not None and stat.S_ISREG(info.st_mode) else None
+
+
+def history_mark(application: Any, context: Mapping[str, Any], key: str) -> Any:
+    """The history bucket's mark for `key`, from this request's own update where it wrote that
+    bucket, else as the file holds it (an ambiguous project label files the update elsewhere)."""
+    semantic = context.get("semantic")
+    history = semantic.get("history") if isinstance(semantic, dict) else None
+    mark = history.get("mark") if isinstance(history, dict) else None
+    if isinstance(mark, dict) and mark.get("key") == key:
+        return mark
+    return semantic_history.mark_for(application.config, application.state, key)
+
+
+# [the record of what a check read](docs/design-reading-a-session.md#amended-2026-11-24-a-stored-check-keeps-the-record-of-what-it-read)  # noqa: E501
+def evidence_held(
+    application: Any,
+    context: Mapping[str, Any],
+    row: Mapping[str, Any],
+    entry: annotation_store.Annotation | None,
+    floor: float | None,
+) -> reading_evidence.Held:
+    """Whether the stored reading's record still matches what this request can read. Anything
+    that cannot be read now fails closed."""
+    try:
+        return reading_evidence.held(
+            entry,
+            row,
+            mark=history_mark(application, context, reading_evidence.project_key(row)),
+            transcript_bytes=_transcript_bytes(application, row),
+            floor=floor,
+        )
+    except Exception:  # noqa: BLE001 - an unanswerable gate withholds the level, never the page
+        return reading_evidence.Held(False, reading_evidence.PART_UNREADABLE)
+
+
 def stored_work(
     application: Any,
     context: dict[str, Any],
@@ -213,14 +262,10 @@ def stored_work(
     entry: annotation_store.Annotation | None,
 ) -> dict[str, Any]:
     requests = request_sources(application, row, facts_of(context), entry) if entry else []
-    return {
-        "line_requests": line_requests(entry, requests, row),
-        "analysis_levels": analysis_levels(
-            application,
-            context,
-            row,
-            entry,
-            annotation_store.direction_floor(entry, row),
-            request_sources=requests,
-        ),
-    }
+    floor = annotation_store.direction_floor(entry, row)
+    rows = analysis_levels(application, context, row, entry, floor, request_sources=requests)
+    if rows:
+        # The one gate on a stored level: the page, `drift_view.derive` and the terminal all read
+        # this row, so they withhold together.
+        rows = reading_evidence.hold(rows, evidence_held(application, context, row, entry, floor))
+    return {"line_requests": line_requests(entry, requests, row), "analysis_levels": rows}

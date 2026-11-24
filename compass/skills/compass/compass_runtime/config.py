@@ -428,6 +428,14 @@ class RuntimeConfig:
     daemon_ready_timeout_sec: float
     stop_release_timeout_sec: float
     state_read_cap_bytes: int
+    # The semantic history store (`semantic_history`). Not the 64 KiB state cap: one busy
+    # project's day of operator directions and results passed that measured (123,903 bytes after
+    # one press), and an over-cap file reads as lost history, which withholds every stored level
+    # (`reading_evidence`). 1 MiB costs about 60 ms per read with the redaction pass on the machine
+    # measured, so the cap is set by read cost, not by the count bounds (20 projects of 512
+    # events, about 13 MB). The writer trims oldest events first to stay under it, so only a
+    # foreign or damaged file is ever refused.
+    semantic_history_read_cap_bytes: int
     # The dismissal store. The read cap is the state file's, because the shape of
     # the risk is the same: a file this process wrote, which any local process
     # could have replaced with something enormous or deeply nested. The entry
@@ -1109,6 +1117,7 @@ def build_runtime_config(
         daemon_ready_timeout_sec=10.0,
         stop_release_timeout_sec=5.0,
         state_read_cap_bytes=65_536,
+        semantic_history_read_cap_bytes=1_048_576,
         dismissal_read_cap_bytes=65_536,
         dismissal_max_entries=256,
         delivery_read_cap_bytes=262_144,

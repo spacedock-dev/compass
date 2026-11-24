@@ -156,7 +156,10 @@ class ClientContractFixtureTest(unittest.TestCase):
             native_context["sources"]["work"]["drift_views"],
             held_context["sources"]["work"]["drift_views"],
         )
-        self.assertFalse(held_context["sources"]["work"]["drift_views"][0]["pill"]["so_far"])
+        (view,) = held_context["sources"]["work"]["drift_views"]
+        # Completed, so not "so far"; and out of date once the session worked on, so no level.
+        self.assertFalse(view["so_far"])
+        self.assertEqual(("work", None), (view["stale"]["kind"], view["pill"]))
         results = [fact for fact in held_context["semantic"]["facts"] if fact["type"] == "result"]
         self.assertTrue(results)
         self.assertEqual(

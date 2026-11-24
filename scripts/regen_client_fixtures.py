@@ -68,15 +68,19 @@ from compass_runtime import claude_settings as runtime_claude_settings  # noqa: 
 from compass_runtime import copied_corrections as runtime_copied_corrections  # noqa: E402
 from compass_runtime import deliveries as runtime_deliveries  # noqa: E402
 from compass_runtime import departures as runtime_departures  # noqa: E402 - runtime path
+from compass_runtime import http_api as runtime_http_api  # noqa: E402 - skill runtime path
 from compass_runtime import levels as runtime_levels  # noqa: E402 - skill runtime path
 from compass_runtime import notifications as runtime_notifications  # noqa: E402 - runtime path
 from compass_runtime import observation as observation_module  # noqa: E402 - skill runtime path
+from compass_runtime import observer as runtime_observer  # noqa: E402 - skill runtime path
 from compass_runtime import project_context as runtime_project_context  # noqa: E402
 from compass_runtime import reading as runtime_reading  # noqa: E402 - skill runtime path
+from compass_runtime import reading_evidence as runtime_reading_evidence  # noqa: E402
 from compass_runtime import reading_jobs as runtime_reading_jobs  # noqa: E402 - skill runtime path
 from compass_runtime import reading_policy as runtime_reading_policy  # noqa: E402 - runtime path
 from compass_runtime import reading_route as runtime_reading_route  # noqa: E402 - runtime path
 from compass_runtime import records as runtime_records  # noqa: E402 - skill runtime path
+from compass_runtime import semantic_history as runtime_semantic_history  # noqa: E402
 from compass_runtime import tripwires as runtime_tripwires  # noqa: E402 - runtime path
 from compass_runtime import unasked as runtime_unasked  # noqa: E402 - runtime path
 from compass_runtime.aggregate import Application, HarnessSpec  # noqa: E402 - skill runtime path
@@ -2188,32 +2192,34 @@ def _drift_view_recording(
             )
             if saved != annotation_store.OUTCOME_STORED:
                 raise RuntimeError(saved)
+            assessment: Any = {
+                "revision_read": 1,
+                "stamp": "",
+                "cutoff": "",
+                "scope": runtime_reading.SCOPE_LAST_TURN,
+                "scope_text": runtime_reading.SCOPE_TEXT[runtime_reading.SCOPE_LAST_TURN],
+                "ended_at_read": None,
+                "read_at": NOW - 600,
+                "evidence_through": NOW - 600,
+                "revision_read_at": goal_at,
+                "window_start": goal_at,
+                "criteria": {
+                    "goal": {
+                        "result": runtime_reading.RESULT_DEPARTURE,
+                        "cites": (first["fact_id"],),
+                        "detail": "It asked for a different change",
+                        "why": runtime_reading.WHY_STANDS,
+                        "clause": "Add retry with backoff",
+                    }
+                },
+            }
             stored = annotation_store.record_reading(
                 rig.config,
                 rig.state,
                 "claude",
                 "a1b2c3d4",
-                assessment={
-                    "revision_read": 1,
-                    "stamp": "",
-                    "cutoff": "",
-                    "scope": runtime_reading.SCOPE_LAST_TURN,
-                    "scope_text": runtime_reading.SCOPE_TEXT[runtime_reading.SCOPE_LAST_TURN],
-                    "ended_at_read": None,
-                    "read_at": NOW - 600,
-                    "evidence_through": NOW - 600,
-                    "revision_read_at": goal_at,
-                    "window_start": goal_at,
-                    "criteria": {
-                        "goal": {
-                            "result": runtime_reading.RESULT_DEPARTURE,
-                            "cites": (first["fact_id"],),
-                            "detail": "It asked for a different change",
-                            "why": runtime_reading.WHY_STANDS,
-                            "clause": "Add retry with backoff",
-                        }
-                    },
-                },
+                assessment=assessment,
+                evidence=_press_record(rig, row, assessment),
             )
             if stored != annotation_store.OUTCOME_STORED:
                 raise RuntimeError(stored)
@@ -2271,6 +2277,35 @@ def _drift_view_recording(
         )
     finally:
         rig.close()
+
+
+def _press_record(rig: Rig, row: dict[str, Any], assessment: Any) -> Any:
+    """The record a press stores beside its reading, over the press's own collect.
+
+    Without one the focused context withholds the stored level (`reading_evidence`), so the recorded
+    view would carry no level for the page to be held to.
+    """
+    transcript = runtime_observer.resolve_transcript(
+        rig.config, rig.state, str(row["harness"]), str(row["sid"])
+    )
+    stamp = runtime_project_context.transcript_stamp(transcript or "")
+    context = runtime_http_api._session_context(rig.application, row)  # noqa: SLF001
+    history = context["semantic"].get("history") or {}
+    entry = annotation_store.find(
+        annotation_store.load(rig.config), str(row["harness"]), str(row["sid"])
+    )
+    record = runtime_reading_evidence.capture(
+        row,
+        runtime_http_api._facts_of(context),  # noqa: SLF001 - the facts the press reads
+        assessment,
+        floor=annotation_store.direction_floor(entry, row),
+        transcript_bytes=stamp[2] if stamp else None,
+        mark=history.get("mark"),
+    )
+    if record is None:
+        msg = "the press captured no record"
+        raise RuntimeError(msg)
+    return record
 
 
 def tripwire_scenarios(recorder: Recorder, scratch: Scratch) -> None:
@@ -2442,6 +2477,13 @@ def guarded() -> Iterator[None]:
             ),
         ),
         mock.patch.object(runtime_reading_jobs, "launch", refuse_launch),
+        # A history bucket's lineage is random per store; a recorded focused context carries it,
+        # so the run mints a fixed one and the bytes do not move between runs.
+        mock.patch.object(
+            runtime_semantic_history,
+            "secrets",
+            SimpleNamespace(token_hex=lambda nbytes: "5" * (2 * nbytes)),
+        ),
         mock.patch.object(subprocess.Popen, "__init__", refuse_spawn),
         mock.patch.object(shutil, "which", lambda _name, **_kwargs: None),
     ):

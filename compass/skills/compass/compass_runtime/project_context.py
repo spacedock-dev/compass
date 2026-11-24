@@ -13242,6 +13242,9 @@ def _merge_semantic_history(
         "window_sec": history.get("window_sec", semantic_history.HISTORY_WINDOW_SEC),
         "cursors": history.get("cursors", {}),
         "persisted": history.get("persisted") is True,
+        # The bucket's lineage and generation after this request's own update, present only when
+        # the write landed: what a stored check's record is compared against (`reading_evidence`).
+        **({"mark": dict(history["mark"])} if isinstance(history.get("mark"), dict) else {}),
         "events": [
             {
                 key: event.get(key)

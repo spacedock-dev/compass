@@ -32,7 +32,7 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from . import analyze_diagnostics, reading, reading_policy, supervise
+from . import analyze_diagnostics, reading, reading_evidence, reading_policy, supervise
 from . import annotations as annotation_store
 from . import io as runtime_io
 
@@ -117,6 +117,9 @@ class Hooks:
         # departure on such a line for good.
         self.on_a_check: frozenset[str] = frozenset()
         self.analyze_diagnostic: dict[str, Any] | None = None
+        # What the reading read (`reading_evidence.capture`), set by the press that holds the facts
+        # and stored with the reading in the same write. None stores a reading that draws no level.
+        self.evidence: reading_evidence.Record | None = None
 
     def capture(self, value: dict[str, Any]) -> None:
         """Keep only the current producer's validated, word-free measurement."""
@@ -366,6 +369,7 @@ def _run(application: Application, job: reading.Job, compose: Callable[[Hooks], 
                 outcome,
                 on_a_check=hooks.on_a_check,
                 analyze_diagnostic=hooks.analyze_diagnostic,
+                evidence=hooks.evidence,
             )
     finally:
         # A spend the store would not take keeps its marker: it is then the
@@ -454,6 +458,7 @@ def _record(
     *,
     on_a_check: frozenset[str] = frozenset(),
     analyze_diagnostic: dict[str, Any] | None = None,
+    evidence: reading_evidence.Record | None = None,
 ) -> bool:
     """Fence assessment publication against a pause accepted after the job's seal."""
     permission = job.permission
@@ -469,7 +474,12 @@ def _record(
         if reason:
             outcome = _cancelled(job, outcome, spent=outcome[2])
         durable = _write_outcome(
-            application, job, outcome, on_a_check=on_a_check, analyze_diagnostic=analyze_diagnostic
+            application,
+            job,
+            outcome,
+            on_a_check=on_a_check,
+            analyze_diagnostic=analyze_diagnostic,
+            evidence=evidence,
         )
     if reason and not durable:
         _mark_unstored(application.config, job.id, outcome[1])
@@ -483,6 +493,7 @@ def _write_outcome(
     *,
     on_a_check: frozenset[str] = frozenset(),
     analyze_diagnostic: dict[str, Any] | None = None,
+    evidence: reading_evidence.Record | None = None,
 ) -> bool:
     """Write the outcome under the job's id. True when the store holds it."""
     assessment, why, spent = outcome
@@ -500,6 +511,7 @@ def _write_outcome(
                 job_id=job.id,
                 on_a_check=on_a_check,
                 analyze_diagnostic=checked,
+                evidence=evidence,
             )
         else:
             answer = annotation_store.record_withheld(

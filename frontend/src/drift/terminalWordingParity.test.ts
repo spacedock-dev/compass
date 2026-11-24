@@ -211,6 +211,8 @@ it('a person reads the page wording and derived reading in their terminal', () =
           STORE_BUSY: sentences.STORE_BUSY_PRESS,
           STORE_UNUSABLE: sentences.STORE_UNREADABLE_PRESS,
           POLICY_UNREADABLE: policyReason({ reason: 'store-unavailable' }),
+          RECORD_CHANGED: sentences.BLOCKER_LINES['record-changed'],
+          LATER_DIRECTION_HELD: sentences.BLOCKER_LINES['later-direction'],
         },
       },
       monitor: { 'settings-refused': refusalNote('settings-refused') },

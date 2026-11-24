@@ -1129,6 +1129,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         # Record paging, message ordinals and stored-reading evidence extracted from http_api.
         "compass_runtime.focused_reading": {
+            "compass_runtime.reading_evidence",
+            "compass_runtime.semantic_history",
             "compass_runtime.annotations",
             "compass_runtime.ci_read",
             "compass_runtime.compass_turns",
@@ -1501,6 +1503,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # shape belongs with the producer, and it stays a DAG: `reading`
         # imports neither this module nor `state`.
         "compass_runtime.annotations": {
+            "compass_runtime.reading_evidence",
             "compass_runtime.analyze_diagnostics",
             "compass_runtime.reading_long_diagnostics",
             "compass_runtime.config",
@@ -1550,6 +1553,10 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading_map_series",
             "compass_runtime.reading_maps",
             "compass_runtime.reading_passes",
+        },
+        "compass_runtime.reading_evidence": {
+            "compass_runtime.levels",
+            "compass_runtime.reading",
         },
         "compass_runtime.reading_final_call": {
             "compass_runtime.analyze_diagnostics",
@@ -1704,6 +1711,9 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.records",
         },
         "compass_runtime.reading_long_coordinator": {
+            "compass_runtime.annotations",
+            "compass_runtime.reading_evidence",
+            "compass_runtime.semantic_history",
             "compass_runtime.aggregate",
             "compass_runtime.ci_read",
             "compass_runtime.reading",
@@ -1831,6 +1841,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.state",
         },
         "compass_runtime.reading_long_finalize": {
+            "compass_runtime.reading_evidence",
             "compass_runtime.annotations",
             "compass_runtime.config",
             "compass_runtime.reading",
@@ -1912,6 +1923,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # store and reads the job registry beside the slot in `reading`. The
         # application it runs over is a protocol, so it never imports upward.
         "compass_runtime.reading_jobs": {
+            "compass_runtime.reading_evidence",
             "compass_runtime.analyze_diagnostics",
             "compass_runtime.annotations",
             "compass_runtime.config",
@@ -2028,6 +2040,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # question and option text it stores. The register route builds the
         # `PendingAsk` and is therefore the one place that bounding can happen.
         "compass_runtime.http_api": {
+            "compass_runtime.reading_evidence",
             "compass_runtime.declared_sessions",
             "compass_runtime.board_explanations",
             # Per-application focused views use the state owner's bounded cache insertion.
