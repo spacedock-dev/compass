@@ -868,6 +868,44 @@ class MonitorLinesTest(unittest.TestCase):
 
 
 class FooterRowProgressTest(_RowProgress):
+    def test_the_board_withholds_an_archived_collision_inside_the_snapshot_memo(self) -> None:
+        archive = self.path.parent.with_name("-work-archive")
+        archive.mkdir()
+        app, lines, footer, focused = self._departure_footer()
+        app.monotonic = lambda: 100.0
+        with (
+            self.serving(app) as port,
+            mock.patch.object(app, "collect", wraps=app.collect) as collect,
+            mock.patch.object(
+                app._footer_prefixes, "unambiguous", wraps=app._footer_prefixes.unambiguous
+            ) as check_prefixes,
+        ):
+            app.warm_row_progress = None
+            (view,) = self.get(port, focused)["sources"]["work"]["drift_views"]
+            self.assertEqual("medium", view["pill"]["level"])
+            self.assertEqual("medium", self.poll(port))
+            self.assertEqual("medium", self._level(footer))
+            collect.reset_mock()
+            check_prefixes.reset_mock()
+
+            lines.touch(self.now)
+            self.assertEqual("medium", self.poll(port))
+            self.assertEqual("medium", self.poll(port))
+            collect.assert_not_called()
+            check_prefixes.assert_called_once()
+
+            self._archive_collision(archive)
+            # Both clocks stay fixed so expiry cannot hide a stale board response.
+            lines.touch(self.now)
+            self.assertIsNone(self._level(footer))
+            collect.assert_not_called()
+            self.assertIsNone(self.poll(port))
+            collect.assert_called_once()
+            self.assertIsNone(self.poll(port))
+            collect.assert_called_once()
+            (view,) = self.get(port, focused)["sources"]["work"]["drift_views"]
+            self.assertIsNone(view["pill"])
+
     def test_an_archived_transcript_in_an_existing_project_clears_the_idle_level(self) -> None:
         self._archived_collision_clears_idle_level(new_project=False)
 

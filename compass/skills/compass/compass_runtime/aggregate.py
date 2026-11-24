@@ -204,6 +204,7 @@ class FooterLane(Protocol):
         validate_progress: Callable[[float, tuple[str, str]], bool] | None = None,
         validate_stores: Callable[[], bool] | None = None,
         validate_prefixes: Callable[[], set[str]] | None = None,
+        on_progress_withheld: Callable[[], None] | None = None,
     ) -> None: ...
 
     def touch(self, now: float) -> None: ...
@@ -1805,11 +1806,14 @@ class Application:
             collection = self.collect(show_all=show_all)
             validate = row_progress.publish(collection, self.config, self.state, self.clock, stamp)
             body = json.dumps(board_explanations.compact(collection, _BOARD_EXPLANATIONS)).encode()
+            built_at, built_monotonic = self.clock(), self.monotonic()
+            # A withdrawal during the footer's last evidence check must also fence this publish.
+            self._write_footer_lines(collection, show_all=show_all, validate_progress=validate)
             revision, kept = self.snapshot.publish(
                 key,
                 body,
-                now=self.clock(),
-                monotonic_now=self.monotonic(),
+                now=built_at,
+                monotonic_now=built_monotonic,
                 generation=generation,
                 validate=(
                     lambda: validate.proofs_hold(self.clock(), None) and validate.stores_hold()
@@ -1817,7 +1821,6 @@ class Application:
                 if validate
                 else None,
             )
-            self._write_footer_lines(collection, show_all=show_all, validate_progress=validate)
             # Only a freshly minted revision that was kept is worth announcing. A
             # warm reuse returns above without reaching this line, so a connected
             # client is never woken for a state it already has; and a body that
@@ -1855,6 +1858,7 @@ class Application:
                 )
                 if validate_progress
                 else None,
+                on_progress_withheld=self.snapshot.clear if validate_progress else None,
             )
 
     def _fresh_snapshot(
