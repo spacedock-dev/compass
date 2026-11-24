@@ -8,14 +8,20 @@ bare origin; nothing reaches the real remote, a real tag or a version field.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from typing import TYPE_CHECKING
+from unittest import mock
+
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -752,6 +758,188 @@ class CommandLineTest(unittest.TestCase):
         result = self.cli("rehearse", "--tag", "v0.2.0")
         self.assertEqual(1, result.returncode)
         self.assertIn("not a local path", result.stdout)
+
+
+@unittest.skipUnless(shutil.which("bash") and sys.platform != "win32", "requires a POSIX gh shim")
+class PublishedReleaseTest(unittest.TestCase):
+    """Rehearse the tag move, then drive the publishing workflow against fake GitHub."""
+
+    def setUp(self) -> None:
+        self.fx = Fixture(self)
+
+    def github_release(
+        self, *, drop: str = "", empty: str = "", draft: bool = False, stop_after: str = "stable"
+    ) -> None:
+        tag = "v0.2.0"
+        self.fx.commit("feat: work")
+        self.fx.tag(tag)
+        rt.rehearse(self.fx.work, tag, stop_after=stop_after)
+        names = [
+            "compass_0.2.0_darwin_arm64.tar.gz",
+            "compass_0.2.0_darwin_amd64.tar.gz",
+            "compass_0.2.0_linux_arm64.tar.gz",
+            "compass_0.2.0_linux_amd64.tar.gz",
+            "checksums.txt",
+        ]
+        payload = {
+            "tag_name": tag,
+            "draft": draft,
+            "published_at": None if draft else "2026-11-24T10:50:00Z",
+            "assets": [
+                {"name": name, "state": "uploaded", "size": 0 if name == empty else 256}
+                for name in names
+                if name != drop
+            ],
+        }
+        response = self.fx.root / "release-response"
+        response.write_text(json.dumps(payload), encoding="utf-8")
+        gh = self.fx.root / "gh"
+        gh.write_text(
+            """#!/bin/sh
+set -eu
+case "$*" in
+    'api --include repos/{owner}/{repo}/releases/tags/v0.2.0')
+        case "${FAKE_GH_STATUS:-200}" in
+            200) printf 'HTTP/2.0 200 OK\nContent-Type: application/json\n\n'
+                 cat "$FAKE_RESPONSE" ;;
+            404) printf 'HTTP/2.0 404 Not Found\n\n{}'; exit 1 ;;
+            *) printf 'HTTP/2.0 503 Service Unavailable\n\n{}'; exit 1 ;;
+        esac ;;
+    'release download v0.2.0 --pattern checksums.txt --output '*)
+        [ "$8" = --clobber ]
+        printf 'published checksum bytes\n' > "$7" ;;
+    *) printf 'unexpected gh command: %s\n' "$*" >&2; exit 2 ;;
+esac
+""",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        patch = mock.patch.dict(
+            os.environ,
+            {
+                "PATH": f"{self.fx.root}{os.pathsep}{os.environ['PATH']}",
+                "FAKE_RESPONSE": str(response),
+            },
+        )
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def release_command(self, *args: str) -> subprocess.CompletedProcess[str]:
+        self.fx.fetch()
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), "--repo", str(self.fx.work), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+
+    def resolve_attempt(self, attempt: str = "1") -> subprocess.CompletedProcess[str]:
+        return self.release_command("resolve", "--tag", "v0.2.0", "--run-attempt", attempt)
+
+    def test_the_tag_move_of_a_fully_published_release_stops_at_resolve(self) -> None:
+        self.github_release()
+        original = self.fx.origin_rev("refs/tags/v0.2.0")
+        result = self.resolve_attempt()
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(f"mode=complete\nversion=0.2.0\ntarget={original}\n", result.stdout)
+        self.assertEqual(original, self.fx.origin_rev("refs/tags/v0.2.0"))
+
+    def test_a_missing_or_empty_release_asset_still_resumes(self) -> None:
+        for drop, empty in (("checksums.txt", ""), ("", "compass_0.2.0_linux_amd64.tar.gz")):
+            with self.subTest(drop=drop, empty=empty):
+                self.fx = Fixture(self)
+                self.github_release(drop=drop, empty=empty)
+                result = self.resolve_attempt()
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertIn("mode=resume\n", result.stdout)
+
+    def test_a_draft_or_missing_github_release_still_resumes(self) -> None:
+        self.github_release(draft=True)
+        for status in ("200", "404"):
+            with (
+                self.subTest(status=status),
+                mock.patch.dict(os.environ, {"FAKE_GH_STATUS": status}),
+            ):
+                result = self.resolve_attempt()
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertIn("mode=resume\n", result.stdout)
+
+    def test_an_explicit_rerun_can_recover_distribution_after_the_assets_were_uploaded(
+        self,
+    ) -> None:
+        self.github_release()
+        result = self.resolve_attempt("2")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("mode=resume\n", result.stdout)
+
+    def test_the_release_still_resumes_before_the_tag_has_moved(self) -> None:
+        self.github_release(stop_after="push-bump")
+        with mock.patch.dict(os.environ, {"FAKE_GH_STATUS": "503"}):
+            result = self.resolve_attempt()
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("mode=resume\n", result.stdout)
+
+    def test_an_unavailable_release_lookup_cannot_start_another_build(self) -> None:
+        self.github_release()
+        with mock.patch.dict(os.environ, {"FAKE_GH_STATUS": "503"}):
+            result = self.resolve_attempt()
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("could not read published assets", result.stdout)
+        self.assertNotIn("mode=", result.stdout)
+
+    @unittest.skipUnless(shutil.which("sha256sum"), "the attach job uses sha256sum")
+    def test_attach_only_uploads_for_a_partial_set_and_reports_the_published_digest(self) -> None:
+        release = SCRIPT.parents[1] / ".github/workflows/release.yml"
+        workflow = yaml.safe_load(release.read_text(encoding="utf-8"))
+        steps = workflow["jobs"]["attach-cli"]["steps"]
+        step = next(step for step in steps if step.get("id") == "attach")
+        for drop, expected, option in (
+            ("", b"published checksum bytes\n", None),
+            ("checksums.txt", b"replacement checksum bytes\n", ""),
+            (
+                "compass_0.2.0_linux_arm64.tar.gz",
+                b"replacement checksum bytes\n",
+                "--replace-checksums",
+            ),
+        ):
+            with self.subTest(missing=drop):
+                self.fx = Fixture(self)
+                self.github_release(drop=drop)
+                scratch = self.fx.root / "cli"
+                scratch.mkdir()
+                publisher = self.fx.work / "scripts" / "publish-cli.sh"
+                publisher.write_text(
+                    "#!/bin/sh\n"
+                    'printf "%s" "${3:-}" > "$RUNNER_TEMP/attach-option"\n'
+                    'printf "replacement checksum bytes\\n" > "$2/checksums.txt"\n',
+                    encoding="utf-8",
+                )
+                publisher.chmod(0o755)
+                output = self.fx.root / "github-output"
+                result = subprocess.run(
+                    [shutil.which("bash") or "bash", "-c", step["run"]],
+                    cwd=self.fx.work,
+                    env={
+                        **os.environ,
+                        "TAG": "v0.2.0",
+                        "RUNNER_TEMP": str(self.fx.root),
+                        "GITHUB_OUTPUT": str(output),
+                    },
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=60,
+                )
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual(expected, (scratch / "checksums.txt").read_bytes())
+                attach_option = self.fx.root / "attach-option"
+                if option is None:
+                    self.assertFalse(attach_option.exists())
+                else:
+                    self.assertEqual(option, attach_option.read_text(encoding="utf-8"))
+                digest = hashlib.sha256(expected).hexdigest()
+                self.assertEqual(f"checksums_sha256={digest}\n", output.read_text(encoding="utf-8"))
 
 
 class RehearsalTest(unittest.TestCase):

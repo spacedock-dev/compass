@@ -84,9 +84,8 @@ require a refreshed integrity record even when the rendered page bytes stay unch
 The Select story uses shadcn Base UI Select with a reserved fixture width. It exercises opening,
 keyboard choice, titled long labels, disabled and loading items, and keyboard scrolling through thirty
 choices. The page's PromptSelect tests and Intent browser proof own the async prompt loader. The fixture does not certify the
-page's prompt loader. Stories are how the interface is verified. The browser proofs, retired from the
-gate, remain runnable on demand for routing, refresh continuity, backend behavior and installed-page
-investigation, but no pull request needs them.
+page's prompt loader. Stories verify the interface. The older parity proofs remain available on
+demand for routing, refresh continuity and backend behavior.
 
 ### Frontend development
 
@@ -344,9 +343,10 @@ same directories through the relative symlinks under `.agents/skills/`.
   `coverage-exception` label is the only bypass.
 - `Frontend production bundle`, which rebuilds and compares the tracked artifact on Linux and runs no
   proof.
-- `Storybook (ubuntu-latest)`, which builds the offline explorer and runs every story's assertions in
-  pinned Chromium. The interface is verified here. The Playwright browser proofs were retired from CI
-  and from the pre-PR suite on 2026-10-12; they remain runnable on demand.
+- `Storybook (ubuntu-latest)` builds the offline explorer and runs every story's assertions in
+  pinned Chromium on frontend changes. On frontend or runtime contract changes it also runs
+  `pnpm test:parser` and `pnpm test:installed`, the release checks for the shipped HTML and
+  installed Python-only package. The older Playwright parity proofs remain runnable on demand.
 - `Lint workflows (actionlint)`, a pinned, checksummed actionlint over every workflow, for any change
   under `.github/workflows/`. Run `actionlint` from the repository root to check the same thing
   locally; `scripts/pre_pr.py` runs it when it is installed. A change to a local action under
@@ -743,6 +743,8 @@ marketplace listing. A last job, once the archives are attached, holds a read-on
 the Homebrew tap alone, and writes `Formula/compass.rb` there from the release's published
 `checksums.txt`, once its SHA-256 matches the one the attaching job reported. The `CLI package`
 workflow runs the same build on pull requests that touch the runtime, so a break shows up in review.
+Once all five assets are published, the run started by the workflow's tag move stops at resolution.
+An explicit rerun can finish distribution using the checksum file already on the release.
 The bump is skipped when the manifests already carry the tagged version, which is also how you
 release the current version as-is. Every step is idempotent, so a partially failed release is
 finished by **Re-run all jobs** on the same run. That is the only re-run that resolves the release

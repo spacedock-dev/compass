@@ -539,8 +539,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
-    # The browser proofs are no longer part of the gate (owner, 2026-10-12): the UI is verified by the
-    # `storybook` job below. Their scripts stay in package.json and run on demand.
+    # The parity proofs stay on demand. The `storybook` job shares its browser with the release checks.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -848,7 +847,7 @@ jobs:
       COREPACK_ENABLE_NETWORK: "0"
     name: Storybook (ubuntu-latest)
     needs: changes
-    if: needs.changes.outputs.frontend == 'true'
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -860,6 +859,10 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        id: python
+        with:
+          python-version: "3.12"
       # npm from the pinned Node checks the committed bootstrap hashes; no setup cache post step.
       - name: Install pinned pnpm
         timeout-minutes: 3
@@ -871,6 +874,7 @@ jobs:
         timeout-minutes: 5
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build offline component stories
+        if: needs.changes.outputs.frontend == 'true'
         timeout-minutes: 3
         run: pnpm build:storybook
       # No host packages are installed (owner ruling, 2026-11-06). Every library Chromium needs is already
@@ -888,9 +892,18 @@ jobs:
       - name: Install pinned Chromium
         timeout-minutes: 3
         run: pnpm exec playwright install chromium
+      - name: Hostile inline artifact parser browser proof
+        timeout-minutes: 3
+        run: pnpm test:parser
+      - name: Installed Python-only artifact browser proof
+        timeout-minutes: 3
+        env:
+          COMPASS_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: pnpm test:installed
       # Measured on 2026-11-16: this step took 4 to 5 minutes across ten runs and timed out at 5 in two
       # of them (43820712919, 43826170856) after every assertion had passed. 8 leaves room for a slow runner.
       - name: Component assertions and offline runtime proof
+        if: needs.changes.outputs.frontend == 'true'
         timeout-minutes: 8
         run: pnpm test:stories
 
@@ -1081,6 +1094,11 @@ jobs:
           both() { if [ "$1" = "true" ] && [ "$2" = "true" ]; then echo true; else echo false; fi; }
           PYTHON_MACOS=$(both "$PYTHON" "$PLATFORM")
           FRONTEND_MACOS=$(both "$FRONTEND" "$PLATFORM")
+          STORYBOOK=
+          case "$FRONTEND:$CONTRACT" in
+            true:* | *:true) STORYBOOK=true ;;
+            false:false) STORYBOOK=false ;;
+          esac
 
           # Each job names the lane that runs it. `skipped` is a pass ONLY when the
           # detector said that lane is off; anything else skipped means a dependency
@@ -1092,7 +1110,7 @@ jobs:
                      "frontend-macos:$FRONTEND_MACOS:$R_FRONTEND_MACOS" \
                      "frontend-coverage:$FRONTEND:$R_FRONTEND_COVERAGE" \
                      "frontend-production:$FRONTEND:$R_FRONTEND_PRODUCTION" \
-                     "storybook:$FRONTEND:$R_STORYBOOK" "frontend-contract:$CONTRACT:$R_CONTRACT" \
+                     "storybook:$STORYBOOK:$R_STORYBOOK" "frontend-contract:$CONTRACT:$R_CONTRACT" \
                      "frontend-docs:$FRONTEND_DOCS:$R_FRONTEND_DOCS" \
                      "actionlint:$WORKFLOWS:$R_ACTIONLINT"; do
             job=${row%%:*}

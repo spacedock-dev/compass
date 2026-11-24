@@ -11,13 +11,14 @@ from __future__ import annotations
 import copy
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import yaml
 
@@ -70,6 +71,17 @@ def serialized(value: Any) -> str:
 
 
 class JobGraphTest(unittest.TestCase):
+    def test_a_completed_release_skips_verification_and_build_before_they_start(self) -> None:
+        for name in ("verify-frontend", "verify-tree", "build-cli"):
+            with self.subTest(job=name):
+                self.assertEqual(
+                    "needs.resolve.outputs.mode == 'fresh' || needs.resolve.outputs.mode == 'resume'",
+                    jobs()[name].get("if"),
+                )
+        for name in ("release", "attach-cli", "marketplace", "homebrew"):
+            with self.subTest(job=name):
+                self.assertNotIn("if", jobs()[name])
+
     def test_the_release_is_resolve_then_verify_and_build_then_publish_then_attach(self) -> None:
         self.assertEqual(
             {
@@ -197,6 +209,137 @@ class CiLimitsTest(unittest.TestCase):
             (step,) = [s for s in release if fragment in s["run"]]
             with self.subTest(fragment=fragment):
                 self.assertIn(self.command(step), ci, "no CI twin, so no limit is held equal")
+
+
+class CiVerifyCommandsTest(unittest.TestCase):
+    RELEASE_ONLY: ClassVar[dict[str, str]] = {
+        'python3 scripts/release_transition.py assert-head --expected "$TARGET"': "Release verifies the checkout of an earlier job's resolved SHA.",
+        """set -euo pipefail
+if [ -n "$(git status --porcelain)" ]; then
+echo "::error::verification changed the tracked tree, so it did not verify the target"
+git status --porcelain
+exit 1
+fi""": "Release attests that the verified checkout stayed clean for publication.",
+        """set -euo pipefail
+SHA=$(git rev-parse HEAD)
+if [ "$SHA" != "$TARGET" ]; then
+echo "::error::verified $SHA but the target is $TARGET"
+exit 1
+fi
+echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+""".strip(): "The frontend verifier hands its proven SHA to the publisher.",
+        """set -euo pipefail
+SHA=$(git rev-parse HEAD)
+if [ "$SHA" != "$TARGET" ]; then
+echo "::error::validated $SHA but the target is $TARGET"
+exit 1
+fi
+echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+""".strip(): "The tree verifier hands its proven SHA to the publisher.",
+        "python3 -m pip install --disable-pip-version-check --only-binary=:all: "
+        "--require-hashes --requirement requirements-release.txt": "Validate installs the same hashed requirements and wheels with equivalent pip flags.",
+        "python3 -m unittest discover -s compass/skills/compass/tests -t .": "Validate and the quality gate run this same suite through the parallel test runner.",
+    }
+
+    @staticmethod
+    def run_lines(run: str) -> list[str]:
+        return [line.strip() for line in code(run).replace("\\\n", "").splitlines() if line.strip()]
+
+    def missing_pr_commands(self, release_jobs: dict[str, Any]) -> set[str]:
+        ci = set()
+        for path in WORKFLOWS.glob("*.y*ml"):
+            workflow = load(path)
+            triggers = cast("dict[Any, Any]", workflow).get(True, workflow.get("on", {}))
+            events = [triggers] if isinstance(triggers, str) else triggers or ()
+            if "pull_request" not in events:
+                continue
+            for job in workflow["jobs"].values():
+                if job.get("if") is not False:
+                    for step in job.get("steps", []):
+                        if step.get("if") is not False:
+                            ci.update(self.run_lines(step.get("run", "")))
+        missing = set()
+        for name in ("verify-frontend", "verify-tree"):
+            for step in release_jobs[name]["steps"]:
+                lines = self.run_lines(step.get("run", ""))
+                if "\n".join(lines) not in self.RELEASE_ONLY:
+                    missing.update(set(lines) - ci - self.RELEASE_ONLY.keys())
+        return missing
+
+    def test_release_verification_commands_run_on_pull_requests(self) -> None:
+        self.assertEqual(set(), self.missing_pr_commands(jobs()))
+
+    def test_a_new_command_in_a_multiline_release_step_needs_pr_coverage(self) -> None:
+        changed = jobs()
+        verify = next(
+            step
+            for step in changed["verify-tree"]["steps"]
+            if "scripts/validate_plugins.py" in step.get("run", "")
+        )
+        command = "python3 scripts/release_only_check.py"
+        verify["run"] += f"\n{command}\n"
+        self.assertEqual({command}, self.missing_pr_commands(changed))
+
+
+class CiBrowserProofTest(unittest.TestCase):
+    def test_storybook_runs_the_two_release_proofs_on_either_lane(self) -> None:
+        job = load(GATE)["jobs"]["storybook"]
+        frontend = "needs.changes.outputs.frontend == 'true'"
+        self.assertEqual(f"{frontend} || needs.changes.outputs.contract == 'true'", job.get("if"))
+        run_steps = {step["run"]: step for step in job["steps"] if "run" in step}
+        for script in ("pnpm build:storybook", "pnpm test:stories"):
+            self.assertEqual(frontend, run_steps[script].get("if"))
+        for script in ("pnpm test:parser", "pnpm test:installed"):
+            with self.subTest(script=script):
+                step = run_steps.get(script, {})
+                self.assertTrue(step, script)
+                self.assertNotIn("if", step)
+                self.assertNotIn("continue-on-error", step)
+        python = next(step for step in job["steps"] if step.get("id") == "python")
+        self.assertEqual("3.12", python["with"]["python-version"])
+        self.assertEqual(
+            "${{ steps.python.outputs.python-path }}",
+            run_steps["pnpm test:installed"]["env"]["COMPASS_TEST_PYTHON"],
+        )
+        ci_commands = [
+            step.get("run", "")
+            for job in load(GATE)["jobs"].values()
+            for step in job.get("steps", [])
+        ]
+        self.assertFalse(
+            any(re.search(r"pnpm test:(?:[\w-]+:)?browser\b", run) for run in ci_commands)
+        )
+
+    @unittest.skipUnless(shutil.which("bash"), "the gate's aggregator is a bash script")
+    def test_the_aggregator_requires_storybook_whenever_either_lane_is_on(self) -> None:
+        aggregator = load(GATE)["jobs"]["quality-gate"]["steps"][0]
+        for frontend, contract, expected in (
+            ("false", "false", 0),
+            ("true", "false", 1),
+            ("false", "true", 1),
+        ):
+            with self.subTest(frontend=frontend, contract=contract):
+                env = {name: "success" for name in aggregator["env"] if name.startswith("R_")}
+                env.update(
+                    FRONTEND=frontend,
+                    CONTRACT=contract,
+                    R_STORYBOOK="skipped",
+                    PYTHON="false",
+                    PLATFORM="false",
+                    LINT="false",
+                    SUITES="false",
+                    FRONTEND_DOCS="false",
+                    WORKFLOWS="false",
+                )
+                result = subprocess.run(
+                    [shutil.which("bash") or "bash", "-c", aggregator["run"]],
+                    env={**os.environ, **env},
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=10,
+                )
+                self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
 
 
 class NoCacheTest(unittest.TestCase):
@@ -522,6 +665,8 @@ class CredentialBoundaryTest(unittest.TestCase):
             with self.subTest(job=name):
                 if name in {"release", "attach-cli"}:
                     self.assertEqual({"contents": "write"}, job["permissions"])
+                elif name == "resolve":
+                    self.assertEqual({"contents": "read"}, job["permissions"])
                 else:
                     self.assertNotIn("github.token", text)
                     self.assertNotIn("GITHUB_TOKEN", text)
@@ -1051,16 +1196,20 @@ class BuildCliJobTest(unittest.TestCase):
             self.assertNotIn(hazard, text)
         self.assertEqual([], uses("attach-cli", "actions/setup-python"))
 
-    def test_the_attaching_job_reports_the_digest_of_the_checksums_it_uploaded(self) -> None:
+    def test_the_attaching_job_reports_the_digest_of_the_published_checksums(self) -> None:
         job = jobs()["attach-cli"]
         self.assertEqual(
             {"checksums_sha256": "${{ steps.attach.outputs.checksums_sha256 }}"}, job["outputs"]
         )
         step = next(s for s in steps("attach-cli") if s.get("id") == "attach")
         body = code(step["run"])
+        prepare = body.index(
+            'prepare-attachment --tag "$TAG" --output "$RUNNER_TEMP/cli/checksums.txt"'
+        )
         upload = body.index('scripts/publish-cli.sh "$TAG" "$RUNNER_TEMP/cli"')
         digest = body.index('sha256sum "$RUNNER_TEMP/cli/checksums.txt"')
-        self.assertLess(upload, digest, "the digest is of the file that was uploaded")
+        self.assertLess(prepare, upload)
+        self.assertLess(upload, digest, "the digest is of the published file")
         self.assertIn('"checksums_sha256=$DIGEST" >> "$GITHUB_OUTPUT"', body)
         self.assertIn("[0-9a-f]{64}", body)
 
@@ -1273,14 +1422,16 @@ class GateParityTest(unittest.TestCase):
         for step in steps("verify-tree"):
             with self.subTest(step=step.get("name") or step.get("uses")):
                 self.assertNotIn("if", step)
-        self.assertNotIn("if", jobs()["verify-tree"])
         self.assertNotIn("MODE", jobs()["verify-tree"].get("env", {}))
 
     def test_resolve_hands_only_validated_values_to_later_jobs(self) -> None:
         resolve = next(s for s in steps("resolve") if s.get("id") == "resolve")
         self.assertIn('--tag "$TAG"', resolve["run"])
+        self.assertIn('--run-attempt "$GITHUB_RUN_ATTEMPT"', resolve["run"])
         self.assertIn('--github-output "$GITHUB_OUTPUT"', resolve["run"])
-        self.assertEqual({"TAG": "${{ github.ref_name }}"}, resolve["env"])
+        self.assertEqual(
+            {"TAG": "${{ github.ref_name }}", "GH_TOKEN": "${{ github.token }}"}, resolve["env"]
+        )
 
 
 if __name__ == "__main__":

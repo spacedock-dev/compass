@@ -3,7 +3,9 @@
 
 Usage (each subcommand is one workflow step; see .github/workflows/release.yml):
 
-    python3 scripts/release_transition.py resolve --tag v0.2.0 --github-output "$GITHUB_OUTPUT"
+    python3 scripts/release_transition.py resolve --tag v0.2.0 --run-attempt "$GITHUB_RUN_ATTEMPT" \
+        --github-output "$GITHUB_OUTPUT"
+    python3 scripts/release_transition.py prepare-attachment --tag v0.2.0 --output <path>
     python3 scripts/release_transition.py assert-head --expected <sha>
     python3 scripts/release_transition.py assert-checkout --mode fresh --target <sha> \
         --verified <sha> --tag v0.2.0
@@ -272,7 +274,78 @@ def assert_no_hold(repo: Path, main_ref: str) -> None:
         raise ReleaseError(message)
 
 
-def resolve(repo: Path, tag: str, main_ref: str = "origin/main") -> Resolution:
+def _cli_publication(repo: Path, tag: str, version: str) -> str:
+    result = run(["gh", "api", "--include", f"repos/{{owner}}/{{repo}}/releases/tags/{tag}"], repo)
+    headers, _, body = result.stdout.partition("\n\n")
+    status = headers.partition("\n")[0].split(maxsplit=2)
+    if len(status) >= 2 and status[0].startswith("HTTP/") and status[1] == "404":
+        return "partial"
+    message = f"could not read published assets for {tag}"
+    if result.returncode or not body:
+        raise ReleaseError(f"{message}: {result.stderr.strip() or 'no GitHub response body'}")
+    try:
+        release = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise ReleaseError(f"{message}: invalid GitHub response") from exc
+    if (
+        not isinstance(release, dict)
+        or release.get("tag_name") != tag
+        or not isinstance(release.get("draft"), bool)
+        or not isinstance(release.get("assets"), list)
+    ):
+        raise ReleaseError(f"{message}: unexpected GitHub response")
+    expected = {"checksums.txt"} | {
+        f"compass_{version}_{target}.tar.gz"
+        for target in ("darwin_arm64", "darwin_amd64", "linux_arm64", "linux_amd64")
+    }
+    names: set[str] = set()
+    uploaded: set[str] = set()
+    for asset in release["assets"]:
+        if (
+            not isinstance(asset, dict)
+            or not isinstance(asset.get("name"), str)
+            or not isinstance(asset.get("state"), str)
+            or type(asset.get("size")) is not int
+        ):
+            raise ReleaseError(f"{message}: unexpected GitHub asset response")
+        names.add(asset["name"])
+        if asset["state"] == "uploaded" and asset["size"] > 0:
+            uploaded.add(asset["name"])
+    if not release["draft"] and release.get("published_at") and expected <= uploaded:
+        return "complete"
+    return "partial-with-checksums" if "checksums.txt" in names else "partial"
+
+
+def prepare_attachment(repo: Path, tag: str, output: Path) -> str:
+    """Tell the publisher what is missing, or restore the checksums of a complete set."""
+    version, _ = parse_tag(tag)
+    publication = _cli_publication(repo, tag, version)
+    if publication != "complete":
+        return publication
+    path = output.absolute()
+    result = run(
+        [
+            "gh",
+            "release",
+            "download",
+            tag,
+            "--pattern",
+            "checksums.txt",
+            "--output",
+            str(path),
+            "--clobber",
+        ],
+        repo,
+    )
+    if result.returncode or not path.is_file() or not path.stat().st_size:
+        message = f"could not download published checksums for {tag}: {result.stderr.strip()}"
+        raise ReleaseError(message)
+    return publication
+
+
+def resolve(
+    repo: Path, tag: str, main_ref: str = "origin/main", *, first_attempt: bool = False
+) -> Resolution:
     """Fix the commit this run releases, before anything is built or verified."""
     version, _ = parse_tag(tag)
     main_tip = run_git(repo, "rev-parse", "--verify", f"{main_ref}^{{commit}}")
@@ -297,6 +370,13 @@ def resolve(repo: Path, tag: str, main_ref: str = "origin/main") -> Resolution:
             )
             raise ReleaseError(message)
         check_release_commit(repo, release_commit)
+        # Explicit reruns may still owe a marketplace or Homebrew update after a successful attach.
+        if (
+            first_attempt
+            and tag_commit == release_commit
+            and _cli_publication(repo, tag, version) == "complete"
+        ):
+            return Resolution(tag, version, "complete", release_commit, release_commit, main_tip)
         return Resolution(tag, version, "resume", release_commit, release_commit, main_tip)
     check_monotonic(tag, existing)
     return Resolution(tag, version, "fresh", main_tip, "", main_tip)
@@ -616,6 +696,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     resolve_cmd = command("resolve", "tag", optional=("main-ref", "github-output"))
     resolve_cmd.set_defaults(main_ref="origin/main")
+    resolve_cmd.add_argument("--run-attempt", type=int)
+    command("prepare-attachment", "tag", "output")
     command("latest", "tag")
     command("assert-head", "expected")
     checkout = command("assert-checkout", "mode", "target", "tag")
@@ -638,11 +720,13 @@ def dispatch(args: argparse.Namespace) -> int:  # noqa: C901, PLR0912 -- one arm
     repo: Path = args.repo
     match args.command:
         case "resolve":
-            resolution = resolve(repo, args.tag, args.main_ref)
+            resolution = resolve(repo, args.tag, args.main_ref, first_attempt=args.run_attempt == 1)
             for key, value in resolution.outputs().items():
                 print(f"{key}={value}")
             if args.github_output:
                 github_output(Path(args.github_output), resolution.outputs())
+        case "prepare-attachment":
+            print(prepare_attachment(repo, args.tag, Path(args.output)))
         case "latest":
             existing = run_git(repo, "tag", "-l", *TAG_GLOBS).split()
             print("true" if is_latest(args.tag, existing) else "false")
