@@ -383,6 +383,10 @@ Read which job failed first:
   moves `stable` forward only, so resuming an older release after a newer one leaves `stable` where
   the newer release put it and says so in the log.
 
+If either distribution job reports `no GitHub host keys fetched`, it stopped before cloning the
+destination. Transient lookup failures already get up to four attempts. Check GitHub API
+availability and rerun the affected job once the lookup is available.
+
 ### The release hold
 
 `RELEASE_HOLD` at the repository root of `main` pauses every release. It is a real guard: the

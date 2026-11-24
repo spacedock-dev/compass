@@ -1,7 +1,7 @@
 """The Homebrew formula: what it renders, what it refuses, and the push it makes.
 
 `update_homebrew.py` is called directly. `publish-homebrew.sh` runs for real against a local bare
-repository standing in for spacedock-dev/homebrew-tap, with `curl`, `jq` and `ssh` replaced on PATH
+repository standing in for spacedock-dev/homebrew-tap, with `curl` and `ssh` replaced on PATH
 by the shims in publish_fakes.py, which serve the GitHub releases from a local directory. That
 exercises the fetch, the digest check, the clone, the commit and the push and needs no key or
 network: the script asks for a key only of an SSH remote.
@@ -269,7 +269,12 @@ class PublishHomebrewTest(unittest.TestCase):
             "FAKE_LOG": str(self.log),
             "FAKE_RELEASES": str(self.releases),
         }
-        for name in ("RUNNER_TEMP", "HOMEBREW_TAP_DEPLOY_KEY", "COMPASS_RELEASE_URL"):
+        for name in (
+            "RUNNER_TEMP",
+            "HOMEBREW_TAP_DEPLOY_KEY",
+            "COMPASS_RELEASE_URL",
+            "GITHUB_TOKEN",
+        ):
             self.env.pop(name, None)
         self.git(self.root, "init", "--quiet", "--bare", "--initial-branch=main", str(self.remote))
         self.seed("Formula/subspace-beta.rb", "class SubspaceBeta < Formula\nend\n")
@@ -312,10 +317,11 @@ class PublishHomebrewTest(unittest.TestCase):
         return hashlib.sha256(published.read_bytes()).hexdigest()
 
     def publish(
-        self, tag: str = "v1.3.0", digest: str | None = None
+        self, tag: str = "v1.3.0", digest: str | None = None, *, trace: bool = False
     ) -> subprocess.CompletedProcess[str]:
+        shell = [SH, "-x"] if trace else [SH]
         return subprocess.run(
-            [SH, str(PUBLISH), tag, self.digest(tag) if digest is None else digest],
+            [*shell, str(PUBLISH), tag, self.digest(tag) if digest is None else digest],
             capture_output=True,
             text=True,
             check=False,
@@ -459,6 +465,52 @@ class PublishHomebrewTest(unittest.TestCase):
 
         self.assertEqual(1, done.returncode)
         self.assertIn("HOMEBREW_TAP_DEPLOY_KEY is empty", done.stderr)
+
+    def ssh_publish(self, responses: str) -> subprocess.CompletedProcess[str]:
+        url = "git@github.com:spacedock-dev/homebrew-tap.git"
+        self.env.update(publish_fakes.ssh_publish_env(self.remote, url, self.log / "git"))
+        self.env.update(
+            HOMEBREW_TAP_REMOTE=url,
+            HOMEBREW_TAP_DEPLOY_KEY=publish_fakes.TEST_DEPLOY_KEY,
+            FAKE_META_RESPONSES=responses,
+        )
+        return self.publish(trace=True)
+
+    def test_host_key_403_retries_with_auth_before_publishing(self) -> None:
+        done = self.ssh_publish("403 200")
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        calls = publish_fakes.curl_calls(self.log)
+        self.assertEqual([publish_fakes.META_URL] * 2, [call[-1] for call in calls[:-1]])
+        for call in calls[:-1]:
+            self.assertEqual("%{http_code}", call[call.index("--write-out") + 1])
+        self.assertEqual(["bearer", "bearer", "none"], (self.log / "auth").read_text().splitlines())
+        self.assertEqual("1", (self.log / "sleep").read_text().strip())
+        self.assertNotIn(publish_fakes.TEST_BEARER, done.stdout + done.stderr)
+        self.assertNotIn(publish_fakes.TEST_DEPLOY_KEY, done.stdout + done.stderr)
+        self.assertNotIn(publish_fakes.TEST_BEARER, str(calls))
+        self.assertEqual(["compass 1.3.0", "seed"], self.commits())
+        self.assertEqual([], list(self.scratch.iterdir()))
+
+    def test_persistent_host_key_rate_limit_stops_before_clone(self) -> None:
+        done = self.ssh_publish("403")
+
+        self.assertEqual(1, done.returncode)
+        self.assertIn("no GitHub host keys fetched", done.stderr)
+        self.assertEqual(
+            [publish_fakes.META_URL] * 4, [c[-1] for c in publish_fakes.curl_calls(self.log)]
+        )
+        self.assertFalse((self.log / "git").exists())
+        self.assertNotIn(publish_fakes.TEST_BEARER, done.stdout + done.stderr)
+        self.assertEqual([], list(self.scratch.iterdir()))
+
+    def test_host_key_throttling_server_error_and_transport_timeout_retry(self) -> None:
+        done = self.ssh_publish("429 503 timeout 200")
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual(["bearer"] * 4 + ["none"], (self.log / "auth").read_text().splitlines())
+        self.assertEqual(["1", "2", "4"], (self.log / "sleep").read_text().splitlines())
+        self.assertEqual(["compass 1.3.0", "seed"], self.commits())
 
     def test_the_download_is_https_only_and_fails_on_an_http_error(self) -> None:
         self.assertEqual(0, self.publish("v1.3.0").returncode)

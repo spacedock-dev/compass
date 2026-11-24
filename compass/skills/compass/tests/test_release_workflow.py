@@ -19,10 +19,13 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 from unittest import mock
 
 import yaml
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from .test_workflow_caches import (
     BOOTSTRAP_RUN,
@@ -888,6 +891,11 @@ class CredentialBoundaryTest(unittest.TestCase):
                     self.assertEqual({"contents": "write"}, job["permissions"])
                 elif name == "resolve":
                     self.assertEqual({"contents": "read"}, job["permissions"])
+                elif name in {"marketplace", "homebrew"}:
+                    self.assertEqual({"contents": "read"}, job["permissions"])
+                    self.assertEqual(1, text.count("github.token"))
+                    self.assertEqual(1, text.count("GITHUB_TOKEN"))
+                    self.assertNotIn("GH_TOKEN", text)
                 else:
                     self.assertNotIn("github.token", text)
                     self.assertNotIn("GITHUB_TOKEN", text)
@@ -1464,6 +1472,21 @@ class BuildCliJobTest(unittest.TestCase):
         self.assertEqual("3.12", python["with"]["python-version"])
 
 
+def assert_host_key_lookup_boundary(test: unittest.TestCase, publisher: str) -> None:
+    token_lines = [line.strip() for line in code(publisher).splitlines() if "GITHUB_TOKEN" in line]
+    test.assertEqual(["unset GITHUB_TOKEN"], token_lines)
+    helper = (ROOT / "scripts/fetch-github-host-keys.sh").read_text(encoding="utf-8")
+    for hazard in (
+        "GH_TOKEN",
+        "RELEASE_DEPLOY_KEY",
+        "MARKETPLACE_DEPLOY_KEY",
+        "HOMEBREW_TAP_DEPLOY_KEY",
+        "--force",
+        "git tag",
+    ):
+        test.assertNotIn(hazard, helper)
+
+
 class MarketplaceJobTest(unittest.TestCase):
     """The listing is stamped by a job that holds a key to another repository."""
 
@@ -1473,11 +1496,15 @@ class MarketplaceJobTest(unittest.TestCase):
         self.assertEqual(checkout, steps("marketplace")[0], "nothing may run before the checkout")
         self.assertIn("assert-head", commands("marketplace")[0])
 
-    def test_the_key_is_bound_at_the_one_step_that_runs_the_script(self) -> None:
+    def test_credentials_are_bound_at_the_one_step_that_runs_the_script(self) -> None:
         holders = [s for s in steps("marketplace") if "env" in s]
         self.assertEqual(1, len(holders))
         self.assertEqual(
-            {"MARKETPLACE_DEPLOY_KEY": "${{ secrets.MARKETPLACE_DEPLOY_KEY }}"}, holders[0]["env"]
+            {
+                "MARKETPLACE_DEPLOY_KEY": "${{ secrets.MARKETPLACE_DEPLOY_KEY }}",
+                "GITHUB_TOKEN": "${{ github.token }}",
+            },
+            holders[0]["env"],
         )
         script = [line for line in code(holders[0]["run"]).splitlines() if "publish" in line]
         self.assertEqual(['scripts/publish-marketplace.sh "$VERSION"'], script)
@@ -1502,8 +1529,9 @@ class MarketplaceJobTest(unittest.TestCase):
     def test_the_script_it_runs_cannot_reach_this_repository_or_move_a_release(self) -> None:
         text = (ROOT / "scripts/publish-marketplace.sh").read_text(encoding="utf-8")
         self.assertIn("spacedock-dev/marketplace.git", text)
-        for hazard in ("GITHUB_TOKEN", "GH_TOKEN", "RELEASE_DEPLOY_KEY", "--force", "git tag"):
+        for hazard in ("GH_TOKEN", "RELEASE_DEPLOY_KEY", "--force", "git tag"):
             self.assertNotIn(hazard, text)
+        assert_host_key_lookup_boundary(self, text)
 
 
 class HomebrewJobTest(unittest.TestCase):
@@ -1515,11 +1543,14 @@ class HomebrewJobTest(unittest.TestCase):
         self.assertEqual(checkout, steps("homebrew")[0], "nothing may run before the checkout")
         self.assertIn("assert-head", commands("homebrew")[0])
 
-    def test_the_key_is_bound_at_the_one_step_that_runs_the_script(self) -> None:
+    def test_credentials_are_bound_at_the_one_step_that_runs_the_script(self) -> None:
         holders = [s for s in steps("homebrew") if "env" in s]
         self.assertEqual(1, len(holders))
         self.assertEqual(
-            {"HOMEBREW_TAP_DEPLOY_KEY": "${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}"},
+            {
+                "HOMEBREW_TAP_DEPLOY_KEY": "${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}",
+                "GITHUB_TOKEN": "${{ github.token }}",
+            },
             holders[0]["env"],
         )
         script = [line for line in code(holders[0]["run"]).splitlines() if "publish" in line]
@@ -1549,7 +1580,6 @@ class HomebrewJobTest(unittest.TestCase):
         text = (ROOT / "scripts/publish-homebrew.sh").read_text(encoding="utf-8")
         self.assertIn("spacedock-dev/homebrew-tap.git", text)
         for hazard in (
-            "GITHUB_TOKEN",
             "GH_TOKEN",
             "RELEASE_DEPLOY_KEY",
             "MARKETPLACE_DEPLOY_KEY",
@@ -1557,6 +1587,59 @@ class HomebrewJobTest(unittest.TestCase):
             "git tag",
         ):
             self.assertNotIn(hazard, text)
+        assert_host_key_lookup_boundary(self, text)
+
+
+class PublisherScriptBoundaryTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.checks = (
+            ("publish-marketplace.sh", MarketplaceJobTest()),
+            ("publish-homebrew.sh", HomebrewJobTest()),
+        )
+
+    def assert_marker_is_rejected(
+        self, script: str, marker: str, check: Callable[[], None], expected: str
+    ) -> None:
+        changed = ROOT / "scripts" / script
+        original_read = Path.read_text
+        mutated = changed.read_text(encoding="utf-8") + f"\n{marker}\n"
+
+        def read_with_marker(path: Path, *, encoding: str) -> str:
+            return mutated if path == changed else original_read(path, encoding=encoding)
+
+        with (
+            mock.patch.object(Path, "read_text", autospec=True, side_effect=read_with_marker),
+            self.assertRaisesRegex(AssertionError, re.escape(expected)),
+        ):
+            check()
+
+    def test_both_workflow_checks_reject_forbidden_markers_in_the_helper(self) -> None:
+        for publisher, case in self.checks:
+            for hazard in (
+                "--force",
+                "git tag",
+                "GH_TOKEN",
+                "RELEASE_DEPLOY_KEY",
+                "MARKETPLACE_DEPLOY_KEY",
+                "HOMEBREW_TAP_DEPLOY_KEY",
+            ):
+                with self.subTest(publisher=publisher, hazard=hazard):
+                    self.assert_marker_is_rejected(
+                        "fetch-github-host-keys.sh",
+                        f": '{hazard}'",
+                        case.test_the_script_it_runs_cannot_reach_this_repository_or_move_a_release,
+                        hazard,
+                    )
+
+    def test_each_workflow_check_rejects_an_extra_executable_token_reference(self) -> None:
+        for publisher, case in self.checks:
+            with self.subTest(publisher=publisher):
+                self.assert_marker_is_rejected(
+                    publisher,
+                    ': "${GITHUB_TOKEN:-}"',
+                    case.test_the_script_it_runs_cannot_reach_this_repository_or_move_a_release,
+                    "GITHUB_TOKEN",
+                )
 
 
 class GateParityTest(unittest.TestCase):

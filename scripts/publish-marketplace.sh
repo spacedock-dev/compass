@@ -14,9 +14,11 @@
 # Environment:
 #   MARKETPLACE_DEPLOY_KEY   private half of a write deploy key on the marketplace repository.
 #                            Required for an SSH remote and ignored for any other.
+#   GITHUB_TOKEN             optional read-only token for the GitHub SSH host-key lookup.
 #   MARKETPLACE_REMOTE       the repository to push to (default: the real marketplace over SSH).
 #                            The tests point it at a local bare repository.
 #   MARKETPLACE_RETRY_DELAY  seconds to wait before a retry (default 5)
+set +x # A caller using sh -x would expose the publishing credentials.
 set -eu
 version="${1:?usage: publish-marketplace.sh <X.Y.Z>}"
 remote="${MARKETPLACE_REMOTE:-git@github.com:spacedock-dev/marketplace.git}"
@@ -37,14 +39,13 @@ git@* | ssh://*)
 	COMPASS_SSH_KNOWN_HOSTS="$scratch/known_hosts"
 	export COMPASS_SSH_KEY_FILE COMPASS_SSH_KNOWN_HOSTS
 	printf '%s\n' "$MARKETPLACE_DEPLOY_KEY" >"$COMPASS_SSH_KEY_FILE"
-	# GitHub's host keys come from its API over TLS rather than from the first connection, so a
-	# strict check can still refuse an impostor.
-	curl --proto '=https' --tlsv1.2 --fail --silent --show-error https://api.github.com/meta |
-		jq -r '.ssh_keys[] | "github.com " + .' >"$COMPASS_SSH_KNOWN_HOSTS"
-	[ -s "$COMPASS_SSH_KNOWN_HOSTS" ] || {
+	# shellcheck source=scripts/fetch-github-host-keys.sh
+	. "$here/fetch-github-host-keys.sh"
+	if ! fetch_github_host_keys "$scratch" >"$COMPASS_SSH_KNOWN_HOSTS" ||
+		[ ! -s "$COMPASS_SSH_KNOWN_HOSTS" ]; then
 		echo "publish-marketplace.sh: no GitHub host keys fetched" >&2
 		exit 1
-	}
+	fi
 	# git runs this through the shell. The paths travel in the environment and are expanded by
 	# that shell inside double quotes, so no character in the scratch path can split an argument
 	# or end the command, as it could when the path was spliced into the string here.
@@ -54,6 +55,7 @@ git@* | ssh://*)
 	export GIT_SSH_COMMAND
 	;;
 esac
+unset GITHUB_TOKEN
 
 attempt=1
 while :; do
