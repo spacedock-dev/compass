@@ -530,9 +530,15 @@ def collect(
     window_hours: float,
     show_all: bool,
 ) -> list[Session]:
+    window_sec = window_hours * 3600
     tasks_by_session = load_tasks(config)
     team_members = load_team_members(config)
-    transcripts: dict[str, tuple[str, float]] = {}  # prefix -> (newest path, its mtime)
+    candidates: dict[str, list[tuple[str, float]]] = {}
+    reachable = {
+        prefix
+        for prefix, tasks in tasks_by_session.items()
+        if runtime_sessions.is_fresh(config, now, max(t["updated"] for t in tasks), window_sec)
+    }
     raw_children: list[dict[str, Any]] = []
     paths = runtime_io.glob_stores(config, "claude.projects", "*", "*.jsonl")
     # The resolver sees these stems before the collector discards archive and metadata rows.
@@ -548,18 +554,18 @@ def collect(
             mtime = os.path.getmtime(fp)
         except OSError:
             continue  # transcript rotated/deleted between glob and stat
-        if show_all or runtime_sessions.is_fresh(config, now, mtime, window_hours * 3600):
+        prefix = base[:8]
+        fresh = runtime_sessions.is_fresh(config, now, mtime, window_sec)
+        if show_all or fresh:
             is_agent, agent_name, parent_prefix = claude_data.agent_identity(config, state, fp)
             if is_agent:
                 # Fold into the parent, never a standalone session; without a
                 # parent prefix there is nothing to attach to.
-                if parent_prefix and runtime_sessions.is_fresh(
-                    config, now, mtime, window_hours * 3600
-                ):
+                if parent_prefix and fresh:
                     raw_children.append(
                         {
                             "path": fp,
-                            "prefix": base[:8],
+                            "prefix": prefix,
                             "mtime": mtime,
                             # Both unbounded: `published_agent` redacts and
                             # then bounds for display, and the roster join
@@ -570,15 +576,41 @@ def collect(
                         }
                     )
                 continue
-        if not claude_data.has_conversation(config, state, fp):
-            continue  # a harness metadata file, not a session (DRC-4645)
-        prefix = base[:8]
-        # `mtime` is this file's, measured a few lines up in this same pass. The
-        # newest-wins test used to re-stat the incumbent for a number the loop
-        # had already taken and dropped, and the per-prefix loop below stat'd the
-        # winner a third time. Carrying the pair costs nothing and removes both.
-        if prefix not in transcripts or mtime > transcripts[prefix][1]:
-            transcripts[prefix] = (fp, mtime)
+        candidates.setdefault(prefix, []).append((fp, mtime))
+        if fresh:
+            reachable.add(prefix)
+
+    # Every possible stop in the teammate walk below is named by an incoming
+    # link. A child can reach a parked parent, and its workers can extend that
+    # parent's activity once the child is attached.
+    reachable.update(c["parent_prefix"] for c in raw_children)
+    transcripts: dict[str, tuple[str, float]] = {}
+    probed_agent_files: dict[str, list[tuple[str, float]]] = {}
+    for prefix, copies in candidates.items():
+        probed: dict[str, list[tuple[str, float]]] = {}
+        if not show_all and prefix not in reachable:
+            for fp, _ in copies:
+                files = agent_transcripts(fp, config=config, state=state)
+                probed[fp] = files
+                if any(
+                    runtime_sessions.is_fresh(config, now, stamp, window_sec) for _, stamp in files
+                ):
+                    break
+            else:
+                continue
+
+        # Check reachability for the whole prefix. A recent copy can be a
+        # metadata-only file, in which case an older valid copy still wins.
+        for fp, mtime in copies:
+            if not claude_data.has_conversation(config, state, fp):
+                continue
+            if prefix not in transcripts or mtime > transcripts[prefix][1]:
+                transcripts[prefix] = (fp, mtime)
+        if (
+            prefix in transcripts
+            and (winner_files := probed.get(transcripts[prefix][0])) is not None
+        ):
+            probed_agent_files[prefix] = winner_files
 
     # DRC-4347. Resolve nested teammate parentage.
     # In Claude Code, the harness coordinates agent teams under the team
@@ -619,7 +651,9 @@ def collect(
             key=lambda t: int(t["id"]) if str(t["id"]).isdigit() else 0,
         )
         latest_task_mtime = max((t["updated"] for t in tasks), default=0)
-        agent_files = agent_transcripts(transcript, config=config, state=state)
+        agent_files = probed_agent_files.get(prefix)
+        if agent_files is None:
+            agent_files = agent_transcripts(transcript, config=config, state=state)
         children = agent_children.get(prefix, [])
         # One analysis per child transcript, read once and shared by everything
         # below that wants it: the session's output rate, and the model published

@@ -114,6 +114,89 @@ class ClaudeDataBoundTest(unittest.TestCase):
 
 
 class ClaudeCollectorTest(RuntimeTestCase):
+    def test_a_large_archive_does_not_evict_the_boards_transcript_prefixes(self) -> None:
+        now = time.time()
+        old = now - 30 * 3600
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "projects" / "sample"
+            project.mkdir(parents=True)
+            for index in range(12):
+                session_id = f"{index:08x}-0000-0000-0000-000000000000"
+                transcript = project / f"{session_id}.jsonl"
+                mtime = now if index == 11 else old
+                transcript.write_text(
+                    json.dumps(
+                        {
+                            "type": "user",
+                            "sessionId": session_id,
+                            "timestamp": datetime.fromtimestamp(mtime, UTC).isoformat(),
+                            "message": {
+                                "role": "user",
+                                "content": "Review this input. " + "x" * 16_384,
+                            },
+                        }
+                    )
+                    + "\n"
+                )
+                os.utime(transcript, (mtime, mtime))
+
+            with (
+                store_patch(PROJECTS_DIR=str(project.parent)),
+                config_patch(max_cache_entries=4),
+                mock.patch.object(
+                    runtime_io, "read_prefix_bytes", wraps=runtime_io.read_prefix_bytes
+                ) as read_prefix,
+            ):
+                cold = collect_claude(now, 24, False)
+                cold_reads = {Path(call.args[0]).stem[:8] for call in read_prefix.call_args_list}
+                read_prefix.reset_mock()
+                warm = collect_claude(now + 5, 24, False)
+                warm_reads = {Path(call.args[0]).stem[:8] for call in read_prefix.call_args_list}
+                historical = collect_claude(now + 5, 24, True)
+
+        self.assertEqual(["0000000b"], [row["sid"] for row in cold])
+        self.assertEqual(["0000000b"], [row["sid"] for row in warm])
+        self.assertEqual(set(), cold_reads & warm_reads)
+        self.assertEqual({"0000000b"}, cold_reads)
+        self.assertEqual(
+            {f"{index:08x}" for index in range(12)}, {row["sid"] for row in historical}
+        )
+
+    def test_a_fresh_task_keeps_the_older_conversation_behind_a_metadata_copy(self) -> None:
+        now = time.time()
+        old = now - 30 * 3600
+        metadata_id = "27d10654-1111-481e-8194-6ce868b91bb5"
+        session_id = "27d10654-2222-481e-8194-6ce868b91bb5"
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "projects" / "sample"
+            project.mkdir(parents=True)
+            metadata = project / f"{metadata_id}.jsonl"
+            metadata.write_text(json.dumps({"type": "ai-title", "aiTitle": "Elsewhere"}) + "\n")
+            transcript = project / f"{session_id}.jsonl"
+            transcript.write_text(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "sessionId": session_id,
+                        "timestamp": datetime.fromtimestamp(old, UTC).isoformat(),
+                        "message": {"role": "user", "content": "Review the changes"},
+                    }
+                )
+                + "\n"
+            )
+            os.utime(transcript, (old, old))
+            os.utime(metadata, (old + 5, old + 5))
+            tasks = Path(tmp) / "tasks" / f"session-{session_id[:8]}"
+            tasks.mkdir(parents=True)
+            task = tasks / "1.json"
+            task.write_text(json.dumps({"id": "1", "subject": "Review", "status": "pending"}))
+            os.utime(task, (now, now))
+            with store_patch(PROJECTS_DIR=str(project.parent), TASKS_DIR=str(tasks.parent)):
+                rows = collect_claude(now, 24, False)
+
+        self.assertEqual([session_id], [row["resume_id"] for row in rows])
+        self.assertAlmostEqual(now, rows[0]["last_activity"], delta=0.001)
+
     def test_the_parent_row_publishes_its_scanned_output_token_totals(self) -> None:
         now = time.time()
         session_id = "12345678-0000-0000-0000-000000000000"
@@ -3296,8 +3379,8 @@ class DispatchedTeammateTest(RuntimeTestCase):
         lens_stamp = datetime.fromtimestamp(now - 45, UTC).isoformat()
         child_sid = "bbbb2222-0000-0000-0000-000000000000"
         with tempfile.TemporaryDirectory() as tmp:
-            proj = self.project(tmp, now=now)
-            self.teammate(proj, sid=child_sid, name="ensign-review", stamp=stamp, age=5, now=now)
+            proj = self.project(tmp, now=now, parent_age=30 * 3600)
+            self.teammate(proj, sid=child_sid, name="ensign-review", stamp=stamp, age=120, now=now)
             lenses = proj / child_sid / "subagents"
             lenses.mkdir(parents=True)
             for label in ("evidence", "design"):
@@ -3312,6 +3395,8 @@ class DispatchedTeammateTest(RuntimeTestCase):
             session = self.collect_one(tmp, None, now)
 
         published = {a["name"]: a for a in session["subagents"]}
+        self.assertEqual(self.PARENT, session["resume_id"])
+        self.assertAlmostEqual(now - 10, session["last_activity"], delta=0.001)
         self.assertEqual({"ensign-review", "design-lens", "evidence-lens"}, set(published))
         self.assertIsNone(published["ensign-review"]["parent"])
         self.assertEqual("ensign-review", published["design-lens"]["parent"])
