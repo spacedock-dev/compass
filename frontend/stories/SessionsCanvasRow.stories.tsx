@@ -77,9 +77,11 @@ const CANVAS_SESSIONS: readonly Record<string, unknown>[] = [
 function Board({
   sessions = CANVAS_SESSIONS,
   annotate = true,
+  usage,
 }: {
   readonly sessions?: readonly Record<string, unknown>[];
   readonly annotate?: boolean;
+  readonly usage?: readonly Record<string, unknown>[];
 }) {
   const [shell] = useState(() => {
     const history = fakeRouterEnvironment('#n=sessions');
@@ -120,6 +122,7 @@ function Board({
                   },
                 ],
                 sessions,
+                ...(usage ? { usage } : {}),
               })
             : json({}),
         ),
@@ -249,6 +252,41 @@ export const DescriptorAndNow: Story = {
 const near = async (actual: number, expected: number, slack = 1) => {
   await expect(actual).toBeGreaterThanOrEqual(expected - slack);
   await expect(actual).toBeLessThanOrEqual(expected + slack);
+};
+
+/* The allowance leads the Sessions page, under the example invite and above the greeting (owner, 2026-11-24). */
+export const AllowanceLeadsThePage: Story = {
+  render: () => (
+    <Board
+      usage={[
+        {
+          harness: 'codex',
+          state: 'ok',
+          asOf: G,
+          week: { pct: 82, windowSec: 604800, resetAt: G + 400000 },
+        },
+      ]}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const allowance = (await canvas.findByRole('heading', { name: 'Your AI allowance' })).closest(
+      'section',
+    ) as HTMLElement;
+    const greeting = await canvas.findByRole('heading', { level: 1 });
+    const list = canvasElement.querySelector('[data-sessions-list-card]') as HTMLElement;
+    await expect(
+      allowance.compareDocumentPosition(greeting) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await expect(
+      allowance.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const invite = canvas.queryByText('New to Compass?');
+    if (invite)
+      await expect(
+        invite.compareDocumentPosition(allowance) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+  },
 };
 
 export const ListCard: Story = {

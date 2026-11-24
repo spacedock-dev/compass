@@ -329,7 +329,7 @@ sources cannot support.
 
 ## Usage and rate limits
 
-Your AI allowance sits below the session groups. It names the selected plan window and reset
+Your AI allowance sits at the top of Sessions, above the greeting. It names the selected plan window and reset
 beside the percentage used and a bar. The tick marks how much of the window has elapsed when
 the vendor published a clock. Choose another window when several are available. How the AI
 allowance works shows the pace, reset time, source, and the projected budget end. It also

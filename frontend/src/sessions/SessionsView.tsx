@@ -702,6 +702,9 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
   if (!screen || !board) return null;
   return (
     <section className="next-operations" data-next-view-body="sessions">
+      {/* The allowance leads the page, under the example invite and above the greeting (owner, 2026-11-24): a
+          reader deciding what to start next reads how much AI use is left before the sessions. */}
+      <CapacityStrip />
       {attention ? (
         <SessionsGlance
           selection={attention}
@@ -760,7 +763,6 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
       </section>
       <SessionsWindowLink board={board} />
       <StatusLegend />
-      <CapacityStrip />
     </section>
   );
 }

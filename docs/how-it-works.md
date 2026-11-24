@@ -222,7 +222,7 @@ history works explains what those rows can tell you. If every discovered source 
 results and session counts are unavailable.
 The [Find sessions design record](design-sessions-search.md) owns the counting rules.
 
-At the foot of Sessions, Your AI allowance shows the selected quota window, its published reset
+At the top of Sessions, Your AI allowance shows the selected quota window, its published reset
 and the amount used. The bar marks how far the window has elapsed when the clock is available.
 Open How the AI allowance works for the pace, local reset date and time, and source. Turning off
 quota reading stops credential-backed fetches in this browser. Fresh Codex disk readings and

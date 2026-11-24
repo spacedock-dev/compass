@@ -468,6 +468,9 @@ Five more changes came from the same comparison.
   (4.25 rem on a phone) that stays empty when the phase has no time, so every title starts at the
   same place, as the canvas draws the list. An automatic column had moved each title by its
   time's width and put an untimed title at the card's left edge (owner, 2026-11-24).
+- **Your AI allowance leads Sessions.** The card moved from the foot of the page to the top, under
+  the example invite and above the greeting, so a reader sees how much AI use is left before the
+  sessions (owner, 2026-11-24).
 - **Helpers in Right now have tiles.** Each helper has the 28 px tile from the canvas, the shared
   StatusTile at its small size, named for screen readers and not a tab stop. A helper publishes
   only whether it is running. Running gets Working. The canvas draws Ended for a finished

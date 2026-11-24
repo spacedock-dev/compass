@@ -356,7 +356,7 @@ being open, not about a raise reaching you.
 **We promise:** your quota in one place across vendors, with each window's budget shown against its
 own clock, so you can see whether there is room before you start rather than partway through.
 
-Your AI allowance at the foot of Sessions shows the selected plan window, its reset, and the
+Your AI allowance at the top of Sessions shows the selected plan window, its reset, and the
 measured percentage used. The bar marks elapsed time when the vendor publishes a clock.
 Choose another window when several are available. How the AI allowance works gives the source,
 window, pace, reset time, and projected budget end. It also shows what the remaining budget

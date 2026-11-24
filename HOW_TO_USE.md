@@ -931,7 +931,7 @@ Compass reads the credential that harness already stored and sends it to that ve
 numbers. The request carries the vendor's own token and nothing else, behind a five minute floor, and no
 session content is sent.
 
-Choose Turn off quota reading in Your AI allowance at the foot of Sessions to stop
+Choose Turn off quota reading in Your AI allowance at the top of Sessions to stop
 credential-backed fetches from this browser. You can also use **Turn off** under
 **Show my AI allowance** in Settings. Both controls save the same browser choice. Fresh Codex
 disk readings and Antigravity receipts can still appear. **Turn on quota reading** in Sessions
