@@ -238,6 +238,11 @@ search field to the Filters button packages the page at 2,479,987 bytes on Node 
 12.19.0, 2,596 bytes above the No goal yet page. The page bound follows that measurement. The fixture
 bound stays at 250,000 bytes.
 
+Later on 2026-11-24, the canvas buttons and their calm disabled look, the Session page's helper
+tiles, Project counts and in-card Check progress, and drawing every absence as plain quiet text
+package the page at 2,481,691 bytes on Node 26.12.1 and pnpm 12.19.0, 1,704 bytes above the tile
+column page. The page bound follows that measurement. The fixture bound stays at 250,000 bytes.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.
