@@ -614,7 +614,8 @@ def seed_stored_readings(config: Any, state: Any, count: int) -> None:
             config, state, "claude", sid, goal="Add retry with backoff", now=now - 600
         )
         read_at = now - 300.0
-        assessment: dict[str, Any] = {
+        # `Any`: an `Assessment` TypedDict to the runtime, built here as plain JSON.
+        assessment: Any = {
             "revision_read": 1,
             "stamp": "bench",
             "cutoff": "",
