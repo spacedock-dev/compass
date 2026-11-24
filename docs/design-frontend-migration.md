@@ -16,6 +16,18 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+Departure (2026-11-24): Sessions rows follow the redesign canvas. A row is its status tile,
+title, a descriptor line (harness, project, start, and end once there is one), the Now line, any
+held question or wait note, the outcome, the existing secondary lines, and then the goal. The
+Project, Next and Blocked columns and the column strip are gone; the Waiting on you tile carries a
+block. With nothing published about now, the current task stands in for the Now line. The
+Sessions differential applies `frontend/test/sessionCanvasRowDeviation.ts`, which rearranges the
+recorded row in that order and drops its Next value, Blocked label and block word. It still
+compares every title, harness, project, end age, Now value, held question, outcome, goal, group
+and link. The start age has no recorded answer, so the comparison sets the page's copy aside;
+the mounted Sessions tests and the Sessions canvas row story check it. The recorded answers stay
+fixed.
+
 Departure (2026-11-23): Goal history uses searchable On the board now and Older sessions
 groups. Rows show each published goal's source and time, and the binding and standing-quotation
 caveats stay next to the saved or discarded record. Older records can lack a title because the

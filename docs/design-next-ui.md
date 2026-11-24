@@ -1207,6 +1207,15 @@ without an observed end, or an exact request. A reported workflow gate now suppl
 Waiting on you state. The Working count uses its own population. A reading against the goal
 supplies no Needs you count.
 
+### Amended 2026-11-24 (owner): Sessions rows follow the canvas
+
+The WHERE, NEXT and BLOCKED columns and the column header strip above are retired. After testing
+main, the owner asked that each row match the redesign canvas: the status tile, the title, one
+descriptor line naming the harness, the project and when the session started, the Now line under
+it, and the goal to the right. Blocked is the Waiting on you tile, with any held question under
+the Now line. A pending step is read on the session page. The
+[Calm Compass record](design-calm-compass.md#status-language) keeps the ruling.
+
 ## NUI-17: the gate queue hands over a command, and only where one was measured
 
 A gate-queue row names a session that is waiting and then leaves the reader to find its terminal.

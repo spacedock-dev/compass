@@ -136,6 +136,15 @@ calls for it. The [dashboard reference](../compass/skills/compass/reference/dash
 explains the scanning limit. Helpers are subagents. Declared child sessions retain their own
 rows and relationships.
 
+The owner asked on 2026-11-24, after testing main, for Sessions rows to follow the canvas. Under
+the title, one quiet line names the harness, the project and how long ago the session started,
+as in "Claude · acme/dashboard · started 1 hour 30 minutes ago". An ended row adds "ended 25
+minutes ago", and a row with no published start says "start time not published". The Now line
+sits under that line and the goal to the right. The Project, Next and Blocked columns and their
+header strip are gone. Blocked was exactly a session waiting on you, so the Waiting on you tile
+carries it. The row keeps the question it holds, in three lines under the Now line. No state,
+icon or legend entry was added.
+
 | Progress word | Recorded level |
 |---|---|
 | On track | None or low. "No departure found in what Compass read". |

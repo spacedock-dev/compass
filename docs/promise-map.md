@@ -27,9 +27,9 @@ Four steps, and only the first two are required.
    goal. How goals work on the Goal card explains what the check reads and where it stops,
    including what it can read against when you haven't described what done looks like.
 
-   Sessions separates active work from recent history and gives each active
-   session its goal beside what it is doing now, plus where it is, what it does next, and whether
-   it is blocked. A recorded departure brings a session forward without counting it as active.
+   Sessions separates active work from recent history and gives each session its goal beside
+   what it is doing now, with its agent, project and start time. A session waiting on you is
+   marked as waiting and shows what it is waiting for. A recorded departure brings a session forward without counting it as active.
    The orientation and how-to stay visible after a session has been checked. Projects, one click
    away, groups the sessions by the label their harness publishes and lists the projects under
    Active today or No recent activity.

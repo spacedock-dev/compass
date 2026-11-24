@@ -37,8 +37,11 @@ Pi relocation: `PI_CODING_AGENT_SESSION_DIR` is an authoritative direct session-
 
 ## Session states
 
-Sessions rows show the observed state in a named icon tile beside the title. The progress
-slot is blank. Open the session page to see the progress reading and any live estimate
+Sessions rows show the observed state in a named icon tile beside the title. Under the title,
+one line names the agent, the project and how long ago the session started, and when it ended
+once it has. A session that published no start says so. The next line says what the session is
+doing now, and a session waiting on you shows what it is waiting for under it. The goal sits to
+the right. The progress slot is blank. Open the session page to see the progress reading and any live estimate
 the session supports.
 
 The Sessions legend pairs Working with a pulse, Waiting on you with a clock, Quiet with a moon
