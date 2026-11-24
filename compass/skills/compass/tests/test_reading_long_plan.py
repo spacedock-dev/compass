@@ -10,11 +10,12 @@ import io
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from unittest import mock
 
 from compass_runtime import (
@@ -32,6 +33,9 @@ from compass_runtime import reading_long_markers as markers
 from compass_runtime import reading_source_collect as source
 from compass_runtime import reading_source_inventory as inventory
 
+if TYPE_CHECKING:
+    from types import FrameType
+
 
 class LongPlanTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -39,12 +43,13 @@ class LongPlanTest(unittest.TestCase):
         self.module = importlib.import_module("compass_runtime.reading_long_plan")
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
         self.preferences = settings.DEFAULTS
         with mock.patch.object(reading_route, "_state", return_value="usable"):
             self.route = reading_route.resolve(
                 "claude",
                 environ={},
-                root=Path(temporary.name),
+                root=self.root,
                 binary_resolver=lambda _name: "/fixture/cli",
             )
         self.row = {"harness": "claude", "sid": "abc123ab", "activity": "working"}
@@ -114,10 +119,21 @@ class LongPlanTest(unittest.TestCase):
         )
 
     def test_preview_is_zero_io_zero_authority_and_discloses_distinct_measurements(self) -> None:
+        real_stat = os.stat
+
+        def guard_stat(*args: Any, **kwargs: Any) -> os.stat_result:
+            # Sysmon lazily loads source maps on the first branch in a file.
+            # Its source reader calls os.path.exists while this guard is active.
+            frame: FrameType | None = sys._getframe(1)
+            while frame is not None:
+                if frame.f_globals.get("__name__") == "coverage.python":
+                    return real_stat(*args, **kwargs)
+                frame = frame.f_back
+            raise AssertionError("metadata lookup")
+
         with (
             mock.patch.object(builtins, "open", side_effect=AssertionError("file IO")),
             mock.patch.object(io, "open", side_effect=AssertionError("path IO")),
-            mock.patch.object(os, "stat", side_effect=AssertionError("metadata lookup")),
             mock.patch.object(subprocess, "Popen", side_effect=AssertionError("process launch")),
             mock.patch.object(
                 reading_policy, "status", side_effect=AssertionError("permission transaction")
@@ -140,6 +156,7 @@ class LongPlanTest(unittest.TestCase):
             mock.patch.object(
                 analyze_capacity, "preview", side_effect=AssertionError("capacity lookup")
             ),
+            mock.patch.object(os, "stat", guard_stat),
         ):
             first, second = self.describe(), self.describe()
         self.assertEqual(first, second)
@@ -167,6 +184,28 @@ class LongPlanTest(unittest.TestCase):
         self.assertEqual("whole-job-elapsed", first["measurements"]["job_ms"])
         wire = json.dumps(first, allow_nan=False)
         self.assertNotIn("PRIVATE GOAL", wire)
+
+    @unittest.skipUnless(
+        sys.version_info >= (3, 14) and importlib.util.find_spec("coverage"),
+        "requires coverage.py with Python 3.14 or newer",
+    )
+    def test_the_zero_io_preview_allows_cold_coverage_source_loading(self) -> None:
+        # A fresh tracer has no source maps from earlier tests to hide its own stat calls.
+        test = f"{__name__}.LongPlanTest."
+        test += "test_preview_is_zero_io_zero_authority_and_discloses_distinct_measurements"
+        answer = subprocess.run(
+            [sys.executable, "-m", "coverage", "run", "-m", "unittest", test],
+            env={
+                **os.environ,
+                "COVERAGE_CORE": "sysmon",
+                "COVERAGE_FILE": str(self.root / "coverage"),
+            },
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(0, answer.returncode, answer.stderr)
 
     def test_binding_changes_for_route_plan_or_saved_intent_not_advisory_estimates(self) -> None:
         original = self.describe()

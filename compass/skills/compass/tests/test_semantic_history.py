@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -825,6 +826,7 @@ class HistoryLineageTest(unittest.TestCase):
         self.assertNotIn("mark", self.update("p", at=1, now=300))
         self.assertIsNone(semantic_history.mark_for(self.config, self.state, "p"))
 
+    @unittest.skipUnless(os.name == "posix", "requires stat change time")
     def test_the_mark_read_back_parses_the_file_only_after_it_changes(self) -> None:
         mark = self.update()["mark"]
         with patch.object(semantic_history, "_read", wraps=semantic_history._read) as read:
@@ -832,6 +834,20 @@ class HistoryLineageTest(unittest.TestCase):
             self.assertEqual(mark, semantic_history.mark_for(self.config, self.state, "p"))
             self.assertEqual(1, read.call_count)
         self.path.unlink()
+        self.assertIsNone(semantic_history.mark_for(self.config, self.state, "p"))
+
+    def test_a_same_size_history_rewrite_with_its_old_mtime_has_no_old_mark(self) -> None:
+        mark = self.update()["mark"]
+        original = self.path.stat()
+        self.assertEqual(mark, semantic_history.mark_for(self.config, self.state, "p"))
+
+        empty = b'{"v":1,"projects":{}}'
+        self.path.write_bytes(empty.ljust(original.st_size))
+        os.utime(self.path, ns=(original.st_atime_ns, original.st_mtime_ns))
+        rewritten = self.path.stat()
+        self.assertEqual(original.st_ino, rewritten.st_ino)
+        self.assertEqual(original.st_size, rewritten.st_size)
+        self.assertEqual(original.st_mtime_ns, rewritten.st_mtime_ns)
         self.assertIsNone(semantic_history.mark_for(self.config, self.state, "p"))
 
     def test_a_bucket_over_the_old_cap_keeps_its_lineage_and_fits_the_cap(self) -> None:

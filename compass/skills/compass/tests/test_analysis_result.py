@@ -21,6 +21,7 @@ import json
 import os
 import threading
 import types
+from functools import partial
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
@@ -33,6 +34,7 @@ from compass_runtime import (
     project_context,
     reading_evidence,
     reading_jobs,
+    reading_route,
     semantic_history,
     terminal_drift,
 )
@@ -986,12 +988,27 @@ class StoredLevelNeedsCurrentEvidenceTest(_Result):
         return _reading({"goal": dict(consistent), "line_1": dict(consistent)}, window_start=None)
 
     def test_a_transcript_cut_below_what_the_check_read_never_reads_on_track(self) -> None:
+        # The saved check answered an outcome line, which the card can show with a
+        # usable route. Supply its CLI lookup without depending on the test machine.
+        self.enterContext(
+            patch.object(
+                reading_route,
+                "resolve_all",
+                side_effect=partial(
+                    reading_route.resolve_all,
+                    binary_resolver=lambda name: str(self.root / name),
+                    environ={},
+                    root=self.root,
+                ),
+            )
+        )
         self.save_goal()
         self.session._entry("assistant", [{"type": "text", "text": "All done."}])
         self.session.save(self.path)
         self.record(self.consistent_reading())
         with self.serving(self.cold()) as port:
-            self.assertEqual(levels.NONE_OR_LOW, self.seen(port)["shown"])
+            before = self.seen(port)
+            self.assertEqual(levels.NONE_OR_LOW, before["shown"], before)
         self.session.rows = self.session.rows[:-1]
         self.session.save(self.path)
         for poll, seen in self.each_poll():

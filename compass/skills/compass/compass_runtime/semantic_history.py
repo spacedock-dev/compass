@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import secrets
+import stat
 from typing import TYPE_CHECKING, Any
 
 from . import io as runtime_io
@@ -98,24 +99,37 @@ def mark_of(payload: Mapping[str, Any], project: str) -> dict[str, Any] | None:
     return {"key": project, "lineage": held[0], "generation": held[1]} if held else None
 
 
+def _mark_stamp(path: str) -> tuple[int, int, int, int, int] | None:
+    try:
+        info = os.stat(path, follow_symlinks=False)
+    except OSError:
+        return None
+    if not stat.S_ISREG(info.st_mode):
+        return None
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
 def mark_for(config: RuntimeConfig, state: RuntimeState, project: str) -> dict[str, Any] | None:
     """One project's bucket mark as the file holds it now, or None when it holds none.
 
-    Memoised on the file's identity, size and modification time, so a caller that asks per request
-    parses the file only after a write. A file that cannot be stated has no mark.
+    On POSIX the change time also covers in-place rewrites that restore the modification time.
     """
     path = store_path(config)
     with state.semantic_history_lock:
-        try:
-            info = os.stat(path)
-        except OSError:
-            return None
-        stamp = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+        if os.name != "posix":
+            # Windows stat's ctime is creation time.
+            return mark_of(_read(config), project)
+        stamp = _mark_stamp(path)
         memo = state.semantic_history_marks
+        if stamp is None:
+            memo.clear()
+            return None
         if memo.get("stamp") != stamp:
             memo.clear()
-            memo["stamp"] = stamp
-            memo["payload"] = _read(config)
+            payload = _read(config)
+            if _mark_stamp(path) != stamp:
+                return None
+            memo.update(stamp=stamp, payload=payload)
         payload = memo["payload"]
     return mark_of(payload, project)
 
