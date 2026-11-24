@@ -210,9 +210,10 @@ and At a glance count the whole loaded board while you filter it.
 Search reads titles, goals, prompts and project names. Press `/` to jump to the field.
 Open Filters for Project, Agent, Started and Progress check. The Progress check choices are
 Slightly off course, Off course, Way off course and No goal yet. Choose a level to see rows carrying
-that saved progress pill. No goal yet finds the rows whose Goal cell says No goal yet. All four
-chips are enabled when annotations are available. The Progress check chips carry no counts.
-Filters explains when some sessions have unpublished goal data.
+that saved progress pill. No goal yet finds rows where the Goal cell says No goal yet and Compass
+can confirm there is no saved goal, expected outcome or prompt to show. All four chips are enabled
+when annotations are available. The Progress check chips carry no counts. Filters explains when
+some sessions have unpublished goal data.
 More filters for power users holds the complete list of choices, including
 Last active, Group, Headless and Goal source.
 Headless offers Headless and Interactive or unknown. Claude Code and Codex publish headless status;
@@ -246,10 +247,13 @@ status tile beside the title, and the tiles line up in one column. The legend na
 including Quiet for an observed turn stop, Ended for a reported session end, and State not known
 when the agent reports it is idle but Compass saw no finished turn. A row waiting on a child
 shows the tile of its own state when Compass knows it. If scanning cannot see a turn end, the
-row also explains that in words. A session with no goal says No goal yet in its goal. At the far right a row may carry one plain grey
-word, Not checked yet, for a saved or draft goal that no check has read. It says nothing there where
-Compass cannot prove it, and a goal it cannot read says Saved goal unavailable. Open the session page to see the progress reading and any live estimate the session
-supports.
+row also explains that in words. The Goal cell can show a goal, a prompt or an expected outcome
+you saved. An empty cell says No goal yet when annotations are available. An unreadable goal says
+Saved goal unavailable. At the far right, a saved check can show a Slightly off course or
+Off course pill while its evidence still matches. Out of date and Goal too vague to check appear
+as plain text. Not checked yet appears when the session has a reading route, has words it can
+check and has no recorded check or attempt. Codex rows leave that space blank. Open the session
+page to see the reading and any live estimate it supports.
 
 A Worth a look flag explains a reported risk or an end with uncommitted work. Use the Worth
 a look tab to find those rows. Its count includes only sessions with the flag.

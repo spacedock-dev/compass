@@ -111,17 +111,16 @@ Quiet  Claude Code  beta-api
   lacks evidence for a state.
 - A `Goal ·` label that starts with `from` or reads `your words` is a saved goal. Other labels
   can identify a draft, which the first check saves.
-- `Not checked yet` under a goal is the word the board draws at the right of the row: a saved goal,
-  or a draft the first check would save, that no check has read. No line means Compass cannot show
-  one for that session, which includes every Codex session. A session with no goal and no draft has
-  no goal line at all. A prompt you picked as the goal in the dashboard is held only in that browser,
-  so a session whose only draft is that choice shows no `Not checked yet` line here, though the
-  board shows one. `Goal: Saved goal unavailable` means the saved goals could not be read, so
-  Compass shows no goal and no prompt.
-- `Slightly off course` or `Off course` comes from the same saved check as the Sessions row.
-  `Out of date` and `Goal too vague to check` also follow the board. An empty progress line
-  means Compass has no answer it can show. Run [`--drift`](#check-a-session-for-drift) to see the
-  stored reading in detail.
+- `Not checked yet` matches the label at the right of a board row. Compass needs a reading route,
+  a saved goal, expected outcome or draft it can check, and no recorded check or attempt. Codex
+  rows omit the label. An unsaved prompt you chose in the dashboard stays in that browser, so
+  the terminal cannot use it as a draft. If the saved goal is unreadable, the terminal prints
+  `Goal: Saved goal unavailable` and offers no prompt. If there are no words to show, it omits
+  the goal line.
+- `Slightly off course` or `Off course` comes from the same saved check as the Sessions row
+  while its evidence still matches. `Out of date` and `Goal too vague to check` also follow
+  the row. When Compass has no answer it can show, it leaves out the progress line. Run
+  [`--drift`](#check-a-session-for-drift) to see the stored reading in detail.
 - `Resume:` is the command to reopen a stopped session, and it holds the session's id. For a session
   that is still running, go to the terminal it runs in.
 - The earlier group names the dashboard's published window. A session you marked handled on the
@@ -321,14 +320,14 @@ reply leaves the helper running. A helper that cannot finish stopping is never r
 `Live monitor on · 2 waiting · waits not reported for Droid · 5h 82% resets in 2h 9m`.
 It can show:
 
-- a level from a stored check that found a departure, when the dashboard publishes that result
 - whether the Live monitor is on or AI use is paused
+- the departure level shown on this session's Sessions row while the saved evidence still matches
 - how many other sessions are waiting on you
 - which harnesses have an active session but cannot report a wait
 - your tightest quota window
 
 It gets its session from the status line, from Claude Code, or from `--session`. A steady board
-can leave the line empty.
+can leave the line empty. Open the session page or use `--drift` for a stored progress check.
 
 [Set it up](HOW_TO_USE.md#show-waiting-sessions-and-quota-in-the-claude-code-status-line).
 

@@ -33,10 +33,9 @@ Four steps, and only the first two are required.
    The orientation and how-to stay visible after a session has been checked. Projects, one click
    away, groups the sessions by the label their harness publishes and lists the projects under
    Active today or No recent activity.
-4. Optionally connect two things, both one-time and both documented in
-   [HOW_TO_USE.md](../HOW_TO_USE.md): the lifecycle hooks that let a blocked session raise a
-   desktop notification, and the status-line hook that gives Antigravity its working state and
-   forwards its quota.
+4. For optional setup, see the lifecycle hooks for desktop notifications, Antigravity's status
+   line for working state and quota, and Claude Code's status line for quota.
+   [Setup guide](../HOW_TO_USE.md)
 
 The moment worth waiting for is step 3, and it is not the layout. It is the first time the board
 shows you a second agent that has been blocked on you for eleven minutes while you were watching
@@ -60,12 +59,12 @@ the active-versus-recent split that shipped with the session operations board in
 
 From any shell, `spacedock-compass --sessions` lists the running sessions, with recent ones under
 their own heading, and `--sessions waiting` lists only what waits on you. It reads the board's own
-snapshot and uses the board's own groups and words. A row shows a progress level only for a
-validated stored departure. It shows a duration only where the board states one, "Stop observed"
-and never "unread", and a re-entry command only for Claude Code and Codex sessions that publish
-an id. It needs the dashboard running, and says so and exits non-zero when it is not. It prints
-nothing the board would not. The [manual](../MANUAL.md#starting-and-inspecting-an-instance) has
-the options.
+snapshot and uses the board's groups and words. A row can say `Not checked yet` when it has
+words Compass can check and no record of a check or attempt. Progress levels belong on the
+session page. The list shows a duration only where the board states one, uses "Stop observed"
+for an observed stop, and offers a re-entry command only for Claude Code and Codex sessions
+that publish an id. If the dashboard is down, the command says so and exits non-zero.
+[Manual](../MANUAL.md#starting-and-inspecting-an-instance)
 
 Inside a Claude Code session, `/compass:compass sessions` and `/compass:compass sessions waiting`
 print the same list into that session, where the agent can read it too. The skill pre-approves
@@ -143,7 +142,9 @@ prove a banner appeared. See [workflow stage conditions](design-tripwires.md).
 The Claude Code Live monitor is off by default. A browser reload leaves its switch off; a terminal holder runs until stopped or its session or connection ends, without a browser question. `--monitor --off` stops that terminal holder; Pause all AI use stops all holders. You can pause from any shell with `--pause-model-calls` or the skill's `pause` action; Resume AI use stays on the board. A browser calls Haiku while you view the session with its tab visible and asks whether you still want it after 20 minutes. Neither raises a notification. A terminal start saves no goal over existing intent or a discard, and makes no check with neither saved intent nor a draft. Saved outcome lines still allow checks. Its checks have limits of their own, 30 per session in a window
 and a rolling 24-hour limit across the board, apart from the 100 attempts for Check progress. An analysis result
 keeps the source beside each outcome line, groups written paths by folder, and states whether your words changed or new work
-arrived after it. Both levels are recomputed from the evidence and are never stored.
+arrived after it. Compass computes levels from evidence. A stored check's level appears only
+while Compass can verify that the record of what it read still holds. The reading can still
+be available without a level.
 Once a reading exists, the session header offers Check progress again for current and stale
 readings. The control stays visible where a press is temporarily unavailable. Is it on track?
 gives the answer and links to the quotes behind it. Evidence under Show technical details
@@ -151,10 +152,10 @@ names each goal or outcome line, gives the reason and lists the numbered sources
 number opens Activity log at the entry, loading older pages when needed. Departure citations
 keep the neutral `Cited` tag.
 From any shell, `spacedock-compass --drift --session claude:SESSION_ID` prints a Claude Code
-session's stored reading as the session page derives it: the goal and where it came from, the
-level, each outcome line's state and source, each departure with your words, its entry numbers and
-the reason, earlier departures, why it is stale, and, run in your own terminal, the correction to
-copy. Under the [spend rule](../SECURITY.md#drift-commands-and-typed-consent), a stored reading costs
+session's stored reading as the session page derives it: the goal and where it came from, any
+level the page can show, each outcome line's state and source, each departure with your words,
+entry numbers and reason, and why the reading is stale. It includes earlier departures and, when
+run in your own terminal, the correction to copy. Under the [spend rule](../SECURITY.md#drift-commands-and-typed-consent), a stored reading costs
 nothing. With none, or with `--drift again`, it prints the route's allowance, asks for one reading
 as Check progress does and waits for it, and Ctrl+C cancels a reading it started. It settles no later message you sent; it
 says how many it left and that the session page can answer them. `--session codex:SESSION_ID`
@@ -287,9 +288,8 @@ sessions are waiting on you. It counts by the same rule as the board's Needs you
 the board draws as a risk row does not. The number is left out when nothing could be measured and is
 never shown as zero, and a harness that cannot report a wait is named on the line instead of being
 counted as quiet. It needs the dashboard running and reads a small file the dashboard writes, so it
-can be about a minute behind. It shows a progress level only for a validated stored departure.
-Otherwise it may show why a level is unavailable or leave the level out. The footer can separately
-say the Live monitor is on. `spacedock-compass --monitor` turns the monitor on
+can be about a minute behind. The footer can also say the Live monitor is on. Open the
+session page or use `--drift` to read a stored check. `spacedock-compass --monitor` turns the monitor on
 for the session you run it in, or the session page does. [How to add it](../HOW_TO_USE.md#show-waiting-sessions-and-quota-in-the-claude-code-status-line)
 to a status line you already have.
 
@@ -369,9 +369,10 @@ per-session AI Units with no percentage because its entitlement is not stored lo
 fetching is macOS only, and Cursor's cycle has no published start, so its allowance shows a percentage without an elapsed-time tick. There is no per-session cost figure anywhere on the board, and no ranking of which session is
 burning fastest right now: every rate the board publishes is a mean over one ten-minute window, and
 it names that window rather than claiming an immediacy the arithmetic does not have.
-Credential-backed fetching is on until you turn it off in the page, `--no-usage` refuses it for
-a run, and the token is never written, logged, or served. Quota that is expired, rejected, missing,
-or stale is withheld rather than rendered as zero.
+Credential-backed fetching is on until you turn it off in the page. Compass never writes, logs
+or serves the token. The switch also hides Claude's forwarded figures. Start with `--no-usage`
+to stop vendor fetching and discard forwarded quota for the run. Compass withholds expired,
+rejected, missing or stale quota.
 
 **Compass never tells you that you are going to overrun.** It puts the budget's end time beside
 the window's reset time and leaves the comparison to you, including on the day they are ninety
@@ -383,7 +384,8 @@ The same status line shows your tightest Claude quota window and when it resets.
 figures Claude Code hands to a status line, so Compass makes no vendor request for it and asks no
 disclosure. Claude Code supplies them to Pro and Max subscriptions after a session's first reply,
 so the segment is absent otherwise, and it shows no verdict: the window and its reset time, and the
-comparison stays yours.
+comparison stays yours. A status line wrapper can also forward those windows to the board
+without a login token. [How to set it up](../HOW_TO_USE.md#show-claudes-allowance-on-the-board-from-your-status-line)
 
 ### P5. Did anything die quietly?
 

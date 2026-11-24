@@ -84,12 +84,15 @@ filter choices. Search reports that the sources could not be read. A readable em
 measured zeros. On an empty board the tabs cannot start a new status filter.
 
 Progress check selects Slightly off course, Off course and Way off course from the levels on the
-rows. No goal yet uses the same published goal evidence as the Goal cell. All four Progress check
-chips stay enabled on a readable annotation board, including an empty board. The
-[owner's filter ruling](design-calm-compass.md#drc-5476-owner-follow-up-rulings-2026-11-22-fourth-round)
-keeps the chips free of counts. Goal source keeps drafted goals separate. On a mixed board the
-panel explains when rows have unpublished goal status. The advanced Progress records options
-also carry no counts.
+rows. All four Progress check chips stay enabled on a readable annotation board, including an
+empty board. The [owner's filter ruling](design-calm-compass.md#drc-5476-owner-follow-up-rulings-2026-11-22-fourth-round)
+keeps the chips free of counts. The advanced Progress records options also carry no counts.
+
+Both No goal yet options use `noGoalYet()`. The Goal cell must say No goal yet, and the annotation
+store must confirm that the goal was never typed or was discarded. The filter skips drafts,
+prompts shown in the cell, saved expected outcomes and unreadable goals. Goal source keeps drafted
+goals separate. On a mixed board the panel explains that goal filters skip rows with unpublished
+goal status.
 
 A choice whose clock or annotation data becomes unavailable stays visible and clearable.
 An explanation beside the choice says why it filters nothing.
@@ -104,7 +107,7 @@ Clearing a date range also clears its option to include sessions with no publish
 | Headless | Headless; Interactive or unknown | `headless === true` for Headless; every other value, including missing and null, for Interactive or unknown |
 | State | Waiting on you, Working, Quiet, Ended, Waiting on child, State not published | `rowState()` |
 | Progress records | Departure recorded; Checked against your current words, none recorded; Not checked against your current words | Recorded departures, `departure_checked`, and a stored reading whose `revision_read` equals `annotation_revision` |
-| Goal source | Goal saved; Drafted from a prompt, not saved; No goal yet | Published annotation evidence. A prompt offered by `goalCell()` on a row without a saved goal is drafted. |
+| Goal source | Goal saved; Drafted from a prompt, not saved; No goal yet | Published annotation evidence and the Goal cell. A prompt offered on a row without a saved goal is drafted. No goal yet uses the same predicate as Progress check. |
 
 Headless starts with neither value selected, so all sessions show. Interactive or unknown includes
 measured interactive runs and sessions whose entrypoint is unknown. The panel says
