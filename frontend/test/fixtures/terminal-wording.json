@@ -147,7 +147,9 @@
       "READINGS_OFF": "AI use is paused. Nothing is sent until you resume.",
       "STORE_BUSY": "Another tab or dashboard is saving to the store of what you typed, so nothing was started or spent. Try again in a moment.",
       "STORE_UNUSABLE": "Compass could not use the file that holds what you typed, so nothing was started or spent.",
-      "POLICY_UNREADABLE": "Reading permission or its daily budget could not be read or saved. Restore access to the Compass store before checking progress."
+      "POLICY_UNREADABLE": "Reading permission or its daily budget could not be read or saved. Restore access to the Compass store before checking progress.",
+      "RECORD_CHANGED": "What this check read has changed since, so it shows no level. Check progress again.",
+      "LATER_DIRECTION_HELD": "A later direction of yours is unsettled."
     }
   },
   "monitor": {

@@ -106,6 +106,12 @@ POLICY_UNREADABLE: Final = (
     "Compass store before checking progress."
 )
 READINGS_OFF: Final = "AI use is paused. Nothing is sent until you resume."
+# The page's own sentences for a stored level the server withheld (`reading_evidence`), held to
+# `BLOCKER_LINES` through `terminal-wording.json`.
+RECORD_CHANGED: Final = (
+    "What this check read has changed since, so it shows no level. Check progress again."
+)
+LATER_DIRECTION_HELD: Final = "A later direction of yours is unsettled."
 PROMPT_TIME_UNPUBLISHED: Final = (
     "The prompt time was not published, so it cannot be adopted. Type a goal to check progress."
 )
@@ -391,6 +397,8 @@ class View(NamedTuple):
     stale: StaleView | None
     unsettled: bool
     unsettled_count: int | None
+    # The page's sentence for a stored level the server withheld as a whole, or "".
+    withheld: str = ""
 
 
 # ---------------------------------------------------------------------------------------------
@@ -950,6 +958,17 @@ def adapt(view: Mapping[str, Any]) -> View:
         and ((_rec(pill) and pill.get("source") == "analysis") or too_early)
         and view.get("drafted") is not True
     )
+    reasons = analysis.get("reasons") if _rec(analysis) else None
+    said = reasons if isinstance(reasons, list) else []
+    withheld = (
+        ""
+        if drawn or stale is not None or level != "not_enough"
+        else RECORD_CHANGED
+        if "record-changed" in said
+        else LATER_DIRECTION_HELD
+        if "later-direction" in said and not unsettled
+        else ""
+    )
     return View(
         malformed=malformed or ("unknown" if unknown else ""),
         level=level if drawn else None,
@@ -961,6 +980,7 @@ def adapt(view: Mapping[str, Any]) -> View:
         stale=stale,
         unsettled=unsettled,
         unsettled_count=count if type(count) is int and count >= 0 else None,
+        withheld=withheld,
     )
 
 
@@ -1070,6 +1090,8 @@ def render(  # noqa: C901, PLR0912 - one optional block per field, in the order 
         lines.append(f"{stale_head(view.stale)} {again_hint}")
     elif view.so_far:
         lines.append(SO_FAR_LINE)
+    if view.withheld:
+        lines.append(f"{view.withheld} {again_hint}")
     if said := unsettled_line(view):
         lines.append(said)
     lines.append(PROVENANCE)

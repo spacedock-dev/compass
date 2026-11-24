@@ -71,6 +71,7 @@ export const RULES: readonly string[] = [
   'L10',
   'L11',
   'L12',
+  'L13',
 ];
 
 interface Spec {
@@ -987,6 +988,41 @@ function levelCases(): DriftCase[] {
 
     build('a-departure-reading-draws-the-level-the-server-computed', ['L5', 'L9'], {
       analysis: ANALYSIS(),
+    }),
+    /* The pill's own gates beyond staleness, with the Live monitor on so an estimate is there to stand in. */
+    build('a-newer-withheld-check-leaves-the-earlier-level-out', ['L13'], {
+      analysis: ANALYSIS(),
+      lease: LEASE(),
+      live: LIVE({ level: 'high' }),
+      session: {
+        annotation_reading_withheld: 'The check did not finish.',
+        annotation_reading_withheld_at: 300,
+      },
+    }),
+    build('an-older-withheld-check-leaves-the-newer-reading-its-level', ['L13'], {
+      analysis: ANALYSIS(),
+      lease: LEASE(),
+      live: LIVE({ level: 'high' }),
+      session: {
+        annotation_reading_withheld: 'The check did not finish.',
+        annotation_reading_withheld_at: 150,
+      },
+    }),
+    build('an-unreadable-store-draws-no-level', ['L13'], {
+      analysis: ANALYSIS(),
+      lease: LEASE(),
+      live: LIVE({ level: 'high' }),
+      payload: { annotate_unreadable: 'The annotation store could not be read.' },
+    }),
+    build('a-record-that-changed-draws-no-level-and-keeps-the-slot', ['L13'], {
+      analysis: ANALYSIS({
+        level: 'not_enough',
+        reasons: ['record-changed'],
+        cites: [],
+        evidence: 'history',
+      }),
+      lease: LEASE(),
+      live: LIVE({ level: 'high' }),
     }),
     build('a-level-above-low-needs-a-departure-the-page-kept', ['L9'], {
       analysis: ANALYSIS(),

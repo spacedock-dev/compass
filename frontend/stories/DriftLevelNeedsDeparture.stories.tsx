@@ -41,6 +41,8 @@ const AGENT = fact('m5', 650, {
   summary: 'Done: the billing rate is now 0.25 in src/billing/invoice.ts.',
 });
 
+const RECORD_CHANGED =
+  'What this check read has changed since, so it shows no level. Check progress again.';
 const READ = (criteria: Record<string, unknown>, scope = 'last-turn') => ({
   annotation_assessment: { ...DEPARTURE_READING, scope, criteria },
   annotation_reading_count: 1,
@@ -182,16 +184,67 @@ export const ARecordThatChangedDrawsNoLevelAndSaysWhy: Story = {
     const monitor = await privacy.findByRole('switch', { name: 'Live monitor' });
     await userEvent.click(monitor);
     await waitFor(() => expect(monitor).toHaveAttribute('aria-checked', 'true'));
+    // The card itself says why, first: not only the Evidence tab.
+    await expect(await within(progress).findByText(RECORD_CHANGED)).toBeVisible();
+    await expect(progress.textContent).not.toContain('did not give Compass enough evidence');
     const drift = await evidencePanel(canvasElement);
-    await expect(
-      await within(drift).findByText(
-        /What this check read has changed since, so it shows no level\. Check progress again\./,
-      ),
-    ).toBeVisible();
+    await expect(await within(drift).findByText(RECORD_CHANGED)).toBeVisible();
     await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
     await expect(progress.querySelector('.next-session-drift-meter')).toBeNull();
     await expect(canvasElement.querySelector('[data-next-drift-pill]')).toBeNull();
     await expect(progress.textContent).not.toMatch(/Slightly off course|Off course|On track/);
+  },
+};
+
+/* The same withheld level over a reading that found nothing: the card says why in place of "Can't tell" for
+   want of evidence, which would be the wrong reason. */
+export const ARecordThatChangedUnderANothingFoundReadingSaysWhy: Story = {
+  ...scenario({
+    session: READ({ goal: { ...CONSISTENT, clause: 'Ship the queue' }, line_1: CONSISTENT }),
+    facts: [PERSON, PASSED, AGENT],
+    work: {
+      analysis_levels: [
+        {
+          ...analysisRow('claude', 'not_enough'),
+          reasons: ['record-changed'],
+          cites: [],
+          evidence: 'transcript',
+        },
+      ],
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const progress = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
+    await waitFor(() => expect(progress.textContent).toContain(RECORD_CHANGED));
+    await expect(progress.textContent).not.toContain('did not give Compass enough evidence');
+    await expect(canvasElement.querySelector('[data-next-drift-pill]')).toBeNull();
+  },
+};
+
+/* A departure held back by a later direction of yours that Compass can no longer read in the record (it aged out
+   of history): the card names the direction as the reason, beside the finding. */
+export const ALaterDirectionOnADepartureSaysWhyThereIsNoLevel: Story = {
+  ...scenario({
+    session: READ({ goal: DEPARTS, line_1: CONSISTENT }),
+    facts: [PERSON, FAILED, PASSED, AGENT],
+    work: {
+      analysis_levels: [
+        {
+          ...analysisRow('claude', 'not_enough'),
+          reasons: ['later-direction'],
+          cites: [],
+          evidence: 'direction',
+        },
+      ],
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const progress = await within(canvasElement).findByRole('region', { name: 'Is it on track?' });
+    await expect(
+      await within(progress).findByText('A later direction of yours is unsettled.'),
+    ).toBeVisible();
+    await expect(progress.textContent).not.toContain('did not give Compass enough evidence');
+    await expect(canvasElement.querySelector('[data-next-drift-pill]')).toBeNull();
   },
 };
 

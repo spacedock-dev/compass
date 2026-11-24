@@ -773,6 +773,28 @@ class FreeReadTest(unittest.TestCase):
         )
         _code, out, _err = drift(board)
         self.assertNotIn("Level:", out)
+        (said,) = [line for line in out.splitlines() if "has changed since" in line]
+        self.assertTrue(said.startswith(terminal_drift.RECORD_CHANGED), said)
+        self.assertIn("--drift again", said)
+
+    def test_a_person_whose_aged_out_direction_holds_the_level_reads_why(self) -> None:
+        board = stored()
+        board.view = a_view(
+            pill=None,
+            analysis={"level": "not_enough", "reasons": ["later-direction"], "withheld": False},
+        )
+        _code, out, _err = drift(board)
+        self.assertNotIn("Level:", out)
+        self.assertIn(terminal_drift.LATER_DIRECTION_HELD, out)
+        # Over a direction the view can still list, the unsettled line says it instead.
+        board.view = a_view(
+            pill=None,
+            unsettled=True,
+            unsettled_count=1,
+            analysis={"level": "not_enough", "reasons": ["later-direction"], "withheld": False},
+        )
+        _code, out, _err = drift(board)
+        self.assertNotIn(terminal_drift.LATER_DIRECTION_HELD, out)
 
     def test_a_person_whose_words_changed_reads_that_their_intent_changed(self) -> None:
         board = stored()
