@@ -466,7 +466,7 @@ published data proves ship:
   session that opened with a harness control) counts as no goal here.
 - **No goal yet** is never drawn in that cell. It lives in the Goal cell, once, for a session with
   nothing saved and nothing to draft. A session with saved outcome lines and no goal is not that: its
-  Goal cell reads **Expected outcome** with the first saved line, and it reads Not checked yet at the
+  Goal cell reads **What "done" looks like** (the glossary's word for the expected outcome) with the first saved line, and it reads Not checked yet at the
   right, as its page does. A draft row shows its prompt in the Goal cell and reads Not
   checked yet at the right, because pressing Check progress saves the draft and then checks it. The
   session page's progress card now says the same for a draft, where it used to say No goal yet.

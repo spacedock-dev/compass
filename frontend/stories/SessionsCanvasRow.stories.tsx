@@ -556,7 +556,7 @@ export const AbsenceWord: Story = {
         // Saved outcome lines and no goal name the expected outcome, never No goal yet beside Not checked yet.
         await expect(
           part(rowOf(canvasElement, 'acme-lines'), '[data-next-operation-fact="goal"]').textContent,
-        ).toContain('Expected outcome');
+        ).toContain('What "done" looks like');
         // A goal that cannot be read says so, never No goal yet or its prompt.
         const held = rowOf(canvasElement, 'acme-held');
         await expect(part(held, '[data-next-operation-fact="goal"]').textContent).toContain(

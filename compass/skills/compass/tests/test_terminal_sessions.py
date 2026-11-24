@@ -32,7 +32,8 @@ GROUPS: dict[str, Any] = json.loads((FIXTURES / "session-groups.json").read_text
 EXPECTED: dict[str, Any] = GROUPS["board"]
 VOCABULARY: dict[str, Any] = json.loads((FIXTURES / "vocabulary.json").read_text(encoding="utf-8"))
 NOTHING = "Nothing is reported as waiting on you."
-PROGRESS = json.loads((FIXTURES / "terminal-wording.json").read_text(encoding="utf-8"))["drift"]
+WORDING = json.loads((FIXTURES / "terminal-wording.json").read_text(encoding="utf-8"))
+PROGRESS = WORDING["drift"]
 DEPARTURES = {token: PROGRESS["levels"][token] for token in ("medium", "high", "extreme")}
 ESC = "\x1b"
 NASTY = f"plain {ESC}]52;c;QUJD\x07{ESC}[31mred{ESC}[0m \u202eevil\u2066 tail\x00\x08\x9b\n\tsecond line"
@@ -383,7 +384,10 @@ class AbsenceWordTest(unittest.TestCase):
 
     def test_saved_lines_without_a_goal_name_the_expected_outcome_not_no_goal(self) -> None:
         one = self.entry({**self.ABSENT, "annotation_line_2": "Done when it ships"})
-        self.assertEqual(("Expected outcome", "Done when it ships"), (one.goal_label, one.goal))
+        self.assertEqual(
+            (WORDING["goalCell"]["doneLooksLike"], "Done when it ships"), (one.goal_label, one.goal)
+        )
+        self.assertEqual(WORDING["goalCell"]["doneLooksLike"], terminal_sessions.DONE_LOOKS_LIKE)
         self.assertEqual("Not checked yet", one.absence)
         drafted = self.entry({**self.ABSENT, **self.DRAFT, "annotation_line_2": "Done"})
         self.assertEqual("Goal · your first prompt", drafted.goal_label)

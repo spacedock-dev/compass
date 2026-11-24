@@ -27,7 +27,7 @@ import {
   type PromptCandidate,
 } from './intent';
 import { datedClock } from '../observed/values';
-import { SESSION_ROW_WORDS } from '../language/glossary';
+import { GLOSSARY, SESSION_ROW_WORDS } from '../language/glossary';
 
 /* What the Sessions screen draws, as data: a pure function of one payload and the model read from it, so
    every sentence is testable without a DOM and the screen cannot say something the rows do not. The
@@ -280,7 +280,7 @@ export function goalCell(
      would contradict words that exist. The session page reads such a row as having words to check. */
   const line = firstSavedLine(source);
   return line
-    ? { label: 'Expected outcome', kind: 'link', text: line, known: true }
+    ? { label: GLOSSARY.doneLooksLike.plain, kind: 'link', text: line, known: true }
     : { label, kind: 'none', text: SESSION_ROW_WORDS.noGoalYet, known: false };
 }
 

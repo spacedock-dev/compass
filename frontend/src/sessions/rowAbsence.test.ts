@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { GLOSSARY } from '../language/glossary';
 import { observe, type Row } from '../observed';
 import { buildSessionsScreen, noGoalYet, sessionsContext } from './rows';
 
@@ -114,7 +115,7 @@ describe('a row with saved outcome lines and no goal', () => {
   it('shows the expected outcome in the Goal cell and never No goal yet', () => {
     const { row } = rowFor({ ...absent, annotation_line_2: 'Done when it ships' });
     expect(row.goal).toMatchObject({
-      label: 'Expected outcome',
+      label: GLOSSARY.doneLooksLike.plain,
       kind: 'link',
       text: 'Done when it ships',
       known: true,

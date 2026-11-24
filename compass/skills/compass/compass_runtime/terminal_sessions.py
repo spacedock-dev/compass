@@ -161,6 +161,8 @@ def list_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
 GOAL_WIDTH: Final = 120
 NOT_CHECKED_YET: Final = "Not checked yet"
 UNAVAILABLE_GOAL: Final = "Saved goal unavailable"
+# The glossary's plain word for the expected-outcome lines, pinned by terminal-wording.json.
+DONE_LOOKS_LIKE: Final = 'What "done" looks like'
 
 # Ruled progress words from the board glossary, pinned by terminal-wording.json.
 STORED_DEPARTURE_LEVELS: Final = {
@@ -732,7 +734,7 @@ def _goal(source: Row, *, annotate: bool, unreadable: bool) -> tuple[str, str]:
         ),
         "",
     )
-    return ("Expected outcome", line) if line else ("Goal", "")
+    return (DONE_LOOKS_LIKE, line) if line else ("Goal", "")
 
 
 def _has_text(value: object) -> bool:
