@@ -666,7 +666,7 @@ it('a mixed-evidence board explains its goal coverage', async () => {
   await press(page, noGoal);
   const advanced = await openFilter(page, 'goal');
   expect(within(advanced).getByText(partial)).toBeVisible();
-  await pick(page, advanced, 'No goal and no prompt');
+  await pick(page, advanced, 'No goal yet');
   expect(rows()).toBe(1);
 
   await closeFilters(page);

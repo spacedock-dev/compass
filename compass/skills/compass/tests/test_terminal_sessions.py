@@ -318,11 +318,12 @@ class AbsenceWordTest(unittest.TestCase):
                 "Not checked yet",
             ),
             ("pi row", {"harness": "pi", **self.SAVED}, "Not checked yet"),
-            ("draft only", {**self.ABSENT, **self.DRAFT}, "No goal yet"),
+            # A check adopts the draft first, so a draft is a goal that has yet to be checked.
+            ("draft only", {**self.ABSENT, **self.DRAFT}, "Not checked yet"),
             (
                 "discarded draft",
                 {"annotation_goal": "", "annotation_discarded_at": 4_995, **self.DRAFT},
-                "No goal yet",
+                "Not checked yet",
             ),
         ):
             with self.subTest(name):
@@ -335,6 +336,8 @@ class AbsenceWordTest(unittest.TestCase):
         }
         for name, fields in (
             ("no goal, no draft", self.ABSENT),
+            ("a prompt with no time", {**self.ABSENT, "first_prompt": "Write the summary"}),
+            ("opened with a control", {**self.ABSENT, **self.DRAFT, "first_prompt_control": True}),
             ("codex with a goal", {"harness": "codex", **self.SAVED}),
             ("codex draft", {"harness": "codex", **self.ABSENT, **self.DRAFT}),
             (
@@ -368,6 +371,7 @@ class AbsenceWordTest(unittest.TestCase):
         self.assertIsNone(self.entry(self.SAVED, annotate=False).absence)
         for fields in (self.SAVED, {**self.ABSENT, **self.DRAFT}):
             self.assertIsNone(self.entry(fields, annotate_unreadable="cannot read").absence)
+            self.assertIsNone(self.entry(fields, reading_routes={"codex": {}}).absence)
 
     def test_an_unreadable_goal_is_unavailable_and_never_no_goal_or_a_prompt(self) -> None:
         for fields, top in (

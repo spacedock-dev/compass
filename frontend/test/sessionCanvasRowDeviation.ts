@@ -8,8 +8,8 @@
    is new, with no recorded answer, so the page's copy is set aside; the mounted tests and the Sessions
    canvas row story check it.
 
-   2026-11-24, absence words: a row may now draw one grey line at the foot of its goal (`data-next-row-absence`,
-   No goal yet or Not checked yet). The recorded rows never had it, so the page's copy is set aside, and the
+   2026-11-24, absence words: a row may now draw one grey word in a far-right cell (`data-next-row-absence`,
+   Not checked yet). The recorded rows never had it, so the page's copy is set aside, and the
    mounted tests, `rowAbsence.test.ts` and the canvas row story check it. Over a store that cannot be read the
    recorded row said No goal yet or offered a prompt as the goal; the page now says Saved goal unavailable
    there. Neither wording is held to the other, so the goal fact is set aside on both sides for that board. */

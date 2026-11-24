@@ -687,9 +687,9 @@ export const StatusTilesWithoutProgress: Story = {
       const active = rowOf(canvasElement, 'B');
       const history = canvasElement.querySelector('[data-next-operation-history]');
       if (!active || !history) throw new Error('Missing desktop session rows');
-      // The session beside its goal; the Project, Next and Blocked columns are gone.
-      await expect(getComputedStyle(active).gridTemplateColumns.split(' ')).toHaveLength(2);
-      await expect(getComputedStyle(history).gridTemplateColumns.split(' ')).toHaveLength(2);
+      // The session, its goal and the far-right progress cell; the Project, Next and Blocked columns are gone.
+      await expect(getComputedStyle(active).gridTemplateColumns.split(' ')).toHaveLength(3);
+      await expect(getComputedStyle(history).gridTemplateColumns.split(' ')).toHaveLength(3);
     });
   },
 };

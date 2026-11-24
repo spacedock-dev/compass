@@ -161,7 +161,6 @@ def list_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 GOAL_WIDTH: Final = 120
-NO_GOAL_YET: Final = "No goal yet"
 NOT_CHECKED_YET: Final = "Not checked yet"
 UNAVAILABLE_GOAL: Final = "Saved goal unavailable"
 
@@ -737,32 +736,21 @@ def _has_saved_words(source: Row) -> bool:
     )
 
 
-def _no_goal_yet(source: Row, *, annotate: bool, unreadable: bool) -> bool:
-    """The board's one predicate: nothing saved, and the store's own reason for the absence."""
-    if not annotate or unreadable or source.get("annotation_goal_unreadable") is True:
-        return False
-    if not isinstance(source.get("annotation_goal"), str) or _has_saved_words(source):
-        return False
-    discarded = _num(source.get("annotation_discarded_at"))
-    return _has_text(source.get("annotation_goal_why")) or (discarded is not None and discarded > 0)
-
-
 def _absence(
-    source: Row, goal: str, *, annotate: bool, unreadable: bool, routes: frozenset[str]
+    source: Row, *, annotate: bool, unreadable: bool, routes: frozenset[str]
 ) -> str | None:
-    """The grey line the board draws under a row's goal, or None: only a word its data proves.
+    """The grey word the board draws at the right of a row, or None: only one its data proves.
 
-    `sessions/rows.ts` `rowAbsence` is the oracle. No goal yet is not repeated where the goal cell
-    already says it (`goal` is empty then), nothing is said for Codex, a refused or withheld
-    reading, a harness with no reading route, or any recorded check.
+    `sessions/rows.ts` `rowAbsence` is the oracle. Only Not checked yet: a goal the reader can
+    check (saved words, or the draft a check would adopt) and nothing recording a check. No goal
+    yet is never said here, because the goal cell says it. Nothing for Codex, a refused or
+    withheld reading, a harness with no reading route, or any recorded check.
     """
     if not annotate or unreadable or source.get("annotation_goal_unreadable") is True:
         return None
     if source.get("harness") == "codex":
         return None
-    if _no_goal_yet(source, annotate=annotate, unreadable=unreadable):
-        return NO_GOAL_YET if goal else None
-    if not _has_saved_words(source):
+    if not _has_saved_words(source) and _draft(source) is None:
         return None
     count = _num(source.get("annotation_reading_count"))
     checked = (
@@ -921,7 +909,7 @@ def _observe(
         ),
         drift=STORED_DEPARTURE_LEVELS.get(progress or ""),
         source=source,
-        absence=_absence(source, goal, annotate=annotate, unreadable=unreadable, routes=routes),
+        absence=_absence(source, annotate=annotate, unreadable=unreadable, routes=routes),
     )
     return _Seen(
         source=source,

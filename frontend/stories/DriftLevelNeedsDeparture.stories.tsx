@@ -517,10 +517,28 @@ export const Progress05NoGoalYet = absenceStory(
   '05 · No goal yet',
   {
     unsaved: true,
-    session: { annotation_goal: '', annotation_goal_why: 'No goal typed for this session.' },
+    // No first prompt either, so there is no draft for a check to adopt.
+    session: {
+      annotation_goal: '',
+      annotation_goal_why: 'No goal typed for this session.',
+      first_prompt: '',
+      first_prompt_at: null,
+    },
   },
   'No goal yet',
   /Give Compass a goal/,
+  'Check progress',
+);
+
+// A draft is a goal Check progress adopts before it reads, so the page agrees with the Sessions row.
+export const Progress05DraftIsNotCheckedYet = absenceStory(
+  '05 · A draft goal is Not checked yet',
+  {
+    unsaved: true,
+    session: { annotation_goal: '', annotation_goal_why: 'No goal typed for this session.' },
+  },
+  'Not checked yet',
+  /no saved progress check/,
   'Check progress',
 );
 

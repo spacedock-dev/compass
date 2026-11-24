@@ -107,7 +107,6 @@ export const SESSION_LIST_WORDS = {
   filters: 'Filters',
   moreFilters: 'More filters for power users',
   progressCheck: 'Progress check',
-  noGoalNoPrompt: 'No goal and no prompt',
   progressRecords: 'Progress records',
   departureRecorded: 'Departure recorded',
   rightNow: 'Right now',
@@ -614,13 +613,6 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       ],
       /\bNot checked(?! yet\b)(?:\s*[·:.]|$)/i,
     ),
-    noGoalNoPrompt: kept([
-      SESSION_LIST_WORDS.noGoalNoPrompt,
-      'No goal yet (Goal source chip)',
-      'No saved goal and nothing to draft one from',
-      'No goal yet',
-      'Goal source filter chip only',
-    ]),
     savedGoalUnavailable: kept([
       SESSION_ROW_WORDS.savedGoalUnavailable,
       'No goal yet over an unreadable store',

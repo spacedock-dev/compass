@@ -12,7 +12,7 @@
         "command": "claude --resume c3d4e5f6-11111111-2222-4333-8444-555500000003",
         "ended": "",
         "drift": null,
-        "absence": "No goal yet"
+        "absence": "Not checked yet"
       },
       {
         "key": [
@@ -25,7 +25,7 @@
         "command": "claude --resume b2c3d4e5-11111111-2222-4333-8444-555500000002",
         "ended": "",
         "drift": null,
-        "absence": "No goal yet"
+        "absence": "Not checked yet"
       },
       {
         "key": [
@@ -51,7 +51,7 @@
         "command": "claude --resume f6a7b8c9-11111111-2222-4333-8444-555500000006",
         "ended": "",
         "drift": null,
-        "absence": "No goal yet"
+        "absence": null
       },
       {
         "key": [
@@ -64,7 +64,7 @@
         "command": "claude --resume a1b2c3d4-11111111-2222-4333-8444-555500000001",
         "ended": "",
         "drift": null,
-        "absence": "No goal yet"
+        "absence": "Not checked yet"
       }
     ],
     "history": [
@@ -79,7 +79,7 @@
         "command": "claude --resume b8c9d0e1-11111111-2222-4333-8444-555500000008",
         "ended": "ended 1 hour 8 minutes ago",
         "drift": null,
-        "absence": "No goal yet"
+        "absence": "Not checked yet"
       },
       {
         "key": [
@@ -92,7 +92,7 @@
         "command": "claude --resume a7b8c9d0-11111111-2222-4333-8444-555500000007",
         "ended": "ended 1 hour 6 minutes ago",
         "drift": null,
-        "absence": "No goal yet"
+        "absence": "Not checked yet"
       },
       {
         "key": [
@@ -105,7 +105,7 @@
         "command": "claude --resume e5f6a7b8-11111111-2222-4333-8444-555500000005",
         "ended": "ended 30 minutes ago",
         "drift": null,
-        "absence": "No goal yet"
+        "absence": "Not checked yet"
       },
       {
         "key": [
@@ -118,7 +118,7 @@
         "command": "",
         "ended": "",
         "drift": null,
-        "absence": "No goal yet"
+        "absence": "Not checked yet"
       },
       {
         "key": [
@@ -131,7 +131,7 @@
         "command": "claude --resume d4e5f6a7-11111111-2222-4333-8444-555500000004",
         "ended": "",
         "drift": null,
-        "absence": "No goal yet"
+        "absence": "Not checked yet"
       },
       {
         "key": [
@@ -170,7 +170,7 @@
         "command": "claude --resume c9d0e1f2-11111111-2222-4333-8444-555500000009",
         "ended": "",
         "drift": null,
-        "absence": "No goal yet"
+        "absence": "Not checked yet"
       }
     ],
     "waiting": [

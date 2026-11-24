@@ -43,11 +43,11 @@ one line names the agent, the project and how long ago the session started, and 
 once it has. A session that published no start says so. The next line says what the session is
 doing now, and a session waiting on you shows what it is waiting for under it. A stopped or
 ended session states how it ended and its git state once, leaving out a git state nobody
-measured. The goal sits to the right. Under the goal a row may carry one plain grey line, never a pill or an
-icon: No goal yet under a draft goal nobody has saved, or Not checked yet under saved words that no
-check has read. A row says nothing where Compass cannot prove either, which includes every Codex
-row, and a goal that cannot be read says Saved goal unavailable. Open the session page to see the
-progress reading and any live estimate the session supports.
+measured. The goal sits beside it, and a session with no goal says No goal yet there. At the far right a row
+may carry one plain grey word, never a pill or an icon: Not checked yet, for a saved goal or a draft
+goal that no check has read. A row says nothing there where Compass cannot prove it, which includes
+every Codex row, and a goal that cannot be read says Saved goal unavailable. Open the session page
+to see the progress reading and any live estimate the session supports.
 
 The Sessions legend pairs Working with a pulse, Waiting on you with a clock, Quiet with a moon,
 Ended with a checkmark and State not known with a dashed circle. The warning triangle means Worth a look. Open What the icons mean in Help for the full legend.

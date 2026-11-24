@@ -292,37 +292,45 @@ export function hasSavedWords(source: Row | undefined): boolean {
   );
 }
 
-/* Whether the board can say this session has no goal yet: annotations on and readable, nothing saved (no
-   goal and no lines), and the store's own reason for the absence (never typed, or discarded). It is the one
-   predicate the row's word and both "No goal yet" filter chips read, so they cannot keep different rows.
-   The store's reason is what separates an absence from the constructor's empty default, and a session
-   whose entry could not be read publishes none. */
-export function noGoalYet(source: Row | undefined, context: SessionsContext): boolean {
-  if (!context.annotate || context.unreadable || !source) return false;
+/* Whether the Goal cell's "No goal yet" is a statement the board can back: annotations on and readable, the
+   store's own reason for the absence (never typed, or discarded), and nothing for the cell to show, neither
+   saved words nor a draft. It is the one predicate both "No goal yet" filter chips read, so they keep the
+   same rows. The store's reason is what separates an absence from the constructor's empty default, and a
+   session whose entry could not be read publishes none and draws an unavailable goal instead. */
+export function noGoalYet(
+  source: Row | undefined,
+  context: SessionsContext,
+  goal: GoalCell,
+): boolean {
+  if (!context.annotate || context.unreadable || !source || goal.kind !== 'none') return false;
   if (source['annotation_goal_unreadable'] === true) return false;
-  if (typeof source['annotation_goal'] !== 'string' || hasSavedWords(source)) return false;
+  if (typeof source['annotation_goal'] !== 'string' || hasText(source['annotation_goal']))
+    return false;
   const discarded = nextNumber(source['annotation_discarded_at']);
   return hasText(source['annotation_goal_why']) || (discarded !== null && discarded > 0);
 }
 
-export type RowAbsence = 'noGoalYet' | 'notCheckedYet';
+export type RowAbsence = 'notCheckedYet';
 
-/* The one grey line at the foot of the Goal cell, or none. Only words the row's own data proves:
-   - No goal yet where nothing is saved and the Goal cell is not already saying it (a draft row, whose cell
-     shows an unsaved prompt). Never a repeat.
-   - Not checked yet where there are saved words and nothing in the published row records any check: no
-     stored reading, refusal, withheld reason, press, unasked check or raise.
+/* The one grey word at the right of the row, or none. Only Not checked yet: a goal the reader can check (saved
+   words, or the draft Check progress would adopt, by the session page's own rule) and nothing in the
+   published row recording any check: no stored reading, refusal, withheld reason, press, unasked check or
+   raise. "No goal yet" is never drawn here: it lives in the Goal cell, once.
    Nothing for Codex (it shows no level), for a refused or withheld reading (a failed check is not "nothing
    departs"), for a harness with no reading route, or for a live estimate, which the list cannot see. */
 export function rowAbsence(
   source: Row | undefined,
   context: SessionsContext,
-  goal: GoalCell,
+  chosen: PromptCandidate | null = null,
 ): RowAbsence | null {
   if (!source || !context.annotate || context.unreadable) return null;
   if (source['annotation_goal_unreadable'] === true || source['harness'] === 'codex') return null;
-  if (noGoalYet(source, context)) return goal.kind === 'none' ? null : 'noGoalYet';
-  if (!hasSavedWords(source)) return null;
+  const draft = intentDraft(
+    source,
+    { annotate: context.annotate, unreadable: context.unreadable },
+    chosen,
+  );
+  if (!hasSavedWords(source) && !draft) return null;
   const count = nextNumber(source['annotation_reading_count']);
   const checked =
     source['annotation_assessment'] != null ||
@@ -367,7 +375,7 @@ export interface SessionRow {
   /** The project's stable key, which the drift context rows are held under. */
   readonly projectKey: string;
   readonly goal: GoalCell;
-  /** The grey line under the goal, or none. */
+  /** The grey word at the right of the row, or none. */
   readonly absence: RowAbsence | null;
   readonly drift: DriftMark | null;
   /** "started <duration> ago"; empty when a published start has no usable age. */
@@ -487,7 +495,8 @@ export function buildSessionsScreen(
     const source = sources.get(sessionKey(session));
     const startedAt = nextNumber(source?.['started_at']);
     const started = formatDurationWords(observationAge(context.generated, startedAt));
-    const goal = goalCell(source, context, source && chosenFor ? chosenFor(source) : null);
+    const chosen = source && chosenFor ? chosenFor(source) : null;
+    const goal = goalCell(source, context, chosen);
     const since =
       session.isEnded && source
         ? formatDurationWords(observationAge(context.generated, endedAt(source)))
@@ -505,7 +514,7 @@ export function buildSessionsScreen(
       harnessLabel: labels.get(session.harness) || session.harness,
       projectKey: projectKey(String(source?.['project'] ?? '')),
       goal,
-      absence: rowAbsence(source, context, goal),
+      absence: rowAbsence(source, context, chosen),
       drift: driftMark(source, context),
       startedSince: started ? `started ${started} ago` : '',
       startPublished: startedAt !== null && startedAt > 0,

@@ -532,7 +532,7 @@ describe('the groups', () => {
     );
   });
 
-  it('says Not checked yet under a saved goal nothing has checked, in the goal cell', async () => {
+  it('says Not checked yet at the right of a row whose saved goal nothing has checked', async () => {
     await open(
       board([{ harness: 'claude', sid: 'read', state: 'working', annotation_goal: 'Ship it' }], {
         annotate: true,
@@ -540,11 +540,13 @@ describe('the groups', () => {
       }),
     );
     expect(absence()?.textContent).toBe('Not checked yet');
-    expect(absence()?.closest('[data-next-operation-fact="goal"]')).toBeInTheDocument();
+    // Outside the goal cell and outside the row link: it is the progress cell, not a part of the link name.
+    expect(absence()?.closest('[data-next-operation-fact="goal"]')).toBeNull();
+    expect(absence()?.closest('a')).toBeNull();
     expect(absence()?.querySelector('svg')).toBeNull();
   });
 
-  it('says No goal yet once under a draft row, and not at all under a goal cell that says it', async () => {
+  it('says Not checked yet for a draft a check would adopt, and No goal yet only in the Goal cell', async () => {
     await open(
       board(
         [
@@ -565,17 +567,15 @@ describe('the groups', () => {
             annotation_goal_why: 'No goal typed for this session.',
           },
         ],
-        { annotate: true, reading_routes: ROUTES },
+        { annotate: true, reading_routes: { ...ROUTES, gemini: {} } },
       ),
     );
-    expect(absence('draft')?.textContent).toBe('No goal yet');
+    expect(absence('draft')?.textContent).toBe('Not checked yet');
     expect(absence('never')).toBeNull();
-    for (const sid of ['draft', 'never'])
-      expect(
-        document
-          .querySelector(`article[data-next-session="${sid}"]`)
-          ?.textContent?.match(/No goal yet/g),
-      ).toHaveLength(1);
+    const text = (sid: string) =>
+      document.querySelector(`article[data-next-session="${sid}"]`)?.textContent ?? '';
+    expect(text('draft')).not.toMatch(/No goal yet/);
+    expect(text('never').match(/No goal yet/g)).toHaveLength(1);
   });
 
   it.each([

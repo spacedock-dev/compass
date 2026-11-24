@@ -440,25 +440,28 @@ describe('the facets', () => {
         .map(({ row }) => row.session.sid)
         .sort();
     };
-    expect(kept({ progress: ['no-goal'] })).toEqual(['discarded', 'draft', 'never']);
-    expect(kept({ goal: ['none'] })).toEqual(['discarded', 'lines', 'never']);
+    // The Goal cell's own word decides both chips, through one predicate, so a drafted row (a goal the
+    // reader can check) is in neither. This replaces the earlier chip, which kept the draft too.
+    const noGoal = kept({ progress: ['no-goal'] });
+    expect(noGoal).toEqual(['discarded', 'lines', 'never']);
+    expect(kept({ goal: ['none'] })).toEqual(noGoal);
     expect(kept({ goal: ['saved'] })).toEqual(['adopted', 'saved']);
     expect(kept({ goal: ['drafted'] })).toEqual(['draft']);
-    // The row's own word is the one both chips read: every kept row's Goal cell or progress line says it.
-    const says = (sid: string) => {
-      const one = indexed.find(({ row }) => row.session.sid === sid);
-      return one?.row.goal.text === 'No goal yet' || one?.row.absence === 'noGoalYet';
-    };
-    for (const sid of kept({ progress: ['no-goal'] })) expect(says(sid)).toBe(true);
-    // The Goal source chip is the narrower set and says so: never a drafted row, so a different name.
+    // Each kept row reads No goal yet in its Goal cell, and no other row does.
+    const reads = (sid: string) =>
+      indexed.find(({ row }) => row.session.sid === sid)?.row.goal.text === 'No goal yet';
+    expect(
+      indexed
+        .filter(({ row }) => reads(row.session.sid))
+        .map(({ row }) => row.session.sid)
+        .sort(),
+    ).toEqual([...noGoal, 'unpublished', 'default'].filter((sid) => reads(sid)).sort());
+    for (const sid of noGoal) expect(reads(sid)).toBe(true);
     expect(GOAL_OPTIONS.map((one) => one.label)).toEqual([
       'Goal saved',
       'Drafted from a prompt, not saved',
-      'No goal and no prompt',
+      'No goal yet',
     ]);
-    expect(
-      kept({ goal: ['none'] }).filter((sid) => kept({ progress: ['no-goal'] }).includes(sid)),
-    ).toEqual(['discarded', 'never']);
   });
 
   it('filter nothing on drift or goal while annotations are off', () => {

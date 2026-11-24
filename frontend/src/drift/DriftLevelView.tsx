@@ -290,7 +290,11 @@ function absence(model: ReturnType<typeof useDrift>['model']) {
     ];
   if (annotation['reading_refused'] === true)
     return [GLOSSARY.cantTell.plain, 'Compass could not read the saved check.'];
-  if (!String(annotation['goal'] ?? '').trim() && !annotationLines(annotation).length)
+  if (
+    !String(annotation['goal'] ?? '').trim() &&
+    !annotationLines(annotation).length &&
+    !model.drafted
+  )
     return [GLOSSARY.noGoalYet.plain, 'Give Compass a goal to check progress against.'];
   if (estimate && 'level' in estimate && estimate.level === 'not_enough')
     return [

@@ -40,18 +40,28 @@ describe('the row absence word', () => {
       'notCheckedYet',
     ],
     ['a Pi row with a saved goal', { harness: 'pi', ...saved }, 'notCheckedYet'],
-    ['a draft goal that was never saved', { ...absent, ...draft }, 'noGoalYet'],
+    // A check adopts the draft first, so a draft is a goal that has yet to be checked.
+    ['a draft goal that was never saved', { ...absent, ...draft }, 'notCheckedYet'],
     [
       'a discarded goal with a draft',
       { annotation_goal: '', annotation_discarded_at: NOW - 5, ...draft },
-      'noGoalYet',
+      'notCheckedYet',
     ],
   ])('names %s', (_name, fields, word) => {
     expect(rowFor(fields).row.absence).toBe(word);
   });
 
   it.each([
-    ['no goal and no draft (the Goal cell says it)', absent],
+    ['no goal and no draft (the Goal cell says it, once)', absent],
+    [
+      'a prompt with no time, which the page drafts nothing from',
+      { ...absent, first_prompt: 'Write the acme summary' },
+    ],
+    [
+      'a session that opened with a harness control',
+      { ...absent, ...draft, first_prompt_control: true },
+    ],
+    ['a draft whose harness has been checked', { ...absent, ...draft, departure_checked: true }],
     ['a Codex row with a goal', { harness: 'codex', ...saved }],
     [
       'a Codex row with a draft',
@@ -84,6 +94,9 @@ describe('the row absence word', () => {
 
   it('draws nothing where the harness has no reading route', () => {
     expect(rowFor(saved, { reading_routes: { codex: {} } }).row.absence).toBeNull();
+    expect(
+      rowFor({ ...absent, ...draft }, { reading_routes: { codex: {} } }).row.absence,
+    ).toBeNull();
     expect(rowFor(saved, { reading_routes: undefined }).row.absence).toBeNull();
   });
 
@@ -116,13 +129,17 @@ describe('the Goal cell when the saved goal cannot be read', () => {
   });
 });
 
-describe('noGoalYet, the one predicate the row and both filter chips share', () => {
+describe('noGoalYet, the one predicate the Goal cell word and both filter chips share', () => {
   it.each([
     ['never typed', absent, true],
     ['discarded', { annotation_goal: '', annotation_discarded_at: NOW - 5 }, true],
-    ['a draft only', { ...absent, ...draft }, true],
+    [
+      'lines only, with no prompt to show',
+      { ...absent, annotation_line_2: 'Done when it ships' },
+      true,
+    ],
+    ['a draft only (the cell shows the prompt)', { ...absent, ...draft }, false],
     ['saved', saved, false],
-    ['lines only', { ...absent, annotation_line_2: 'Done when it ships' }, false],
     ['unpublished', {}, false],
     [
       'unreadable entry',
@@ -130,14 +147,22 @@ describe('noGoalYet, the one predicate the row and both filter chips share', () 
       false,
     ],
   ])('%s', (_name, fields, expected) => {
-    const { context } = rowFor(fields);
+    const { row, context } = rowFor(fields);
     const source = { harness: 'claude', sid: 'acme', ...fields };
-    expect(noGoalYet(source, context)).toBe(expected);
+    expect(noGoalYet(source, context, row.goal)).toBe(expected);
   });
 
   it('is false for every row once the store cannot be read or annotations are off', () => {
     const base = sessionsContext({ annotate: true });
-    expect(noGoalYet(absent, { ...base, unreadable: 'The store cannot be read' })).toBe(false);
-    expect(noGoalYet(absent, { ...base, annotate: false })).toBe(false);
+    const none = { label: 'Goal', kind: 'none', text: 'No goal yet', known: false } as const;
+    expect(noGoalYet(absent, { ...base, unreadable: 'The store cannot be read' }, none)).toBe(
+      false,
+    );
+    expect(noGoalYet(absent, { ...base, annotate: false }, none)).toBe(false);
+  });
+
+  it('never draws No goal yet as a row absence, whatever the row', () => {
+    for (const fields of [absent, { ...absent, ...draft }, saved])
+      expect(rowFor(fields).row.absence).not.toBe('noGoalYet');
   });
 });

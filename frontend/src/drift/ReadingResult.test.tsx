@@ -85,12 +85,33 @@ describe('the progress answer without a level', () => {
     expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
   });
 
-  it('shows no goal yet when the first prompt is still a suggestion', async () => {
+  it('says not checked yet when the first prompt is a suggestion a check would save', async () => {
+    // Check progress adopts the draft first, so a draft is a goal the board has yet to check: the list row
+    // says Not checked yet for it, and this page agrees.
     const page = mountDrift({ store: { goal: '', lines: [], revision: 0 } });
     await page.settle();
     expect(screen.getByText(/Drafted from your first prompt · not saved/)).toBeVisible();
-    expect(textOf('[data-next-progress-absence]')).toMatch(/^No goal yet.*Give Compass a goal/);
+    expect(textOf('[data-next-progress-absence]')).toMatch(/^Not checked yet/);
+    expect(textOf('[data-next-progress-absence]')).not.toMatch(/No goal yet/);
     expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
+  });
+
+  it('still says no goal yet when there is no draft to check', async () => {
+    const board = driftBoard();
+    const row = Object.fromEntries(
+      Object.entries(board.sessions[0] ?? {}).filter(
+        ([key]) =>
+          !key.startsWith('first_prompt') &&
+          !key.startsWith('annotation_line') &&
+          key !== 'instruction',
+      ),
+    );
+    const page = mountDrift({
+      payload: { sessions: [{ ...row, annotation_goal: '', annotation_goal_why: 'None.' }] },
+      store: { goal: '', lines: [], revision: 0 },
+    });
+    await page.settle();
+    expect(textOf('[data-next-progress-absence]')).toMatch(/^No goal yet.*Give Compass a goal/);
   });
 
   it('explains a reading shape this version cannot interpret', async () => {
