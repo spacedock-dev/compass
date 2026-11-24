@@ -9,6 +9,7 @@
 # Usage: package-cli.sh <version> [out-dir] [source-root]
 #   PYTHON  the interpreter that carries PyInstaller (default python3); it is the one embedded
 set -eu
+unset CDPATH
 version="${1:?usage: package-cli.sh <version> [out-dir] [source-root]}"
 out="${2:-dist}"
 src="${3:-.}"

@@ -574,10 +574,29 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "Release $TAG already exists - nothing to publish."
-            exit 0
+          # REST lookup by tag misses drafts. Query the pending tag directly because
+          # gh release view can report absence when one of its two lookups fails.
+          # The dollar-prefixed GraphQL variables bind to the fields passed to gh.
+          # shellcheck disable=SC2016
+          if ! STATE=$(gh api graphql --include \
+            -f query='query($owner: String!, $repo: String!, $tag: String!) { repository(owner: $owner, name: $repo) { release(tagName: $tag) { isDraft } } }' \
+            -f owner="${GITHUB_REPOSITORY%%/*}" -f repo="${GITHUB_REPOSITORY#*/}" -f tag="$TAG" \
+            | python3 scripts/release_transition.py publish-state); then
+            echo "::error::Could not look up release $TAG. Re-run all jobs once GitHub is reachable." >&2
+            exit 1
           fi
+          case "$STATE" in
+            true)
+              echo "::error::Release $TAG exists as a draft. Review and publish or remove the draft, then re-run all jobs." >&2
+              exit 1 ;;
+            false)
+              echo "Release $TAG already exists - nothing to publish."
+              exit 0 ;;
+            missing) ;;
+            *)
+              echo "::error::Could not determine whether release $TAG is a draft. GitHub did not return a clean release lookup." >&2
+              exit 1 ;;
+          esac
           # Refresh here: a newer tag may have arrived since resolve or a failed attempt.
           git fetch --tags --force origin
           LATEST=$(python3 scripts/release_transition.py latest --tag "$TAG")

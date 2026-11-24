@@ -131,6 +131,23 @@ chmod +x "$dist/compass/compass"
 
         self.assertEqual(before, sorted(p.relative_to(self.src) for p in self.src.rglob("*")))
 
+    def test_it_resolves_relative_source_and_output_from_the_working_directory(self) -> None:
+        alternate = self.root / "alternate"
+        (alternate / "src").mkdir(parents=True)
+        (alternate / "out").mkdir()
+        for src, out in (("src", str(self.root / "out")), (str(self.src), "out")):
+            with self.subTest(src=src, out=out):
+                result = run(
+                    [str(PACKAGE), "1.2.3", out, src],
+                    env={"PYTHON": str(self.python), "CDPATH": str(alternate)},
+                    cwd=self.root,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                archive = self.root / "out" / f"compass_1.2.3_{host_target()}.tar.gz"
+                self.assertEqual(str(archive), result.stdout.strip())
+                self.assertTrue(archive.is_file())
+        self.assertEqual([], list((alternate / "out").iterdir()))
+
     def test_it_refuses_an_interpreter_below_the_floor_rather_than_embed_it(self) -> None:
         result = self.package(FAKE_PYTHON_REFUSES="1")
 
@@ -202,6 +219,23 @@ class PublishCliTest(unittest.TestCase):
         self.assertEqual(
             [str(start.resolve())], self.cwd.read_text(encoding="utf-8").strip().splitlines()
         )
+
+    def test_it_resolves_a_relative_archive_directory_from_the_working_directory(self) -> None:
+        self.fill()
+        alternate = self.root / "alternate"
+        (alternate / "archives").mkdir(parents=True)
+
+        result = run(
+            [str(PUBLISH), "v1.2.3", "archives"],
+            env={**self.env, "CDPATH": str(alternate)},
+            cwd=self.root,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn(
+            f"{self.archives.resolve()}/checksums.txt", self.calls.read_text(encoding="utf-8")
+        )
+        self.assertEqual([], list((alternate / "archives").iterdir()))
 
     def test_a_second_two_argument_upload_replaces_archives_and_checksums(self) -> None:
         self.fill()

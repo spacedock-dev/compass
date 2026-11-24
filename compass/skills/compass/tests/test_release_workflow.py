@@ -290,13 +290,17 @@ def step_commands(step: dict[str, Any], *, include_env: bool = True) -> set[str]
 
 def _pr_atom(atom: str) -> str:
     atom = atom.strip().lower()
-    negate = atom.startswith("!")
-    if negate:
+    negate = False
+    while atom.startswith("!"):
+        negate = not negate
         atom = atom[1:].strip()
-    event = re.fullmatch(r"""github\.event_name\s*(==|!=)\s*(['"])([\w-]+)\2""", atom)
-    if event:
-        is_pr = event[3] == "pull_request"
-        atom = "true" if is_pr == (event[1] == "==") else "false"
+    if comparison := re.fullmatch(r"(.*?)\s*(==|!=)\s*(.*?)", atom):
+        left, operator, right = comparison.groups()
+        if right == "github.event_name":
+            left, right = right, left
+        if left == "github.event_name" and (event := re.fullmatch(r"""(['"])([\w-]+)\1""", right)):
+            is_pr = event[2] == "pull_request"
+            atom = "true" if is_pr == (operator == "==") else "false"
     if atom not in {"true", "false"}:
         return "unknown"
     return "true" if (atom == "true") != negate else "false"
@@ -359,8 +363,9 @@ echo "sha=$SHA" >> "$GITHUB_OUTPUT"
     def run_lines(run: str) -> list[str]:
         return [line.strip() for line in code(run).replace("\\\n", "").splitlines() if line.strip()]
 
-    def missing_pr_commands(self, release_jobs: dict[str, Any]) -> set[str]:
-        ci = set()
+    @staticmethod
+    def covered_pr_commands() -> set[str]:
+        commands = set()
         for name in PR_WORKFLOWS:
             workflow = load(WORKFLOWS / name)
             triggers = cast("dict[Any, Any]", workflow).get(True, workflow.get("on", {}))
@@ -371,7 +376,11 @@ echo "sha=$SHA" >> "$GITHUB_OUTPUT"
                 if can_run_on_pull_request(job.get("if", True)):
                     for step in job.get("steps", []):
                         if can_run_on_pull_request(step.get("if", True)):
-                            ci.update(step_commands(step))
+                            commands.update(step_commands(step))
+        return commands
+
+    def missing_pr_commands(self, release_jobs: dict[str, Any]) -> set[str]:
+        ci = self.covered_pr_commands()
         missing = set()
         exceptions = {
             command
@@ -381,8 +390,14 @@ echo "sha=$SHA" >> "$GITHUB_OUTPUT"
         }
         for name in ("verify-frontend", "verify-tree"):
             for step in release_jobs[name]["steps"]:
-                lines = self.run_lines(step.get("run", ""))
-                if "\n".join(lines) not in self.RELEASE_ONLY:
+                run = "\n".join(self.run_lines(step.get("run", "")))
+                if run in self.RELEASE_ONLY:
+                    continue
+                # The simple reader cannot tell which substitutions execute or how their output
+                # is used. Keep reviewed steps exact so edits to them get another review.
+                if any(token in run for token in ("$(", "`", "<(", ">(")):
+                    missing.add(f"review command substitution in {name}:\n{run}")
+                else:
                     missing.update(step_commands(step) - ci - exceptions)
         return missing
 
@@ -399,6 +414,22 @@ echo "sha=$SHA" >> "$GITHUB_OUTPUT"
         command = "python3 scripts/release_only_check.py"
         verify["run"] += f"\n{command}\n"
         self.assertEqual({command}, self.missing_pr_commands(changed))
+
+    def test_a_release_command_substitution_requires_pr_coverage_or_explicit_review(self) -> None:
+        for run in (
+            'result="$(pnpm run test:release-example)"',
+            "result=$(pnpm run test:release-example)",
+            'result="`pnpm run test:release-example`"',
+            "echo <(pnpm run test:release-example)",
+            "printf '%s' >(pnpm run test:release-example)",
+        ):
+            with self.subTest(run=run):
+                changed = jobs()
+                changed["verify-tree"]["steps"].append({"run": run})
+                self.assertEqual(
+                    {f"review command substitution in verify-tree:\n{run}"},
+                    self.missing_pr_commands(changed),
+                )
 
     def missing_with_counterpart(
         self,
@@ -426,9 +457,13 @@ echo "sha=$SHA" >> "$GITHUB_OUTPUT"
         command = "python3 scripts/only_on_push.py"
         for condition in (
             "github.event_name == 'push'",
+            "'push' == github.event_name",
+            "'pull_request' != github.event_name",
             "${{ github.event_name != 'pull_request' }}",
             False,
             "${{ false }}",
+            "!!false",
+            "!!('push' == github.event_name)",
             "success() && (github.event_name == 'push' || false)",
         ):
             with self.subTest(condition=condition):

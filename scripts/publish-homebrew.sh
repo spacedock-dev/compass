@@ -40,7 +40,7 @@ version="${tag#v}"
 remote="${HOMEBREW_TAP_REMOTE:-git@github.com:spacedock-dev/homebrew-tap.git}"
 releases="${COMPASS_RELEASE_URL:-https://github.com/spacedock-dev/compass/releases/download}"
 delay="${HOMEBREW_RETRY_DELAY:-5}"
-here="$(cd "$(dirname "$0")" && pwd)"
+here="$(CDPATH='' cd "$(dirname "$0")" && pwd)"
 
 umask 077
 scratch="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/homebrew.XXXXXX")"

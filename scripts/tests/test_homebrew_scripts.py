@@ -352,6 +352,21 @@ class PublishHomebrewTest(unittest.TestCase):
             self.git(self.remote, "show", "main:Formula/subspace-beta.rb"),
         )
 
+    def test_a_relative_script_path_ignores_cdpath(self) -> None:
+        alternate = self.root / "alternate"
+        (alternate / "scripts").mkdir(parents=True)
+        done = subprocess.run(
+            [SH, "scripts/publish-homebrew.sh", "v1.3.0", self.digest("v1.3.0")],
+            cwd=SCRIPTS.parent,
+            env=self.env | {"CDPATH": str(alternate)},
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual(["compass 1.3.0", "seed"], self.commits())
+
     def test_a_second_run_for_the_same_version_pushes_nothing(self) -> None:
         self.assertEqual(0, self.publish("v1.3.0").returncode)
         head = self.head()
