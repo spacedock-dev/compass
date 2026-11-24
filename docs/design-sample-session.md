@@ -228,6 +228,10 @@ Later on 2026-11-24, putting the Sessions list in one card and saying a row's en
 packages the page at 2,477,135 bytes on Node 26.12.1 and pnpm 12.19.0, 1,520 bytes above the canvas
 row's page. The page bound follows that measurement. The fixture bound stays at 250,000 bytes.
 
+Later on 2026-11-24, saying "No goal yet" on a Sessions row with no goal, in place of its Add a goal
+link, packages the page at 2,477,391 bytes on Node 26.12.1 and pnpm 12.19.0, 256 bytes above the list
+card's page. The page bound follows that measurement. The fixture bound stays at 250,000 bytes.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.
