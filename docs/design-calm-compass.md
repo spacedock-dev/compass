@@ -191,6 +191,18 @@ line are plain quiet ink at the 15 px body size, padded as a row inside the list
 hatch, dashed border or tinted box, as the canvas style board draws absences. The global absence
 treatment is unchanged for the surfaces that still use it.
 
+Later that day the owner rejected the hatched box on Sessions a second time, so no absence inside a
+Sessions row or the list draws it. An unknown title, "Title not published", keeps the title's 18 px
+size at 600 weight in quiet ink `#52606D`, with no hatch, dashed border, background or inset, and
+stays the row's link and 44 px target, so it lines up with every other title. The goal cell's
+"Annotations off" is plain 13 px quiet text, as "No goal yet" is. The descriptor's "start time not
+published" and the Now line's absence were already plain. The owner also asked for the toolbar to
+match the canvas. The search field takes the Filters button's `--r-card` radius token, so the two
+always match; the canvas draws both at 12 px, and sharing the token keeps them equal without a
+third radius. "All sessions" moves to the 24 px, 700 section-title step the canvas and the style
+board give it, replacing an 18 px pin that no ruling set. A phone still hides that heading, as
+Mobile.dc.html does.
+
 | Progress word | Recorded level |
 |---|---|
 | On track | None or low. "No departure found in what Compass read". |
