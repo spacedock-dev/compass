@@ -254,7 +254,7 @@ the spacing build, on the same toolchain. The page bound follows that measuremen
 Later on 2026-11-24, drawing a Not checked yet word in a far-right Sessions row cell, saying Saved goal
 unavailable for a goal that cannot be read (on the row, the session page and Goal history), naming saved
 outcome lines in the Goal cell, and sharing one No goal yet predicate between the filter chips packages the
-page at 2,484,983 bytes on Node 26.12.1 and pnpm 12.19.0, 2,900 bytes above the preceding build. The page
+page at 2,484,987 bytes on Node 26.12.1 and pnpm 12.19.0, 2,904 bytes above the preceding build. The page
 bound follows that measurement. The fixture bound stays at 250,000 bytes.
 
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
