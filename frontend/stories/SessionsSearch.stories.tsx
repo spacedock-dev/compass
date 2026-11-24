@@ -1833,6 +1833,19 @@ export const SessionsHeadingUsesTypeScale: Story = {
   },
 };
 
+/* The search field and the Filters button stay matched on the 12 px control radius they share (owner,
+   2026-11-24), and the button's label takes the 600 weight every button now has. */
+export const SearchAndFiltersShareTheControlRadius: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = await ready(canvasElement);
+    const search = getComputedStyle(canvas.getByRole('searchbox', { name: 'Search sessions' }));
+    const filters = getComputedStyle(filtersButton(canvasElement));
+    await expect(search.borderTopLeftRadius).toBe('12px');
+    await expect(filters.borderTopLeftRadius).toBe(search.borderTopLeftRadius);
+    await expect(filters.fontWeight).toBe('600');
+  },
+};
+
 export const UnavailableSegmentsLookDisabled: Story = {
   args: { flagBoard: 'failed' },
   play: async ({ canvasElement }) => {
@@ -1841,8 +1854,10 @@ export const UnavailableSegmentsLookDisabled: Story = {
     await expect(tab).toBeDisabled();
     const style = getComputedStyle(tab);
     await expect(style.cursor).toBe('not-allowed');
-    await expect(style.borderTopStyle).toBe('dashed');
-    await expect(style.backgroundImage).toMatch(/gradient/);
+    // Calm, not hatched (owner, 2026-11-24): a solid outline over the muted fill.
+    await expect(style.borderTopStyle).toBe('solid');
+    await expect(style.backgroundImage).toBe('none');
+    await expect(style.backgroundColor).toBe('rgb(238, 241, 244)');
     await expect(style.color).not.toBe(
       getComputedStyle(canvas.getByRole('button', { name: 'All unavailable' })).color,
     );
