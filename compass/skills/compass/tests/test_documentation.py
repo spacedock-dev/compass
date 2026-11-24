@@ -2366,7 +2366,10 @@ class ClaudeAllowanceSourceDocumentationTest(unittest.TestCase):
                 (
                     "Claude's figures can also come from Claude Code's status line",
                     "`--forward-usage`",
-                    "Turning off quota reading hides these too.",
+                    (
+                        "Turning off quota reading hides these too, in Your AI allowance, a "
+                        "project's Usage and alerts view and Needs you's quota warnings"
+                    ),
                 ),
             ),
             (
@@ -2374,7 +2377,10 @@ class ClaudeAllowanceSourceDocumentationTest(unittest.TestCase):
                 (
                     "### Show Claude's allowance on the board from your status line",
                     "--forward-usage >/dev/null 2>&1",
-                    "Turn off quota reading hides Claude's figures from this source too.",
+                    (
+                        "Turn off quota reading hides Claude's figures from this source too, in "
+                        "Your AI allowance, a project's Usage and alerts view and Needs you."
+                    ),
                 ),
             ),
             (
@@ -2384,6 +2390,11 @@ class ClaudeAllowanceSourceDocumentationTest(unittest.TestCase):
                     "posts the two windows' `used_percentage` and `resets_at` and nothing else",
                     "`--no-usage` drops the windows before storage",
                     "refuses it with 403 to a LAN client",
+                    (
+                        "while it is off, figures Claude Code's status line forwards are still "
+                        "received, kept and served in `/api/data`"
+                    ),
+                    "but only while it keeps posting",
                 ),
             ),
             ("MANUAL.md", ("| `--forward-usage` |",)),

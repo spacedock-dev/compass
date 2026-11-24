@@ -351,7 +351,9 @@ Claude's figures can also come from Claude Code's status line, with no credentia
 wrapper pipes its JSON to `--forward-usage`, which sends the board only the five-hour and seven-day
 percentages and resets, to a route that answers this machine alone. They appear after a session's
 first reply. Where the credential fetch also reads them, the two make one Claude row and the
-per-model rows still come from the fetch. Turning off quota reading hides these too.
+per-model rows still come from the fetch. Turning off quota reading hides these too, in Your AI
+allowance, a project's Usage and alerts view and Needs you's quota warnings; the dashboard still
+receives and keeps them until it runs with `--no-usage`.
 Cursor fetching is macOS-only, and because Cursor publishes a cycle end with no start, its row shows
 a level and no clock.
 Copilot contributes per-session AI Units from disk but no percentage because its entitlement is not

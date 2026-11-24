@@ -1634,19 +1634,26 @@ The route admits only a direct loopback peer with no forwarding header, so a boa
 on the declared length, before any read. The server rebuilds what it keeps from those four numbers
 alone, refusing a percentage outside 0 to 100 and a reset that has passed or lies further ahead than
 the window is long, plus five minutes. What it keeps is in memory only, in Claude's own receipt slot,
-apart from Antigravity's: per window, a percentage, a reset time and when it was last reported. A
-body with no usable window stores nothing and erases nothing. A window drops from the board once
-its reset passes, or once no session has reported it for the activity window. Where the credential
-fetch also has a reading, the two merge into one Claude entry by the rule in
-[Q-13](docs/design-usage-quota.md#q-13), and the fetch's per-model rows stay. `--no-usage` drops
-the windows before storage and still answers success. The page's Turn off quota reading hides
-Claude's figures whichever source supplied them; as with Antigravity's receipt, a figure already
-kept is still served on the loopback port, and `--no-usage` is what withdraws retention.
+apart from Antigravity's: per window, a percentage, a reset time, when it was last reported and when
+its figure last changed. A body with no usable window stores nothing and erases nothing. A window
+drops from the board once its reset passes, or once no session has reported it for the activity
+window. Where the credential fetch also has a reading, the two merge into one Claude entry by the
+rule in [Q-13](docs/design-usage-quota.md#q-13); the fetch's per-model rows stay while its weekly
+window is the one shown. `--no-usage` drops the windows before storage and still answers success.
+
+The page's Turn off quota reading is a display switch in this browser. It hides Claude's and
+Cursor's figures, from either source, in Your AI allowance on Sessions, in a project's Usage and
+alerts view and in Needs you's quota warnings, and stops the credential fetch. It does not reach
+the server: while it is off, figures Claude Code's status line forwards are still received, kept and
+served in `/api/data` on the loopback port, as Antigravity's receipt is. `--no-usage` is what stops
+the dashboard keeping them.
 
 Any process on this machine can post to the route, as it can to every loopback route (see Known and
-accepted). Within one window it cannot lower a figure, because the higher one is kept, but a post
-with a later reset replaces the window, so a local process can make the tile read low until that
-reset. Two Claude accounts on one machine share the one slot, because the payload names no account.
+accepted). Within one window it cannot lower a figure, because the higher one is kept. A post with a
+later reset does replace the window, so a local process can make the tile read low, but only while
+it keeps posting: once the forged window has gone five minutes without a post, the next genuine post
+replaces it. Two Claude accounts on one machine share the one slot, because the payload names no
+account; when one stops reporting, the other's figures take over within the same five minutes.
 
 ## Light harness usage (asking a harness a bounded question)
 

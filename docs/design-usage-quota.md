@@ -604,7 +604,13 @@ ones included, so the newest post is not the newest reading. Per window, then:
 - A later reset is a newer window and wins at any level.
 - At the same reset, the higher level wins, because use only rises within a window. Two resets
   within 60 seconds count as the same window, to absorb rounding between sessions.
-- An earlier reset is an older window and changes nothing.
+- An earlier reset is an older window and changes nothing, unless the kept window has gone five
+  minutes without a post. A genuine older window never gets here, because a reset that has passed is
+  refused at the door, so this is a forged or early reset, or a second account still reporting after
+  the first stopped, and the window still being reported is the one to keep. A lower figure for the
+  same window never replaces a higher one, however old: widening the staleness rule to every
+  arrival was rejected, because an idle session's older figure for the same window would then
+  replace an active session's higher one whenever the active one paused, and clear the pace ring.
 
 A resend of the kept window at the same or a lower level refreshes only when it was last reported.
 
@@ -616,22 +622,34 @@ session has reported it for the activity window. A reset further ahead than the 
 plus five minutes is refused, so one post cannot pin a slot to a window no real later post can
 displace.
 
-**`asOf` means last reported, not measured.** A receipt carries no measurement time, so the entry's
-`asOf` is when the newest kept window was last reported. An idle session's resend moves it forward,
-which is true: the window is still being reported at that level. The max rule keeps the pace ring
-from seeing a regression.
+**`asOf` means when the figure last changed.** A receipt carries no measurement time, and an idle
+session's resend is byte-identical to a fresh unchanged reading, so the only evidence of when a figure
+was true is when it changed. Each window keeps two stamps. `receivedAt` moves on every post reporting
+it and drives the activity gate, so a window still being reported is still shown. `changedAt` moves
+only on a new window, a later reset or a higher level, and the entry publishes the newest as `asOf`.
+The first build published the last report instead, and review measured what that cost: a resend
+every ten seconds labelled an hours-old figure as read now, and fed the pace ring a flat sample each
+collection, so a steady third of a point a minute was published as 0.55 or 0.0. With `changedAt`
+the same run measures a third of a point a minute.
 
 **Fetch and receipt make one entry.** Two Claude entries would draw two Claude tiles, so
 `merge_claude_usage` joins them per window by the same rule, a tie going to the fetch. The fetch is
 not skipped while a receipt is fresh, by owner decision on 2026-11-24, because the status line has
-no per-model rows and the fetch's `models` survive the merge whenever it has them. A fetch that read
-no figures, `lapsed` or `refused`, yields to a receipt that has some. The merged `asOf` is the newer
-of the two.
+no per-model rows and the fetch's `models` survive the merge while the fetch's weekly window is the
+one shown, including when the receipt reports the same week higher. When the receipt reports a later
+week, last week's rows are dropped until the next fetch brings the new week's, because a sub-limit
+drawn under a week it was not measured in states a figure nobody read. A fetch that read no figures,
+`lapsed` or `refused`, yields to a receipt that has some. The merged `asOf` is the newest stamp
+among the sources that won a window, so a receipt that won nothing cannot move the stamp a fetched
+window is sampled at.
 
 **Switches.** `--no-usage` drops the provider and drops the windows at ingest, still answering
 success. The page's Turn off quota reading hides every Claude figure, receipt included, because the
-switch sits on the Claude row and a reader who turned it off expects Claude's percentages gone;
-the page already filters by harness, so this needed no page change.
+switch sits on the Claude row and a reader who turned it off expects Claude's percentages gone. One
+helper, `capacity/visibility.ts`, applies it on every surface that draws quota: the Sessions strip,
+a project's Usage and alerts view, and Needs you's quota warnings. The first build relied on the
+strip's existing filter and review found the other two still drawing Claude's figures. The switch
+is display only; the server keeps and serves what arrives until `--no-usage`.
 
 **Limits, accepted.** The payload names no account, so two Claude accounts on one machine share the
 one slot, and the rule may pair one account's five-hour figure with the other's weekly one. Any local

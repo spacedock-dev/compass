@@ -1093,8 +1093,17 @@ printf '%s' "$input" | python3 /path/to/skills/compass/launch.py /path/to/skills
 ```
 
 If you already use the Barista wrapper above, add only the last line to it. If your status line is
-`--footer` alone, use the Barista wrapper with `--footer` as the existing command and add the same
-line. The [standalone binary](README.md#standalone-binary) takes the same option:
+`--footer` alone, the wrapper is the footer and the forwarder, each given the same JSON:
+
+```bash
+#!/bin/bash
+input=$(cat)
+
+printf '%s' "$input" | python3 /path/to/skills/compass/launch.py /path/to/skills/compass/server.py --footer
+printf '%s' "$input" | python3 /path/to/skills/compass/launch.py /path/to/skills/compass/server.py --forward-usage >/dev/null 2>&1
+```
+
+The [standalone binary](README.md#standalone-binary) takes the same option:
 `/path/to/compass/compass --forward-usage`.
 
 What to expect:
@@ -1106,18 +1115,21 @@ What to expect:
   figure of each window and the newer window, so an idle session cannot pull it back.
 - A window leaves the board once it resets, or once no session has reported it for the activity
   window, 24 hours by default.
-- Turn off quota reading hides Claude's figures from this source too. `--no-usage` makes the board
-  drop them on arrival.
+- Turn off quota reading hides Claude's figures from this source too, in Your AI allowance, a
+  project's Usage and alerts view and Needs you. The dashboard still receives and keeps them;
+  `--no-usage` makes it drop them on arrival.
 - Where Compass can also read the login, the two sources make one Claude row, and the per-model
   weekly rows still come from the login.
 - Two Claude accounts on one machine share one Claude row, because the status line does not say
   which account it reports.
 
-This was run with a stand-in for the existing command, against a dashboard on a spare port: the bar
-showed the stand-in's line alone, a payload without `rate_limits` changed nothing, and the next payload
-put Claude's two windows in `/api/data` with nothing else from it. In five runs each on a machine
-under heavy load, `--footer` took a median of about 0.9 seconds and `--forward-usage` about 1.2
-seconds; the 50 millisecond footer figure above was measured on an unloaded machine.
+This was checked with hand-built payloads in the shape Claude Code documents, through the wrapper
+with a stand-in for the existing command, against a dashboard on a spare port: the wrapper printed
+the stand-in's line alone, a payload without `rate_limits` changed nothing, and the next payload put
+Claude's two windows in `/api/data` with nothing else from it. No live Claude Code session has run it
+yet. In five runs each on a machine under heavy load, `--footer` took a median of about 0.9 seconds
+and `--forward-usage` about 1.2 seconds; the 50 millisecond footer figure above was measured on an
+unloaded machine.
 
 To check yours without waiting for Claude Code, feed it a payload by hand while the dashboard runs,
 with a reset two minutes from now:
@@ -1127,9 +1139,22 @@ printf '{"rate_limits":{"five_hour":{"used_percentage":40,"resets_at":%d}}}' $((
   | python3 /path/to/skills/compass/launch.py /path/to/skills/compass/server.py --forward-usage
 ```
 
-Claude shows 40% for the five-hour window in Your AI allowance on the next refresh. The test figure
-leaves the board when its two minutes are up, and a real session's report replaces it sooner, because
-a real window resets later.
+What you see depends on what the board already holds:
+
+- If Your AI allowance showed no Claude five-hour figure, it shows 40% within a few seconds, when the
+  board next collects, and the test figure leaves the board when its two minutes are up.
+- If it already showed one, that figure stays: it resets later than the test figure, and the board
+  keeps the later window, the same rule that stops an idle session pulling a real reading back.
+
+To see that the dashboard took the post either way, send the same body to its route directly. The
+answer `{"ok":true,"usage":1}` means one window was received; `"usage":0` means it was refused, for
+example because the reset had already passed; a 404 means the dashboard is a release without the
+route:
+
+```bash
+printf '{"rate_limits":{"five_hour":{"used_percentage":40,"resets_at":%d}}}' $(( $(date +%s) + 120 )) \
+  | curl -s --data-binary @- -H 'Content-Type: application/json' http://127.0.0.1:4553/api/usage/claude
+```
 
 ### Checking it worked on your own status line
 
