@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2482079,
+    "bytes": 2482083,
     "file": "react.html",
-    "sha256": "2e83535f4fd26a9b201bd17040984d6864f72d18703f8a0c99c32e174ec0cf9d"
+    "sha256": "5672bd81a76de9fab962a95c58bfc11f8e05fcb60272e38b3266622bd0017130"
   },
   "format": 1,
   "frontend": "react",
@@ -319,7 +319,7 @@
       },
       {
         "file": "frontend/src/capacity/CapacityStrip.tsx",
-        "sha256": "359060bc803cce963a0ce8f95ea873d08817118879c39fe57acef7bc9e237bc3"
+        "sha256": "7c99f300a72631c0b41ede5f60d2dfac487db7bd8310ddcca2f3a4b5f22efaae"
       },
       {
         "file": "frontend/src/capacity/ObserverControls.tsx",
@@ -1231,7 +1231,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionsView.tsx",
-        "sha256": "13913fe8586682d4ec927806546f4631f7020ade94e2ac48109a7e64321e1d0e"
+        "sha256": "dfabf520361693706fac7124af7890010a2da9e0b892a6f982365d11b37c76d0"
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",

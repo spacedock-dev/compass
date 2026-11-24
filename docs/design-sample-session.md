@@ -248,6 +248,9 @@ packages the page at 2,482,079 bytes on Node 26.12.1 and pnpm 12.19.0, 388 bytes
 page canvas build. The page bound follows that measurement. The fixture bound stays at 250,000
 bytes.
 
+Moving Your AI allowance to the top of Sessions packages the page at 2,482,083 bytes, 4 bytes above
+the spacing build, on the same toolchain. The page bound follows that measurement.
+
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.
