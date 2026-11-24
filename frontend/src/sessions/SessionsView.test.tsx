@@ -514,7 +514,10 @@ describe('the groups', () => {
     expect(row).toBeInTheDocument();
     expect(row?.querySelector('.next-operation-progress')).toBeNull();
     expect(row?.querySelector('[data-variant="progress"]')).toBeNull();
-    expect(row?.textContent).not.toMatch(/No goal yet|Not checked yet/);
+    // The progress slot holds no absence word; the goal cell's own "No goal yet" is not the progress slot.
+    expect(row?.querySelector('.next-operation-identity')?.textContent).not.toMatch(
+      /No goal yet|Not checked yet/,
+    );
   });
 
   it('leaves the row blank for a live estimate before a stored check', async () => {
@@ -614,8 +617,9 @@ describe('the groups', () => {
       '#n=session:p:claude:typed',
     );
     expect(goal('drafted')?.textContent).toBe('Goal · your first promptDo the thing');
-    expect(goal('empty')?.textContent).toBe('GoalAdd a goal');
-    expect(goal('empty')?.querySelector('a')?.classList.contains('next-absence')).toBe(true);
+    // No goal: the absence word, and nothing to press (owner, 2026-11-24).
+    expect(goal('empty')?.textContent).toBe('GoalNo goal yet');
+    expect(goal('empty')?.querySelector('a, button')).toBeNull();
   });
 
   it('shows a held question under the Now line, behind the Waiting on you tile', async () => {
@@ -722,7 +726,9 @@ describe('the goal link opens the session at its goal', () => {
       annotate: true,
     });
     const page = await open(data);
-    fireEvent.click(document.querySelector('a[data-next-goal-focus]') as Element);
+    // A row with no goal has no goal link; opening the row itself lands in the empty goal box.
+    expect(document.querySelector('a[data-next-goal-focus]')).toBeNull();
+    fireEvent.click(document.querySelector('a.next-operation-route') as Element);
     await page.settle();
     expect(page.router.getRoute().view).toBe('session');
     expect(focused()).toBe('held:cursor:x:goal');

@@ -236,7 +236,7 @@ export interface IndexedRow {
   readonly active: Stamp | null;
 }
 
-/* Built once per payload, so a keystroke folds no text. Placeholder sentences ("Add a goal", "Title not
+/* Built once per payload, so a keystroke folds no text. Placeholder sentences ("No goal yet", "Title not
    published") are never fields, because a reader searching for them would match a fact nobody published.
    The current task is shown only where the row draws it (`assignmentOf`, on an active row); a history row
    does not, so a match there is named in a hint like any other field the row does not show. */

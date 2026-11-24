@@ -33,7 +33,10 @@ const LEVELS = [
 ] as const;
 
 const ABSENCES = [
-  [SESSION_ROW_WORDS.noGoalYet, 'Add a goal to give Compass something to read against.'],
+  [
+    SESSION_ROW_WORDS.noGoalYet,
+    'Open the session and add a goal there to give Compass something to read against.',
+  ],
   [
     SESSION_ROW_WORDS.notCheckedYet,
     'Check progress to ask Compass to read the record against the goal.',

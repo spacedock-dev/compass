@@ -48,7 +48,10 @@ export const Guide: Story = {
       progress.getByText('No departure found in what Compass read', { exact: true }),
     ).toBeVisible();
     for (const [word, explanation] of [
-      [words.noGoalYet, 'Add a goal to give Compass something to read against.'],
+      [
+        words.noGoalYet,
+        'Open the session and add a goal there to give Compass something to read against.',
+      ],
       [words.notCheckedYet, 'Check progress to ask Compass to read the record against the goal.'],
       [words.tooEarlyToTell, 'The session has recorded too little for a reading.'],
       [

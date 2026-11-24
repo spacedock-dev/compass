@@ -27,6 +27,7 @@ import {
   type PromptCandidate,
 } from './intent';
 import { datedClock } from '../observed/values';
+import { SESSION_ROW_WORDS } from '../language/glossary';
 
 /* What the Sessions screen draws, as data: a pure function of one payload and the model read from it, so
    every sentence is testable without a DOM and the screen cannot say something the rows do not. The
@@ -208,8 +209,9 @@ export function checkedAgainstCurrentWords(
 
 export interface GoalCell {
   readonly label: string;
-  /** Every available goal opens the session at its goal, including saved words. */
-  readonly kind: 'off' | 'link';
+  /** Every available goal opens the session at its goal, including saved words. A row with no goal says
+      so in plain words and offers no action: the goal is added on the session page (owner, 2026-11-24). */
+  readonly kind: 'off' | 'link' | 'none';
   readonly text: string;
   readonly known: boolean;
 }
@@ -256,7 +258,9 @@ export function goalCell(
             : 'Goal';
   return typed
     ? { label, kind: 'link', text, known: true }
-    : { label, kind: 'link', text: text || 'Add a goal', known: Boolean(text) };
+    : text
+      ? { label, kind: 'link', text, known: true }
+      : { label, kind: 'none', text: SESSION_ROW_WORDS.noGoalYet, known: false };
 }
 
 /* A row's end and git facts, said once (owner, 2026-11-24). The model words them twice, as an outcome

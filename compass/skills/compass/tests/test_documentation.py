@@ -926,7 +926,7 @@ class DocumentVocabularyTest(unittest.TestCase):
             "Slightly off course": "Some work wandered from the goal.",
             "Off course": "The work no longer serves the goal.",
             "Way off course": "The work has gone far from the goal.",
-            "No goal yet": "Add a goal to give Compass something to read against.",
+            "No goal yet": "Open the session and add a goal there to give Compass something to read against.",
             "Not checked yet": "Check progress to ask Compass to read the record against the goal.",
             "Too early to tell": "The session has recorded too little for a reading.",
             "Can't tell": (

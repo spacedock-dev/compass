@@ -349,6 +349,27 @@ export const ListCard: Story = {
         link.focus();
         await expect(link).toHaveStyle({ textDecorationLine: 'underline', outlineWidth: '2px' });
         link.blur();
+        // A row with no goal says so in plain quiet text and offers nothing to press (owner, 2026-11-24): the
+        // list cannot add a goal, so the reader opens the row and adds it on the session page.
+        for (const sid of ['acme-billing', 'acme-cleanup', 'acme-nightly']) {
+          const empty = part(rowOf(canvasElement, sid), '[data-next-operation-fact="goal"]');
+          const word = part(empty, '[data-next-goal-absent]');
+          await expect(word.textContent).toBe('No goal yet');
+          await expect(word).toHaveStyle({
+            fontSize: '13px',
+            color: 'rgb(82, 96, 109)',
+            borderTopWidth: '0px',
+            backgroundImage: 'none',
+          });
+          await expect(empty.querySelector('a, button, svg')).toBeNull();
+          await expect(rowOf(canvasElement, sid)).not.toHaveTextContent('Add a goal');
+          await expect(
+            within(rowOf(canvasElement, sid)).queryByRole('link', { name: /goal/i }),
+          ).toBeNull();
+          await expect(
+            within(rowOf(canvasElement, sid)).queryByRole('button', { name: /goal/i }),
+          ).toBeNull();
+        }
         await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
       });
     }

@@ -3,7 +3,8 @@
    session waits on, then the goal. The Project, Next and Blocked columns are gone: the Waiting on you tile
    carries the block. The recorded row is rearranged as the page now draws it, so the comparison still reads
    every title, harness, project, end age, Now value, held question, outcome and goal in order. The end and git
-   facts are said once, so the recorded outcome and git line are joined as the page joins them. The start age
+   facts are said once, so the recorded outcome and git line are joined as the page joins them, and a row with
+   no goal says "No goal yet" where the recorded row offered "Add a goal". The start age
    is new, with no recorded answer, so the page's copy is set aside; the mounted tests and the Sessions
    canvas row story check it. */
 
@@ -75,6 +76,10 @@ function recordedRow(row: Element) {
     placed.push(joined);
   }
   descriptor.after(...placed);
+  // 2026-11-24: a row with no goal says "No goal yet" and offers no "Add a goal" action.
+  for (const add of row.querySelectorAll('[data-next-operation-fact="goal"] a')) {
+    if (text(add).trim() === 'Add a goal') add.replaceWith(span('No goal yet'));
+  }
   for (const retired of [
     where,
     now,

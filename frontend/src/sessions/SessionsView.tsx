@@ -165,9 +165,16 @@ function Identity({
   readonly row: SessionRow;
   readonly hints: readonly RowHint[];
 }) {
+  const shell = useShell();
   const { session, source, history } = row;
   const assignment = history ? '' : assignmentOf(source);
   const names = source ? gapNames(source) : [];
+  /* A row with no goal offers no goal action; opening it lands in the empty goal box instead, where the goal
+     is added (owner, 2026-11-24). */
+  const toGoal =
+    row.goal.kind === 'none'
+      ? () => goalFocusFor(shell.controls).request({ harness: session.harness, sid: session.sid })
+      : undefined;
   const state = rowState(session);
   const limit = sessionStateLimit(session, state);
   const tile = state !== 'State not published' && state !== 'Waiting on child';
@@ -191,6 +198,7 @@ function Identity({
              its line height, so the descriptor sits directly under it. */
           className={`next-operation-route block [min-block-size:0]! ${titleLink}`}
           label={`Open session ${session.titleText}`}
+          {...(toGoal ? { before: toGoal } : {})}
           focusKey={`sessions-row:${row.key}`}
           fallback={SEARCH_KEY}
         >
@@ -284,6 +292,20 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
   const shell = useShell();
   const { goal } = row;
   if (goal.kind === 'off') return <Fact kind="goal" label="Goal" value={goal.text} />;
+  /* No goal: the ruled absence word in plain quiet text, and no action. The list cannot add a goal; the
+     reader opens the row and adds one on the session page (owner, 2026-11-24). */
+  if (goal.kind === 'none')
+    return (
+      <span className="next-operation-fact" data-next-operation-fact="goal">
+        <small className={GOAL_LABEL}>{goal.label}</small>
+        <span
+          className="mt-0.5 block text-label leading-[1.5] text-muted-foreground"
+          data-next-goal-absent
+        >
+          {goal.text}
+        </span>
+      </span>
+    );
   const onGoal = () =>
     goalFocusFor(shell.controls).request({ harness: row.session.harness, sid: row.session.sid });
   return (
@@ -293,13 +315,8 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
         route={row.route}
         /* A goal holds 1,000 characters since 2026-10-27: the list shows three lines, the session page the rest.
            Plain ink at rest, as the canvas draws it; like a row title it underlines on hover and focus. */
-        className={
-          goal.known
-            ? `next-operation-goal-link relative z-[1] mt-0.5 line-clamp-3 text-body font-normal leading-[1.5] [overflow-wrap:anywhere] ${titleLink}`
-            : /* "Add a goal" is an action, drawn as the canvas's quiet green link rather than a hatched absence. */
-              'next-operation-goal-link next-absence relative z-[1] mt-0.5 line-clamp-3 border-0 bg-none text-label font-semibold leading-[1.5] text-primary underline underline-offset-[3px]'
-        }
-        extra={{ 'data-next-goal-focus': '', ...(goal.known ? { 'data-authored': '' } : {}) }}
+        className={`next-operation-goal-link relative z-[1] mt-0.5 line-clamp-3 text-body font-normal leading-[1.5] [overflow-wrap:anywhere] ${titleLink}`}
+        extra={{ 'data-next-goal-focus': '', 'data-authored': '' }}
         before={onGoal}
         focusKey={`sessions-row-goal:${row.key}`}
         fallback={SEARCH_KEY}
