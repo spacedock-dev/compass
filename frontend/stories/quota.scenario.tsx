@@ -17,6 +17,17 @@ export let refreshQuota: (() => Promise<void>) | undefined;
 export const CLAUDE_WINDOW = [
   { harness: 'claude', state: 'ok', asOf: 1, fiveH: { pct: 34, windowSec: 18000, resetAt: 9060 } },
 ];
+/* What the board publishes for Claude when the figures came from Claude Code's status line through
+   `--forward-usage`: both named windows and no per-model rows, because the status line carries none. */
+export const CLAUDE_STATUS_LINE_WINDOWS = [
+  {
+    harness: 'claude',
+    state: 'ok',
+    asOf: 1,
+    fiveH: { pct: 38, windowSec: 18000, reset: '14:42', resetAt: 9060 },
+    week: { pct: 12, windowSec: 604800, reset: 'Sat 00:02', resetAt: 9060 + 4 * 86400 },
+  },
+];
 export const CODEX_WINDOW = [
   { harness: 'codex', state: 'ok', asOf: 1, fiveH: { pct: 71, windowSec: 10800, resetAt: 9060 } },
 ];

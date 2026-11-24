@@ -2,8 +2,10 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { openInFlow } from './disclosure.flow';
 import { GLOSSARY } from '../src/language/glossary';
+import { SLOT_LABELS } from '../src/capacity/model';
 import { contrastOf, rgbOf } from './a11y.audit';
 import {
+  CLAUDE_STATUS_LINE_WINDOWS,
   CLAUDE_WINDOW,
   CODEX_WINDOW,
   QuotaExample,
@@ -94,6 +96,31 @@ export const TurningOffTheFetchKeepsLocalQuota: Story = {
     await expect(canvas.queryByRole('button', { name: /Read Claude Code/ })).toBeNull();
     await expect(canvas.getByText(/Local readings are still shown/)).toBeVisible();
     await expect(requests.at(-1)).not.toMatch(/usage=/);
+  },
+};
+
+/* A reader whose Claude login Compass cannot read still sees Claude beside Codex once Claude Code's status
+   line has forwarded its two windows, and Turn off quota reading hides them as it hides a fetched figure. */
+export const ClaudeFromTheStatusLineBesideCodex: Story = {
+  args: { strip: true, usage: [...CLAUDE_STATUS_LINE_WINDOWS, ...CODEX_WINDOW] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const card = await canvas.findByRole('region', { name: GLOSSARY.aiAllowance.plain });
+    const reader = within(card);
+    await expect(
+      await reader.findByRole('button', { name: 'Read Claude Code 5-hour window' }),
+    ).toBeVisible();
+    await expect(
+      reader.getByRole('button', { name: `Read Claude Code ${SLOT_LABELS.week} window` }),
+    ).toBeVisible();
+    await expect(reader.getByRole('button', { name: 'Read Codex 3-hour window' })).toBeVisible();
+    await userEvent.click(reader.getByRole('button', { name: 'Read Claude Code 5-hour window' }));
+    await expect(reader.getByText('Claude Code 5-hour plan · resets in 2h 30m.')).toBeVisible();
+    await expect(reader.getByText('38% used')).toBeVisible();
+    await userEvent.click(reader.getByRole('button', { name: 'Turn off quota reading' }));
+    await expect(await canvas.findByText('71% used')).toBeVisible();
+    await expect(canvas.queryByRole('button', { name: /Read Claude Code/ })).toBeNull();
+    await expect(canvas.queryByText('38% used')).toBeNull();
   },
 };
 
