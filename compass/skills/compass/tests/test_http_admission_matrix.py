@@ -47,6 +47,7 @@ GET = {
 POST = {
     "/api/shutdown",
     "/api/usage",
+    "/api/usage/claude",
     "/api/dismiss",
     "/api/tripwire",
     "/api/annotate",
@@ -120,6 +121,8 @@ REMOTE_RESULTS = {
     ("POST", "/api/shutdown"): 200,
     ("POST", "/api/tripwire"): 400,
     ("POST", "/api/usage"): 200,
+    # Loopback only: the status line that forwards Claude's quota always runs on this machine.
+    ("POST", "/api/usage/claude"): 403,
     **{("POST", f"/api/events/{harness}"): 403 for harness in events.IDENTITY_NORMALIZERS},
 }
 VALID_DISCARD = {

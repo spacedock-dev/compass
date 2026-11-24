@@ -535,6 +535,9 @@ def _session_context(
 # is a 400 carrying such a route, and its note says to reload.
 # A settings body is a few keys and integers; anything near this is not one.
 SETTINGS_BODY_CAP_BYTES = 1024
+# The body `--forward-usage` sends is two windows of two numbers, under 200 bytes. A body this
+# large is not one, and refusing it on the declared length means nothing bigger is ever read.
+CLAUDE_USAGE_BODY_CAP_BYTES = 2048
 
 
 def published_settings(config: RuntimeConfig) -> dict[str, Any]:
@@ -2781,6 +2784,46 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             payload = {}
         response = quota.receive_statusline(
+            application.state,
+            payload,
+            now=application.clock(),
+            config=application.config,
+        )
+        self._send(json.dumps(response, separators=(",", ":")).encode(), "application/json")
+
+    def _claude_usage_receipt(self) -> None:
+        """Claude Code's two quota windows, forwarded by `--forward-usage` from a status line.
+
+        Loopback only, unlike `/api/usage`: the status line that runs the forwarder is always a
+        process on this machine, so a board exposed with `--host` has no producer for this route
+        on the network and a LAN peer could only use it to forge the tile. A forwarding header is
+        refused for the same reason, by `_loopback_resource_ok`.
+
+        Its own route rather than `/api/usage`, which stores Antigravity's receipt and stamps any
+        unusable body as an arrival: a Claude body there would erase Antigravity's reading, and a
+        new client against an older dashboard now meets a 404 instead. The declared length is
+        checked before any read; a malformed or non-object body degrades to `{}`, which stores
+        nothing; and every admitted body is answered with success, because a status line must
+        never see a Compass error.
+        """
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if not 0 <= length <= CLAUDE_USAGE_BODY_CAP_BYTES:
+            self._reject(413)
+            return
+        try:
+            payload = json.loads(self._read_body(length) or b"{}")
+        except (ValueError, json.JSONDecodeError, RecursionError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        application = self.server.application
+        response = quota.receive_claude_statusline(
             application.state,
             payload,
             now=application.clock(),
@@ -5772,6 +5815,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         route = {
             "/api/shutdown": self._shutdown,
             "/api/usage": self._usage_receipt,
+            "/api/usage/claude": self._claude_usage_receipt,
             "/api/dismiss": self._dismiss,
             "/api/tripwire": self._tripwire,
             "/api/annotate": self._annotate,

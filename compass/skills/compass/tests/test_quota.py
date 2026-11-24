@@ -9,6 +9,7 @@ well as successes, and neither `collect` nor `--diagnose` can trigger a fetch.
 from __future__ import annotations
 
 import contextlib
+import copy
 import dataclasses
 import email.message
 import http.client
@@ -29,7 +30,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Self
 from unittest import mock
 
-from compass_runtime import aggregate, cli, diagnostics, quota, sessions
+from compass_runtime import aggregate, cli, diagnostics, http_api, quota, sessions
 from compass_runtime.collectors import claude as claude_collector
 from compass_runtime.collectors import codex as codex_collector
 from compass_runtime.collectors import cursor as cursor_collector
@@ -1741,6 +1742,405 @@ class UsageEndpointTest(RuntimeTestCase):
             application.collect(show_all=True)
         trigger.assert_not_called()
         fetch.assert_not_called()
+
+
+def _claude_post(
+    five: tuple[Any, Any] | None = None,
+    week: tuple[Any, Any] | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    """The body `--forward-usage` sends: `rate_limits` with the named windows as (used, reset)."""
+    limits: dict[str, Any] = {}
+    if five is not None:
+        limits["five_hour"] = {"used_percentage": five[0], "resets_at": five[1]}
+    if week is not None:
+        limits["seven_day"] = {"used_percentage": week[0], "resets_at": week[1]}
+    return {"rate_limits": limits, **extra}
+
+
+FIVE_RESET = NOW + 3_600
+WEEK_RESET = NOW + 4 * 86_400
+
+
+class ClaudeStatuslineReceiptTest(unittest.TestCase):
+    """Claude Code's own status-line windows, held in Claude's receipt slot."""
+
+    def setUp(self) -> None:
+        self.config = _config()
+        self.state = _state(self.config)
+
+    def receive(self, body: dict[str, Any], now: float = NOW) -> dict[str, Any]:
+        return quota.receive_claude_statusline(self.state, body, now=now, config=self.config)
+
+    def shown(self, now: float = NOW, window_hours: float = 24) -> list[dict[str, Any]]:
+        return quota.claude_receipt_entries(self.config, self.state, now, window_hours)
+
+    def test_a_reader_sees_both_claude_windows_from_the_status_line(self) -> None:
+        response = self.receive(_claude_post((42.4, FIVE_RESET), (61, WEEK_RESET)))
+
+        self.assertEqual({"ok": True, "usage": 2}, response)
+        (entry,) = self.shown()
+        self.assertEqual({"harness", "state", "asOf", "fiveH", "week"}, set(entry))
+        self.assertEqual(
+            ("claude", "ok", int(NOW)), (entry["harness"], entry["state"], entry["asOf"])
+        )
+        self.assertEqual(
+            {"pct": 42, "windowSec": 5 * 3600, "resetAt": int(FIVE_RESET)},
+            {k: v for k, v in entry["fiveH"].items() if k != "reset"},
+        )
+        self.assertEqual(sessions.format_reset(NOW, FIVE_RESET), entry["fiveH"]["reset"])
+        self.assertEqual(61, entry["week"]["pct"])
+        self.assertEqual(7 * 86400, entry["week"]["windowSec"])
+        self.assertNotIn("models", entry)
+
+    def test_nothing_but_the_two_windows_reaches_the_board(self) -> None:
+        body = _claude_post(
+            (10, FIVE_RESET),
+            (20, WEEK_RESET),
+            session_id="private-session",
+            transcript_path="/Users/someone/private/t.jsonl",
+            cwd="/Users/someone/private",
+            workspace={"repo": {"name": "private"}},
+            model={"display_name": "private-model"},
+        )
+        body["rate_limits"]["five_hour"]["account"] = "private-account"
+        body["rate_limits"]["spend_limit"] = {"used_usd": 5, "resets_at": WEEK_RESET}
+        self.receive(body)
+
+        (entry,) = self.shown()
+        self.assertEqual({"harness", "state", "asOf", "fiveH", "week"}, set(entry))
+        for slot in ("fiveH", "week"):
+            self.assertEqual({"pct", "windowSec", "reset", "resetAt"}, set(entry[slot]))
+        self.assertNotIn("private", json.dumps(entry))
+        self.assertNotIn("private", json.dumps(self.state.usage_receipts["claude"]))
+
+    def test_a_figure_that_is_not_a_percentage_is_withheld(self) -> None:
+        values: tuple[Any, ...] = (
+            None,
+            "42",
+            True,
+            False,
+            -1,
+            100.5,
+            math.nan,
+            math.inf,
+            10**400,
+            [],
+            {},
+        )
+        for used in values:
+            with self.subTest(used=used):
+                state = _state(self.config)
+                response = quota.receive_claude_statusline(
+                    state, _claude_post((used, FIVE_RESET)), now=NOW, config=self.config
+                )
+                self.assertEqual({"ok": True, "usage": 0}, response)
+                self.assertNotIn("claude", state.usage_receipts)
+
+    def test_a_reset_that_is_missing_past_or_too_far_ahead_withholds_its_window(self) -> None:
+        too_far = NOW + 5 * 3600 + quota.RECEIPT_RESET_SLACK_SEC + 1
+        for reset in (None, "2026-11-24T00:00:00Z", True, NOW - 1, NOW, too_far, math.inf):
+            with self.subTest(reset=reset):
+                state = _state(self.config)
+                response = quota.receive_claude_statusline(
+                    state, _claude_post((10, reset)), now=NOW, config=self.config
+                )
+                self.assertEqual(0, response["usage"])
+                self.assertNotIn("claude", state.usage_receipts)
+
+    def test_one_window_alone_is_shown(self) -> None:
+        self.receive(_claude_post(week=(30, WEEK_RESET)))
+
+        (entry,) = self.shown()
+        self.assertNotIn("fiveH", entry)
+        self.assertEqual(30, entry["week"]["pct"])
+
+    def test_a_first_render_without_rate_limits_keeps_the_good_reading(self) -> None:
+        self.receive(_claude_post((42, FIVE_RESET), (61, WEEK_RESET)))
+        before = self.shown(NOW + 30)
+        bodies: tuple[dict[str, Any], ...] = (
+            {},
+            {"session_id": "new-session"},
+            {"rate_limits": None},
+            {"rate_limits": {}},
+            {"rate_limits": {"five_hour": None, "seven_day": "x"}},
+        )
+        for body in bodies:
+            with self.subTest(body=body):
+                self.assertEqual({"ok": True, "usage": 0}, self.receive(body, NOW + 30))
+                self.assertEqual(before, self.shown(NOW + 30))
+
+    def test_an_idle_session_resending_stale_figures_does_not_regress_a_newer_window(self) -> None:
+        self.receive(_claude_post((60, FIVE_RESET), (40, WEEK_RESET)))
+        # An idle session still holding the figures it saw an hour ago: same window, lower level.
+        self.receive(_claude_post((20, FIVE_RESET), (35, WEEK_RESET)), NOW + 60)
+        # And one still holding the previous five-hour window, at a higher level than now.
+        self.receive(_claude_post((95, FIVE_RESET - 5 * 3600 + 120)), NOW + 90)
+
+        (entry,) = self.shown(NOW + 90)
+        self.assertEqual((60, int(FIVE_RESET)), (entry["fiveH"]["pct"], entry["fiveH"]["resetAt"]))
+        self.assertEqual(40, entry["week"]["pct"])
+
+    def test_a_higher_figure_in_the_same_window_replaces_the_lower(self) -> None:
+        self.receive(_claude_post((40, FIVE_RESET)))
+        # The same window, its reset reported a few seconds differently.
+        self.receive(_claude_post((55, FIVE_RESET + 30)), NOW + 60)
+
+        (entry,) = self.shown(NOW + 60)
+        self.assertEqual(55, entry["fiveH"]["pct"])
+        self.assertEqual(int(NOW + 60), entry["asOf"])
+
+    def test_a_new_window_replaces_the_old_even_at_a_lower_figure(self) -> None:
+        self.receive(_claude_post((80, NOW + 600)))
+        later = NOW + 700
+        self.receive(_claude_post((5, later + 5 * 3600 - 60)), later)
+
+        (entry,) = self.shown(later)
+        self.assertEqual(5, entry["fiveH"]["pct"])
+
+    def test_a_window_drops_after_its_reset(self) -> None:
+        self.receive(_claude_post((70, NOW + 100), (30, WEEK_RESET)))
+
+        (entry,) = self.shown(NOW + 101)
+        self.assertNotIn("fiveH", entry)
+        self.assertEqual(30, entry["week"]["pct"])
+        self.assertEqual(
+            [], quota.claude_receipt_entries(self.config, self.state, WEEK_RESET, 24 * 30)
+        )
+
+    def test_a_reading_older_than_the_activity_window_drops(self) -> None:
+        self.receive(_claude_post(week=(30, NOW + 6 * 86_400)))
+
+        self.assertEqual(1, len(self.shown(NOW + 23 * 3600)))
+        self.assertEqual([], self.shown(NOW + 25 * 3600))
+
+    def test_a_resend_of_the_same_window_keeps_the_reading_current(self) -> None:
+        self.receive(_claude_post(week=(30, NOW + 6 * 86_400)))
+        self.receive(_claude_post(week=(30, NOW + 6 * 86_400)), NOW + 20 * 3600)
+
+        (entry,) = self.shown(NOW + 30 * 3600)
+        self.assertEqual(int(NOW + 20 * 3600), entry["asOf"])
+
+    def test_antigravity_receipt_is_untouched_by_a_claude_post(self) -> None:
+        quota.receive_statusline(
+            self.state,
+            {"quota": {"gemini-5h": {"remaining_fraction": 0.25}}},
+            now=NOW,
+            config=self.config,
+        )
+        antigravity = copy.deepcopy(self.state.usage_receipts["antigravity"])
+        self.receive(_claude_post((10, FIVE_RESET)))
+        self.receive({})
+
+        self.assertEqual(antigravity, self.state.usage_receipts["antigravity"])
+        self.assertEqual(
+            75, quota.receipt_entries(self.config, self.state, NOW, 24)[0]["fiveH"]["pct"]
+        )
+
+    def test_a_claude_reading_is_untouched_by_an_antigravity_post(self) -> None:
+        self.receive(_claude_post((10, FIVE_RESET)))
+        quota.receive_statusline(self.state, {}, now=NOW, config=self.config)
+
+        self.assertEqual(10, self.shown()[0]["fiveH"]["pct"])
+        self.assertEqual([], quota.receipt_entries(self.config, self.state, NOW, 24))
+
+    def test_quota_off_stores_nothing(self) -> None:
+        config = _config(usage_fetch_enabled=False)
+        state = _state(config)
+        response = quota.receive_claude_statusline(
+            state, _claude_post((42, FIVE_RESET), (61, WEEK_RESET)), now=NOW, config=config
+        )
+
+        self.assertEqual({"ok": True, "usage": 0}, response)
+        self.assertNotIn("claude", state.usage_receipts)
+        self.assertEqual([], quota.claude_receipt_entries(config, state, NOW, 24))
+
+    def test_a_published_reading_cannot_edit_the_stored_one(self) -> None:
+        self.receive(_claude_post((42, FIVE_RESET)))
+        self.shown()[0]["fiveH"]["pct"] = 0
+
+        self.assertEqual(42, self.shown()[0]["fiveH"]["pct"])
+
+
+class ClaudeUsageMergeTest(unittest.TestCase):
+    """The Claude row with both sources: the credential fetch and the status-line receipt."""
+
+    def setUp(self) -> None:
+        self.config = _config(platform_name="darwin")
+        self.state = _state(self.config)
+
+    def fetch(self, runner: Any, opener: Any = None) -> None:
+        _fetch_claude(
+            self.config,
+            self.state,
+            clock=lambda: NOW,
+            opener=opener or _opener(_usage_body()),
+            runner=runner,
+            diagnostic_sink=lambda _line: None,
+        )
+
+    def receive(self, body: dict[str, Any], now: float = NOW) -> None:
+        quota.receive_claude_statusline(self.state, body, now=now, config=self.config)
+
+    def row(self, now: float = NOW) -> list[dict[str, Any]]:
+        return claude_collector.usage(self.config, self.state, now, 24)
+
+    def test_the_allowance_shows_claude_when_the_login_holds_no_oauth_token(self) -> None:
+        # The default Keychain item holds only MCP server logins, so the fetch finds no token.
+        self.fetch(_keychain_runner(json.dumps({"mcpOAuth": {"server": {}}})), _forbidden_opener())
+        self.assertEqual([], quota.cached_entries(self.config, self.state, "claude", NOW, 24))
+        self.receive(_claude_post((42, FIVE_RESET), (61, WEEK_RESET)))
+
+        (entry,) = self.row()
+        self.assertEqual(("claude", "ok"), (entry["harness"], entry["state"]))
+        self.assertEqual((42, 61), (entry["fiveH"]["pct"], entry["week"]["pct"]))
+
+    def test_where_both_exist_the_fetch_keeps_its_model_rows(self) -> None:
+        self.fetch(_keychain_runner(_credentials()))
+        self.receive(_claude_post((50, FIVE_RESET)), NOW + 60)
+
+        (entry,) = self.row(NOW + 60)
+        self.assertEqual(50, entry["fiveH"]["pct"])
+        self.assertEqual(61, entry["week"]["pct"])
+        self.assertEqual([{"label": "Fable", "pct": 37}], entry["models"])
+        self.assertEqual(int(NOW + 60), entry["asOf"])
+
+    def test_a_fetch_that_measured_a_window_higher_keeps_it(self) -> None:
+        self.fetch(_keychain_runner(_credentials()))
+        self.receive(_claude_post((30, FIVE_RESET), (61, WEEK_RESET)), NOW + 60)
+
+        (entry,) = self.row(NOW + 60)
+        self.assertEqual(42, entry["fiveH"]["pct"])
+
+    def test_a_status_line_window_that_has_moved_on_replaces_the_fetched_one(self) -> None:
+        self.fetch(_keychain_runner(_credentials()))
+        later = NOW + 3_700
+        self.receive(_claude_post((3, later + 5 * 3600 - 100)), later)
+
+        (entry,) = self.row(later)
+        self.assertEqual(3, entry["fiveH"]["pct"])
+        self.assertEqual([{"label": "Fable", "pct": 37}], entry["models"])
+
+    def test_a_refused_fetch_does_not_hide_the_status_line_figures(self) -> None:
+        self.fetch(_keychain_runner(_credentials()), _opener(error=_http_error(401, "no")))
+        self.receive(_claude_post((42, FIVE_RESET)))
+
+        (entry,) = self.row()
+        self.assertEqual("ok", entry["state"])
+        self.assertEqual(42, entry["fiveH"]["pct"])
+
+    def test_the_fetch_alone_is_published_as_before(self) -> None:
+        self.fetch(_keychain_runner(_credentials()))
+
+        self.assertEqual(
+            quota.cached_entries(self.config, self.state, "claude", NOW, 24), self.row()
+        )
+
+    def test_the_merge_never_draws_two_claude_tiles(self) -> None:
+        self.fetch(_keychain_runner(_credentials()))
+        self.receive(_claude_post((42, FIVE_RESET), (61, WEEK_RESET)))
+
+        self.assertEqual(1, len(self.row()))
+
+
+class ClaudeUsageEndpointTest(RuntimeTestCase):
+    """POST /api/usage/claude: loopback only, capped, and never an error a status line sees."""
+
+    def _post(
+        self, port: int, body: bytes, headers: dict[str, str] | None = None, path: str = ""
+    ) -> tuple[int, bytes]:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        conn.request(
+            "POST",
+            path or "/api/usage/claude",
+            body=body,
+            headers={"Content-Type": "application/json", **(headers or {})},
+        )
+        response = conn.getresponse()
+        payload = response.read()
+        conn.close()
+        return response.status, payload
+
+    def test_the_route_stores_claude_windows_and_answers_every_body_with_success(self) -> None:
+        application = cli.build_application(*runtime(), clock=time.time)
+        httpd = make_server(application=application)
+        thread = threading.Thread(target=poll_fast(httpd), daemon=True)
+        thread.start()
+        now = time.time()
+        try:
+            body = json.dumps(_claude_post((42, now + 3600), (61, now + 86_400))).encode()
+            self.assertEqual((200, b'{"ok":true,"usage":2}'), self._post(httpd.server_port, body))
+            for junk in (b"{not json", b"[1,2,3]", b"null", b"", b"{}"):
+                with self.subTest(body=junk):
+                    self.assertEqual(
+                        (200, b'{"ok":true,"usage":0}'), self._post(httpd.server_port, junk)
+                    )
+            cap = http_api.CLAUDE_USAGE_BODY_CAP_BYTES
+            status, _ = self._post(httpd.server_port, b"x" * (cap + 1))
+            self.assertEqual(413, status)
+            status, _ = self._post(httpd.server_port, body, {"X-Forwarded-For": "192.0.2.1"})
+            self.assertEqual(403, status)
+            status, _ = self._post(httpd.server_port, body, {"Sec-Fetch-Site": "same-site"})
+            self.assertEqual(403, status)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=2)
+
+        (entry,) = quota.claude_receipt_entries(
+            application.config, application.state, time.time(), 24
+        )
+        self.assertEqual((42, 61), (entry["fiveH"]["pct"], entry["week"]["pct"]))
+        self.assertNotIn("antigravity", application.state.usage_receipts)
+
+
+class ClaudeReceiptDisclosureTest(unittest.TestCase):
+    """No credential, and nothing the status line names, reaches `/api/data` or diagnostics."""
+
+    def test_no_token_or_status_line_detail_reaches_the_board_or_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = _config(home=tmp, platform_name="darwin")
+            Path(tmp, ".claude", "projects").mkdir(parents=True)
+            state = _state(config)
+            sink: list[str] = []
+            _fetch_claude(
+                config,
+                state,
+                clock=lambda: NOW,
+                opener=_opener(_usage_body()),
+                runner=_keychain_runner(_credentials()),
+                diagnostic_sink=sink.append,
+            )
+            quota.receive_claude_statusline(
+                state,
+                _claude_post(
+                    (50, FIVE_RESET),
+                    session_id="decoy-session-7f3a",
+                    transcript_path="/decoy-7f3a/transcript.jsonl",
+                    cwd="/decoy-7f3a/folder",
+                ),
+                now=NOW,
+                config=config,
+            )
+            application = aggregate.Application(
+                config,
+                state,
+                aggregate.default_harnesses(),
+                native_notifier=lambda _p: "",
+                popup_notifier=lambda _t, _m: None,
+                diagnostic_sink=sink.append,
+                clock=lambda: NOW,
+            )
+            _revision, body = application.collect_json(show_all=True)
+            report = json.dumps(diagnostics.diagnose(application), default=str)
+
+        data = json.loads(body)
+        (claude_entry,) = [u for u in data["usage"] if u.get("harness") == "claude"]
+        self.assertEqual(50, claude_entry["fiveH"]["pct"])
+        self.assertEqual([{"label": "Fable", "pct": 37}], claude_entry["models"])
+        for text in (body.decode(), report, "\n".join(sink)):
+            self.assertNotIn(TOKEN, text)
+            self.assertNotIn("decoy-7f3a", text)
 
 
 class PublishedWindowLengthTest(RuntimeTestCase):

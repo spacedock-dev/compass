@@ -198,6 +198,7 @@ class TerminalActionsMatchTheClientTest(unittest.TestCase):
     # question to put to a session, so the skill offers no action for them.
     NOT_ACTIONS = (
         "--footer",
+        "--forward-usage",
         "--version",
         "--set-group",  # Launcher writes need a label and explicit target, not an action word.
     )
@@ -2350,6 +2351,54 @@ class SemanticHistoryContractDocumentationTest(unittest.TestCase):
             self.assertEqual(0o600, target.stat().st_mode & 0o777)
 
 
+class ClaudeAllowanceSourceDocumentationTest(unittest.TestCase):
+    """A reader whose Claude login Compass cannot read is told where else Claude's figures come from."""
+
+    ROOT = SERVER_PATH.parents[3]
+
+    def flat(self, relative: str) -> str:
+        return " ".join((self.ROOT / relative).read_text(encoding="utf-8").split())
+
+    def test_each_reader_facing_document_names_the_status_line_source(self) -> None:
+        for relative, phrases in (
+            (
+                _DASHBOARD_REFERENCE,
+                (
+                    "Claude's figures can also come from Claude Code's status line, with no "
+                    "credential",
+                    "`--forward-usage`",
+                    "Turning off quota reading hides these too.",
+                ),
+            ),
+            (
+                "HOW_TO_USE.md",
+                (
+                    "### Show Claude's allowance on the board from your status line",
+                    "--forward-usage >/dev/null 2>&1",
+                    "Turn off quota reading hides Claude's figures from this source too.",
+                ),
+            ),
+            (
+                "SECURITY.md",
+                (
+                    "`POST /api/usage/claude`",
+                    "posts the two windows' `used_percentage` and `resets_at` and nothing else",
+                    "`--no-usage` drops the windows before storage",
+                    "refuses it with 403 to a LAN client",
+                ),
+            ),
+            ("MANUAL.md", ("| `--forward-usage` |",)),
+        ):
+            flat = self.flat(relative)
+            for phrase in phrases:
+                with self.subTest(file=relative, phrase=phrase):
+                    self.assertIn(phrase, flat)
+
+    def test_the_route_the_documents_name_is_the_one_the_forwarder_posts_to(self) -> None:
+        self.assertEqual("/api/usage/claude", terminal_client.FORWARD_ROUTE)
+        self.assertIn(terminal_client.FORWARD_ROUTE, self.flat("SECURITY.md"))
+
+
 class LightHarnessUsageContractDocumentationTest(unittest.TestCase):
     """DEC-14's section is a contract for a pathway nothing uses yet.
 
@@ -3250,10 +3299,10 @@ class FocusCommandContractDocumentationTest(unittest.TestCase):
             'path.startswith("/api/events/")' in do_post
         )
         gated = len(re.findall(r"\bcoordinator\.(?:focus_)?authorized\(", source))
-        self.assertEqual(24, routes)
+        self.assertEqual(25, routes)
         self.assertEqual(2, gated)
-        self.assertIn("Writing is the twenty-four POST routes", self.FLAT)
-        self.assertIn("There is nothing to authenticate with on twenty-two of them", self.FLAT)
+        self.assertIn("Writing is the twenty-five POST routes", self.FLAT)
+        self.assertIn("There is nothing to authenticate with on twenty-three of them", self.FLAT)
         self.assertIn("Two carry a capability and they are not worth the same.", self.FLAT)
 
     def test_the_copied_correction_route_is_named_counted_and_its_residual_stated(self) -> None:

@@ -505,7 +505,7 @@ def usage(
     now: float,
     window_hours: float,
 ) -> list[dict[str, Any]]:
-    """The last fetched Claude quota, read from the quota module's cache.
+    """Claude's quota: the last fetch, merged with what Claude Code's status line reported.
 
     This provider never touches the network: the fetch runs on its own thread,
     triggered by `/api/data` requests carrying the page's consent, and this
@@ -517,7 +517,9 @@ def usage(
     older than the dashboard's own activity window is withheld, the same rule the
     Codex disk reader applies to its snapshot.
     """
-    return runtime_quota.cached_entries(config, state, "claude", now, window_hours)
+    fetched = runtime_quota.cached_entries(config, state, "claude", now, window_hours)
+    received = runtime_quota.claude_receipt_entries(config, state, now, window_hours)
+    return runtime_quota.merge_claude_usage(fetched, received)
 
 
 def collect(

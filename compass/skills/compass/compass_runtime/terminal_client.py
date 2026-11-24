@@ -14,7 +14,9 @@ so no other operation loads it.
 `--footer` is the one operation that never reaches the dashboard. It runs on every status line
 refresh, so it reads what the dashboard already wrote and the JSON the status line
 hands it, and `http.client` is imported only by the functions that do reach the dashboard, which
-keeps it out of this command's import set.
+keeps it out of this command's import set. `--forward-usage` runs on the same refresh beside it
+and does reach the dashboard, once, with Claude's two quota windows and nothing else; it is a
+separate operation so the footer's promise stays whole.
 """
 
 from __future__ import annotations
@@ -74,6 +76,12 @@ STDIN_DEADLINE_SEC: Final = 0.25
 # collection that follows it still leave the file fresh. A constant here rather than a
 # `config.py` value because this module imports nothing from the runtime.
 LINE_STALE_SEC: Final = 60.0
+# `--forward-usage`'s whole budget after stdin: discovery and the one POST together. A status line
+# waits for its command, so this bounds what a hung or missing dashboard can cost each refresh; a
+# live loopback dashboard answers both in a few milliseconds.
+FORWARD_BUDGET_SEC: Final = 1.0
+FORWARD_ROUTE: Final = "/api/usage/claude"
+FORWARD_REPLY_CAP_BYTES: Final = 1024
 LINE_CAP_BYTES: Final = 8192
 # A file dated further ahead than this is a clock that moved or a file nobody wrote.
 LINE_FUTURE_SLACK_SEC: Final = 5.0
@@ -83,6 +91,11 @@ FOOTER_DIRECTORY: Final = "footer"
 _MS_EPOCH_FLOOR: Final = 1e11  # a seconds value this large is the year 5138; it is milliseconds
 
 _STATE_NAME = re.compile(r"compass-([1-9][0-9]{0,4})\.json")
+# Cortado's rule for a reset written as text: a full ISO 8601 date and time, an optional fraction
+# and an optional offset, and nothing else. A bare date would be read as midnight.
+_ISO_RESET = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})?"
+)
 _PATH = re.compile(r"/[!-~]*")
 _SESSION_FLAG = re.compile(r"([a-z][a-z0-9_-]{0,31}):([!-~]{1,200})")
 _SESSION_ID = re.compile(r"[!-~]{1,200}")
@@ -264,6 +277,11 @@ OPERATIONS = (
         "print one status line segment (other sessions waiting, the tightest quota window) "
         "from the JSON on stdin and the dashboard's line file, and exit 0; "
         "it reaches no dashboard, so it stands alone or with --session",
+    ),
+    Operation(
+        "--forward-usage",
+        "send Claude's five-hour and seven-day quota from the status line JSON on stdin to a "
+        "running dashboard, and nothing else from it; prints nothing, starts nothing, exits 0",
     ),
     Operation(
         "--sessions",
@@ -687,7 +705,7 @@ def handles(argv: list[str]) -> bool:
     )
 
 
-def run(argv: list[str]) -> int:  # noqa: PLR0911 - one dispatch per short operation
+def run(argv: list[str]) -> int:  # noqa: C901, PLR0911 - one dispatch per short operation
     no_update_check = "--no-update-check" in argv
     argv = [arg for arg in argv if arg != "--no-update-check"]
     group = parse_group_args(argv)
@@ -706,6 +724,8 @@ def run(argv: list[str]) -> int:  # noqa: PLR0911 - one dispatch per short opera
         return run_monitor(off=off, session=named, no_update_check=no_update_check)
     if parse_footer_args(argv)[0]:
         return run_footer(argv, os.environ, sys.stdin, sys.stdout)
+    if argv == ["--forward-usage"]:
+        return run_forward_usage(sys.stdin)
     drift, again, session = parse_drift_args(argv)
     if drift:
         return run_drift(again=again, session=session, no_update_check=no_update_check)
@@ -1485,6 +1505,87 @@ def run_footer(
     except Exception:  # noqa: BLE001 — nothing may reach a status bar but the line
         return 0
     return 0
+
+
+def _strict_reset(value: object) -> float | None:
+    """A reset as epoch seconds, from a number or a full ISO 8601 stamp only."""
+    if isinstance(value, str) and _ISO_RESET.fullmatch(value) is None:
+        return None
+    return _reset_epoch(value)
+
+
+def forwarded_windows(payload: Mapping[str, Any] | None, now: float) -> dict[str, dict[str, Any]]:
+    """The two windows `--forward-usage` may send, rebuilt from their four numbers.
+
+    Only `rate_limits.five_hour` and `rate_limits.seven_day` are read, and of each only
+    `used_percentage` and `resets_at`. The body is built fresh from those, so the session id,
+    transcript path, folder, model, cost and `spend_limit` the payload also carries cannot ride
+    along. A window is withheld when its percent is not a number from 0 to 100, or its reset is
+    not a number or a full ISO stamp, or has already passed: the board needs the reset to tell
+    a newer window from an older one, and drops a finished period anyway.
+    """
+    limits = payload.get("rate_limits") if payload is not None else None
+    if not isinstance(limits, dict):
+        return {}
+    found: dict[str, dict[str, Any]] = {}
+    for key, _label in _WINDOWS:
+        window = limits.get(key)
+        if not isinstance(window, dict):
+            continue
+        used = _number(window.get("used_percentage"))
+        resets_at = _strict_reset(window.get("resets_at"))
+        if used is None or not 0 <= used <= 100 or resets_at is None or resets_at <= now:
+            continue
+        found[key] = {"used_percentage": window["used_percentage"], "resets_at": int(resets_at)}
+    return found
+
+
+def run_forward_usage(
+    stdin: TextIO | None,
+    *,
+    environ: Mapping[str, str] | None = None,
+    port: int | None = None,
+    now: float | None = None,
+) -> int:
+    """Hand Claude Code's quota windows to the board. Always 0, and never a word.
+
+    A status line shows whatever its command prints, so this prints nothing, and it exits 0
+    whatever happens because a failure here must not disturb the line beside it. It never
+    starts a dashboard: a status line refresh is no reason to launch one. Without a usable
+    window it sends nothing, so a session's first render, before Claude Code has any
+    `rate_limits`, costs no connection at all.
+    """
+    try:
+        moment = time.time() if now is None else now
+        windows = forwarded_windows(read_status_line(stdin), moment)
+        if windows:
+            env = os.environ if environ is None else environ
+            _forward(state_home(env), {"rate_limits": windows}, port)
+    except Exception:  # noqa: BLE001 — nothing may reach a status bar, and the exit stays 0
+        return 0
+    return 0
+
+
+def _forward(home: str, body: Mapping[str, Any], port: int | None) -> None:
+    """Post `body` to the newest-started dashboard, all inside one budget.
+
+    Discovery is `find_dashboard`'s, rewritten only to share one deadline across the probes and
+    the post, so eight stale state files cannot cost eight health timeouts on one refresh. The
+    reply is not read for meaning: an older dashboard's 404 and a refusal are both silence here.
+    """
+    end = time.monotonic() + FORWARD_BUDGET_SEC
+    best: Dashboard | None = None
+    for candidate in candidate_ports(home, port):
+        left = end - time.monotonic()
+        if left <= 0:
+            return
+        answer = probe(candidate, min(left, HEALTH_TIMEOUT_SEC))
+        if isinstance(answer, Dashboard) and (best is None or answer.started > best.started):
+            best = answer
+    left = end - time.monotonic()
+    if best is None or left <= 0:
+        return
+    post(best.port, FORWARD_ROUTE, body, timeout=left, cap=FORWARD_REPLY_CAP_BYTES)
 
 
 def _emit(lines: list[str], stream: TextIO) -> None:
