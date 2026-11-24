@@ -567,6 +567,7 @@ export const StatusLegend: Story = {
       ['Waiting on you', 'waiting'],
       ['Quiet', 'quiet'],
       ['Ended', 'ended'],
+      ['State not known', 'state-not-known'],
       ['Worth a look', 'worth-a-look'],
     ];
     await expect(within(legend).getAllByRole('listitem')).toHaveLength(entries.length);
@@ -645,6 +646,12 @@ export const StatusLegend: Story = {
     const unknown = rowOf(canvasElement, 'J')?.querySelector('[data-next-row-state]');
     await expect(unknown).toHaveTextContent('State not published');
     await expect(unknown?.querySelector('svg')).toBeNull();
+    // Both rows still draw a tile: the neutral State not known one (owner, 2026-11-24).
+    for (const id of ['F', 'J']) {
+      const row = rowOf(canvasElement, id);
+      if (!row) throw new Error(`Missing row ${id}`);
+      await expect(within(row).getByRole('img', { name: 'State not known' })).toBeVisible();
+    }
     await expect(canvas.getByRole('status', { name: 'Working sessions' })).toHaveTextContent(
       '2 sessions working',
     );

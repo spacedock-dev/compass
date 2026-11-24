@@ -7,6 +7,7 @@ const glyphs = [
   ['waiting', 'Waiting on you', 'PiClockBold'],
   ['quiet', 'Quiet', 'PiMoonBold'],
   ['ended', 'Ended', 'PiCheckBold'],
+  ['state-not-known', 'State not known', 'PiCircleDashedBold'],
   ['worth-a-look', 'Worth a look', 'PiWarningBold'],
   ['go-to-page', 'go-to-page', 'PiArrowRightBold'],
   ['show-below', 'show-below', 'PiArrowDownBold'],

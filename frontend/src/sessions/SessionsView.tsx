@@ -12,7 +12,13 @@ import { WorthALookFlag } from '../attention/WorthALookFlag';
 import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 'react';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
-import { SESSION_TEXT_ORIGIN, gapNames, sessionStateLimit, type Row } from '../observed';
+import {
+  SESSION_TEXT_ORIGIN,
+  gapNames,
+  sessionStateLimit,
+  sessionTile,
+  type Row,
+} from '../observed';
 import { selectObserved } from '../observed/select';
 import { selectHarnessSources } from '../store/selectors';
 import { useDisplayed, useShell } from '../shell/context';
@@ -177,7 +183,10 @@ function Identity({
       : undefined;
   const state = rowState(session);
   const limit = sessionStateLimit(session, state);
-  const tile = state !== 'State not published' && state !== 'Waiting on child';
+  /* Every row draws a tile (owner, 2026-11-24). A row whose state word is a text line (State not published,
+     Waiting on child) keeps that line as its state, and its tile shows what Compass can say underneath. */
+  const wordIsTile = state !== 'State not published' && state !== 'Waiting on child';
+  const tile = sessionTile(session, state);
   /* The Waiting on you tile carries the block; what the session is waiting on stays under the Now line. A held
      question can run to 2,000 characters: the row shows three lines, the session page all of it. A note that
      only repeats the Now line is said once. */
@@ -190,7 +199,17 @@ function Identity({
   const facts = row.showOutcome ? outcomeLine(session.outcomeText, session.gitText) : '';
   return (
     <div className="next-operation-identity flex items-start gap-4 max-[620px]:gap-3">
-      {tile ? <StatusTile state={state} live={session.isLive && state === 'Working'} /> : null}
+      {/* A fixed 44 px column, so titles, descriptors and Now lines line up whatever a row's tile is. */}
+      <span
+        className="next-operation-tile flex w-11 shrink-0 justify-center"
+        data-next-row-tile-slot
+      >
+        <StatusTile
+          state={tile}
+          rowState={wordIsTile ? state : null}
+          live={session.isLive && tile === 'Working'}
+        />
+      </span>
       <div className="min-w-0">
         <RouteAnchor
           route={row.route}
@@ -229,7 +248,7 @@ function Identity({
           <span
             className="next-operation-scan-only"
             title={session.scanOnly ? SCAN_ONLY_NOTE : undefined}
-            data-next-row-state={tile ? undefined : state}
+            data-next-row-state={wordIsTile ? undefined : state}
           >
             {limit}
           </span>
@@ -360,6 +379,11 @@ const RowView = memo(function RowView({
   );
 });
 
+/* An empty group says so in plain quiet text, padded as a row inside the list card, with no hatch, dashed edge
+   or tinted box: the style board draws absences as plain grey text (owner, 2026-11-24). */
+const EMPTY_LINE =
+  'm-0 border-0 border-t border-solid border-[var(--sunk)] px-6 py-5 text-body leading-[1.5] text-[var(--ink2)] max-[620px]:p-4';
+
 const Group = memo(function Group({
   kind,
   title,
@@ -483,14 +507,13 @@ const Group = memo(function Group({
               </Fragment>
             ))
           ) : !countsAvailable || noMatches ? null : rows.length ? (
-            <p
-              data-next-sessions-filtered-empty
-              className="next-absence m-0 border-0 border-t border-solid border-[var(--sunk)] px-6 py-5 max-[620px]:px-4"
-            >
+            <p data-next-sessions-filtered-empty className={EMPTY_LINE}>
               {groupEmptyLine(rows.length, title)}
             </p>
           ) : (
-            <p className="next-sessions-empty next-absence">{empty}</p>
+            <p className={`next-sessions-empty ${EMPTY_LINE}`} data-next-sessions-empty={kind}>
+              {empty}
+            </p>
           )}
         </div>
       </TooltipProvider>

@@ -29,6 +29,7 @@ export const Guide: Story = {
       words.waitingOnYou,
       words.quiet,
       words.ended,
+      words.stateNotKnown,
       words.worthALook,
     ]);
     await expect(rows[2]?.querySelector('[data-icon="quiet"]')).toBeVisible();
@@ -36,6 +37,10 @@ export const Guide: Story = {
       'The agent finished its turn and is waiting for your next message.',
     );
     await expect(rows[3]).toHaveTextContent('The session reported that it ended.');
+    await expect(rows[4]?.querySelector('[data-icon="state-not-known"]')).toBeVisible();
+    await expect(rows[4]).toHaveTextContent(
+      'The agent reports it is idle, but Compass saw no finished turn, so it cannot say whether it is quiet or stopped.',
+    );
     const progress = within(canvas.getByRole('region', { name: 'Goals and progress checks' }));
     for (const word of [
       GLOSSARY.onTrack.plain,

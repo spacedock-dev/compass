@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, waitFor, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { App } from '../src/App';
 import { createRouter } from '../src/router/router';
@@ -22,7 +22,63 @@ type Story = StoryObj<typeof meta>;
 const G = 1900000000;
 const QUESTION = 'Run the billing migration against the staging copy first?';
 
-function Board() {
+const CANVAS_SESSIONS: readonly Record<string, unknown>[] = [
+  {
+    harness: 'claude',
+    sid: 'acme-docs',
+    project: 'acme/dashboard',
+    project_key: '/acme/dashboard',
+    title: 'Write the dashboard docs',
+    state: 'working',
+    active: true,
+    state_detail: 'Running 3 helpers · writing the docs pull request',
+    started_at: G - 5400,
+    last_activity: G - 10,
+    annotation_goal: 'Publish the dashboard guide with screenshots',
+    annotation_revision: 1,
+  },
+  {
+    harness: 'claude',
+    sid: 'acme-billing',
+    project: 'acme/api',
+    project_key: '/acme/api',
+    title: 'Migrate the billing tables',
+    state: 'needs_input',
+    state_detail: 'Waiting for you to approve a command',
+    blocked_since: G - 120,
+    started_at: G - 1800,
+    last_activity: G - 120,
+  },
+  {
+    harness: 'claude',
+    sid: 'acme-cleanup',
+    project: 'acme/api',
+    project_key: '/acme/api',
+    title: 'Remove the old feature flags',
+    state: 'idle',
+    started_at: G - 7200,
+    ended_at: G - 1500,
+    last_activity: G - 1500,
+    dirty: false,
+  },
+  {
+    harness: 'claude',
+    sid: 'acme-nightly',
+    project: 'acme/website',
+    project_key: '/acme/website',
+    title: 'Nightly dependency check',
+    state: 'idle',
+    started_at: G - 10800,
+    finished_at: G - 180,
+    last_activity: G - 180,
+  },
+];
+
+function Board({
+  sessions = CANVAS_SESSIONS,
+}: {
+  readonly sessions?: readonly Record<string, unknown>[];
+}) {
   const [shell] = useState(() => {
     const history = fakeRouterEnvironment('#n=sessions');
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
@@ -61,57 +117,7 @@ function Board() {
                     age_sec: 120,
                   },
                 ],
-                sessions: [
-                  {
-                    harness: 'claude',
-                    sid: 'acme-docs',
-                    project: 'acme/dashboard',
-                    project_key: '/acme/dashboard',
-                    title: 'Write the dashboard docs',
-                    state: 'working',
-                    active: true,
-                    state_detail: 'Running 3 helpers · writing the docs pull request',
-                    started_at: G - 5400,
-                    last_activity: G - 10,
-                    annotation_goal: 'Publish the dashboard guide with screenshots',
-                    annotation_revision: 1,
-                  },
-                  {
-                    harness: 'claude',
-                    sid: 'acme-billing',
-                    project: 'acme/api',
-                    project_key: '/acme/api',
-                    title: 'Migrate the billing tables',
-                    state: 'needs_input',
-                    state_detail: 'Waiting for you to approve a command',
-                    blocked_since: G - 120,
-                    started_at: G - 1800,
-                    last_activity: G - 120,
-                  },
-                  {
-                    harness: 'claude',
-                    sid: 'acme-cleanup',
-                    project: 'acme/api',
-                    project_key: '/acme/api',
-                    title: 'Remove the old feature flags',
-                    state: 'idle',
-                    started_at: G - 7200,
-                    ended_at: G - 1500,
-                    last_activity: G - 1500,
-                    dirty: false,
-                  },
-                  {
-                    harness: 'claude',
-                    sid: 'acme-nightly',
-                    project: 'acme/website',
-                    project_key: '/acme/website',
-                    title: 'Nightly dependency check',
-                    state: 'idle',
-                    started_at: G - 10800,
-                    finished_at: G - 180,
-                    last_activity: G - 180,
-                  },
-                ],
+                sessions,
               })
             : json({}),
         ),
@@ -320,17 +326,17 @@ export const ListCard: Story = {
           );
           await expect(now).toHaveStyle({ fontSize: '15px' });
           // The status tile lines up with the title.
-          const tile = row.querySelector<HTMLElement>('[data-next-row-state]');
-          if (tile)
-            await near(tile.getBoundingClientRect().top, title.getBoundingClientRect().top, 4);
+          const tile = part(row, '[data-next-row-tile]');
+          await near(tile.getBoundingClientRect().top, title.getBoundingClientRect().top, 4);
           // The row is the 44 px target: a press on its padding opens the session.
           row.scrollIntoView({ block: 'center' });
           const box = row.getBoundingClientRect();
           await expect(box.height).toBeGreaterThanOrEqual(44);
           await near(
             descriptor.getBoundingClientRect().left - box.left,
-            width === 1280 ? 24 + 44 + 12 : 16 + 44 + 8,
-            4,
+            // The row's padding, the fixed 44 px tile column and the gap after it.
+            width === 1280 ? 24 + 44 + 16 : 16 + 44 + 12,
+            1,
           );
           await expect(document.elementFromPoint(box.left + 6, box.top + 6)).toBe(title);
           await near(name.getBoundingClientRect().top - box.top, width === 1280 ? 20 : 16, 3);
@@ -453,6 +459,213 @@ export const SegmentedControl: Story = {
       'placeholder',
       'Search by title, goal or project',
     );
+    await expect(auditCalm(canvasElement)).toEqual([]);
+  },
+};
+
+/* Every row draws a tile, and the tile column is a fixed 44 px slot, so every title starts at the same x
+   (owner, 2026-11-24). A session whose state is not published shows the neutral State not known tile; one
+   waiting on a declared child shows its own state's tile and keeps the Waiting on child line. */
+const TILE_SESSIONS: readonly Record<string, unknown>[] = [
+  ...CANVAS_SESSIONS,
+  {
+    harness: 'claude',
+    sid: 'acme-lint',
+    project: 'acme/website',
+    project_key: '/acme/website',
+    title: 'Fix the lint warnings',
+    state: 'idle',
+    started_at: G - 3600,
+    last_activity: G - 60,
+  },
+  {
+    harness: 'claude',
+    sid: 'acme-release',
+    project: 'acme/api',
+    project_key: '/acme/api',
+    title: 'Coordinate the api release',
+    state: 'working',
+    active: true,
+    waiting_on_child: { harness: 'claude', sid: 'acme-docs' },
+    started_at: G - 2400,
+    last_activity: G - 30,
+  },
+  {
+    harness: 'claude',
+    sid: 'acme-review',
+    project: 'acme/api',
+    project_key: '/acme/api',
+    title: 'Review the api changes',
+    state: 'idle',
+    finished_at: G - 90,
+    waiting_on_child: { harness: 'claude', sid: 'acme-docs' },
+    started_at: G - 2000,
+    last_activity: G - 90,
+  },
+  {
+    harness: 'claude',
+    sid: 'acme-audit',
+    project: 'acme/api',
+    project_key: '/acme/api',
+    title: 'Audit the api keys',
+    state: 'idle',
+    waiting_on_child: { harness: 'claude', sid: 'acme-docs' },
+    started_at: G - 2200,
+    last_activity: G - 100,
+  },
+];
+
+export const TileColumn: Story = {
+  render: () => <Board sessions={TILE_SESSIONS} />,
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(
+        TILE_SESSIONS.length,
+      ),
+    );
+    const tileOf = (sid: string) => part(rowOf(canvasElement, sid), '[data-next-row-tile]');
+
+    // A state that is not published draws the neutral tile, named for what Compass can say.
+    const lint = rowOf(canvasElement, 'acme-lint');
+    const unknown = within(lint).getByRole('img', { name: 'State not known' });
+    await expect(unknown.querySelector('[data-icon="state-not-known"]')).not.toBeNull();
+    await expect(lint).toHaveTextContent('State not published');
+    // A child wait shows the session's own state's tile, or the neutral one, and keeps its line.
+    for (const [sid, tile] of [
+      ['acme-release', 'Working'],
+      ['acme-review', 'Quiet'],
+      ['acme-audit', 'State not known'],
+    ] as const) {
+      const row = rowOf(canvasElement, sid);
+      await expect(within(row).getByRole('img', { name: tile })).toBe(tileOf(sid));
+      await expect(row).toHaveTextContent('Waiting on child "Write the dashboard docs"');
+    }
+    // The neutral tile is grey: quiet ink on the page ground, distinct from Quiet's pair.
+    await expect(part(unknown, ':scope > span')).toHaveStyle({
+      backgroundColor: 'rgb(244, 246, 248)',
+      color: 'rgb(82, 96, 109)',
+    });
+
+    for (const width of [1280, 400]) {
+      await atWidth(width, async () => {
+        const rows = [...canvasElement.querySelectorAll<HTMLElement>('article.next-operation-row')];
+        const kinds = new Set(
+          rows.map((row) => part(row, '[data-next-row-tile]').dataset['nextRowTile']),
+        );
+        await expect([...kinds].sort()).toEqual(
+          ['Ended', 'Quiet', 'State not known', 'Waiting on you', 'Working'].sort(),
+        );
+        const lefts = rows.map((row) => ({
+          title: part(row, '.next-operation-route').getBoundingClientRect().left,
+          descriptor: part(row, '[data-next-row-descriptor]').getBoundingClientRect().left,
+          now: part(row, '[data-next-operation-fact="now"]').getBoundingClientRect().left,
+          slot: part(row, '[data-next-row-tile-slot]').getBoundingClientRect(),
+        }));
+        const first = lefts[0];
+        if (!first) throw new Error('No rows');
+        for (const left of lefts) {
+          await expect(left.title).toBeCloseTo(first.title, 0);
+          await expect(left.descriptor).toBeCloseTo(first.title, 0);
+          await expect(left.now).toBeCloseTo(first.title, 0);
+          await expect(left.slot.width).toBe(44);
+        }
+        for (const row of rows) {
+          const tile = part(row, '[data-next-row-tile]').getBoundingClientRect();
+          await expect(tile.width).toBeGreaterThanOrEqual(44);
+          await expect(tile.height).toBeGreaterThanOrEqual(44);
+        }
+        await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+      });
+    }
+
+    // The legend names the new tile beside the four states and the flag.
+    const legend = within(canvasElement).getByRole('list', { name: 'What the icons mean' });
+    const entries = within(legend)
+      .getAllByRole('listitem')
+      .map((item) => item.textContent);
+    await expect(entries).toEqual([
+      'Working',
+      'Waiting on you',
+      'Quiet',
+      'Ended',
+      'State not known',
+      'Worth a look',
+    ]);
+    await expect(legend.querySelector('[data-icon="state-not-known"]')).not.toBeNull();
+    await expect(auditCalm(canvasElement)).toEqual([]);
+  },
+};
+
+/* An empty group, and a group the filters empty, say so in plain quiet text padded as a row inside the list
+   card: no hatch, dashed edge or tinted box (owner, 2026-11-24). */
+const calmLine = async (line: HTMLElement) => {
+  await expect(line).toHaveStyle({
+    color: 'rgb(82, 96, 109)',
+    backgroundImage: 'none',
+    backgroundColor: 'rgba(0, 0, 0, 0)',
+    borderTopStyle: 'solid',
+    borderTopColor: 'rgb(238, 241, 244)',
+    borderBottomWidth: '0px',
+    borderLeftWidth: '0px',
+    borderRightWidth: '0px',
+  });
+  await expect(Number.parseFloat(getComputedStyle(line).fontSize)).toBeGreaterThanOrEqual(13);
+  await expect(line.classList.contains('next-absence')).toBe(false);
+};
+const ONLY_HISTORY = CANVAS_SESSIONS.filter((session) => session['sid'] === 'acme-cleanup');
+const ONLY_ACTIVE = CANVAS_SESSIONS.filter((session) => session['sid'] === 'acme-docs');
+
+export const EmptyRightNow: Story = {
+  render: () => <Board sessions={ONLY_HISTORY} />,
+  play: async ({ canvasElement }) => {
+    const line = await waitFor(() => part(canvasElement, '[data-next-sessions-empty="active"]'));
+    await expect(line.textContent).toBe('No exact session has active evidence right now.');
+    for (const width of [1280, 400]) {
+      await atWidth(width, async () => {
+        await calmLine(line);
+        // Padded as a row: the text starts where a row's title block does.
+        const row = rowOf(canvasElement, 'acme-cleanup');
+        await expect(getComputedStyle(line).paddingLeft).toBe(getComputedStyle(row).paddingLeft);
+        await expect(getComputedStyle(line).paddingTop).toBe(getComputedStyle(row).paddingTop);
+        await expect(line.getBoundingClientRect().right).toBeLessThanOrEqual(
+          part(canvasElement, '[data-sessions-list-card]').getBoundingClientRect().right,
+        );
+        await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+      });
+    }
+    await expect(auditCalm(canvasElement)).toEqual([]);
+  },
+};
+
+export const EmptyHistoryAndFiltered: Story = {
+  render: () => <Board sessions={[...ONLY_ACTIVE, ...ONLY_HISTORY]} />,
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('article.next-operation-row')).toHaveLength(2),
+    );
+    const search = within(canvasElement).getByRole('searchbox', { name: 'Search sessions' });
+    await userEvent.type(search, 'feature flags');
+    const filtered = await waitFor(() =>
+      part(canvasElement, '[data-next-sessions-filtered-empty]'),
+    );
+    await expect(filtered.textContent).toBe(
+      'The 1 session in Right now does not match these filters.',
+    );
+    for (const width of [1280, 400]) await atWidth(width, () => calmLine(filtered));
+    await userEvent.clear(search);
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-sessions-filtered-empty]')).toBeNull(),
+    );
+    await expect(auditCalm(canvasElement)).toEqual([]);
+  },
+};
+
+export const EmptyHistory: Story = {
+  render: () => <Board sessions={ONLY_ACTIVE} />,
+  play: async ({ canvasElement }) => {
+    const line = await waitFor(() => part(canvasElement, '[data-next-sessions-empty="history"]'));
+    await expect(line.textContent).toBe('No recent-history rows in this payload.');
+    for (const width of [1280, 400]) await atWidth(width, () => calmLine(line));
     await expect(auditCalm(canvasElement)).toEqual([]);
   },
 };

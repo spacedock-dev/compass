@@ -2,7 +2,7 @@ import { useId, useState, type ReactNode } from 'react';
 import { dirtyEndReason } from '../attention/select';
 import { delegationFigure, metricOf, useProjectWindow } from '../delegation';
 import { GLOSSARY, SESSION_ROW_WORDS, SHOWN } from '../language/glossary';
-import { endedAt, sessionState, sessionStateLimit } from '../observed';
+import { endedAt, sessionState, sessionStateLimit, sessionTile } from '../observed';
 import { RouteLink } from '../shell/RouteLink';
 import { useShell } from '../shell/context';
 import { formatDurationWords, formatTimestamp, observationAge } from '../shell/format';
@@ -152,11 +152,13 @@ function SessionRow({
   return (
     <li>
       <SessionDestination project={model.group.label} row={row} className="project-overview-row">
-        {state === 'State not published' || state === 'Waiting on child' ? (
-          <span className="project-list-no-icon" />
-        ) : (
-          <StatusTile state={state} focusable={false} live={session.isLive} />
-        )}
+        {/* Every session row draws a tile, as on Sessions (owner, 2026-11-24). */}
+        <StatusTile
+          state={sessionTile(session, state)}
+          rowState={state === 'State not published' || state === 'Waiting on child' ? null : state}
+          focusable={false}
+          live={session.isLive && sessionTile(session, state) === 'Working'}
+        />
         <span className="project-overview-row-title">
           <strong data-authored={session.titleKnown || undefined}>{label.title}</strong>
           {limit ? (

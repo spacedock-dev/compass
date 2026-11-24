@@ -37,6 +37,7 @@ export {
   SESSION_TEXT_ORIGIN,
   sessionState,
   sessionStateLimit,
+  sessionTile,
   type ObservedSession,
 } from './session';
 export { selectObserved } from './select';

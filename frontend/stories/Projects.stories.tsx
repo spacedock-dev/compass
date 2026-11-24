@@ -97,7 +97,8 @@ export const ManyProjects: Story = {
     await expect(within(active).getByRole('img', { name: '1 waiting on you' })).toBeVisible();
     await expect(within(active).getByRole('img', { name: '1 worth a look' })).toBeVisible();
     const legend = within(canvas.getByRole('list', { name: 'What the icons mean' }));
-    await expect(legend.getAllByRole('listitem')).toHaveLength(5);
+    await expect(legend.getAllByRole('listitem')).toHaveLength(6);
+    await expect(legend.getByText('State not known')).toBeVisible();
     await expect(legend.getByText('Worth a look')).toBeVisible();
     await expect(canvas.getByText('Stage alerts', { exact: true })).not.toBeVisible();
     await userEvent.click(canvas.getByRole('button', { name: 'Show technical details' }));

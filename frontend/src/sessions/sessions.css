@@ -32,7 +32,6 @@
 .next-operation-collision{margin-top:8px;color:var(--ink);font-size:var(--fs-body);font-weight:500;line-height:1.55;max-width:var(--measure)}
 .next-operation-unread,.next-operation-scan-only{display:block;margin-top:8px;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-body);line-height:1.4}
 .next-operation-fact--unknown strong{color:var(--ink2)}
-.next-sessions-empty{grid-column:1/-1;margin:0;padding:20px 24px;border-top:1px solid var(--sunk);color:var(--ink2);font-size:var(--fs-body)}
 .next-operation-identity .next-operation-title--unknown{color:var(--ink2)}
 .next-operation-outcome{display:block;margin-top:6px;color:var(--ink2);font-size:var(--fs-body);font-weight:500;line-height:1.55}
 .next-operation-outcome--bad{color:var(--ink2)}

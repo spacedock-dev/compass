@@ -294,8 +294,9 @@ wording when its redesign ships. Route tokens still belong to the router.
 | All | Unfiltered Sessions list | Published Sessions population | Working sessions alone | First Sessions tab |
 | Active today | Active | Evidence of recent project activity | A session's Working state | Projects group |
 | No recent activity | Recently observed | Published project activity history | The Quiet session state | Projects group |
-| State not published | Keeps current label | The missing state field | The Quiet session state | Text only |
-| Waiting on child | Keeps current label | The reported child and relationship | Waiting on you | Text only |
+| State not known | Blank tile slot | An idle report with no recorded turn end, or no published state | The Quiet session state | Neutral grey tile with a dashed circle |
+| State not published | Keeps current label | The missing state field | The Quiet session state | Text line beside the State not known tile |
+| Waiting on child | Keeps current label | The reported child and relationship | Waiting on you | Text line; the tile shows the session's own state |
 | Read by scanning: no turn end can be observed here | Keeps current label | Collector scope | The Quiet session state | Text only |
 | Show technical details | Separate technical controls | Activity log, AI use, limits and raw evidence | What Compass can't see | Opens in place on the surfaces with technical evidence |
 | Hide technical details | Keeps the same subject as Show technical details | Closes the inline disclosure | Other collapsible sections | Only while the layer is open |

@@ -317,6 +317,7 @@ summary,
 .help-icon[data-help-icon="waiting"]{color:var(--status-waiting-ink);background:var(--status-waiting-bg)}
 .help-icon[data-help-icon="quiet"]{color:var(--status-quiet-ink);background:var(--status-quiet-bg)}
 .help-icon[data-help-icon="ended"]{color:var(--status-ended-ink);background:var(--status-ended-bg)}
+.help-icon[data-help-icon="state-not-known"]{color:var(--ink2);background:var(--bg)}
 .help-icon[data-help-icon="worth-a-look"]{color:var(--worth-a-look)}
 .help-level{color:var(--status-ended-ink)}
 .help-level[data-level="1"]{color:var(--progress-slightly-off-course)}

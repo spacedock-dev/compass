@@ -456,7 +456,8 @@ export const ProjectChildWait: Story = {
     const sessions = within(await canvas.findByRole('region', { name: 'Sessions' }));
     const parent = within(sessions.getByRole('link', { name: /Coordinate release/ }));
     await expect(parent.getByText('Waiting on child "Check build"')).toBeVisible();
-    await expect(parent.queryByRole('img', { name: 'Working' })).toBeNull();
+    // The parent is itself working, so its tile is the Working one (owner, 2026-11-24).
+    await expect(parent.getByRole('img', { name: 'Working' })).toBeVisible();
   },
 };
 
@@ -513,7 +514,9 @@ export const ProjectDisplayedStateRollup: Story = {
     const sessions = within(await canvas.findByRole('region', { name: 'Sessions' }));
     const parent = within(sessions.getByRole('link', { name: /Coordinate release/ }));
     await expect(parent.getByText('Waiting on child "Check build"')).toBeVisible();
-    await expect(parent.queryByRole('img')).toBeNull();
+    await expect(parent.getAllByRole('img').map((tile) => tile.getAttribute('aria-label'))).toEqual(
+      ['Working'],
+    );
   },
 };
 

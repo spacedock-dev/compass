@@ -4,7 +4,7 @@ import { mountSessions } from './testing';
 import { rowState } from './rows';
 import declared from '../../test/fixtures/declared-sessions.json';
 import liveBoard from '../../test/fixtures/client-contract/data-live-row.json';
-import { observe } from '../observed';
+import { observe, sessionTile } from '../observed';
 import { GLOSSARY } from '../language/glossary';
 
 const NOW = 5000;
@@ -553,7 +553,11 @@ describe('the groups', () => {
     const title = within(row).getByRole('link', { name: 'Open session Unmeasured' });
     const absence = within(row).getByText('State not published');
     expect(title.compareDocumentPosition(absence) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(row).queryByRole('img')).toBeNull();
+    /* The row still draws a tile, the neutral one, and the text line stays the row's state word. */
+    const tile = within(row).getByRole('img', { name: 'State not known' });
+    expect(tile.querySelector('[data-icon="state-not-known"]')).toBeInTheDocument();
+    expect(tile.getAttribute('data-next-row-state')).toBeNull();
+    expect(row.querySelector('[data-next-row-state]')).toBe(absence);
   });
 
   it('keeps Waiting on child in the line below the title', async () => {
@@ -563,7 +567,48 @@ describe('the groups', () => {
     const title = within(row).getByRole('link', { name: 'Open session Coordinate release' });
     const absence = within(row).getByText(/Waiting on child/);
     expect(title.compareDocumentPosition(absence) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(row).queryByRole('img')).toBeNull();
+    /* The parent is itself working, so its tile says Working; the child wait stays its state line. */
+    const tile = within(row).getByRole('img', { name: 'Working' });
+    expect(tile.getAttribute('data-next-row-state')).toBeNull();
+    expect(row.querySelector('[data-next-row-state]')?.getAttribute('data-next-row-state')).toBe(
+      'Waiting on child',
+    );
+  });
+
+  it("gives every row a tile: a child wait takes the session's own state, an unpublished state the State not known tile", () => {
+    const child = { harness: 'codex', sid: 'kid' };
+    const sessions = observe(
+      board([
+        { ...child, state: 'working' },
+        { harness: 'claude', sid: 'w', state: 'working', waiting_on_child: child },
+        {
+          harness: 'claude',
+          sid: 'q',
+          state: 'idle',
+          finished_at: NOW - 2,
+          waiting_on_child: child,
+        },
+        { harness: 'claude', sid: 'u', state: 'idle', waiting_on_child: child },
+        { harness: 'claude', sid: 'i', state: 'idle' },
+        { harness: 'claude', sid: 'x', state: 'dozing' },
+        { harness: 'claude', sid: 'n' },
+      ]),
+    ).sessions;
+    const bySid = new Map(sessions.map((session) => [session.sid, session]));
+    const read = (sid: string) => {
+      const session = bySid.get(sid);
+      if (!session) throw new Error(`Missing ${sid}`);
+      return [rowState(session), sessionTile(session)];
+    };
+    expect(['kid', 'w', 'q', 'u', 'i', 'x', 'n'].map(read)).toEqual([
+      ['Working', 'Working'],
+      ['Waiting on child', 'Working'],
+      ['Waiting on child', 'Quiet'],
+      ['Waiting on child', 'State not known'],
+      ['State not published', 'State not known'],
+      ['State not published', 'State not known'],
+      ['State not published', 'State not known'],
+    ]);
   });
 
   it('shows Quiet only for a published idle with a measured turn stop', () => {
