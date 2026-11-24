@@ -262,6 +262,14 @@ class ApplicationSnapshotTest(support.RuntimeTestCase):
         second_rev, _ = app.collect_json(show_all=False)
         self.assertGreater(second_rev[1], first_rev[1])
 
+    def test_a_snapshot_dated_in_the_future_does_not_block_collection(self) -> None:
+        app = support.build_app()
+        base = app.clock()
+        first_rev, _ = app.collect_json(show_all=False)
+        app.clock = lambda: base + app.config.collect_memo_sec - 12
+        second_rev, _ = app.collect_json(show_all=False)
+        self.assertGreater(second_rev[1], first_rev[1])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
@@ -12,6 +13,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from . import annotations as annotation_store
 from . import declared_sessions, levels, reading_evidence, semantic_history
+from . import io as runtime_io
 from .state import bounded_put
 
 if TYPE_CHECKING:
@@ -134,6 +136,101 @@ def current_transcript(state: RuntimeState, owner: tuple[str, str], path: str) -
     ):
         return None
     return transcript(path)
+
+
+_DirectoryStamp = tuple[int, int, int, int, int]
+
+
+class _ProjectNames(NamedTuple):
+    stamp: _DirectoryStamp | None
+    matches: dict[str, str | None]
+
+
+def _directory_stamp(path: str) -> _DirectoryStamp | None:
+    try:
+        info = os.stat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    if not stat.S_ISDIR(info.st_mode):
+        return None
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _claude_matches(directory: str, sids: frozenset[str]) -> dict[str, str | None]:
+    matches: dict[str, str | None] = {}
+    lengths = {len(sid) for sid in sids}
+    # Archived names can make a prefix ambiguous even when the board omits their rows.
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if entry.name.startswith(".") or not fnmatch.fnmatch(entry.name, "*.jsonl"):
+                continue
+            stem = entry.name.removesuffix(".jsonl")
+            for length in lengths:
+                sid = stem[:length]
+                if len(sid) == length and sid in sids:
+                    matches[sid] = None if sid in matches else entry.path
+    return matches
+
+
+class ClaudePrefixes:
+    """Filename evidence for the footer's Claude rows, serialized by the footer writer."""
+
+    def __init__(self, config: RuntimeConfig) -> None:
+        self._roots = config.store_roots.get("claude.projects", ())
+        self._root_stamps: dict[str, _DirectoryStamp | None] = {}
+        self._projects: dict[str, _ProjectNames] = {}
+        self._sids: frozenset[str] = frozenset()
+
+    def _sample_roots(self) -> dict[str, _DirectoryStamp | None]:
+        return {root: _directory_stamp(root) for root in self._roots}
+
+    def _project_paths(self, roots: Mapping[str, _DirectoryStamp | None]) -> list[str] | None:
+        if roots == self._root_stamps:
+            return list(self._projects)
+        directories: list[str] = []
+        for root, stamp in roots.items():
+            if stamp is None:
+                continue
+            if not runtime_io.admit_harness_root(root):
+                return None
+            with os.scandir(root) as entries:
+                directories.extend(
+                    entry.path
+                    for entry in entries
+                    if not entry.name.startswith(".")
+                    and (entry.is_symlink() or entry.is_dir(follow_symlinks=False))
+                )
+        return directories
+
+    def unambiguous(self, paths: Mapping[str, str]) -> set[str]:
+        if not paths:
+            return set()
+        roots = self._sample_roots()
+        directories = self._project_paths(roots)
+        if directories is None:
+            return set()
+        sids = frozenset(paths)
+        projects = {}
+        unique: dict[str, str | None] = {}
+        # An append does not change the namespace. Stat each project once and enumerate names
+        # only where entries could have changed since the last successful check.
+        for directory in directories:
+            stamp = _directory_stamp(directory)
+            cached = self._projects.get(directory)
+            if cached is not None and cached.stamp == stamp and sids == self._sids:
+                project = cached
+            else:
+                matches = _claude_matches(directory, sids) if stamp is not None else {}
+                if stamp is not None and _directory_stamp(directory) != stamp:
+                    return set()
+                project = _ProjectNames(stamp, matches)
+            projects[directory] = project
+            for sid, path in project.matches.items():
+                unique[sid] = None if sid in unique else path
+        if self._sample_roots() != roots:
+            return set()
+        self._root_stamps, self._projects, self._sids = roots, projects, sids
+        return {sid for sid, path in paths.items() if unique.get(sid) == path}
 
 
 def annotation_stamp(config: RuntimeConfig) -> tuple[int, ...] | None:
@@ -260,6 +357,7 @@ def _proof(
 class Validation(NamedTuple):
     proofs_hold: Callable[[float, tuple[str, str] | None], bool]
     stores_hold: Callable[[], bool]
+    claude_paths: dict[str, str]
 
 
 def publish(
@@ -312,4 +410,9 @@ def publish(
         selected = proofs.values() if owner is None else (proofs.get(owner),)
         return all(proof is not None and proof.holds(config, state, now) for proof in selected)
 
-    return Validation(proofs_hold, stores_hold)
+    claude_paths = {
+        sid: proof.memo.transcript.path
+        for (harness, sid), proof in proofs.items()
+        if harness == "claude"
+    }
+    return Validation(proofs_hold, stores_hold, claude_paths)

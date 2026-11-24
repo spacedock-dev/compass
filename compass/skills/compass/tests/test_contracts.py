@@ -2369,6 +2369,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.annotations",
             "compass_runtime.config",
             "compass_runtime.declared_sessions",
+            "compass_runtime.io",  # Share Claude store admission with transcript discovery.
             "compass_runtime.levels",
             "compass_runtime.reading_evidence",
             "compass_runtime.semantic_history",

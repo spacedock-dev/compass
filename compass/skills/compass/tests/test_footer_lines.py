@@ -13,7 +13,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from unittest import mock
 
 from compass_runtime import (
@@ -23,6 +23,7 @@ from compass_runtime import (
     http_api,
     observation,
     project_context,
+    reading_evidence,
     reading_policy,
     row_progress,
     terminal_sessions,
@@ -32,7 +33,11 @@ from compass_runtime import io as runtime_io
 
 from . import support
 from .test_analysis_result import _RowProgress
+from .test_claude_checks import SHORT
 from .test_live_lease_http import LeaseRoute
+
+if TYPE_CHECKING:
+    from compass_runtime.reading import Assessment
 
 NOW = 1_800_000_000.0
 NAME = re.compile(r"claude-[0-9a-f]{32}\.json")
@@ -785,6 +790,110 @@ class MonitorLinesTest(unittest.TestCase):
 
 
 class FooterRowProgressTest(_RowProgress):
+    def test_an_archived_transcript_in_an_existing_project_clears_the_idle_level(self) -> None:
+        self._archived_collision_clears_idle_level(new_project=False)
+
+    def test_an_archived_transcript_in_a_new_project_clears_the_idle_level(self) -> None:
+        self._archived_collision_clears_idle_level(new_project=True)
+
+    @unittest.skipUnless(os.name == "posix", "creating a directory symlink requires POSIX")
+    def test_a_relocated_claude_store_keeps_checking_its_idle_level(self) -> None:
+        projects = self.path.parent.parent
+        relocated = projects.with_name("relocated-projects")
+        projects.rename(relocated)
+        projects.symlink_to(relocated.name, target_is_directory=True)
+        self._archived_collision_clears_idle_level(new_project=False)
+
+    def _archived_collision_clears_idle_level(self, *, new_project: bool) -> None:
+        self.save_goal(lines=())
+        reading = self.departure()
+        os.utime(self.path, (self.now, self.now))
+        archive = self.path.parent.with_name("-work-archive")
+        if not new_project:
+            archive.mkdir()
+        app = self.cold()
+        app.harnesses = tuple(
+            spec
+            for spec in aggregate.default_harnesses(usage_fetch_enabled=False)
+            if spec.key == "claude"
+        )
+        (session,) = app.collect(show_all=False)["sessions"]
+        evidence = support.captured_evidence(app, "claude", SHORT, reading)
+        self.assertIsNotNone(evidence)
+        self.assertEqual(
+            annotation_store.OUTCOME_STORED,
+            annotation_store.record_reading(
+                self.config,
+                app.state,
+                "claude",
+                SHORT,
+                assessment=cast("Assessment", reading),
+                evidence=evidence,
+            ),
+        )
+        focused = (
+            f"/api/project-context?project={reading_evidence.project_key(session)}"
+            f"&session=claude:{SHORT}"
+        )
+        lines = footer_lines.Lines(self.config.state_home)
+        app.footer_lines = lines
+        self.addCleanup(lines.remove_all)
+        name = footer_lines.line_name("claude", session["resume_id"])
+        footer = Path(lines.directory) / name
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            (view,) = self.get(port, focused)["sources"]["work"]["drift_views"]
+            self.assertEqual("medium", view["pill"]["level"])
+            self.assertEqual("medium", self.poll(port))
+            self.assertEqual("medium", json.loads(footer.read_text())["stored_progress"])
+
+            self.now += 16
+            with mock.patch.object(os, "scandir", wraps=os.scandir) as scanned:
+                lines.touch(self.now)
+            refreshed = json.loads(footer.read_text())
+            self.assertEqual(("medium", self.now), (refreshed["stored_progress"], refreshed["at"]))
+            self.assertFalse(
+                any(
+                    Path(call.args[0]).is_relative_to(self.path.parent.parent)
+                    for call in scanned.call_args_list
+                    if call.args and isinstance(call.args[0], (str, Path))
+                )
+            )
+
+            archive.mkdir(exist_ok=True)
+            older = archive / f"{SHORT}-older.jsonl"
+            older.write_bytes(self.path.read_bytes())
+            os.utime(older, (1, 1))
+            self.now += 16
+            lines.touch(self.now)
+            refreshed = json.loads(footer.read_text())
+            self.assertEqual((None, self.now), (refreshed["stored_progress"], refreshed["at"]))
+            self.assertIsNone(self.poll(port))
+            (view,) = self.get(port, focused)["sources"]["work"]["drift_views"]
+            self.assertIsNone(view["pill"])
+
+    def test_a_prefix_collision_leaves_the_other_sessions_level_intact(self) -> None:
+        rows = self.seed_projects(held=2)
+        collided, unaffected = (row["sid"] for row in rows)
+        app = self.projects_app(rows)
+        lines = footer_lines.Lines(self.config.state_home)
+        app.footer_lines = lines
+        self.addCleanup(lines.remove_all)
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            for row in rows:
+                route = f"/api/project-context?project={row['project']}&session=claude:{row['sid']}"
+                (view,) = self.get(port, route)["sources"]["work"]["drift_views"]
+                self.assertEqual("medium", view["pill"]["level"])
+            app.collect_json(show_all=False)
+            older = self.path.with_name(f"{collided}-older.jsonl")
+            older.write_bytes(self.path.with_name(f"{collided}-full.jsonl").read_bytes())
+            os.utime(older, (1, 1))
+            lines.touch(self.now + 16)
+            for sid, level in ((collided, None), (unaffected, "medium")):
+                path = Path(lines.directory) / footer_lines.line_name("claude", sid)
+                self.assertEqual(level, json.loads(path.read_text())["stored_progress"])
+
     def test_a_clear_during_idle_proof_checks_withdraws_every_footer_level(self) -> None:
         rows = self.seed_projects(held=2)
         app = self.projects_app(rows)
@@ -1073,10 +1182,8 @@ class CoordinatorRefreshTest(unittest.TestCase):
 
         coordinator = self.coordinator(SimpleNamespace(touch=touch))
         coordinator.clock = lambda: wall
-        with (
-            mock.patch.object(time, "monotonic", side_effect=lambda: elapsed),
-            mock.patch.object(coordinator._wake, "wait", side_effect=wait),
-        ):
+        coordinator.monotonic = lambda: elapsed
+        with mock.patch.object(coordinator._wake, "wait", side_effect=wait):
             coordinator._run()
 
         self.assertEqual([(5.0, NOW - 7.0), (10.0, NOW - 2.0)], touches)

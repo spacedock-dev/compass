@@ -101,7 +101,8 @@ class Snapshot:
         if entry is None:
             return None
         revision, body, published_at, validate = entry
-        if now - published_at >= max_age:
+        # A wall-clock setback can leave old bytes dated ahead of the next eligible collection.
+        if not 0 <= now - published_at < max_age:
             return None
         if validate is not None:
             if not validate():

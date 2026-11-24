@@ -188,6 +188,7 @@ class Lines:
         self._retired: set[str] = set()
         self._validate_progress: Callable[[float, tuple[str, str]], bool] | None = None
         self._validate_stores: Callable[[], bool] | None = None
+        self._validate_prefixes: Callable[[], set[str]] | None = None
 
     def update(
         self,
@@ -196,6 +197,7 @@ class Lines:
         *,
         validate_progress: Callable[[float, tuple[str, str]], bool] | None = None,
         validate_stores: Callable[[], bool] | None = None,
+        validate_prefixes: Callable[[], set[str]] | None = None,
     ) -> None:
         """Publish the board's stored progress and cheap lease state."""
         try:
@@ -217,6 +219,7 @@ class Lines:
                 self._accept_pause(sample)
                 self._validate_progress = validate_progress
                 self._validate_stores = validate_stores
+                self._validate_prefixes = validate_prefixes
                 for name in self._current - sessions.keys():
                     body = self._desired[name]
                     previous = self._written.get(name)
@@ -245,6 +248,7 @@ class Lines:
                     self._desired[name] = body
                     row = sessions[name]
                     self._apply_state(name, self._state(row) if name not in self._ambiguous else {})
+                self._clear_ambiguous_progress()
                 self._flush(now)
         except Exception as exc:  # noqa: BLE001 — a status line file must never fail a request
             self._report(exc)
@@ -313,6 +317,7 @@ class Lines:
                             body["stored_progress"] = None
                     lease = self._state(row) if name not in self._ambiguous else {}
                     self._apply_state(name, lease)
+                self._clear_ambiguous_progress()
                 # A clear during a later proof check can invalidate an earlier one.
                 if retained and not self._progress_stores_hold():
                     for body in retained:
@@ -336,6 +341,26 @@ class Lines:
         except Exception as exc:  # noqa: BLE001 - shared proof failure withdraws every level
             self._report(exc)
             return False
+
+    def _clear_ambiguous_progress(self) -> None:
+        validate = self._validate_prefixes
+        if validate is None:
+            return
+        levels = [
+            (row["sid"], self._desired[name])
+            for name, row in self._sessions.items()
+            if self._desired[name]["stored_progress"]
+        ]
+        if not levels:
+            return
+        try:
+            unambiguous = validate()
+        except Exception as exc:  # noqa: BLE001 - unknown prefix ownership clears the level
+            self._report(exc)
+            unambiguous = set()
+        for sid, body in levels:
+            if sid not in unambiguous:
+                body["stored_progress"] = None
 
     def remove_all(self) -> None:
         """Remove what this instance wrote. A crash leaves the rest to the ceiling and the sweep."""

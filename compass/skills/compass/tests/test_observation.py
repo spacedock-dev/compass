@@ -105,12 +105,19 @@ class ObservationTestCase(unittest.TestCase):
     def clock(self) -> float:
         return self.now
 
-    def build(self, *, reuse: bool = False, **changes: Any) -> observation.Observation:
+    def build(
+        self,
+        *,
+        reuse: bool = False,
+        monotonic: Callable[[], float] | None = None,
+        **changes: Any,
+    ) -> observation.Observation:
         config = dataclasses.replace(self.config, **changes) if changes else self.config
         self.app = FakeApplication(config, reuse=reuse)
         return observation.Observation(
             self.app,  # type: ignore[arg-type]
             clock=self.clock,
+            monotonic=self.clock if monotonic is None else monotonic,
             diagnostic_sink=lambda _message: None,
         )
 
@@ -1062,7 +1069,6 @@ class WorkerLifecycleTest(ObservationTestCase):
             self.assertLess(self.now - started, 5, "the worker missed the collection floor")
 
         with (
-            mock.patch.object(time, "monotonic", side_effect=self.clock),
             mock.patch.object(coordinator._wake, "wait", side_effect=wait),
             mock.patch.object(self.app, "collect_json", side_effect=finish),
         ):
@@ -1073,11 +1079,54 @@ class WorkerLifecycleTest(ObservationTestCase):
         self.assertLessEqual(touches, 3)
         self.assertLessEqual(waits, 3)
 
+    def test_a_backward_wall_step_does_not_extend_the_collection_floor(self) -> None:
+        self._collect_after_wall_step(coalesce=0.1, expected=2.5)
+
+    def test_a_backward_wall_step_does_not_extend_the_coalescing_window(self) -> None:
+        self._collect_after_wall_step(coalesce=3.0, expected=4.0)
+
+    def _collect_after_wall_step(self, *, coalesce: float, expected: float) -> None:
+        elapsed = 0.0
+        collected: list[float] = []
+        coordinator = self.build(event_coalesce_sec=coalesce, monotonic=lambda: elapsed)
+        coordinator._collect("event")
+        collect = self.app.collect_json
+
+        def finish(*, show_all: bool) -> tuple[tuple[float, int], bytes]:
+            collected.append(elapsed)
+            coordinator.stop()
+            return collect(show_all=show_all)
+
+        def wait(timeout: float) -> None:
+            nonlocal elapsed
+            if elapsed == 0:
+                elapsed = 1.0
+                self.now += elapsed
+                coordinator._wake.release()
+                try:
+                    coordinator.submit("claude", self.envelope(event="store_changed"))
+                finally:
+                    coordinator._wake.acquire()
+                self.now -= 12.0
+            else:
+                elapsed += timeout
+                self.now += timeout
+            self.assertLess(elapsed, 20.0, "the worker did not collect after the clock step")
+
+        with (
+            mock.patch.object(coordinator._wake, "wait", side_effect=wait),
+            mock.patch.object(self.app, "collect_json", side_effect=finish),
+        ):
+            coordinator._run()
+
+        (at,) = collected
+        self.assertAlmostEqual(expected, at, delta=0.01)
+
     def test_the_worker_wakes_on_an_event_rather_than_waiting_out_its_interval(self) -> None:
         # The producer interval is raised to an hour, so only the wake can collect
         # inside the wait below. At its default of five seconds the wait had to
         # stay under five, and a loaded runner missed it.
-        coordinator = self.build(stream_producer_interval_sec=3600.0)
+        coordinator = self.build(stream_producer_interval_sec=3600.0, monotonic=time.monotonic)
         collected = threading.Event()
         real = self.app.collect_json
 
@@ -1171,7 +1220,7 @@ class AskWakeTest(ObservationTestCase):
         # is twenty, which is what a registered ask used to wait on: measured at
         # 18.2 to 22.3 seconds from register to a published revision. The interval
         # is raised to an hour so a regression cannot pass on the periodic tick.
-        coordinator = self.build(stream_producer_interval_sec=3600.0)
+        coordinator = self.build(stream_producer_interval_sec=3600.0, monotonic=time.monotonic)
         collected = threading.Event()
         real = self.app.collect_json
 
