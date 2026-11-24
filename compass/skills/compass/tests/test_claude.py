@@ -4306,6 +4306,80 @@ class DispatchedTeammateTest(RuntimeTestCase):
                             [(a["name"], a["parent"]) for a in rows[0]["subagents"]],
                         )
 
+    def test_a_new_turn_on_a_partial_teammate_copy_updates_the_lead(self) -> None:
+        now = 1_700_000_000.0
+        old = now - 30 * 3600
+        new_turn = now - 1
+        child = "bbbb2222-0000-0000-0000-000000000000"
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(tmp, now=now, parent_age=30 * 3600)
+            teammate = self.teammate(
+                project, sid=child, name="reviewer", stamp=self.stamp(old), age=30 * 3600, now=now
+            )
+            self.worker_for(teammate, old)
+            copy = project.with_name("copy") / teammate.name
+            copy.parent.mkdir()
+            turn = json.loads(teammate.read_text())
+            del turn["agentName"], turn["teamName"]
+            copy.write_text(json.dumps(turn) + "\n")
+            turn["timestamp"] = self.stamp(new_turn)
+            turn["message"]["content"] = "Check the latest change."
+            with copy.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(turn) + "\n")
+            os.utime(copy, (new_turn, new_turn))
+
+            with store_patch(PROJECTS_DIR=str(project.parent)):
+                for show_all in (False, True):
+                    with self.subTest(show_all=show_all):
+                        rows = collect_claude(now, 24, show_all)
+                        self.assertEqual([self.PARENT], [row["resume_id"] for row in rows])
+                        (lead,) = rows
+                        self.assertEqual(new_turn, lead["last_activity"])
+                        self.assertEqual(
+                            [("reviewer", None)],
+                            [(agent["name"], agent["parent"]) for agent in lead["subagents"]],
+                        )
+
+    def test_a_colliding_lead_keeps_its_worker_after_the_worker_stops(self) -> None:
+        now = 1_700_000_000.0
+        old = now - 30 * 3600
+        child = "bbbb2222-0000-0000-0000-000000000000"
+        unrelated_id = f"{self.PARENT[:8]}-1111-0000-0000-000000000000"
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(tmp, now=now, parent_age=30 * 3600)
+            lead = project / f"{self.PARENT}.jsonl"
+            turn = json.loads(lead.read_text())
+            turn["cwd"] = "/work/left"
+            lead.write_text(json.dumps(turn) + "\n")
+            os.utime(lead, (old, old))
+            unrelated = project.with_name("unrelated") / f"{unrelated_id}.jsonl"
+            unrelated.parent.mkdir()
+            turn.update(sessionId=unrelated_id, cwd="/work/right", timestamp=self.stamp(now - 1))
+            unrelated.write_text(json.dumps(turn) + "\n")
+            os.utime(unrelated, (now - 1, now - 1))
+            teammate = self.teammate(
+                project, sid=child, name="reviewer", stamp=self.stamp(old), age=30 * 3600, now=now
+            )
+            self.worker_for(teammate, now)
+
+            with store_patch(PROJECTS_DIR=str(project.parent)):
+                for elapsed, active in ((0, True), (91, False), (3600, False)):
+                    with self.subTest(elapsed=elapsed):
+                        rows = {
+                            row["project"]: row for row in collect_claude(now + elapsed, 24, False)
+                        }
+                        self.assertCountEqual(["work/left", "work/right"], rows)
+                        self.assertEqual(self.PARENT, rows["work/left"]["resume_id"])
+                        self.assertEqual(unrelated_id, rows["work/right"]["resume_id"])
+                        self.assertEqual([], rows["work/right"]["subagents"])
+                        self.assertCountEqual(
+                            [("reviewer", None, active), ("subagent", "reviewer", active)],
+                            [
+                                (agent["name"], agent["parent"], agent["active"])
+                                for agent in rows["work/left"]["subagents"]
+                            ],
+                        )
+
     def test_a_fresher_unrelated_lead_does_not_erase_live_work_on_a_colliding_prefix(self) -> None:
         now = 1_700_000_000.0
         child = "bbbb2222-0000-0000-0000-000000000000"

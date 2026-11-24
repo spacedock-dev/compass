@@ -697,10 +697,23 @@ def session_groups(
                 continue
             if role[1]:
                 teammate_ids.add(copy.sid)
-                if fresh(copy.activity):
+                # A partial conversation can receive new turns before its team
+                # identity is available. Its writes still belong to this teammate.
+                partial_mtime = max(
+                    (
+                        other.plausible_mtime
+                        for other in native_copies[copy.sid]
+                        if (other_role := identity(other)) is not None and not other_role[1]
+                    ),
+                    default=0,
+                )
+                teammate = copy
+                if partial_mtime > copy.plausible_mtime:
+                    teammate = replace(copy, plausible_mtime=partial_mtime, mtime=partial_mtime)
+                if fresh(teammate.activity):
                     existing = teammates.get(copy.sid)
-                    if existing is None or copy.rank() > existing.rank():
-                        teammates[copy.sid] = copy
+                    if existing is None or teammate.rank() > existing.rank():
+                        teammates[copy.sid] = teammate
             else:
                 group = groups.setdefault(copy.sid, SessionGroup())
                 if group.source is None or not group.resumable or copy.rank() > group.source.rank():
@@ -835,7 +848,7 @@ def session_groups(
             group.source.workers if group.source is not None else (),
             (worker for child in group.children.values() for worker in child.transcript.workers),
         )
-        if any(working(mtime) for _, mtime in group_workers) or any(
+        if any(fresh(mtime) for _, mtime in group_workers) or any(
             fresh(task["updated"]) for task in group.tasks
         ):
             # Keep the short key for the normal winner when possible. Folding a
