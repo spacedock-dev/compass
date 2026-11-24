@@ -149,7 +149,7 @@ def list_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     progress_available = payload.get("annotate") is True and not payload.get("annotate_unreadable")
     for row in _records(result.get("sessions")):
         if "stored_progress" in row:
-            row["stored_progress"] = stored_departure(row) if progress_available else None
+            row["stored_progress"] = stored_progress(row) if progress_available else None
         # Unknown assessment keys invalidate a reading; trimming them would invent a departure.
         # Keep the assessment intact so the board's schema rejection remains the same.
         for key, nested_fields in _NESTED_FIELDS.items():
@@ -172,16 +172,29 @@ STORED_DEPARTURE_LEVELS: Final = {
 }
 
 
-def stored_departure(source: Row) -> str | None:
-    """Read only the published stored progress verdict."""
+STORED_PROGRESS_WORDS: Final = {
+    "out-of-date": "Out of date",
+    "goal-unclear": "Goal too vague to check",
+}
+
+
+def stored_progress(source: Row) -> str | None:
+    """Read only the board's closed set of published progress tokens."""
     token = source.get("stored_progress")
     if (
         source.get("harness") != "codex"
+        and source.get("annotation_goal_unreadable") is not True
         and isinstance(token, str)
-        and token in STORED_DEPARTURE_LEVELS
+        and (token in STORED_DEPARTURE_LEVELS or token in STORED_PROGRESS_WORDS)
     ):
         return token
     return None
+
+
+def stored_departure(source: Row) -> str | None:
+    """Read the departure tokens shared by the terminal list and status footer."""
+    token = stored_progress(source)
+    return token if token is not None and token in STORED_DEPARTURE_LEVELS else None
 
 
 # Spelt as the page spells them (`sessions/intent.ts`) and checked against the vocabulary fixture,
@@ -752,15 +765,15 @@ def _absence(
 ) -> str | None:
     """The grey word the board draws at the right of a row, or None: only one its data proves.
 
-    `sessions/rows.ts` `rowAbsence` is the oracle. Only Not checked yet: a goal the reader can
-    check (saved words, or the draft a check would adopt) and nothing recording a check. No goal
-    yet is never said here, because the goal cell says it. Nothing for Codex, a refused or
-    withheld reading, a harness with no reading route, or any recorded check.
+    Follow the board's progress token first. Not checked yet needs a checkable goal, a reading
+    route and no record of a check. The goal cell owns No goal yet.
     """
     if not annotate or unreadable or source.get("annotation_goal_unreadable") is True:
         return None
     if source.get("harness") == "codex":
         return None
+    if (token := stored_progress(source)) is not None:
+        return STORED_PROGRESS_WORDS.get(token)
     if not _has_saved_words(source) and _draft(source) is None:
         return None
     count = _num(source.get("annotation_reading_count"))

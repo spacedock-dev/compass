@@ -462,6 +462,7 @@ COMPASS_RUNTIME_FILES = (
     # The status line's per-session files, written by the dashboard and read by `--footer`.
     "skills/compass/compass_runtime/footer_lines.py",
     "skills/compass/compass_runtime/terminal_sessions.py",
+    "skills/compass/compass_runtime/row_progress.py",
     "skills/compass/compass_runtime/board_explanations.py",
     "skills/compass/compass_runtime/terminal_project.py",
     "skills/compass/compass_runtime/terminal_goal.py",

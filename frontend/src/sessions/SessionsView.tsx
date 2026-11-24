@@ -2,11 +2,17 @@ import { StatusLegend } from '../ui/status-legend';
 import { groupName, groupOf, nestRows } from './declared';
 import { RelationshipLabels } from './DeclaredRelationships';
 import { Card } from '../ui/card';
+import { Badge } from '../ui/badge';
 import { titleLink } from '../ui/link';
 import { Button } from '../ui/button';
 import { StatusTile } from '../ui/status-tile';
 import { TooltipProvider } from '../ui/tooltip';
-import { EXPLANATIONS, SESSION_LIST_WORDS, SESSION_ROW_WORDS } from '../language/glossary';
+import {
+  EXPLANATIONS,
+  PROGRESS_LEVEL_WORDS,
+  SESSION_LIST_WORDS,
+  SESSION_ROW_WORDS,
+} from '../language/glossary';
 import { selectAttentionSelection } from '../attention/select';
 import { WorthALookFlag } from '../attention/WorthALookFlag';
 import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef } from 'react';
@@ -355,18 +361,34 @@ const NO_HINTS: readonly RowHint[] = [];
 
 /* Memoized with `Group`, so the urgent render a keystroke makes, which still holds the deferred result,
    passes every row the same props and redraws none of them. */
-/* The far-right cell: where the canvas draws a row's progress. Today it holds one plain grey word the board
-   can prove, Not checked yet, with no pill, border or icon, and it draws nothing (no empty element) where
-   there is none. Outside the row link, so it is not part of the link's name, and under the card's cover like
-   the descriptor, so a press on it still opens the session. The stored-departure pill will use this cell. */
+/* The progress mark sits outside the row link, under the card's cover. */
 function ProgressCell({ row }: { readonly row: SessionRow }) {
-  if (!row.absence) return null;
+  const { progress, absence } = row;
+  if (progress === 'medium' || progress === 'high' || progress === 'extreme') {
+    return (
+      <Badge
+        variant="progress"
+        tone={progress}
+        className={
+          progress === 'medium'
+            ? 'self-start justify-self-start bg-card py-[3px] leading-5'
+            : 'self-start justify-self-start py-[3px] leading-5'
+        }
+        data-next-drift-pill
+        data-level={progress}
+      >
+        {PROGRESS_LEVEL_WORDS.get(progress)}
+      </Badge>
+    );
+  }
+  const word = progress ?? absence;
+  if (!word) return null;
   return (
     <span
-      className="self-start whitespace-nowrap pt-[3px] text-label leading-[1.5] text-muted-foreground max-[620px]:pt-0"
-      data-next-row-absence={SESSION_ROW_WORDS[row.absence]}
+      className="self-start pt-[3px] text-label leading-[1.5] text-muted-foreground max-[620px]:pt-0"
+      data-next-row-absence={SESSION_ROW_WORDS[word]}
     >
-      {SESSION_ROW_WORDS[row.absence]}
+      {SESSION_ROW_WORDS[word]}
     </span>
   );
 }
@@ -388,7 +410,7 @@ const RowView = memo(function RowView({
     <Card
       as="article"
       variant="session-row"
-      className={`next-operation-row relative cursor-pointer no-underline grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_7rem] max-[620px]:grid-cols-1 next-operation-row--${session.tone}${depth ? ' pl-12 max-[620px]:pl-8' : ''}`}
+      className={`next-operation-row relative cursor-pointer no-underline grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_9rem] max-[620px]:grid-cols-1 next-operation-row--${session.tone}${depth ? ' pl-12 max-[620px]:pl-8' : ''}`}
       {...(depth ? { 'data-declared-depth': depth } : {})}
       data-next-harness={session.harness}
       data-next-session={session.sid}
@@ -679,7 +701,8 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
   const generated = screen ? screen.context.generated : null;
   const annotated = screen ? screen.context.annotate && !screen.context.unreadable : false;
   const progressAvailable = useMemo(
-    () => indexed.some(({ progress }) => progress !== null),
+    () =>
+      indexed.some(({ progress, progressLevel }) => progress !== null || progressLevel !== null),
     [indexed],
   );
   const prepared = useMemo(

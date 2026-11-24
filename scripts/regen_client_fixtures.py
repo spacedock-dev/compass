@@ -336,6 +336,9 @@ class Rig:
         if with_focus:
             self._attach_focus()
         self.server = CompassHTTPServer(("127.0.0.1", 0), self.application, page, self.observation)
+        # Each case records a scripted request against a fixed store. A concurrent warm pass
+        # would make the cold wire fixture depend on when its history generation was sampled.
+        self.application.warm_row_progress = None
         self.port = self.server.server_port
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()

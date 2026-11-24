@@ -7367,9 +7367,9 @@ Six sub-questions were ruled the same day, each as recommended.
    estimate" and the pill is hidden. "Analysis" derives the level from a reading's per-line
    results, with no new model output. Each source says what it is and when it was computed.
 3. Where it shows: the Drift section and the session header pill. The
-   [2026-11-08 amendment](#amended-2026-11-08-owner-a-stored-departing-analysis-may-name-its-level-on-a-sessions-row)
-   also permits a departing stored analysis to name its level on a Sessions row. A live estimate
-   stays off the row. Neither level is a total or a sort key.
+   [2026-11-24 amendment](#amended-2026-11-24-sessions-progress-follows-the-saved-check)
+   lets a departing stored analysis name its level on a Sessions row while the evidence holds.
+   A live estimate stays off the row. Neither level is a total or a sort key.
 4. The live monitor switch is off by default, as the design's "Turn on for a quick, low-cost drift
    check after every turn" says. It is remembered per session in the browser only, and never sent
    to the server: there is no server-side store and no new route. DRC-4696 adds its row to
@@ -7388,12 +7388,10 @@ Six sub-questions were ruled the same day, each as recommended.
 
 ### Amended 2026-11-08 (owner): a stored departing analysis may name its level on a Sessions row
 
-On 2026-11-08, the owner accepted the recommendation: a departing stored analysis may name its
-level beside the Sessions row's Drift mark. It uses the same analysis derivation as the session
-header. Until that tab holds the evidence needed to distinguish Medium from High, a current stored
-departure says "Medium or higher" without a meter. A stale or withdrawn reading names no level.
-Once the tab holds the context, the row follows the page's analysis level alone, including when it
-names no level.
+On 2026-11-08, the owner allowed a departing stored analysis to name its level on a Sessions row
+using the session header's derivation. The interim "Medium or higher" wording is retired by the
+[2026-11-24 amendment](#amended-2026-11-24-sessions-progress-follows-the-saved-check).
+A row with no proven answer leaves the progress cell empty.
 
 A notification raise alone names no level, including beside a reading that does not depart.
 A live estimate never supplies a row level, including when a raised departure also appears.
@@ -8387,14 +8385,11 @@ level words and six distinct absences. DEC-17 rule 4, DEC-20 item 3 and DEC-26 i
 | Session header | A full level word when evidence permits one, otherwise the applicable absence. |
 | Is it on track? card | A full level word with its evidence, or the appropriate absence. On track means "No departure found in what Compass read". The meter and Help explain all four levels. |
 | Terminal status-line footer | The row rule. It may also say the Live monitor is on. |
-| Sessions Filters | Progress check lists disabled level chips. No goal yet uses published goal evidence. |
+| Sessions Filters | Progress check selects the level shown on each row. No goal yet uses published goal evidence. |
 
-The Sessions implementation of 2026-11-23 leaves the progress slot blank. The session
-page holds the progress reading. The board snapshot uses ordinary collection. DRC-5533
-owns the stored-departure pill. DRC-5539 (2026-11-24) ships one row absence word, Not checked yet,
-as plain grey text in the row's far-right cell; No goal yet stays in the Goal cell. Too early to tell and Can't
-tell stay off the row because they need the analysis level, which reads transcript evidence.
-Goal too vague to check and Out of date wait for the freshness record the row pill builds.
+Not checked yet, Out of date and Goal too vague to check use the same far-right cell as the pill.
+No goal yet stays in the Goal cell. The [row amendment](#amended-2026-11-24-sessions-progress-follows-the-saved-check)
+sets the evidence boundary for each answer.
 
 Codex sessions show neither a level nor a correction. The
 [installed skill](../compass/skills/compass/SKILL.md) states the limit.
@@ -8704,7 +8699,8 @@ also be settled, by the current goal floor or by a Keep given since. Any mismatc
 error turns every level, On track included, into no level. The reason reads "A later direction of
 yours is unsettled." while a recorded direction is still open, and otherwise "What this check read
 has changed since, so it shows no level. Check progress again." A check that cannot capture every
-part stores no record, and its level is withheld. Board polls run no gate and read nothing new.
+part stores no record, and its level is withheld. The [Sessions progress amendment](#amended-2026-11-24-sessions-progress-follows-the-saved-check)
+applies the same gate to cached row answers.
 
 Readings saved before this record existed carry none, so they show no level until the session is
 checked again; nothing migrates them. A migration would have had to guess what an old check measured
@@ -8739,6 +8735,35 @@ three are coordinator decisions of the same day that the owner may overrule.
   lock is per process, so one dashboard's write can replace the other's without breaking the lineage,
   and the record cannot see events dropped that way. The annotation store holds an OS file lock for
   this reason; the history store does not.
+
+### Amended 2026-11-24: Sessions progress follows the saved check
+
+The coordinator applies DEC-26 to the far-right Sessions cell. A proven saved departure shows
+Slightly off course or Off course. Out of date and Goal too vague to check are plain text. A goal
+that no check has read can show Not checked yet. The cell shows one answer at most. Codex rows and
+live estimates supply no level. While a peer dashboard is checking, the standing saved answer can
+still show. The level chips select rows showing the corresponding pill. All four Progress check
+chips stay enabled on readable annotation boards and carry no counts.
+
+The row uses the same focused derivation as the session page. It keeps the result in process
+memory, including when that derivation reuses its view. A poll verifies a matching row input
+digest and reading time, a readable annotation store, the absence of an overrule, the saved
+evidence record, and the transcript's identity, accessibility and file metadata. Only Out of date
+can survive transcript growth. The gate opens no transcript. A memo expires at 300 seconds. An unknown answer leaves
+the cell empty until the focused derivation can prove one.
+
+The owner approved warming that memo in the background. The server takes at most four rows per
+pass and stops starting work at the pass deadline. It checks that the saved evidence still holds
+before running the focused derivation. It uses the existing collection and skips model calls,
+live estimates, Live monitor leases and history updates. Between messages it gives board collection
+priority. When the published answer changes, it invalidates the board snapshot after the pass.
+The status-line writer rechecks the published proof before refreshing an idle footer. No level is
+saved with the assessment.
+
+History-only changes that preserve lineage and do not change the transcript can leave an answer
+standing until the memo expires or the page is opened. POSIX change time catches in-place rewrites
+that preserve size and mtime. On Windows, creation time cannot detect those rewrites. After expiry
+the focused page or the warmer must derive a new answer. Each dashboard warms its own memo.
 
 ### Amended 2026-10-19 (owner): each departure is a card
 

@@ -16,6 +16,11 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+Departure (2026-11-24, saved progress): the far-right Sessions cell shows the current saved departure pill,
+Out of date or Goal too vague to check. `frontend/test/sessionCanvasRowDeviation.ts` sets aside that cell's
+`data-next-drift-pill` or `data-next-row-absence` in the comparison. The Sessions canvas story checks the
+new answers, styles and available space at 1280, 700 and 400 pixels.
+
 Departure (2026-11-24, absence words): a Sessions row may draw one grey word in a far-right cell (Not
 checked yet), which no recorded row had. `frontend/test/sessionCanvasRowDeviation.ts`
 sets the page's line aside (`data-next-row-absence`), and the mounted tests, `rowAbsence.test.ts` and the

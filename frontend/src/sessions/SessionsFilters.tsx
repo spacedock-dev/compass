@@ -114,7 +114,6 @@ export interface FilterActions {
 const ROW = 'flex min-h-11 w-full items-center gap-2.5 cursor-pointer';
 const NOTE = 'm-0 text-label text-muted-foreground leading-[1.5]';
 const SENTENCE = 'm-0 text-body text-muted-foreground leading-[1.55]';
-const PROGRESS_LEVEL_NOTE = 'Filtering by progress level is unavailable.';
 const NO_PUBLISHED_GOALS = 'The board did not publish saved goals for these sessions.';
 const PARTIAL_GOALS = 'Goal filters skip sessions whose saved goal status was not published.';
 const NO_CLOCK = 'The board published no clock time, so dates cannot be filtered.';
@@ -927,21 +926,13 @@ export function SessionsFilters({
               })}
             </ChipGroup>
           </div>
-          <ChipGroup
-            name={SESSION_LIST_WORDS.progressCheck}
-            note={
-              <>
-                {PROGRESS_LEVEL_NOTE}
-                {goalCoverage ? ` ${goalCoverage}` : ''}
-              </>
-            }
-          >
+          <ChipGroup name={SESSION_LIST_WORDS.progressCheck} note={goalCoverage || undefined}>
             {PROGRESS_OPTIONS.map(({ value, label }) => (
               <FilterChip
                 key={value}
                 label={label}
-                selected={value === 'no-goal' && filters.progress.includes(value)}
-                disabled={value !== 'no-goal' || !prepared.progressAvailable}
+                selected={filters.progress.includes(value)}
+                disabled={!readable}
                 onClick={() => toggle('progress', value)}
               />
             ))}

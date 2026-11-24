@@ -755,6 +755,15 @@ class DocumentVocabularyTest(unittest.TestCase):
             set(DOC_VOCABULARY_FILES),
         )
 
+    def test_a_reader_can_find_the_saved_progress_marks_in_the_dashboard_reference(self) -> None:
+        dashboard = (SERVER_PATH.parent / "reference" / "dashboard.md").read_text(encoding="utf-8")
+        sessions = dashboard.split("## Session states", 1)[1].split("\n## ", 1)[0]
+        for word in ("Slightly off course", "Off course", "Out of date", "Goal too vague to check"):
+            self.assertIn(word, sessions)
+        self.assertIn("while its evidence still matches", sessions)
+        self.assertIn("The Progress check chips carry no counts.", dashboard)
+        self.assertNotIn("level chips are disabled", dashboard)
+
     def test_the_guard_covers_every_bundled_reference(self) -> None:
         root = SERVER_PATH.parents[3]
         skill = root / "compass/skills/compass"

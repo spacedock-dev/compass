@@ -15,10 +15,13 @@ from __future__ import annotations
 import builtins
 import concurrent.futures
 import contextlib
+import dataclasses
+import datetime as dt
 import http.client
 import io
 import json
 import os
+import stat
 import threading
 import types
 from functools import partial
@@ -28,14 +31,19 @@ from unittest.mock import patch
 
 from compass_runtime import (
     aggregate,
+    footer_lines,
     history,
     http_api,
     levels,
+    live_estimate,
+    observer,
     project_context,
     reading_evidence,
     reading_jobs,
     reading_route,
+    row_progress,
     semantic_history,
+    terminal_client,
     terminal_drift,
 )
 from compass_runtime import annotations as annotation_store
@@ -45,7 +53,7 @@ from compass_runtime import sessions as runtime_sessions
 from compass_runtime.state import build_runtime_state
 
 from .support import captured_evidence, make_server, serve_until_closed
-from .test_claude_checks import SHORT, START
+from .test_claude_checks import SHORT, START, Transcript
 from .test_copied_corrections import _row
 from .test_live_estimate import GOAL, LINE, _Replay
 
@@ -441,7 +449,7 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
                 board = json.loads(app.collect_json(show_all=True)[1])
                 (session,) = board["sessions"]
                 self.assertIsNotNone(session["annotation_assessment"])
-                self.assertNotIn("stored_progress", session)
+                self.assertIsNone(session["stored_progress"])
                 paths = [
                     Path(call.args[0])
                     for opener in (descriptor_open, file_open, path_open)
@@ -548,6 +556,644 @@ class TheAnalysisLevelIsRecomputedOnRenderTest(_Result):
         self.assertNotIn("analysis_levels", json.dumps(http_api._session_context(app, row)))
 
 
+class _RowProgress(_Result):
+    def poll(self, port: int) -> str | None:
+        (row,) = self.get(port, "/api/data")["sessions"]
+        return cast("str | None", row.get("stored_progress"))
+
+    def wait_for_progress(self, port: int, token: str) -> None:
+        for _ in range(100):
+            if self.poll(port) == token:
+                return
+            threading.Event().wait(0.01)
+        self.assertEqual(token, self.poll(port))
+
+    def page(self, port: int) -> dict[str, Any]:
+        (view,) = self.get(port, FOCUSED)["sources"]["work"]["drift_views"]
+        return cast("dict[str, Any]", view)
+
+
+class RowProgressFollowsThePageTest(_RowProgress):
+    def test_a_reader_loses_the_final_pill_if_the_end_is_withdrawn(self) -> None:
+        self.save_goal(lines=())
+        reading = self.departure()
+        end = reading["read_at"] - 0.1
+        reading.update(
+            scope=runtime_reading.SCOPE_FINAL,
+            scope_text=runtime_reading.SCOPE_TEXT[runtime_reading.SCOPE_FINAL],
+            ended_at_read=end,
+        )
+        self.record(reading, ended_at=end, acquisition="event")
+        with self.serving(self.cold(acquisition="event")) as port:
+            self.assertIn(self.poll(port), (None, "out-of-date"))
+            self.wait_for_progress(port, "out-of-date")
+            view = self.page(port)
+            self.assertEqual("out-of-date", self.poll(port))
+            self.assertIsNone(view["pill"])
+            self.assertEqual({"kind": "withdrawn", "before": None}, view["stale"])
+            self.assertEqual([], self.get(port, FOCUSED)["sources"]["work"]["analysis_levels"])
+            board = self.get(port, "/api/data")
+            (row,) = board["sessions"]
+            terminal = terminal_drift.render(
+                row, board, terminal_drift.adapt(view), adopted=None, again_hint=""
+            )
+            self.assertIn("This check was withdrawn.", "\n".join(terminal))
+            self.assertNotIn("Level:", "\n".join(terminal))
+
+    def test_a_reader_loses_the_pill_when_the_transcript_directory_cannot_be_listed(self) -> None:
+        if os.name != "posix":
+            self.skipTest("the fixture uses POSIX read permissions")
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.cold()
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            parent = self.path.parent
+            previous = stat.S_IMODE(parent.stat().st_mode)
+            parent.chmod(0o111)
+            try:
+                if os.access(parent, os.R_OK):
+                    self.skipTest("the test process can still list the directory")
+                self.assertIsNone(self.poll(port))
+                self.assertIsNone(self.page(port)["pill"])
+                self.assertIsNone(self.poll(port))
+            finally:
+                parent.chmod(previous)
+
+    def test_an_older_transcript_with_the_same_prefix_withdraws_the_pill(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.cold()
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            older = self.path.with_name(f"{SHORT}-older.jsonl")
+            older.write_bytes(self.path.read_bytes())
+            os.utime(older, (1, 1))
+            self.assertIsNone(self.page(port)["pill"])
+            self.now += self.config.collect_memo_sec + 1
+            self.assertIsNone(self.poll(port))
+
+    def test_a_poll_discounts_an_archived_prefix_collision_before_the_page_opens(self) -> None:
+        self.save_goal(lines=())
+        reading = self.departure()
+        os.utime(self.path, (self.now, self.now))
+        app = self.cold()
+        app.harnesses = tuple(
+            spec
+            for spec in aggregate.default_harnesses(usage_fetch_enabled=False)
+            if spec.key == "claude"
+        )
+        (row,) = app.collect(show_all=False)["sessions"]
+        project = reading_evidence.project_key(row)
+        evidence = captured_evidence(app, "claude", SHORT, reading)
+        self.assertIsNotNone(evidence)
+        self.assertEqual(
+            annotation_store.OUTCOME_STORED,
+            annotation_store.record_reading(
+                self.config,
+                app.state,
+                "claude",
+                SHORT,
+                assessment=cast("Any", reading),
+                evidence=evidence,
+            ),
+        )
+        app.snapshot.clear()
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            (view,) = self.get(port, FOCUSED.replace("billing", project))["sources"]["work"][
+                "drift_views"
+            ]
+            self.assertEqual(levels.MEDIUM, view["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            older = self.path.with_name(f"{SHORT}-older.jsonl")
+            older.write_bytes(self.path.read_bytes())
+            os.utime(older, (1, 1))
+            self.now += self.config.collect_memo_sec + 1
+            self.assertIsNone(self.poll(port))
+
+    def test_a_same_size_rewrite_with_the_old_mtime_withdraws_the_pill(self) -> None:
+        if os.name != "posix":
+            self.skipTest("the fixture relies on POSIX change time")
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.cold()
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            before = self.path.stat()
+            passage = self.session.rows[0]
+            passage["timestamp"] = (
+                (START + dt.timedelta(seconds=self.session.seconds + 3))
+                .isoformat()
+                .replace("+00:00", "Z")
+            )
+            self.session.save(self.path)
+            os.utime(self.path, ns=(before.st_atime_ns, before.st_mtime_ns))
+            after = self.path.stat()
+            self.assertEqual((before.st_size, before.st_ino), (after.st_size, after.st_ino))
+            self.assertNotEqual(before.st_ctime_ns, after.st_ctime_ns)
+            self.assertIsNone(self.poll(port))
+            self.assertIsNone(self.page(port)["pill"])
+
+    def test_an_idle_footer_stops_showing_a_departure_whose_proof_expires(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.cold()
+        lines = footer_lines.Lines(self.config.state_home)
+        app.footer_lines = lines
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            session = terminal_client.Session("claude", SHORT, "fixture")
+            home = self.config.state_home
+            expires_at = self.now + row_progress.MAX_AGE_SEC
+            self.now += row_progress.MAX_AGE_SEC / 2
+            lines.touch(self.now)
+            refreshed = terminal_client.read_line(home, session, self.now)
+            self.assertIn(
+                "Slightly off course", terminal_client.compose_footer(None, refreshed, self.now)
+            )
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            self.now = expires_at
+            lines.touch(self.now)
+            last = terminal_client.read_line(home, session, self.now)
+            self.assertIsNotNone(last)
+            assert last is not None
+            self.assertIsNone(last.stored_progress)
+            self.assertNotIn(
+                "Slightly off course", terminal_client.compose_footer(None, last, self.now)
+            )
+            self.assertIsNone(self.poll(port))
+
+    def test_a_new_departure_warms_inside_the_retry_interval(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.on_track_reading())
+        app = self.cold()
+        with make_server(application=app) as server:
+            self.run_warmer(app, server)
+            self.assertIsNone(self.progress_from(app))
+            self.now += 5
+            self.record({**self.departure(), "read_at": self.now})
+            app.snapshot.clear()
+            self.run_warmer(app, server)
+            self.assertEqual(levels.MEDIUM, self.progress_from(app))
+
+    def test_unchanged_on_track_rows_do_not_repeat_work_or_clear_the_board(self) -> None:
+        rows = self.seed_projects(held=4, on_track=True)
+        app = self.projects_app(rows)
+        observed_levels = []
+        assemble = http_api.assemble_project_drift
+
+        def observe(*args: Any, **kwargs: Any) -> Any:
+            context = assemble(*args, **kwargs)
+            (view,) = context["sources"]["work"]["drift_views"]
+            observed_levels.append(view["analysis"]["level"])
+            return context
+
+        with (
+            make_server(application=app) as server,
+            patch.object(http_api, "assemble_project_drift", side_effect=observe) as assembled,
+            patch.object(app.snapshot, "clear", wraps=app.snapshot.clear) as clear,
+            patch.object(live_estimate, "for_session", wraps=live_estimate.for_session) as estimate,
+        ):
+            for _ in range(5):
+                self.run_warmer(app, server)
+                self.now += 12
+            self.assertEqual([levels.NONE_OR_LOW] * 4, observed_levels)
+            self.assertEqual(
+                (4, 0, 0), (assembled.call_count, clear.call_count, estimate.call_count)
+            )
+
+    def test_polling_unheld_projects_preserves_the_full_history_of_saved_departures(self) -> None:
+        rows = self.seed_projects(held=20, legacy=4)
+        app = self.projects_app(rows)
+        history_path = Path(semantic_history.store_path(self.config))
+        before = history_path.read_bytes()
+        first = rows[0]
+        owner = ("claude", first["sid"])
+        with (
+            make_server(application=app) as server,
+            patch.object(http_api, "ROW_PROGRESS_PASS_SEC", 10),
+            patch.object(
+                http_api, "assemble_project_drift", wraps=http_api.assemble_project_drift
+            ) as assemble,
+        ):
+            for _ in range(6):
+                self.run_warmer(app, server)
+                self.now += self.config.collect_memo_sec + 1
+            evicted = (
+                json.loads(before)["projects"].keys()
+                - json.loads(history_path.read_bytes())["projects"].keys()
+            )
+            self.assertEqual(set(), evicted)
+            self.assertEqual(before, history_path.read_bytes())
+            warmed = {call.args[3][1] for call in assemble.call_args_list}
+            self.assertEqual({row["sid"] for row in rows[:20]}, warmed)
+            board = json.loads(app.collect_json(show_all=False)[1])
+            (row,) = [row for row in board["sessions"] if row["sid"] == owner[1]]
+            self.assertEqual(levels.MEDIUM, row["stored_progress"])
+            page = http_api.assemble_project_drift(
+                app, board, first["project"], owner, server.record_cursor_key
+            )
+            (view,) = page["sources"]["work"]["drift_views"]
+            self.assertEqual(levels.MEDIUM, view["pill"]["level"])
+
+    def projects_app(self, rows: list[dict[str, Any]]) -> aggregate.Application:
+        app = self.cold()
+        (spec,) = app.harnesses
+        app.harnesses = (
+            dataclasses.replace(spec, collect=lambda *_: [row.copy() for row in rows]),
+        )
+        return app
+
+    def seed_projects(
+        self, *, held: int, legacy: int = 0, on_track: bool = False
+    ) -> list[dict[str, Any]]:
+        rows = []
+        for index in range(held + legacy):
+            sid = f"{index:08d}"
+            project = f"fixture-{index}"
+            cwd = self.root / "work" / project
+            cwd.mkdir()
+            session = Transcript(cwd)
+            if index >= held:
+                session.seconds = 100
+            session.prompt(GOAL)
+            if on_track:
+                session.bash("pytest", "5 passed")
+            else:
+                session.write(str(cwd / "unrelated.py"))
+            path = self.path.with_name(f"{sid}-full.jsonl")
+            session.save(path)
+            row = _row(sid=sid, project=project)
+            rows.append(row)
+            through = START.timestamp() + session.seconds
+            self.assertEqual(
+                annotation_store.OUTCOME_STORED,
+                annotation_store.annotate(
+                    self.config, self.state, "claude", sid, goal=GOAL, lines=[], now=through - 6
+                ),
+            )
+            facts, _ = project_context.claude_tool_reports(self.config, str(path), sid)
+            (fact,) = facts
+            reading = _reading(
+                {
+                    "goal": {
+                        "result": runtime_reading.RESULT_CONSISTENT
+                        if on_track
+                        else runtime_reading.RESULT_DEPARTURE,
+                        "cites": [
+                            project_context._semantic_fact_from_event(
+                                fact, fact["kind"], "tool_report", ""
+                            )["fact_id"]
+                        ],
+                        "why": runtime_reading.WHY_STANDS
+                        if on_track
+                        else runtime_reading.WHY_RECORDED_WRITE,
+                    }
+                },
+                read_at=through + 1,
+                evidence_through=through,
+            )
+            evidence = None
+            if index < held:
+                evidence = captured_evidence(self.projects_app([row]), "claude", sid, reading)
+                self.assertIsNotNone(evidence)
+            self.assertEqual(
+                annotation_store.OUTCOME_STORED,
+                annotation_store.record_reading(
+                    self.config,
+                    self.state,
+                    "claude",
+                    sid,
+                    assessment=cast("Any", reading),
+                    evidence=evidence,
+                ),
+            )
+        return rows
+
+    def on_track_reading(self) -> dict[str, Any]:
+        through = START.timestamp() + self.session.seconds
+        return _reading(
+            {
+                "goal": {
+                    "result": runtime_reading.RESULT_CONSISTENT,
+                    "cites": [self.passing_check()],
+                    "why": runtime_reading.WHY_STANDS,
+                }
+            },
+            read_at=through + 1,
+            evidence_through=through,
+        )
+
+    @staticmethod
+    def progress_from(app: aggregate.Application) -> Any:
+        (row,) = json.loads(app.collect_json(show_all=False)[1])["sessions"]
+        return row["stored_progress"]
+
+    def run_warmer(self, app: aggregate.Application, server: http_api.CompassHTTPServer) -> None:
+        worker = server.warm_row_progress(app.collect(show_all=False))
+        if worker is not None:
+            worker.join(5)
+            self.assertFalse(worker.is_alive())
+
+    def test_a_reader_sees_a_saved_departure_without_opening_the_session(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        with self.serving(self.cold()) as port:
+            self.assertIsNone(self.poll(port))
+            self.wait_for_progress(port, levels.MEDIUM)
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+
+    def test_a_reader_loses_the_pill_when_history_disappears_inside_the_poll_floor(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        with self.serving(self.cold()) as port:
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            Path(semantic_history.store_path(self.config)).unlink()
+            self.assertIsNone(self.poll(port))
+            self.assertIsNone(self.page(port)["pill"])
+            self.assertIsNone(self.poll(port))
+
+    def test_a_reader_overrules_the_pill_on_the_next_poll(self) -> None:
+        self.save_goal(lines=())
+        reading = self.departure()
+        self.record(reading)
+        with self.serving(self.cold()) as port:
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            status, answer = self.post(
+                port,
+                "/api/annotate",
+                {
+                    "harness": "claude",
+                    "sid": SHORT,
+                    "not_accurate": True,
+                    "read_at": reading["read_at"],
+                },
+            )
+            self.assertEqual(200, status, answer)
+            self.assertIsNone(self.poll(port))
+
+    def test_a_reader_sees_out_of_date_only_after_the_page_proves_later_work(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        with self.serving(self.cold()) as port:
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            self.session.write(str(Path(self.session.cwd) / "later.py"))
+            self.session.save(self.path)
+            self.assertIsNone(self.poll(port))
+            self.assertEqual("work", self.page(port)["stale"]["kind"])
+            self.assertEqual("out-of-date", self.poll(port))
+            self.session.write(str(Path(self.session.cwd) / "later-again.py"))
+            self.session.save(self.path)
+            self.assertEqual("out-of-date", self.poll(port))
+
+
+class RowProgressGuardsTest(_RowProgress):
+    def test_a_reader_sees_the_page_answer_again_after_the_progress_memo_is_lost(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.cold()
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            app.state.row_progress.clear()
+            app.snapshot.clear()
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+
+    def test_a_reader_gets_no_old_pill_after_saving_different_words(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.cold()
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            self.save_goal(lines=(LINE,))
+            self.assertIsNone(self.poll(port))
+            self.assertEqual("intent", self.page(port)["stale"]["kind"])
+            self.assertEqual("out-of-date", self.poll(port))
+
+    def test_a_reader_gets_no_pill_from_an_expired_memo(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.cold()
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            self.now += 301
+            self.assertIsNone(self.poll(port))
+
+    def test_a_reader_gets_no_pill_when_the_history_mark_cannot_be_read(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.cold()
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            with patch.object(semantic_history, "mark_for", side_effect=PermissionError):
+                self.assertIsNone(self.poll(port))
+
+    def test_a_reader_loses_the_warm_pill_when_the_history_becomes_corrupt(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.cold()
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            Path(semantic_history.store_path(self.config)).write_text("{", encoding="utf-8")
+            self.assertIsNone(self.poll(port))
+            self.assertIsNone(self.page(port)["pill"])
+
+    def test_a_reader_gets_no_pill_when_the_history_file_loses_read_permission(self) -> None:
+        if os.name != "posix":
+            self.skipTest("the fixture uses POSIX read permissions")
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.cold()
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            path = Path(semantic_history.store_path(self.config))
+            path.chmod(0)
+            try:
+                if os.access(path, os.R_OK):
+                    self.skipTest("the test process can still read a mode-zero file")
+                self.assertIsNone(self.poll(port))
+            finally:
+                path.chmod(0o600)
+
+    def test_a_reader_sees_the_vague_goal_word_the_page_proves(self) -> None:
+        self.save_goal(lines=())
+        self.record(
+            _reading(
+                {
+                    "goal": {"result": runtime_reading.RESULT_GOAL_UNCLEAR, "cites": [], "why": ""},
+                }
+            )
+        )
+        with self.serving(self.cold()) as port:
+            self.assertIsNone(self.poll(port))
+            self.wait_for_progress(port, "goal-unclear")
+            view = self.page(port)
+            self.assertIsNone(view["pill"])
+            self.assertIn("goal-unclear", view["analysis"]["reasons"])
+            self.assertEqual("goal-unclear", self.poll(port))
+
+    def test_a_reader_sees_the_high_departure_the_page_proves(self) -> None:
+        self.save_goal(lines=())
+        reading = self.departure()
+        self.session.bash("pytest -k parser", "1 failed", is_error=True)
+        self.session.save(self.path)
+        reading["evidence_through"] = START.timestamp() + self.session.seconds
+        reading["read_at"] = reading["evidence_through"] + 1
+        self.record(reading)
+        with self.serving(self.cold()) as port:
+            self.assertIsNone(self.poll(port))
+            self.wait_for_progress(port, levels.HIGH)
+            self.assertEqual(levels.HIGH, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.HIGH, self.poll(port))
+
+    def test_a_reader_never_gets_the_live_pill_on_a_row(self) -> None:
+        view = {"pill": {"source": "live", "level": "high"}, "live_on": True}
+        self.assertIsNone(row_progress.token(view))
+        self.save_goal(lines=())
+        with self.serving(self.cold()) as port:
+            self.assertIsNone(self.poll(port))
+
+    def test_a_codex_reader_never_gets_a_saved_progress_candidate(self) -> None:
+        self.assertFalse(
+            row_progress.eligible(
+                {
+                    "harness": "codex",
+                    "sid": SHORT,
+                    "annotation_assessment": self.departure(),
+                }
+            )
+        )
+
+    def test_a_reader_keeps_a_final_pill_after_the_end_reaches_the_board(self) -> None:
+        self.save_goal(lines=())
+        reading = self.departure()
+        end = reading["read_at"] - 0.1
+        reading.update(
+            scope=runtime_reading.SCOPE_FINAL,
+            scope_text=runtime_reading.SCOPE_TEXT[runtime_reading.SCOPE_FINAL],
+            ended_at_read=end,
+        )
+        self.record(reading, ended_at=end, acquisition="event")
+        app = self.cold(acquisition="event")
+        app.overlays = types.SimpleNamespace(
+            overlays_for=lambda *_: [],
+            finished_at=lambda *_: end,
+            ended_at=lambda *_: end,
+            git_for=lambda *_: None,
+            focusable=lambda *_: False,
+            note_rows=lambda *_: None,
+            drop_counters=dict,
+            command_reports=list,
+        )
+        with self.serving(app) as port:
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+
+    def test_a_reader_gets_the_saved_pill_without_a_model_lease_or_recursion(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.cold()
+        collect = app.collect
+
+        def collect_on_poll(**kwargs: Any) -> Any:
+            self.assertNotEqual("compass-row-progress", threading.current_thread().name)
+            return collect(**kwargs)
+
+        with (
+            patch.object(app, "collect", side_effect=collect_on_poll),
+            patch.object(observer, "analyze", side_effect=AssertionError("warmer refreshed")),
+            patch.object(
+                http_api, "_live_leases", side_effect=AssertionError("warmer took a lease")
+            ),
+            self.serving(app) as port,
+        ):
+            self.assertIsNone(self.poll(port))
+            self.wait_for_progress(port, levels.MEDIUM)
+            self.assertIsNone(app.live_leases)
+
+    def test_a_reader_keeps_the_standing_pill_while_a_peer_check_is_pending(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.cold()
+        with self.serving(app) as port:
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            key = f"claude:{SHORT}"
+            job = runtime_reading.start_job(
+                self.config, key, provider="claude", label="Claude", now=self.now
+            )
+            self.assertIsNotNone(job)
+            try:
+                app.snapshot.clear()
+                self.assertIn(key, self.get(port, "/api/data")["reading_jobs"])
+                self.assertEqual(levels.MEDIUM, self.poll(port))
+                self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            finally:
+                runtime_reading.end_job(self.config, key)
+
+    def test_a_reader_does_not_get_a_pill_from_a_warmer_racing_history_loss(self) -> None:
+        self.save_goal(lines=())
+        self.record(self.departure())
+        app = self.cold()
+        entered = threading.Event()
+        release = threading.Event()
+        derive = http_api.assemble_project_drift
+
+        def hold_warmer(*args: Any, **kwargs: Any) -> Any:
+            if kwargs.get("with_lease") is False:
+                answer = derive(*args, **kwargs)
+                entered.set()
+                if not release.wait(5):
+                    raise TimeoutError("the test did not release the warmer")
+                return answer
+            return derive(*args, **kwargs)
+
+        with (
+            patch.object(http_api, "assemble_project_drift", side_effect=hold_warmer),
+            self.serving(app) as port,
+            concurrent.futures.ThreadPoolExecutor(12) as pool,
+        ):
+            try:
+                self.assertIsNone(self.poll(port))
+                self.assertTrue(entered.wait(5))
+                self.now += self.config.collect_memo_sec + 1
+                self.assertEqual(levels.MEDIUM, self.poll(port))
+                Path(semantic_history.store_path(self.config)).unlink()
+                polls = [pool.submit(self.poll, port) for _ in range(12)]
+                pages = [pool.submit(self.page, port) for _ in range(6)]
+                release.set()
+                self.assertEqual([None] * 12, [p.result(10) for p in polls])
+                self.assertEqual([None] * 6, [p.result(10)["pill"] for p in pages])
+                self.assertIsNone(self.poll(port))
+            finally:
+                release.set()
+
+
 class StoredLevelNeedsCurrentEvidenceTest(_Result):
     """A session's page draws no level once the evidence that held it back is gone (DRC-5533).
 
@@ -573,6 +1219,9 @@ class StoredLevelNeedsCurrentEvidenceTest(_Result):
         (view,) = work["drift_views"]
         levels_now = [x for x in work.get("analysis_levels", []) if x["sid"] == SHORT]
         pill = view.get("pill")
+        (row_after_page,) = [
+            r for r in self.get(port, "/api/data")["sessions"] if r["sid"] == SHORT
+        ]
         raw = row.get("annotation_assessment") or {}
         withheld_at = row.get("annotation_reading_withheld_at")
         read_at = raw.get("read_at")
@@ -587,6 +1236,9 @@ class StoredLevelNeedsCurrentEvidenceTest(_Result):
         shown = pill["level"] if pill and not view.get("stale") and not withheld else None
         if row.get("annotate_unreadable"):
             shown = None
+        if shown is None:
+            for answer in (row, row_after_page):
+                self.assertNotIn(answer.get("stored_progress"), ("medium", "high", "extreme"))
         return {
             "shown": shown,
             "pill": pill["level"] if pill else None,
@@ -1373,28 +2025,28 @@ class TheRecordStaysWithItsReadingTest(_Result):
         self.assertNotIn(self.first["project"], body.decode())
 
 
-class TheGateCostsTheBoardNothingTest(_Result):
-    """The record is compared on the focused route alone: a board poll reads no transcript, no
-    history mark and runs no gate (DRC-5543)."""
-
-    def test_a_board_poll_answers_without_ever_reaching_the_gate(self) -> None:
+class TheRowGateReadsMetadataTest(_RowProgress):
+    def test_a_readers_cached_row_checks_the_evidence_without_reopening_the_record(self) -> None:
         self.save_goal(lines=())
         self.record(self.departure())
-        boom = AssertionError("a board poll reached the record's gate")
         app = self.cold()
-        with (
-            patch.object(reading_evidence, "held", side_effect=boom) as held,
-            patch.object(semantic_history, "mark_for", side_effect=boom) as mark_for,
-            patch.object(project_context, "transcript_stamp", side_effect=boom) as stamp,
-            self.serving(app) as port,
-        ):
-            for poll in ("cold", "warm"):
-                status, body = self.get_status(port, "/api/data")
-                self.assertEqual(200, status, poll)
-                (row,) = [r for r in body["sessions"] if r["sid"] == SHORT]
-                self.assertIsNotNone(row["annotation_assessment"], poll)
-                self.now += self.config.collect_memo_sec + 1
-        self.assertEqual((0, 0, 0), (held.call_count, mark_for.call_count, stamp.call_count))
+        with self.serving(app) as port:
+            app.warm_row_progress = None
+            self.assertEqual(levels.MEDIUM, self.page(port)["pill"]["level"])
+            self.assertEqual(levels.MEDIUM, self.poll(port))
+            boom = AssertionError("the poll tried to reopen the record")
+            with (
+                patch.object(reading_evidence, "held", wraps=reading_evidence.held) as held,
+                patch.object(semantic_history, "mark_for", wraps=semantic_history.mark_for) as mark,
+                patch.object(project_context, "transcript_stamp", side_effect=boom),
+                patch.object(observer, "resolve_transcript", side_effect=boom),
+                patch.object(builtins, "open", wraps=builtins.open) as opened,
+            ):
+                self.assertEqual(levels.MEDIUM, self.poll(port))
+            self.assertEqual((1, 1), (held.call_count, mark.call_count))
+            self.assertFalse(
+                any(str(call.args[0]).endswith(".jsonl") for call in opened.call_args_list)
+            )
 
     def test_a_gate_that_fails_withholds_the_level_and_keeps_the_page(self) -> None:
         self.save_goal(lines=())

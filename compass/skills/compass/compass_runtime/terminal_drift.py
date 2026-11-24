@@ -935,7 +935,7 @@ def adapt(view: Mapping[str, Any]) -> View:
     unknown = (
         any(line.state not in STATE_WORDS for line in lines)
         or (level is not None and level not in LEVEL_NAMES)
-        or (stale is not None and stale.kind not in ("intent", "work"))
+        or (stale is not None and stale.kind not in ("intent", "work", "withdrawn"))
     )
     # The progress absence is for a mid-flight reading that found an outcome not reached yet.
     # A withheld level, unclear goal or unsettled direction keeps its own explanation.
@@ -1015,6 +1015,8 @@ def _entries(numbers: Iterable[str]) -> str:
 
 def stale_head(stale: StaleView) -> str:
     """`resultStale`'s head, from the published kind and the first message after the reading."""
+    if stale.kind == "withdrawn":
+        return "This check was withdrawn."
     if stale.kind == "intent":
         return "Your intent changed after this analysis."
     if stale.before is not None:

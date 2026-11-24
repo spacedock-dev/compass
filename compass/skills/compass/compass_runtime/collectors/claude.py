@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from compass_runtime import claude_data, notifications, project_context, records
@@ -533,7 +534,13 @@ def collect(
     team_members = load_team_members(config)
     transcripts: dict[str, tuple[str, float]] = {}  # prefix -> (newest path, its mtime)
     raw_children: list[dict[str, Any]] = []
-    for fp in runtime_io.glob_stores(config, "claude.projects", "*", "*.jsonl"):
+    paths = runtime_io.glob_stores(config, "claude.projects", "*", "*.jsonl")
+    # The resolver sees these stems before the collector discards archive and metadata rows.
+    prefixes = Counter(os.path.basename(path).removesuffix(".jsonl")[:8] for path in paths)
+    state.claude_transcript_collisions = frozenset(
+        sid for sid, count in prefixes.items() if count > 1
+    )
+    for fp in paths:
         base = os.path.basename(fp)
         if "-agent-" in base or base.startswith("agent-"):
             continue  # legacy subagent transcripts aren't top-level sessions

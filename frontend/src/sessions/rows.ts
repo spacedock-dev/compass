@@ -319,6 +319,26 @@ export function noGoalYet(
   return hasText(source['annotation_goal_why']) || (discarded !== null && discarded > 0);
 }
 
+export type RowLevel = 'medium' | 'high' | 'extreme';
+export type RowProgress = RowLevel | 'outOfDate' | 'goalTooVague';
+
+export function rowProgress(source: Row | undefined, context: SessionsContext): RowProgress | null {
+  if (!source || !context.annotate || context.unreadable) return null;
+  if (source['harness'] === 'codex' || source['annotation_goal_unreadable'] === true) return null;
+  switch (source['stored_progress']) {
+    case 'medium':
+    case 'high':
+    case 'extreme':
+      return source['stored_progress'];
+    case 'out-of-date':
+      return 'outOfDate';
+    case 'goal-unclear':
+      return 'goalTooVague';
+    default:
+      return null;
+  }
+}
+
 export type RowAbsence = 'notCheckedYet';
 
 /* The one grey word at the right of the row, or none. Only Not checked yet: a goal the reader can check (saved
@@ -334,6 +354,7 @@ export function rowAbsence(
 ): RowAbsence | null {
   if (!source || !context.annotate || context.unreadable) return null;
   if (source['annotation_goal_unreadable'] === true || source['harness'] === 'codex') return null;
+  if (rowProgress(source, context)) return null;
   const draft = intentDraft(
     source,
     { annotate: context.annotate, unreadable: context.unreadable },
@@ -386,6 +407,7 @@ export interface SessionRow {
   readonly goal: GoalCell;
   /** The grey word at the right of the row, or none. */
   readonly absence: RowAbsence | null;
+  readonly progress: RowProgress | null;
   readonly drift: DriftMark | null;
   /** "started <duration> ago"; empty when a published start has no usable age. */
   readonly startedSince: string;
@@ -524,6 +546,7 @@ export function buildSessionsScreen(
       projectKey: projectKey(String(source?.['project'] ?? '')),
       goal,
       absence: rowAbsence(source, context, chosen),
+      progress: rowProgress(source, context),
       drift: driftMark(source, context),
       startedSince: started ? `started ${started} ago` : '',
       startPublished: startedAt !== null && startedAt > 0,

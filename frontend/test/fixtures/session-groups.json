@@ -311,12 +311,21 @@
     {
       "name": "stale or withdrawn",
       "stored_progress": "out-of-date",
-      "mark": null
+      "mark": null,
+      "word": "Out of date"
     },
     {
       "name": "live estimate only",
       "live_level": "high",
       "mark": null
     }
+  ],
+  "publishedProgress": [
+    { "name": "slightly off course", "stored_progress": "medium", "mark": "Slightly off course", "word": null },
+    { "name": "off course", "stored_progress": "high", "mark": "Off course", "word": null },
+    { "name": "known level vocabulary", "stored_progress": "extreme", "mark": "Way off course", "word": null },
+    { "name": "dated check", "stored_progress": "out-of-date", "mark": null, "word": "Out of date" },
+    { "name": "vague goal", "stored_progress": "goal-unclear", "mark": null, "word": "Goal too vague to check" },
+    { "name": "Codex", "harness": "codex", "stored_progress": "high", "mark": null, "word": null }
   ]
 }

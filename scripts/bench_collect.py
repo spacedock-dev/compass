@@ -18,6 +18,7 @@ import pstats
 import statistics
 import sys
 import tempfile
+import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -499,7 +500,7 @@ def format_report(result: dict[str, Any], simulation: dict[str, Any] | None = No
     return "\n".join(lines)
 
 
-def main(argv: list[str]) -> int:
+def _bench_arguments(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repeat", type=int, default=5)
     parser.add_argument("--window-hours", type=float, default=24.0)
@@ -514,7 +515,11 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument("--simulate-records", type=int, default=SIM_RECORDS)
     parser.add_argument("--simulate-record-bytes", type=int, default=SIM_RECORD_BYTES)
-    parser.add_argument("--simulate-projects", type=int, default=SIM_PROJECTS)
+    parser.add_argument(
+        "--simulate-projects",
+        type=int,
+        help="project spread (default 75, or 6 for --row-progress)",
+    )
     parser.add_argument(
         "--simulate-cold",
         type=int,
@@ -529,9 +534,31 @@ def main(argv: list[str]) -> int:
             "reading, with the record of what it read where this build keeps one"
         ),
     )
+    parser.add_argument(
+        "--row-progress",
+        choices=("warm", "cold"),
+        help="time fresh board JSON with verified stored readings and a warm or empty memo",
+    )
+    parser.add_argument(
+        "--during-row-progress-pass",
+        action="store_true",
+        help="time warm board JSON while the server runs a row-progress pass",
+    )
     parser.add_argument("--list-simulations", action="store_true")
     args = parser.parse_args(argv[1:])
+    if args.row_progress and (not args.simulate or not args.stored_readings or args.profile):
+        parser.error("--row-progress requires --simulate and --stored-readings, without --profile")
+    if args.during_row_progress_pass and args.row_progress != "warm":
+        parser.error("--during-row-progress-pass requires --row-progress warm")
 
+    if args.simulate_projects is None:
+        # All 24 saved readings must fit in the same bounded semantic-history store.
+        args.simulate_projects = 6 if args.row_progress else SIM_PROJECTS
+    return args
+
+
+def main(argv: list[str]) -> int:
+    args = _bench_arguments(argv)
     if args.list_simulations:
         for name, counts in sorted(SIMULATIONS.items()):
             print(f"{name}: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
@@ -576,12 +603,23 @@ def main(argv: list[str]) -> int:
         # build_application, not Application(...): the constructor also requires
         # the harness registry and three injected sinks, and the CLI is what
         # assembles them. The no-op sink keeps store diagnostics out of the report.
+        bench_now = time.time()
         app = cli.build_application(
             config,
             state,
-            clock=time.time,
+            clock=(lambda: bench_now) if args.row_progress else time.time,
             diagnostic_sink=lambda _message: None,
         )
+        if args.row_progress:
+            seed_row_progress_readings(app)
+            answer = measure_row_progress(
+                app,
+                mode=args.row_progress,
+                repeat=args.repeat,
+                during=args.during_row_progress_pass,
+            )
+            print(json.dumps(answer, sort_keys=True))
+            return 0
         if args.stored_readings and simulation is not None:
             seed_stored_readings(config, state, int(simulation["counts"].get("claude", 0)))
         if args.profile:
@@ -655,6 +693,130 @@ def seed_stored_readings(config: Any, state: Any, count: int) -> None:
         entry = annotation_store.find(annotation_store.load(config), "claude", sid)
         if not entry or not entry.get("assessment") or entry.get("refused"):
             raise RuntimeError("bench_collect: a seeded reading does not load as a reading")
+
+
+def seed_row_progress_readings(app: Any) -> None:
+    """Seed real, held evidence for every simulated Claude row, identical on base and head."""
+    from compass_runtime import annotations as annotation_store  # noqa: PLC0415
+    from compass_runtime import (  # noqa: PLC0415
+        observer,
+        reading,
+        reading_evidence,
+        semantic_history,
+    )
+
+    config, state = app.config, app.state
+    now = app.clock()
+    rows = [row for row in app.collect(show_all=False)["sessions"] if row["harness"] == "claude"]
+    if not rows:
+        raise ValueError("--row-progress needs simulated Claude Code sessions")
+    for row in rows:
+        sid = row["sid"]
+        annotation_store.annotate(
+            config, state, "claude", sid, goal="Improve the project", now=now - 600
+        )
+        assessment: Any = {
+            "revision_read": 1,
+            "stamp": "bench",
+            "cutoff": "",
+            "scope": reading.SCOPE_LAST_TURN,
+            "scope_text": reading.SCOPE_TEXT[reading.SCOPE_LAST_TURN],
+            "ended_at_read": None,
+            "read_at": now - 5,
+            "evidence_through": now - 6,
+            "revision_read_at": now - 600,
+            "window_start": now - 600,
+            "criteria": {"goal": {"result": reading.RESULT_GOAL_UNCLEAR, "cites": [], "why": ""}},
+        }
+        project = reading_evidence.project_key(row)
+        mark = semantic_history.update(config, state, project, {}, [row], now=now).get("mark")
+        path = observer.resolve_transcript(config, state, "claude", sid)
+        evidence = reading_evidence.capture(
+            row,
+            (),
+            assessment,
+            floor=now - 600,
+            transcript_bytes=Path(path).stat().st_size if path else None,
+            mark=mark,
+        )
+        if not evidence:
+            raise RuntimeError(
+                f"bench_collect: unable to capture the record for {sid} "
+                f"(transcript={bool(path)}, history={bool(mark)})"
+            )
+        saved = annotation_store.record_reading(
+            config, state, "claude", sid, assessment=assessment, evidence=evidence
+        )
+        if saved != annotation_store.OUTCOME_STORED:
+            raise RuntimeError(f"bench_collect: unable to store the reading for {sid}: {saved}")
+
+
+def warm_bench_rows(server: Any, collection: dict[str, Any], count: int) -> None:
+    """Use the server's candidate selection until the bounded passes have filled the memo."""
+    for _ in range(count):
+        worker = server.warm_row_progress(collection)
+        if worker is None:
+            break
+        worker.join()
+
+
+def measure_row_progress(app: Any, *, mode: str, repeat: int, during: bool) -> dict[str, Any]:
+    """A fresh collect_json per sample, excluding fixture setup, decode and wait time."""
+    from compass_runtime import http_api  # noqa: PLC0415
+
+    if repeat < 1:
+        raise ValueError("repeat must be at least 1")
+    initial = app.collect(show_all=False)
+    rows = [row for row in initial["sessions"] if row.get("annotation_assessment")]
+    if not rows:
+        raise RuntimeError("bench_collect: stored readings did not load")
+    server = http_api.CompassHTTPServer(("127.0.0.1", 0), app, b"", bind_and_activate=False)
+    has_warmer = hasattr(server, "warm_row_progress")
+    try:
+        if has_warmer:
+            # Samples explicitly control when a pass runs. Use the server's actual candidate
+            # selection to fill the warm memo, in as many bounded passes as the board needs.
+            app.warm_row_progress = None
+            if mode == "warm":
+                warm_bench_rows(server, initial, len(rows))
+        times = []
+        overlaps = 0
+        proven = 0
+        for _ in range(repeat):
+            app.snapshot.clear()
+            worker = None
+            if during and has_warmer:
+                worker = threading.Thread(
+                    target=server._warm_row_progress_pass,  # noqa: SLF001 - time the actual server pass
+                    args=(initial, rows[: http_api.ROW_PROGRESS_PASS_ROWS]),
+                )
+                worker.start()
+            try:
+                overlaps += worker is not None and worker.is_alive()
+                started = time.perf_counter()
+                _, body = app.collect_json(show_all=False)
+                times.append((time.perf_counter() - started) * 1000.0)
+            finally:
+                if worker is not None:
+                    worker.join()
+            proven = sum(
+                row.get("stored_progress") is not None for row in json.loads(body)["sessions"]
+            )
+        expected = len(rows) if has_warmer and mode == "warm" else 0
+        if proven != expected or (during and overlaps != repeat):
+            raise RuntimeError(
+                f"bench_collect: expected {expected} held rows, got {proven}; "
+                f"{overlaps}/{repeat} samples overlapped a pass"
+            )
+        return {
+            "median_ms": round(statistics.median(times), 3),
+            "rows": len(rows),
+            "proven": proven,
+            "overlaps": overlaps,
+            "samples": repeat,
+        }
+    finally:
+        server.server_close()
 
 
 def build_runtime(

@@ -118,7 +118,10 @@ Quiet  Claude Code  beta-api
   so a session whose only draft is that choice shows no `Not checked yet` line here, though the
   board shows one. `Goal: Saved goal unavailable` means the saved goals could not be read, so
   Compass shows no goal and no prompt.
-- Run [`--drift`](#check-a-session-for-drift) to see the stored reading in detail.
+- `Slightly off course` or `Off course` comes from the same saved check as the Sessions row.
+  `Out of date` and `Goal too vague to check` also follow the board. An empty progress line
+  means Compass has no answer it can show. Run [`--drift`](#check-a-session-for-drift) to see the
+  stored reading in detail.
 - `Resume:` is the command to reopen a stopped session, and it holds the session's id. For a session
   that is still running, go to the terminal it runs in.
 - The earlier group names the dashboard's published window. A session you marked handled on the

@@ -2154,7 +2154,18 @@ eviction or a newer reading; `--forget` reaches it no more than it reaches the r
 published on a row or a route, never sent to a model, never counted, and not admitted to session
 history (`history.OBSERVATION_FIELDS` names no part of it). A record this build cannot read withholds
 only the level, never the entry, so it cannot block a save. The focused route compares it against a
-stat of the transcript and the history mark it already holds; board polls read nothing for it.
+stat of the transcript and the history mark it already holds. A Sessions poll uses transcript
+metadata and the current semantic-history mark to recheck the memo, including on a cached board
+response. That gate opens no transcript.
+
+A serving dashboard can warm these answers for listed sessions with saved checks, even when
+nobody opens their session pages. The server runs at most four focused assemblies per pass in a
+background thread. The warmer reads the same admitted local transcript and history sources as the
+session page and can update `semantic-work-history.json` through that existing path. It makes
+no model call, starts or renews no Live monitor lease, and uses the already collected rows.
+Turning annotations off disables it. The memo stays in process memory. The Sessions row's
+`stored_progress` field carries only `medium`, `high`, `extreme` (reserved on the analysis scale),
+`out-of-date`, `goal-unclear` or null. The saved assessment contains no level.
 
 Amended 2026-10-05 by the owner through delegated adversarial acceptance
 ([the amendment](docs/design-reading-a-session.md#amended-2026-10-05-owner-the-newest-recorded-final-reply-is-read-whole)):
@@ -4660,9 +4671,8 @@ JSON: a shape version, a time, the dashboard's process id, the count of the othe
 Needs you queue, sessions waiting on you and pending asks (`null` when no harness that can report a wait was read), the board's names for harnesses that
 cannot report one, a `monitor` boolean, `stored_progress` (a departing level token or `null`),
 `last_end` (`null` or an end reason and time), and `model_calls_paused` (`true`, `false` or `null`
-for unknown). The stored level comes from the published session row; the board publishes no stored
-level yet, so `stored_progress` is `null` until it does. The file holds no title,
-path, prompt, session id or tool output.
+for unknown). The status line copies a current departure token from the published session row.
+The file holds no title, path, prompt, session id or tool output.
 
 The dashboard writes only the page-default snapshot, only while it is serving, and never fails a
 request over it (`test_footer_lines`). A file is rewritten when its content changes and otherwise
@@ -4672,8 +4682,9 @@ so an older collection cannot supply a stale pause answer. Samples are ordered b
 A late older read cannot replace a newer answer. Unknown clears an earlier assertion.
 The client prints `AI use paused` only for exact `true`, independently of the monitor, and
 keeps waiting and quota segments. Resume AI use clears the pause segment on the next refresh.
-The writer clears stored progress when the next snapshot withholds it. A session with a stored
-departure or a standing monitor that leaves the board gets one final write, retried if it fails. The client shows an end note for five
+The writer clears stored progress when the next snapshot withholds it or an idle refresh finds
+that the snapshot's progress proof has failed or expired. A session with a stored departure or a
+standing monitor that leaves the board gets one final write, retried if it fails. The client shows an end note for five
 minutes after the recorded end, except for the reader's own Off. A dashboard that stops removes the
 files it wrote, including on `--stop`; a crash leaves them to the client's one-minute freshness
 ceiling, after which the client ignores them, and to a sweep that removes strays older than an hour.

@@ -318,6 +318,7 @@
           "started_at": 1899999100.0,
           "state": "working",
           "state_detail": "running a synthetic tool",
+          "stored_progress": null,
           "subagent_events": null,
           "subagent_hierarchy": null,
           "subagents": [],
@@ -479,6 +480,7 @@
           "started_at": 1899999100.0,
           "state": "idle",
           "state_detail": "awaiting your message",
+          "stored_progress": null,
           "subagent_events": null,
           "subagent_hierarchy": null,
           "subagents": [],
@@ -640,6 +642,7 @@
           "started_at": 1899999100.0,
           "state": "idle",
           "state_detail": "awaiting your message",
+          "stored_progress": null,
           "subagent_events": null,
           "subagent_hierarchy": null,
           "subagents": [],
@@ -702,7 +705,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "23888",
+      "Content-Length": "23963",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.2"
