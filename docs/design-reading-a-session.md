@@ -8640,6 +8640,23 @@ departure can appear. The direction question dates the later message and quotes 
 reader to interpret. How goals work opens in either Goal mode, and the read-mode prompt picker
 can explain an empty or unreadable record.
 
+### Amended 2026-11-24 (owner): Check progress in Is it on track?, filled wherever it can run
+
+A goal with no check said Not checked yet in Is it on track? and offered no way to check. The card
+now draws the header's press as well: Check progress before any reading, Check progress again
+after one, with the same Uses AI note. It is the same press, not a second path. Both copies render
+the shared run control from the same board, so the daily cap, paused AI use, consent, a refusal
+beside the press, a running check and the no-reader case decide both at once, and the pending key
+makes both busy while a press is in flight. The card's copy is drawn exactly when the header's is.
+Its weight follows the card: primary before a reading when nothing else in the card is primary,
+otherwise outlined, so a later direction's question, Steer back and the raise for a waiting session
+keep the card's one primary. The header's copy is now the filled primary whenever it can be
+pressed, including over an unsettled direction and for Check progress again, as the canvas draws
+it; a refused press takes the calm refused look in
+[the Calm Compass record](design-calm-compass.md#the-session-page-follows-the-canvas-2026-11-24).
+This narrows the [primary-control hierarchy](#what-the-session-page-build-had-to-decide) for the
+header only: the header and the card can each show one filled action.
+
 ### Amended 2026-10-19 (owner): each departure is a card
 
 The 2026-10-15 feedback read "2 departures" above two "Model assessment" blocks as something it did

@@ -900,6 +900,21 @@ class DocumentVocabularyTest(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, flat)
 
+    def test_session_page_cards_describe_the_card_press_helper_tiles_and_project_counts(
+        self,
+    ) -> None:
+        """The Session page's Is it on track?, Right now and Project cards, as the page draws them."""
+        root = SERVER_PATH.parents[3]
+        for relative in (_DASHBOARD_REFERENCE, "docs/how-it-works.md"):
+            flat = " ".join((root / relative).read_text(encoding="utf-8").split())
+            for phrase in (
+                "pressing either starts one check",
+                "State not known once it stops, because no agent records when a helper finished",
+                "2 other sessions today · 1 working",
+            ):
+                with self.subTest(file=relative, phrase=phrase):
+                    self.assertIn(phrase, flat)
+
     def test_words_on_the_board_carries_the_ruled_states_levels_and_absences(self) -> None:
         root = SERVER_PATH.parents[3]
         dashboard = (root / _DASHBOARD_REFERENCE).read_text(encoding="utf-8")

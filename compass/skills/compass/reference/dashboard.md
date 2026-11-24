@@ -206,13 +206,21 @@ starts "● Needs you" while a request waits.
 At 1100 px and wider the header spans two columns. Goal, Is it on track? and What's happened so
 far sit on the left. Right now, At a glance and Project sit on the right. In a narrower window
 the cards stack, with Right now following Is it on track? before the story. Right now shows the
-published activity, helpers, next step and reported block. The next-step and block rows disappear
-when the session reports its own end. At a glance shows published figures and says "At least"
-when Compass holds an incomplete entry count.
+published activity, helpers, next step and reported block. Each helper has a small tile beside its
+name: Working while it runs, and State not known once it stops, because no agent records when a
+helper finished. The words beside the tile say Not running or Activity not published. The next-step
+and block rows disappear when the session reports its own end. At a glance shows published figures
+and says "At least" when Compass holds an incomplete entry count. Project links to the project's
+page and, when other sessions in the project were active today, counts them, as in "2 other
+sessions today · 1 working". Active today means working, waiting on you or ended today; the line is
+left out when no other session was.
 
 Goal shows what you want the session to do, including the outcome lines you set. Is it on track?
-shows what a progress check reads. Open What is sent before pressing Check progress to see what
-the check sends. If you gave a later direction and have yet to settle it, the page asks about that direction. See [recording what a session should achieve](intent-and-drift.md#recording-what-a-session-should-achieve).
+shows what a progress check reads and repeats the header's button inside the card: Check progress
+before any reading, Check progress again after one, with the same Uses AI note. The two buttons
+are one control: pressing either starts one check, both wait while it runs, and both refuse for the
+same reason, such as paused AI use, the daily limit or a goal that is not saved. Open What is sent
+before pressing Check progress to see what the check sends. If you gave a later direction and have yet to settle it, the page asks about that direction. See [recording what a session should achieve](intent-and-drift.md#recording-what-a-session-should-achieve).
 Codex sessions keep the evidence without a progress level.
 
 What's happened so far starts with an outline grouped by your messages, made without a model call.

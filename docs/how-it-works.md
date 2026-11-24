@@ -71,11 +71,16 @@ Right now, At a glance and Project are on the right. On narrower windows, the ca
 order: Goal, Is it on track?, Right now, What's happened so far, At a glance and Project.
 
 - Goal shows your saved goal and what done looks like. How goals work explains what Compass reads.
-- Is it on track? shows the progress answer and the actions you can take.
-- Right now shows the latest published activity and helpers. Open the session to see its next
-  step and whether it is blocked. When it reports its own end, the current next step and block
-  rows disappear. At a glance shows published figures and labels an incomplete entry count
-  "At least".
+- Is it on track? shows the progress answer and the actions you can take. It repeats the header's
+  Check progress button, so Not checked yet always sits beside the way to check. The two buttons
+  are one control: pressing either starts one check, and both wait while it runs.
+- Right now shows the latest published activity and helpers. Each helper has a small tile:
+  Working while it runs, and State not known once it stops, because no agent records when a
+  helper finished. Open the session to see its next step and whether it is blocked. When it
+  reports its own end, the current next step and block rows disappear. At a glance shows
+  published figures and labels an incomplete entry count "At least".
+- Project links to the project and counts its other sessions that were active today, as in
+  "2 other sessions today · 1 working".
 - What's happened so far starts with Compass's outline, made from the record without a model.
   Codex outlines only your messages. A Claude Code summary adds an opening paragraph and short
   phases. Open one phase at a time. Off course here opens the matching evidence. A flag from an

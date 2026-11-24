@@ -75,6 +75,8 @@ The lighter surfaces, dividers and fills can group content decoratively.
 | Primary action text on green | `#FFFFFF` | `#2F7D5B` | 4.99:1 | Filled action. |
 | Control border on card | `#7B8794` | `#FFFFFF` | 3.66:1 | Required outline for outlined controls. |
 | Control border on ground | `#7B8794` | `#F4F6F8` | 3.38:1 | Required outline on the page ground. |
+| Refused control label on muted fill | `#5C6976` | `#EEF1F4` | 4.96:1 | Calm disabled label. |
+| Control border on muted fill | `#7B8794` | `#EEF1F4` | 3.23:1 | A refused control keeps its outline. |
 | Card border on card | `#E3E7EB` | `#FFFFFF` | 1.24:1 | Below 3:1. Decorative edge under NUI-18. |
 | Card border on ground | `#E3E7EB` | `#F4F6F8` | 1.15:1 | Below 3:1. Decorative edge under NUI-18. |
 | Row divider on card | `#EEF1F4` | `#FFFFFF` | 1.13:1 | Below 3:1. Decorative edge under NUI-18. |
@@ -107,9 +109,16 @@ light outline so the marker stays visible on both the filled bar and the empty t
 
 One bundled variable Inter face supplies the five steps. The style board uses 800 for the
 34 px page title, 700 for 24 px section and 18 px card titles, and 400 at 15 px for body
-text. Use 13 px for supporting text, tags and badges. It is the floor. Technical details
+text. Button labels use 600 at 15 px, and the Session page's At a glance numbers use the 24 px
+step at 800. Use 13 px for supporting text, tags and badges. It is the floor. Technical details
 can use `ui-monospace` for logs, identifiers and commands. Use sentence case on the first
 layer. Interactive targets are at least 44 px.
+
+Every button and text field shares one control radius, `--r-control`, 12 px, as the style
+board's `.btn` draws it. A button is at least 44 px tall with 18 px either side and 8 px
+between a glyph and its words. Cards keep the 16 px radius and status tiles their own. The
+Sessions search field and its Filters button share the control radius, so they stay matched.
+A checkbox keeps a 4 px corner, because 12 px would round its 16 px box into a radio's circle.
 
 Sentences on the page stop at `--measure`, 540 px, about 72 characters at the body step.
 Inside an opened accordion or collapsible panel they span the panel instead: the panel resets
@@ -378,7 +387,9 @@ record the control decisions.
 ## Affordances
 
 Use a filled green primary action, a bordered secondary action and a quiet text action,
-for example Check progress, Edit goal and Not now. The style board uses 16 px card radius,
+for example Check progress, Edit goal and Not now. A control that cannot be pressed rests calm:
+a muted fill, its outline kept and muted ink, never a hatch or a dashed edge. The style board
+uses 16 px card radius,
 a 1 px decorative border and 24 px padding, with a flat edge in place of stripes or deep
 shadows. The shared Button also provides outlined and filled danger actions. Keyboard focus adds
 a 2 px Compass green outline with a 2 px offset. Sessions row titles underline on hover and
@@ -400,6 +411,51 @@ The command clears observation history, recorded session ends, parent declaratio
 correction digests and annotation discard records. It keeps typed goals and group labels,
 readings, dismissals, read choices and spend guards. It sets AI use to paused and summaries
 to off. Goal history explains that typed goals and readings survive.
+
+### Buttons and the calm disabled look, 2026-11-24
+
+The owner compared the live Session page with the canvas on 2026-11-24 and asked for buttons
+with "more border radius" and a "stronger" font weight. Buttons now take the canvas `.btn`: the
+12 px `--r-control` radius (it was 4 px, with emphasized buttons on the 10 px card radius), a
+600-weight label and 18 px side padding. The change is in the shared Button and its token, so
+every page takes it, text fields and popovers included. The owner has also rejected the hatched,
+dashed box for a control that cannot be pressed, on several surfaces that day. A refused button
+now draws the muted `--sunk` fill, the solid `--line` outline at 3.23:1 against that fill and
+`--ink3` text at 4.96:1. It stays in the tab order with `aria-disabled` where it did before and
+keeps the sentence that says why. A busy button is unchanged: it keeps its own fill and spinner.
+[NUI-18](design-next-ui.md#amended-2026-11-24-owner-a-refused-control-rests-calm) records the
+amendment to "disabled is dashed".
+
+### The Session page follows the canvas, 2026-11-24
+
+Five more changes came from the same comparison.
+
+- **Check progress is filled wherever it can be pressed.** The header's button had dropped to
+  the outlined weight while a later direction was unsettled, and Check progress again was
+  always outlined. Both are now the green primary with white text whenever a press can run,
+  as the canvas draws them. A refused press takes the calm refused look above.
+- **Is it on track? has its own Check progress.** A goal with no check said Not checked yet and
+  offered no way to check. The card now draws the header's button: Check progress before any
+  reading, Check progress again after one, with the same Uses AI note. It is the same component
+  with the same board, refusals, daily cap, pause and pending key, so it shows exactly when the
+  header's does, and pressing either leaves both busy, then both inert while the check runs. The
+  card's copy is primary only before a reading and when the card has no other primary: a later
+  direction's question, Steer back and a raise for a waiting session keep theirs. The canvas
+  draws no button in the card; the owner asked for it.
+- **Helpers in Right now have tiles.** Each helper has the 28 px tile from the canvas, the shared
+  StatusTile at its small size, named for screen readers and not a tab stop. A helper publishes
+  only whether it is running. Running gets Working. The canvas draws Ended for a finished
+  helper, but no harness records a helper's finish, so a helper that stopped gets State not
+  known and keeps the words Not running or Activity not published beside it, under the honesty
+  rules. Working says itself, so its row keeps only the elapsed time.
+- **At a glance numbers lead.** The values use the 24 px step at 800. The canvas draws 24 px at
+  800; the type-step ruling keeps the five steps, so no 26 px step was added.
+- **Project counts the project's other sessions today.** Under the project link a quiet 13 px line
+  reads "2 other sessions today · 1 working", counted from the board's rows for the same project,
+  leaving this session out. Today is the Projects group's Active today rule: Working, Waiting on
+  you, or a reported end on the board's calendar day. One session is singular. The working clause
+  is left out at zero, and the whole line when no other session was active today. The gap under
+  the Project heading is 8 px, as the canvas draws it.
 
 ## Contextual help
 

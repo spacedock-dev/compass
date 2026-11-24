@@ -1437,6 +1437,22 @@ back from the recorded facts in that slot as its primary. Every other refusal (a
 model calls off, the build gate, the daily cap, no saved words) keeps the inert control with its
 reason, as above.
 
+### Amended 2026-11-24 (owner): a refused control rests calm
+
+"Disabled is dashed, not dimmer" is replaced. The owner rejected the hatched, dashed box for a
+control that cannot be pressed on several surfaces on 2026-11-24. A refused control now keeps a
+solid `--line` outline, which still clears 3:1 against its new muted `--sunk` fill (3.23:1), and
+draws its label in `--ink3` (4.96:1 on that fill). The fill, not the border style, separates it
+from a pressable control in greyscale. The rest of this ruling stands: the control stays on the
+page, stays reachable through `aria-disabled` where it was, refuses its own press and keeps the
+sentence that says why. The same day the shared control radius became 12 px and button labels 600
+weight; [the Calm Compass record](design-calm-compass.md#buttons-and-the-calm-disabled-look-2026-11-24)
+has the tokens.
+
+The same comparison put Check progress in two places, the session header and Is it on track?.
+Both copies are the one shared press, so the handler-gate rule above holds: each refuses on the
+same expression, from the same function, and neither can start a check the other would refuse.
+
 ## NUI-19: a caveat has three tiers
 
 Compass pays for its honesty in vertical space, and before this rule it paid the same price for
