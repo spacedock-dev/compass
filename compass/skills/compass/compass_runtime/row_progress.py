@@ -468,10 +468,48 @@ def _proof(
     return Proof(row, entry, memo, annotation_store.direction_floor(entry, row))
 
 
-class Validation(NamedTuple):
-    proofs_hold: Callable[[float, tuple[str, str] | None], bool]
-    stores_hold: Callable[[], bool]
+@dataclass(frozen=True)
+class Validation:
+    config: RuntimeConfig
+    state: RuntimeState
+    clock: Callable[[], float]
+    stamp: tuple[int, ...]
+    proofs: dict[tuple[str, str], Proof]
     claude_paths: dict[str, str]
+
+    def stores_hold(self) -> bool:
+        # A chmod need not change the history parser's cached inode, size or mtime.
+        return annotation_stamp(self.config) == self.stamp and os.access(
+            semantic_history.store_path(self.config), os.R_OK
+        )
+
+    def proofs_hold(self, now: float, owner: tuple[str, str] | None) -> bool:
+        selected = self.proofs.values() if owner is None else (self.proofs.get(owner),)
+        return all(
+            proof is not None and proof.holds(self.config, self.state, now) for proof in selected
+        )
+
+    def prepare_snapshot(self, withheld: frozenset[str]) -> Callable[[], bool] | None:
+        if not withheld:
+            return lambda: self.proofs_hold(self.clock(), None) and self.stores_hold()
+        # A proof the footer rejected must neither supply bytes nor expire a memo that omits it.
+        retained = []
+        for (harness, sid), proof in self.proofs.items():
+            if harness == "claude" and sid in withheld and proof.memo.token in DEPARTURES:
+                proof.row["stored_progress"] = None
+            else:
+                retained.append(proof)
+        if not retained:
+            return None
+
+        def snapshot_holds() -> bool:
+            now = self.clock()
+            return (
+                all(proof.holds(self.config, self.state, now) for proof in retained)
+                and self.stores_hold()
+            )
+
+        return snapshot_holds
 
 
 def publish(
@@ -509,24 +547,14 @@ def publish(
         if proof is not None and proof.holds(config, state, now):
             proofs[owner] = proof
 
-    def stores_hold() -> bool:
-        # A chmod need not change the history parser's cached inode, size or mtime.
-        return annotation_stamp(config) == stamp and os.access(
-            semantic_history.store_path(config), os.R_OK
-        )
-
-    if not proofs or not stores_hold():
-        return None
-    for proof in proofs.values():
-        proof.row.update(published(proof.memo.token))
-
-    def proofs_hold(now: float, owner: tuple[str, str] | None) -> bool:
-        selected = proofs.values() if owner is None else (proofs.get(owner),)
-        return all(proof is not None and proof.holds(config, state, now) for proof in selected)
-
     claude_paths = {
         sid: proof.memo.transcript.path
         for (harness, sid), proof in proofs.items()
         if harness == "claude"
     }
-    return Validation(proofs_hold, stores_hold, claude_paths)
+    validation = Validation(config, state, clock, stamp, proofs, claude_paths)
+    if not proofs or not validation.stores_hold():
+        return None
+    for proof in proofs.values():
+        proof.row.update(published(proof.memo.token))
+    return validation

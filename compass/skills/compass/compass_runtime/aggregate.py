@@ -204,7 +204,10 @@ class FooterLane(Protocol):
         validate_progress: Callable[[float, tuple[str, str]], bool] | None = None,
         validate_stores: Callable[[], bool] | None = None,
         validate_prefixes: Callable[[], set[str]] | None = None,
-    ) -> None: ...
+        on_progress_change: Callable[[], None] | None = None,
+    ) -> frozenset[str]: ...
+
+    def withheld_progress(self) -> frozenset[str]: ...
 
     def touch(self, now: float) -> None: ...
 
@@ -1804,20 +1807,22 @@ class Application:
             stamp = row_progress.annotation_stamp(self.config) if self.state.row_progress else None
             collection = self.collect(show_all=show_all)
             validate = row_progress.publish(collection, self.config, self.state, self.clock, stamp)
+            # A footer check can find a collision the collector missed. Use its decision
+            # before encoding the response and keep the generation fence for concurrent clears.
+            withheld = self._write_footer_lines(
+                collection, show_all=show_all, validate_progress=validate
+            )
+            snapshot_check = validate.prepare_snapshot(withheld) if validate else None
             body = json.dumps(board_explanations.compact(collection, _BOARD_EXPLANATIONS)).encode()
+            built_at, built_monotonic = self.clock(), self.monotonic()
             revision, kept = self.snapshot.publish(
                 key,
                 body,
-                now=self.clock(),
-                monotonic_now=self.monotonic(),
+                now=built_at,
+                monotonic_now=built_monotonic,
                 generation=generation,
-                validate=(
-                    lambda: validate.proofs_hold(self.clock(), None) and validate.stores_hold()
-                )
-                if validate
-                else None,
+                validate=snapshot_check,
             )
-            self._write_footer_lines(collection, show_all=show_all, validate_progress=validate)
             # Only a freshly minted revision that was kept is worth announcing. A
             # warm reuse returns above without reaching this line, so a connected
             # client is never woken for a state it already has; and a body that
@@ -1836,16 +1841,18 @@ class Application:
         *,
         show_all: bool,
         validate_progress: row_progress.Validation | None,
-    ) -> None:
-        """The status line's files, from the page-default variant only.
+    ) -> frozenset[str]:
+        """Get the footer's withheld levels while updating its files on the default variant.
 
         `show_all` carries old rows, which would count waits the board does not show.
         """
         writer = self.footer_lines
-        if writer is None or show_all:
-            return
+        if writer is None:
+            return frozenset()
         with contextlib.suppress(Exception):
-            writer.update(
+            if show_all:
+                return writer.withheld_progress()
+            return writer.update(
                 collection,
                 self.clock(),
                 validate_progress=validate_progress.proofs_hold if validate_progress else None,
@@ -1855,7 +1862,9 @@ class Application:
                 )
                 if validate_progress
                 else None,
+                on_progress_change=self.snapshot.clear,
             )
+        return frozenset()
 
     def _fresh_snapshot(
         self, key: runtime_snapshot.SnapshotKey

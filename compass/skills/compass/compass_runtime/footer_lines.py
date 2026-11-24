@@ -189,6 +189,8 @@ class Lines:
         self._validate_progress: Callable[[float, tuple[str, str]], bool] | None = None
         self._validate_stores: Callable[[], bool] | None = None
         self._validate_prefixes: Callable[[], set[str]] | None = None
+        self._on_progress_change: Callable[[], None] | None = None
+        self._withheld: frozenset[str] = frozenset()
 
     def update(
         self,
@@ -198,8 +200,9 @@ class Lines:
         validate_progress: Callable[[float, tuple[str, str]], bool] | None = None,
         validate_stores: Callable[[], bool] | None = None,
         validate_prefixes: Callable[[], set[str]] | None = None,
-    ) -> None:
-        """Publish the board's stored progress and cheap lease state."""
+        on_progress_change: Callable[[], None] | None = None,
+    ) -> frozenset[str]:
+        """Publish the footer and return the Claude board IDs whose levels it withheld."""
         try:
             sample = self._pause_state()
             snapshot = copy.deepcopy(dict(collection))
@@ -220,6 +223,7 @@ class Lines:
                 self._validate_progress = validate_progress
                 self._validate_stores = validate_stores
                 self._validate_prefixes = validate_prefixes
+                self._on_progress_change = on_progress_change
                 for name in self._current - sessions.keys():
                     body = self._desired[name]
                     previous = self._written.get(name)
@@ -243,17 +247,19 @@ class Lines:
                     name = line_name(harness, sid)
                     self._retired.discard(name)
                     body["model_calls_paused"] = self._paused
-                    if name in self._ambiguous:
-                        body["stored_progress"] = None
                     self._desired[name] = body
                     row = sessions[name]
                     self._apply_state(name, self._state(row) if name not in self._ambiguous else {})
-                unambiguous = self._unambiguous_progress()
-                if validate_progress is not None:
-                    self._recheck_progress(now)
-                self._flush(now, unambiguous=unambiguous)
+                self._flush(now, check_proofs=validate_progress is not None)
+                return self._withheld
         except Exception as exc:  # noqa: BLE001 — a status line file must never fail a request
             self._report(exc)
+            return self.withheld_progress()
+
+    def withheld_progress(self) -> frozenset[str]:
+        """Read the current decision without touching the namespace or updating the footer."""
+        with self._lock:
+            return self._withheld
 
     def _pause_state(self) -> tuple[int, bool | None]:
         # Number before I/O so a late read cannot replace a newer timestamp or permission.
@@ -290,17 +296,19 @@ class Lines:
         body["monitor"] = on
         body["last_end"] = None if on else lease.get("last_end")
 
-    def _flush(self, now: float, *, unambiguous: set[str] | None) -> None:
+    def _flush(self, now: float, *, check_proofs: bool) -> None:
+        withheld = self._recheck_progress(
+            now, self._unambiguous_progress(), check_proofs=check_proofs
+        )
+        if withheld != self._withheld:
+            self._withheld = withheld
+            # A reader can see the new footer as soon as the file is replaced.
+            if self._on_progress_change is not None:
+                self._on_progress_change()
         wrote = False
         for name in sorted(self._current | self._retired):
             body = {**self._desired[name], "at": now}
-            # A transient namespace failure only withholds this write. The next idle touch
-            # can restore the candidate if its transcript and annotation proofs still hold.
-            if (
-                unambiguous is not None
-                and body["stored_progress"]
-                and self._sessions[name]["sid"] not in unambiguous
-            ):
+            if name in self._current and self._sessions[name]["sid"] in withheld:
                 body["stored_progress"] = None
             wrote |= self._write(name, body, now)
             previous = self._written.get(name)
@@ -325,26 +333,39 @@ class Lines:
                 for name, row in self._sessions.items():
                     lease = self._state(row) if name not in self._ambiguous else {}
                     self._apply_state(name, lease)
-                unambiguous = self._unambiguous_progress()
-                self._recheck_progress(now)
-                self._flush(now, unambiguous=unambiguous)
+                self._flush(now, check_proofs=True)
         except Exception as exc:  # noqa: BLE001
             self._report(exc)
 
-    def _recheck_progress(self, now: float) -> None:
-        retained: list[Body] = []
+    def _recheck_progress(
+        self, now: float, unambiguous: set[str] | None, *, check_proofs: bool
+    ) -> frozenset[str]:
+        retained: list[tuple[str, Body]] = []
+        withheld = set()
         for name, row in self._sessions.items():
             body = self._desired[name]
-            if body["stored_progress"]:
-                if self._progress_holds(row, now):
-                    retained.append(body)
-                else:
-                    body["stored_progress"] = None
+            sid = row["sid"]
+            if not body["stored_progress"]:
+                # A collector may have noticed the same collision and stopped offering the
+                # level. Only a newly confirmed level counts as recovery.
+                if sid in self._withheld:
+                    withheld.add(sid)
+                continue
+            if check_proofs and not self._progress_holds(row, now):
+                body["stored_progress"] = None
+                withheld.add(sid)
+                continue
+            retained.append((sid, body))
+            # Keep the candidate through a namespace failure so an idle touch can restore it.
+            if name in self._ambiguous or (unambiguous is not None and sid not in unambiguous):
+                withheld.add(sid)
         # The scan can outlast a transcript proof, and a clear during a later
         # row's check can invalidate a shared stamp an earlier row relied on.
-        if retained and not self._progress_stores_hold():
-            for body in retained:
+        if check_proofs and retained and not self._progress_stores_hold():
+            for sid, body in retained:
                 body["stored_progress"] = None
+                withheld.add(sid)
+        return frozenset(withheld)
 
     def _progress_holds(self, row: Mapping[str, Any], now: float) -> bool:
         validate = self._validate_progress
@@ -389,6 +410,8 @@ class Lines:
             self._validate_progress = None
             self._validate_stores = None
             self._validate_prefixes = None
+            self._on_progress_change = None
+            self._withheld = frozenset()
 
     def _write(self, name: str, body: Body, now: float) -> bool:
         previous = self._written.get(name)

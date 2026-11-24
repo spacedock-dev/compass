@@ -137,8 +137,13 @@ list withholds the level for that write. A later idle touch can restore it if th
 holds. After the namespace check the writer
 rechecks each transcript proof, then the shared annotation stamp and history readability. A clear
 during a later proof check can invalidate a level that already passed, so a failed shared check
-clears every retained level. The writer reads the lease independently. This path can run without focused
-context or record reads. Older files can still supply waits and monitor state.
+clears every retained level. The writer keeps the withheld Claude board IDs for its current rows.
+When that set changes, it clears both board snapshot variants before replacing the footer files.
+Repeated checks with the same result leave the memo in place. A collection omits the withheld
+levels before encoding either variant, and a collection that crossed a clear cannot replace the
+memo or wake the stream. A warm board read checks proofs for the levels it carries without
+scanning the Claude namespace. The writer reads the lease independently. This path can run
+without focused context or record reads. Older files can still supply waits and monitor state.
 The client ignores their live `level` token and drops any invalid or missing stored verdict.
 
 The writer looks up leases by row `sid` and names files by the full `resume_id` when available.
