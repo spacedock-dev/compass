@@ -877,6 +877,8 @@ class ThePostRoutesAreTheListedOnesTest(unittest.TestCase):
             "/api/summary/delete",
             "/api/tripwire",
             "/api/usage",
+            # Two quota windows from `--forward-usage`, loopback only; nothing reaches a session.
+            "/api/usage/claude",
         }
     )
 

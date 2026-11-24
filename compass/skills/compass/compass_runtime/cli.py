@@ -297,6 +297,8 @@ def refuse_footer_with_other_options(
         parser.error(
             "--footer and --session stand alone: they read the status line, not a dashboard"
         )
+    if args.forward_usage:
+        parser.error("--forward-usage stands alone: it reads the status line on stdin")
 
 
 def https_reach_url(value: str) -> str:

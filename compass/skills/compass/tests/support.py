@@ -561,6 +561,7 @@ def _never_starts_dashboard(arguments: list[str]) -> bool:
         "--internal",
         "--forget",
         "--footer",
+        "--forward-usage",
         "--sessions",
         "--project",
         "--pause-model-calls",

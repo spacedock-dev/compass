@@ -1,8 +1,8 @@
-import { act, fireEvent } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { mountPanels, type MountOptions } from '../steering/testing';
 import { CapacityStrip } from './CapacityStrip';
-import { heldFor } from './held';
+import { heldFor, useConsent } from './held';
 import { CapacityPanel } from '../delegation/CapacityPanel';
 import { observe } from '../observed';
 import { RailUsage } from './UsageConsent';
@@ -29,14 +29,20 @@ const board = (over: Record<string, unknown> = {}) => ({
 });
 const mount = (options: MountOptions = {}, strip = true) =>
   mountPanels(strip ? <CapacityStrip /> : <RailUsage windows />, { data: board(), ...options });
-/* The Console rail: the switch sits under the capacity panel and is told whether that panel drew a window. */
-const rail = (payload: ReturnType<typeof board>) => (
-  <CapacityPanel
-    payload={payload}
-    model={observe(payload)}
-    usage={(windows) => <RailUsage windows={windows} />}
-  />
-);
+/* The Console rail: the switch sits under the capacity panel, which is told the recorded switch as
+   `ProjectConsole` tells it, and is told whether that panel drew a window or hid one. */
+function Rail({ payload }: { readonly payload: ReturnType<typeof board> }) {
+  const quotaOff = useConsent('usage') === 'declined';
+  return (
+    <CapacityPanel
+      payload={payload}
+      model={observe(payload)}
+      quotaOff={quotaOff}
+      usage={(windows, hidden) => <RailUsage windows={windows} hidden={hidden} />}
+    />
+  );
+}
+const rail = (payload: ReturnType<typeof board>) => <Rail payload={payload} />;
 const dataUrls = (page: ReturnType<typeof mount>): string[] =>
   page.state.requests.filter((r) => r.path === '/api/data').map((r) => r.url);
 const withUsage = (page: ReturnType<typeof mount>): string[] =>
@@ -77,7 +83,9 @@ describe('the quota fetch is on until it is turned off', () => {
     await page.advance(120_000);
     expect(dataUrls(page).length).toBeGreaterThan(1);
     expect(withUsage(page)).toEqual([]);
-    expect(line()?.textContent).toContain('Quota reading is off. The last cached read will lapse.');
+    expect(line()?.textContent).toContain(
+      'Quota reading is off. Figures read for Claude Code and Cursor are hidden.',
+    );
     expect(line()?.querySelector('button')?.textContent).toBe('Turn on quota reading');
   });
 
@@ -92,7 +100,9 @@ describe('the quota fetch is on until it is turned off', () => {
   it('names a cached credential window without displaying its figures', async () => {
     const page = mount({ storage: { [CONSENT]: 'declined' } });
     await page.settle();
-    expect(line()?.textContent).toContain('Quota reading is off. The last cached read will lapse.');
+    expect(line()?.textContent).toContain(
+      'Quota reading is off. Figures read for Claude Code and Cursor are hidden.',
+    );
     expect(document.querySelector('[data-next-capacity]')?.textContent).toContain(
       'Last cached window: Claude Code 5-hour',
     );
@@ -108,12 +118,43 @@ describe('the quota fetch is on until it is turned off', () => {
     expect(line()?.querySelector('button')?.textContent).toBe('Turn on quota reading');
   });
 
-  it('the Console rail, declined with windows published, keeps the last-cached-read sentence', async () => {
+  it('the Console rail, declined with a Claude window read, says it is hidden and never that none was reported', async () => {
     const full = board();
     const page = mountPanels(rail(full), { data: full, storage: { [CONSENT]: 'declined' } });
     await page.settle();
     expect(line()?.textContent).toContain(
-      'Quota reading is off. Windows above are the last cached read and will lapse.',
+      'Quota reading is off. Figures read for Claude Code and Cursor are hidden.',
+    );
+    expect(document.querySelector('[data-next-rail-window]')).toBeNull();
+    const panel = document.querySelector('[data-next-rail-panel="capacity"]')?.textContent ?? '';
+    expect(panel).not.toContain('No plan usage has been reported yet.');
+    expect(panel).not.toContain('will lapse');
+  });
+
+  it('a capacity panel with no switch slot says the hidden figure itself', () => {
+    const full = board();
+    render(<CapacityPanel payload={full} model={observe(full)} quotaOff />);
+    const panel = document.querySelector('[data-next-rail-panel="capacity"]')?.textContent ?? '';
+    expect(panel).toContain(
+      'Quota reading is off. Figures read for Claude Code and Cursor are hidden.',
+    );
+    expect(panel).not.toContain('No plan usage has been reported yet.');
+  });
+
+  it('the Console rail, declined beside a Codex reading, keeps Codex and says local readings stay', async () => {
+    const both = board({
+      usage: [
+        ...board().usage,
+        { harness: 'codex', state: 'ok', fiveH: { pct: 71, windowSec: 10800, resetAt: 9000 } },
+      ],
+    });
+    const page = mountPanels(rail(both), { data: both, storage: { [CONSENT]: 'declined' } });
+    await page.settle();
+    const rows = document.querySelectorAll('[data-next-rail-window]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.textContent).toContain('71%');
+    expect(line()?.textContent).toContain(
+      'Quota reading is off for Claude Code and Cursor. Local readings are still shown.',
     );
   });
 

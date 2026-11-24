@@ -225,7 +225,8 @@ The [Find sessions design record](design-sessions-search.md) owns the counting r
 At the top of Sessions, Your AI allowance shows the selected quota window, its published reset
 and the amount used. The bar marks how far the window has elapsed when the clock is available.
 Open How the AI allowance works for the pace, local reset date and time, and source. Turning off
-quota reading stops credential-backed fetches in this browser. Fresh Codex disk readings and
+quota reading stops credential-backed fetches in this browser and hides Claude's figures, including
+those Claude Code's status line can forward with `--forward-usage`. Fresh Codex disk readings and
 Antigravity receipts can still appear. The [quota policy](../SECURITY.md#usage-quota-reads-the-quota-fetcher)
 describes what Compass reads and how to stop it.
 

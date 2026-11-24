@@ -1199,3 +1199,237 @@ def receipt_entries(
     if not sessions.is_fresh(config, now, stamp, window_hours * 3600):
         return []
     return entries
+
+
+# Claude Code's status line names its two windows, and these are the only keys read from it.
+_CLAUDE_RECEIPT_WINDOWS: Final = (("five_hour", "fiveH"), ("seven_day", "week"))
+# Two reset stamps this close are one window. Claude Code derives `resets_at` from the same
+# server answer every session reads, so a real gap is a whole window; this only absorbs a stamp
+# rounded differently between two sessions.
+RECEIPT_SAME_WINDOW_SEC: Final = 60.0
+# How far past one window's length a reset may lie. A window cannot reset later than its own
+# length from now, so a stamp beyond this is broken or forged, and refusing it stops one post
+# from pinning a slot to a made-up window that no genuine later post could displace.
+RECEIPT_RESET_SLACK_SEC: Final = 300.0
+# How long a kept window may go unreported before a post with an earlier reset may replace it.
+# Every open session re-renders on each refresh, so a window still being reported is never this
+# old. One that is was posted once and abandoned, which is what a forged reset looks like, and
+# holding it until that reset would refuse every genuine post for up to a week. Five minutes
+# outlasts a status line that redraws only on events, so an active window is not given up
+# between two of its own posts.
+RECEIPT_STALE_SEC: Final = 300.0
+
+
+def _claude_receipt_window(now: float, raw: Any, slot: str) -> dict[str, Any] | None:
+    """One forwarded window as `{pct, resetAt}`, or nothing.
+
+    Held to the forwarder's own rules again, because a loopback POST can come from anything:
+    a JSON number from 0 to 100, and a numeric reset after now and no further ahead than the
+    window is long. Out of range is refused rather than clamped, as the footer does: a figure of
+    150 is a broken field, and drawing it as a full bar would state something nobody measured.
+    A window with no usable reset is withheld too: without one it could neither be told from an
+    older window nor dropped when its period ends.
+    """
+    window = records.as_dict(raw)
+    used = _finite(window.get("used_percentage"))
+    resets = _finite(window.get("resets_at"))
+    if used is None or not 0 <= used <= 100 or resets is None:
+        return None
+    if not now < resets <= now + SLOT_WINDOW_SEC[slot] + RECEIPT_RESET_SLACK_SEC:
+        return None
+    return {"pct": max(0, min(100, round(used))), "resetAt": resets}
+
+
+def shape_claude_statusline(payload: dict[str, Any], now: float) -> dict[str, dict[str, Any]]:
+    """The usable windows in a forwarded body, keyed by slot. Nothing else is read.
+
+    `--forward-usage` already sends only these numbers, but the route cannot know who posted, so
+    a fresh mapping is built from the two named windows and every other key is ignored: a
+    session id, a transcript path or a working folder in the body cannot reach storage.
+    """
+    limits = records.as_dict(payload.get("rate_limits"))
+    shaped: dict[str, dict[str, Any]] = {}
+    for key, slot in _CLAUDE_RECEIPT_WINDOWS:
+        window = _claude_receipt_window(now, limits.get(key), slot)
+        if window is not None:
+            shaped[slot] = window
+    return shaped
+
+
+def _merged_window(
+    stored: dict[str, Any] | None, arrived: dict[str, Any], now: float
+) -> dict[str, Any] | None:
+    """The window a slot keeps when `arrived` meets `stored`, or None to leave it as it was.
+
+    [Q-13](docs/design-usage-quota.md#q-13) is the rule: a later
+    reset is a newer window and wins at any level; at the same reset the higher level wins,
+    because use only rises inside a window; an earlier reset is an older window and changes
+    nothing. Every Claude Code session re-sends its last figures on each refresh, idle ones
+    included, so the newest post is not the newest reading and must not simply win.
+
+    Two stamps per window. `receivedAt` moves on every post that reports the kept window, and is
+    what keeps it inside the activity window. `changedAt` moves only when the figure does: a new
+    window, a later reset or a higher level. It is what the entry publishes as `asOf`, so an idle
+    session's resend neither labels an old figure as read now nor adds a flat pace sample.
+
+    One exception to "an earlier reset changes nothing": when the kept window has gone unreported
+    for `RECEIPT_STALE_SEC`. A genuine older window cannot reach that branch, because a reset that
+    has passed is refused before this, so it is reached by a forged or early reset, or by a second
+    account still reporting after the first stopped. In each, the window still being reported is
+    the one to keep. The same-window max rule has no such exception: a lower figure for the same
+    window never replaces a higher one, however long ago the higher one arrived.
+    """
+    changed = {**arrived, "receivedAt": now, "changedAt": now}
+    if stored is None or stored["resetAt"] <= now:
+        return changed
+    gap = arrived["resetAt"] - stored["resetAt"]
+    if gap > RECEIPT_SAME_WINDOW_SEC:
+        return changed
+    if gap < -RECEIPT_SAME_WINDOW_SEC:
+        return changed if now - stored["receivedAt"] > RECEIPT_STALE_SEC else None
+    if arrived["pct"] > stored["pct"]:
+        return changed
+    return {**stored, "receivedAt": max(stored["receivedAt"], now)}
+
+
+def receive_claude_statusline(
+    state: RuntimeState,
+    payload: dict[str, Any],
+    *,
+    now: float,
+    config: RuntimeConfig,
+) -> dict[str, Any]:
+    """Merge Claude Code's forwarded windows into Claude's receipt slot.
+
+    The inverse of `receive_statusline` on one point, deliberately: a body without a usable
+    window stores nothing and stamps nothing. Every Claude Code session renders its status line
+    before its first reply, with no `rate_limits` yet, so stamping that arrival would blank a
+    good reading another session is still reporting. A receipt ages out on its own clock
+    instead, per window, in `claude_receipt_entries`.
+
+    With server-side usage disabled the windows are dropped before storage and the answer is
+    still success, as `receive_statusline` does: a status line must never see a Compass error.
+    """
+    if not config.usage_fetch_enabled:
+        return {"ok": True, "usage": 0}
+    arrived = shape_claude_statusline(payload, now)
+    if not arrived:
+        return {"ok": True, "usage": 0}
+    with state.usage_fetch_lock:
+        cached = state.usage_receipts.get("claude")
+        windows: dict[str, Any] = dict(cached["entries"][0]) if cached and cached["entries"] else {}
+        for slot, window in arrived.items():
+            merged = _merged_window(windows.get(slot), window, now)
+            if merged is not None:
+                windows[slot] = merged
+        stamp = max(window["receivedAt"] for window in windows.values())
+        state.usage_receipts["claude"] = {"ts": stamp, "entries": [windows]}
+    return {"ok": True, "usage": len(arrived)}
+
+
+def claude_receipt_entries(
+    config: RuntimeConfig,
+    state: RuntimeState,
+    now: float,
+    window_hours: float,
+) -> list[dict[str, Any]]:
+    """Claude's receipt as one published entry, or none.
+
+    Shaped at read time, not on arrival, because both drop rules are about now: a window whose
+    reset has passed describes a finished period, as the footer and Claude Code both treat it,
+    and a window not reported within the activity window may belong to a session long gone.
+    The reset words are formatted here for the same reason, so "14:00" is not left saying today
+    after midnight. `asOf` is when the newest kept window's figure last changed, not when it was
+    last reported: an idle session's resend is byte-identical to a fresh unchanged reading, and
+    only a change is evidence of when the figure was true. The activity gate stays on
+    `receivedAt`, so a window still being reported is still shown.
+    """
+    with state.usage_fetch_lock:
+        cached = state.usage_receipts.get("claude")
+        stored = copy.deepcopy(cached["entries"][0]) if cached and cached["entries"] else {}
+    entry: dict[str, Any] = {"harness": "claude", "state": "ok"}
+    newest: float | None = None
+    for _key, slot in _CLAUDE_RECEIPT_WINDOWS:
+        window = stored.get(slot)
+        if not isinstance(window, dict) or window["resetAt"] <= now:
+            continue
+        if not sessions.is_fresh(config, now, window["receivedAt"], window_hours * 3600):
+            continue
+        entry[slot] = {
+            "pct": window["pct"],
+            "windowSec": SLOT_WINDOW_SEC[slot],
+            **sessions.reset_fields(now, window["resetAt"]),
+        }
+        changed_at: float = window["changedAt" if "changedAt" in window else "receivedAt"]
+        newest = changed_at if newest is None else max(newest, changed_at)
+    if newest is None:
+        return []
+    entry["asOf"] = int(newest)
+    return [entry]
+
+
+def _later_window(fetched: Any, received: Any) -> Any:
+    """One slot's window from the two Claude sources, by the receipt's own rule.
+
+    A later reset wins; within one window the higher level wins; a tie keeps the fetch. A
+    fetched window that carries no reset cannot be placed against the receipt's, so the receipt,
+    which always carries one, wins it.
+    """
+    if not isinstance(received, dict) or not isinstance(fetched, dict):
+        return received if isinstance(received, dict) else fetched
+    fetched_reset = _finite(fetched.get("resetAt"))
+    fetched_pct = fetched.get("pct")
+    if fetched_reset is None or not isinstance(fetched_pct, int):
+        return received
+    gap = received["resetAt"] - fetched_reset
+    if gap < -RECEIPT_SAME_WINDOW_SEC:
+        return fetched
+    newer = gap > RECEIPT_SAME_WINDOW_SEC or received["pct"] > fetched_pct
+    return received if newer else fetched
+
+
+def merge_claude_usage(
+    fetched: list[dict[str, Any]], received: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """One Claude entry from the credential fetch and the status-line receipt.
+
+    Two Claude entries would draw two Claude tiles, so the sources meet here, per window, by
+    the rule the receipt merges itself with. A fetch that read no figures (`lapsed`, `refused`)
+    yields to a receipt that has some, because a reading beats an explanation of why one other
+    route has none.
+
+    `asOf` is the newest stamp among the sources that won a window, not of both: a receipt that
+    won nothing must not move the stamp the pace ring samples a fetched window at.
+
+    The fetch's per-model rows are sub-limits of its weekly window and survive while that is the
+    weekly window shown, including when the receipt reports the same week higher. When the receipt
+    has moved on to a later week, last week's rows are dropped until the next fetch brings the new
+    week's: a sub-limit drawn under a week it was not measured in states a figure nobody read.
+    """
+    if not received:
+        return fetched
+    receipt = received[0]
+    ok = [entry for entry in fetched if entry.get("state") == "ok"]
+    if not ok:
+        return [receipt]
+    fetch = ok[0]
+    base = copy.deepcopy(fetch)
+    winners: dict[str, str] = {}
+    for _key, slot in _CLAUDE_RECEIPT_WINDOWS:
+        chosen = _later_window(fetch.get(slot), receipt.get(slot))
+        if chosen is None:
+            continue
+        winners[slot] = "receipt" if chosen is receipt.get(slot) else "fetch"
+        base[slot] = copy.deepcopy(chosen)
+    if "models" in base and winners.get("week") == "receipt":
+        fetched_reset = _finite(records.as_dict(fetch.get("week")).get("resetAt"))
+        if fetched_reset is None or abs(receipt["week"]["resetAt"] - fetched_reset) > (
+            RECEIPT_SAME_WINDOW_SEC
+        ):
+            del base["models"]
+    sources = {"fetch": fetch, "receipt": receipt}
+    stamps = [_finite(sources[name].get("asOf")) for name in set(winners.values()) or sources]
+    known = [stamp for stamp in stamps if stamp is not None]
+    if known:
+        base["asOf"] = int(max(known))
+    return [base]

@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2484987,
+    "bytes": 2485899,
     "file": "react.html",
-    "sha256": "e185f2eea694b194235bb44ab951a1967cc24b7b57ded1c2c3f13e118643d207"
+    "sha256": "523d7bebe5824ec42f4702f3c8519378a4ab59f21b1a1d766d3f7d493f759747"
   },
   "format": 1,
   "frontend": "react",
@@ -271,7 +271,7 @@
       },
       {
         "file": "frontend/src/attention/AttentionView.tsx",
-        "sha256": "87e44faa25b8a14825b476cbb9917a300144f8133c18ba4c0e82a29dbe93b99b"
+        "sha256": "f13caa813c442e82b05b385dba1f2b99a7183be82e7bff67316de81616a13291"
       },
       {
         "file": "frontend/src/attention/Coverage.tsx",
@@ -319,7 +319,7 @@
       },
       {
         "file": "frontend/src/capacity/CapacityStrip.tsx",
-        "sha256": "7c99f300a72631c0b41ede5f60d2dfac487db7bd8310ddcca2f3a4b5f22efaae"
+        "sha256": "e2d6797e0d99ca5ea01f8649129b25c0c8d487b553ec429ad4bcbd278e371e8d"
       },
       {
         "file": "frontend/src/capacity/ObserverControls.tsx",
@@ -327,7 +327,7 @@
       },
       {
         "file": "frontend/src/capacity/UsageConsent.tsx",
-        "sha256": "5f332553fffceec89bf8fea2f0d09272af73965bcee4585b93946180265dc15c"
+        "sha256": "52efc1afd5c514214c6bc16786f36adf1383ba030341643a0c190326b0cd7ad6"
       },
       {
         "file": "frontend/src/capacity/capacity.css",
@@ -344,6 +344,10 @@
       {
         "file": "frontend/src/capacity/model.ts",
         "sha256": "7c458823fd3cf410c90281e71cc688a07c1a360578914c2ab6feaded4e26b9a1"
+      },
+      {
+        "file": "frontend/src/capacity/visibility.ts",
+        "sha256": "31ee46852a7fee23c8704f917c38b1f8a9a6761c7997cb41ddb8cd6efef7efd7"
       },
       {
         "file": "frontend/src/controls/ControlsProvider.tsx",
@@ -459,11 +463,11 @@
       },
       {
         "file": "frontend/src/delegation/CapacityPanel.tsx",
-        "sha256": "f987006b8a426097609d6ebd5f98c78698c30df898a804d82088913e62ecc79c"
+        "sha256": "5bbdf0e9a011f63e337989ea3dd72539b26ed56d620c6db09e0633058aeaaf8a"
       },
       {
         "file": "frontend/src/delegation/Console.tsx",
-        "sha256": "19f04c3ae4ef79294fb7923bc16e504bc089199f8f1fa3d280683c260b2b7b58"
+        "sha256": "77bf66bcca220fdc1713e6df02217bee9df246b22c8fe883a77ab7d84367bf5f"
       },
       {
         "file": "frontend/src/delegation/DelegationPanel.tsx",
@@ -1483,7 +1487,7 @@
       },
       {
         "file": "frontend/src/steering/slots.tsx",
-        "sha256": "c32a7dc044eb39b0a37eaf3b045099c1263e39603eafb17e4556414dfc96ab06"
+        "sha256": "f94f8fab6ebd9b515e3e770686a2ddf0bbe1195b9d3fe16503aa7e3cccfacade"
       },
       {
         "file": "frontend/src/steering/stage.ts",

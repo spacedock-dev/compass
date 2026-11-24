@@ -2,8 +2,10 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { openInFlow } from './disclosure.flow';
 import { GLOSSARY } from '../src/language/glossary';
+import { SLOT_LABELS } from '../src/capacity/model';
 import { contrastOf, rgbOf } from './a11y.audit';
 import {
+  CLAUDE_STATUS_LINE_WINDOWS,
   CLAUDE_WINDOW,
   CODEX_WINDOW,
   QuotaExample,
@@ -29,7 +31,9 @@ export const OnUntilTurnedOff: Story = {
     await expect(requests.at(-1)).toMatch(/usage=1/);
     await userEvent.click(canvas.getByRole('button', { name: 'Turn off quota reading' }));
     await expect(
-      await canvas.findByText('Quota reading is off. The last cached read will lapse.'),
+      await canvas.findByText(
+        'Quota reading is off. Figures read for Claude Code and Cursor are hidden.',
+      ),
     ).toBeVisible();
     await expect(canvas.queryByRole('progressbar')).toBeNull();
     await expect(requests.at(-1)).not.toMatch(/usage=/);
@@ -74,7 +78,9 @@ export const TurnedOffWithWindowsShown: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
-      await canvas.findByText('Quota reading is off. The last cached read will lapse.'),
+      await canvas.findByText(
+        'Quota reading is off. Figures read for Claude Code and Cursor are hidden.',
+      ),
     ).toBeVisible();
     await expect(canvas.queryByRole('progressbar')).toBeNull();
     await expect(canvas.getByRole('button', { name: 'Turn on quota reading' })).toBeVisible();
@@ -97,6 +103,31 @@ export const TurningOffTheFetchKeepsLocalQuota: Story = {
   },
 };
 
+/* A reader whose Claude login Compass cannot read still sees Claude beside Codex once Claude Code's status
+   line has forwarded its two windows, and Turn off quota reading hides them as it hides a fetched figure. */
+export const ClaudeFromTheStatusLineBesideCodex: Story = {
+  args: { strip: true, usage: [...CLAUDE_STATUS_LINE_WINDOWS, ...CODEX_WINDOW] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const card = await canvas.findByRole('region', { name: GLOSSARY.aiAllowance.plain });
+    const reader = within(card);
+    await expect(
+      await reader.findByRole('button', { name: 'Read Claude Code 5-hour window' }),
+    ).toBeVisible();
+    await expect(
+      reader.getByRole('button', { name: `Read Claude Code ${SLOT_LABELS.week} window` }),
+    ).toBeVisible();
+    await expect(reader.getByRole('button', { name: 'Read Codex 3-hour window' })).toBeVisible();
+    await userEvent.click(reader.getByRole('button', { name: 'Read Claude Code 5-hour window' }));
+    await expect(reader.getByText('Claude Code 5-hour plan · resets in 2h 30m.')).toBeVisible();
+    await expect(reader.getByText('38% used')).toBeVisible();
+    await userEvent.click(reader.getByRole('button', { name: 'Turn off quota reading' }));
+    await expect(await canvas.findByText('71% used')).toBeVisible();
+    await expect(canvas.queryByRole('button', { name: /Read Claude Code/ })).toBeNull();
+    await expect(canvas.queryByText('38% used')).toBeNull();
+  },
+};
+
 export const ConsoleRailTurnedOffWithNoWindowRead: Story = {
   args: { declined: true, rail: true, usage: [] },
   play: async ({ canvasElement }) => {
@@ -109,13 +140,38 @@ export const ConsoleRailTurnedOffWithNoWindowRead: Story = {
   },
 };
 
-export const ConsoleRailTurnedOffWithWindowsShown: Story = {
+export const ConsoleRailTurnedOffWithAWindowRead: Story = {
   args: { declined: true, rail: true, usage: CLAUDE_WINDOW },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
       await canvas.findByText(
-        'Quota reading is off. Windows above are the last cached read and will lapse.',
+        'Quota reading is off. Figures read for Claude Code and Cursor are hidden.',
+      ),
+    ).toBeVisible();
+    await expect(canvas.queryByText('34%')).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-rail-window]')).toBeNull();
+    await expect(canvas.queryByText('No plan usage has been reported yet.')).toBeNull();
+    await expect(canvas.queryByText(/will lapse/)).toBeNull();
+  },
+};
+
+/* The project's Usage view keeps the switch too: Claude's figures, from the fetch or from Claude Code's
+   status line, leave the rail while Codex's local reading stays. */
+export const ConsoleRailTurnedOffKeepsCodexAndHidesClaude: Story = {
+  args: { rail: true, usage: [...CLAUDE_STATUS_LINE_WINDOWS, ...CODEX_WINDOW] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const rows = () => [...canvasElement.querySelectorAll('[data-next-rail-window]')];
+    await waitFor(() => expect(rows().length).toBe(3));
+    await expect(rows().some((row) => row.textContent?.includes('Claude Code'))).toBe(true);
+    await userEvent.click(canvas.getByRole('button', { name: 'Turn off quota reading' }));
+    await waitFor(() => expect(rows().length).toBe(1));
+    await expect(rows()[0]?.textContent).toContain('Codex');
+    await expect(rows().some((row) => row.textContent?.includes('Claude Code'))).toBe(false);
+    await expect(
+      canvas.getByText(
+        'Quota reading is off for Claude Code and Cursor. Local readings are still shown.',
       ),
     ).toBeVisible();
   },

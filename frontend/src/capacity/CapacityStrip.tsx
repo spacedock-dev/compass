@@ -7,6 +7,7 @@ import { ALLOWANCE_LABEL, EXPLANATIONS } from '../language/glossary';
 import type { Row } from '../observed';
 import { useDisplayed, useShell } from '../shell/context';
 import { heldFor, useConsent, useSelectedWindow, useUsageOffered } from './held';
+import { quotaShown } from './visibility';
 import {
   allowanceSentence,
   clockWords,
@@ -24,7 +25,7 @@ import {
   type Spread,
   type StripRow,
 } from './model';
-import { UsageSwitch } from './UsageConsent';
+import { QUOTA_HIDDEN_NOTE, UsageSwitch } from './UsageConsent';
 import './capacity.css';
 
 /* The board publishes the reading. The tab holds the window selection and disclosure state. */
@@ -250,15 +251,10 @@ export function CapacityStrip() {
   const key = useSelectedWindow();
   const offered = useUsageOffered();
   const off = useConsent('usage') === 'declined';
-  // The browser switch gates credential fetches. Codex reads disk and Antigravity receives quota locally.
-  const rows = off
-    ? published.filter(({ harness }) => harness === 'codex' || harness === 'antigravity')
-    : published;
+  const rows = published.filter(({ harness }) => quotaShown(harness, off));
   const picked = selectRows(rows, key);
   const cached =
-    off && !picked
-      ? published.find(({ harness }) => harness === 'claude' || harness === 'cursor')
-      : undefined;
+    off && !picked ? published.find(({ harness }) => !quotaShown(harness, off)) : undefined;
   const lane = heldFor(runtime).selection;
   const selectedKey = picked ? rowKey(picked.selected) : '';
   /* A refresh keeps the vendor and window key while it is still published. Before the first
@@ -352,7 +348,7 @@ export function CapacityStrip() {
           selected
             ? 'Quota reading is off for Claude Code and Cursor. Local readings are still shown.'
             : cached
-              ? 'Quota reading is off. The last cached read will lapse.'
+              ? QUOTA_HIDDEN_NOTE
               : 'Quota reading is off. No window has been read.'
         }
       />

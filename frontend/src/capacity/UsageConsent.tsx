@@ -11,6 +11,11 @@ import { useConsent, useUsageAnswer, useUsageOffered } from './held';
 
 const SWITCH_KEY = 'usage:switch';
 
+/* Said wherever Turn off quota reading hides a window that was read. Not "will lapse": a figure Claude Code's
+   status line forwards keeps arriving while its wrapper runs, so only the hiding is certain. */
+export const QUOTA_HIDDEN_NOTE =
+  'Quota reading is off. Figures read for Claude Code and Cursor are hidden.';
+
 /* An unanswered origin reads as on, as `transport/runtime` sends it. */
 export function UsageSwitch({ offNote }: { readonly offNote: string }) {
   const offered = useUsageOffered();
@@ -40,14 +45,23 @@ export function UsageSwitch({ offNote }: { readonly offNote: string }) {
   );
 }
 
-/** What the Console rail draws under its windows. */
-export function RailUsage({ windows }: { readonly windows: boolean }) {
+/** What the Console rail draws under its windows: whether any is drawn above, and whether the switch is
+    hiding one that was read. The wording matches the Sessions strip's. */
+export function RailUsage({
+  windows,
+  hidden = false,
+}: {
+  readonly windows: boolean;
+  readonly hidden?: boolean;
+}) {
   return (
     <UsageSwitch
       offNote={
         windows
-          ? 'Quota reading is off. Windows above are the last cached read and will lapse.'
-          : 'Quota reading is off. No window has been read.'
+          ? 'Quota reading is off for Claude Code and Cursor. Local readings are still shown.'
+          : hidden
+            ? QUOTA_HIDDEN_NOTE
+            : 'Quota reading is off. No window has been read.'
       }
     />
   );

@@ -5,7 +5,10 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Disclosure, useControls } from '../controls';
 import { useFocusKey } from '../controls/useFocusKey';
 import { selectObserved } from '../observed/select';
-import { sessionKey, type Observed, type ObservedSession } from '../observed';
+import { observeCapacity, sessionKey, type Observed, type ObservedSession } from '../observed';
+import { useConsent } from '../capacity/held';
+import { quotaShown, withoutHiddenQuota } from '../capacity/visibility';
+import { asPayload } from '../observed/values';
 import { sessionRisk } from '../observed/project';
 import { useDisplayed, useShell } from '../shell/context';
 import { selectDataStatus } from '../store/selectors';
@@ -136,6 +139,13 @@ function Board({
     fallback: 'attention:title',
   });
   const reports = useMemo(() => boardReports(data), [data]);
+  const quotaOff = useConsent('usage') === 'declined';
+  /* Turn off quota reading hides Claude's and Cursor's quota pressure here as on the strip. The board's
+     quota risks are derived again from the usage it may show, in the place they held. */
+  const quotaRisks = useMemo(
+    () => (quotaOff ? observeCapacity(withoutHiddenQuota(asPayload(data), true)).risks : null),
+    [quotaOff, data],
+  );
   const [action, setAction] = useState<{
     readonly identity: { readonly harness: string; readonly sid: string };
     readonly text: string;
@@ -210,13 +220,19 @@ function Board({
     return { session, reason, risk, subject: collision ?? subjects.get(key) };
   });
   const ready = selection?.readyToWrapUp ?? [];
-  const boardRisks = observed.boardRisks.filter((risk) => {
+  const shownBoardRisks = quotaRisks
+    ? [...quotaRisks, ...observed.boardRisks.filter((risk) => risk.kind !== 'quota')]
+    : observed.boardRisks;
+  const boardRisks = shownBoardRisks.filter((risk) => {
     if (!selection || risk.kind !== 'collision') return true;
     const subject = riskSubject(risk, model);
     return !subject || offCountKeys.has(subject.key);
   });
   const notices = model.risk.filter(
-    (subject) => subject.kind === 'quota' && subject.identity?.project.startsWith('model:'),
+    (subject) =>
+      subject.kind === 'quota' &&
+      subject.identity?.project.startsWith('model:') &&
+      quotaShown(subject.identity.harness, quotaOff),
   );
   const warnings = [
     ...boardRisks.map((risk) => ({ risk, retained: undefined })),

@@ -33,7 +33,10 @@ The terminal client (`terminal_client.py`, what a short command such as `--versi
 terminal operations use) is not one of the four and shares no code with them: it connects with
 `http.client` to the literal `127.0.0.1` on an integer port, so it consults no proxy variable and
 follows no redirect by construction, and it finds the dashboard from state file names and
-`/api/health`, never by opening a state file that holds the event-ingress tokens. `--sessions` prints
+`/api/health`, never by opening a state file that holds the event-ingress tokens. `--forward-usage`
+is the one terminal operation built to run from a status line and post: it sends the two quota
+windows described in [Usage quota reads](#usage-quota-reads-the-quota-fetcher) and nothing else
+from the status line's JSON. `--sessions` prints
 text sessions published, such as a title, a goal or a question. Collectors leave control characters
 in that text on purpose, so the terminal strips escape sequences, bidirectional controls and every
 other control character from each value before printing it. The same stripping covers what
@@ -125,7 +128,9 @@ The posture rests on two invariants:
    own connection, which is why it is named here rather than counted above.
 2. Read-only against harness stores. They are opened read-only and never written. The mutating
    endpoints change Compass's own state. These mutate only in memory: `POST /api/notify` updates needs-input state, and
-   `POST /api/usage` stores a quota figure a harness published to its own status-line command.
+   `POST /api/usage` stores a quota figure a harness published to its own status-line command, and
+   `POST /api/usage/claude` keeps the two quota windows Claude Code's status line forwards through
+   `--forward-usage`. That second route answers only a loopback peer.
    `POST /api/events/<harness>` updates lifecycle state behind the capability described under
    Known and accepted. It also persists session ends and
    [launcher parent claims](#launcher-parent-declarations-and-group-labels) in Compass's own stores.
@@ -588,6 +593,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | A Live monitor check, about once a minute while you view a Claude Code session with the switch on or a terminal holder keeps the lease | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result, every other command as its masked line with its exit status, and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause all AI use (`--pause-model-calls`), the last holder leaving or lapsing, session end and caps; browser holders also stop at their consent deadline or No, and a hidden tab cannot drive checks | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
 | The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response forbids framing, objects and base tags; it has no fetch restrictions, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
 | `--footer`, the status line segment | Nothing. It launches no program and opens no socket: it reads the JSON a Claude Code status line passes on standard input and one file the dashboard wrote, and prints one line. [The status line files](#the-status-line-files) owns what that file holds. | Not putting it in a status line | `test_footer.RunFooterTest.test_it_opens_no_socket`, `test_footer.FooterLightPathTest.test_footer_through_server_py_imports_neither_the_cli_nor_an_http_client` |
+| `--forward-usage`, Claude's quota from the status line | Loopback only: at most one health probe per candidate port and one POST to `127.0.0.1`, holding Claude's five-hour and seven-day `used_percentage` and `resets_at` and nothing else from the status line's JSON. It launches no program, starts no dashboard and prints nothing. Nothing leaves the machine. | Not putting it in a status line; `--no-usage` on the dashboard drops what arrives | `test_forward_usage.ForwardUsageCommandTest.test_a_status_line_payload_is_posted_as_the_two_windows_and_nothing_else`, `test_forward_usage.ForwardUsageCommandTest.test_it_never_starts_a_dashboard`, `test_quota.ClaudeStatuslineReceiptTest.test_quota_off_stores_nothing` |
 | The hook forwarders, the MCP server and the terminal client | Loopback only. The Python forwarders and the MCP server accept only literal IPv4 `127.0.0.1`, ignore proxy settings and refuse redirects. Each HTTP exchange has one monotonic deadline across connect, send, headers and bounded body reads. The terminal client reaches only the literal `127.0.0.1` with an integer port, ignores proxy settings and returns a redirect without following it, and discovers a dashboard from state file names and mtimes without opening a state file. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`; `test_terminal_client.RequestPathTest.test_a_port_that_is_not_a_plain_integer_is_refused_before_connecting`; `test_terminal_client.RequestPathTest.test_a_proxy_in_the_environment_is_never_contacted`; `test_terminal_client.RequestPathTest.test_a_redirect_is_returned_and_never_followed`; `test_terminal_client.DiscoveryTest.test_no_state_file_is_ever_opened`; `test_terminal_sessions.SessionsPrintableTest.test_escape_sequences_and_bidi_controls_are_gone_from_every_printed_value`. None for the two JavaScript adapters. |
 | The bounded loopback transport | `loopback_transport`, used by MCP as well as terminal and lifecycle clients, connects only to literal IPv4 `127.0.0.1`, without proxies or redirect handling. The standalone hooks mirror its deadline socket because the hooks-only plugin roots do not ship the runtime package. Connect, send, headers and body share one deadline, and the response has a byte cap. Nothing leaves the machine. | The calling operation's refusal gates and exchange deadline | `test_http_deadline.DeadlineTest.test_a_person_is_not_kept_waiting_by_dripping_headers_or_bodies`; `test_edge_bounds.EdgeDeadlineTest.test_dripping_headers_and_bodies_end_at_the_exchange_deadline`; `test_edge_bounds.EdgeDeadlineTest.test_only_literal_ipv4_targets_are_admitted`; `test_terminal_client.RequestPathTest.test_a_proxy_in_the_environment_is_never_contacted`; `test_terminal_client.RequestPathTest.test_a_redirect_is_returned_and_never_followed`; `test_terminal_client.RequestPathTest.test_a_reply_is_read_to_a_bound` |
 | The bounded HTTPS transport | `https_transport` carries the vendor quota poll, the daily release lookup and the Reach nudge. It refuses a URL that is not HTTPS before resolving anything and holds DNS, connect, headers and every body read to one deadline. All three callers open it through `reach`'s opener, which reads no proxy setting from the environment or the system and follows no redirect. The quota poll also refuses any URL but the two endpoints named in [Usage quota reads](#usage-quota-reads-the-quota-fetcher). | `--no-usage` for the vendor quota poll; `--no-update-check` or switch off Look for new versions once a day in Settings for the daily release lookup; `--no-reach` for the Reach nudge | `test_quota.VendorTransportTest.test_a_redirect_is_refused_without_a_second_request`; `test_quota.VendorTransportTest.test_ambient_proxies_are_never_consulted`; `test_quota.VendorTransportTest.test_a_non_https_endpoint_is_refused_before_any_connection`; `test_quota.VendorTransportTest.test_a_dripping_response_ends_at_the_deadline_and_clears_the_inflight_mark`; `test_update_check.ExchangeDeadlineTest.test_continuously_dripping_headers_and_body_cannot_extend_the_exchange`; `test_reach.ReachDeadlineTest.test_a_webhook_dripping_headers_is_abandoned_within_the_exchange_deadline`; `test_reach.ReachHTTPSSettingTest` |
@@ -1612,6 +1618,43 @@ narrower, and deliberately so. It governs the outbound fetch and the display, wh
 govern for a harness that publishes its quota locally: with it off, a pushed receipt is still kept
 and still served on the loopback port, exactly as a disk-read tile (Codex, Copilot) is. Withdrawing
 retention for a run is what `--no-usage` is for.
+
+Claude Code can hand its quota over the same way, which matters when the fetch finds no token: Claude
+Code can keep its login in a Keychain item whose name it derives from its own environment, and Compass
+reads only `Claude Code-credentials` and never searches for another. Claude Code passes its status
+line command a JSON payload that, after a session's first reply, carries
+`rate_limits.five_hour` and `rate_limits.seven_day`. A user's status line pipes that payload to
+`--forward-usage`, which posts the two windows' `used_percentage` and `resets_at` and nothing else:
+not the session id, the transcript path, the working folder, the model, the cost or
+`rate_limits.spend_limit`. It reaches only `POST /api/usage/claude` on `127.0.0.1`, starts no
+dashboard and prints nothing. No credential is read and nothing leaves the machine.
+
+The route admits only a direct loopback peer with no forwarding header, so a board exposed with
+`--host` refuses it with 403 to a LAN client even under `--allow-host`. Its body is capped at 2 KiB
+on the declared length, before any read. The server rebuilds what it keeps from those four numbers
+alone, refusing a percentage outside 0 to 100 and a reset that has passed or lies further ahead than
+the window is long, plus five minutes. What it keeps is in memory only, in Claude's own receipt slot,
+apart from Antigravity's: per window, a percentage, a reset time, when it was last reported and when
+its figure last changed. A body with no usable window stores nothing and erases nothing. A window
+drops from the board once its reset passes, or once no session has reported it for the activity
+window. Where the credential fetch also has a reading, the two merge into one Claude entry by the
+rule in [Q-13](docs/design-usage-quota.md#q-13); the fetch's per-model rows stay while its weekly
+window is the one shown. `--no-usage` drops the windows before storage and still answers success.
+
+The page's Turn off quota reading is a display switch in this browser. It hides Claude's and
+Cursor's figures, from either source, in Your AI allowance on Sessions, in a project's Usage and
+alerts view and in Needs you's quota warnings, and stops the credential fetch. It does not reach
+the server: while it is off, figures Claude Code's status line forwards are still received, kept and
+served in `/api/data` on the loopback port, as Antigravity's receipt is. `--no-usage` is what stops
+the dashboard keeping them.
+
+Any process on this machine can post to the route, as it can to every loopback route (see Known and
+accepted). Within one window it cannot lower a figure, because the higher one is kept. A post with a
+later reset does replace the window, so a local process can make the tile read low, but only while
+it keeps posting: once the forged window has gone five minutes without a post, the next genuine post
+replaces it. Two Claude accounts on one machine share the one slot, because the payload names no
+account; when one stops reporting, the other's figures take over after five minutes, at the other
+account's next post.
 
 ## Light harness usage (asking a harness a bounded question)
 
@@ -5856,15 +5899,16 @@ that was.
 saying the machine's network may read the board, and there is no second gate behind it: everything
 the paragraph below grants another account on the machine, a non-default bind grants anything that
 can reach the port. Reading `/api/data` is the whole board: every session's titles, prompts and
-project paths. Writing is the twenty-four POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
+project paths. Writing is the twenty-five POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
 reachable dashboard can be killed, and a question a session is waiting on can be answered by
-somebody other than you. Two of the twenty-four store nothing durable of their own: `POST /api/direction` returns the whole text
+somebody other than you. Two of the twenty-five store nothing durable of their own: `POST /api/direction` returns the whole text
 of a direction a session's user gave, which `/api/project-context` names by its first sentence, and
 `POST /api/correction` returns the goal and outcome lines a reader saved, composed as Steer back's
 correction, and, for a claim of the agent's the record contradicts or does not show, that one agent
 message's published title of at most 112 characters. Both answer only a loopback peer, so a
 non-default bind does not widen them. See the bounds for both under
-[Check progress, Cancel and copied corrections](#analyze-drift-cancel-and-copied-corrections). There is nothing to authenticate with on twenty-two of them, for the reason the
+[Check progress, Cancel and copied corrections](#analyze-drift-cancel-and-copied-corrections). `POST /api/usage/claude`
+also answers only a loopback peer. There is nothing to authenticate with on twenty-three of them, for the reason the
 ask-lane paragraph below gives: the page is served as fixed bytes with no per-run secret in them.
 Two carry a capability and they are not worth the same. `POST /api/events/<harness>` takes a per-run
 token published only in the state file at mode `0600` and never served to the page, so a client

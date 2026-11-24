@@ -60,8 +60,9 @@ weekly bar they subdivide. Q-2 owns which elements of the response become one.
   its rollout files, so `collectors/codex.py` reads the newest one. Windows arrive as durations
   (`window_minutes`), so 300 minutes maps to `fiveH` and anything a day or longer to `week`, which
   keeps a weekly-only plan rendering.
-- Claude publishes from the fetch cache. `quota.py` holds the token read, the outbound request, and
-  the cache; `collectors/claude.py` only copies entries out of it.
+- Claude publishes from the fetch cache, merged with a receipt its own status line can forward.
+  `quota.py` holds the token read, the outbound request, the cache and the receipt;
+  `collectors/claude.py` only merges entries out of them. See Q-13.
 - Cursor publishes from the same fetch cache under its own vendor key, and fills `month` plus
   `used`. See Q-8.
 - Copilot publishes consumption from disk, and no gauge at all. See Q-6.
@@ -69,7 +70,9 @@ weekly bar they subdivide. Q-2 owns which elements of the response become one.
 
 `asOf` is epoch seconds of the moment the numbers were true: the snapshot's own timestamp for
 Codex, the fetch time for Claude and Cursor, the newest contributing row for Copilot, the receipt
-time for Antigravity. The page refuses to show a percentage without it.
+time for Antigravity. A Claude entry with a status-line receipt in it takes the newer of the fetch
+time and the last time a status line reported a kept window, which Q-13 explains. The page refuses
+to show a percentage without it.
 
 ## Q-6: A harness can report spend without reporting a limit
 
@@ -448,6 +451,21 @@ Claude:
 - Everywhere else: `.credentials.json` beside the resolved `claude.projects` store, so a
   `CLAUDE_CONFIG_DIR` override moves both together.
 
+**A suffixed Claude item is not read, by owner decision on 2026-11-24.** Claude Code keys its
+Keychain item to its configuration directory: Anthropic's authentication documentation says only
+that a session with a different `CLAUDE_CONFIG_DIR` reads a different entry. On the owner's Mac the
+login sat in an item with an eight-hex suffix while `Claude Code-credentials` held only MCP server
+logins, so the fetch found no token and Claude dropped out of the band. Deriving the suffix was
+rejected for three reasons. No public source gives the derivation: the scheme in circulation is a
+user's reverse engineering, and it did not reproduce the owner's suffix from the default directory.
+Its input is the environment of the Claude Code process that wrote the item, which the dashboard,
+started from some other shell, cannot see, so a wrong derivation reads some other item and calls it
+a credential, the failure the Cursor rule below refuses. And several suffixed items is the common
+case on machines that ran Claude Desktop's local agent mode, so choosing one would need a Keychain
+search, which this section never does. Each new item name would also raise its own access prompt
+and change the reviewed `security` argument shape. Q-13 is what was built instead: the status line
+hands the numbers over with no credential at all.
+
 Cursor: the Keychain generic password with service `cursor-access-token`, macOS only (Q-8). Both
 vendors go through one `security` helper that takes the service name, so there is a single
 subprocess call site to audit. It is service-scoped on both sides, and the test fake is scoped the
@@ -551,6 +569,93 @@ first-run banner must not appear; the user installed the forwarder deliberately,
 its network half, and it also drops the quota fields at ingest so a receipt pushed while the flag is
 set is not retained. The endpoint still answers 200: a status-line command must never see an error
 from Compass.
+
+<a id="q-13"></a>
+
+## Q-13: Claude's status line hands over its two windows, and the merge keeps the highest of each
+
+Claude Code passes its status line command a JSON payload, and after a session's first reply that
+payload carries `rate_limits.five_hour` and `rate_limits.seven_day`, each a `used_percentage` from 0
+to 100 and a `resets_at` in epoch seconds
+([Claude Code's status line documentation](https://code.claude.com/docs/en/statusline)). It is the
+same figure the fetch reads, with no credential in the way, so a reader whose login sits where Q-5
+will not look can still see Claude in the band. Cortado, a status line, made the same move for the
+same reason; its validation rules are the ones the forwarder keeps.
+
+**The forwarder is a terminal operation, not `--footer`.** `--forward-usage` reads the payload with
+the footer's stdin bounds and posts a body it builds from the four numbers alone, so the session id,
+transcript path, folder, model, cost and `spend_limit` never leave the process. It shares one
+one-second budget across discovery and the post, prints nothing, never starts a dashboard and exits
+0 whatever happens. `--footer` was the obvious host and was rejected: its promise that it opens no
+socket is stated in SECURITY.md and held by two tests, and it runs on the hottest path a status line
+has. A reader runs the forwarder beside their own status line with a wrapper, as HOW_TO_USE.md shows.
+
+**Its own route, loopback only.** `POST /api/usage` was not reused. It stores under Antigravity's key
+and stamps any unusable body as an arrival, so a Claude body there would erase Antigravity's figure,
+and every Claude session renders before its first reply with no `rate_limits`. `POST
+/api/usage/claude` is a separate route, so a new forwarder against an older dashboard meets a 404
+rather than clobbering anything. It answers only a direct loopback peer: the status line is always a
+process on this machine, so a LAN client under `--host` has no business there and could only forge
+the tile.
+
+**The merge rule.** Every open Claude Code session re-sends its last figures on each refresh, idle
+ones included, so the newest post is not the newest reading. Per window, then:
+
+- A later reset is a newer window and wins at any level.
+- At the same reset, the higher level wins, because use only rises within a window. Two resets
+  within 60 seconds count as the same window, to absorb rounding between sessions.
+- An earlier reset is an older window and changes nothing, unless the kept window has gone five
+  minutes without a post. A genuine older window never gets here, because a reset that has passed is
+  refused at the door, so this is a forged or early reset, or a second account still reporting after
+  the first stopped, and the window still being reported is the one to keep. A lower figure for the
+  same window never replaces a higher one, however old: widening the staleness rule to every
+  arrival was rejected, because an idle session's older figure for the same window would then
+  replace an active session's higher one whenever the active one paused, and clear the pace ring.
+
+A resend of the kept window at the same or a lower level refreshes only when it was last reported.
+
+**Nothing is stamped empty.** This is the deliberate inverse of Q-7's rule for Antigravity. A body
+with no usable window stores nothing and erases nothing, because the next Claude session's first
+render would otherwise blank a good reading another session is still reporting. A window ages out on
+its own instead: it drops once its reset passes, matching Claude Code and the footer, and once no
+session has reported it for the activity window. A reset further ahead than the window's own length
+plus five minutes is refused, so one post cannot pin a slot to a window no real later post can
+displace.
+
+**`asOf` means when the figure last changed.** A receipt carries no measurement time, and an idle
+session's resend is byte-identical to a fresh unchanged reading, so the only evidence of when a figure
+was true is when it changed. Each window keeps two stamps. `receivedAt` moves on every post reporting
+it and drives the activity gate, so a window still being reported is still shown. `changedAt` moves
+only on a new window, a later reset or a higher level, and the entry publishes the newest as `asOf`.
+The first build published the last report instead, and review measured what that cost: a resend
+every ten seconds labelled an hours-old figure as read now, and fed the pace ring a flat sample each
+collection, so a steady third of a point a minute was published as 0.55 or 0.0. With `changedAt`
+the same run measures a third of a point a minute.
+
+**Fetch and receipt make one entry.** Two Claude entries would draw two Claude tiles, so
+`merge_claude_usage` joins them per window by the same rule, a tie going to the fetch. The fetch is
+not skipped while a receipt is fresh, by owner decision on 2026-11-24, because the status line has
+no per-model rows and the fetch's `models` survive the merge while the fetch's weekly window is the
+one shown, including when the receipt reports the same week higher. When the receipt reports a later
+week, last week's rows are dropped until the next fetch brings the new week's, because a sub-limit
+drawn under a week it was not measured in states a figure nobody read. A fetch that read no figures,
+`lapsed` or `refused`, yields to a receipt that has some. The merged `asOf` is the newest stamp
+among the sources that won a window, so a receipt that won nothing cannot move the stamp a fetched
+window is sampled at.
+
+**Switches.** `--no-usage` drops the provider and drops the windows at ingest, still answering
+success. The page's Turn off quota reading hides every Claude figure, receipt included, because the
+switch sits on the Claude row and a reader who turned it off expects Claude's percentages gone. One
+helper, `capacity/visibility.ts`, applies it on every surface that draws quota: the Sessions strip,
+a project's Usage and alerts view, and Needs you's quota warnings. The first build relied on the
+strip's existing filter and review found the other two still drawing Claude's figures. The switch
+is display only; the server keeps and serves what arrives until `--no-usage`.
+
+**Limits, accepted.** The payload names no account, so two Claude accounts on one machine share the
+one slot, and the rule may pair one account's five-hour figure with the other's weekly one. Any local
+process can post, as it can to every loopback route; within a window it cannot lower a figure, but a
+later reset replaces the window. `rate_limits.spend_limit`, sent behind a Claude apps gateway, is out
+of scope; it would map like Cursor's money window in Q-8.
 
 ## Q-10: A capacity comparison is between authorities, inside one horizon, with its holes on screen
 

@@ -185,7 +185,7 @@ Inside a Claude Code session, a command without `--session` uses that session. `
 
 | Command | Calls a model |
 |---|---|
-| `--sessions`, `--project`, `--goal`, `--footer`, `--pause-model-calls`, `--summaries off`, `--monitor --off` | Never |
+| `--sessions`, `--project`, `--goal`, `--footer`, `--forward-usage`, `--pause-model-calls`, `--summaries off`, `--monitor --off` | Never |
 | `--drift`, `--summary` | Only when nothing is stored yet |
 | `--summary --update` | Only when the session changed |
 | `--drift again`, `--summary --again` | Every time, unless one is already running |

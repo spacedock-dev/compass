@@ -13,6 +13,7 @@ import { contextKey } from '../api/identity';
 import { selectHarnessSources } from '../store/selectors';
 import { TerminalSurface, useBridgeReading } from '../terminal';
 import { ScopeCue } from '../timeline/ScopeCue';
+import { useConsent } from '../capacity/held';
 import { CapacityPanel } from './CapacityPanel';
 import { DelegationPanel } from './DelegationPanel';
 import { useProjectWindow } from './evidence';
@@ -31,7 +32,7 @@ export interface ProjectConsoleProps {
   /** The observer-model controls, drawn only when the capability is read as on. The capacity step supplies them. */
   readonly observer?: ReactNode;
   /** The usage disclosure and switch inside the capacity panel. The capacity step supplies them. */
-  readonly usage?: (windows: boolean) => ReactNode;
+  readonly usage?: (windows: boolean, hidden: boolean) => ReactNode;
   readonly view?: 'usage' | 'technical';
 }
 
@@ -62,6 +63,7 @@ export function ProjectConsole({
 }: ProjectConsoleProps) {
   const { runtime } = useShell();
   const snapshot = useDisplayed((current) => current);
+  const quotaOff = useConsent('usage') === 'declined';
   const model = selectObserved(snapshot);
   const observed = model.projects.find((candidate) => candidate.key === project);
   const identity = focus && view !== 'usage' ? exactIdentity(focus) : null;
@@ -115,6 +117,7 @@ export function ProjectConsole({
           <CapacityPanel
             payload={(snapshot.data ?? {}) as Row}
             model={model}
+            quotaOff={quotaOff}
             {...(usage === undefined ? {} : { usage })}
           />
           <Tripwires project={project} />

@@ -3,6 +3,7 @@ import { CapacityStrip } from '../src/capacity/CapacityStrip';
 import { CapacityPanel } from '../src/delegation/CapacityPanel';
 import { observe } from '../src/observed';
 import { RailUsage } from '../src/capacity/UsageConsent';
+import { useConsent } from '../src/capacity/held';
 import { createShell } from '../src/shell/createShell';
 import { ShellContext } from '../src/shell/context';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
@@ -16,6 +17,17 @@ export const requests: string[] = [];
 export let refreshQuota: (() => Promise<void>) | undefined;
 export const CLAUDE_WINDOW = [
   { harness: 'claude', state: 'ok', asOf: 1, fiveH: { pct: 34, windowSec: 18000, resetAt: 9060 } },
+];
+/* What the board publishes for Claude when the figures came from Claude Code's status line through
+   `--forward-usage`: both named windows and no per-model rows, because the status line carries none. */
+export const CLAUDE_STATUS_LINE_WINDOWS = [
+  {
+    harness: 'claude',
+    state: 'ok',
+    asOf: 1,
+    fiveH: { pct: 38, windowSec: 18000, reset: '14:42', resetAt: 9060 },
+    week: { pct: 12, windowSec: 604800, reset: 'Sat 00:02', resetAt: 9060 + 4 * 86400 },
+  },
 ];
 export const CODEX_WINDOW = [
   { harness: 'codex', state: 'ok', asOf: 1, fiveH: { pct: 71, windowSec: 10800, resetAt: 9060 } },
@@ -78,18 +90,21 @@ export function QuotaExample({
   return (
     <ShellContext.Provider value={shell}>
       <ControlsProvider controls={shell.controls}>
-        {strip ? (
-          <CapacityStrip />
-        ) : rail ? (
-          <CapacityPanel
-            payload={railPayload}
-            model={observe(railPayload)}
-            usage={(windows) => <RailUsage windows={windows} />}
-          />
-        ) : (
-          <RailUsage windows />
-        )}
+        {strip ? <CapacityStrip /> : rail ? <Rail payload={railPayload} /> : <RailUsage windows />}
       </ControlsProvider>
     </ShellContext.Provider>
+  );
+}
+
+/* The Console rail as `ProjectConsole` mounts it: the panel is told the switch this browser recorded. */
+function Rail({ payload }: { readonly payload: Record<string, unknown> }) {
+  const quotaOff = useConsent('usage') === 'declined';
+  return (
+    <CapacityPanel
+      payload={payload}
+      model={observe(payload)}
+      quotaOff={quotaOff}
+      usage={(windows, hidden) => <RailUsage windows={windows} hidden={hidden} />}
+    />
   );
 }
