@@ -1126,8 +1126,10 @@ What to expect:
 This was checked with hand-built payloads in the shape Claude Code documents, through the wrapper
 with a stand-in for the existing command, against a dashboard on a spare port: the wrapper printed
 the stand-in's line alone, a payload without `rate_limits` changed nothing, and the next payload put
-Claude's two windows in `/api/data` with nothing else from it. No live Claude Code session has run it
-yet. In five runs each on a machine under heavy load, `--footer` took a median of about 0.9 seconds
+Claude's two windows in `/api/data` with nothing else from it. On 2026-11-24 it ran live: a Claude
+Code session's status line, through this wrapper with Cortado as the existing command, put Claude's
+five-hour and weekly figures in Your AI allowance. In five runs each on a machine under heavy load,
+`--footer` took a median of about 0.9 seconds
 and `--forward-usage` about 1.2 seconds; the 50 millisecond footer figure above was measured on an
 unloaded machine.
 
