@@ -65,14 +65,194 @@ class APersonSharingAuthorization(unittest.TestCase):
         raw = "curl '--user=user:password' https://example.test"
         self.assert_shared_text(raw, raw)
 
+    def test_curl_masks_a_login_with_an_empty_password_except_the_admin_example(self) -> None:
+        for option in ("-u ", "--user=", "-u"):
+            self.assert_shared_text(f"curl {option}reader:", f"curl {option}…REDACTED")
+            self.assert_shared_text(f"curl {option}admin:", f"curl {option}admin:")
+
+    def test_curl_must_be_the_full_executable_basename(self) -> None:
+        for program in ("docs.CURL", "libcurl", "curly", "my-curl"):
+            raw = f"{program} -u label:value"
+            self.assert_shared_text(raw, raw)
+        self.assert_shared_text("/bin/CuRl -u label:value", "/bin/CuRl -u label:…REDACTED")
+
+    def test_curl_masks_a_password_quoted_on_its_own(self) -> None:
+        for quote in ("'", '"'):
+            self.assert_shared_text(
+                f"curl -u alice:{quote}MadeUp Pass99{quote} https://example.test",
+                f"curl -u alice:{quote}…REDACTED{quote} https://example.test",
+            )
+
+    def test_curl_masks_a_password_with_no_username(self) -> None:
+        for option in ("-u ", "--user=", "-u"):
+            self.assert_shared_text(
+                f"curl {option}:MadeUpPass99 https://example.test",
+                f"curl {option}:…REDACTED https://example.test",
+            )
+
+    def test_uppercase_curl_masks_clustered_and_lexed_user_options(self) -> None:
+        self.assert_shared_text("CURL -sSu alice:MadeUpPass99", "CURL -sSu alice:…REDACTED")
+        self.assertEqual(
+            ["CURL", "-u", "alice:…REDACTED"],
+            records.mask_words(["CURL", "-u", "alice:MadeUpPass99"], prose=False),
+        )
+
+    def test_curl_proxy_user_masks_separate_and_joined_passwords(self) -> None:
+        for program in ("curl", "CURL"):
+            for option in ("--proxy-user ", "--proxy-user="):
+                self.assert_shared_text(
+                    f"{program} {option}alice:MadeUpPass99 https://example.test",
+                    f"{program} {option}alice:…REDACTED https://example.test",
+                )
+        self.assert_shared_text(
+            "curl --proxy-user user:password https://example.test",
+            "curl --proxy-user user:…REDACTED https://example.test",
+        )
+        self.assert_shared_text(
+            "curl --proxy-user user:<token>", "curl --proxy-user user:…REDACTED"
+        )
+
+    def test_curl_keeps_the_outer_quote_on_a_joined_option(self) -> None:
+        self.assert_shared_text(
+            """curl '--user=alice:MadeUpPass99"quote' https://example.test""",
+            "curl '--user=alice:…REDACTED' https://example.test",
+        )
+
+    def test_curl_examples_keep_shell_and_markdown_delimiters(self) -> None:
+        for raw in (
+            "curl -u user:password; echo hi",
+            "curl -u admin:; echo hi",
+            "`curl -u user:password`",
+        ):
+            self.assert_shared_text(raw, raw)
+        self.assert_shared_text(
+            "curl -u alice:MadeUpPass99; echo hi", "curl -u alice:…REDACTED; echo hi"
+        )
+        self.assert_shared_text("curl -u alice:MadeUp`Pass99", "curl -u alice:…REDACTED")
+
+    def test_curl_masks_markup_between_the_username_and_password(self) -> None:
+        for raw, expected in (
+            (
+                "curl -u alice:<!-- note -->MadeUpPass99 https://example.test",
+                "curl -u alice:…REDACTED https://example.test",
+            ),
+            (
+                'curl -u alice:<a href="https://example.test">MadeUpPass99</a> https://example.test',
+                "curl -u alice:…REDACTED https://example.test",
+            ),
+            (
+                "curl -u user:p<!-- note -->assword https://example.test",
+                "curl -u user:…REDACTED https://example.test",
+            ),
+            (
+                "curl -u user:password<!-- note --> https://example.test",
+                "curl -u user:…REDACTED https://example.test",
+            ),
+            (
+                "curl -u admin:<!-- note --> https://example.test",
+                "curl -u …REDACTED https://example.test",
+            ),
+        ):
+            self.assert_shared_text(raw, expected)
+
     def test_bearer_placeholders_stay_visible_in_literal_and_encoded_form(self) -> None:
         for placeholder in ("<token>", "%3Ctoken%3E", "%3ctoken%3e"):
             raw = f"Authorization: Bearer {placeholder} then retry"
             self.assert_shared_text(raw, raw)
 
+    def test_bearer_example_is_exact_and_local_to_the_scheme(self) -> None:
+        for scheme, value in (
+            ("Token", "%3Ctoken%3E"),
+            ("Bearer", "<TOKEN>"),
+            ("Bearer", "%3cTOKEN%3e"),
+        ):
+            self.assert_shared_text(
+                f"Authorization: {scheme} {value}", f"Authorization: {scheme} …REDACTED"
+            )
+        raw = "Authorization: Bearer\n%3Ctoken%3E9x"
+        self.assertEqual("Authorization: Bearer\n…REDACTED", records.redact_secrets(raw))
+        self.assertEqual("Authorization: Bearer …REDACTED", records.mask_prose(raw))
+        self.assertEqual("Authorization: Bearer …REDACTED", records.safe_text(raw, 4_000))
+
+    def test_escaped_basic_keeps_brackets_and_quoted_padding_keeps_quotes(self) -> None:
+        for value in ("dXNlcjpwYXNz", "dXNlcjpzM2Ny", "dXNlcjpzM2NyZXRwYXNzd29yZA=="):
+            self.assert_shared_text(
+                rf"[Authorization:\ Basic\ {value}]", r"[Authorization:\ Basic\ …REDACTED]"
+            )
+        for separator in (" ", "\\ "):
+            raw = f'"Authorization:{separator}Basic{separator}dXNlcjpzM2NyZXRwYXNzd29yZA=="'
+            self.assert_shared_text(raw, f'"Authorization:{separator}Basic{separator}…REDACTED"')
+
+    def test_basic_with_escaped_spaces_keeps_prose(self) -> None:
+        raw = r"Authorization:\ Basic\ JavaScript clients"
+        self.assert_shared_text(raw, raw)
+
+    def test_escaped_authorization_masks_bare_joined_and_extra_spaces(self) -> None:
+        for raw, expected in (
+            (r"Authorization:\ MadeUpToken99", r"Authorization:\ …REDACTED"),
+            (
+                r"Authorization:\ \ Basic\ \ dXNlcjpzM2NyZXRwYXNzd29yZA==",
+                r"Authorization:\ \ Basic\ \ …REDACTED",
+            ),
+            (
+                r"curl -HAuthorization:\ Basic\ dXNlcjpwYXNz https://example.test",
+                r"curl -HAuthorization:\ Basic\ …REDACTED https://example.test",
+            ),
+        ):
+            self.assert_shared_text(raw, expected)
+
+    def test_escaped_authorization_masks_each_digest_and_aws_parameter(self) -> None:
+        for scheme, parameters in (
+            ("Digest", r'username="alice",\ response="MadeUp99"'),
+            ("AWS4-HMAC-SHA256", r"Credential=MadeUp99,\ Signature=MadeUpPass99"),
+        ):
+            self.assert_shared_text(
+                rf"Authorization:\ {scheme}\ {parameters}",
+                rf"Authorization:\ {scheme}\ …REDACTED",
+            )
+
     def test_a_trailing_powershell_reference_after_token_stays_visible(self) -> None:
         raw = "use the Token PowerShell"
         self.assert_shared_text(raw, raw)
+
+    def test_powershell_example_requires_exact_source_spelling_at_line_end(self) -> None:
+        for value in ("Power<!--wrap-->Shell", "Power\u200bShell"):
+            self.assert_shared_text(f"use the Token {value}", "use the Token …REDACTED")
+        self.assert_shared_text(
+            "use the Token PowerShell, then retry", "use the Token …REDACTED, then retry"
+        )
+        self.assert_shared_text("use the Basic PowerShell", "use the Basic …REDACTED")
+        raw = "use the Token PowerShell\nthen retry"
+        self.assertEqual(raw, records.redact_secrets(raw))
+        self.assertEqual("use the Token PowerShell then retry", records.mask_prose(raw))
+        self.assertEqual("use the Token PowerShell then retry", records.safe_text(raw, 4_000))
+        for newline in ("\r\n", "\n"):
+            raw = f"use the Token PowerShell{newline}"
+            self.assertEqual(raw, records.redact_secrets(raw))
+            self.assertEqual("use the Token PowerShell", records.mask_prose(raw))
+            self.assertEqual("use the Token PowerShell ", records.safe_text(raw, 4_000))
+        for separator in ("\n", "\t"):
+            raw = f"use the Token{separator}PowerShell"
+            self.assertEqual(f"use the Token{separator}…REDACTED", records.redact_secrets(raw))
+            self.assertEqual("use the Token …REDACTED", records.mask_prose(raw))
+            self.assertEqual("use the Token …REDACTED", records.safe_text(raw, 4_000))
+        raw = "use the Token\x00PowerShell"
+        self.assertEqual(raw, records.redact_secrets(raw))
+        self.assertEqual("use the Token …REDACTED", records.mask_prose(raw))
+        self.assertEqual("use the Token …REDACTED", records.safe_text(raw, 4_000))
+        raw = "use the Token PowerShell\n\x00\x00"
+        self.assertEqual(raw, records.redact_secrets(raw))
+        self.assertEqual("use the Token PowerShell", records.mask_prose(raw))
+        self.assertEqual("use the Token PowerShell  ", records.safe_text(raw, 4_000))
+
+    def test_explicit_wrapped_token_header_masks_powershell(self) -> None:
+        for name in ("Authorization", "Proxy-Authorization"):
+            for raw in (f"{name}: Token\nPowerShell", f"{name}:\nToken PowerShell"):
+                self.assertEqual(
+                    raw.replace("PowerShell", "…REDACTED"), records.redact_secrets(raw)
+                )
+                self.assertEqual(f"{name}: Token …REDACTED", records.mask_prose(raw))
+                self.assertEqual(f"{name}: Token …REDACTED", records.safe_text(raw, 4_000))
 
     def test_credentials_close_to_placeholder_spellings_still_mask(self) -> None:
         for user, password in (("user", "password9zD8rU5m"), ("admin", "MadeUpPass99")):
