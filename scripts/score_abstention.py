@@ -1261,6 +1261,13 @@ def score_case(  # noqa: PLR0913 - one keyword per thing a case decides
                     source_kwargs["message_source_lookup"] = (
                         mark_abstention.native_codex_case_message_lookup(dict(case), config=config)
                     )
+                    if tool_output is not None:
+                        values, partial = codex_case_sources.masked_check_values(
+                            config, dict(case), str(case["sources"]["parent"]["path"])
+                        )
+                        tool_output = dataclasses.replace(
+                            tool_output, masked_values=values, masked_values_partial=partial
+                        )
                 model = _SourcePinnedModel(
                     model,
                     str(frozen["prompt_digest"]),

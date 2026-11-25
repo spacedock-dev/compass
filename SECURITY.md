@@ -4155,7 +4155,11 @@ owner-only directory (0700) and file (0600). They retain a cut only during deriv
 pinned reader invocation and remove it on completion, refusal or exception. Abrupt termination may leave a private
 temporary copy for the owner to remove. This promises neither secure erasure nor isolation from
 another process running under the same account. Redact before clipping or displaying screens.
-Keep raw cuts out of caches, history and public artifacts.
+The Codex freezer masks credential shapes in the hand-typed goal and outcome lines before
+sealing the revision. The scorer recovers values masked by the command parser from the
+verified source cuts in memory and applies the production explanation scrub. If the mask set
+is partial, the reader withholds the explanation. The values themselves stay out of the
+packet and the prompt. Keep raw cuts out of caches, history and public artifacts.
 
 Before each OpenAI batch, show all ten registered slots (case alias and repetition), each exact
 request digest, model/effort, verified CLI binding digests, evidence categories, whether the
@@ -4173,9 +4177,12 @@ omits assistant messages and final replies.
 Before each Google evidence-sharing step, present the exact redacted screens locally and obtain
 one owner approval per send covering exactly the listed payload digests, recipients,
 model/effort, purpose and call ceiling: the blind-marking set, then each review batch.
-`mark_abstention.py` prepares a digest-only inventory and seals an owner-approved one-use
-artifact. There is no Google sender in the tooling. Any future sender must consume
-`consume_google_send` immediately before sending the same in-memory bytes. Changed payloads,
+`mark_abstention.py` masks credential shapes on intent marking screens and in their questions.
+Apply `redact_google_screen` to UTF-8 review text before presenting it for approval. The
+digest-only inventory accepts the screened bytes and refuses input the redactor would change.
+The tool seals an owner-approved one-use artifact. There is no Google sender in the tooling.
+Any future sender must call `consume_google_send` immediately before sending the same
+in-memory bytes. Changed payloads,
 send bindings, copied artifacts and consumed sends refuse. Consumption is durable before send;
 an interrupted send needs reconciliation and cannot silently retry.
 Google receives only the approved intent, bounded evidence/screens and marking questions for
