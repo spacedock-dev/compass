@@ -68,7 +68,8 @@ that received the pause. Use Resume AI use on the board.
 Never add `--session`. It starts nothing and spends nothing.
 
 `drift` prints a progress check for this Claude Code or Codex session. Never add `--session`.
-A Codex reading shows no level and no correction. With no stored reading it asks a model for one,
+A Codex reading omits the level. Steer back on the session page can offer a correction for
+Claude Code or Codex. With no stored reading `drift` asks a model for one,
 and `drift again` always does, which spends one of the person's daily checks. Run `drift again`
 only when the person invoked it, and never repeat an action on your own. Compass itself refuses a
 press unless the person's latest prompt is the typed command for

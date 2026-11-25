@@ -937,9 +937,7 @@ class CorrectionRouteTest(_App):
         self.assertEqual((200, {"ok": False, "reason": "nothing"}), unknown)
         self.assertEqual((200, {"ok": False, "reason": "nothing"}), other)
 
-    def test_a_codex_session_with_saved_words_and_a_failed_check_gets_no_correction(self) -> None:
-        # A real Codex row in the collection, with saved words and a failed check in its record:
-        # everything a Claude Code session would be steered from, refused at the harness.
+    def test_a_codex_session_with_saved_words_and_a_failed_check_gets_a_correction(self) -> None:
         annotation_store.annotate(
             self.config,
             self.state,
@@ -949,16 +947,17 @@ class CorrectionRouteTest(_App):
             lines=["The parser tests pass"],
             now=START.timestamp() + 1,
         )
-        failed = check("c-fail", START.timestamp() + 5, "failed")
-        failed["source_session"] = {"harness": "codex", "sid": SHORT}
+        source = {"harness": "codex", "sid": SHORT}
+        person = fact("u1", START.timestamp() + 2, "user_message", source_session=source)
+        failed = check("c-fail", START.timestamp() + 5, "failed", source_session=source)
         read: list[str] = []
 
-        def facts(_handler: Any, row: dict[str, Any]) -> list[Any]:
+        def context(_application: Any, row: dict[str, Any]) -> dict[str, Any]:
             read.append(str(row.get("harness")))
-            return [failed]
+            return {"semantic": {"facts": [person, failed]}}
 
         app = self.app(harness="codex")
-        with mock.patch.object(http_api._RequestHandler, "_session_facts", facts):
+        with mock.patch.object(http_api, "_session_context", context):
             httpd = make_server(application=app)
             thread = serve_until_closed(httpd)
             try:
@@ -971,8 +970,11 @@ class CorrectionRouteTest(_App):
         ]
         self.assertEqual(1, len(codex), "the fixture has no Codex session")
         self.assertEqual("Ship the placeholder parser", codex[0]["annotation_goal"])
-        self.assertEqual((200, {"ok": False, "reason": "nothing"}), answer)
-        self.assertEqual([], read)
+        status, body = answer
+        self.assertEqual(200, status)
+        self.assertTrue(body["ok"], body)
+        self.assertIn("A check failed", words(body["parts"]))
+        self.assertEqual(["codex"], read)
 
     def test_it_is_refused_cross_origin_and_on_a_malformed_body(self) -> None:
         with self.serving() as port:

@@ -335,7 +335,9 @@ the agent ran the same tool again before claiming, with no failure in that run o
 naming nothing after the tool but flags or `.`; the working directory is not recorded. A
 contradicted claim is said on its own row and sets no level by itself. An unshown claim blocks On track without raising Slightly off course.
 Neither is counted as a departure from your intent or held back by an unsettled later direction.
-A withdrawn claim draws no row. Steer back is offered only with a departure from your intent; the server still composes a correction from a claim or a failed check, as an evidence request:
+A withdrawn claim draws no row. On Claude Code and Codex, the page offers Steer back with a
+departure from your intent. The server can also compose a correction from a claim or a failed
+check as an evidence request:
 `Can you show evidence for "<its first sentence>" at 14:02?`, or, contradicted,
 `You said "<its first sentence>" at 14:02; the record shows otherwise at 14:05.`
 Short titles and bare URLs are not quoted in the correction. Times are your local clock, the

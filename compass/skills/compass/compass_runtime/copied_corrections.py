@@ -3,8 +3,8 @@
 Item 9 of
 [DEC-24](docs/design-reading-a-session.md#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy)
 (DRC-4678). `POST /api/correction/copied` records the digest of the exact text the reader
-copied and where the session's transcript ended at that moment; a later Claude Code user message,
-written past that point, whose raw text has the same digest is Compass's words, `derived`, for
+copied and where the session's transcript ended at that moment. A later Claude Code or Codex
+user message past that point with the same text digest is Compass's words, `derived`, for
 adoption, rule 7 and the later-direction floor alike. Only digests, positions and fact ids are
 stored, never the text.
 
@@ -78,8 +78,7 @@ _KEY_CAP_CHARS = 64
 # 12 * (9,700 + 2 * 64) + 256 = 118,192 bytes.
 COPY_BODY_CAP_BYTES = 12 * (CORRECTION_CAP_CHARS + 2 * _KEY_CAP_CHARS) + 256
 _LOCK_WAIT_SECONDS = 10.0
-# Only Claude Code's messages are read for a digest, which is what item 9 rules.
-HARNESSES = frozenset({"claude"})
+HARNESSES = frozenset({"claude", "codex"})
 
 OUTCOME_STORED = "stored"
 OUTCOME_UNCHANGED = "unchanged"
@@ -414,8 +413,27 @@ def forget(config: RuntimeConfig) -> bool:
     return remove_state_file(store_path(config))
 
 
+def _raw_content(record: dict[str, Any], harness: str) -> Any:
+    if harness == "codex":
+        payload = records.as_dict(record.get("payload"))
+        if (
+            record.get("type") != "response_item"
+            or payload.get("type") != "message"
+            or payload.get("role") != "user"
+        ):
+            return None
+        return [
+            block["text"]
+            for block in records.as_list(payload.get("content"))
+            if isinstance(block, dict)
+            and block.get("type") == "input_text"
+            and isinstance(block.get("text"), str)
+        ]
+    return records.message_dict(record).get("content")
+
+
 def _scan(
-    config: RuntimeConfig, path: str, sid: str, start: int, end: int
+    config: RuntimeConfig, path: str, key: tuple[str, str], start: int, end: int
 ) -> tuple[list[_Message], int]:
     """Each user message whose record begins in `[start, end)`, and where the scan stopped.
 
@@ -425,6 +443,7 @@ def _scan(
     A record `start` falls inside was being written before it, so it is skipped; a last line with
     no newline is still being written, so the scan stops before it and reads it next time.
     """
+    harness, sid = key
     out: list[_Message] = []
     # The collector's own spelling, frozen.
     steer = project_context._SEMANTIC_FACT_TYPES["steer"]  # noqa: SLF001
@@ -441,20 +460,18 @@ def _scan(
                 break
             here, position = position, position + len(raw)
             if not raw.lstrip().startswith(b"{") or not project_context._could_be_instruction(  # noqa: SLF001
-                raw, "claude"
+                raw, harness
             ):
                 continue
             try:
                 record = json.loads(raw)
             except (ValueError, RecursionError):
                 continue
-            event = project_context._instruction_event(config, record, "claude", sid)  # noqa: SLF001
+            event = project_context._instruction_event(config, record, harness, sid)  # noqa: SLF001
             if event is None:
                 continue
             fact = project_context._semantic_fact_from_event(event, "steer", steer, "")  # noqa: SLF001
-            text = records.extract_text(
-                records.message_dict(record).get("content"), cap=_MESSAGE_READ_CAP
-            )
+            text = records.extract_text(_raw_content(record, harness), cap=_MESSAGE_READ_CAP)
             whole = len(text) < _MESSAGE_READ_CAP
             # What was copied is the correction, and Claude Code wraps a paste in its own tags
             # (DRC-4920), so the digest reads the words between them.
@@ -482,7 +499,7 @@ def _scan(
 def _opening_messages(
     config: RuntimeConfig,
     path: str,
-    sid: str,
+    key: tuple[str, str],
     info: os.stat_result,
     cached: dict[str, Any] | None,
     start: int,
@@ -499,11 +516,11 @@ def _opening_messages(
         and cached.get("opening_end") == end
     ):
         return list(cached.get("opening", ()))
-    return _scan(config, path, sid, start, end)[0]
+    return _scan(config, path, key, start, end)[0]
 
 
 def _messages(
-    config: RuntimeConfig, state: RuntimeState, path: str, sid: str, start: int
+    config: RuntimeConfig, state: RuntimeState, path: str, key: tuple[str, str], start: int
 ) -> tuple[list[_Message], int, int]:
     """The user messages from `start` to the end of the transcript, with its inode and size.
 
@@ -514,7 +531,8 @@ def _messages(
     info = os.stat(path)
     opening_start = max(start, 0)
     start = max(start, info.st_size - config.direction_scan_max_bytes, 0)
-    cache_key = f"copied-corrections:{sid}:{path}"
+    harness, sid = key
+    cache_key = f"copied-corrections:{harness}:{sid}:{path}"
     with state.cache_lock:
         cached = state.metadata_cache.get(cache_key)
     if (
@@ -523,12 +541,12 @@ def _messages(
         and cached["start"] <= start
         and cached["end"] <= info.st_size
     ):
-        more, end = _scan(config, path, sid, max(cached["end"], start), info.st_size)
+        more, end = _scan(config, path, key, max(cached["end"], start), info.st_size)
         found = [m for m in cached["messages"] if m.position >= start] + more
     else:
-        found, end = _scan(config, path, sid, start, info.st_size)
+        found, end = _scan(config, path, key, start, info.st_size)
     opening_end = min(info.st_size, _OPENING_SCAN_CAP_BYTES)
-    opening = _opening_messages(config, path, sid, info, cached, opening_start, opening_end, start)
+    opening = _opening_messages(config, path, key, info, cached, opening_start, opening_end, start)
     found = sorted([*opening, *found], key=lambda message: message.position)
     seen: set[str] = set()
     messages = []
@@ -577,15 +595,14 @@ def _recognise(
         size = os.stat(path).st_size
         waiting = [copy["offset"] for copy in held.copies]
         start = min([max(0, size - config.tail_bytes), *waiting])
-        messages, ino, size = _messages(config, state, path, sid, start)
+        messages, ino, size = _messages(config, state, path, key, start)
     except OSError:
         return held.matches, []
     taken = {match["fact_id"] for match in held.matches}
     found: list[tuple[str, Match]] = []
     for copy in held.copies:
-        # A replaced transcript (a new inode) or one now shorter than where the copy was made is
-        # skipped. One cut short and regrown past that point on the same inode can still match;
-        # Claude Code only appends, and the digest must still be exact.
+        # Both measured Codex resumes kept the rollout and one session_meta, so the copy's
+        # byte boundary still applies. See docs/captures/codex/correction-delivery-0.172.0-macos.jsonl.
         if copy["ino"] != ino or copy["offset"] > size:
             continue
         for message in messages:

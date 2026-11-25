@@ -91,6 +91,8 @@ function CorrectionBox({
 }) {
   const { ctx, model } = useDrift();
   const { key, identity } = model;
+  const headless = model.session['headless'];
+  const showDelivery = model.harness === 'codex' && typeof headless === 'boolean';
   const draft = correctionDraft(held);
   /* What the box last drew, for a recomposition to freeze before the record can renumber its parts. */
   useEffect(() => rememberShown(held, draft));
@@ -173,7 +175,11 @@ function CorrectionBox({
         defaultValue={initial}
         data-next-cockpit-correction-key={key}
         data-next-focus={`correction:${key}`}
-        aria-describedby="next-cockpit-correction-hint"
+        aria-describedby={
+          showDelivery
+            ? 'next-cockpit-correction-delivery next-cockpit-correction-hint'
+            : 'next-cockpit-correction-hint'
+        }
       />
       <div className="next-cockpit-steer-tools">
         <Button
@@ -229,6 +235,18 @@ function CorrectionBox({
         >
           {held.paintWhy || ''}
         </p>
+        {showDelivery ? (
+          <p className="next-cockpit-reading-why" id="next-cockpit-correction-delivery">
+            {headless ? (
+              <>
+                After the run ends, resume it with the correction on standard input using{' '}
+                <code>codex exec resume &lt;session id&gt; -</code>.
+              </>
+            ) : (
+              'Paste it into the Codex session and press Enter. If Codex is working, Enter gives it to the current turn.'
+            )}
+          </p>
+        ) : null}
         <p className="next-cockpit-reading-why" id="next-cockpit-correction-hint">
           {CORRECTION_HINT}
         </p>

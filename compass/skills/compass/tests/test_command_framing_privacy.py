@@ -249,7 +249,7 @@ class CopiedCommandProvenanceKeepsTheCorrectFirstPrompt(copied_cases._App):
                 copied_cases._paste(self.session, prompt_command("review", args))
                 self.session.save(self.path)
                 messages, _ = copied_corrections._scan(
-                    self.config, str(self.path), SHORT, 0, self.path.stat().st_size
+                    self.config, str(self.path), ("claude", SHORT), 0, self.path.stat().st_size
                 )
                 self.assertEqual(1, len(messages))
                 if EXAMPLE not in args:

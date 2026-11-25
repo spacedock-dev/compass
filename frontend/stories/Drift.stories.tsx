@@ -422,10 +422,8 @@ export const NoReaderClaudeUnqualifiedCodexMissing: Story = routeStory(
 );
 export const NoReaderNeitherQualified: Story = routeStory('not-qualified');
 
-/* Harness limits. Compass reads work results from Claude Code, Codex and Pi only, the live estimate from Claude
-   Code only, and corrections for Claude Code only; a card for any other harness says so and draws no level,
-   because a level from work it cannot read would measure nothing. Claude Code's own row is the live monitor
-   story above. */
+/* Harness limits. Compass reads work results from Claude Code, Codex and Pi only. The live estimate is
+   Claude Code's, and Steer back is available for Claude Code and Codex when there is something to correct. */
 
 /* Pi has work results and so a level, but only from an analysis: there is no live estimate to switch on, and
    no correction to steer back with. */
@@ -458,7 +456,7 @@ export const PiShowsAnalysisLevelWithNoSwitchAndNoSteerBack: Story = {
 
 /* A Codex session's failing test is a check on its page, as its rollout recorded it: the failed row, read from
    the command's exit code, and the record's own line saying what Codex's record holds. There is no live
-   estimate and no Steer back on Codex, and the harness limit that stood here before is gone.
+   estimate, and an unsettled or pre-intent check does not offer a correction.
    ([the amendment](../../docs/design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)) */
 const CODEX_FAILED = fact(
   'c1',

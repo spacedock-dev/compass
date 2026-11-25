@@ -1247,7 +1247,9 @@ class SpendTest(unittest.TestCase):
         ready = next(line for line in out.splitlines() if "correction is ready" in line)
         self.assertNotIn("spacedock-compass", ready)
         self.assertNotIn("Steer back: keep tabs.", out)
-        self.assertIn("This output shows only that it is ready.", ready)
+        self.assertIn(
+            "This output from `/compass:compass drift` shows only that it is ready.", ready
+        )
 
     def test_a_person_in_a_session_is_told_to_type_drift_again_over_a_stale_reading(self) -> None:
         board = stored()
@@ -1506,7 +1508,7 @@ def a_codex_board(*, assessed: bool = True, view: dict[str, Any] | None = None, 
 
 
 class ACodexReadingTest(unittest.TestCase):
-    """A Codex reading prints what the session page shows for it: no level, no correction."""
+    """A Codex reading prints what the session page shows, including a correction for a departure."""
 
     def test_a_person_reads_a_stored_codex_reading_as_the_page_shows_it(self) -> None:
         board = a_codex_board()
@@ -1518,17 +1520,28 @@ class ACodexReadingTest(unittest.TestCase):
         self.assertNotIn("Read this session's drift on its page", out)
         self.assertEqual(0, board.readings_started())
 
-    def test_a_person_reading_codex_is_shown_no_level_and_is_offered_no_correction(self) -> None:
-        board = a_codex_board()
-        _code, out, _err = drift(board, harness="codex")
+    def test_a_person_reading_codex_gets_a_correction_but_no_level_even_if_the_view_carried_one(
+        self,
+    ) -> None:
+        carried = a_codex_view(
+            analysis={"level": "high", "reasons": [], "withheld": False},
+            pill={"level": "high", "source": "analysis", "so_far": False},
+        )
+        self.assertEqual("high", terminal_drift.adapt(carried).level)
+        board = a_codex_board(view=carried)
+        code, out, err = drift(board, harness="codex")
+        self.assertEqual((0, ""), (code, err))
         self.assertNotIn("Level:", out)
-        self.assertNotIn("orrection", out)
-        self.assertNotIn("/api/correction", [path for path, _ in board.posts])
+        self.assertIn("Correction to copy:\nSteer back: keep tabs.", out)
+        self.assertIn("/api/correction", [path for path, _ in board.posts])
 
-    def test_a_person_is_shown_no_level_even_if_a_codex_view_carried_one(self) -> None:
-        carried = a_codex_view(analysis={"level": "high", "reasons": [], "withheld": False})
-        _code, out, _err = drift(a_codex_board(view=carried), harness="codex")
-        self.assertNotIn("Level:", out)
+    def test_a_person_inside_codex_sees_only_that_a_correction_is_ready(self) -> None:
+        code, out, err = drift(a_codex_board(), harness="codex", at_shell=False, in_session=True)
+        self.assertEqual((0, ""), (code, err))
+        ready = next((line for line in out.splitlines() if "correction is ready" in line), "")
+        self.assertIn("`$compass drift`", ready)
+        self.assertNotIn("Steer back: keep tabs.", out)
+        self.assertNotIn("spacedock-compass", ready)
 
     def test_a_person_sees_a_codex_earlier_departure_the_page_keeps_in_view(self) -> None:
         prior = {

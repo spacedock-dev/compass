@@ -89,8 +89,7 @@ UTC_OFFSET_MAX_MINUTES = 16 * 60
 # between two cited times does not draw one of them an hour off (review, 2026-10-20). IANA names
 # are under 32 characters; the bound only keeps a request from making the lookup read a long one.
 TIME_ZONE_MAX_CHARS = 64
-# Claude Code only, as the copy route is: a correction offered where a paste cannot be recognised
-# coming back would count as the reader's own words.
+# A correction offered where a paste cannot be recognised would count as the reader's own words.
 HARNESSES = copied_corrections.HARNESSES
 
 # Names what the 6,560 bounds, the goal and lines, since the page counts the whole text to the cap.

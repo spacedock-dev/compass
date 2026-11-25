@@ -3,9 +3,11 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { CORRECTION_CAP, CORRECTION_HINT, CORRECTION_WHY_LABEL } from '../src/drift/sentences';
 import { clock } from '../src/observed';
 import {
+  analysisRow,
   DEPARTURE_READING,
   DriftScenario,
   failedCheck,
+  healthyRoute,
   fact,
   passedCheck,
   written,
@@ -99,6 +101,91 @@ async function noOpeningLine(box: HTMLTextAreaElement) {
     await expect(/^[/!#<>`@]/.test(line)).toBe(false);
   }
 }
+
+const INTERACTIVE_HINT =
+  'Paste it into the Codex session and press Enter. If Codex is working, Enter gives it to the current turn.';
+const EXEC_HINT =
+  'After the run ends, resume it with the correction on standard input using codex exec resume <session id> -.';
+const CODEX_CORRECTION =
+  'Back to my goal: Ship the queue\nThe session departed from my goal at 00:08.\nPlease continue from here.';
+const CODEX_MESSAGE = fact(
+  'm1',
+  500,
+  { type: 'agent_message', summary: 'I stopped running the tests to take on another task.' },
+  'codex',
+);
+const CODEX_PASTE = fact(
+  'u2',
+  995,
+  {
+    type: 'user_message',
+    by: 'person:me',
+    summary: 'Back to my goal: Ship the queue',
+    copied: true,
+  },
+  'codex',
+);
+const CODEX_ROUTE = { ...healthyRoute('codex'), destination: 'codex' };
+const codexDeparture = (headless: boolean): Scenario => ({
+  harness: 'codex',
+  route: CODEX_ROUTE,
+  session: session({ goal: departs(['m1'], GOAL_WHY, 'Ship the queue') }, { headless }),
+  facts: [CODEX_MESSAGE, CODEX_PASTE],
+  work: { analysis_levels: [{ ...analysisRow('codex'), cites: ['m1'] }] },
+  correction: { ok: true, parts: [CODEX_CORRECTION] },
+});
+
+function codexDelivery(headless: boolean, hint: string, otherHint: string): Story {
+  return {
+    ...scenario(codexDeparture(headless)),
+    play: async ({ canvasElement }) => {
+      const canvas = within(canvasElement);
+      await expect(
+        await canvas.findByRole('heading', { name: 'Where it went off course' }),
+      ).toBeVisible();
+      const box = await openBox(canvasElement);
+      await expect(box).toHaveValue(CODEX_CORRECTION);
+      const delivery = canvasElement.querySelector('#next-cockpit-correction-delivery');
+      await expect(delivery).toBeVisible();
+      await expect(delivery?.textContent).toBe(hint);
+      await expect(canvasElement).not.toHaveTextContent(otherHint);
+      await expect(canvas.getByText(CORRECTION_HINT)).toBeVisible();
+      await expect(canvasElement.querySelector('[data-next-drift-pill]')).toBeNull();
+      await expect(canvasElement.querySelector('[data-next-session-progress]')).toBeNull();
+      const activity = await openSessionTechnicalTab('Activity log', canvasElement);
+      await expect(await activity.findByText('Copied from Compass', { exact: true })).toBeVisible();
+    },
+  };
+}
+
+export const InteractiveCodexCorrection = codexDelivery(false, INTERACTIVE_HINT, EXEC_HINT);
+export const CodexExecCorrection = codexDelivery(true, EXEC_HINT, INTERACTIVE_HINT);
+export const CodexWithoutADeparture: Story = {
+  ...scenario({
+    harness: 'codex',
+    route: CODEX_ROUTE,
+    session: session(
+      {
+        goal: {
+          result: 'consistent with the evidence read',
+          cites: ['c2'],
+          clause: 'Ship the queue',
+        },
+      },
+      { annotation_line_1: '', annotation_line_2: '' },
+    ),
+    facts: [passedCheck('c2', 600, 'codex')],
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const evidence = await openSessionTechnicalTab('Evidence', canvasElement);
+    const citation = await evidence.findByRole('link', { name: /Entry #/ });
+    await expect(citation.closest('[data-next-result-row="goal"]')).toHaveTextContent(
+      /^Consistent with #/,
+    );
+    await expect(canvas.queryByRole('button', { name: 'Steer back' })).toBeNull();
+  },
+};
 
 export const ADepartingDoneLineSuppliesTheStarter: Story = {
   ...scenario({

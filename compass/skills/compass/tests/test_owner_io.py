@@ -153,7 +153,9 @@ class OwnerIoTest(unittest.TestCase):
             ),
             "session": lambda: session_source.read(self.config, path, "claude", UUID),
             "typed_press": lambda: typed_press.tail_lines(path),
-            "corrections": lambda: copied_corrections._scan(self.config, path, UUID, 0, 1),
+            "corrections": lambda: copied_corrections._scan(
+                self.config, path, ("claude", UUID), 0, 1
+            ),
             "pi_settings": lambda: self._pi_settings(path),
             "tail": lambda: runtime_io.read_tail(self.config, path),
         }

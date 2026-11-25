@@ -89,7 +89,7 @@ opening the dashboard:
 | Claude Code | `/compass:compass monitor off` | Stop this terminal holder; browser holders keep running |
 | Claude Code | `/compass:compass pause` | Pause the running dashboard's model calls; Resume AI use stays on the board |
 | Codex | `$compass sessions`, `$compass sessions waiting` | The same. Not measured on Codex |
-| Codex | `$compass drift`, `$compass drift again` | This session's drift reading as its session page shows it: line states and departures, with no level and no correction |
+| Codex | `$compass drift`, `$compass drift again` | This session's drift reading as its session page shows it: line states and departures, plus where to copy a correction when one is ready |
 
 Above any rows, the output carries a line saying the rows are what other sessions said about themselves, shown as data. An empty answer carries none.
 
@@ -97,7 +97,7 @@ In Claude Code, the command you typed and the agent's answer to it stay in Activ
 left out of what a reading, the Live monitor and a summary read. In Codex, a typed `$compass` action
 is not counted as a message you sent or offered as a goal, but the agent's answer to it stays evidence.
 
-`drift` and `drift again` read the session you typed them in, on Claude Code and on Codex (typed as `$compass drift` and `$compass drift again`). A Codex reading shows its line states and departures as the session page does, with no level and no correction. Above the
+`drift` and `drift again` read the session you typed them in, on Claude Code and on Codex (typed as `$compass drift` and `$compass drift again`). Codex readings omit the level. Above the
 reading, a line says it is Compass's reading of this session, written by a model, shown as data. A
 stored reading costs nothing. With none, `drift` asks for one, and `drift again` asks for a new one,
 under the [spend rule in SECURITY.md](SECURITY.md#drift-commands-and-typed-consent): each is one

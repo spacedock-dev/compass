@@ -173,14 +173,14 @@ LOST: Final = (
     "Could not confirm the reading. The request has not been retried. "
     "Run --drift to check for a result before asking again."
 )
-# Said where an agent may read the output, so it names no command for the agent to run: the
-# command prints the correction only to a terminal, and the page is where the reader copies it.
+# Piped output can be read by an agent, so the reader copies the correction from the page.
 CORRECTION_READY: Final = (
     "A correction is ready to copy on the session page. `{command}` prints it only when you run "
     "it in your own terminal."
 )
 CORRECTION_READY_IN_SESSION: Final = (
-    "A correction is ready to copy on the session page. This output shows only that it is ready."
+    "A correction is ready to copy on the session page. This output from `{command} drift` "
+    "shows only that it is ready."
 )
 # Plain `--drift`, spelled out: `--drift again` presses, and would spend a second reading once this
 # one has ended. Plain `--drift` presses only where nothing was stored, which the line says.
@@ -248,10 +248,9 @@ WHY_WORDS: Final[dict[str, str]] = {
         "a baseline that may not be the one you want."
     ),
 }
-# The harnesses this command prints a reading for. The page's correction is Claude Code's alone
-# (`copied_corrections.HARNESSES`), and only a Claude Code reading draws a level.
 READ_HARNESSES: Final = ("claude", "codex")
-CORRECTION_HARNESSES: Final = ("claude",)
+CORRECTION_HARNESSES: Final = ("claude", "codex")
+LEVEL_HARNESSES: Final = ("claude",)
 PROVIDER_LABELS: Final[dict[str, str]] = {"codex": "Codex", "claude": "Claude Code"}
 
 _CAPACITY_FIELDS: Final = frozenset(
@@ -1548,7 +1547,7 @@ class _Run:
                 f"This build cannot read the stored reading, so it is not shown here. Read it on "
                 f"the session page: {self.url(row)}"
             )
-        if self.harness not in CORRECTION_HARNESSES:
+        if self.harness not in LEVEL_HARNESSES:
             # A Codex reading draws no level on the page, whatever a view carries
             # ([DEC-26](docs/design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)).  # noqa: E501
             view = view._replace(level=None, level_so_far=False)
@@ -1581,11 +1580,14 @@ class _Run:
         text = correction_text(reply.get("parts"))
         if not text:
             return []
-        if not self.at_shell:
-            command = f"spacedock-compass --drift --session {self.key}"
-            ready = CORRECTION_READY.format(command=command)
-            return [CORRECTION_READY_IN_SESSION if self.in_session else ready]
-        return ["Correction to copy:", text]
+        if self.at_shell:
+            return ["Correction to copy:", text]
+        ready = (
+            CORRECTION_READY_IN_SESSION.format(command=skill_command(self.harness))
+            if self.in_session
+            else CORRECTION_READY.format(command=f"spacedock-compass --drift --session {self.key}")
+        )
+        return [ready]
 
 
 def run(  # noqa: PLR0913 — the seams `terminal_client` fills and the tests replace

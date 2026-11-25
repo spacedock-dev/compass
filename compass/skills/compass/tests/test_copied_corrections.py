@@ -15,6 +15,7 @@ Every text here is placeholder prose.
 from __future__ import annotations
 
 import contextlib
+import copy
 import dataclasses
 import http.client
 import json
@@ -24,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -37,9 +39,10 @@ from compass_runtime import sessions as runtime_sessions
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
-from .support import make_server, serve_until_closed
+from .support import SERVER_PATH, make_server, serve_until_closed
 from .test_annotations_shared_home import _HOLD_LOCK
 from .test_claude_checks import SHORT, START, Transcript
+from .test_drift_view import BY_NAME, view
 from .test_history import isolated_environment, no_instance, run_one_shot_cli
 
 FIRST = "Add retry with backoff to the webhook handler."
@@ -194,7 +197,7 @@ class CopyStoreTest(_Store):
             ("empty", "   \n\t ", "claude"),
             ("not a string", ["x"], "claude"),
             ("over 2,000 characters", "x" * (copies.CORRECTION_CAP_CHARS + 1), "claude"),
-            ("a harness whose messages are not read", COPIED, "codex"),
+            ("a harness whose messages are not read", COPIED, "pi"),
         )
         for label, text, harness in cases:
             with self.subTest(case=label):
@@ -387,6 +390,106 @@ class MatchingTest(_Store):
         _paste(self.session, text + "z" * 9000)
         self.session.save(self.path)
         self.assertEqual((), self.matched())
+
+
+class CodexDeliveryTest(unittest.TestCase):
+    def test_captured_deliveries_keep_the_departure_and_match_the_collected_fact_id(self) -> None:
+        capture_path = (
+            SERVER_PATH.parents[3] / "docs/captures/codex/correction-delivery-0.172.0-macos.jsonl"
+        )
+        capture = [
+            json.loads(line) for line in capture_path.read_text(encoding="utf-8").splitlines()
+        ]
+        short, long = [row["text"] for row in capture if row["event"] == "_correction_text"]
+        for delivery, source, text in (
+            ("exec resume argument", "exec", short),
+            ("TUI mid-turn", "cli", short),
+            ("TUI idle long paste", "cli", long),
+            ("exec resume stdin", "exec", long),
+        ):
+            with self.subTest(delivery=delivery), tempfile.TemporaryDirectory() as tmp:
+                self.check_delivery(Path(tmp), delivery, source, text)
+
+    def check_delivery(self, root: Path, delivery: str, source: str, text: str) -> None:
+        case = copy.deepcopy(BY_NAME["codex-later-direction-unsettled"])
+        row = case["session"]
+        row["project"] = "stats"
+        row["active"] = True
+        sid = row["sid"]
+        sessions = root / "sessions"
+        path = sessions / "1970/01/01/rollout-stats.jsonl"
+        path.parent.mkdir(parents=True)
+        config = build_runtime_config(
+            environ={"HOME": str(root), "COMPASS_HOME": str(root / "state")},
+            platform_name="linux",
+            os_name="posix",
+            launcher_path=root / "server.py",
+            store_root_overrides={"codex.sessions": str(sessions)},
+        )
+        state = build_runtime_state(config, started=1000)
+
+        def record(at: int, kind: str, **payload: Any) -> str:
+            stamp = datetime.fromtimestamp(at, UTC).isoformat()
+            return json.dumps({"timestamp": stamp, "type": kind, "payload": payload}) + "\n"
+
+        def message(at: int, words: str) -> str:
+            return record(
+                at,
+                "response_item",
+                type="message",
+                role="user",
+                content=[{"type": "input_text", "text": words}],
+            )
+
+        # The resume and idle deliveries open a new task with no second session_meta.
+        trigger = "exec" if source == "exec" else "user"
+        mid_turn = delivery == "TUI mid-turn"
+        opening = record(80, "session_meta", id=sid, cwd=str(root), source=source)
+        opening += record(
+            81, "event_msg", type="task_started", turn_id="first", turn_trigger=trigger
+        )
+        opening += message(90, "Fix the off-by-one bug in mean().")
+        if not mid_turn:
+            opening += record(155, "event_msg", type="task_complete", turn_id="first")
+        path.write_text(opening, encoding="utf-8")
+        position = copies.transcript_position(config, state, "codex", sid)
+        self.assertIsNotNone(position)
+        registered = copies.register(config, "codex", sid, text, now=160, position=position)
+        with path.open("a", encoding="utf-8") as output:
+            if not mid_turn:
+                output.write(
+                    record(
+                        165, "event_msg", type="task_started", turn_id="next", turn_trigger=trigger
+                    )
+                )
+            output.write(message(170, text))
+            output.write(
+                record(171, "event_msg", type="item_completed", item={"type": "UserMessage"})
+            )
+            output.write(
+                record(
+                    180, "event_msg", type="task_complete", turn_id="first" if mid_turn else "next"
+                )
+            )
+
+        collected = project_context.collect(
+            config, state, [row], "stats", now=1000, focus=("codex", sid)
+        )
+        (paste,) = (
+            fact
+            for fact in collected["semantic"]["facts"]
+            if fact["type"] == "user_message" and fact["at"] == 170
+        )
+        case["context"]["semantic"]["facts"][1] = paste
+        self.assertEqual("cant-tell", view(case)["lines"][0]["state"])
+        self.assertEqual(copies.OUTCOME_STORED, registered)
+        copies.attach(config, state, [row])
+        self.assertEqual([paste["fact_id"]], [item["fact_id"] for item in row["copied_prompts"]])
+        case["context"] = copies.mark(case["context"], [row])
+        marked = case["context"]["semantic"]["facts"][1]
+        self.assertEqual(runtime_reading.AUTHOR_DERIVED, runtime_reading.author_of(marked))
+        self.assertEqual(["goal"], view(case)["departures"])
+        self.assertEqual("departs", view(case)["lines"][0]["state"])
 
 
 class _App(_Store):

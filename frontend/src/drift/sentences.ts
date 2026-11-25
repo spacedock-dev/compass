@@ -635,7 +635,7 @@ export const WORK_AS_REPORTED = 'Results are as the tool reported; not inspected
 export const CORRECTION_CAP = 9700;
 /* The label the server writes before a departure's explanation (`correction.EXPLANATION_LABEL`). */
 export const CORRECTION_WHY_LABEL = 'Why Compass reads this as drift: ';
-export const STEER_HARNESSES: readonly string[] = ['claude'];
+export const STEER_HARNESSES: readonly string[] = ['claude', 'codex'];
 /* Over the correction, since it steers from the stored reading, which can be older than the session's latest
    work: the time that reading was read, on the reader's clock (owner, 2026-10-20). */
 export const steerFrom = (at: string): string =>

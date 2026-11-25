@@ -50,9 +50,10 @@ A check goes like this:
    always use that approach for departures. The quotes link counts the entries cited by the
    finding and opens Evidence under Show technical details, with focus on the first available
    quote.
-4. When Steer back is available, it opens an editable message based on your goal or a saved
-   line describing what done looks like. Use Copy message and paste it into the session
-   yourself. Compass never sends it for you.
+4. On a Claude Code or Codex session, Steer back opens an editable correction when a check
+   finds a departure. Use Copy message so Compass can recognize it when it reaches the session.
+   The box tells you how to deliver it in interactive Codex or after a `codex exec` run ends.
+   Compass never sends it for you.
 5. Once a reading is saved, the button reads Check progress again. New work, a changed goal
    or a withdrawn reading can make the card show Out of date. If a newer check fails to produce a
    reading, the card identifies any finding it shows from the earlier check. A check also keeps a
@@ -154,7 +155,8 @@ One more path starts from you and is not traffic Compass sends. When you invoke 
 with `sessions` or `sessions waiting`, the agent runs that read-only operation and the list it prints
 becomes part of that session's context, so it goes to that session's model provider. `drift` and
 `drift again` do the same with that session's own progress reading. Like Check progress, they can
-spend one reading. The correction stays out of the session. The list covers
+spend one reading. For a correction, the answer tells you when one is ready on the session
+page. The list covers
 every session on the board, in any harness or project, and
 [what can reach into a session](../SECURITY.md#what-can-reach-into-a-session) names each field and what
 does and does not stop it. The same command run in a terminal outside the session prints to that

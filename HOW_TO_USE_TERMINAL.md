@@ -225,8 +225,8 @@ spacedock-compass --drift again --session codex:ID    # a new reading, or wait o
 Plain `--drift` costs nothing when a reading is stored. If the reading is stale, it says Out of date
 and prints no level, as the session page draws none. It also prints no level where the page shows
 none: after a newer check that produced no reading, or once what the check read has changed since.
-Run `--drift again` for a fresh one. A Claude Code reading looks like this. A Codex reading has no
-`Level:` and no correction:
+Run `--drift again` for a fresh one. The example shows a Claude Code reading. Codex omits the
+`Level:` line and also offers a correction when the reading shows a departure.
 
 ```text
 Progress check · claude:abc · Fix the parser
@@ -249,9 +249,11 @@ Session page: http://127.0.0.1:4553/#n=session:compass:claude:abc
   the turn can say Too early to tell if the outcome has yet to be reached. When `so far` follows
   a level, the session was still working, so the level can change.
 - Numbers such as `#41` are entries in the session page's Activity log.
-- Paste the correction with Copy correction on the session page, so Compass recognizes it. Text
-  pasted from the terminal counts as a new message from you. The next reading then marks every
-  departure that message could change as `Can't tell`.
+- Use **Copy message** in Steer back on the Claude Code or Codex session page so Compass
+  recognizes the correction when it reaches the session. Paste and press Enter in interactive
+  Codex. For `codex exec`, wait for the run to end, then pass the correction on standard input
+  to `codex exec resume <session id> -`. Text copied from terminal output counts as a new message
+  from you. The next reading then marks every departure that message could change as `Can't tell`.
 - Before a new check starts, the command prints an estimate of how much session text may be sent.
 - Without `--session`, or through a pipe, it prints no correction and stops waiting after about 100
   seconds. Run plain `--drift` later to collect the reading for free.

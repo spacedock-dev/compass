@@ -736,6 +736,9 @@ to check share the far-right cell as plain quiet text. The progress slot stacks 
 > * Goal history shows no level.
 > * Codex sessions never show a level or a correction (`SKILL.md:70`).
 
+The [2026-11-25 Steer back amendment](design-reading-a-session.md#amended-2026-11-25-owner-steer-back-and-paste-recognition-for-codex)
+supersedes the correction limit. Codex sessions still show no level.
+
 ### DRC-5479 Owner follow-up ruling, 2026-11-22 (third round)
 
 > The rerun button has one label, Check progress again, whether the last reading is current or out of date. Staleness shows on the card through the ruled Out of date word. This replaces the builder default recorded in DRC-5514.

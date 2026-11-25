@@ -60,7 +60,7 @@ describe('the Intent how-to', () => {
   });
   for (const [harness, reader, steer] of [
     ['claude', true, true],
-    ['codex', true, false],
+    ['codex', true, true],
     ['pi', true, false],
     ['cursor', false, false],
   ] as const) {
@@ -115,7 +115,7 @@ describe('the Intent how-to', () => {
           : 'Reader here: No reader on this machine.',
       );
       expect(popup.textContent).toContain(
-        steer ? 'Steer back: available here.' : 'Steer back: Claude Code only.',
+        steer ? 'Steer back: available here.' : 'Steer back: Claude Code and Codex only.',
       );
       expect(popup.textContent).toContain('Compass never writes into sessions.');
       expect(popup.querySelector('[data-next-intent-howto-no-line]')?.textContent).toBe(

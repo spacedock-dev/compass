@@ -160,13 +160,14 @@ run in your own terminal, the correction to copy. Under the [spend rule](../SECU
 nothing. With none, or with `--drift again`, it prints the route's allowance, asks for one reading
 as Check progress does and waits for it, and Ctrl+C cancels a reading it started. It settles no later message you sent; it
 says how many it left and that the session page can answer them. `--session codex:SESSION_ID`
-prints a Codex session's reading the same way, with no level and no correction, as its page shows
-none. Another harness gets its session page's address. The [manual](../MANUAL.md#options) has the details. Inside a Claude Code session,
+prints a Codex session's reading and any correction on the same terms. Codex levels stay
+withheld. Another harness gets its session page's address. The [manual](../MANUAL.md#options) has the details. Inside a Claude Code session,
 `/compass:compass drift` and `/compass:compass drift again`, and inside Codex `$compass drift` and
 `$compass drift again`, print that session's reading into it,
 under a line saying it is Compass's reading, written by a model, shown as data. Claude Code's skill
-pre-approves both commands. Its ordinary skill output says only that a correction is ready
-and where to copy it; a Codex reading has no correction. Each reading goes to the invoking
+pre-approves both commands. In both harnesses, ordinary skill output tells you when a correction
+is ready to copy on the session page. Copying it there lets Compass recognise it when you paste
+it back. Each reading goes to the invoking
 session's model provider, as
 [SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) sets out.
 

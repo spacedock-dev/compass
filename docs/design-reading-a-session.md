@@ -4753,6 +4753,9 @@ local yield sessions could use.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
+Amended 2026-11-25 by [the owner](#amended-2026-11-25-owner-steer-back-and-paste-recognition-for-codex):
+items 7 and 9 extend Steer back and copied-correction recognition to Codex.
+
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.
 
 Amended 2026-10-11 by [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result): item 3's Expected outcome is one optional empty line by default, and the Direction question's summary shrinks to one line while Keep keeps its two presses.
@@ -4933,6 +4936,27 @@ the later-direction floor (item 9).
     process states, never answers. All of it is session-page only: never on a row, a total or a
     notification. Elsewhere than Claude Code the panel states the harness limit ("Compass can't
     read work from this harness"). "Stop session" is not offered (DEC-16, SECURITY.md).
+
+### Amended 2026-11-25 (owner): Steer back and paste recognition for Codex
+
+The owner answered "Yes, build it now" to "Should Codex sessions get Steer back's correction to
+copy now, recognised when it is pasted back (as Claude Code's is), while the Codex level keeps
+waiting on its qualification?" The selected option read:
+
+> Amend the rulings to extend the correction to Codex; build Steer back plus paste recognition for Codex in one PR, reviewed by two lenses plus an arbiter. It also confirms that recognition was the only reason for the limit.
+
+This extends item 7's composition and the 2026-09-28 Steer back build to Codex, and item 9's
+recognition follows it. Item 14's original panel limit predates Codex readings. The level stays
+withheld on every Codex surface pending qualification.
+
+Codex CLI 0.172.0 on macOS recorded the same user `response_item` with `input_text` for all four
+deliveries. An interactive paste submitted with Enter while Codex worked entered the current turn.
+After a `codex exec` run ended, `codex exec resume <session id> -` read a 1,613-character correction
+verbatim from standard input into a new turn in the same rollout. Quoted arguments are fragile
+because a correction can quote the agent's words. The page uses the measured `cli` and `exec`
+entrypoints to select the delivery hint. Copy records a local digest, and a matching user message
+after the copy is shown as Copied from Compass. See the
+[delivery capture](captures/codex/correction-delivery-0.172.0-macos.jsonl).
 
 ### Amended 2026-10-05: verified request age belongs to a line
 
@@ -6578,9 +6602,10 @@ saved-line labels. The calls the rulings left open:
   native Undo is preserved during editing,
   and ends when that redraw replaces the editor. Retaining and moving the same textarea did not
   keep Chrome's Undo history, even through a continuously connected atomic move.
-- Claude Code only, as the copy route is, so a paste of the correction can be recognised coming
-  back. An unknown session and another harness answer what a session with nothing to steer from
-  does.
+- At launch, Claude Code alone could recognise a returning paste. The
+  [2026-11-25 amendment](#amended-2026-11-25-owner-steer-back-and-paste-recognition-for-codex)
+  extends the offer and copy recognition to Codex. An unknown session and an unsupported harness
+  answer what a session with nothing to steer from does.
 - Placement. Steer back takes the control's slot on the first screen rather than the result's rows,
   which ran to 2,567px at 1440x900 with six lines when it was first drawn there. Under a surviving
   departure it is the one primary with Update intent instead beside it, and Analyze drift follows
@@ -7230,29 +7255,25 @@ id Claude Code gives it, and the skill never passes `--session`. The rulings:
   Printed into the session, it would be read by the agent it is addressed to, which is delivery
   without the reader's paste. So the composed correction prints only when the reader named the
   session with `--session` and standard output is a terminal. Anywhere else the command prints one
-  line saying a correction is ready on the session page. Run by the skill, the line names no
-  command, because a plugin install has no `spacedock-compass` on PATH; through a pipe elsewhere
-  it names the shell command that prints it. The skill tells the agent not to run a command it
-  names, and not to print or apply the correction. The skill's other next steps (still reading,
-  a stale reading, a dashboard of another release) name `/compass:compass` for the same reason.
+  line saying a correction is ready on the session page. The skill's line identifies the action as
+  `/compass:compass drift` in Claude Code or `$compass drift` in Codex. Through a pipe outside the
+  skill it names the shell command that prints the correction in a terminal. The skill tells the
+  agent to leave the correction for the reader to copy and apply.
 - **The terminal settles nothing.** The page's question about later messages has no terminal
   equivalent: the press settles none, an unsettled later message demotes a departure it could
   change, as it does under the page's own Analyze, and the output says in one line how many were
   left and that the session page can answer them.
-- **Claude Code sessions only, for now.** The page analyzes Codex sessions too, but corrections are
-  Claude Code's alone. A session of another harness gets one line naming its session page, and the
-  line never claims Compass cannot read it. A harness started inside a Claude Code session
-  inherits that session's id, which names the outer session. Codex sets its own `CODEX_THREAD_ID`,
-  so with no `--session` the action refuses there, saying that it reads Claude Code sessions and
-  nothing was read or spent. A harness or shell with no marker of its own cannot be told apart, so
-  started under Claude Code it reads the outer session.
+- **The original terminal scope was Claude Code.** Codex terminal readings were admitted on
+  2026-11-08. A session of another harness gets one line naming its session page, and the
+  line never claims Compass cannot read it. A harness or shell started inside a Claude Code
+  session inherits that session's id. With no marker of its own, it still reads the outer session.
 
   *Owner accepted the recommendation, 2026-11-08: Codex readings print without a level; a level
   waits on DRC-5248's qualification.* The terminal now prints a Codex reading from the same
   `drift_views` row the page's card is held to: line states, current departures and earlier
-  departures, and neither a level nor a correction (the correction stays Claude Code's:
-  `copied_corrections.HARNESSES`). It prints no level whatever a published view carries, because
-  the page draws none for Codex and nothing publishes one. `CODEX_THREAD_ID` alone now names the
+  departures. The [2026-11-25 amendment](#amended-2026-11-25-owner-steer-back-and-paste-recognition-for-codex)
+  adds the correction on the same terms as Claude Code. It prints no level whatever a published
+  view carries. `CODEX_THREAD_ID` alone now names the
   caller for `--drift` only; with `CLAUDE_CODE_SESSION_ID` also set the action still refuses,
   because the two cannot be told apart. A fresh or `again` press from a Codex session goes through
   the same consent, pause and daily-cap guards as the page's Analyze, and the typed-command rule
@@ -8445,7 +8466,7 @@ Not checked yet, Out of date and Goal too vague to check use the same far-right 
 No goal yet stays in the Goal cell. The [row amendment](#amended-2026-11-24-sessions-progress-follows-the-saved-check)
 sets the evidence boundary for each answer.
 
-Codex sessions show neither a level nor a correction. The
+Codex sessions show no level. The
 [installed skill](../compass/skills/compass/SKILL.md) states the limit.
 
 ### Amended 2026-10-14: what the how-to, the live line and a late save say

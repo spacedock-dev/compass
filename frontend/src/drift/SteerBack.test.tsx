@@ -2,7 +2,17 @@ import { act, fireEvent } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { RecordedRequest } from '../intent/testing';
 import { CORRECTION_CAP } from './sentences';
-import { byAction, check, driftBoard, json, mountDrift, press, textOf } from './testing';
+import {
+  byAction,
+  check,
+  driftBoard,
+  fact,
+  json,
+  mountDrift,
+  press,
+  ROUTE,
+  textOf,
+} from './testing';
 
 const ASSESSMENT = {
   revision_read: 3,
@@ -36,6 +46,43 @@ function mountSteer(extra: Record<string, unknown> = {}) {
 }
 
 describe('Steer back', () => {
+  it('opens and copies a correction for a Codex departure', async () => {
+    const text = 'Back to my goal: Ship the queue\nThe session departed from my goal at 00:08.';
+    const page = mountSteer({
+      hash: '#n=session:alpha%2Fapp:codex:s1',
+      session: { ...session, harness: 'codex' },
+      facts: [
+        fact('c1', 500, {
+          type: 'agent_message',
+          by: 'agent',
+          summary: 'I stopped working on the queue.',
+          source_session: { harness: 'codex', sid: 's1' },
+        }),
+      ],
+      payload: {
+        reading_routes: {
+          codex: { ...ROUTE, harness: 'codex', provider: 'codex', destination: 'codex' },
+        },
+      },
+      routes: {
+        '/api/correction': () => json({ ok: true, parts: [text] }),
+        '/api/correction/copied': () => json({ ok: true }),
+      },
+    });
+    await page.settle();
+    const steer = byAction('steer-back');
+    expect(steer, textOf('[data-next-drift-body]')).not.toBeNull();
+    await press(steer);
+    await page.settle();
+    expect(box()?.value).toBe(text);
+    await press(byAction('correction-copy'));
+    await page.settle();
+    expect(corrections(page).map((request) => request.body)).toEqual([
+      expect.objectContaining({ harness: 'codex', sid: 's1' }),
+      { harness: 'codex', sid: 's1', text },
+    ]);
+  });
+
   it('gives the feedback-only controls no dangling accessible names', async () => {
     const page = mountSteer({
       session: {
