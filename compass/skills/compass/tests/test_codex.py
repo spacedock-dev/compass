@@ -183,7 +183,7 @@ class CodexCollectorTest(RuntimeTestCase):
                         "agent_nickname": "worker",
                     },
                 ),
-                (user_fork, {"forked_from_id": parent}),
+                (user_fork, {"forked_from_id": parent, "thread_source": "user"}),
             ):
                 path = day / f"rollout-2026-11-08T00-00-00-{sid}.jsonl"
                 head = {
@@ -216,6 +216,70 @@ class CodexCollectorTest(RuntimeTestCase):
                 for child in rows[parent]["subagent_hierarchy"]
             ],
         )
+
+    def test_a_malformed_child_thread_does_not_hide_a_healthy_session(self) -> None:
+        now = time.time()
+        parent = "11111111-1111-4111-8111-111111111111"
+        child = "22222222-2222-4222-8222-222222222222"
+        with tempfile.TemporaryDirectory() as tmp:
+            day = Path(tmp) / "2026" / "11" / "08"
+            day.mkdir(parents=True)
+            for sid, fields in (
+                (parent, {"id": parent}),
+                (child, {"id": {"invalid": "id"}, "parent_thread_id": parent}),
+            ):
+                path = day / f"rollout-2026-11-08T00-00-00-{sid}.jsonl"
+                head = {
+                    "type": "session_meta",
+                    "payload": {"session_id": parent, "cwd": "/tmp/project", **fields},
+                }
+                path.write_text(
+                    json.dumps(head) + "\n" + json.dumps(_task_started(now - 10)) + "\n"
+                )
+            with store_patch(CODEX_SESSIONS_DIR=tmp):
+                config, state = runtime()
+                (root,) = codex_collector.collect(config, state, now, 24, False)
+        self.assertEqual(parent, root["sid"])
+        self.assertEqual([], root["subagent_hierarchy"])
+
+    def test_the_subagent_tag_can_establish_fork_parentage_with_equal_ids(self) -> None:
+        payload = {
+            "id": "child",
+            "session_id": "child",
+            "forked_from_id": "parent",
+            "thread_source": "subagent",
+        }
+        self.assertEqual("parent", runtime_transcripts.codex_parent_thread(payload))
+
+    def test_an_untagged_fork_with_distinct_identities_can_have_a_subagent_parent(self) -> None:
+        payload = {"id": "child", "session_id": "root", "forked_from_id": "parent"}
+        self.assertEqual("parent", runtime_transcripts.codex_parent_thread(payload))
+
+    def test_a_fork_with_an_empty_identity_has_no_subagent_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config, state = make_runtime()
+            for index, payload in enumerate(
+                ({"id": "fork", "session_id": ""}, {"id": "", "session_id": "fork"})
+            ):
+                with self.subTest(payload=payload):
+                    path = Path(tmp) / f"rollout-{index}.jsonl"
+                    head = {
+                        "type": "session_meta",
+                        "payload": {**payload, "forked_from_id": "parent"},
+                    }
+                    path.write_text(json.dumps(head) + "\n")
+                    meta = runtime_transcripts.codex_meta(config, state, str(path))
+                    self.assertIsNone(meta["parent_session_id"])
+                    self.assertFalse(meta["subagent"])
+
+    def test_an_explicit_user_fork_has_no_subagent_parent_with_unequal_ids(self) -> None:
+        payload = {
+            "id": "fork",
+            "session_id": "parent",
+            "forked_from_id": "parent",
+            "thread_source": "user",
+        }
+        self.assertEqual("", runtime_transcripts.codex_parent_thread(payload))
 
     def test_codex_subagent_usage_is_added_after_own_start_boundary(self) -> None:
         now = time.time()

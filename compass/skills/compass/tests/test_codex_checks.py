@@ -1321,6 +1321,91 @@ class ASubagentsCheckReachesThePageFromTheStore(CodexChecksTestCase):
         (check,) = [row for row in entries if row["subject"] == "check"]
         self.assertEqual(("failed", "subagent"), (check["result"], check["worker_kind"]))
 
+    def test_a_fork_is_credited_to_the_spawner_in_short_and_oversized_heads(self) -> None:
+        self.rollout.function_call("spawn_agent", {"message": "missing direct child"})
+        self.rollout.command("pytest -q", "3 passed in 0.1s")
+        self.rollout.save(self.path)
+        child = Rollout(self.cwd, thread=GRANDCHILD, parent=CHILD, start_ms=self.rollout.ms)
+        child.command("ls", "one file")
+        path = self.store / f"rollout-2026-10-30T03-00-00-{GRANDCHILD}.jsonl"
+        for fields in (
+            {"parent_thread_id": CHILD},
+            {"forked_from_ordinal_exclusive": 7, "parent_thread_id": CHILD},
+            {"source": child.rows[0]["payload"]["source"]},
+        ):
+            for size in (0, self.config.first_line_json_cap_bytes + 1):
+                with self.subTest(spawner=fields, size=size):
+                    child.rows[0]["payload"] = {
+                        "session_id": SID,
+                        "id": GRANDCHILD,
+                        "forked_from_id": SID,
+                        **fields,
+                        "thread_source": "subagent",
+                        "base_instructions": {"text": "x" * size},
+                    }
+                    child.save(path)
+                    state = build_runtime_state(self.config, started=self.NOW)
+                    found = observer.codex_child_rollouts(self.config, state, str(self.path))
+                    self.assertEqual([str(path)], found)
+                    self.assertEqual(
+                        CHILD, project_context._codex_parent_of(self.config, str(path))
+                    )
+                    entries, scan = project_context.codex_tool_reports(
+                        self.config, str(self.path), SHORT, child_paths=found
+                    )
+                    (check,) = [row for row in entries if row["subject"] == "check"]
+                    self.assertEqual(1, scan["subagent_transcripts_unread"])
+                    self.assertTrue(check["read_incomplete"])
+
+    def test_a_fork_with_an_unread_spawner_does_not_satisfy_a_spawn(self) -> None:
+        self.rollout.function_call("spawn_agent", {"message": "missing direct child"})
+        self.rollout.command("pytest -q tests/test_root.py", "3 passed in 0.1s")
+        self.rollout.save(self.path)
+        path = self.long_head_child(parent_field="forked_from_id")
+        rows = path.read_text().splitlines()
+        head = json.loads(rows[0])
+        head["payload"]["source"] = {"subagent": {"thread_spawn": {"parent_thread_id": GRANDCHILD}}}
+        path.write_text("\n".join([json.dumps(head), *rows[1:]]) + "\n")
+        state = build_runtime_state(self.config, started=self.NOW)
+        found = observer.codex_child_rollouts(self.config, state, str(self.path))
+        self.assertEqual([str(path)], found)
+        self.assertEqual("", project_context._codex_parent_of(self.config, str(path)))
+        entries, scan = project_context.codex_tool_reports(
+            self.config, str(self.path), SHORT, child_paths=found
+        )
+        (root_check,) = [
+            row
+            for row in entries
+            if row["subject"] == "check" and row.get("worker_kind") != "subagent"
+        ]
+        self.assertEqual(1, scan["subagent_transcripts_unread"])
+        self.assertTrue(root_check["read_incomplete"])
+
+    def test_an_oversized_untagged_fork_with_equal_ids_stays_out_of_child_discovery(self) -> None:
+        self.rollout.save(self.path)
+        path = self.long_head_child(parent_field="forked_from_id")
+        rows = path.read_text().splitlines()
+        head = json.loads(rows[0])
+        head["payload"]["session_id"] = CHILD
+        del head["payload"]["thread_source"]
+        path.write_text("\n".join([json.dumps(head), *rows[1:]]) + "\n")
+        self.assertEqual({}, transcripts.codex_child_head(str(path)))
+        state = build_runtime_state(self.config, started=self.NOW)
+        self.assertEqual([], observer.codex_child_rollouts(self.config, state, str(self.path)))
+
+    def test_an_oversized_explicit_user_fork_with_unequal_ids_stays_out_of_child_discovery(
+        self,
+    ) -> None:
+        self.rollout.save(self.path)
+        path = self.long_head_child(parent_field="forked_from_id")
+        rows = path.read_text().splitlines()
+        head = json.loads(rows[0])
+        head["payload"]["thread_source"] = "user"
+        path.write_text("\n".join([json.dumps(head), *rows[1:]]) + "\n")
+        self.assertEqual({}, transcripts.codex_child_head(str(path)))
+        state = build_runtime_state(self.config, started=self.NOW)
+        self.assertEqual([], observer.codex_child_rollouts(self.config, state, str(self.path)))
+
     def test_text_in_a_long_head_never_names_a_root(self) -> None:
         # Only the opening fields are read: a root's id written later in the head, inside text,
         # is never taken for the child's root.

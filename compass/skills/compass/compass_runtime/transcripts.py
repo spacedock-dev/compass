@@ -53,21 +53,37 @@ def _codex_spawn(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def codex_parent_thread(payload: dict[str, Any]) -> str:
-    parent = payload.get("parent_thread_id") or _codex_spawn(payload).get("parent_thread_id")
-    if isinstance(parent, str) and parent:
-        return parent
+def _codex_spawn_parent(payload: dict[str, Any]) -> str:
+    for parent in (payload.get("parent_thread_id"), _codex_spawn(payload).get("parent_thread_id")):
+        if isinstance(parent, str) and parent:
+            return parent
+    return ""
+
+
+def _codex_fork_parent(payload: dict[str, Any]) -> str:
     # A user can also fork a session. Only use fork ancestry when the head identifies
-    # a subagent or records a chain root distinct from the rollout's thread.
+    # a subagent or an untagged head records two distinct identities.
     fork = payload.get("forked_from_id")
+    source = payload.get("thread_source")
     session_id = payload.get("session_id")
     thread_id = payload.get("id")
     if isinstance(fork, str) and (
-        payload.get("thread_source") == "subagent"
-        or (isinstance(session_id, str) and isinstance(thread_id, str) and session_id != thread_id)
+        source == "subagent"
+        or (
+            source in (None, "")
+            and isinstance(session_id, str)
+            and bool(session_id)
+            and isinstance(thread_id, str)
+            and bool(thread_id)
+            and session_id != thread_id
+        )
     ):
         return fork
     return ""
+
+
+def codex_parent_thread(payload: dict[str, Any]) -> str:
+    return _codex_spawn_parent(payload) or _codex_fork_parent(payload)
 
 
 def codex_meta(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[str, Any]:
@@ -97,7 +113,7 @@ def codex_meta(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[st
             # Current Codex subagent metadata carries two identities: session_id
             # is the top-level root and id is this rollout thread. Collection
             # groups on the former; nested-parent traversal needs the latter.
-            "thread_id": p.get("id") or p.get("session_id"),
+            "thread_id": p.get("id", p.get("session_id")),
             "parent_session_id": parent or None,
             "cwd": p.get("cwd"),
             # Only the measured source literals classify an entrypoint. IDE and child-source
@@ -128,10 +144,9 @@ _CODEX_CHILD_HEAD_RE = re.compile(
     + rb'\s*,\s*"creator_account_id"\s*:\s*'
     + _CODEX_PLAIN
     + rb"\s*,\s*)?"
-    rb'"session_id"\s*:\s*' + _CODEX_UUID + rb'\s*,\s*"id"\s*:\s*' + _CODEX_UUID + rb"\s*,\s*"
-    rb'(?:"forked_from_id"\s*:\s*' + _CODEX_UUID + rb"\s*,\s*)?"
-    rb'(?:"parent_thread_id"\s*:\s*' + _CODEX_UUID + rb")?"
+    rb'"session_id"\s*:\s*' + _CODEX_UUID + rb'\s*,\s*"id"\s*:\s*' + _CODEX_UUID
 )
+_CODEX_HEAD_FIELD = re.compile(r',\s*"([^"\\]*)"\s*:\s*')
 CODEX_HEAD_PREFIX_BYTES = 4096
 
 
@@ -147,19 +162,36 @@ def codex_child_head(path: str) -> dict[str, Any]:
         )
     except OSError:
         return {}
+    opening = opening.partition(b"\n")[0]
     found = _CODEX_CHILD_HEAD_RE.match(opening)
     if found is None:
         return {}
-    session_id, thread_id, fork, parent = found.groups()
-    # The bounded opening lacks the subagent tag. Distinct identities separate a
-    # child fork from a user fork when no spawner is recorded.
-    parent = parent or (fork if session_id != thread_id else None)
-    if parent is None:
+    session_id, thread_id = (value.decode() for value in found.groups())
+    payload: dict[str, Any] = {"session_id": session_id, "id": thread_id}
+    rest = opening[found.end() :].decode("utf-8", "replace").lstrip()
+    decoder = json.JSONDecoder()
+    # Decode whole values so a key quoted in free text cannot become evidence.
+    while field := _CODEX_HEAD_FIELD.match(rest):
+        try:
+            value, end = decoder.raw_decode(rest, field.end())
+        except (ValueError, RecursionError):
+            break
+        rest = rest[end:].lstrip()
+        if not rest.startswith((",", "}")):
+            break
+        payload[field[1]] = value
+    parent = _codex_spawn_parent(payload)
+    fork = _codex_fork_parent(payload)
+    if not parent and not fork:
         return {}
+    # A fork can identify a child even when an explicit spawn link may be beyond the prefix.
+    # Crediting that fork to a parent could let it satisfy a different worker's spawn.
+    if not parent and rest.startswith("}"):
+        parent = fork
     return {
-        "session_id": session_id.decode(),
-        "thread_id": thread_id.decode(),
-        "parent_session_id": parent.decode(),
+        "session_id": session_id,
+        "thread_id": thread_id,
+        "parent_session_id": parent or None,
         "subagent": True,
     }
 

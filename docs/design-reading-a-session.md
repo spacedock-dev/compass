@@ -1286,7 +1286,9 @@ Before any future run, the ruling lists these fixes:
   and admitting the five adversaries as authored material, as the protocol says.
 - The case inventory counted subagent forks (`thread_source: subagent`, `forked_from_id`) as
   roots, and the freezer's handling was unverified. The inventory now counts these forks as
-  children. The freezer uses their parent links when checking the selected case's descendants.
+  children. The freezer requires the descendants reached through parent links to match the
+  rollouts that name the selected session as their root at the capture cut. A missing link or
+  cycle leaves that case unconfirmed.
 - Ledger hardening.
 - Redaction gaps, which matter before any case leaves the machine.
 
@@ -4695,7 +4697,9 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   part read names a subagent (those items, or a `spawn_agent` that did not fail, `wait_agent`,
   `send_message`, `followup_task`, `interrupt_agent` or `close_agent` call).
 - Spawns are compared per parent: each rollout read, with the children whose heads name it in
-  `parent_thread_id`, or in `forked_from_id` for a subagent fork without a spawn link. Compared
+  `parent_thread_id` or the older nested spawn metadata. A complete head can supply
+  `forked_from_id` for a subagent fork without a spawn link. The fork needs a subagent tag or,
+  if the tag is absent, two nonempty and distinct IDs. Compared
   with every rollout found, a grandchild found while its own parent
   went unread stood in for a sibling of that parent with no rollout (DRC-5033 item 4). A spawn
   failed only where its whole output, trimmed, is one of the four error forms all 27 local text
@@ -4706,11 +4710,13 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   counted. The match is anchored and linear and parses nothing: the first build parsed the output
   as JSON to tell an object, and 200,000 opening brackets raised `RecursionError` out of every
   collect. Reading anything that is not an object as a failure, as it also did, failed open.
-- A child's head is read through the first-line cap, 200 KB. One longer than that is read for its
-  first 4,096 bytes alone, and only where they open with the fields Codex writes before any free
-  text: the root's id, the child's and its parent's (589 of 589 local child heads, none of 498
-  roots; the largest field, `base_instructions`, comes later in 1,077 of 1,087). Without it a child
-  whose head was too long was neither found nor counted (item 7); the largest local head is 49 KB.
+- The checks reader reads a child's head through the first-line cap, 200 KB. For a longer head it
+  reads the first 4,096 bytes and requires the known opening with the root's and child's IDs.
+  The original measurement found an early `parent_thread_id` in 589 of 589 child heads and
+  none of 498 roots. The largest field, `base_instructions`, came later in 1,077 of 1,087 heads.
+  The reader decodes complete fields in that opening and credits an explicit spawn link when
+  visible. A recognized fork with an incomplete head and no visible spawn link stays discoverable
+  under its root, with its immediate parent unknown.
 - Discovery keeps what each rollout's head said, since a head is written once: a store that moved
   reads only the heads it has not read. The index #697 built already listed the store only when a
   day folder moved; past the shared metadata cache each rebuild still re-read every head, 0.7 to

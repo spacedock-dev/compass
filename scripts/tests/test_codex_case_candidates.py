@@ -39,6 +39,33 @@ class CandidatePrivacyTest(unittest.TestCase):
             self.assertFalse(candidates.summarize_shape(fork)["child"])
             self.assertFalse(candidates.summarize_shape(root)["child"])
 
+    def test_the_subagent_tag_counts_a_fork_with_equal_identities_as_a_child(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            fork = forked_rollout(Path(folder))
+            head = json.loads(fork.read_text().splitlines()[0])
+            head["payload"]["session_id"] = head["payload"]["id"]
+            fork.write_text(json.dumps(head) + "\n")
+            self.assertTrue(candidates.summarize_shape(fork)["child"])
+
+    def test_a_fork_with_an_empty_identity_is_not_counted_as_a_child(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            fork = forked_rollout(Path(folder))
+            head = json.loads(fork.read_text().splitlines()[0])
+            del head["payload"]["thread_source"]
+            for key in ("id", "session_id"):
+                with self.subTest(key=key):
+                    payload = {**head["payload"], key: ""}
+                    fork.write_text(json.dumps({**head, "payload": payload}) + "\n")
+                    self.assertFalse(candidates.summarize_shape(fork)["child"])
+
+    def test_an_explicit_user_fork_is_not_counted_as_a_child_with_unequal_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            fork = forked_rollout(Path(folder))
+            head = json.loads(fork.read_text().splitlines()[0])
+            head["payload"]["thread_source"] = "user"
+            fork.write_text(json.dumps(head) + "\n")
+            self.assertFalse(candidates.summarize_shape(fork)["child"])
+
     def test_a_person_sees_each_first_line_size_and_whether_it_is_session_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             path = rollout(Path(folder))

@@ -90,15 +90,19 @@ def summarize_shape(path: Path) -> dict[str, Any]:  # noqa: C901, PLR0912, PLR09
                     session_id = payload.get("session_id")
                     thread_id = payload.get("id")
                     fork = payload.get("forked_from_id")
+                    thread_source = payload.get("thread_source")
                     row["child"] = (
                         isinstance(source, dict)
                         or bool(payload.get("parent_thread_id"))
-                        or payload.get("thread_source") == "subagent"
+                        or thread_source == "subagent"
                         or (
-                            isinstance(fork, str)
+                            thread_source in (None, "")
+                            and isinstance(fork, str)
                             and bool(fork)
                             and isinstance(session_id, str)
+                            and bool(session_id)
                             and isinstance(thread_id, str)
+                            and bool(thread_id)
                             and session_id != thread_id
                         )
                     )

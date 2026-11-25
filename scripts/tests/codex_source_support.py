@@ -144,11 +144,15 @@ def rollout(
     return path
 
 
-def forked_rollout(folder: Path, *, sid: str = CHILD, parent: str = SID) -> Path:
+def forked_rollout(
+    folder: Path, *, sid: str = CHILD, parent: str = SID, session: str | None = None
+) -> Path:
     """Synthetic fork head from the 2026-11-08 inventory fields, with a scalar source."""
     path = rollout(folder, sid=sid)
     rows = [json.loads(line) for line in path.read_text().splitlines()]
-    rows[0]["payload"].update(session_id=parent, thread_source="subagent", forked_from_id=parent)
+    rows[0]["payload"].update(
+        session_id=session or parent, thread_source="subagent", forked_from_id=parent
+    )
     write(path, rows)
     return path
 

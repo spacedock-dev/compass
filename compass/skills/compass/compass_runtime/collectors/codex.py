@@ -368,7 +368,9 @@ def _rollouts(
             continue
         meta = transcripts.codex_meta(config, state, fp)
         session_sid = meta.get("session_id") or os.path.basename(fp)[: -len(".jsonl")][-36:]
-        sid = (meta.get("thread_id") or session_sid) if meta.get("subagent") else session_sid
+        sid = meta.get("thread_id") if meta.get("subagent") else session_sid
+        if not isinstance(sid, str) or not sid or not isinstance(session_sid, str):
+            continue
         rollouts.append((sid, mtime, fp, meta))
         meta_by_sid[sid] = meta
         if not meta.get("subagent") and (session_sid not in found or mtime > found[session_sid][0]):

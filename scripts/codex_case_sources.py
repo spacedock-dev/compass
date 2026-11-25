@@ -179,7 +179,9 @@ def _selection(config: Any, entry: dict[str, Any]) -> tuple[Path, Path, list[Pat
         if more <= wanted:
             break
         wanted |= more
-    if any(sessions[identity] != sid for identity in wanted - {sid}):
+    claimed = {identity for identity, session in sessions.items() if session == sid}
+    # An orphan or cycle can claim this root without being reached by the parent walk.
+    if claimed - {sid} != wanted - {sid}:
         raise marker.FreezeError("codex-source-identity-unconfirmed")
     discovered = sorted(heads[identity][0].absolute() for identity in wanted - {sid})
     if children != discovered or len(set(children)) != len(children):

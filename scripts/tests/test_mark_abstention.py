@@ -852,6 +852,32 @@ class CodexPacketSourceTest(unittest.TestCase):
         self.assertEqual(case["sources"]["children"], [])
         self.assertEqual(self.reasons(case), [])
 
+    def test_a_person_cannot_freeze_a_fork_with_a_missing_parent_in_their_session(self) -> None:
+        missing = "00000000-0000-4000-8000-0000000000aa"
+        self.support.forked_rollout(self.root, parent=missing, session=self.support.SID)
+        with self.assertRaisesRegex(
+            mark_abstention.FreezeError, "^codex-source-identity-unconfirmed$"
+        ):
+            self.freeze()
+
+    def test_a_person_cannot_freeze_a_cycle_of_forks_in_their_session(self) -> None:
+        second = "00000000-0000-4000-8000-0000000000aa"
+        self.support.forked_rollout(self.root, parent=second, session=self.support.SID)
+        self.support.forked_rollout(
+            self.root, sid=second, parent=self.support.CHILD, session=self.support.SID
+        )
+        with self.assertRaisesRegex(
+            mark_abstention.FreezeError, "^codex-source-identity-unconfirmed$"
+        ):
+            self.freeze()
+
+    def test_a_person_can_freeze_with_an_unrelated_orphan_in_the_store(self) -> None:
+        missing = "00000000-0000-4000-8000-0000000000aa"
+        self.support.forked_rollout(self.root, parent=missing)
+        case = self.freeze()
+        self.assertEqual(case["sources"]["children"], [])
+        self.assertEqual(self.reasons(case), [])
+
     def test_a_person_must_select_the_fork_of_their_session_to_freeze_it(self) -> None:
         child = self.support.forked_rollout(self.root)
         with self.assertRaisesRegex(mark_abstention.FreezeError, "^codex-children-differ$"):
