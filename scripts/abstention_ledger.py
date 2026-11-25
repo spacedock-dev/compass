@@ -1316,6 +1316,7 @@ CODEX_STATUSES = (
     "protection-failed",
     "refunded",
 )
+CODEX_NONRETRYABLE_FAILURES = ("semantic-failed", "coverage-failed", "protection-failed")
 CODEX_REVIEWS = "docs/abstention/codex-reviews.json"
 
 
@@ -1581,6 +1582,7 @@ class CodexLedger:
         if (
             not isinstance(receipt, dict)
             or set(receipt) != {"v", "grant", "batch", "checkpoint", "review"}
+            or type(receipt["v"]) is not int
             or receipt["v"] != 1
             or receipt["grant"] != self.binding
             or type(receipt["batch"]) is not int
@@ -1803,23 +1805,39 @@ class CodexLedger:
         elif (
             event["kind"] == "result"
             and "launch_armed" in call
+            and ("classification" not in fields or event["classification"] in CODEX_STATUSES)
             and (
-                (fields == {"result_digest"} and "result_digest" not in call)
+                (
+                    fields in ({"result_digest"}, {"result_digest", "classification"})
+                    and "result_digest" not in call
+                )
                 or (
-                    fields == {"result_digest", "missing_result"}
+                    fields
+                    in (
+                        {"result_digest", "missing_result"},
+                        {"result_digest", "missing_result", "classification"},
+                    )
                     and "result_digest" in call
                     and event["missing_result"] == call["result_digest"]
+                    and ("classification" in fields) == ("result_classification" in call)
+                    and (
+                        call.get("result_classification") not in CODEX_NONRETRYABLE_FAILURES
+                        or event["classification"] == call["result_classification"]
+                    )
                 )
             )
             and codex_digest_valid(event.get("result_digest"))
         ):
             call["result_digest"] = event["result_digest"]
+            if "classification" in fields:
+                call["result_classification"] = event["classification"]
         elif (
             event["kind"] == "settlement"
             and fields == {"status"}
             and event["status"] in CODEX_STATUSES
             and (event["status"] != "refunded" or call.get("launch_armed") is False)
             and ("launch_armed" not in call or "result_digest" in call)
+            and event["status"] == call.get("result_classification", event["status"])
         ):
             call["status"] = event["status"]
         else:
@@ -1838,10 +1856,21 @@ class CodexLedger:
         self._charge_event(charge_id, "launch")
 
     def witness_result(
-        self, charge_id: str, result_digest: str, *, missing_result: str | None = None
+        self,
+        charge_id: str,
+        result_digest: str,
+        classification: str,
+        *,
+        missing_result: str | None = None,
     ) -> None:
         fields = {} if missing_result is None else {"missing_result": missing_result}
-        self._charge_event(charge_id, "result", result_digest=result_digest, **fields)
+        self._charge_event(
+            charge_id,
+            "result",
+            result_digest=result_digest,
+            classification=classification,
+            **fields,
+        )
 
     def _state(  # noqa: C901 - revalidate both witnesses and every ledger receipt
         self,

@@ -1208,9 +1208,9 @@ and confer no authority on this study.
 `CodexLedger` and `CodexCampaign` require a separately prepared grant, its reviewed zero-charge
 genesis and freshly recomputed input and transport bindings. Source intake establishes provenance;
 the scorer separately verifies the resolved npm installation, package version and actual native
-executable. It launches npm's `bin/codex.js` through its pinned Node and rechecks those files
-and the two npm manifests when present. The owner reviews the installation hashes. A version
-string or an unknown layout is insufficient.
+executable. It checks the version through npm's `bin/codex.js` with its pinned Node. Before
+launch it checks the files again and verifies that Node still resolves the same platform
+package or the same bundled fallback. The owner reviews the installation hashes.
 The grant holds only the transport digest; absolute CLI paths and actual argv stay local.
 A batch approval lists the exact ten registered slot/request digests of one repetition and
 whether it includes the single availability retry. Reservation consumes one listed slot at a
@@ -1327,18 +1327,20 @@ reserves a slot or the retry. Review and clear that alias after establishing tha
 process has stopped.
 
 For an interrupted charge, run `python3 scripts/score_abstention.py reconcile-codex usable`
-to retain a scorer-written attempt whose digest matches. Its original grading still applies.
-Choose `unusable` to retain the charge when the output is missing, or `refunded` when the
-durable launch fence proves the call was never sent. The command asks for the exact charge ID.
-In a non-interactive invocation pass `--confirm-charge ID`. Reconciliation records the
-immutable attempt and advances the checkpoint without a producer call. A refund retains its
-audit record and restores the same approved slot. Uncertain sends stay charged.
+to retain a scorer-written attempt whose digest matches, including a protection failure.
+If the attempt is missing and its charge is unsettled, choose `unusable`. A witnessed
+semantic, coverage or protection failure keeps its classification and remains ineligible
+for an availability retry. Choose `refunded` only for a reservation that never crossed
+the durable launch fence. The command asks for the exact charge ID. In a non-interactive
+invocation pass `--confirm-charge ID`. Reconciliation records the attempt and advances the
+checkpoint without a producer call. A refund retains its audit record and restores the
+same approved slot. Uncertain sends stay charged.
 
 The local results use `abstention-codex-results.json` in the packet home. The committable
 half uses `docs/abstention/codex-results.json`.
 
 Commit `docs/abstention/codex-reviews.json` as an object keyed by the canonical ledger
-digest of each receipt. Each receipt contains `v` (1), `grant` (the stable grant digest),
+digest of each receipt. Each receipt contains `v` (the integer 1), `grant` (the stable grant digest),
 `batch` (0 for genesis, 1 to 3 for repetition reviews), `checkpoint`, and `review`
 (the review model and effort). For genesis, get the grant digest and empty checkpoint from
 `CodexLedger.binding` and `abstention_ledger.progress(anchor, [])`, where `anchor` is returned by

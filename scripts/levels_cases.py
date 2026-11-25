@@ -56,7 +56,7 @@ import abstention_ledger
 import store_paths
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Iterator, Mapping, Sequence
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SKILL = os.path.join(_ROOT, "compass", "skills", "compass")
@@ -1208,14 +1208,42 @@ class _ClaudeWitness:
     def _path(self, key: str) -> str:
         return os.path.join(self.folder, digest([self.commit, key]) + ".json")
 
+    def _read(self, key: str) -> Any:
+        return abstention_ledger._review_json(  # noqa: SLF001
+            self._path(key), "Claude reading witness", cap=4096, optional=True
+        )
+
+    def _check(self, key: str, reading: Any, *, allow_missing: bool = False) -> None:
+        found = self._read(key)
+        if allow_missing and found is abstention_ledger._MISSING:  # noqa: SLF001
+            return
+        if found != {"reading": reading_digest(reading)}:
+            raise abstention_ledger.LedgerError(
+                f"{key}: the Claude reading has changed or is unbound"
+            )
+
     def matches(self, key: str, reading: Any) -> bool:
         try:
-            found = abstention_ledger._review_json(  # noqa: SLF001
-                self._path(key), "Claude reading witness", cap=4096
-            )
-        except abstention_ledger.LedgerError:
+            self._check(key, reading)
+        except (OSError, abstention_ledger.LedgerError):
             return False
-        return isinstance(found, dict) and found == {"reading": reading_digest(reading)}
+        else:
+            return True
+
+    def preflight_replay(self, held: Mapping[str, Any], chosen: Sequence[str]) -> None:
+        for key, reading in held.items():
+            self._check(key, reading)
+        for key in chosen:
+            if key not in held and self._read(key) is not abstention_ledger._MISSING:  # noqa: SLF001
+                raise abstention_ledger.LedgerError(
+                    f"{key}: the witnessed Claude reading is missing"
+                )
+
+    def bind_attachment(self, readings: Mapping[str, Any]) -> None:
+        for key, reading in readings.items():
+            self._check(key, reading, allow_missing=True)
+        for key, reading in readings.items():
+            self.bind(key, reading)
 
     def bind(self, key: str, reading: Any) -> None:
         os.makedirs(self.folder, mode=0o700, exist_ok=True)
@@ -1293,7 +1321,7 @@ def _genesis(allowance_path: str | None) -> str:
         return ""
 
 
-def attach_readings(  # noqa: C901, PLR0912 - one refusal per binding
+def attach_readings(  # noqa: C901 - one refusal per binding
     spec_path: str | os.PathLike[str],
     *,
     home: str,
@@ -1349,9 +1377,7 @@ def attach_readings(  # noqa: C901, PLR0912 - one refusal per binding
             problems.append(f"{key}: binding refused: {why}")
     if not codex and not problems:
         try:
-            witness = _ClaudeWitness(repo_root, committed)
-            for key, value in readings.items():
-                witness.bind(key, value)
+            _ClaudeWitness(repo_root, committed).bind_attachment(readings)
         except (OSError, abstention_ledger.LedgerError) as error:
             problems.append(str(error))
     for problem in problems:
@@ -1935,7 +1961,7 @@ def _produce(
     return produced
 
 
-def read_cases(  # noqa: C901, PLR0911, PLR0912, PLR0913 - one keyword per thing bound
+def read_cases(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - explicit replay phases
     *,
     home: str,
     repo_root: str,
@@ -1993,6 +2019,14 @@ def read_cases(  # noqa: C901, PLR0911, PLR0912, PLR0913 - one keyword per thing
         return 1
     paths = _paths(home, cohort)
     held = dict(_load(paths["replayed"]).get("readings") or {})
+    claude_witness = None
+    if not codex:
+        try:
+            claude_witness = _ClaudeWitness(repo_root, committed)
+            claude_witness.preflight_replay(held, chosen)
+        except (OSError, abstention_ledger.LedgerError) as error:
+            say(f"Refused: {error}. Nothing was read and nothing was charged.")
+            return 1
     bindings: dict[str, Any] | None = (
         dict(_load(paths["replayed"]).get("bindings") or {}) if codex else None
     )
@@ -2023,7 +2057,6 @@ def read_cases(  # noqa: C901, PLR0911, PLR0912, PLR0913 - one keyword per thing
         return 1
     if dry_run:
         return _dry_run(press, cases, marks, plan.groups, clock, say)
-    claude_witness = None if codex else _ClaudeWitness(repo_root, committed)
     files = _Files(paths, held, record, bindings, claude_witness)
     gate = _Gate(ledger, approve) if codex else None
     for key, sibling in plan.reused.items():
@@ -2038,12 +2071,18 @@ def read_cases(  # noqa: C901, PLR0911, PLR0912, PLR0913 - one keyword per thing
             "call": sibling,
             "at": clock(),
         }
-    if plan.reused:
+    try:
+        if plan.reused:
+            files.save()
+        for keys in plan.groups.values():
+            if not _read_group(press, cases, keys, model, clock, files, say, gate):
+                return 1
         files.save()
-    for keys in plan.groups.values():
-        if not _read_group(press, cases, keys, model, clock, files, say, gate):
-            return 1
-    files.save()
+    except (OSError, abstention_ledger.LedgerError) as error:
+        if codex:
+            raise
+        say(f"Refused: {error}. No further readings were requested.")
+        return 1
     if gate is not None:
         say(f"Codex replay checkpoint: {json.dumps(ledger.checkpoint(), sort_keys=True)}")
     if held:
@@ -2144,7 +2183,9 @@ class _Files:
         self.bindings = bindings
 
     def save(self) -> None:
-        _write(self.paths["replay"], {"v": 1, "cases": self.record})
+        record = {"v": 1, "cases": self.record}
+        if self.claude_witness is None:
+            _write(self.paths["replay"], record)
         if self.held:
             if self.claude_witness is not None:
                 for key, reading in self.held.items():
@@ -2153,6 +2194,9 @@ class _Files:
             if self.bindings is not None:
                 body["bindings"] = self.bindings
             _write(self.paths["replayed"], body)
+        # Keep the in-flight marker if publishing the witnessed Claude reading fails.
+        if self.claude_witness is not None:
+            _write(self.paths["replay"], record)
 
 
 class _Press:

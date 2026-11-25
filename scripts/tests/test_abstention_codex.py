@@ -174,6 +174,18 @@ class CodexAuthority(unittest.TestCase):
             self.batch(study)
         self.launch.assert_not_called()
 
+    def test_boolean_review_version_is_refused(self) -> None:
+        study = self.study()
+        anchor = study.initialize()
+        receipt = source_support.review_receipt(study, 0, authority.progress(anchor, []))
+        receipt["v"] = True
+        proof = authority.digest(receipt)
+        self.reviews[proof] = receipt
+        self.grant.update(phase="sealed", activation_anchor=anchor, genesis_review=proof)
+        self.write_grant()
+        with self.assertRaisesRegex(authority.LedgerError, "review does not attest"):
+            self.study().checkpoint()
+
     def test_a_person_cannot_launch_a_changed_request_inside_an_approved_batch(self) -> None:
         study = self.activate()
         approval = self.batch(study)

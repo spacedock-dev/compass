@@ -7,6 +7,8 @@ import copy
 import io
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -36,6 +38,8 @@ class _CodexInstallationFixture(unittest.TestCase):
         self.package = self.home / "node_modules/@openai/codex"
         self.launcher = self.package / "bin/codex.js"
         self.node = self.home / "bin/node"
+        self.verification_platform = "linux"
+        self.verification_machine = "x86_64"
         self.native = self.package / "vendor/x86_64-unknown-linux-musl/codex/codex"
         self.launcher.parent.mkdir(parents=True)
         self.native.parent.mkdir(parents=True)
@@ -54,14 +58,25 @@ class _CodexInstallationFixture(unittest.TestCase):
         self.version_runner = mock.Mock(
             return_value=mock.Mock(returncode=0, stdout="codex-cli 0.167.0\n")
         )
+        resolve = scorer._codex_optional_manifest
+
+        def resolve_package(node: str, launcher: str, package: str) -> str | None:
+            if Path(node) != self.home / "bin/node":
+                return resolve(node, launcher, package)
+            manifest = self.package.parent / "codex-linux-x64/package.json"
+            return str(manifest) if manifest.is_file() else None
+
+        patch = mock.patch.object(scorer, "_codex_optional_manifest", side_effect=resolve_package)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def verify(self) -> Any:
         return scorer.verify_codex_binary(
             binary_resolver=lambda _: str(self.launcher),
             node_resolver=lambda _: str(self.node),
             runner=self.version_runner,
-            platform="linux",
-            machine="x86_64",
+            platform=self.verification_platform,
+            machine=self.verification_machine,
         )
 
     def platform_package(self) -> Path:
@@ -90,6 +105,93 @@ class _CodexInstallationFixture(unittest.TestCase):
 
 
 class CodexInstallationTest(_CodexInstallationFixture):
+    def test_node_runtime_must_match_the_verified_platform_target(self) -> None:
+        node = shutil.which("node")
+        if node is None or os.name != "posix":
+            self.skipTest("the npm launcher check requires Node on POSIX")
+        with self.assertRaisesRegex(scorer.BinaryError, "Node platform"):
+            scorer._codex_optional_manifest(
+                os.path.realpath(node), str(self.launcher), "@openai/codex-win32-x64"
+            )
+
+    def setup_node_launcher(self) -> None:
+        node = shutil.which("node")
+        if node is None or sys.platform not in ("darwin", "linux"):
+            self.skipTest("the npm launcher check requires Node on POSIX")
+        self.node = Path(node)
+        arch = subprocess.run(
+            [node, "-p", "process.arch"], check=True, capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+        if arch not in ("x64", "arm64"):
+            self.skipTest("the npm launcher check needs a supported Codex architecture")
+        self.verification_platform = sys.platform
+        self.verification_machine = (
+            "x86_64" if arch == "x64" else "arm64" if sys.platform == "darwin" else "aarch64"
+        )
+        platform_target = "apple-darwin" if sys.platform == "darwin" else "unknown-linux-musl"
+        processor = "x86_64" if arch == "x64" else "aarch64"
+        self.target = f"{processor}-{platform_target}"
+        self.platform_package_name = f"codex-{sys.platform}-{arch}"
+        native = self.package / "vendor" / self.target / "codex/codex"
+        if native != self.native:
+            native.parent.mkdir(parents=True)
+            self.native.rename(native)
+            self.native = native
+        if sys.platform == "darwin":
+            self.native.write_bytes(b"\xcf\xfa\xed\xfeFAKE TEST EXECUTABLE; NEVER EXECUTE")
+        # Match the optional-package lookup and bin layout of the published npm launcher.
+        self.launcher.write_text(
+            f"""#!/usr/bin/env node
+const {{ spawnSync }} = require("node:child_process");
+const path = require("node:path");
+let root = path.dirname(__dirname);
+try {{ root = path.dirname(require.resolve("@openai/{self.platform_package_name}/package.json")); }}
+catch {{}}
+const native = path.join(root, "vendor", "{self.target}", "bin", "codex");
+const child = spawnSync(native, process.argv.slice(2), {{ stdio: "inherit" }});
+process.exit(child.status ?? 1);
+"""
+        )
+
+    def test_launcher_native_layout_mismatch_refuses_before_approval(self) -> None:
+        self.setup_node_launcher()
+        advertised = self.version_runner.return_value
+
+        def version(command: list[str], *, check: bool, **kwargs: Any) -> Any:
+            if command[0] == str(self.native):
+                return advertised
+            return subprocess.run(command, check=check, **kwargs)
+
+        self.version_runner.side_effect = version
+        with self.assertRaises(scorer.BinaryError):
+            self.verify()
+
+    def test_new_platform_package_cannot_redirect_verified_launcher(self) -> None:
+        self.setup_node_launcher()
+        native = self.native.parent.parent / "bin" / "codex"
+        native.parent.mkdir()
+        self.native.rename(native)
+        self.native = native
+        verified = self.verify()
+        pin = scorer.PinnedCodex(verified)
+        marker = self.home / "alternate-native-ran"
+        for modules in (self.package / "node_modules", self.home / "node_modules"):
+            with self.subTest(modules=modules):
+                package = modules / "@openai" / self.platform_package_name
+                redirected = package / "vendor" / self.target / "bin/codex"
+                redirected.parent.mkdir(parents=True)
+                try:
+                    (package / "package.json").write_text("{}")
+                    redirected.write_text('#!/bin/sh\ntouch "$1"\n')
+                    redirected.chmod(0o700)
+                    with self.assertRaises(scorer.BinaryError):
+                        subprocess.run(
+                            [str(self.node), pin("codex"), str(marker)], check=True, timeout=5
+                        )
+                    self.assertFalse(marker.exists())
+                finally:
+                    shutil.rmtree(package)
+
     def test_a_person_records_the_installation_and_native_bytes_separately(self) -> None:
         verified = self.verify()
         self.assertEqual(str(self.launcher), verified.path)
@@ -97,7 +199,10 @@ class CodexInstallationTest(_CodexInstallationFixture):
         self.assertEqual(scorer.file_identity(str(self.native)), verified.identity)
         self.assertEqual("codex-cli 0.167.0", verified.version)
         self.version_runner.assert_called_once()
-        self.assertEqual([str(self.native), "--version"], self.version_runner.call_args.args[0])
+        self.assertEqual(
+            [str(self.node), str(self.launcher), "--version"],
+            self.version_runner.call_args.args[0],
+        )
         self.assertNotEqual(verified.installation_digest, verified.identity[-1])
 
     def test_the_pinned_executable_is_the_production_npm_launcher(self) -> None:
@@ -569,6 +674,47 @@ class CodexQualificationTest(_CodexInstallationFixture):
         self.assertEqual(2, self.run_one(resume=True))
         self.assertEqual(10, len(self.launches))
 
+    def test_interrupted_protection_failure_can_be_retained_without_retry(self) -> None:
+        from compass_runtime import observer  # noqa: PLC0415 - deferred runtime
+
+        checkpoint = scorer._codex_checkpoint
+
+        def interrupt_after_settlement(*args: Any, **kwargs: Any) -> None:
+            if not kwargs.get("pending"):
+                raise KeyboardInterrupt
+            checkpoint(*args, **kwargs)
+
+        for settled in (False, True):
+            with self.subTest(settled=settled):
+                self.doCleanups()
+                self.setUp()
+                interrupt = (
+                    mock.patch.object(
+                        scorer, "_codex_checkpoint", side_effect=interrupt_after_settlement
+                    )
+                    if settled
+                    else mock.patch.object(
+                        authority.CodexLedger, "settle", side_effect=KeyboardInterrupt
+                    )
+                )
+                with (
+                    mock.patch.object(observer, "OUTPUT_FILE_LIMIT_BYTES", 100),
+                    interrupt,
+                    self.assertRaises(KeyboardInterrupt),
+                ):
+                    self.run_one()
+                charge = self.launches[0]["charge"]
+                attempt = Path(self.study().path + ".results", charge + ".json")
+                written = attempt.read_bytes()
+                self.assertEqual(2, self.reconcile(charge, "unusable"))
+                self.assertEqual(2, self.reconcile(charge, "refunded"))
+                self.assertEqual(0, self.reconcile(charge, "usable"))
+                self.assertEqual(written, attempt.read_bytes())
+                self.assertEqual("protection-failed", self.study()._state()[2][0]["status"])
+                self.assertEqual(1, self.study().used())
+                self.assertEqual(2, self.run_one(resume=True))
+                self.assertEqual(1, len(self.launches))
+
     def test_a_refund_before_the_launch_fence_reopens_the_same_slot_without_a_retry(self) -> None:
         checkpoint = scorer._codex_checkpoint
 
@@ -591,6 +737,9 @@ class CodexQualificationTest(_CodexInstallationFixture):
         self.assertEqual(0, self.study().used())
         self.assertEqual(2, self.run_one(resume=True))
         self.assertEqual(10, len(self.launches))
+        self.assertIn("Codex qualification: 10 charged attempts", self.output.getvalue())
+        self.assertEqual(10, self.study().used())
+        self.assertEqual(10, json.loads(Path(self.summary).read_text())["spend"]["charged"])
         local = json.loads(Path(self.results).read_text())
         self.assertEqual("refunded", local["records"]["attempts"][0]["classification"])
         self.assertFalse(any(row["retry"] for row in local["calls"]))
@@ -613,6 +762,49 @@ class CodexQualificationTest(_CodexInstallationFixture):
         self.assertEqual(2, self.reconcile(charge, "usable"))
         self.assertEqual(0, self.reconcile(charge, "unusable"))
         self.assertEqual(2, self.run_one(resume=True))
+
+    def test_missing_witnessed_failure_never_unlocks_availability_retry(self) -> None:
+        write = authority.write_receipt
+
+        def interrupt_publication(path: str, body: Any) -> None:
+            if Path(path).parent.name.startswith(".attempt-"):
+                raise KeyboardInterrupt
+            write(path, body)
+
+        for status in ("semantic-failed", "coverage-failed", "protection-failed"):
+            for published in (False, True):
+                with self.subTest(status=status, published=published):
+                    self.doCleanups()
+                    self.setUp()
+                    interrupt = (
+                        mock.patch.object(
+                            authority.CodexLedger, "settle", side_effect=KeyboardInterrupt
+                        )
+                        if published
+                        else mock.patch.object(
+                            authority, "write_receipt", side_effect=interrupt_publication
+                        )
+                    )
+                    with (
+                        mock.patch.object(scorer, "_repeat_classification", return_value=status),
+                        interrupt,
+                        self.assertRaises(KeyboardInterrupt),
+                    ):
+                        self.run_one()
+                    charge = self.launches[0]["charge"]
+                    if published:
+                        Path(self.study().path + ".results", charge + ".json").unlink()
+                    self.assertEqual(0, self.reconcile(charge, "unusable"))
+                    self.assertEqual(status, self.study()._state()[2][0]["status"])
+                    self.run_one(resume=True)
+                    calls = self.study()._state()[2]
+                    self.assertFalse(any(call["retry"] for call in calls))
+                    self.assertEqual(10 if status == "semantic-failed" else 1, len(self.launches))
+                    if status == "semantic-failed":
+                        self.assertEqual(
+                            scorer.VERDICT_FAILED,
+                            json.loads(Path(self.summary).read_text())["verdict"],
+                        )
 
     def test_a_person_cannot_resume_an_interrupted_launch_as_an_unused_slot(self) -> None:
         self.interrupt = True
@@ -701,6 +893,44 @@ class CodexQualificationTest(_CodexInstallationFixture):
             self.assertEqual(2, self.run_one())
         self.assertEqual([], self.launches)
         self.assertEqual(1, self.study().used())
+
+    def test_pin_refusal_before_spawn_keeps_reservation_refundable(self) -> None:
+        link = os.link
+        native = self.native.read_bytes()
+
+        def change_after_alias(*args: Any, **kwargs: Any) -> None:
+            link(*args, **kwargs)
+            self.native.write_bytes(native + b"changed before the runner")
+
+        with mock.patch.object(os, "link", side_effect=change_after_alias):
+            self.assertEqual(2, self.run_one())
+        self.assertEqual([], self.launches)
+        call = self.study()._state()[2][-1]
+        self.assertIs(call["launch_armed"], False)
+        self.assertEqual("charged", call["status"])
+        self.native.write_bytes(native)
+        self.verified = self.verify()
+        self.assertEqual(0, self.reconcile(call["id"], "refunded"))
+        self.assertEqual(0, self.study().used())
+        self.assertEqual(2, self.run_one(resume=True))
+        calls = self.study()._state()[2]
+        self.assertEqual(call["slot"], calls[1]["slot"])
+        self.assertEqual(10, len(self.launches))
+        self.assertFalse(any(attempt["retry"] for attempt in calls))
+
+    def test_a_person_cannot_swap_the_cli_while_the_launch_fence_lands(self) -> None:
+        arm = authority.CodexLedger.arm_launch
+
+        def change_after_fence(ledger: Any, charge: str) -> None:
+            arm(ledger, charge)
+            self.launcher.write_bytes(self.launcher.read_bytes() + b"// changed while arming")
+
+        with mock.patch.object(authority.CodexLedger, "arm_launch", change_after_fence):
+            self.assertEqual(2, self.run_one())
+        self.assertEqual([], self.launches)
+        call = self.study()._state()[2][-1]
+        self.assertIs(call["launch_armed"], True)
+        self.assertEqual("charged", call["status"])
 
     def test_a_person_cannot_redirect_an_immutable_attempt_receipt(self) -> None:
         self.run_one()

@@ -809,6 +809,62 @@ class ReadTest(CaseToolTestCase):
         self.assertEqual(1, self.score())
         self.assertEqual("refused:unbound", self.results()["cases"][case_id]["analysis"]["outcome"])
 
+    def test_refused_attach_creates_no_new_witness(self) -> None:
+        first, second, *_ = self.four_cases()
+        self.assertEqual(0, self.read(first))
+        reading = self.replayed()["readings"][first]
+        witnesses = self.repo / ".git/compass-level-readings"
+        before = {p.name: p.read_bytes() for p in witnesses.iterdir()}
+        edited = dict(reading, read_at=reading["read_at"] + 1)
+        self.assertEqual(1, self.attach({second: reading, first: edited}))
+        self.assertEqual(before, {p.name: p.read_bytes() for p in witnesses.iterdir()})
+
+    def test_orphan_witness_refuses_repeated_reads_without_charges(self) -> None:
+        first, second, *_ = self.four_cases()
+        self.assertEqual(0, self.read(first))
+        reading = self.replayed()["readings"][first]
+        self.assertEqual(0, self.attach({second: reading}))
+        paths = levels_cases._paths(str(self.home))
+        for _ in range(2):
+            with self.subTest():
+                self.assertEqual(1, self.read(second))
+        self.assertEqual(1, len(self.model.prompts))
+        self.assertEqual(1, self.used())
+        self.assertNotIn(second, self.record()["cases"])
+        self.assertNotIn(second, json.loads(Path(paths["replayed"]).read_text())["readings"])
+
+    def test_witness_preflight_refuses_symlink_or_edited_held_reading(self) -> None:
+        first, second, *_ = self.four_cases()
+        self.assertEqual(0, self.read(first))
+        paths = levels_cases._paths(str(self.home))
+        replay = Path(paths["replay"])
+        replayed = Path(paths["replayed"])
+        original = replayed.read_bytes()
+        record = replay.read_bytes()
+        for symptom in ("edited", "symlink"):
+            with self.subTest(symptom=symptom):
+                witnesses = self.repo / ".git/compass-level-readings"
+                backup = witnesses.with_name("saved-witnesses")
+                if symptom == "edited":
+                    body = json.loads(original)
+                    body["readings"][first]["read_at"] += 1
+                    replayed.write_text(json.dumps(body))
+                else:
+                    witnesses.rename(backup)
+                    witnesses.symlink_to(backup, target_is_directory=True)
+                held = replayed.read_bytes()
+                try:
+                    self.assertEqual(1, self.read(second))
+                    self.assertEqual(record, replay.read_bytes())
+                    self.assertEqual(held, replayed.read_bytes())
+                    self.assertEqual(1, len(self.model.prompts))
+                    self.assertEqual(1, self.used())
+                finally:
+                    replayed.write_bytes(original)
+                    if backup.exists():
+                        witnesses.unlink()
+                        backup.rename(witnesses)
+
     def test_the_frozen_record_and_intent_are_what_is_sent(self) -> None:
         case_id = self.marked("h", "h")
         self.read(case_id)
@@ -1590,6 +1646,31 @@ class CodexAllowanceTest(CodexReplayTestCase):
         shutil.rmtree(str(self.allowance_path) + ".receipts")
         self.allowance_path.unlink()
         self.assertEqual(1, self.allow(1))
+        self.assertEqual(1, self.score())
+        self.assertEqual(levels_cases.VERDICT_REFUSED, self.results()["verdict"])
+        self.assertEqual("refused:unbound", self.results()["cases"][case_id]["analysis"]["outcome"])
+
+    def test_scoring_refuses_a_different_readable_allowance_genesis(self) -> None:
+        (case_id,) = self.marked("n")
+        self.assertEqual(0, self.allow(1))
+        self.assertEqual(0, self.read(case_id))
+        self.assertEqual(0, self.attach_replayed())
+        active = levels_cases.ReplayLedger(str(self.allowance_path))
+        other = levels_cases.ReplayLedger(str(self.root / "other-allowance.json"))
+        with (
+            unittest.mock.patch.object(
+                other, "_progress_path", return_value=str(self.root / "other-witness.json")
+            ),
+            unittest.mock.patch("abstention_ledger.committed_study_json", return_value=None),
+        ):
+            other_genesis = other.initialize(1, 1.0)
+        self.assertNotEqual(other_genesis, active.genesis())
+        self.assertEqual(1, len(active.charges()))
+
+        path = Path(self.files()["readings"])
+        attached = json.loads(path.read_text())
+        attached["allowance"] = other_genesis
+        path.write_text(json.dumps(attached))
         self.assertEqual(1, self.score())
         self.assertEqual(levels_cases.VERDICT_REFUSED, self.results()["verdict"])
         self.assertEqual("refused:unbound", self.results()["cases"][case_id]["analysis"]["outcome"])

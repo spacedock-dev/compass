@@ -190,15 +190,17 @@ call, whichever run read the sibling.
 
 A re-run can still charge again. A call that finished and was refused after its charge,
 `model-failed` for one, is read again on the next run and charged again, as a fresh press is the
-retry on the board. Both files are written after every call, so a run that is
-stopped keeps every reading it made. Before each charge `replay.json` marks the call `pending`,
+retry on the board. Replay writes the reading before clearing the call's in-flight marker, so
+a publication failure leaves the charge recorded. Before each charge `replay.json` marks the call `pending`,
 with the job id the ledger records the charge under, and `charged` once the charge has committed.
 A re-run never reads a `charged` case again, since that call may have been paid for and its reading
-lost, and reads a `pending` one again only when the ledger says that job was never charged. To read
-a stopped case anyway, delete its entry from `replay.json`, knowing it will be charged again.
+lost, and reads a `pending` one again only when the ledger says that job was never charged.
 
 `--read` writes `replayed-readings.json` in exactly the shape `--attach-readings` takes, and
-`--attach-readings` and `--score` check each reading against its recorded content digest.
+`--attach-readings` and `--score` check readings against the witnesses under Git's common
+directory. An attachment checks for conflicts before creating any new witness. Replay refuses
+before spending if a retained reading is unbound or changed, or if a selected case has a witness
+but its retained reading is missing.
 `replay.json` holds, per case id, the status,
 the withheld token, whether the call spent, whether it was charged, and when, and for a call in
 flight its marker and ledger job id, made of a case id and a time. It holds no session id,

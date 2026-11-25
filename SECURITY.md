@@ -4213,17 +4213,21 @@ independently. A process able to replace the witness and the trusted repository 
 local integrity checks. The protocol does not authenticate the owner or isolate processes
 sharing a UID.
 
-The scorer checkpoints the charge and records a durable launch fence before giving Codex
-control. It keeps an exclusive, digest-bound attempt record under
+The scorer checkpoints the charge and records a durable launch fence after acquiring the
+output alias and checking the installation, immediately before spawning Codex. It keeps an
+exclusive, digest-bound attempt record under
 `~/.cargento/codex-qualification-spend.json.results/`. These records hold local outcomes and
 bounded model explanations. Prompts and raw replies stay out. Resume compares the packet
 checkpoint and each attempt to the witnessed ledger. Missing, rewritten or symlinked records
 refuse. The owner can settle an interrupted charge offline. A refund requires a reservation
-that never crossed the launch fence. An unavailable result can retain the charge as unusable.
-An existing attempt must match its witnessed digest before its classification can be kept.
+that never crossed the launch fence. The result witness preserves semantic, coverage and
+protection failures even if the attempt file is missing. An existing attempt must match
+its witnessed digest and any witnessed classification before it can be retained.
 
 The approved argv invokes npm's `bin/codex.js` with the pinned Node found first on the child
-PATH. The scorer rechecks the launcher, Node, npm manifests and native executable before launch.
+PATH. The scorer checks the version through that launcher and interpreter. It verifies Node's
+platform and architecture before resolving the platform package. Before launch it rechecks
+the launcher, Node, the package resolution, the npm manifests and the native executable.
 The argv names a private transient output alias of the production executor's temporary file.
 A stale alias refuses before reservation, including the retry. The alias is removed after the
 invocation. The proposed allowance registers thirty producer exposures and at most one charged
@@ -4248,8 +4252,11 @@ refuses the account ledger.
 
 Codex replay settlements bind each reading's contents to its charge. The Claude cohort writes
 a separate content witness under Git's common directory, keyed to the case and the committed
-marks. Attachment and scoring check those digests, so an edited replay or attached verdict
-refuses. The study records only the allowance genesis in the committable score.
+marks. Attachment checks every supplied reading against any existing witness before recording
+a new witness. Replay checks retained readings and refuses a selected case whose witness has
+no matching retained reading before it writes state or charges a call. Scoring checks the
+attached readings against those digests. The study records only the allowance genesis in the
+committable score.
 Each replay also needs one-call approval, reading consent, tool-output consent and capacity in
 the ordinary rolling reading-permission ledger. Deterministic level scoring makes no model
 call. Reuse needs exact input, prompt and producer bindings, with blind level marks predating
