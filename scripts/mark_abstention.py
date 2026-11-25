@@ -116,22 +116,26 @@ def _screen_text(text: str) -> str:
     # so the approval check can verify them without rewriting them.
     for _ in range(3):
         shaped = records.redact_secrets(text)
-        prose = records.mask_prose(text)
-        # Prose drops invisible separators that safe_text can turn into credential
-        # boundaries. Inspect the original in both views before choosing a rendering.
+        # Analyze keeps ordinary typography that the prose scan removes.
+        screened = records.mask_prose(shaped, preserve_layout_if_unmasked=True)
+        # Raw prose and the field renderer can discover masks the shape pass
+        # misses. Keep the whole field masked if the views cannot agree.
+        if shaped != text:
+            raw_prose = records.mask_prose(text, preserve_layout_if_unmasked=True)
+            if raw_prose not in (text, screened) and records.mask_prose(
+                records.redact_secrets(raw_prose)
+            ) != records.mask_prose(shaped):
+                return records.SECRET_MARKER
         limit = len(text) * 16
         safe = records.safe_text(text, limit)
-        # Keep layout only when the prose pass would carry the same words.
-        screened = shaped if prose == " ".join(shaped.split()) else prose
-        if " ".join(safe.split()) != " ".join(shaped.split()):
+        if safe != shaped:
             safe_prose = records.mask_prose(safe)
-            if records.SECRET_MARKER not in screened or safe_prose == records.mask_prose(
-                records.safe_text(screened, len(screened) * 16)
-            ):
+            if safe.split() != shaped.split() or safe_prose != records.mask_prose(shaped):
+                if safe_prose != records.mask_prose(
+                    records.safe_text(screened, len(screened) * 16)
+                ):
+                    return records.SECRET_MARKER
                 screened = safe_prose
-            else:
-                # Neither view can vouch for the other's masked spans.
-                return records.SECRET_MARKER
         if text.endswith("\n") and not screened.endswith("\n"):
             screened += "\n"
         if screened == text:

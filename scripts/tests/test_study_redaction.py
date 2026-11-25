@@ -169,33 +169,53 @@ class StudyRedactionTest(unittest.TestCase):
 
     def test_zwsp_intent_does_not_reveal_a_value_hidden_in_the_base_model_request(self) -> None:
         value = "SyntheticControl123456"
-        body = {"v": marker.FORMAT_CODEX}
         for prefix in ("Bearer\u200b", "curl\u200b-u user:", "--password\u200b"):
             with self.subTest(prefix=prefix):
-                raw = prefix + value
-                self.assertNotIn(value, records.safe_text(raw, 4000))
-                self.spec["intent"].update(goal=raw, lines=[raw, {"text": raw, "source": "typed"}])
-                case = sources.freeze_case(self.config, self.spec)
-                sink = mock.Mock(return_value=("{}", "ok"))
-                scorer.score_case(
-                    self.config,
-                    case,
-                    case["row_snapshot"],
-                    case["producer_facts"],
-                    {},
-                    model=sink,
-                    now=case["captured_at"],
-                    revision=marker.case_revision(case),
-                    tool_output=scorer._tool_output(case, "OpenAI", "Codex", body),
-                )
-                sink.assert_called_once()
-                self.assertNotIn(value, sink.call_args.args[0])
-                self.assertNotIn(value, json.dumps(case))
-                with contextlib.redirect_stdout(io.StringIO()) as screen:
-                    marker._show_intent_case(body, case, "1/1")
-                self.assertNotIn(value, screen.getvalue())
-                for criterion in ("goal", "line_1", "line_2"):
-                    self.assertNotIn(value, marker._mark_question(body, case, criterion))
+                self.assert_intent_masked(prefix + value, value)
+
+    def test_shape_masks_survive_prose_removing_an_invisible_boundary(self) -> None:
+        self.use_authored_source()
+        for raw, value in (
+            ("Bearer FakeSecret12345\u200b", "FakeSecret12345"),
+            ("Authorization: Bearer \u200b$SecretToken123456", "SecretToken123456"),
+            ("http://alice:123456789\u200b", "123456789"),
+            ("prefix-\u2060ghp_" + "D" * 36, "D" * 36),
+            ("prefix-\u00adsk-ant-api03-" + "A" * 24, "A" * 24),
+            ("prefix\u2060sk-" + "c" * 32, "c" * 32),
+            ("prefix\u2060machine example.com login bob password FakePass99", "FakePass99"),
+        ):
+            with self.subTest(raw=raw):
+                self.assertNotIn(value, records.redact_secrets(raw))
+                self.assert_intent_masked(raw, value)
+                self.assertNotIn(value.encode(), marker.redact_google_screen(raw.encode()))
+
+    def assert_intent_masked(self, raw: str, value: str) -> None:
+        self.assertNotIn(value, records.safe_text(raw, 4000))
+        self.spec["intent"].update(goal=raw, lines=[raw, {"text": raw, "source": "typed"}])
+        case = sources.freeze_case(self.config, self.spec)
+        body = {"v": marker.FORMAT_CODEX}
+        sink = mock.Mock(return_value=("{}", "ok"))
+        scorer.score_case(
+            self.config,
+            case,
+            case["row_snapshot"],
+            case["producer_facts"],
+            {},
+            model=sink,
+            now=case["captured_at"],
+            revision=marker.case_revision(case),
+            tool_output=scorer._tool_output(case, "OpenAI", "Codex", body),
+        )
+        sink.assert_called_once()
+        self.assertNotIn(value, sink.call_args.args[0])
+        self.assertNotIn(value, json.dumps(case))
+        for revision in (case["intent"], self.spec["intent"]):
+            screen_case = {**case, "intent": revision}
+            with contextlib.redirect_stdout(io.StringIO()) as screen:
+                marker._show_intent_case(body, screen_case, "1/1")
+            self.assertNotIn(value, screen.getvalue())
+            for criterion in ("goal", "line_1", "line_2"):
+                self.assertNotIn(value, marker._mark_question(body, screen_case, criterion))
 
     def test_bidi_command_case_is_masked_and_immediately_revalidates(self) -> None:
         self.use_authored_source()
