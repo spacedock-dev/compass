@@ -4156,10 +4156,12 @@ pinned reader invocation and remove it on completion, refusal or exception. Abru
 temporary copy for the owner to remove. This promises neither secure erasure nor isolation from
 another process running under the same account. Redact before clipping or displaying screens.
 The Codex freezer masks credential shapes in the hand-typed goal and outcome lines before
-sealing the revision. It checks the bounded text again so a newly frozen case can pass
-revalidation. A recorded case is refused if screening changes the request Analyze builds
-from the saved revision. The scorer recovers values masked by the command parser from the
-verified source cuts in memory and applies the production explanation scrub. If the mask set
+sealing the revision. The study's prose scan keeps the layout of unmasked text so the
+frozen request can match what Analyze sends. The freezer screens the bounded text again
+to catch credential shapes exposed by clipping. A recorded case is refused if screening
+changes the request Analyze builds from the saved revision. The scorer recovers values
+masked by the command parser from the verified source cuts in memory and applies the
+production explanation scrub. If the mask set
 is partial, the reader withholds the explanation. The values themselves stay out of the
 packet and the prompt. Keep raw cuts out of caches, history and public artifacts.
 

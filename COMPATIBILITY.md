@@ -272,4 +272,11 @@ agy plugin validate ./compass
      This pass clarified when the merge queue runs the Python floor and recorded worker cleanup.
      The harness and platform matrices still apply. -->
 
-<!-- docs-synced-through: c3b8aa5e (2026-11-25) -->
+<!-- Reconciled c3b8aa5e..1e3bf696: the previous docs pass, the recorded pause and amendment of
+     the Codex qualification, the terminal project brief for an explicitly named Codex session,
+     authored qualification cases with production-prompt parity, and masking in the qualification
+     tooling. This pass clarified the Codex project selector and its refusals, linked the README to
+     it, and described how study screening keeps unmasked layout. The harness and platform
+     matrices still apply. -->
+
+<!-- docs-synced-through: 1e3bf696 (2026-11-25) -->
