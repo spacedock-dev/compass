@@ -1204,6 +1204,12 @@ the recommended qualification; that direction authorizes neither private source 
 provider calls. Historical acceptance, Claude grants, charges and results above remain unchanged
 and confer no authority on this study.
 
+The owner [paused this study](../design-reading-a-session.md#owner-ruling-2026-11-09-pause-the-study)
+on 2026-11-09, so no packet admission or run is pending. The
+[2026-11-25 amendment](../design-reading-a-session.md#owner-ruling-2026-11-25-authored-cases-may-fill-the-missing-kinds)
+is how it resumes: independently authored and verified cases, labelled authored, fill the missing
+kinds only, and the paid run still waits on per-batch approvals.
+
 `codex_grant()` reads only `docs/abstention/codex-grant.json`, which is not supplied.
 `CodexLedger` and `CodexCampaign` require a separately prepared grant, its reviewed zero-charge
 genesis and freshly recomputed input and transport bindings. Source intake establishes provenance;

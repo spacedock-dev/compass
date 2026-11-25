@@ -1261,6 +1261,60 @@ fallback or fresh ledger can reset allowance. The
 [privacy and accounting contract](../SECURITY.md#prospective-codex-analysis-qualification-2026-11-09)
 owns the proposed paths and failure handling.
 
+#### Owner ruling 2026-11-09: pause the study
+
+The owner ruled: "pause the study. The tooling already in review merges, and the issue stays open
+and parked under 'Later, only if asked for' until the owner's Codex history holds more cases."
+
+The owner had approved Claude reading the shortlisted sessions to classify them. That
+classification found that the protocol's five recorded kinds cannot be filled from the current
+corpus:
+
+- Legitimate change has a strong candidate.
+- Insufficient evidence has a good one, the only provenance-tagged session.
+- Matching intent with incorrect execution is weak, because a Claude orchestrator briefed it.
+- Supported departure is low confidence.
+- Misleading completion has none, because every answer that ends on a failing check discloses it.
+
+Most of the corpus is orchestration runs. The prebuilt page-and-terminal level change was stopped
+and not opened.
+
+Before any future run, the ruling lists these fixes:
+
+- Scorer review: a leftover output file can use up the retry; an owner reconciliation tool for an
+  interrupted charge; binding the transport to Codex's `codex.js` launcher as production uses it;
+  and admitting the five adversaries as authored material, as the protocol says.
+- The case inventory misclassifies subagent forks (`thread_source: subagent`,
+  `forked_from_id`) as roots, and how the freezer treats forks needs checking.
+- Ledger hardening.
+- Redaction gaps, which matter before any case leaves the machine.
+
+#### Owner ruling 2026-11-25: authored cases may fill the missing kinds
+
+The owner chose: "Amend: admit authored cases. Independently authored and verified Codex cases,
+labelled authored, fill only the missing kinds; everything else stays as approved. File the seven
+pre-run fixes plus the agent-message alignment. The paid run still waits on your per-batch
+approvals."
+
+The missing kinds are misleading completion, spontaneous supported departure and, optionally,
+matching intent with incorrect execution. Unchanged: the genuine recorded cases, the pinned
+producer route, three full repetitions, blind marking, the separate levels cohort, and per-batch
+and per-send approvals. The owner chose this when asked how the paused study should resume;
+admitting private cases, each producer batch, each Google send and the final acceptance still
+each wait on the owner's own approval.
+
+The qualification freezes the prompt a production Codex press sends today. That prompt holds no
+Codex agent messages and no final reply. This follows from two earlier rulings, not from a new
+one: the 2026-10-03 ruling keeps Codex assistant messages out of a reading, and the 2026-11-09
+ruling binds the qualification to the actual production prompt.
+
+#### Owner decision 2026-11-25: live features come after the level qualifies
+
+The owner chose: "After the level qualifies. Record the direction: once a Codex level qualifies,
+add a live-estimate replay cohort, then decide the monitor's route (OpenAI low effort or Haiku)
+separately. Nothing is built now." The live estimate renders a progress level, so it cannot
+precede the Codex level.
+
 #### Amended 2026-10-01: a reader's correction and a transcript stop
 
 The owner ruled two things on 2026-10-01, while looking for DRC-4666's supported-departure case.

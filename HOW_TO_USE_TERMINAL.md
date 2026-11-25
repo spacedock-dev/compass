@@ -381,7 +381,7 @@ board to do these things:
 - see token rate, ETAs and every harness's quota
 - edit a correction or your outcome lines
 - use Check progress for harnesses other than Claude Code and Codex
-- summarize a Codex session
+- summarize a Codex goal: choose `Summarize this session` in the project's technical details. The cited session summary is Claude Code only
 - choose Resume AI use, or turn summaries back on
 
 [How it works](docs/how-it-works.md#finding-your-way-around) tours the board.
@@ -407,7 +407,7 @@ board to do these things:
 | `Another monitor command is still running.` | Another command for the same session has kept its command lock past the 204-second wait. That wait covers finding or starting the dashboard, the monitor reads, replacement and helper readiness, including failed-worker cleanup. Polling can add up to 0.05 seconds, apart from OS scheduling delays. Wait for that command to finish, then retry. |
 | `Compass could not start or stop this terminal's Live monitor.` | The helper could not finish starting or stopping. A start waits up to 35 seconds for readiness, then allows up to 18 seconds to reap its own worker. Check the dashboard and retry. `--monitor --off --session claude:ID` stops a leftover helper without a board read. |
 | `Compass: the dashboard did not answer in time ...` during a monitor command | Each lookup, lease read, start request or check-in has a 30-second whole-exchange bound, including retries while busy. Wait for the dashboard to finish collecting and retry. A timed-out repeat keeps its helper running. |
-| `--project needs a Claude Code caller.` or `Compass summarizes Claude Code sessions only.` | `--project`, `--summary` and `--monitor` take Claude Code sessions only. Summarize a Codex session on the board. |
+| `--project needs a Claude Code caller.` or `Compass summarizes Claude Code sessions only.` | `--project`, `--summary` and `--monitor` take Claude Code sessions only. For a Codex goal summary, use `Summarize this session` in the project's technical details on the board. Codex sessions get no cited session summary. |
 | `Compass's connection to the dashboard was blocked by a sandbox or permissions.` | A sandbox, such as Codex's, blocked the local connection. Run the command in a terminal outside it, and add `--session codex:ID` for `--drift`. |
 | `The dashboard has every connection in use, so nothing was sent; try again in a moment.` | The dashboard is running but all of its connections are open at once, often many sessions asking together. Wait a moment and run the command again. |
 | `The running dashboard is version X and this is version Y, so nothing was sent.` or `... refused this request as outdated ...` | Y is the copy you typed. Inside a session, that is the plugin. If Y is older, or the message says `outdated`, update that copy (and your alias) and run your command again. Do not run the printed commands, because they would restart the older release. If Y is newer, run the two printed commands to restart the dashboard, then update your other copy. Add `--port` to both if the dashboard is not on 4553. Inside a session, run `spacedock-compass --stop` in your own terminal, then type `/compass:compass`. |
