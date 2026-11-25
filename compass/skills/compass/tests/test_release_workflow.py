@@ -12,7 +12,6 @@ import copy
 import os
 import re
 import shlex
-import shutil
 import stat
 import subprocess
 import sys
@@ -27,6 +26,7 @@ import yaml
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+from .test_quality_gate import _ci_scope, runs_if
 from .test_workflow_caches import (
     BOOTSTRAP_RUN,
     assert_locked_pnpm,
@@ -537,7 +537,8 @@ class CiBrowserProofTest(unittest.TestCase):
     def test_storybook_runs_the_two_release_proofs_on_either_lane(self) -> None:
         job = load(GATE)["jobs"]["storybook"]
         frontend = "needs.changes.outputs.frontend == 'true'"
-        self.assertEqual(f"{frontend} || needs.changes.outputs.contract == 'true'", job.get("if"))
+        # Which lanes run the job is the detector's answer; the test below holds it to either lane.
+        self.assertEqual(runs_if("storybook"), job.get("if"))
         run_steps = {step["run"]: step for step in job["steps"] if "run" in step}
         for script in ("pnpm build:storybook", "pnpm test:stories"):
             self.assertEqual(frontend, run_steps[script].get("if"))
@@ -569,36 +570,21 @@ class CiBrowserProofTest(unittest.TestCase):
             "retired browser proof in a required PR workflow",
         )
 
-    @unittest.skipUnless(shutil.which("bash"), "the gate's aggregator is a bash script")
-    def test_the_aggregator_requires_storybook_whenever_either_lane_is_on(self) -> None:
-        aggregator = load(GATE)["jobs"]["quality-gate"]["steps"][0]
-        for frontend, contract, expected in (
-            ("false", "false", 0),
-            ("true", "false", 1),
-            ("false", "true", 1),
-        ):
-            with self.subTest(frontend=frontend, contract=contract):
-                env = {name: "success" for name in aggregator["env"] if name.startswith("R_")}
-                env.update(
-                    FRONTEND=frontend,
-                    CONTRACT=contract,
-                    R_STORYBOOK="skipped",
-                    PYTHON="false",
-                    PLATFORM="false",
-                    LINT="false",
-                    SUITES="false",
-                    FRONTEND_DOCS="false",
-                    WORKFLOWS="false",
+    def test_the_detector_requires_storybook_whenever_either_lane_is_on(self) -> None:
+        # The aggregate fails a job the detector said to run and that skipped
+        # (test_frontend_quality_gate), so this answer is what makes the proofs required.
+        ci_scope = _ci_scope()
+        for mode in (ci_scope.PULL_REQUEST, ci_scope.QUEUE):
+            for frontend, contract, expected in (
+                (False, False, False),
+                (True, False, True),
+                (False, True, True),
+            ):
+                found = ci_scope.Scope(
+                    python=False, frontend=frontend, contract=contract, reasons=(), mode=mode
                 )
-                result = subprocess.run(
-                    [shutil.which("bash") or "bash", "-c", aggregator["run"]],
-                    env={**os.environ, **env},
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=10,
-                )
-                self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
+                with self.subTest(mode=mode, frontend=frontend, contract=contract):
+                    self.assertIs(expected, found.jobs()["storybook"])
 
 
 class NoCacheTest(unittest.TestCase):

@@ -401,8 +401,11 @@ The macOS legs run only for a change on the reviewed platform-sensitive list in
 `scripts/ci_scope.py` (the launchers, the exit watch, the daemon, file locks, notifications, the
 development server, Terminal automation and their tests, the timing bounds that failed only on
 macOS runners, the shared test config, and the toolchain and dependency pins), for the gate's own
-wiring, and for a path the detector does not recognise. Every push to main, a nightly scheduled run and a manual
-dispatch run every lane on both systems, so anything a pull request skipped surfaces within a day.
+wiring, and for a path the detector does not recognise. The merge queue runs no macOS leg, no 3.12
+floor and no 3.15 leg, because each pull request ran them on its own head; the push to main runs
+them again on what landed, and skips the rest, which the queue ran on that same commit. A nightly
+scheduled run and a manual dispatch run everything on both systems, so anything a pull request
+skipped surfaces within a day.
 `scripts/ci_scope.py` makes that call, prints why for each changed path, and turns everything on
 when it cannot tell. Run `python3 scripts/ci_scope.py --paths <file>...` to see what a change
 would run. The `quality-gate` check itself always runs and always reports, so a PR is never left

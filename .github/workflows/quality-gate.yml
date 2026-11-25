@@ -13,8 +13,11 @@ name: Quality Gate
 # workflow_run indirection is needed: its jobs hand results to one another as
 # artifacts within the run.
 
-# A push to main, the nightly schedule and a manual dispatch run every lane, macOS included, so
-# what a pull request's lanes skipped (a fail-open gap, platform drift) surfaces within a day.
+# Each event has its own mode; scripts/ci_scope.py owns them and why. A pull request runs its lanes
+# everywhere they apply. A merge queue entry checks integration only: its lanes once on Linux, with
+# no 3.12 floor, 3.15 or macOS leg, which the pull request already ran. A push to main runs just
+# those portability legs, since the queue ran everything else on the exact commit that lands. The
+# nightly schedule and a manual dispatch run every job, so a fail-open gap surfaces within a day.
 on:
   push:
     branches: [main]
@@ -60,6 +63,8 @@ jobs:
       frontend_docs_tests: ${{ steps.detect.outputs.frontend_docs_tests }}
       platform: ${{ steps.detect.outputs.platform }}
       workflows: ${{ steps.detect.outputs.workflows }}
+      # One true or false per gate job, as JSON. Each job's `if:` and the aggregator read it.
+      jobs: ${{ steps.detect.outputs.jobs }}
     steps:
       # actions/checkout@v7.0.1 — pinned to immutable SHA.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -77,10 +82,14 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: |
           set -uo pipefail
-          # The script fails open on its own; this covers it not running at all.
+          # The script fails open on its own; this covers it not running at all, with what the
+          # script writes for every lane. The merge queue still runs no portability leg.
           if ! python3 scripts/ci_scope.py; then
             echo "::warning::scripts/ci_scope.py failed; running every lane."
-            printf 'python=true\nlint=true\nfrontend=true\ncontract=false\npython_suites=true\nfrontend_docs=false\nfrontend_docs_tests=\nplatform=true\nworkflows=true\n' >> "$GITHUB_OUTPUT"
+            PORT=true
+            if [ "$EVENT" = "merge_group" ]; then PORT=false; fi
+            printf 'python=true\nlint=true\nfrontend=true\ncontract=false\npython_suites=true\nfrontend_docs=false\nfrontend_docs_tests=\nplatform=%s\nworkflows=true\n' "$PORT" >> "$GITHUB_OUTPUT"
+            printf 'jobs={"actionlint":true,"lint":true,"typecheck":true,"test":true,"coverage":true,"runtime-floor":%s,"platform-tests":%s,"platform-tests-current":%s,"frontend":true,"frontend-macos":%s,"frontend-coverage":true,"frontend-production":true,"storybook":true,"frontend-contract":false,"frontend-docs":false}\n' "$PORT" "$PORT" "$PORT" "$PORT" >> "$GITHUB_OUTPUT"
           fi
 
   # actionlint over every workflow, inside the required gate so a workflow edit cannot merge
@@ -88,7 +97,7 @@ jobs:
   actionlint:
     name: Lint workflows (actionlint)
     needs: changes
-    if: needs.changes.outputs.workflows == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['actionlint']
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -118,7 +127,7 @@ jobs:
   lint:
     name: Lint (ruff + format + frontend sources)
     needs: changes
-    if: needs.changes.outputs.lint == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['lint']
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -141,7 +150,7 @@ jobs:
   typecheck:
     name: Type check (mypy --strict)
     needs: changes
-    if: needs.changes.outputs.python == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['typecheck']
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -165,11 +174,11 @@ jobs:
   # script suite is what set the wall clock. `QualificationRetry` is one class with a class fixture
   # and cannot be split across legs, so the shard count is the one that keeps its shard from being
   # the long pole by much. The job keeps its id, so the aggregator reads one result for all legs:
-  # a failed leg fails the job, and a skipped job is a skipped lane.
+  # a failed leg fails the job. In the merge queue it runs only when `test` runs no suite.
   runtime-floor:
     name: Runtime floor (Python 3.12, ${{ matrix.suite }} ${{ matrix.shard }})
     needs: changes
-    if: needs.changes.outputs.python_suites == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['runtime-floor']
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -228,7 +237,7 @@ jobs:
   test:
     name: Tests under coverage (${{ matrix.suite }} ${{ matrix.shard }})
     needs: changes
-    if: needs.changes.outputs.python == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['test']
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -288,7 +297,7 @@ jobs:
   coverage:
     name: Tests + coverage threshold
     needs: [changes, test]
-    if: needs.changes.outputs.python == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['coverage']
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Read-only, because this job runs the packages it installs: the sticky
@@ -446,7 +455,7 @@ jobs:
   platform-tests:
     name: Tests (${{ matrix.os }}, ${{ matrix.suite }} ${{ matrix.shard }})
     needs: changes
-    if: needs.changes.outputs.python == 'true' && needs.changes.outputs.platform == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['platform-tests']
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
@@ -500,7 +509,7 @@ jobs:
   platform-tests-current:
     name: Tests (${{ matrix.os }}, Python 3.15, dashboard ${{ matrix.shard }})
     needs: changes
-    if: needs.changes.outputs.python == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['platform-tests-current']
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
@@ -537,7 +546,7 @@ jobs:
       COREPACK_ENABLE_NETWORK: "0"
     name: Frontend (ubuntu-latest)
     needs: changes
-    if: needs.changes.outputs.frontend == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['frontend']
     runs-on: ubuntu-latest
     # The parity proofs stay on demand. The `storybook` job shares its browser with the release checks.
     timeout-minutes: 20
@@ -603,7 +612,7 @@ jobs:
       COREPACK_ENABLE_NETWORK: "0"
     name: Frontend (macos-latest)
     needs: changes
-    if: needs.changes.outputs.frontend == 'true' && needs.changes.outputs.platform == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['frontend-macos']
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -658,7 +667,7 @@ jobs:
       COREPACK_ENABLE_NETWORK: "0"
     name: Frontend tests + coverage threshold
     needs: changes
-    if: needs.changes.outputs.frontend == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['frontend-coverage']
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -807,7 +816,7 @@ jobs:
       COREPACK_ENABLE_NETWORK: "0"
     name: Frontend production bundle (ubuntu-latest)
     needs: changes
-    if: needs.changes.outputs.frontend == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['frontend-production']
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -847,7 +856,7 @@ jobs:
       COREPACK_ENABLE_NETWORK: "0"
     name: Storybook (ubuntu-latest)
     needs: changes
-    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['storybook']
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -917,7 +926,7 @@ jobs:
       COREPACK_ENABLE_NETWORK: "0"
     name: Frontend tests that read the runtime
     needs: changes
-    if: needs.changes.outputs.contract == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['frontend-contract']
     runs-on: ${{ needs.changes.outputs.platform == 'true' && 'macos-latest' || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
@@ -982,7 +991,7 @@ jobs:
       COREPACK_ENABLE_NETWORK: "0"
     name: Frontend tests that read the changed documents
     needs: changes
-    if: needs.changes.outputs.frontend_docs == 'true'
+    if: fromJSON(needs.changes.outputs.jobs)['frontend-docs']
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -1022,8 +1031,9 @@ jobs:
           # shellcheck disable=SC2086 # one path per word; repository paths hold no spaces
           pnpm exec vitest run $FILES
 
-  # The single required status check. Branch protection requires this job, so
-  # a measurable job may skip only when the detector turned its lane off.
+  # The single required status check. Branch protection requires this job, so a gate job may skip
+  # only when the detector said it should not run. The detector's job list and this job's `needs`
+  # must name the same jobs, so a job added to one and not the other fails here, not silently.
   quality-gate:
     name: quality-gate
     needs:
@@ -1049,83 +1059,45 @@ jobs:
     steps:
       - name: Verify all gate jobs succeeded
         env:
-          PYTHON: ${{ needs.changes.outputs.python }}
-          LINT: ${{ needs.changes.outputs.lint }}
-          FRONTEND: ${{ needs.changes.outputs.frontend }}
-          CONTRACT: ${{ needs.changes.outputs.contract }}
-          SUITES: ${{ needs.changes.outputs.python_suites }}
-          FRONTEND_DOCS: ${{ needs.changes.outputs.frontend_docs }}
-          PLATFORM: ${{ needs.changes.outputs.platform }}
-          WORKFLOWS: ${{ needs.changes.outputs.workflows }}
           R_CHANGES: ${{ needs.changes.result }}
-          R_LINT: ${{ needs.lint.result }}
-          R_TYPECHECK: ${{ needs.typecheck.result }}
-          R_FLOOR: ${{ needs.runtime-floor.result }}
-          R_TEST: ${{ needs.test.result }}
-          R_COVERAGE: ${{ needs.coverage.result }}
-          R_PLATFORM: ${{ needs.platform-tests.result }}
-          R_PLATFORM_CURRENT: ${{ needs.platform-tests-current.result }}
-          R_FRONTEND: ${{ needs.frontend.result }}
-          R_FRONTEND_MACOS: ${{ needs.frontend-macos.result }}
-          R_FRONTEND_COVERAGE: ${{ needs.frontend-coverage.result }}
-          R_FRONTEND_PRODUCTION: ${{ needs.frontend-production.result }}
-          R_STORYBOOK: ${{ needs.storybook.result }}
-          R_CONTRACT: ${{ needs.frontend-contract.result }}
-          R_FRONTEND_DOCS: ${{ needs.frontend-docs.result }}
-          R_ACTIONLINT: ${{ needs.actionlint.result }}
+          JOBS: ${{ needs.changes.outputs.jobs }}
+          NEEDS: ${{ toJSON(needs) }}
         run: |
           set -euo pipefail
-          echo "changes: $R_CHANGES (python=$PYTHON lint=$LINT frontend=$FRONTEND contract=$CONTRACT python_suites=$SUITES frontend_docs=$FRONTEND_DOCS platform=$PLATFORM workflows=$WORKFLOWS)"
-
-          # The detector itself is never allowed to skip or fail. If it did, we
-          # do not know whether the measurable jobs were skipped on purpose or lost,
-          # and "we do not know" must not read as green on a required check.
+          # The detector itself is never allowed to skip or fail. If it did, we do not know whether
+          # the gate jobs were skipped on purpose or lost, and "we do not know" must not read as
+          # green on a required check.
           if [ "$R_CHANGES" != "success" ]; then
             echo "::error::The change detector did not succeed; refusing to report a gate result."
             exit 1
           fi
+          # `skipped` is a pass ONLY for a job the detector said not to run. Any other skip means
+          # a dependency failed upstream and GitHub cascaded it, which is a failure. A lost or
+          # garbled answer is not "off": anything but a JSON true or false fails.
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
 
-          # A macOS leg runs when its lane AND `platform` are on, so that conjunction is its lane.
-          # Like every lane, `platform` fails closed: a lost or garbled answer is not "off".
-          if [ "$PLATFORM" != "true" ] && [ "$PLATFORM" != "false" ]; then
-            echo "::error::The detector's platform answer is '$PLATFORM', not true or false."
-            exit 1
-          fi
-          both() { if [ "$1" = "true" ] && [ "$2" = "true" ]; then echo true; else echo false; fi; }
-          PYTHON_MACOS=$(both "$PYTHON" "$PLATFORM")
-          FRONTEND_MACOS=$(both "$FRONTEND" "$PLATFORM")
-          STORYBOOK=
-          case "$FRONTEND:$CONTRACT" in
-            true:* | *:true) STORYBOOK=true ;;
-            false:false) STORYBOOK=false ;;
-          esac
+          def fail(message):
+              print(f"::error::{message}")
+              sys.exit(1)
 
-          # Each job names the lane that runs it. `skipped` is a pass ONLY when the
-          # detector said that lane is off; anything else skipped means a dependency
-          # failed upstream and GitHub cascaded it, which is a failure, not a pass.
-          for row in "lint:$LINT:$R_LINT" "typecheck:$PYTHON:$R_TYPECHECK" \
-                     "runtime-floor:$SUITES:$R_FLOOR" "test:$PYTHON:$R_TEST" \
-                     "coverage:$PYTHON:$R_COVERAGE" "platform-tests:$PYTHON_MACOS:$R_PLATFORM" \
-                     "platform-tests-current:$PYTHON:$R_PLATFORM_CURRENT" "frontend:$FRONTEND:$R_FRONTEND" \
-                     "frontend-macos:$FRONTEND_MACOS:$R_FRONTEND_MACOS" \
-                     "frontend-coverage:$FRONTEND:$R_FRONTEND_COVERAGE" \
-                     "frontend-production:$FRONTEND:$R_FRONTEND_PRODUCTION" \
-                     "storybook:$STORYBOOK:$R_STORYBOOK" "frontend-contract:$CONTRACT:$R_CONTRACT" \
-                     "frontend-docs:$FRONTEND_DOCS:$R_FRONTEND_DOCS" \
-                     "actionlint:$WORKFLOWS:$R_ACTIONLINT"; do
-            job=${row%%:*}
-            rest=${row#*:}
-            lane=${rest%%:*}
-            res=${rest#*:}
-            echo "$job: $res (lane on: $lane)"
-            if [ "$res" = "success" ]; then
-              continue
-            fi
-            if [ "$res" = "skipped" ] && [ "$lane" = "false" ]; then
-              continue
-            fi
-            echo "::error::$job did not succeed (result=$res, lane on: $lane)."
-            exit 1
-          done
-
-          echo "Quality gate passed."
+          try:
+              runs = json.loads(os.environ["JOBS"])
+              needs = json.loads(os.environ["NEEDS"])
+          except (KeyError, ValueError) as error:
+              fail(f"The detector's job list is unreadable: {error}")
+          gated = set(needs) - {"changes"}
+          if not isinstance(runs, dict) or set(runs) != gated:
+              names = sorted(runs) if isinstance(runs, dict) else runs
+              fail(f"The detector names {names}, and this job needs {sorted(gated)}.")
+          for job in sorted(gated):
+              run, result = runs[job], needs[job]["result"]
+              if not isinstance(run, bool):
+                  fail(f"The detector's answer for {job} is {run!r}, not true or false.")
+              print(f"{job}: {result} (should run: {str(run).lower()})")
+              if result != "success" and not (result == "skipped" and not run):
+                  fail(f"{job} did not succeed (result={result}, should run: {str(run).lower()}).")
+          print("Quality gate passed.")
+          PY

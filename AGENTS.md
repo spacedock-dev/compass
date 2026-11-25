@@ -452,8 +452,9 @@ is required.
   leaves the queue: fix it on its branch and enqueue it again. An entry removed for a failed or
   timed-out check goes back in once per head commit on its own (`requeue-after-ejection.yml`), and a
   comment on the PR names the failed jobs. A second failure of the same commit, a conflict, a manual
-  removal, or a missing `MERGE_QUEUE_TOKEN` secret leaves it out for you to queue again. If you
-  queue it again yourself first, the workflow leaves it alone. If putting it back fails, that comment
+  removal, or a missing `MERGE_QUEUE_TOKEN` secret leaves it out for you to queue again. The queue
+  runs no macOS leg ([Quality Gate](#quality-gate) says why), so a macOS runner shortage cannot hold
+  it. If you queue it again yourself first, the workflow leaves it alone. If putting it back fails, that comment
   changes to say it is not in the queue and why. When GitHub refused the token, as it did once, the
   commit keeps its one automatic attempt; any other failure counts as the attempt, because it may
   have reached GitHub.
@@ -651,13 +652,30 @@ launchers, the exit watch, the daemon, file locks, osascript notifications, the 
 `pnpm test:dev` drives, Terminal automation and the harness drivers, and their tests; the scrub and
 footer timing bounds that failed only on the slower macOS runners; the shared test config, which takes
 `sys.platform`; and the toolchain and dependency pins the macOS legs install, whose native bindings
-differ per OS), for the gate's own wiring and any unrecognised path, and for every run that is
-neither a pull request nor a merge queue entry. A queue entry decides it from its paths, as a pull
-request does; the push to main once it lands turns it on.
+differ per OS), for the gate's own wiring and any unrecognised path, and for every push to main,
+nightly run and manual dispatch. It is always off in the merge queue.
 
-**Push, nightly and manual runs run everything.** A push to main, the nightly `schedule` and a
-`workflow_dispatch` turn on every lane, macOS included, so a fail-open gap or platform drift that a
-pull request's lanes skipped surfaces within a day rather than at release.
+**Each event runs only what it alone can check.** The lanes say what a change can affect. The
+event's mode, in `scripts/ci_scope.py`, says which of those jobs run:
+
+| Event | Runs | Skips |
+|---|---|---|
+| Pull request | every job its lanes turn on, with the macOS legs when `platform` is on | nothing its lanes need |
+| Merge queue entry | its lanes once on Linux: lint, types, the coverage run, the frontend jobs, Storybook, actionlint, and the 3.12 floor only when it is the entry's one suite run | the portability legs: the 3.12 floor, 3.15 and every macOS leg. `platform` stays off even when the detector fails open |
+| Push to main | the portability legs for every lane, macOS included | the jobs the queue just ran on the same commit, which is the commit that lands |
+| Nightly schedule, manual dispatch | every job | nothing |
+
+The queue checks integration. Each pull request has already run the portability legs on its own
+head, and the push to main runs them again on what landed. Measured on 2026-11-25 over the last six
+green runs of each kind: a queue run took 26.9 minutes from start to finish against 12.6 for a pull
+request run, because it waited on macOS. On 2026-11-24 GitHub's arm64 macOS runners were short for
+hours, and that removed one stack from the queue six times, though no test had failed. The push to
+main repeated 45 Linux runner-minutes of work the queue had just finished on the same commit. A
+fail-open gap or platform drift still surfaces within a day, from the nightly run.
+
+`Scope.jobs` turns lanes and mode into one true or false per gate job, and the detector writes it
+as the `jobs` output. Each job's `if:` is `fromJSON(needs.changes.outputs.jobs)['<job id>']`, and the
+aggregator reads the same answer, so the two cannot disagree.
 
 The gate's own wiring (`quality-gate.yml`, `validate.yml`, `release.yml`, `scripts/ci_scope.py`,
 `scripts/coverage_exception.py`) turns on both full lanes, and so does any path the script does not
@@ -668,14 +686,16 @@ job itself always runs and always reports, so branch protection is never left wa
 failure mode that made a naive `paths:` filter unusable here: a required check a filter excludes
 never reports, and GitHub reads a missing context as pending forever rather than as passing. The
 detector **fails open**: anything it cannot compute turns every lane on. The aggregator accepts
-`skipped` only for a job whose lane the detector turned off, so a job skipped because an upstream
-dependency died still fails the gate. `validate` and `version-guard` are deliberately unfiltered for
+`skipped` only for a job the detector said not to run, so a job skipped because an upstream
+dependency died still fails the gate. It also fails when the detector's job list and its own
+`needs` name different jobs, so a job added to one and not the other cannot pass unread. `validate` and `version-guard` are deliberately unfiltered for
 the same required-check reason, and `validate` is in any case the check a prose change most needs:
 it resolves every relative Markdown link and heading anchor, and it runs the dashboard suite when
 the gate runs no Python suite at all. That step is **not** a duplicate of the gate's copy: on a PR
 the detector called prose it is the only run of the suite, so deleting it would let a prose edit
 that breaks a test merge green. When the gate does run the suites it skips, because it only
-repeated them. `validate.yml` says the same thing at the step itself.
+repeated them, and so do its validator and bump-version unit tests, which are in the script suite.
+`validate.yml` says the same thing at the step itself.
 
 **All three required workflows also run on `merge_group`,** so a merge queue entry reports every
 required check; one that never reported would hold the entry forever. The queue builds each entry
@@ -683,7 +703,7 @@ on the head of the entry ahead of it, and `merge_group.base_sha` names that head
 the detector and `version-guard` diff an entry against its merge base with the branch it lands on
 (`merge_group.base_ref`): a queue run turns on the lanes of every PR queued ahead of it as well as
 its own, and a version bump anywhere in that range fails it, whichever grouping rule the queue
-uses. The push to `main` once it lands runs every lane. `version-guard` keys its concurrency on
+uses. The push to `main` once it lands runs the portability legs the queue skipped. `version-guard` keys its concurrency on
 the entry's own ref so entries never cancel each other. The `coverage-exception` label counts only
 on the entry's own PR, named by the queue's head ref (`scripts/coverage_exception.py`). An
 unlabelled PR queued behind a labelled one is measured on both and needs its own label, as it did
