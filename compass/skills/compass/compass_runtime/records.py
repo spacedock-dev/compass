@@ -300,7 +300,7 @@ _SECRET_SHAPES: Final = (
         0,
         False,
         (
-            r"(?<![\w-])(?i:(?:proxy-)?authorization)[\"']?[ \t]*(?:[:=]|,)[ \t]*"
+            r"(?<![\w-])(?i:(?:proxy-)?authorization)[\"']?[ \t]*(?:[:=]|,)(?:[ \t]|\\[ \t])*"
             r"(?P<authquote>[\"'])?(?P<authkind>(?:(?P<authparams>(?i:digest|aws4-hmac-sha256))"
             r"|[A-Za-z][A-Za-z0-9!#$%&'*+.^_`|~-]*))(?:[ \t]+|\\[ \t]+)"
             r"(?P<authval>(?(authquote)"
@@ -340,7 +340,7 @@ _SECRET_SHAPES: Final = (
         0,
         False,
         (
-            r"(?<![\w-])(?i:basic|token|negotiate|ntlm)\s+"
+            r"(?<![\w-])(?P<schemeword>(?i:basic|token|negotiate|ntlm))\s+"
             r"(?P<schemeval>[A-Za-z0-9._~+/=-]{8,})"
         ),
     ),
@@ -622,6 +622,7 @@ _KEY_ASSIGNMENT_NAME_RE: Final = re.compile(
 
 _AUTH_CREDENTIAL_WORD: Final = re.compile(r"(?=[A-Za-z0-9._~+/=-]*[0-9+/=])[A-Za-z0-9._~+/=-]{12,}")
 _AUTH_PLACEHOLDER: Final = re.compile(r"(?:<[^<>]*>|\{[^{}]*\}|\.{3,})$")
+_BEARER_TOKEN_PLACEHOLDER: Final = re.compile(r"<token>|%3ctoken%3e", re.IGNORECASE)
 # After `Basic`, base64 of a short `user:pass` can be letters only with no padding
 # (`dXNlcjpwYXNz`), which `_CREDENTIAL_LIKE_RE` reads as a word. Mixed case past the
 # first letter is what a word lacks: `Authentication` stays readable.
@@ -664,6 +665,7 @@ def _auth_value_is_secret(value: str, *, cued: bool = False, basic: bool = False
     return (
         not _CODE_VALUE_RE.match(value)
         and not _AUTH_PLACEHOLDER.fullmatch(value)
+        and not _BEARER_TOKEN_PLACEHOLDER.fullmatch(value)
         and (
             cued
             or (basic and bool(_BASIC_BASE64.fullmatch(value)))
@@ -716,7 +718,9 @@ def _cued_value_is_secret(match: re.Match[str]) -> bool:
     if _CODE_VALUE_RE.match(value.strip()):
         return False
     credential_like = bool(_CREDENTIAL_LIKE_RE.match(value)) and len(value) >= 3
-    if match.group("cueauth") is not None or match.group("cueflag") is not None:
+    if match.group("cueauth") is not None:
+        return _BEARER_TOKEN_PLACEHOLDER.fullmatch(value) is None
+    if match.group("cueflag") is not None:
         return True
     if match.group("cuebearer") is not None:
         return len(value) >= 16 and credential_like
@@ -800,6 +804,9 @@ def _mark_secret(match: re.Match[str]) -> str | None:
                     last -= 1
         elif name == "authscheme":
             value = match.group(value_group)
+            # PowerShell looks like mixed-case base64. An explicit header still cues it.
+            if value == "PowerShell" and match.group("schemeword").lower() == "token":
+                return None
             if not (
                 _AUTH_CREDENTIAL_WORD.fullmatch(value)
                 or (_BASIC_BASE64.fullmatch(value) and _AUTH_VALUE_END.match(match.string, last))
@@ -1161,7 +1168,7 @@ def _needs_secret_scan(text: str) -> bool:
 # One forward pass tracks curl until a command boundary. Starting a new search
 # at every `curl` and scanning to a later `-u` would rescan long rejected lines.
 _CURL_USER_RE: Final = re.compile(
-    r"(?P<curl>(?<![\w-])curl(?=[ \t]))"
+    r"(?P<curl>(?<![\w-])(?i:curl)(?=[ \t]))"
     r"|(?P<continuation>\\\r?\n)"
     r"|(?P<end>[\r\n;|&])"
     r"|(?<![\w-])(?:-u[ \t]*|--user(?:=|[ \t]+))"
@@ -1169,6 +1176,13 @@ _CURL_USER_RE: Final = re.compile(
     r"(?:(?!(?P=userquote))[^\r\n])+|[^\s\"';|&]+))"
     r"(?(userquote)(?:(?P=userquote)|(?=[\r\n]|$)))"
 )
+
+
+def _curl_password_start(value: str) -> int | None:
+    user, colon, password = value.partition(":")
+    if not colon or not password or value in {"user:password", "USER:PASS"}:
+        return None
+    return len(user) + 1
 
 
 def _curl_secret_matches(text: str) -> list[_SecretSpan]:
@@ -1183,13 +1197,12 @@ def _curl_secret_matches(text: str) -> list[_SecretSpan]:
             curl = False
         elif curl:
             value = match.group("userval")
-            if ":" not in value:
-                continue
-            user, password = value.split(":", 1)
-            if not user or not _auth_value_is_secret(password, cued=True):
-                continue
-            first, last = match.span("userval")
-            found.append(_secret_span(first, last, _SECRET_MARKER))
+            password_start = _curl_password_start(value)
+            if password_start is not None and password_start > 1:
+                password = value[password_start:].strip("'\"")
+                if not (_CODE_VALUE_RE.match(password) or _AUTH_PLACEHOLDER.fullmatch(password)):
+                    first, last = match.span("userval")
+                    found.append(_secret_span(first + password_start, last, _SECRET_MARKER))
     return found
 
 
@@ -1325,6 +1338,7 @@ _MASK_HEADER_WIDE: Final = (
 _MASK_HEADER_OPENERS: Final = r"(?:--header=|--proxy-header=|-H)"
 _MASK_HEADER_FLAGS: Final = frozenset({"-H", "--header", "--proxy-header"})
 _MASK_ASSIGNMENT_NAME: Final = r"['\"]?[A-Za-z_][A-Za-z0-9_]*="
+_MASK_ESCAPED_AUTH_HEADER: Final = re.compile(r"['\"]?(?:proxy-)?authorization:\\", re.IGNORECASE)
 _MASK_WORD_FORMS: Final = (
     # `--password=value` and the other named flags, `=` joined.
     re.compile(
@@ -1408,6 +1422,7 @@ _MASK_HTTP_WORD_FORMS: Final = (
     # `-ualice:value`, curl's joined form.
     re.compile(r"^(-u[^\s:]+:).+$", re.DOTALL),
 )
+_MASK_CURL_JOINED_USER: Final = re.compile(r"^['\"]?(?:--user=|-u)(?=[^\s:]+:)")
 # Flags that are a password only for the command that owns them: `redis-cli -a`
 # is a password and `ls -a` is not.
 _MASK_LDAP_PROGRAMS: Final = (
@@ -1743,6 +1758,7 @@ def mask_words(  # noqa: PLR0915 - one branch per masked form, read in one pass
     program = os.path.basename(words[start]) if start < len(words) else ""
     flags = _MASK_FLAGS | _MASK_COMMAND_FLAGS.get(program, frozenset())
     http = program in _MASK_HTTP_PROGRAMS
+    curl_prose = prose and program == "curl"
     user_flags = _MASK_USER_FLAGS | {"-a"} if program in _MASK_HTTPIE_PROGRAMS else _MASK_USER_FLAGS
     word_forms = _MASK_WORD_FORMS + (_MASK_HTTP_WORD_FORMS if http else ())
     word_forms += _MASK_COMMAND_WORD_FORMS.get(program, ())
@@ -1783,7 +1799,11 @@ def mask_words(  # noqa: PLR0915 - one branch per masked form, read in one pass
             user_next = False
             user, colon, _rest = word.partition(":")
             if colon:
-                masked.append(user + colon + _SECRET_MARKER)
+                masked.append(
+                    _mask_curl_prose_user(word)
+                    if curl_prose and words[index - 1] != "--proxy-user"
+                    else user + colon + _SECRET_MARKER
+                )
                 continue
         if index == positional:
             masked.append(_SECRET_MARKER)
@@ -1810,6 +1830,9 @@ def mask_words(  # noqa: PLR0915 - one branch per masked form, read in one pass
             masked.append(word)
             header_owed = scheme_next = True
             continue
+        if curl_prose and (joined_user := _MASK_CURL_JOINED_USER.match(word)) is not None:
+            masked.append(_mask_curl_prose_user(word, joined_user.end()))
+            continue
         masked.append(_mask_one_word(word, word_forms, header_here=header_here, prose=prose))
     return masked
 
@@ -1828,6 +1851,9 @@ def _mask_one_word(
     word: str, word_forms: tuple[re.Pattern[str], ...], *, header_here: bool, prose: bool
 ) -> str:
     """One word with the first named form it matches masked, and a userinfo password."""
+    # Whitespace tokenization strands the shell escape on the header name.
+    if prose and _MASK_ESCAPED_AUTH_HEADER.fullmatch(word):
+        return word
     formed = word
     if not prose and _is_header_word(word, header_here):
         match = next((m for p in _MASK_HEADER_VALUE_FORMS if (m := p.match(word))), None)
@@ -1841,6 +1867,21 @@ def _mask_one_word(
         if dotted is not None and _MASK_DOTTED_CREDENTIAL.search(dotted.group(1).rstrip("=")):
             formed = dotted.group(1) + _SECRET_MARKER
     return _mask_userinfo(formed)
+
+
+def _mask_curl_prose_user(word: str, first: int = 0) -> str:
+    quote = word[first : first + 1]
+    if quote in ("'", '"'):
+        first += 1
+    else:
+        quote = word[:1]
+    last = len(word)
+    if quote in ("'", '"') and word.endswith(quote):
+        last -= 1
+    password_start = _curl_password_start(word[first:last])
+    if password_start is None:
+        return word
+    return word[: first + password_start] + _SECRET_MARKER + word[last:]
 
 
 def _mask_userinfo(word: str) -> str:

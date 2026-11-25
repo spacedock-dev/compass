@@ -11,6 +11,15 @@ from compass_runtime import records
 
 
 class APersonSharingAuthorization(unittest.TestCase):
+    def assert_shared_text(self, raw: str, expected: str) -> None:
+        for surface, shown in (
+            ("redact_secrets", records.redact_secrets(raw)),
+            ("mask_prose", records.mask_prose(raw)),
+            ("safe_text", records.safe_text(raw, 4_000)),
+        ):
+            with self.subTest(raw=raw, surface=surface):
+                self.assertEqual(expected, shown)
+
     def assert_private(self, raw: str, value: str) -> None:
         for mask in (records.redact_secrets, records.mask_prose):
             with self.subTest(raw=raw, mask=mask.__name__):
@@ -24,6 +33,64 @@ class APersonSharingAuthorization(unittest.TestCase):
             self.assert_private(
                 f"curl -H Authorization:{scheme}\\ {value} https://example.test", value
             )
+
+    def test_escaped_header_separators_stay_visible_while_the_token_is_masked(self) -> None:
+        value = "dXNlcjpzM2NyZXRwYXNzd29yZA=="
+        for raw in (
+            rf"Authorization:\ Basic\ {value}",
+            rf"curl -H Authorization:\ Basic\ {value} https://example.test",
+        ):
+            self.assert_shared_text(raw, raw.replace(value, records.SECRET_MARKER))
+
+    def test_curl_executable_case_does_not_expose_the_password(self) -> None:
+        for command in ("CURL", "CuRl"):
+            self.assert_shared_text(
+                f"{command} -u user:MadeUpPass99 https://example.test",
+                f"{command} -u user:…REDACTED https://example.test",
+            )
+
+    def test_curl_keeps_the_username_and_quotes_when_masking_the_password(self) -> None:
+        for option in ("-u ", "--user ", "--user=", "-u"):
+            for quote in ("", "'", '"'):
+                self.assert_shared_text(
+                    f"curl {option}{quote}alice:MadeUpPass99{quote} https://example.test",
+                    f"curl {option}{quote}alice:…REDACTED{quote} https://example.test",
+                )
+
+    def test_curl_keeps_literal_example_pairs_and_empty_passwords(self) -> None:
+        for option in ("-u ", "--user="):
+            for value in ("user:password", "USER:PASS", "admin:", '"user:password"'):
+                raw = f"curl {option}{value} https://example.test"
+                self.assert_shared_text(raw, raw)
+        raw = "curl '--user=user:password' https://example.test"
+        self.assert_shared_text(raw, raw)
+
+    def test_bearer_placeholders_stay_visible_in_literal_and_encoded_form(self) -> None:
+        for placeholder in ("<token>", "%3Ctoken%3E", "%3ctoken%3e"):
+            raw = f"Authorization: Bearer {placeholder} then retry"
+            self.assert_shared_text(raw, raw)
+
+    def test_a_trailing_powershell_reference_after_token_stays_visible(self) -> None:
+        raw = "use the Token PowerShell"
+        self.assert_shared_text(raw, raw)
+
+    def test_credentials_close_to_placeholder_spellings_still_mask(self) -> None:
+        for user, password in (("user", "password9zD8rU5m"), ("admin", "MadeUpPass99")):
+            self.assert_shared_text(
+                f"curl -u {user}:{password} https://example.test",
+                f"curl -u {user}:…REDACTED https://example.test",
+            )
+        for raw, expected in (
+            ("Authorization: Bearer %3Ctoken%3E9x", "Authorization: Bearer …REDACTED"),
+            ("Authorization: Bearer %3Ctoken%3EMadeUp99", "Authorization: Bearer …REDACTED"),
+            ("Authorization: Token PowerShell", "Authorization: Token …REDACTED"),
+            ("Authorization: Token abcdefghijklmnop", "Authorization: Token …REDACTED"),
+            ("('Authorization', 'Token abcdefghijklmnop')", "('Authorization', 'Token …REDACTED')"),
+        ):
+            self.assert_shared_text(raw, expected)
+        self.assert_shared_text(
+            "Authorization: Basic JavaScript clients", "Authorization: Basic JavaScript clients"
+        )
 
     def test_a_person_can_share_a_schemeless_header_without_publishing_its_token(self) -> None:
         for header in ("Authorization", "Proxy-Authorization"):
@@ -388,7 +455,7 @@ class APersonSharingAuthorization(unittest.TestCase):
                 for prefix in ("curl -X POST https://example.test", "curl -H 'A: b'"):
                     raw = f"{prefix} {continuation}  {flag}{value}"
                     self.assert_private(raw, "MadeUpPass99")
-                    expected = raw.replace(value, records.SECRET_MARKER)
+                    expected = raw.replace("MadeUpPass99", records.SECRET_MARKER)
                     self.assertEqual(expected, records.redact_secrets(raw))
                     self.assertEqual(" ".join(expected.split()), records.mask_prose(raw))
             raw = f"curl {continuation} -H 'A: b' {continuation} -u '{value}' {continuation} https://example.test"
