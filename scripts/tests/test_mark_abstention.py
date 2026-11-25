@@ -844,6 +844,26 @@ class CodexPacketSourceTest(unittest.TestCase):
         self.assertEqual(case["sources"]["children"], [])
         self.assertEqual(self.reasons(case), [])
 
+    def test_a_person_can_freeze_with_an_unrelated_fork_in_the_store(self) -> None:
+        other = "00000000-0000-4000-8000-0000000000aa"
+        self.support.rollout(self.root, sid=other)
+        self.support.forked_rollout(self.root, parent=other)
+        case = self.freeze()
+        self.assertEqual(case["sources"]["children"], [])
+        self.assertEqual(self.reasons(case), [])
+
+    def test_a_person_must_select_the_fork_of_their_session_to_freeze_it(self) -> None:
+        child = self.support.forked_rollout(self.root)
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "^codex-children-differ$"):
+            self.freeze()
+        self.entry["children"] = [str(child)]
+        case = self.freeze()
+        self.assertEqual(
+            [(self.support.CHILD, self.support.SID)],
+            [(row["sid"], row["parent"]) for row in case["sources"]["children"]],
+        )
+        self.assertEqual(self.reasons(case), [])
+
     def test_a_person_cannot_admit_a_descendant_that_names_another_session(self) -> None:
         child = self.support.rollout(
             self.root,

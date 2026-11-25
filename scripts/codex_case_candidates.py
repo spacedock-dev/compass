@@ -87,7 +87,21 @@ def summarize_shape(path: Path) -> dict[str, Any]:  # noqa: C901, PLR0912, PLR09
                 kind = payload.get("type")
                 if record.get("type") == "session_meta":
                     source = payload.get("source")
-                    row["child"] = isinstance(source, dict) or bool(payload.get("parent_thread_id"))
+                    session_id = payload.get("session_id")
+                    thread_id = payload.get("id")
+                    fork = payload.get("forked_from_id")
+                    row["child"] = (
+                        isinstance(source, dict)
+                        or bool(payload.get("parent_thread_id"))
+                        or payload.get("thread_source") == "subagent"
+                        or (
+                            isinstance(fork, str)
+                            and bool(fork)
+                            and isinstance(session_id, str)
+                            and isinstance(thread_id, str)
+                            and session_id != thread_id
+                        )
+                    )
                     row["source"] = (
                         source
                         if isinstance(source, str) and source in {"cli", "exec", "vscode"}

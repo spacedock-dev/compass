@@ -47,6 +47,29 @@ def first_line_meta(
         return m
 
 
+def _codex_spawn(payload: dict[str, Any]) -> dict[str, Any]:
+    return records.as_dict(
+        records.as_dict(records.as_dict(payload.get("source")).get("subagent")).get("thread_spawn")
+    )
+
+
+def codex_parent_thread(payload: dict[str, Any]) -> str:
+    parent = payload.get("parent_thread_id") or _codex_spawn(payload).get("parent_thread_id")
+    if isinstance(parent, str) and parent:
+        return parent
+    # A user can also fork a session. Only use fork ancestry when the head identifies
+    # a subagent or records a chain root distinct from the rollout's thread.
+    fork = payload.get("forked_from_id")
+    session_id = payload.get("session_id")
+    thread_id = payload.get("id")
+    if isinstance(fork, str) and (
+        payload.get("thread_source") == "subagent"
+        or (isinstance(session_id, str) and isinstance(thread_id, str) and session_id != thread_id)
+    ):
+        return fork
+    return ""
+
+
 def codex_meta(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[str, Any]:
     """Codex session_meta: identity, cwd, entrypoint and subagent thread lineage."""
 
@@ -56,11 +79,9 @@ def codex_meta(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[st
         p = d.get("payload")
         if not isinstance(p, dict):
             p = {}
-        spawn = records.as_dict(
-            records.as_dict(records.as_dict(p.get("source")).get("subagent")).get("thread_spawn")
-        )
         nickname = p.get("agent_nickname")
-        agent_path = p.get("agent_path") or spawn.get("agent_path")
+        agent_path = p.get("agent_path") or _codex_spawn(p).get("agent_path")
+        parent = codex_parent_thread(p)
         label = (
             nickname
             if isinstance(nickname, str) and nickname
@@ -77,16 +98,14 @@ def codex_meta(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[st
             # is the top-level root and id is this rollout thread. Collection
             # groups on the former; nested-parent traversal needs the latter.
             "thread_id": p.get("id") or p.get("session_id"),
-            "parent_session_id": (
-                spawn.get("parent_thread_id") if isinstance(spawn, dict) else None
-            ),
+            "parent_session_id": parent or None,
             "cwd": p.get("cwd"),
             # Only the measured source literals classify an entrypoint. IDE and child-source
             # objects say nothing about an interactive terminal; originator is not a fallback.
             "headless": (
                 True if p.get("source") == "exec" else False if p.get("source") == "cli" else None
             ),
-            "subagent": p.get("thread_source") == "subagent",
+            "subagent": p.get("thread_source") == "subagent" or bool(parent),
             "agent_label": label or None,
             "agent_path": agent_path if isinstance(agent_path, str) and agent_path else None,
         }
@@ -110,8 +129,8 @@ _CODEX_CHILD_HEAD_RE = re.compile(
     + _CODEX_PLAIN
     + rb"\s*,\s*)?"
     rb'"session_id"\s*:\s*' + _CODEX_UUID + rb'\s*,\s*"id"\s*:\s*' + _CODEX_UUID + rb"\s*,\s*"
-    rb'(?:"forked_from_id"\s*:\s*"[0-9a-f-]{36}"\s*,\s*)?'
-    rb'"parent_thread_id"\s*:\s*' + _CODEX_UUID
+    rb'(?:"forked_from_id"\s*:\s*' + _CODEX_UUID + rb"\s*,\s*)?"
+    rb'(?:"parent_thread_id"\s*:\s*' + _CODEX_UUID + rb")?"
 )
 CODEX_HEAD_PREFIX_BYTES = 4096
 
@@ -131,10 +150,16 @@ def codex_child_head(path: str) -> dict[str, Any]:
     found = _CODEX_CHILD_HEAD_RE.match(opening)
     if found is None:
         return {}
+    session_id, thread_id, fork, parent = found.groups()
+    # The bounded opening lacks the subagent tag. Distinct identities separate a
+    # child fork from a user fork when no spawner is recorded.
+    parent = parent or (fork if session_id != thread_id else None)
+    if parent is None:
+        return {}
     return {
-        "session_id": found[1].decode(),
-        "thread_id": found[2].decode(),
-        "parent_session_id": found[3].decode(),
+        "session_id": session_id.decode(),
+        "thread_id": thread_id.decode(),
+        "parent_session_id": parent.decode(),
         "subagent": True,
     }
 

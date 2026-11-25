@@ -8917,17 +8917,11 @@ class _CodexScan(NamedTuple):
 
 
 def _codex_parent(head: dict[str, Any], path: str) -> str:
-    """The thread a child rollout's head names as its spawner: `parent_thread_id`, which current
-    heads carry at the top and older ones under `source.subagent.thread_spawn`; for a head too long
-    to parse, its opening alone (`transcripts.codex_child_head`)."""
+    """Read the parent from the same metadata as the collector, with a bounded fallback."""
     if not head:
         return str(transcripts.codex_child_head(path).get("parent_session_id") or "")
     meta = records.as_dict(head.get("payload")) if head.get("type") == "session_meta" else {}
-    spawn = records.as_dict(
-        records.as_dict(records.as_dict(meta.get("source")).get("subagent")).get("thread_spawn")
-    )
-    parent = meta.get("parent_thread_id") or spawn.get("parent_thread_id")
-    return parent if isinstance(parent, str) else ""
+    return transcripts.codex_parent_thread(meta)
 
 
 def _codex_parent_of(config: RuntimeConfig, path: str) -> str:

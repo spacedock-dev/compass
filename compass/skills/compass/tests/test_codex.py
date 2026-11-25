@@ -163,6 +163,60 @@ class CodexCollectorTest(RuntimeTestCase):
         self.assertEqual("parent-thread", meta["parent_session_id"])
         self.assertIsNone(meta["agent_path"])
 
+    def test_a_forked_subagent_appears_under_its_parent_session(self) -> None:
+        now = time.time()
+        parent = "11111111-1111-4111-8111-111111111111"
+        fork = "22222222-2222-4222-8222-222222222222"
+        user_fork = "33333333-3333-4333-8333-333333333333"
+        with tempfile.TemporaryDirectory() as tmp:
+            day = Path(tmp) / "2026" / "11" / "08"
+            day.mkdir(parents=True)
+            for sid, fields in (
+                (parent, {}),
+                (
+                    fork,
+                    {
+                        # Synthetic fork metadata from the 2026-11-08 inventory fields.
+                        "session_id": parent,
+                        "thread_source": "subagent",
+                        "forked_from_id": parent,
+                        "agent_nickname": "worker",
+                    },
+                ),
+                (user_fork, {"forked_from_id": parent}),
+            ):
+                path = day / f"rollout-2026-11-08T00-00-00-{sid}.jsonl"
+                head = {
+                    "timestamp": _stamp(now - 30),
+                    "type": "session_meta",
+                    "payload": {
+                        "session_id": sid,
+                        "id": sid,
+                        "cwd": "/tmp/project",
+                        "source": "cli",
+                        **fields,
+                    },
+                }
+                path.write_text(
+                    json.dumps(head) + "\n" + json.dumps(_task_started(now - 10)) + "\n"
+                )
+                os.utime(path, (now, now))
+            with store_patch(CODEX_SESSIONS_DIR=tmp):
+                config, state = runtime()
+                rows = {
+                    row["sid"]: row
+                    for row in codex_collector.collect(config, state, now, 24, False)
+                }
+
+        self.assertEqual({parent, user_fork}, set(rows))
+        self.assertEqual(
+            [("worker", fork, 1)],
+            [
+                (child["name"], child["observer_sid"], child["depth"])
+                for child in rows[parent]["subagent_hierarchy"]
+            ],
+        )
+
     def test_codex_subagent_usage_is_added_after_own_start_boundary(self) -> None:
         now = time.time()
 

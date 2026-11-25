@@ -1284,8 +1284,9 @@ Before any future run, the ruling lists these fixes:
 - Scorer review: a leftover output file can use up the retry; an owner reconciliation tool for an
   interrupted charge; binding the transport to Codex's `codex.js` launcher as production uses it;
   and admitting the five adversaries as authored material, as the protocol says.
-- The case inventory misclassifies subagent forks (`thread_source: subagent`,
-  `forked_from_id`) as roots, and how the freezer treats forks needs checking.
+- The case inventory counted subagent forks (`thread_source: subagent`, `forked_from_id`) as
+  roots, and the freezer's handling was unverified. The inventory now counts these forks as
+  children. The freezer uses their parent links when checking the selected case's descendants.
 - Ledger hardening.
 - Redaction gaps, which matter before any case leaves the machine.
 
@@ -4694,7 +4695,8 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   part read names a subagent (those items, or a `spawn_agent` that did not fail, `wait_agent`,
   `send_message`, `followup_task`, `interrupt_agent` or `close_agent` call).
 - Spawns are compared per parent: each rollout read, with the children whose heads name it in
-  `parent_thread_id`. Compared with every rollout found, a grandchild found while its own parent
+  `parent_thread_id`, or in `forked_from_id` for a subagent fork without a spawn link. Compared
+  with every rollout found, a grandchild found while its own parent
   went unread stood in for a sibling of that parent with no rollout (DRC-5033 item 4). A spawn
   failed only where its whole output, trimmed, is one of the four error forms all 27 local text
   outputs take: "collab spawn failed: ..." (19), "Full-history forked agents inherit the parent

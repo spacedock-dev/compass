@@ -15,12 +15,30 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import codex_case_candidates as candidates
 
 if TYPE_CHECKING:
-    from tests.codex_source_support import ROOT, rollout
+    from tests.codex_source_support import ROOT, forked_rollout, rollout
 else:
-    from codex_source_support import ROOT, rollout
+    from codex_source_support import ROOT, forked_rollout, rollout
 
 
 class CandidatePrivacyTest(unittest.TestCase):
+    def test_a_forked_subagent_is_counted_as_a_child(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = rollout(Path(folder))
+            fork = forked_rollout(Path(folder))
+            rows = candidates.inventory(Path(folder))
+            self.assertEqual([False, True], [row["child"] for row in rows])
+
+            head = json.loads(fork.read_text().splitlines()[0])
+            meta = head["payload"]
+            del meta["thread_source"]
+            fork.write_text(json.dumps(head) + "\n")
+            self.assertTrue(candidates.summarize_shape(fork)["child"])
+
+            meta["session_id"] = meta["id"]
+            fork.write_text(json.dumps(head) + "\n")
+            self.assertFalse(candidates.summarize_shape(fork)["child"])
+            self.assertFalse(candidates.summarize_shape(root)["child"])
+
     def test_a_person_sees_each_first_line_size_and_whether_it_is_session_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             path = rollout(Path(folder))

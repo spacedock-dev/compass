@@ -1275,12 +1275,12 @@ class ASubagentsCheckReachesThePageFromTheStore(CodexChecksTestCase):
         found = observer.codex_child_rollouts(self.config, state, str(self.path))
         self.assertEqual(sorted([str(child), str(grandchild)]), sorted(found))
 
-    def long_head_child(self) -> Path:
+    def long_head_child(self, *, parent_field: str = "parent_thread_id") -> Path:
         """A child whose head is past the first-line cap, in the key order current Codex writes:
         the root's id, its own and its parent's first, then free text such as instructions."""
         head = (
             '{"timestamp":"2026-10-30T03:00:00.000Z","ordinal":0,"type":"session_meta",'
-            f'"payload":{{"session_id":"{SID}","id":"{CHILD}","parent_thread_id":"{SID}",'
+            f'"payload":{{"session_id":"{SID}","id":"{CHILD}","{parent_field}":"{SID}",'
             f'"timestamp":"2026-10-30T03:00:00Z","cwd":"{self.cwd}","cli_version":"0.164.0",'
             '"thread_source":"subagent","base_instructions":{"text":"'
             + "x" * (self.config.first_line_json_cap_bytes + 1)
@@ -1308,6 +1308,18 @@ class ASubagentsCheckReachesThePageFromTheStore(CodexChecksTestCase):
         (check,) = [row for row in entries if row["subject"] == "check"]
         self.assertEqual(("failed", "subagent"), (check["result"], check["worker_kind"]))
         self.assertEqual(1, scan["subagent_transcripts"])
+
+    def test_a_forked_child_whose_head_is_past_the_cap_is_found_and_read(self) -> None:
+        self.rollout.save(self.path)
+        child = self.long_head_child(parent_field="forked_from_id")
+        state = build_runtime_state(self.config, started=self.NOW)
+        found = observer.codex_child_rollouts(self.config, state, str(self.path))
+        self.assertEqual([str(child)], found)
+        entries, _ = project_context.codex_tool_reports(
+            self.config, str(self.path), SHORT, child_paths=found
+        )
+        (check,) = [row for row in entries if row["subject"] == "check"]
+        self.assertEqual(("failed", "subagent"), (check["result"], check["worker_kind"]))
 
     def test_text_in_a_long_head_never_names_a_root(self) -> None:
         # Only the opening fields are read: a root's id written later in the head, inside text,
