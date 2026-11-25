@@ -201,6 +201,13 @@ git commit -s -m "feat(skill): add new capability to compass"
 **Format:** `<type>(<scope>): <description>` with sign-off (DCO required)
 
 - For multi-line commit messages with backticks, apostrophes, or special characters, write to a temp file and use `git commit -F <file>` instead of heredocs to avoid shell escaping issues.
+- **Sign off with `-s` only** (`git commit -s -F <file>`, or `git commit --amend -s`), which takes
+  the identity in git's configuration. Never type a `Signed-off-by:` line into a message file, and
+  never put an author address into a commit, PR or comment from anywhere else, such as an agent's
+  session context. This repository is public: on 2026-11-25 an agent typed a personal address into
+  a sign-off and pushed it, and the commit stayed fetchable by its SHA after the branch was
+  corrected. Before pushing, check that `git log -1 --format=%B | grep Signed-off-by` names the
+  address `git config user.email` prints.
 
 ## PR Workflow
 
