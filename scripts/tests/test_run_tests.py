@@ -12,10 +12,12 @@ import contextlib
 import importlib.util
 import io
 import os
+import signal
 import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -768,3 +770,85 @@ class SerialPassTest(unittest.TestCase):
 
         self.assertEqual(0, code, out)
         self.assertEqual(["FLAKY-RETRY-PASSED: test_late.Flaky.test_late"], flaky_lines(out))
+
+
+STUCK = """
+import os
+import time
+import unittest
+
+
+def hold() -> None:
+    with open(os.path.join(os.environ["ORPHAN_PID_DIR"], str(os.getpid())), "w"):
+        pass
+    time.sleep(120)
+
+
+class First(unittest.TestCase):
+    def test_holds(self) -> None:
+        hold()
+
+
+class Second(unittest.TestCase):
+    def test_holds(self) -> None:
+        hold()
+"""
+
+
+def alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def stop_runner(runner: subprocess.Popen[bytes]) -> None:
+    if runner.poll() is None:
+        runner.kill()
+        runner.wait(timeout=10)
+
+
+def stop_pid(pid: int) -> None:
+    if alive(pid):
+        os.kill(pid, signal.SIGKILL)
+
+
+@unittest.skipUnless(os.name == "posix", "signals a pid with os.kill")
+class AKilledRunLeavesNoWorkerTest(unittest.TestCase):
+    """A worker exits when its parent does, however the parent ended.
+
+    Measured 2026-11-25: 38 workers from runs killed between 2026-10-28 and 2026-11-14 were still
+    alive weeks later, each blocked in a test or on its queues with no parent left to read them.
+    """
+
+    def test_workers_exit_soon_after_the_parent_is_killed_outright(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "test_stuck.py").write_text(STUCK, encoding="utf-8")
+            pids = root / "pids"
+            pids.mkdir()
+            runner = subprocess.Popen(
+                [sys.executable, run_tests.__file__, "-s", tmp, "-t", tmp, "-j", "2", "--no-retry"],
+                env={**os.environ, "ORPHAN_PID_DIR": str(pids)},
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self.addCleanup(stop_runner, runner)
+            workers: list[int] = []
+            deadline = time.monotonic() + 60
+            while len(workers) < 2 and time.monotonic() < deadline:
+                workers = [int(path.name) for path in pids.iterdir()]
+                time.sleep(0.1)
+            self.assertEqual(2, len(workers), "both workers should have started a test")
+            # A failing run must not leave its own orphans behind.
+            for pid in workers:
+                self.addCleanup(stop_pid, pid)
+            runner.kill()
+            runner.wait(timeout=10)
+            deadline = time.monotonic() + 15
+            while any(alive(pid) for pid in workers) and time.monotonic() < deadline:
+                time.sleep(0.1)
+            self.assertEqual([], [pid for pid in workers if alive(pid)])
