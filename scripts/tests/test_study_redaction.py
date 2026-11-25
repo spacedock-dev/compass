@@ -9,13 +9,16 @@ import json
 import sys
 import tempfile
 import unittest
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, overload
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from tests.codex_source_support import command, config, entry, rollout, write
 else:
     from codex_source_support import command, config, entry, rollout, write
@@ -24,6 +27,7 @@ import abstention_ledger
 import codex_case_sources as sources
 import mark_abstention as marker
 import score_abstention as scorer
+from compass_runtime import annotations as annotation_store
 from compass_runtime import project_context, records
 
 GOOGLE: dict[str, Any] = {
@@ -35,6 +39,31 @@ GOOGLE: dict[str, Any] = {
 }
 
 
+class ChangingPayloads(Sequence[bytes]):
+    first = b"First draft"
+    swapped = b"Authorization: Bearer SyntheticSwappedToken99"
+
+    def __init__(self) -> None:
+        self.passes = 0
+
+    def __len__(self) -> int:
+        return 1
+
+    @overload
+    def __getitem__(self, index: int) -> bytes: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[bytes]: ...
+
+    def __getitem__(self, index: int | slice) -> bytes | Sequence[bytes]:
+        return (self.first,)[index]
+
+    def __iter__(self) -> Iterator[bytes]:
+        value = self.first if self.passes < 2 else self.swapped
+        self.passes += 1
+        return iter((value,))
+
+
 class StudyRedactionTest(unittest.TestCase):
     def setUp(self) -> None:
         private = tempfile.TemporaryDirectory()
@@ -44,6 +73,17 @@ class StudyRedactionTest(unittest.TestCase):
         root = self.home / "codex/sessions"
         self.path = rollout(root / "2026/11/07")
         self.spec = entry(root, self.path)
+
+    def use_authored_source(self) -> None:
+        root = self.home / "authored"
+        self.path = rollout(root)
+        self.spec = {
+            **entry(root, self.path),
+            "origin": "synthesised",
+            "kind": "misleading-completion",
+            "authored_by": "author",
+            "verified_by": "reviewer",
+        }
 
     def score_explanation(self) -> dict[str, Any]:
         value = "FakePass99"
@@ -91,6 +131,7 @@ class StudyRedactionTest(unittest.TestCase):
         self.assertEqual(marker._reading().SCRUB_WITHHELD_DETAIL, detail)
 
     def test_hand_typed_goal_and_both_line_forms_are_masked(self) -> None:
+        self.use_authored_source()
         self.spec["intent"].update(
             goal="Review Authorization: Bearer MadeUpGoal99",
             lines=[
@@ -126,6 +167,57 @@ class StudyRedactionTest(unittest.TestCase):
             self.assertNotIn(value, b"".join(payloads))
         self.assertEqual(4, len(marker.prepare_google_send(payloads, **GOOGLE)["payload_digests"]))
 
+    def test_zwsp_intent_does_not_reveal_a_value_hidden_in_the_base_model_request(self) -> None:
+        value = "SyntheticControl123456"
+        body = {"v": marker.FORMAT_CODEX}
+        for prefix in ("Bearer\u200b", "curl\u200b-u user:", "--password\u200b"):
+            with self.subTest(prefix=prefix):
+                raw = prefix + value
+                self.assertNotIn(value, records.safe_text(raw, 4000))
+                self.spec["intent"].update(goal=raw, lines=[raw, {"text": raw, "source": "typed"}])
+                case = sources.freeze_case(self.config, self.spec)
+                sink = mock.Mock(return_value=("{}", "ok"))
+                scorer.score_case(
+                    self.config,
+                    case,
+                    case["row_snapshot"],
+                    case["producer_facts"],
+                    {},
+                    model=sink,
+                    now=case["captured_at"],
+                    revision=marker.case_revision(case),
+                    tool_output=scorer._tool_output(case, "OpenAI", "Codex", body),
+                )
+                sink.assert_called_once()
+                self.assertNotIn(value, sink.call_args.args[0])
+                self.assertNotIn(value, json.dumps(case))
+                with contextlib.redirect_stdout(io.StringIO()) as screen:
+                    marker._show_intent_case(body, case, "1/1")
+                self.assertNotIn(value, screen.getvalue())
+                for criterion in ("goal", "line_1", "line_2"):
+                    self.assertNotIn(value, marker._mark_question(body, case, criterion))
+
+    def test_bidi_command_case_is_masked_and_immediately_revalidates(self) -> None:
+        self.use_authored_source()
+        self.spec["intent"]["goal"] = "redis-cli\u202e-a FakeRedisPass99"
+        case = sources.freeze_case(self.config, self.spec)
+        self.assertEqual([], sources.content_refusal(self.config, case, str(self.path)))
+        self.assertNotIn("FakeRedisPass99", json.dumps(case))
+
+    def test_cap_length_outcome_redaction_is_stable_after_clipping(self) -> None:
+        self.use_authored_source()
+        lead = "Set MODE=debug in the sample. "
+        filler = "The example is for documentation. " * 40
+        suffix = " Authorization: Bearer <token>"
+        cap = self.config.annotation_line_cap_chars
+        line = lead + filler[: cap - len(lead + suffix)] + suffix
+        self.assertEqual(800, len(line))
+        self.assertEqual([line], annotation_store._typed_lines([line], cap))
+        self.spec["intent"]["lines"] = [line]
+        case = sources.freeze_case(self.config, self.spec)
+        self.assertEqual([], sources.content_refusal(self.config, case, str(self.path)))
+        self.assertTrue(case["intent"]["lines"][0].endswith(records.SECRET_MARKER))
+
     def test_google_inventory_accepts_only_the_redacted_screen_bytes(self) -> None:
         raw = b"Evidence\n  Authorization: Bearer FakeTok99xx\n"
         with self.assertRaises(abstention_ledger.LedgerError):
@@ -142,6 +234,50 @@ class StudyRedactionTest(unittest.TestCase):
         with self.assertRaises(abstention_ledger.LedgerError):
             marker.consume_google_send(receipt, [raw], **GOOGLE)
         marker.consume_google_send(receipt, [screened], **GOOGLE)
+
+    def test_google_inventory_hashes_only_the_snapshot_it_screened(self) -> None:
+        drafts = ChangingPayloads()
+        expected = [hashlib.sha256(drafts.first).hexdigest()]
+        with self.subTest(payloads="changing sequence"):
+            self.assertEqual(
+                expected, marker.prepare_google_send(drafts, **GOOGLE)["payload_digests"]
+            )
+            self.assertEqual(1, drafts.passes)
+        with self.subTest(payloads="list changed during screening"):
+            payloads = [drafts.first]
+            redact = marker.redact_google_screen
+
+            def replace_after_screening(payload: bytes) -> bytes:
+                screened = redact(payload)
+                payloads[0] = drafts.swapped
+                return screened
+
+            with mock.patch.object(marker, "redact_google_screen", replace_after_screening):
+                inventory = marker.prepare_google_send(payloads, **GOOGLE)
+            self.assertEqual(expected, inventory["payload_digests"])
+
+    def test_google_inventory_screens_the_buffer_of_a_bytes_subclass(self) -> None:
+        class MisleadingPreview(bytes):
+            def decode(self, *_args: str, **_kwargs: str) -> str:
+                return "First draft"
+
+            def __ne__(self, other: object) -> bool:
+                return other != b"First draft"
+
+        with self.assertRaisesRegex(abstention_ledger.LedgerError, "redact the Google screens"):
+            marker.prepare_google_send([MisleadingPreview(ChangingPayloads.swapped)], **GOOGLE)
+
+    def test_google_consumption_cannot_bind_an_unscreened_later_sequence_pass(self) -> None:
+        drafts = ChangingPayloads()
+        receipt = self.home / "approval.json"
+        inventory = marker.prepare_google_send([drafts.first], **GOOGLE)
+        marker.approve_google_send(receipt, inventory)
+        approved = marker.consume_google_send(receipt, drafts, **GOOGLE)
+        self.assertEqual((drafts.first,), approved)
+        self.assertEqual(1, drafts.passes)
+        tuple(drafts)
+        self.assertEqual((drafts.swapped,), tuple(drafts))
+        self.assertEqual((drafts.first,), approved)
 
     def test_google_screen_with_a_wrapped_header_is_ready_for_approval(self) -> None:
         raw = b"Evidence\n('Proxy-Authorization', 'Future-Scheme MadeUpToken99')\nEnd of screen.\n"
@@ -181,3 +317,19 @@ class StudyRedactionTest(unittest.TestCase):
                 intent = sources._redact_intent(self.config, {"goal": raw, "lines": [raw]})
                 self.assertEqual(masked, " ".join(intent["goal"].split()))
                 self.assertEqual(masked, " ".join(intent["lines"][0].split()))
+
+    def test_google_screen_preserves_masks_from_direct_runtime_vectors(self) -> None:
+        for raw, value in (
+            ("Bear<wbr>er\x85SyntheticControl123456", "SyntheticControl123456"),
+            ("curl -u 'alice:$MadeUpPass99'", "MadeUpPass99"),
+            ("curl\n-u alice:MadeUpPass99", "MadeUpPass99"),
+            ("curl -u\nalice:MadeUpPass99", "MadeUpPass99"),
+        ):
+            with self.subTest(raw=raw):
+                self.assertTrue(
+                    value not in records.mask_prose(raw)
+                    or value not in records.safe_text(raw, 4_000)
+                )
+                screened = marker.redact_google_screen(raw.encode())
+                self.assertNotIn(value.encode(), screened)
+                self.assertEqual(screened, marker.redact_google_screen(screened))

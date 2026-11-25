@@ -317,7 +317,15 @@ def _redact_intent(config: Any, intent: dict[str, Any]) -> dict[str, Any]:
     from compass_runtime import records
 
     def redact(value: Any, limit: int) -> str:
-        return records.safe_text(marker._screen_text(str(value or "")), limit)
+        text = str(value or "")
+        # A cut can turn a documented example into a credential-shaped tail.
+        # Check the bounded text again before it becomes the packet's revision.
+        for _ in range(3):
+            screened = records.safe_text(marker._screen_text(text), limit)
+            if screened == text:
+                return screened
+            text = screened
+        raise marker.FreezeError("codex-screened-intent-unstable")
 
     def redact_line(line: Any) -> Any:
         if isinstance(line, dict) and isinstance(line.get("text"), str):
@@ -331,6 +339,18 @@ def _redact_intent(config: Any, intent: dict[str, Any]) -> dict[str, Any]:
         "goal": redact(intent.get("goal"), config.annotation_goal_cap_chars),
         "lines": [redact_line(line) for line in intent["lines"]],
     }
+
+
+def _capture_screened_production(
+    config: Any, case: dict[str, Any], saved_intent: dict[str, Any], transcript: str
+) -> dict[str, Any]:
+    production = marker._production_capture(config, case, transcript)
+    if case["origin"] == "recorded" and saved_intent != case["intent"]:
+        # The screened revision cannot serve as its own Analyze oracle.
+        saved = marker._production_capture(config, {**case, "intent": saved_intent}, transcript)
+        if saved["prompt_digest"] != production["prompt_digest"]:
+            raise marker.FreezeError("codex-screened-production-prompt-differs")
+    return production
 
 
 def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
@@ -350,17 +370,19 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
     sid = str(entry.get("sid") or "")
     provenance = _provenance(entry)
     root, path, children = _selection(config, entry)
-    intent = entry.get("intent")
+    saved_intent = entry.get("intent")
     if (
-        not isinstance(intent, dict)
-        or not marker._epoch(intent.get("at"))
-        or intent["at"] > captured
-        or type(intent.get("n")) is not int
-        or intent["n"] < 1
-        or not marker.case_lines({"intent": intent})
+        not isinstance(saved_intent, dict)
+        or not marker._epoch(saved_intent.get("at"))
+        or saved_intent["at"] > captured
+        or type(saved_intent.get("n")) is not int
+        or saved_intent["n"] < 1
+        or not marker.case_lines({"intent": saved_intent})
     ):
         raise marker.FreezeError("codex-saved-intent-required")
-    intent = _redact_intent(config, intent)
+    intent = _redact_intent(config, saved_intent)
+    if not marker.case_lines({"intent": intent}):
+        raise marker.FreezeError("codex-screened-intent-empty")
     sources: dict[str, Any] = {
         "v": 1,
         "root": str(root),
@@ -448,7 +470,7 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
             "read_incomplete": sorted(map(list, press.read_incomplete)),
         },
     }
-    case["production_reading"] = marker._production_capture(config, case, str(path))
+    case["production_reading"] = _capture_screened_production(config, case, saved_intent, str(path))
     return case
 
 

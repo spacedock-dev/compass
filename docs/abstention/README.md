@@ -1296,6 +1296,8 @@ closed tokens and no source text, paths or tracebacks.
 
 The packet seals each parent/child prefix and capture boundary, the saved Intent, checks,
 person messages, lifecycle, parser, selected source identities and actual production prompt digest.
+Freeze screens and bounds the intent before sealing it. Recorded cases are refused when screening
+changes the request Analyze builds from the saved revision.
 Freeze applies the configured Analyze limits to the check listing and focused timeline.
 It also uses Analyze's bounded semantic history merge to recover eligible person instructions
 from the sealed parent when checks fill the timeline. This history is built in memory for the
@@ -1400,11 +1402,11 @@ study needs a new prospective decision, with the failed record retained.
    recipients, model/effort, purpose and call ceiling: the blind-marking set, then each review
    batch. Run `mark_abstention.redact_google_screen` on the UTF-8 review text before showing the
    resulting bytes to the owner. `mark_abstention.prepare_google_send` verifies those bytes
-   and prepares the digest inventory locally.
+   and inventories the digests from the same in-memory payload snapshot.
    `approve_google_send` seals the owner-approved inventory in a private one-use artifact. No
    Google sender exists here. Any future sender must call `consume_google_send` immediately
-   before transmitting the same in-memory bytes. Changed payloads or send bindings, a copied
-   artifact, or a consumed send refuse. A consumed send is never retried automatically. Google
+   before sending and transmit only the immutable bytes it returns. Changed payloads or send
+   bindings, a copied artifact, or a consumed send refuse. A consumed send is never retried automatically. Google
    receives only the approved intent, bounded evidence/screens and marking questions; later reviews may include approved answers and grades. Two independent
    blind marks, separate kind review and any arbitration precede producer output. Session ids,
    account identifiers, raw rollouts and ledger files stay local. Commands and excerpts can

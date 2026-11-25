@@ -117,8 +117,21 @@ def _screen_text(text: str) -> str:
     for _ in range(3):
         shaped = records.redact_secrets(text)
         prose = records.mask_prose(text)
+        # Prose drops invisible separators that safe_text can turn into credential
+        # boundaries. Inspect the original in both views before choosing a rendering.
+        limit = len(text) * 16
+        safe = records.safe_text(text, limit)
         # Keep layout only when the prose pass would carry the same words.
         screened = shaped if prose == " ".join(shaped.split()) else prose
+        if " ".join(safe.split()) != " ".join(shaped.split()):
+            safe_prose = records.mask_prose(safe)
+            if records.SECRET_MARKER not in screened or safe_prose == records.mask_prose(
+                records.safe_text(screened, len(screened) * 16)
+            ):
+                screened = safe_prose
+            else:
+                # Neither view can vouch for the other's masked spans.
+                return records.SECRET_MARKER
         if text.endswith("\n") and not screened.endswith("\n"):
             screened += "\n"
         if screened == text:
@@ -146,9 +159,31 @@ def prepare_google_send(
     call_ceiling: int,
 ) -> dict[str, Any]:
     """Inventory one blind-marking set or review send locally; this grants no permission."""
+    _, inventory = _google_send_inventory(
+        payloads,
+        purpose=purpose,
+        recipients=recipients,
+        model=model,
+        effort=effort,
+        call_ceiling=call_ceiling,
+    )
+    return inventory
+
+
+def _google_send_inventory(
+    payloads: Sequence[bytes],
+    *,
+    purpose: str,
+    recipients: list[str],
+    model: str,
+    effort: str,
+    call_ceiling: int,
+) -> tuple[tuple[bytes, ...], dict[str, Any]]:
+    # A caller's sequence can yield different bytes on its next pass.
+    snapshot = tuple(payloads)
     if (
-        not payloads
-        or any(not isinstance(p, bytes) or not p for p in payloads)
+        not snapshot
+        or any(not isinstance(p, bytes) or bytes.__len__(p) == 0 for p in snapshot)
         or purpose not in ("blind-marking", "review-batch-1", "review-batch-2", "review-batch-3")
         or not recipients
         or any(not isinstance(r, str) or not r.strip() for r in recipients)
@@ -158,9 +193,11 @@ def prepare_google_send(
         or call_ceiling < 1
     ):
         raise abstention_ledger.LedgerError("the Google send inventory is incomplete")
-    if any(redact_google_screen(payload) != payload for payload in payloads):
+    # A bytes subclass can override decode or equality but its buffer is the data hashed.
+    snapshot = tuple(p if type(p) is bytes else memoryview(p).tobytes() for p in snapshot)
+    if any(redact_google_screen(payload) != payload for payload in snapshot):
         raise abstention_ledger.LedgerError("redact the Google screens before approval")
-    return {
+    return snapshot, {
         "v": 1,
         "provider": "Google",
         "purpose": purpose,
@@ -168,7 +205,7 @@ def prepare_google_send(
         "model": model,
         "effort": effort,
         "call_ceiling": call_ceiling,
-        "payload_digests": [hashlib.sha256(p).hexdigest() for p in payloads],
+        "payload_digests": [hashlib.sha256(p).hexdigest() for p in snapshot],
     }
 
 
@@ -201,13 +238,13 @@ def consume_google_send(
     model: str,
     effort: str,
     call_ceiling: int,
-) -> None:
-    """A sender MUST consume this check immediately before sending these exact bytes.
+) -> tuple[bytes, ...]:
+    """Consume approval and return the exact screened bytes a future sender must use.
 
     No Google sender exists here. Any future sender must transmit these same
     in-memory bytes, retain this receipt, and never retry a consumed send.
     """
-    expected = prepare_google_send(
+    snapshot, expected = _google_send_inventory(
         payloads,
         purpose=purpose,
         recipients=recipients,
@@ -228,6 +265,7 @@ def consume_google_send(
         path.with_name(path.name + ".consumed"),
         {"approval_digest": abstention_ledger.digest(approved)},
     )
+    return snapshot
 
 
 def _reading() -> Any:

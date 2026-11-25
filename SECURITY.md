@@ -4156,7 +4156,9 @@ pinned reader invocation and remove it on completion, refusal or exception. Abru
 temporary copy for the owner to remove. This promises neither secure erasure nor isolation from
 another process running under the same account. Redact before clipping or displaying screens.
 The Codex freezer masks credential shapes in the hand-typed goal and outcome lines before
-sealing the revision. The scorer recovers values masked by the command parser from the
+sealing the revision. It checks the bounded text again so a newly frozen case can pass
+revalidation. A recorded case is refused if screening changes the request Analyze builds
+from the saved revision. The scorer recovers values masked by the command parser from the
 verified source cuts in memory and applies the production explanation scrub. If the mask set
 is partial, the reader withholds the explanation. The values themselves stay out of the
 packet and the prompt. Keep raw cuts out of caches, history and public artifacts.
@@ -4181,8 +4183,8 @@ model/effort, purpose and call ceiling: the blind-marking set, then each review 
 Apply `redact_google_screen` to UTF-8 review text before presenting it for approval. The
 digest-only inventory accepts the screened bytes and refuses input the redactor would change.
 The tool seals an owner-approved one-use artifact. There is no Google sender in the tooling.
-Any future sender must call `consume_google_send` immediately before sending the same
-in-memory bytes. Changed payloads,
+Any future sender must call `consume_google_send` immediately before sending and transmit
+the immutable bytes it returns. Changed payloads,
 send bindings, copied artifacts and consumed sends refuse. Consumption is durable before send;
 an interrupted send needs reconciliation and cannot silently retry.
 Google receives only the approved intent, bounded evidence/screens and marking questions for
