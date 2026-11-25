@@ -4957,15 +4957,22 @@ verbatim from standard input into a new turn in the same rollout. The page uses 
 and says to add `--skip-git-repo-check` outside a trusted folder. See the
 [delivery capture](captures/codex/correction-delivery-0.172.0-macos.jsonl).
 
-Both resumes had one `session_meta` record. The capture did not verify that earlier bytes stayed
-in place. Codex copy matching verifies the ordered session metadata and pre-copy prompt records
-before accepting a paste. Rewrites of other context can move that boundary. If the prompt prefix
-cannot be verified, the paste remains unclassified. This ruling applies to Codex.
+Both resumes had one `session_meta` record. Codex copy matching hashes ordered canonical session
+metadata and prompt records through the copy boundary. Context rewrites can move the records and
+JSON reformatting leaves the proof intact. A partial record present at copy time is ineligible
+when it completes. A second press reuses a verified waiting boundary or replaces one invalidated
+by a rewrite.
 
-The recognized response carries its own fact id. When Codex's separate `UserMessage` completion
-supplies the latest title, Compass identifies its response by the full text and their order in the
-rollout. The copied words cannot become a drafted or adopted goal or set the later-direction
-floor. A later typed prompt remains eligible.
+The board reads the title, opening prompt, instruction and copied occurrence from one rollout
+extent. Both `event_msg/user_message` and `item_completed/UserMessage` can quote a preceding
+response with the same full text. A later identical response is a separate occurrence. An
+unrelated opening prompt can share the copy's timestamp and remain eligible. The copied occurrence
+stays out of goal adoption and the later-direction floor, including when a bare continuation
+would otherwise display it as the earlier instruction.
+
+The board keeps the occurrence and fact proofs private and caches verification by file stamp and
+requested proofs. The Codex qualification parser and its existing frozen cases use the original
+parser stamp.
 
 ### Amended 2026-10-05: verified request age belongs to a line
 

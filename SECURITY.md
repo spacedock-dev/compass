@@ -3155,28 +3155,24 @@ whitespace is trimmed at both ends. It also records a second digest of the same 
 whitespace folded to one space, so a paste whose only edit was whitespace still matches; a changed
 word, or a space inside a word, does not. The store holds the digests, the copy time, and the
 transcript's inode and size at that moment. For Codex it also holds a count and digest of the
-session metadata and prompt records present at copy time. After recognition it keeps the message's
-fact id and time, and for Codex a digest of the matched record. It never holds the text.
-It is `compass-copied-corrections.json`
-beside the annotation store, owner-only through a temp file and a rename, under an OS lock on the
-`.lock` file beside it. It is bounded at eight digests per session still waiting for their message
-and 32 recognised messages per session, the oldest of each dropped. Dropping the oldest waiting
-digest drops only a copy whose message never arrived: a message already recognised keeps its mark
-until 32 later recognised messages in that session push it out, and then it reads as the reader's
-own words again. `--forget` deletes the file, and `--no-annotations` turns it off. A digest still
-waiting answers without storing anything, so registering one twice earns no second match. Compass reads Claude Code and Codex sessions
-for a match. A user message written after the point the transcript
-had reached when the text was copied, whose digest computed from its raw text before any redaction
-or clipping matches exactly (or by the whitespace-folded digest), is Compass-assisted, whatever either
-clock says. Claude Code wraps a paste in its own `pasted_content` tags, which are taken off before
-either digest is computed. Words typed around the paste make a different message. The measured
-Codex TUI and exec deliveries carry the correction verbatim in a user message. While a Codex copy
-is waiting, Compass verifies the earlier prompt records in file order. If other context moves
-those records, their verified positions still locate the boundary. A changed prompt prefix or
-missing proof leaves the copy unmatched. The match scan covers at most the newest 64 MiB plus
-the opening 32 MiB, the same bounds used for historical sources. Each digest binds the
-first such message, and nothing before it, and a recognised message stays recognised after the
-tail moves past it. An assisted message is `derived` rather than person-authored evidence, is never
+ordered session metadata and prompt records. An unfinished record adds its partial digest so its
+completion cannot count as a new paste. After recognition the store keeps the fact id and time.
+For Codex it also keeps the inode and a digest through that occurrence. These source proofs stay
+private. The store never holds the text.
+
+`compass-copied-corrections.json` lives beside the annotation store. An OS lock guards its
+owner-only atomic replacement. It keeps the newest eight waiting copies and 32 recognized
+occurrences per session, with a 4 MiB read bound. `--forget` deletes it and `--no-annotations`
+turns it off. Copying the same words again keeps a waiting boundary that still verifies.
+A new copy replaces an invalid Codex boundary.
+
+Compass matches a user message written after the copy when its whole-text digest agrees,
+including whitespace-only reflow. Claude Code's paste wrappers come off before matching. Its
+match scan covers the newest 64 MiB plus the opening 32 MiB, and recognition survives beyond
+that scan. Codex verifies the original prompt order and the occurrence in a rollout snapshot.
+JSON reformatting and changes to other context can move the source without changing its identity.
+A changed prompt prefix or missing proof leaves the words as the reader's. The board reuses that
+verification while the file stamp and requested proofs agree. An assisted message is `derived` rather than person-authored evidence, is never
 adopted as the goal, including when Codex uses a separate completion record for the title. It
 does not open the evidence window of typed words, cannot be opened by
 `POST /api/direction`, is not an unsettled later direction, and is never shown as the stated goal,

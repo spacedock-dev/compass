@@ -72,10 +72,10 @@ export function openedWithControl(session: Row | null | undefined): boolean {
 
 /* The agent's published instruction when it carries `label`, or null. A correction the reader copied
    from Compass is never their words, so a copied instruction is not returned. */
-export function sessionInstruction(session: Row | null | undefined, label: string): Row | null {
+export function sessionInstruction(session: Row | null | undefined, label?: string): Row | null {
   const instruction = session?.['instruction'];
   if (!isRecord(instruction) || promptCopied(session, 'instruction')) return null;
-  if (String(instruction['label'] || '') !== label) return null;
+  if (label !== undefined && String(instruction['label'] || '') !== label) return null;
   return String(instruction['text'] == null ? '' : instruction['text']).trim() ? instruction : null;
 }
 

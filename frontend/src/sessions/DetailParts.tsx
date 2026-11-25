@@ -5,7 +5,8 @@ import { Disclosure } from '../controls';
 import { GLOSSARY, SESSION_LIST_WORDS, SHOWN } from '../language/glossary';
 import { SESSION_TEXT_ORIGIN, type Landing, type ObservedSession } from '../observed';
 import { RouteAnchor } from './RouteAnchor';
-import { durationSince, gapNames, isRecord, promptCopied, type Row } from '../observed';
+import { sessionInstruction } from './intent';
+import { durationSince, gapNames, type Row } from '../observed';
 import { Icon } from '../ui/icons';
 import { StatusTile } from '../ui/status-tile';
 import { companionsLine, type ProjectCompanions } from '../project/projectList';
@@ -41,8 +42,8 @@ export function InstructionLine({
   readonly generated: number | null;
   readonly className: string;
 }) {
-  const instruction = session['instruction'];
-  if (!isRecord(instruction) || promptCopied(session, 'instruction')) return null;
+  const instruction = sessionInstruction(session);
+  if (!instruction) return null;
   const label = INSTRUCTION_LABELS.find(
     (candidate) => candidate === String(instruction['label'] || ''),
   );

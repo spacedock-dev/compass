@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import itertools
 import json
 import os
@@ -15,7 +14,7 @@ from . import records, sessions
 from . import state as runtime_state
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable
 
     from .config import RuntimeConfig
     from .state import RuntimeState
@@ -614,49 +613,8 @@ def _codex_scan_record(record: dict[str, Any]) -> tuple[str, str, float]:
 
 
 _CodexCandidates = tuple[
-    "tuple[str, float] | None", "tuple[str, float] | None", "tuple[str, float] | None", str
+    "tuple[str, float] | None", "tuple[str, float] | None", "tuple[str, float] | None"
 ]
-
-
-def codex_prompt_record_digest(raw: bytes) -> str:
-    return hashlib.sha256(raw.removesuffix(b"\n")).hexdigest()
-
-
-def _codex_prompt_blocks(record: dict[str, Any], *, completed: bool) -> list[str] | None:
-    payload = records.as_dict(record.get("payload"))
-    if completed:
-        if record.get("type") != "event_msg" or payload.get("type") != "item_completed":
-            return None
-        payload = records.as_dict(payload.get("item"))
-        if payload.get("type") != "UserMessage":
-            return None
-    elif (
-        record.get("type") != "response_item"
-        or payload.get("type") != "message"
-        or payload.get("role") != "user"
-    ):
-        return None
-    return [
-        block["text"]
-        for block in records.as_list(payload.get("content"))
-        if isinstance(block, dict)
-        and block.get("type") == ("text" if completed else "input_text")
-        and isinstance(block.get("text"), str)
-    ]
-
-
-def _codex_prompt_records(
-    config: RuntimeConfig, path: str
-) -> Iterator[tuple[bytes, dict[str, Any]]]:
-    for raw in runtime_io.reverse_lines(config, path):
-        if not raw.startswith(b"{") or not any(m in raw for m in _CODEX_SCAN_MARKERS):
-            continue
-        try:
-            record = json.loads(raw)
-        except ValueError:
-            continue
-        if isinstance(record, dict):
-            yield raw, record
 
 
 def _codex_walk(config: RuntimeConfig, path: str) -> _CodexCandidates:
@@ -688,10 +646,15 @@ def _codex_walk(config: RuntimeConfig, path: str) -> _CodexCandidates:
     older: tuple[str, float] | None = None
     reached_floor = False
     compacted = False
-    prompt_digest = ""
-    completed: list[str] | None = None
-    prompt_is_work = False
-    for raw, record in _codex_prompt_records(config, path):
+    for raw in runtime_io.reverse_lines(config, path):
+        if not raw.startswith(b"{") or not any(m in raw for m in _CODEX_SCAN_MARKERS):
+            continue
+        try:
+            record = json.loads(raw)
+        except ValueError:
+            continue
+        if not isinstance(record, dict):
+            continue
         kind, text, at = _codex_scan_record(record)
         if kind == "commentary":
             # `prompt is None` is the load-bearing clause, not `reached_floor`:
@@ -701,10 +664,6 @@ def _codex_walk(config: RuntimeConfig, path: str) -> _CodexCandidates:
                 preamble = (text, at)
         elif kind == "floor":
             reached_floor = True
-            if completed is not None:
-                completed = None
-                if prompt_is_work:
-                    break
         elif kind == "compaction":
             if prompt is None:
                 continue
@@ -721,26 +680,12 @@ def _codex_walk(config: RuntimeConfig, path: str) -> _CodexCandidates:
                 continue
             if prompt is None:
                 prompt = (body, at)
-                prompt_is_work = states_work(config, body)
-                if record.get("type") == "response_item":
-                    prompt_digest = codex_prompt_record_digest(raw)
-                else:
-                    completed = _codex_prompt_blocks(record, completed=True)
-                if prompt_is_work and not completed:
+                if states_work(config, body):
                     break
-            else:
-                # Completion has its own clock and the title is clipped. Only the
-                # preceding response with the same whole text can supply its provenance.
-                if completed:
-                    if completed == _codex_prompt_blocks(record, completed=False):
-                        prompt_digest = codex_prompt_record_digest(raw)
-                    completed = None
-                    if prompt_is_work:
-                        break
-                if not compacted and states_work(config, body):
-                    older = (body, at)
-                    break
-    return (prompt, preamble if reached_floor else None, older, prompt_digest)
+            elif not compacted and states_work(config, body):
+                older = (body, at)
+                break
+    return (prompt, preamble if reached_floor else None, older)
 
 
 def codex_instruction(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[str, Any]:
@@ -764,13 +709,13 @@ def codex_instruction(config: RuntimeConfig, state: RuntimeState, path: str) -> 
             "prompt_states_work": False,
             "prompt_at": None,
         }
-    cache_key = (stat.st_ino, stat.st_ctime_ns, stat.st_mtime_ns, stat.st_size)
+    cache_key = (stat.st_mtime_ns, stat.st_size)
     with state.cache_lock:
         cached = state.codex_instruction_cache.get(path)
-    if cached is not None and cached[0] == cache_key:
-        return cached[1]
+    if cached is not None and cached[:2] == cache_key:
+        return cached[2]
 
-    prompt, preamble, older, prompt_digest = _codex_walk(config, path)
+    prompt, preamble, older = _codex_walk(config, path)
 
     # Rendered first and scrubbed second, never the other way round: `safe_text`
     # turns a newline into a space, so a prompt scrubbed first has no first line
@@ -793,13 +738,11 @@ def codex_instruction(config: RuntimeConfig, state: RuntimeState, path: str) -> 
         ),
         "instruction": instruction_from(config, prompt, preamble, older, title_is_prompt=True),
     }
-    if prompt_digest:
-        result["prompt_record_digest"] = prompt_digest
     with state.cache_lock:
         runtime_state.bounded_put(
             state.codex_instruction_cache,
             path,
-            (cache_key, result),
+            (*cache_key, result),
             limit=config.max_cache_entries,
         )
     return result

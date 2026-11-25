@@ -925,7 +925,10 @@ class Application:
             if not found:
                 continue
             try:
-                out_sessions.extend(spec.collect(config, state, now, window_hours, show_all))
+                rows = spec.collect(config, state, now, window_hours, show_all)
+                if spec.key == "codex":
+                    copied_corrections.collect_codex_prompts(config, state, rows)
+                out_sessions.extend(rows)
             except Exception as e:  # noqa: BLE001 — one broken harness must not take down the rest
                 harness["error"] = f"{type(e).__name__}: {e}"
                 runtime_io.diag(
@@ -1813,7 +1816,10 @@ class Application:
                 collection, show_all=show_all, validate_progress=validate
             )
             snapshot_check = validate.prepare_snapshot(withheld) if validate else None
-            body = json.dumps(board_explanations.compact(collection, _BOARD_EXPLANATIONS)).encode()
+            body = copied_corrections.bind_board_sources(
+                json.dumps(board_explanations.compact(collection, _BOARD_EXPLANATIONS)).encode(),
+                collection.get("sessions", ()),
+            )
             built_at, built_monotonic = self.clock(), self.monotonic()
             revision, kept = self.snapshot.publish(
                 key,

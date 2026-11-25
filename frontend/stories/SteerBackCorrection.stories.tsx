@@ -204,6 +204,28 @@ export const CodexPasteBackLeavesGoalEmpty: Story = {
   },
 };
 
+export const CodexContinuationKeepsTheCopiedInstructionOut: Story = {
+  ...scenario({
+    ...pastedBack,
+    nav: {},
+    session: {
+      ...pastedBack.session,
+      title: 'continue',
+      prompt_at: 998,
+      prompt_states_work: false,
+      instruction: { label: 'earlier', text: CODEX_PASTE.summary, at: 995.05 },
+      copied_prompts: [{ fact_id: 'u2', at: 995, quoted_as: ['instruction'] }],
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole('heading', { name: 'continue', level: 1 })).toBeVisible();
+    await expect(canvasElement.querySelector('[data-next-instruction="earlier"]')).toBeNull();
+    const activity = await openSessionTechnicalTab('Activity log', canvasElement);
+    await expect(await activity.findByText('Copied from Compass', { exact: true })).toBeVisible();
+  },
+};
+
 export const CodexWithoutADeparture: Story = {
   ...scenario({
     harness: 'codex',

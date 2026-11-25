@@ -8,21 +8,20 @@ user message past that point with the same text digest is Compass's words, `deri
 adoption, rule 7 and the later-direction floor alike. Only digests, positions and fact ids are
 stored, never the text.
 
-The digest is computed here by re-reading the transcript from where the copy was made, rather
-than inside the collector: the collector's module is frozen with the abstention qualification
-(`scripts/mark_abstention.py`, `_PARSER_FILES`), and this read runs only for a session that holds
-a copy. Once a message is recognised its fact id is written to the store and published from there,
-so what the tail no longer holds stays recognised.
+The board verifies Codex prompt occurrences and renders their fields from the
+same read. It uses the qualified collector and fact builders without changing
+their parser stamp. Claude Code keeps its own transcript recognition path.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
 import re
 import threading
-from typing import TYPE_CHECKING, Any, NamedTuple, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Any, NamedTuple, NotRequired, Self, TypedDict
 
 from compass_runtime.config import (
     remove_state_file,
@@ -66,9 +65,9 @@ _MESSAGE_READ_CAP = 4 * CORRECTION_CAP_CHARS + 1
 # backfill reads a source to, so a message that store publishes is one this can recognise.
 _OPENING_SCAN_CAP_BYTES = project_context.SEMANTIC_BACKFILL_MAX_BYTES
 # A store past this reads back as nothing, un-marking every recognised paste at once.
-# The full-bound store test measured 2,286,101 bytes for 256 Codex sessions,
-# with the prefix proof and record digests at their widest.
-_READ_CAP_BYTES = 3 << 20
+# Keep a quarter spare after adding the in-flight fragment proof and the
+# inode on each recognised occurrence. The full-bound store test holds that margin.
+_READ_CAP_BYTES = 4 << 20
 _KEY_CAP_CHARS = 64
 # The copy route's own body bound, derived so no correction the box composes is refused for its
 # bytes (review, 2026-10-20): the shared 12,288 refused 4,216 CJK characters, the page still said
@@ -103,6 +102,8 @@ class Copy(TypedDict):
     folded: NotRequired[str]
     prefix_count: NotRequired[int]
     prefix_digest: NotRequired[str]
+    fragment_start: NotRequired[int]
+    fragment_digest: NotRequired[str]
 
 
 class Match(TypedDict):
@@ -112,6 +113,7 @@ class Match(TypedDict):
     at: float
     copied_at: float
     record_digest: NotRequired[str]
+    ino: NotRequired[int]
 
 
 class Held(NamedTuple):
@@ -125,7 +127,6 @@ class _Message(NamedTuple):
     at: float
     digest: str | None
     folded: str | None
-    record_digest: str
     # What the row's `instruction` and `first_prompt` would carry for this message, each built
     # as its producer builds it, so the row's field can be placed on the message it quotes.
     line: str
@@ -196,6 +197,16 @@ def _copy(value: Any) -> Copy | None:
     if count and isinstance(prefix, str) and _DIGEST.fullmatch(prefix):
         copy["prefix_count"] = count
         copy["prefix_digest"] = prefix
+    start, fragment = _count(value.get("fragment_start")), value.get("fragment_digest")
+    if "fragment_start" in value or "fragment_digest" in value:
+        if (
+            start is None
+            or start >= offset
+            or not isinstance(fragment, str)
+            or not _DIGEST.fullmatch(fragment)
+        ):
+            return None
+        copy["fragment_start"], copy["fragment_digest"] = start, fragment
     return copy
 
 
@@ -213,6 +224,9 @@ def _match(value: Any) -> Match | None:
     record_digest = value.get("record_digest")
     if isinstance(record_digest, str) and _DIGEST.fullmatch(record_digest):
         match["record_digest"] = record_digest
+    ino = _count(value.get("ino"))
+    if ino is not None:
+        match["ino"] = ino
     return match
 
 
@@ -221,7 +235,7 @@ def _held(copies: Iterable[Copy], matches: Iterable[Match]) -> Held:
     ordered = sorted(copies, key=lambda copy: copy["copied_at"])
     unique: dict[str, Match] = {}
     for match in sorted(matches, key=lambda match: match["copied_at"]):
-        unique.setdefault(match["fact_id"], match)
+        unique.setdefault(match.get("record_digest") or match["fact_id"], match)
     return Held(
         tuple(ordered[-COPIES_PER_SESSION:]),
         tuple(list(unique.values())[-MATCHES_PER_SESSION:]),
@@ -286,74 +300,160 @@ def _bounded(held: dict[tuple[str, str], Held], limit: int) -> dict[tuple[str, s
     return dict(ordered[-limit:]) if limit > 0 else {}
 
 
-_Position = tuple[int, int] | tuple[int, int, int, str]
+class _CodexPosition(NamedTuple):
+    ino: int
+    offset: int
+    prefix_count: int
+    digest: str
+    fragment: tuple[int, str] | None
+    prior: tuple[Copy, ...]
+    verified: tuple[int, ...]
+
+
+_Position = tuple[int, int] | _CodexPosition
+
+
+class _CodexRecord(NamedTuple):
+    offset: int
+    raw: bytes
+    record: dict[str, Any]
+    occurrence: str
+    prefix_count: int
 
 
 def _file_stamp(info: os.stat_result) -> tuple[int, int, int, int, int]:
     return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
-def _codex_prefixes(handle: BinaryIO, size: int) -> Iterable[tuple[int, int, str]]:
-    """Yield the end of each verifiable prefix of the rollout's prompt records.
+def _codex_prompt_content(record: dict[str, Any]) -> tuple[str, Any]:
+    payload = records.as_dict(record.get("payload"))
+    if record.get("type") == "response_item":
+        if payload.get("type") == "message" and payload.get("role") == "user":
+            return "response", payload.get("content")
+    elif record.get("type") == "event_msg":
+        if payload.get("type") == "user_message":
+            return "legacy", payload.get("message")
+        item = records.as_dict(payload.get("item"))
+        if payload.get("type") == "item_completed" and item.get("type") == "UserMessage":
+            return "completion", item.get("content")
+    return "", None
 
-    Byte offsets can move if Codex rewrites context. Hash the ordered
-    session metadata and prompt records, so changing context can move the boundary
-    while changing the reader's earlier messages invalidates it.
-    """
-    proof = hashlib.sha256()
+
+def _codex_prefixes(handle: BinaryIO, size: int) -> Iterable[_CodexRecord]:
+    """Order prompt occurrences by a canonical hash chain, even when their JSON is rewritten."""
+    proof = hashlib.sha256(b"compass-codex-copy-v2\0")
     count = offset = 0
+    markers = (*transcripts._CODEX_SCAN_MARKERS, b'"session_meta"', b"\\u", b"task_complete")  # noqa: SLF001
     while offset < size:
         raw = handle.readline(size - offset)
-        if not raw.endswith(b"\n"):
+        if not raw:
             break
+        record: dict[str, Any] = {}
+        occurrence = ""
+        if raw.endswith(b"\n") and any(marker in raw for marker in markers):
+            canonical = b""
+            with contextlib.suppress(ValueError, RecursionError):
+                record = records.as_dict(json.loads(raw))
+                if record.get("type") == "session_meta" or _codex_prompt_content(record)[0]:
+                    canonical = json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
+            if canonical:
+                proof.update(canonical)
+                proof.update(b"\0")
+                count += 1
+                occurrence = proof.hexdigest()
+        yield _CodexRecord(offset, raw, record, occurrence, count)
         offset += len(raw)
-        if b"\\u" not in raw and not any(
-            marker in raw
-            for marker in (b'"session_meta"', b'"user"', b'"user_message"', b'"UserMessage"')
-        ):
-            continue
-        try:
-            record = records.as_dict(json.loads(raw))
-        except (ValueError, RecursionError):
-            continue
-        kind = record.get("type")
-        payload = records.as_dict(record.get("payload"))
-        item = records.as_dict(payload.get("item"))
-        if not (
-            kind == "session_meta"
-            or (kind == "response_item" and _raw_content(record, "codex") is not None)
-            or (
-                kind == "event_msg"
-                and (
-                    payload.get("type") == "user_message"
-                    or (
-                        payload.get("type") == "item_completed"
-                        and item.get("type") == "UserMessage"
-                    )
-                )
-            )
-        ):
-            continue
-        proof.update(raw)
-        count += 1
-        yield count, offset, proof.hexdigest()
 
 
-def _codex_position(path: str) -> _Position | None:
+def _stable_extent(handle: BinaryIO, before: os.stat_result, proof: str) -> bool:
+    after = os.fstat(handle.fileno())
+    if _file_stamp(before) == _file_stamp(after):
+        return True
+    if after.st_size <= before.st_size:
+        return False
+    # An append may change the stamp during either read. Verify the bytes the
+    # scan could have observed, stopping at its original extent.
+    handle.seek(0)
+    remaining = before.st_size
+    check = hashlib.sha256()
+    while remaining:
+        chunk = handle.read(min(remaining, 1 << 20))
+        if not chunk:
+            return False
+        check.update(chunk)
+        remaining -= len(chunk)
+    return check.hexdigest() == proof and os.fstat(handle.fileno()).st_size >= after.st_size
+
+
+class _CodexBoundaries:
+    def __init__(self, info: os.stat_result, waiting: tuple[Copy, ...]) -> None:
+        self.waiting = waiting
+        self.ino = info.st_ino
+        self.prefixes: dict[tuple[int, str], int] = {}
+        self.boundaries: dict[int, int] = {}
+        self.fragments: dict[int, list[int]] = {}
+        self.wanted = {
+            (copy.get("prefix_count", 0), copy.get("prefix_digest", ""))
+            for copy in waiting
+            if copy["ino"] == info.st_ino
+        }
+        for index, copy in enumerate(waiting):
+            if copy["ino"] == info.st_ino and "fragment_digest" in copy:
+                self.fragments.setdefault(copy["fragment_start"], []).append(index)
+
+    def observe(self, item: _CodexRecord) -> None:
+        end = item.offset + len(item.raw)
+        key = (item.prefix_count, item.occurrence)
+        if key in self.wanted:
+            self.prefixes[key] = end
+            for index, copy in enumerate(self.waiting):
+                if (
+                    copy["ino"] == self.ino
+                    and "fragment_digest" not in copy
+                    and self.prefix(copy) == end
+                ):
+                    self.boundaries[index] = end
+        for index in self.fragments.get(item.offset, []):
+            copy = self.waiting[index]
+            width = copy["offset"] - item.offset
+            if (
+                0 < width <= len(item.raw)
+                and self.prefix(copy) is not None
+                and hashlib.sha256(item.raw[:width]).hexdigest() == copy["fragment_digest"]
+            ):
+                self.boundaries[index] = end
+
+    def prefix(self, copy: Copy) -> int | None:
+        return self.prefixes.get((copy.get("prefix_count", 0), copy.get("prefix_digest", "")))
+
+
+def _codex_position(path: str, prior: tuple[Copy, ...]) -> _CodexPosition | None:
     with os.fdopen(runtime_io.open_harness(path), "rb") as handle:
         info = os.fstat(handle.fileno())
-        if not info.st_size:
-            return None
-        handle.seek(info.st_size - 1)
-        if handle.read(1) != b"\n":
-            return None
-        handle.seek(0)
-        last = None
-        for prefix in _codex_prefixes(handle, info.st_size):
-            last = prefix
-        if last and _file_stamp(info) == _file_stamp(os.stat(path)):
-            count, _, proof = last
-            return (info.st_ino, info.st_size, count, proof)
+        boundaries = _CodexBoundaries(info, prior)
+        raw_proof = hashlib.sha256()
+        count, occurrence, fragment = 0, "", None
+        for item in _codex_prefixes(handle, info.st_size):
+            if item.occurrence:
+                count, occurrence = item.prefix_count, item.occurrence
+            if not item.raw.endswith(b"\n"):
+                fragment = (item.offset, hashlib.sha256(item.raw).hexdigest())
+            boundaries.observe(item)
+            raw_proof.update(item.raw)
+        if (
+            occurrence
+            and handle.tell() == info.st_size
+            and _stable_extent(handle, info, raw_proof.hexdigest())
+        ):
+            return _CodexPosition(
+                info.st_ino,
+                info.st_size,
+                count,
+                occurrence,
+                fragment,
+                prior,
+                tuple(boundaries.boundaries),
+            )
     return None
 
 
@@ -366,7 +466,8 @@ def transcript_position(
         return None
     try:
         if harness == "codex":
-            return _codex_position(path)
+            prior = load(config).get(_key(harness, sid), Held((), ()))
+            return _codex_position(path, prior.copies)
         info = os.stat(path)
     except OSError:
         return None
@@ -411,8 +512,7 @@ def register(
 
     `position` is where the session's transcript ended when the copy was made
     (`transcript_position`); only a message written past it can match, whatever its clock says.
-    A digest still waiting for its message answers `unchanged` and keeps its first position, so
-    a second registration cannot move where it matches from or earn a second match.
+    A second press preserves a waiting copy when its first boundary still verifies.
     """
     key = _key(harness, sid)
     moment = reading.valid_prompt_time(now)
@@ -425,7 +525,7 @@ def register(
         or not normalise(text)
         or moment is None
         or position is None
-        or (key[0] == "codex" and len(position) != 4)
+        or (key[0] == "codex" and not isinstance(position, _CodexPosition))
     ):
         return OUTCOME_REFUSED
     copy: Copy = {
@@ -435,20 +535,28 @@ def register(
         "offset": position[1],
         "folded": folded_digest(text),
     }
-    if len(position) == 4:
-        copy["prefix_count"], copy["prefix_digest"] = position[2:]
+    if isinstance(position, _CodexPosition):
+        copy["prefix_count"], copy["prefix_digest"] = position.prefix_count, position.digest
+        if position.fragment:
+            copy["fragment_start"], copy["fragment_digest"] = position.fragment
 
     def change(stored: dict[tuple[str, str], Held]) -> dict[tuple[str, str], Held] | None:
         prior = stored.get(key, Held((), ()))
-        if any(held["digest"] == copy["digest"] for held in prior.copies):
+        same = next((item for item in prior.copies if item["digest"] == copy["digest"]), None)
+        if same is not None and (
+            not isinstance(position, _CodexPosition)
+            or same not in position.prior
+            or position.prior.index(same) in position.verified
+        ):
             return None
-        stored[key] = _held((*prior.copies, copy), prior.matches)
+        remaining = tuple(item for item in prior.copies if item != same)
+        stored[key] = _held((*remaining, copy), prior.matches)
         return stored
 
     return _locked_update(config, change, diagnostic_sink)
 
 
-def _record(config: RuntimeConfig, key: tuple[str, str], found: list[tuple[str, Match]]) -> None:
+def _record(config: RuntimeConfig, key: tuple[str, str], found: list[tuple[Copy, Match]]) -> None:
     """Move each recognised copy from waiting to recognised, so it is never recomputed away.
 
     A store another dashboard emptied meanwhile (`--forget`) is left empty. A write that fails
@@ -459,10 +567,12 @@ def _record(config: RuntimeConfig, key: tuple[str, str], found: list[tuple[str, 
         prior = stored.get(key)
         if prior is None:
             return None
-        digests = {found_digest for found_digest, _ in found}
+        current = [(copy, match) for copy, match in found if copy in prior.copies]
+        if not current:
+            return None
         stored[key] = _held(
-            (copy for copy in prior.copies if copy["digest"] not in digests),
-            (*prior.matches, *(match for _, match in found)),
+            (copy for copy in prior.copies if all(copy != used for used, _ in current)),
+            (*prior.matches, *(match for _, match in current)),
         )
         return stored
 
@@ -505,25 +615,6 @@ def forget(config: RuntimeConfig) -> bool:
     return remove_state_file(store_path(config))
 
 
-def _raw_content(record: dict[str, Any], harness: str) -> Any:
-    if harness == "codex":
-        payload = records.as_dict(record.get("payload"))
-        if (
-            record.get("type") != "response_item"
-            or payload.get("type") != "message"
-            or payload.get("role") != "user"
-        ):
-            return None
-        return [
-            block["text"]
-            for block in records.as_list(payload.get("content"))
-            if isinstance(block, dict)
-            and block.get("type") == "input_text"
-            and isinstance(block.get("text"), str)
-        ]
-    return records.message_dict(record).get("content")
-
-
 def _scan(
     config: RuntimeConfig, path: str, key: tuple[str, str], start: int, end: int
 ) -> tuple[list[_Message], int]:
@@ -563,11 +654,11 @@ def _scan(
             if event is None:
                 continue
             fact = project_context._semantic_fact_from_event(event, "steer", steer, "")  # noqa: SLF001
-            text = records.extract_text(_raw_content(record, harness), cap=_MESSAGE_READ_CAP)
+            text = records.extract_text(
+                records.message_dict(record).get("content"), cap=_MESSAGE_READ_CAP
+            )
             whole = len(text) < _MESSAGE_READ_CAP
-            # Claude Code adds paste tags (DRC-4920). Codex records the text verbatim,
-            # so the same tags there would be part of the reader's text.
-            pasted = records.strip_paste_wrapper(text) if harness == "claude" else text
+            pasted = records.strip_paste_wrapper(text)
             cap = records.INSTRUCTION_CAP_CHARS
             # `claude_data.latest_instruction`'s line, and `transcripts.first_prompt`'s.
             line = records.instruction_line(
@@ -581,7 +672,6 @@ def _scan(
                     float(event["at"]),
                     digest(pasted) if whole else None,
                     folded_digest(pasted) if whole else None,
-                    transcripts.codex_prompt_record_digest(raw) if harness == "codex" else "",
                     str(line["text"]) if line else "",
                     records.safe_text(first, cap + 1) if first else "",
                 )
@@ -628,9 +718,6 @@ def _messages(
     cache_key = f"copied-corrections:{harness}:{sid}:{path}"
     with state.cache_lock:
         cached = state.metadata_cache.get(cache_key)
-    stamp = _file_stamp(info) if harness == "codex" else None
-    if harness == "codex" and cached is not None and cached.get("stamp") != stamp:
-        cached = None
     if (
         cached is not None
         and cached["ino"] == info.st_ino
@@ -656,7 +743,6 @@ def _messages(
             cache_key,
             {
                 "ino": info.st_ino,
-                "stamp": stamp,
                 "start": start,
                 "end": end,
                 "messages": tuple(messages),
@@ -677,31 +763,358 @@ def _same(message: _Message, copy: Copy) -> bool:
     return message.digest == copy["digest"] or (folded is not None and message.folded == folded)
 
 
-def _copy_boundaries(
-    path: str,
-    harness: str,
-    info: os.stat_result,
-    waiting: tuple[Copy, ...],
-) -> list[tuple[Copy, int]]:
-    if harness != "codex":
-        return [(copy, copy["offset"]) for copy in waiting]
-    same_file = [copy for copy in waiting if copy["ino"] == info.st_ino]
-    counts = {copy["prefix_count"] for copy in same_file if "prefix_count" in copy}
-    verified = {}
-    if counts:
+class _Prompt(NamedTuple):
+    text: str
+    at: float
+    occurrence: str
+    offset: int
+
+    @property
+    def words(self) -> tuple[str, float]:
+        return self.text, self.at
+
+
+class _CodexPrompts:
+    def __init__(self) -> None:
+        self.first: _Prompt | None = None
+        self.latest: _Prompt | None = None
+        self.earlier: _Prompt | None = None
+        self.work: _Prompt | None = None
+        self.floor = -1
+        self.preamble: tuple[str, float] | None = None
+        self.response: tuple[str, str] | None = None
+
+    def observe(self, config: RuntimeConfig, item: _CodexRecord) -> None:
+        kind, text, at = transcripts._codex_scan_record(item.record)  # noqa: SLF001
+        if kind == "floor":
+            self.floor, self.preamble, self.response = item.offset, None, None
+        elif kind == "compaction":
+            self.work, self.response = None, None
+        elif kind == "commentary" and text.strip():
+            if self.preamble is None:
+                self.preamble = (text, at)
+            self.response = None
+        elif kind == "prompt":
+            self._prompt(config, item, text, at)
+        elif records.as_dict(item.record.get("payload")).get("type") == "task_complete":
+            self.response = None
+
+    def _prompt(self, config: RuntimeConfig, item: _CodexRecord, text: str, at: float) -> None:
+        body = text.strip()
+        if not body or records.injected_prompt(body, "codex"):
+            self.response = None
+            return
+        shape, content = _codex_prompt_content(item.record)
+        full = records.extract_text(content, cap=_MESSAGE_READ_CAP)
+        occurrence = item.occurrence
+        # Both Codex companions can carry the board's timestamp. Whole text
+        # and the preceding response in this turn establish which words they quote.
+        pair = self.response if shape in {"legacy", "completion"} else None
+        if pair is not None and pair[0] == full:
+            occurrence = pair[1]
+        self.response = (
+            (full, item.occurrence)
+            if shape == "response" and 0 < len(full) < _MESSAGE_READ_CAP
+            else None
+        )
+        first = (
+            self.first is None
+            and item.offset + len(item.raw) <= 2 * 1024 * 1024
+            and not records.compass_command(text)
+        )
+        if first:
+            self.first = _Prompt(text, at, occurrence, item.offset)
+        prompt = _Prompt(body, at, occurrence, item.offset)
+        self.latest, self.earlier, self.preamble = prompt, self.work, None
+        if transcripts.states_work(config, body):
+            self.work = prompt
+
+    def fields(self, config: RuntimeConfig) -> tuple[dict[str, Any], dict[str, str]]:
+        first, latest, earlier = self.first, self.latest, self.earlier
+        cap = records.INSTRUCTION_CAP_CHARS
+        opening = transcripts.prompt_title(config, first.text, cap) if first else ""
+        title_cap = records.PROMPT_TITLE_CAP_CHARS
+        title = transcripts.prompt_title(config, latest.text, title_cap) if latest else ""
+        # The backward ladder accepts preamble only if it reaches a turn floor
+        # before stopping at the earlier work. Preserve that rule in this forward scan.
+        reached_floor = self.floor > (earlier.offset if earlier else -1)
+        instruction = transcripts.instruction_from(
+            config,
+            latest.words if latest else None,
+            self.preamble if reached_floor else None,
+            earlier.words if earlier else None,
+            title_is_prompt=True,
+        )
+        fields = {
+            "first_prompt": records.safe_text(opening, cap + 1),
+            "first_prompt_at": first.at if first and first.at > 0 else None,
+            "first_prompt_control": bool(
+                first and transcripts.harness_control_prompt(config, first.text)
+            ),
+            "title": records.safe_text(title, title_cap + 1).strip() or None,
+            "prompt_at": latest.at if latest and latest.at > 0 else None,
+            "prompt_states_work": bool(latest and transcripts.states_work(config, latest.text)),
+            "last_prompt": records.safe_text(
+                latest.text if latest else "", records.LAST_PROMPT_CAP_CHARS
+            ),
+            "instruction": instruction,
+        }
+        sources = {
+            "title": latest.occurrence if latest else "",
+            "first_prompt": first.occurrence if first else "",
+            "instruction": earlier.occurrence
+            if earlier and instruction and instruction.get("label") == "earlier"
+            else "",
+        }
+        return fields, sources
+
+
+class _FactProof(NamedTuple):
+    source: str
+    words: str
+    complete: str
+
+
+class _Published(list[dict[str, Any]]):
+    """Keep proofs beside the snapshot for server consumers. JSON emits only the list entries."""
+
+    def __init__(
+        self,
+        items: Iterable[dict[str, Any]],
+        proofs: dict[str, _FactProof],
+        path: str,
+        stamp: tuple[int, int, int, int, int],
+    ) -> None:
+        super().__init__(items)
+        self.proofs, self.path, self.stamp = proofs, path, stamp
+
+    def source_unchanged(self) -> bool:
+        try:
+            return _file_stamp(os.stat(self.path)) == self.stamp
+        except OSError:
+            return False
+
+
+class _BoardBody(bytes):
+    sources: dict[tuple[str, str], _Published]
+
+    def __new__(cls, body: bytes, sources: dict[tuple[str, str], _Published]) -> Self:
+        result = super().__new__(cls, body)
+        result.sources = sources
+        return result
+
+
+def bind_board_sources(body: bytes, rows: Iterable[Mapping[str, Any]]) -> bytes:
+    # The shared snapshot caches these exact bytes. A parallel refresh cannot
+    # pick a different set of witnesses for an older body's prompt fields.
+    sources = {}
+    for row in rows:
+        entries = row.get(reading.COPIED_PROMPTS)
+        if isinstance(entries, _Published) and entries.proofs:
+            sources[_key(row.get("harness"), row.get("sid"))] = entries
+    return _BoardBody(body, sources) if sources else body
+
+
+def restore_board_sources(body: bytes, rows: Iterable[dict[str, Any]]) -> None:
+    if isinstance(body, _BoardBody):
+        for row in rows:
+            entries = body.sources.get(_key(row.get("harness"), row.get("sid")))
+            if entries is not None:
+                row[reading.COPIED_PROMPTS] = _Published(
+                    row[reading.COPIED_PROMPTS], entries.proofs, entries.path, entries.stamp
+                )
+
+
+class _CodexSnapshot(NamedTuple):
+    fields: dict[str, Any]
+    matches: tuple[Match, ...]
+    sources: dict[str, str]
+    facts: dict[str, _FactProof]
+    stamp: tuple[int, int, int, int, int]
+
+
+class _CodexRecognition:
+    def __init__(self, info: os.stat_result, held: Held) -> None:
+        self.boundaries = _CodexBoundaries(info, held.copies)
+        self.ino = info.st_ino
+        self.waiting = held.copies
+        self.stored = {
+            match["record_digest"]: match
+            for match in held.matches
+            if match.get("ino") == self.ino and "record_digest" in match
+        }
+        self.new: dict[int, Match] = {}
+        self.matches: list[Match] = []
+        self.facts: dict[str, _FactProof] = {}
+        self.seen: set[str] = set()
+
+    def observe(self, config: RuntimeConfig, sid: str, item: _CodexRecord) -> None:
+        self.boundaries.observe(item)
+        shape, content = _codex_prompt_content(item.record)
+        if shape != "response":
+            return
+        event = project_context._instruction_event(config, item.record, "codex", sid)  # noqa: SLF001
+        if event is None:
+            return
+        fact = project_context._semantic_fact_from_event(  # noqa: SLF001
+            event, "steer", "user_message", ""
+        )
+        fact_id = str(fact["fact_id"])
+        match = self.stored.get(item.occurrence)
+        if match is None:
+            match = self._new_match(item, content, fact_id, float(event["at"]))
+        if fact_id in self.seen:
+            self.facts.pop(fact_id, None)
+        elif match is not None:
+            self.facts[fact_id] = _FactProof(
+                hashlib.sha256(item.raw.rstrip(b"\r\n")).hexdigest(),
+                digest(fact[project_context.READER_WORDS_FIELD])
+                if fact.get(project_context.READER_WORDS_FIELD)
+                else "",
+                project_context._complete_request_digest(  # noqa: SLF001
+                    project_context._direction_words(config, item.record, "codex"),  # noqa: SLF001
+                ),
+            )
+        self.seen.add(fact_id)
+        if match is not None:
+            self.matches.append(match)
+
+    def _new_match(self, item: _CodexRecord, content: Any, fact_id: str, at: float) -> Match | None:
+        eligible = [
+            index
+            for index, offset in self.boundaries.boundaries.items()
+            if item.offset >= offset and index not in self.new
+        ]
+        if not eligible:
+            return None
+        blocks = [
+            block["text"]
+            for block in records.as_list(content)
+            if isinstance(block, dict)
+            and block.get("type") == "input_text"
+            and isinstance(block.get("text"), str)
+        ]
+        text = records.extract_text(blocks, cap=_MESSAGE_READ_CAP)
+        if len(text) >= _MESSAGE_READ_CAP:
+            return None
+        exact, folded = digest(text), folded_digest(text)
+        for index in eligible:
+            copy = self.waiting[index]
+            if exact == copy["digest"] or folded == copy.get("folded"):
+                match: Match = {
+                    "fact_id": fact_id,
+                    "at": at,
+                    "copied_at": copy["copied_at"],
+                    "record_digest": item.occurrence,
+                    "ino": self.ino,
+                }
+                self.new[index] = match
+                return match
+        return None
+
+
+def _codex_snapshot(
+    config: RuntimeConfig, state: RuntimeState, path: str, sid: str, held: Held
+) -> _CodexSnapshot | None:
+    cache_key = f"codex-copied-snapshot:{sid}:{path}"
+    try:
         with os.fdopen(runtime_io.open_harness(path), "rb") as handle:
-            last = max(counts)
-            for count, offset, proof in _codex_prefixes(handle, info.st_size):
-                if count in counts:
-                    verified[count] = (offset, proof)
-                if count == last:
-                    break
-    out = []
-    for copy in same_file:
-        boundary = verified.get(copy.get("prefix_count", 0))
-        if boundary and boundary[1] == copy.get("prefix_digest"):
-            out.append((copy, boundary[0]))
-    return out
+            info = os.fstat(handle.fileno())
+            stamp = _file_stamp(info)
+            with state.cache_lock:
+                cached = state.metadata_cache.get(cache_key)
+            if cached is not None and cached["stamp"] == stamp and cached["held"] == held:
+                snapshot = cached.get("snapshot")
+                if isinstance(snapshot, _CodexSnapshot):
+                    return snapshot
+            recognition, prompts = _CodexRecognition(info, held), _CodexPrompts()
+            raw_proof = hashlib.sha256()
+            for item in _codex_prefixes(handle, info.st_size):
+                raw_proof.update(item.raw)
+                recognition.observe(config, sid, item)
+                if item.record:
+                    prompts.observe(config, item)
+            if handle.tell() != info.st_size or not _stable_extent(
+                handle, info, raw_proof.hexdigest()
+            ):
+                return None
+    except OSError:
+        return None
+    found = [(held.copies[index], match) for index, match in recognition.new.items()]
+    if found:
+        _record(config, ("codex", sid), found)
+    fields, sources = prompts.fields(config)
+    matches = _held((), recognition.matches).matches
+    snapshot = _CodexSnapshot(fields, matches, sources, recognition.facts, stamp)
+    with state.cache_lock:
+        runtime_state.bounded_put(
+            state.metadata_cache,
+            cache_key,
+            {"stamp": stamp, "held": held, "snapshot": snapshot},
+            limit=config.max_cache_entries,
+        )
+    return snapshot
+
+
+def _codex_paths(config: RuntimeConfig, state: RuntimeState, wanted: set[str]) -> dict[str, str]:
+    # Keep the board collector's root selection and tie order without asking the
+    # single-session observer to walk every rollout once per held session.
+    latest: dict[str, tuple[float, str]] = {}
+    for path in runtime_io.glob_stores(config, "codex.sessions", "*", "*", "*", "rollout-*.jsonl"):
+        meta = transcripts.codex_meta(config, state, path)
+        sid = meta.get("session_id") or os.path.basename(path).removesuffix(".jsonl")[-36:]
+        if sid not in wanted or meta.get("subagent"):
+            continue
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        if sid not in latest or mtime > latest[sid][0]:
+            latest[sid] = (mtime, path)
+    return {sid: path for sid, (_, path) in latest.items()}
+
+
+def collect_codex_prompts(
+    config: RuntimeConfig, state: RuntimeState, rows: list[dict[str, Any]]
+) -> None:
+    held = load(config)
+    wanted = {row["sid"] for row in rows if ("codex", row["sid"]) in held}
+    if not wanted:
+        return
+    paths = _codex_paths(config, state, wanted)
+    for row in rows:
+        sid = row["sid"]
+        if sid not in paths:
+            continue
+        snapshot = _codex_snapshot(config, state, paths[sid], sid, held[("codex", sid)])
+        if snapshot is None:
+            continue
+        active = bool(row.get("active"))
+        if active:
+            row.update(snapshot.fields)
+            if not row["title"] and (goal := row.get("session_goal")):
+                row["title"] = transcripts.prompt_title(config, goal["text"])
+        row[reading.COPIED_PROMPTS] = _codex_published(snapshot, paths[sid], active=active)
+
+
+def _codex_published(snapshot: _CodexSnapshot, path: str, *, active: bool) -> _Published:
+    return _Published(
+        (
+            {
+                "fact_id": match["fact_id"],
+                "at": match["at"],
+                reading.QUOTED_AS: [
+                    field
+                    for field, source in snapshot.sources.items()
+                    if active and source == match["record_digest"]
+                ],
+            }
+            for match in sorted(snapshot.matches, key=lambda match: match["at"])
+        ),
+        snapshot.facts,
+        path,
+        snapshot.stamp,
+    )
 
 
 def _recognise(
@@ -716,25 +1129,19 @@ def _recognise(
         return held.matches, []
     try:
         info = os.stat(path)
-        boundaries = _copy_boundaries(path, harness, info, held.copies)
         # Keep the opening range for provenance even when Claude's saved offset
         # no longer points into the current file.
-        waiting = (
-            [offset for _, offset in boundaries]
-            if harness == "codex"
-            else [copy["offset"] for copy in held.copies]
-        )
+        waiting = [copy["offset"] for copy in held.copies]
         start = min([max(0, info.st_size - config.tail_bytes), *waiting])
         messages, ino, size = _messages(config, state, path, key, start)
-        if harness == "codex" and _file_stamp(info) != _file_stamp(os.stat(path)):
-            return held.matches, []
     except OSError:
         return held.matches, []
     taken = {match["fact_id"] for match in held.matches}
-    found: list[tuple[str, Match]] = []
-    for copy, offset in (
-        (copy, offset) for copy, offset in boundaries if copy["ino"] == ino and offset <= size
-    ):
+    found: list[tuple[Copy, Match]] = []
+    for copy in held.copies:
+        offset = copy["offset"]
+        if copy["ino"] != ino or offset > size:
+            continue
         for message in messages:
             if message.position >= offset and _same(message, copy) and message.fact_id not in taken:
                 taken.add(message.fact_id)
@@ -743,9 +1150,7 @@ def _recognise(
                     "at": message.at,
                     "copied_at": copy["copied_at"],
                 }
-                if message.record_digest:
-                    match["record_digest"] = message.record_digest
-                found.append((copy["digest"], match))
+                found.append((copy, match))
                 break
     if found:
         _record(config, key, found)
@@ -770,6 +1175,9 @@ def matched(
     if entry is None:
         return ()
     path = observer.resolve_transcript(config, state, *key)
+    if key[0] == "codex":
+        snapshot = _codex_snapshot(config, state, path, key[1], entry) if path else None
+        return _published(snapshot.matches) if snapshot else ()
     found, _ = _recognise(config, state, key, entry, path)
     return _published(found)
 
@@ -782,7 +1190,7 @@ def _published(found: Iterable[Match]) -> tuple[dict[str, Any], ...]:
 
 
 def _quoted_as(
-    row: Mapping[str, Any], found: Iterable[Match], messages: list[_Message], title_digest: str
+    row: Mapping[str, Any], found: Iterable[Match], messages: list[_Message]
 ) -> dict[str, list[str]]:
     """For each recognised fact id, which of the row's prompt fields quote it.
 
@@ -799,16 +1207,7 @@ def _quoted_as(
         ("first_prompt", row.get("first_prompt"), row.get("first_prompt_at"), "first", 0),
     )
     recognised = {match["fact_id"]: match["at"] for match in found}
-    # A match stored before record digests can still be placed if its exact
-    # response is in the scan.
-    digests = {message.fact_id: message.record_digest for message in messages}
-    quoted = {
-        match["fact_id"]: ["title"]
-        if title_digest
-        and (match.get("record_digest") or digests.get(match["fact_id"])) == title_digest
-        else []
-        for match in found
-    }
+    quoted: dict[str, list[str]] = {match["fact_id"]: [] for match in found}
     for field, text, raw_at, rendering, pick in fields:
         at = reading.valid_prompt_time(raw_at)
         if at is None or not isinstance(text, str) or not text:
@@ -831,31 +1230,19 @@ def attach(config: RuntimeConfig, state: RuntimeState, rows: Iterable[dict[str, 
     quote it (`reading.QUOTED_AS`).
     """
     held = load(config)
-    codex_paths: dict[str, str] | None = None
     for row in rows:
         key = _key(row.get("harness"), row.get("sid"))
+        harness, sid = key
+        if harness == "codex":
+            row.setdefault(reading.COPIED_PROMPTS, [])
+            continue
         entry = held.get(key)
         if entry is None:
             row[reading.COPIED_PROMPTS] = []
             continue
-        harness, sid = key
-        if harness == "codex":
-            if codex_paths is None:
-                codex_paths = observer.resolve_codex_transcripts(
-                    config, state, {sid for harness, sid in held if harness == "codex"}
-                )
-            path = codex_paths.get(sid)
-        else:
-            path = observer.resolve_transcript(config, state, harness, sid)
+        path = observer.resolve_transcript(config, state, harness, sid)
         found, messages = _recognise(config, state, key, entry, path)
-        title_digest = ""
-        if found and path and key[0] == "codex" and row.get("title"):
-            prompt = transcripts.codex_instruction(config, state, path)
-            if prompt.get("title") == row["title"] and prompt.get("prompt_at") == row.get(
-                "prompt_at"
-            ):
-                title_digest = prompt.get("prompt_record_digest", "")
-        quoted = _quoted_as(row, found, messages, title_digest) if found else {}
+        quoted = _quoted_as(row, found, messages) if found else {}
         row[reading.COPIED_PROMPTS] = [
             {**item, reading.QUOTED_AS: quoted.get(item["fact_id"], [])}
             for item in _published(found)
@@ -869,11 +1256,7 @@ def mark(context: Mapping[str, Any], rows: Iterable[Mapping[str, Any]]) -> dict[
     is not changed under it.
     """
     wanted = {
-        _key(row.get("harness"), row.get("sid")): {
-            str(entry.get("fact_id"))
-            for entry in row.get(reading.COPIED_PROMPTS) or ()
-            if isinstance(entry, dict)
-        }
+        _key(row.get("harness"), row.get("sid")): row[reading.COPIED_PROMPTS]
         for row in rows
         if row.get(reading.COPIED_PROMPTS)
     }
@@ -883,13 +1266,53 @@ def mark(context: Mapping[str, Any], rows: Iterable[Mapping[str, Any]]) -> dict[
     if not wanted or not isinstance(facts, list):
         return dict(context)
 
+    unchanged: dict[str, bool] = {}
+
     def marked(fact: Any) -> Any:
         if not isinstance(fact, dict) or fact.get("type") != "user_message":
             return fact
         session = fact.get("source_session")
         if not isinstance(session, dict):
             return fact
-        ids = wanted.get(_key(session.get("harness"), session.get("sid")), set())
-        return {**fact, reading.COPIED_FLAG: True} if str(fact.get("fact_id")) in ids else fact
+        key = _key(session.get("harness"), session.get("sid"))
+        entries = wanted.get(key, ())
+        fact_id = str(fact.get("fact_id"))
+        if isinstance(entries, _Published):
+            if not _matches_fact_proof(fact, entries, unchanged):
+                return fact
+        elif session.get("harness") == "codex" or not any(
+            isinstance(entry, dict) and entry.get("fact_id") == fact_id for entry in entries
+        ):
+            return fact
+        return {**fact, reading.COPIED_FLAG: True}
 
     return {**context, "semantic": {**semantic, "facts": [marked(fact) for fact in facts]}}
+
+
+def mark_direction(
+    fact: dict[str, Any], row: Mapping[str, Any], words: project_context.DirectionText
+) -> dict[str, Any]:
+    if row.get("harness") == "codex":
+        fact = {**fact, "request_words_digest": project_context._complete_request_digest(words)}  # noqa: SLF001
+    marked: dict[str, Any] = mark({"semantic": {"facts": [fact]}}, [row])["semantic"]["facts"][0]
+    return marked
+
+
+def _matches_fact_proof(
+    fact: Mapping[str, Any], entries: _Published, unchanged: dict[str, bool]
+) -> bool:
+    proof = entries.proofs.get(str(fact.get("fact_id")))
+    if proof is None:
+        return False
+    if "request_source_digest" in fact:
+        return bool(fact["request_source_digest"] == proof.source)
+    # A projected or redacted fact alone cannot distinguish a rewrite from
+    # the collected occurrence. Direct source proofs can.
+    if entries.path not in unchanged:
+        unchanged[entries.path] = entries.source_unchanged()
+    if not unchanged[entries.path]:
+        return False
+    if "request_words_digest" in fact:
+        return bool(proof.complete and fact["request_words_digest"] == proof.complete)
+    words = fact.get(project_context.READER_WORDS_FIELD)
+    return bool(isinstance(words, str) and words and digest(words) == proof.words)

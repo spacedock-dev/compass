@@ -896,7 +896,7 @@ def _lease_row(application: Any, harness: str, sid: str) -> dict[str, Any] | Non
         _, body = application.collect_json(show_all=show_all)
         rows = [
             row
-            for row in board_explanations.expand(json.loads(body))["sessions"]
+            for row in _read_board(body)["sessions"]
             if row.get("harness") == harness and row.get("sid") == sid
         ]
         if rows:
@@ -904,6 +904,12 @@ def _lease_row(application: Any, harness: str, sid: str) -> dict[str, Any] | Non
                 rows[0] if len(rows) == 1 else {"harness": harness, "sid": sid, "ambiguous": True}
             )
     return None
+
+
+def _read_board(body: bytes) -> dict[str, Any]:
+    collected: dict[str, Any] = board_explanations.expand(json.loads(body))
+    copied_corrections.restore_board_sources(body, collected["sessions"])
+    return collected
 
 
 def _published_row_of(application: Any, harness: str, sid: str) -> dict[str, Any] | None:
@@ -916,7 +922,7 @@ def _published_row_of(application: Any, harness: str, sid: str) -> dict[str, Any
         _, body = application.collect_json(show_all=show_all)
         rows = [
             row
-            for row in board_explanations.expand(json.loads(body))["sessions"]
+            for row in _read_board(body)["sessions"]
             if row.get("harness") == harness and row.get("sid") == sid
         ]
         if rows:
@@ -1425,6 +1431,7 @@ def _prompt_facts(
         fact.get("fact_id")
         for fact in facts
         if isinstance(fact, dict)
+        and harness != "codex"
         and fact.get(runtime_reading.COPIED_FLAG) is True
         and fact.get("source_session") == wanted
     }
@@ -2310,7 +2317,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self.send_error(400, "observer refresh requires an exact focused session")
             return
         _revision, body = application.collect_json(show_all=False)
-        collected = board_explanations.expand(json.loads(body))
+        collected = _read_board(body)
         result = assemble_project_drift(
             application,
             collected,
@@ -2402,7 +2409,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self.send_error(400, "limit must be an integer")
             return
         _revision, body = application.collect_json(show_all=False)
-        rows = board_explanations.expand(json.loads(body))["sessions"]
+        rows = _read_board(body)["sessions"]
         matching = [
             row
             for row in rows
@@ -4666,7 +4673,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             _, body = application.collect_json(show_all=show_all)
             rows = [
                 row
-                for row in board_explanations.expand(json.loads(body))["sessions"]
+                for row in _read_board(body)["sessions"]
                 if row.get("harness") == harness and row.get("sid") == sid
             ]
             if rows:
@@ -4801,8 +4808,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         fact = lookup.fact
         if not isinstance(fact, dict):
             return None
-        marked = copied_corrections.mark({"semantic": {"facts": [fact]}}, [row])
-        fact = marked["semantic"]["facts"][0]
+        fact = copied_corrections.mark_direction(fact, row, lookup.words)
         if (
             fact.get("type") != "user_message"
             or fact.get("source_session") != {"harness": harness, "sid": sid}
@@ -5167,7 +5173,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         _revision, body = application.collect_json(show_all=False)
         rows = [
             row
-            for row in board_explanations.expand(json.loads(body))["sessions"]
+            for row in _read_board(body)["sessions"]
             if row.get("harness") == harness and row.get("sid") == sid
         ]
         # From disk under the store's lock, the entry the job is handed: the

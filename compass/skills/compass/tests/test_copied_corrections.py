@@ -271,6 +271,8 @@ class CopyStoreTest(_Store):
                         "offset": 2**63 - 1,
                         "prefix_count": 2**63 - 1,
                         "prefix_digest": "1" * 64,
+                        "fragment_start": 2**63 - 2,
+                        "fragment_digest": "2" * 64,
                     }
                     for c in range(copies.COPIES_PER_SESSION)
                 ),
@@ -279,7 +281,8 @@ class CopyStoreTest(_Store):
                         "fact_id": f"fact:{n:08x}{m:08x}",
                         "at": moment + m,
                         "copied_at": moment + m,
-                        "record_digest": "2" * 64,
+                        "record_digest": f"{n:032x}{m:032x}",
+                        "ino": 2**64 - 1,
                     }
                     for m in range(copies.MATCHES_PER_SESSION)
                 ),
@@ -563,6 +566,307 @@ class CodexDeliveryTest(unittest.TestCase):
                 output.write(self.message(170, STORED))
             self.assertEqual((), copies.matched(config, state, "codex", sid))
 
+    def board_row(self, config: Any, state: Any) -> dict[str, Any]:
+        rows = codex.collect(config, state, 200, 1, False)
+        copies.collect_codex_prompts(config, state, rows)
+        (row,) = rows
+        return row
+
+    def collect_row(self, config: Any, state: Any, path: Path) -> dict[str, Any]:
+        os.utime(path, (200, 200))
+        return self.board_row(config, state)
+
+    def copy_words(self, config: Any, state: Any, sid: str, now: float = 160) -> str:
+        return copies.register(
+            config,
+            "codex",
+            sid,
+            STORED,
+            now=now,
+            position=copies.transcript_position(config, state, "codex", sid),
+        )
+
+    def write_base(self, path: Path, sid: str, *, large: bool = False) -> str:
+        header = self.record(80, "session_meta", id=sid, cwd="/stats", source="cli")
+        padding = self.record(85, "turn_context", note="x" * (2 << 20)) if large else ""
+        text = header + padding + self.message(90, FIRST)
+        path.write_text(text, encoding="utf-8")
+        return text
+
+    def append(self, path: Path, text: str) -> None:
+        with path.open("a", encoding="utf-8") as output:
+            output.write(text)
+
+    def assert_copied_title(self, config: Any, state: Any, row: dict[str, Any]) -> None:
+        copies.attach(config, state, [row])
+        self.assertTrue(runtime_reading.prompt_copied(row, "title"))
+        self.assertEqual(
+            "refused",
+            annotation_store.adopt(
+                config,
+                state,
+                row,
+                source="latest-prompt",
+                expected_text=row["title"],
+                expected_at=row["prompt_at"],
+                now=201,
+            ),
+        )
+
+    def test_a_copy_skips_the_record_the_writer_had_already_started(self) -> None:
+        for partial_user in (False, True):
+            with (
+                self.subTest(partial_user=partial_user),
+                self.rollout() as (config, state, sid, path),
+            ):
+                self.write_base(path, sid, large=True)
+                line = (
+                    self.message(150, STORED)
+                    if partial_user
+                    else self.record(150, "event_msg", type="task_started", turn_id="next")
+                )
+                split = len(line) // 2
+                self.append(path, line[:split])
+                self.assertEqual("stored", self.copy_words(config, state, sid))
+                self.append(path, line[split:])
+                if partial_user:
+                    self.assertEqual((), copies.matched(config, state, "codex", sid))
+                self.append(path, self.message(170, STORED))
+                row = self.collect_row(config, state, path)
+                self.assert_copied_title(config, state, row)
+                self.assertEqual([170], [match["at"] for match in row["copied_prompts"]])
+
+    def test_an_append_during_the_copy_boundary_read_keeps_the_copy(self) -> None:
+        with self.rollout() as (config, state, sid, path):
+            self.write_base(path, sid, large=True)
+            prefixes = copies._codex_prefixes
+
+            def append_while_reading(*args: Any, **kwargs: Any) -> Any:
+                for index, prefix in enumerate(prefixes(*args, **kwargs)):
+                    if index == 0:
+                        self.append(path, self.record(159, "turn_context", note="streaming"))
+                    yield prefix
+
+            with mock.patch.object(copies, "_codex_prefixes", append_while_reading):
+                self.assertEqual("stored", self.copy_words(config, state, sid))
+            self.append(path, self.message(170, STORED))
+            self.assert_copied_title(config, state, self.collect_row(config, state, path))
+
+    def test_an_append_during_recognition_keeps_the_collected_correction(self) -> None:
+        with self.rollout() as (config, state, sid, path):
+            self.write_base(path, sid, large=True)
+            self.assertEqual("stored", self.copy_words(config, state, sid))
+            self.append(path, self.message(170, STORED))
+            prefixes = copies._codex_prefixes
+
+            def append_while_reading(*args: Any, **kwargs: Any) -> Any:
+                for index, prefix in enumerate(prefixes(*args, **kwargs)):
+                    if index == 0:
+                        self.append(path, self.record(179, "turn_context", note="streaming"))
+                    yield prefix
+
+            with mock.patch.object(copies, "_codex_prefixes", append_while_reading):
+                row = self.collect_row(config, state, path)
+                self.assert_copied_title(config, state, row)
+
+    def test_a_second_copy_replaces_the_waiting_boundary_after_a_rewrite(self) -> None:
+        with self.rollout() as (config, state, sid, path):
+            base = self.write_base(path, sid, large=True)
+            self.assertEqual("stored", self.copy_words(config, state, sid))
+            self.assertEqual("unchanged", self.copy_words(config, state, sid, 161))
+            path.write_text(
+                base.replace(FIRST, "Fix the documentation for the queue."), encoding="utf-8"
+            )
+            self.assertEqual("stored", self.copy_words(config, state, sid, 165))
+            self.assertEqual("unchanged", self.copy_words(config, state, sid, 166))
+            self.append(path, self.message(170, STORED))
+            row = self.collect_row(config, state, path)
+            self.assert_copied_title(config, state, row)
+            self.assertEqual(1, len(row["copied_prompts"]))
+
+    def test_a_collected_correction_keeps_its_title_provenance_during_attachment(self) -> None:
+        for change in ("append", "new rollout", "rename"):
+            with self.subTest(change=change), self.rollout() as (config, state, sid, path):
+                base = self.write_base(path, sid, large=True)
+                self.assertEqual("stored", self.copy_words(config, state, sid))
+                self.append(path, self.message(170, STORED) + self.completed(170.05, STORED))
+                row = self.collect_row(config, state, path)
+
+                def rows(change: str = change, base: str = base, row: dict[str, Any] = row) -> Any:
+                    yield {"harness": "codex", "sid": "another-row"}
+                    if change == "append":
+                        self.append(path, self.message(180, FIRST))
+                    elif change == "new rollout":
+                        newer = path.with_name(f"rollout-new-{sid}.jsonl")
+                        newer.write_text(base + self.message(181, FIRST), encoding="utf-8")
+                        os.utime(newer, (201, 201))
+                    else:
+                        path.rename(path.with_name(f"rollout-moved-{sid}.jsonl"))
+                    yield row
+
+                copies.attach(config, state, rows())
+                self.assertEqual(170.05, row["prompt_at"])
+                self.assertEqual(
+                    ("", None), annotation_store.prompt_candidate(row, "latest-prompt")
+                )
+                self.assertIsNone(annotation_store.direction_floor(None, row))
+
+    def test_an_identical_second_response_is_the_readers_own_prompt(self) -> None:
+        with self.rollout() as (config, state, sid, path):
+            self.write_base(path, sid, large=True)
+            self.assertEqual("stored", self.copy_words(config, state, sid))
+            paste = self.message(170, STORED)
+            self.append(path, paste)
+            self.assert_copied_title(config, state, self.collect_row(config, state, path))
+            self.append(path, paste)
+            row = self.collect_row(config, state, path)
+            copies.attach(config, state, [row])
+            self.assertFalse(runtime_reading.prompt_copied(row, "title"))
+            self.assertEqual(
+                (row["title"], 170), annotation_store.prompt_candidate(row, "latest-prompt")
+            )
+
+    def test_a_reserialized_response_keeps_its_provenance_until_the_words_change(self) -> None:
+        with self.rollout() as (config, state, sid, path):
+            base = self.write_base(path, sid, large=True)
+            words = "Back to my goal: Keep the queue running. Please resume verification."
+            position = copies.transcript_position(config, state, "codex", sid)
+            self.assertEqual(
+                "stored", copies.register(config, "codex", sid, words, now=160, position=position)
+            )
+            paste = self.message(170, words)
+            self.append(path, paste + self.completed(170.05, words))
+            self.assert_copied_title(config, state, self.collect_row(config, state, path))
+            compact = (
+                "\n".join(
+                    json.dumps(json.loads(line), separators=(",", ":"), sort_keys=True)
+                    for line in path.read_text(encoding="utf-8").splitlines()
+                )
+                + "\n"
+            )
+            path.write_text(compact, encoding="utf-8")
+            self.assert_copied_title(config, state, self.collect_row(config, state, path))
+            path.write_text(
+                base
+                + self.message(
+                    170, "Back to my goal: Keep the queue running. Stop the verification."
+                ),
+                encoding="utf-8",
+            )
+            row = self.collect_row(config, state, path)
+            copies.attach(config, state, [row])
+            self.assertFalse(runtime_reading.prompt_copied(row, "title"))
+            context = project_context.collect(
+                config, state, [row], "stats", now=200, focus=("codex", sid)
+            )
+            (fact,) = (
+                fact
+                for fact in copies.mark(context, [row])["semantic"]["facts"]
+                if fact["type"] == "user_message" and fact["at"] == 170
+            )
+            self.assertEqual(runtime_reading.AUTHOR_PERSON, runtime_reading.author_of(fact))
+
+    def test_a_legacy_companion_cannot_offer_the_correction_as_a_goal(self) -> None:
+        with self.rollout() as (config, state, sid, path):
+            self.write_base(path, sid, large=True)
+            self.assertEqual("stored", self.copy_words(config, state, sid))
+            legacy = self.record(170.05, "event_msg", type="user_message", message=STORED)
+            self.append(path, self.message(170, STORED) + legacy)
+            row = self.collect_row(config, state, path)
+            self.assertEqual(170.05, row["prompt_at"])
+            self.assert_copied_title(config, state, row)
+            self.assertIsNone(annotation_store.direction_floor(None, row))
+
+    def test_a_published_board_keeps_private_proof_for_the_project_reader(self) -> None:
+        with self.rollout() as (config, state, sid, path):
+            self.write_base(path, sid, large=True)
+            self.assertEqual("stored", self.copy_words(config, state, sid))
+            self.append(path, self.message(170, STORED))
+            os.utime(path, (200, 200))
+            app = aggregate.Application(
+                config,
+                state,
+                tuple(spec for spec in aggregate.default_harnesses() if spec.key == "codex"),
+                clock=lambda: 200,
+                native_notifier=lambda _: "",
+                popup_notifier=lambda _title, _body: None,
+                diagnostic_sink=lambda _: None,
+            )
+            _, body = app.collect_json(show_all=False)
+            self.assertNotIn(b"record_digest", body)
+            self.assertNotIn(b"prefix_digest", body)
+            row = http_api._published_row_of(app, "codex", sid)
+            assert row is not None
+            context = project_context.collect(
+                config, state, [row], "stats", now=200, focus=("codex", sid)
+            )
+            (fact,) = (
+                fact
+                for fact in copies.mark(context, [row])["semantic"]["facts"]
+                if fact["type"] == "user_message" and fact["at"] == 170
+            )
+            self.assertEqual(runtime_reading.AUTHOR_DERIVED, runtime_reading.author_of(fact))
+
+    def test_a_continuation_does_not_present_the_correction_as_an_earlier_instruction(self) -> None:
+        with self.rollout() as (config, state, sid, path):
+            self.write_base(path, sid)
+            self.assertEqual("stored", self.copy_words(config, state, sid))
+            self.append(
+                path,
+                self.message(170, STORED)
+                + self.completed(170.05, STORED)
+                + self.message(190, "continue")
+                + self.completed(190.05, "continue"),
+            )
+            row = self.collect_row(config, state, path)
+            copies.attach(config, state, [row])
+            self.assertEqual("continue", row["title"])
+            self.assertTrue(runtime_reading.prompt_copied(row, "instruction"))
+
+    def test_the_readers_opening_prompt_can_share_the_corrections_clock(self) -> None:
+        with self.rollout() as (config, state, sid, path):
+            header = self.record(80, "session_meta", id=sid, cwd="/stats", source="cli")
+            padding = self.record(170, "turn_context", note="x" * (2 << 20))
+            path.write_text(header + self.message(170, FIRST) + padding, encoding="utf-8")
+            self.assertEqual("stored", self.copy_words(config, state, sid))
+            self.append(path, self.message(170, STORED))
+            row = self.collect_row(config, state, path)
+            self.assert_copied_title(config, state, row)
+            self.assertEqual((FIRST, 170), annotation_store.prompt_candidate(row, "first-prompt"))
+            self.assertEqual(
+                "stored",
+                annotation_store.adopt(
+                    config,
+                    state,
+                    row,
+                    source="first-prompt",
+                    expected_text=FIRST,
+                    expected_at=170,
+                    now=202,
+                ),
+            )
+
+    def test_an_unchanged_waiting_copy_does_not_read_the_prefix_again(self) -> None:
+        with self.rollout() as (config, state, sid, path):
+            self.write_base(path, sid, large=True)
+            self.assertEqual("stored", self.copy_words(config, state, sid))
+            os.utime(path, (200, 200))
+            row = self.board_row(config, state)
+            copies.attach(config, state, [row])
+            prefixes = copies._codex_prefixes
+            reads = []
+
+            def measure(source: Any, *args: Any, **kwargs: Any) -> Any:
+                try:
+                    yield from prefixes(source, *args, **kwargs)
+                finally:
+                    reads.append(source.tell())
+
+            with mock.patch.object(copies, "_codex_prefixes", measure):
+                row = self.board_row(config, state)
+                copies.attach(config, state, [row])
+            self.assertEqual(0, sum(reads))
+
     def test_recognised_latest_prompt_is_never_a_goal_or_direction_floor(self) -> None:
         for delivery, last_at in (
             ("completion", 170.05),
@@ -595,7 +899,7 @@ class CodexDeliveryTest(unittest.TestCase):
                 os.utime(path, (200, 200))
 
                 def row_after_attach() -> dict[str, Any]:
-                    (row,) = codex.collect(config, state, 200, 1, False)
+                    row = self.board_row(config, state)
                     copies.attach(config, state, [row])
                     return row
 
@@ -643,7 +947,7 @@ class CodexDeliveryTest(unittest.TestCase):
                         config, direction_scan_max_bytes=4096, tail_bytes=4096
                     )
                     reopened = build_runtime_state(narrow, started=200)
-                    (persisted,) = codex.collect(narrow, reopened, 200, 1, False)
+                    persisted = self.board_row(narrow, reopened)
                     copies.attach(narrow, reopened, [persisted])
                     self.assertTrue(runtime_reading.prompt_copied(persisted, "title"))
 
@@ -713,18 +1017,21 @@ class CodexDeliveryTest(unittest.TestCase):
                     {
                         "harness": "codex",
                         "sid": sid,
-                        "title": transcripts.prompt_title(config, STORED),
-                        "prompt_at": 170 + index,
+                        "active": True,
                     }
                 )
+            copies.collect_codex_prompts(config, state, rows)
             copies.attach(config, state, rows)
             expected = [row["copied_prompts"] for row in rows]
             self.assertEqual([170, 171, 172], [found[0]["at"] for found in expected])
-            self.assertTrue(all(found[0]["quoted_as"] == ["title"] for found in expected))
+            self.assertTrue(
+                all(found[0]["quoted_as"] == ["title", "first_prompt"] for found in expected)
+            )
             self.assertFalse(any(entry.copies for entry in copies.load(config).values()))
             with mock.patch.object(
                 transcripts, "codex_meta", wraps=transcripts.codex_meta
             ) as lookup:
+                copies.collect_codex_prompts(config, state, rows)
                 copies.attach(config, state, rows)
             self.assertEqual(expected, [row["copied_prompts"] for row in rows])
             self.assertLessEqual(lookup.call_count, 6)
@@ -828,6 +1135,7 @@ class CodexDeliveryTest(unittest.TestCase):
         case["context"]["semantic"]["facts"][1] = paste
         self.assertEqual("cant-tell", view(case)["lines"][0]["state"])
         self.assertEqual(copies.OUTCOME_STORED, registered)
+        copies.collect_codex_prompts(config, state, [row])
         copies.attach(config, state, [row])
         self.assertEqual([paste["fact_id"]], [item["fact_id"] for item in row["copied_prompts"]])
         case["context"] = copies.mark(case["context"], [row])
