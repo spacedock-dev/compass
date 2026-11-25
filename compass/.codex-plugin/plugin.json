@@ -1,6 +1,6 @@
 {
   "name": "compass",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "See which coding agents are working, which sessions are waiting on you, and how their work lines up with your goals. A local dashboard for Claude Code, Codex, Pi, Gemini, Antigravity, Copilot, OpenCode, Cursor, Goose, and Droid.",
   "author": {
     "name": "DataRecce",
