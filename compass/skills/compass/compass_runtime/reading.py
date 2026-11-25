@@ -8253,7 +8253,7 @@ class ClaudeReadingModel:
 
 
 def prompt_copied(row: Mapping[str, Any], field: str) -> bool:
-    """Whether the row's prompt field quotes a copied correction.
+    """Whether the row's `field` ("instruction" or "first_prompt") quotes a copied correction.
 
     Adoption, the board's assignment and every other surface that presents that field as the
     reader's words read this one answer (DRC-4678); `nextPromptCopied` was the same rule.

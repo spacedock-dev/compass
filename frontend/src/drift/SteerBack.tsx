@@ -94,6 +94,8 @@ function CorrectionBox({
   const { key, identity } = model;
   const headless = model.session['headless'];
   const showDelivery = model.harness === 'codex' && typeof headless === 'boolean';
+  /* The owner asked for a usable command above the technical disclosure. First-layer copy checks
+     still cover the instructions and treat only the recorded ID as source text. */
   const resumeId = model.session['resume_id'];
   const draft = correctionDraft(held);
   /* What the box last drew, for a recomposition to freeze before the record can renumber its parts. */
