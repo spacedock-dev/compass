@@ -272,10 +272,7 @@ def _person_history(config: Any, cut: str, sid: str, now: float) -> dict[str, An
     return {"events": semantic_history._redact_history(semantic_history._merge([], incoming))}
 
 
-def _focused_facts(
-    config: Any, cut: str, child_cuts: tuple[str, ...], sid: str, now: float
-) -> tuple[list[dict[str, Any]], Any]:
-    from compass_runtime import io as runtime_io
+def _check_tally(config: Any, cut: str, child_cuts: tuple[str, ...]) -> Any:
     from compass_runtime import project_context as context
 
     tally = context._codex_tally(config, cut, child_paths=child_cuts)
@@ -288,6 +285,16 @@ def _focused_facts(
         or tally.scan.get("unread_calls")
     ):
         raise context.FrozenCheckCutoffUnreachableError("codex checks incomplete")
+    return tally
+
+
+def _focused_facts(
+    config: Any, cut: str, child_cuts: tuple[str, ...], sid: str, now: float
+) -> tuple[list[dict[str, Any]], Any]:
+    from compass_runtime import io as runtime_io
+    from compass_runtime import project_context as context
+
+    tally = _check_tally(config, cut, child_cuts)
     people = _person_events(config, runtime_io.read_tail(config, cut), sid)
     limits = marker.codex_analyze_limits(config)
     checks = tally.entries(sid, cap=limits.analyze_listed_checks)
@@ -304,6 +311,46 @@ def _focused_facts(
         now=now,
     )
     return semantic["facts"], context._press(tally)
+
+
+def _redact_intent(config: Any, intent: dict[str, Any]) -> dict[str, Any]:
+    from compass_runtime import records
+
+    def redact(value: Any, limit: int) -> str:
+        text = str(value or "")
+        # A cut can turn a documented example into a credential-shaped tail.
+        # Check the bounded text again before it becomes the packet's revision.
+        for _ in range(3):
+            screened = records.safe_text(marker._screen_text(text), limit)
+            if screened == text:
+                return screened
+            text = screened
+        raise marker.FreezeError("codex-screened-intent-unstable")
+
+    def redact_line(line: Any) -> Any:
+        if isinstance(line, dict) and isinstance(line.get("text"), str):
+            return {**line, "text": redact(line["text"], config.annotation_line_cap_chars)}
+        if isinstance(line, str):
+            return redact(line, config.annotation_line_cap_chars)
+        return line
+
+    return {
+        **intent,
+        "goal": redact(intent.get("goal"), config.annotation_goal_cap_chars),
+        "lines": [redact_line(line) for line in intent["lines"]],
+    }
+
+
+def _capture_screened_production(
+    config: Any, case: dict[str, Any], saved_intent: dict[str, Any], transcript: str
+) -> dict[str, Any]:
+    production = marker._production_capture(config, case, transcript)
+    if case["origin"] == "recorded" and saved_intent != case["intent"]:
+        # The screened revision cannot serve as its own Analyze oracle.
+        saved = marker._production_capture(config, {**case, "intent": saved_intent}, transcript)
+        if saved["prompt_digest"] != production["prompt_digest"]:
+            raise marker.FreezeError("codex-screened-production-prompt-differs")
+    return production
 
 
 def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
@@ -323,16 +370,19 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
     sid = str(entry.get("sid") or "")
     provenance = _provenance(entry)
     root, path, children = _selection(config, entry)
-    intent = entry.get("intent")
+    saved_intent = entry.get("intent")
     if (
-        not isinstance(intent, dict)
-        or not marker._epoch(intent.get("at"))
-        or intent["at"] > captured
-        or type(intent.get("n")) is not int
-        or intent["n"] < 1
-        or not marker.case_lines({"intent": intent})
+        not isinstance(saved_intent, dict)
+        or not marker._epoch(saved_intent.get("at"))
+        or saved_intent["at"] > captured
+        or type(saved_intent.get("n")) is not int
+        or saved_intent["n"] < 1
+        or not marker.case_lines({"intent": saved_intent})
     ):
         raise marker.FreezeError("codex-saved-intent-required")
+    intent = _redact_intent(config, saved_intent)
+    if not marker.case_lines({"intent": intent}):
+        raise marker.FreezeError("codex-screened-intent-empty")
     sources: dict[str, Any] = {
         "v": 1,
         "root": str(root),
@@ -420,7 +470,7 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
             "read_incomplete": sorted(map(list, press.read_incomplete)),
         },
     }
-    case["production_reading"] = marker._production_capture(config, case, str(path))
+    case["production_reading"] = _capture_screened_production(config, case, saved_intent, str(path))
     return case
 
 
@@ -442,7 +492,7 @@ def source_entry(case: dict[str, Any], transcript: str) -> dict[str, Any]:
 
 
 @contextlib.contextmanager
-def historical_source(config: Any, case: dict[str, Any], transcript: str) -> Any:
+def _historical_cuts(config: Any, case: dict[str, Any], transcript: str) -> Any:
     from compass_runtime import project_context as context
 
     entry = source_entry(case, transcript)
@@ -461,7 +511,27 @@ def historical_source(config: Any, case: dict[str, Any], transcript: str) -> Any
         config, str(path), until=captured, child_paths=[str(p) for p in children]
     ) as (cut, cuts):
         _verify_cuts((cut, *cuts), sources)
-        yield cut, sources["parent"]["sha256"]
+        yield cut, cuts
+
+
+@contextlib.contextmanager
+def historical_source(config: Any, case: dict[str, Any], transcript: str) -> Any:
+    with _historical_cuts(config, case, transcript) as (cut, _cuts):
+        yield cut, case["sources"]["parent"]["sha256"]
+
+
+def masked_check_values(
+    config: Any, case: dict[str, Any], transcript: str
+) -> tuple[frozenset[str], bool]:
+    """Recover press scrub inputs in memory so the frozen packet holds no raw values."""
+    from compass_runtime import project_context as context
+
+    try:
+        with _historical_cuts(config, case, transcript) as (cut, cuts):
+            tally = _check_tally(config, cut, cuts)
+            return frozenset(tally.masked_values), bool(tally.masked_values_partial)
+    except (OSError, context.FrozenCheckCutoffUnreachableError) as error:
+        raise marker.FreezeError("codex-check-scrub-unconfirmed") from error
 
 
 def content_refusal(config: Any, case: dict[str, Any], transcript: str) -> list[str]:

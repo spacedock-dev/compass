@@ -145,16 +145,12 @@ producer are owner-gated spend and are not part of this check.
 ## Masked values, 2026-10-28
 
 The drift replay passes the values a shell call masked to the producer, as the runtime does (see
-[the drift replay record](../drift-replay/README.md#masked-values-2026-10-28)). The abstention
-tools (`mark_abstention.py`, `score_abstention.py`) and `levels_cases.py` do not.
-`mark_abstention.py` and `score_abstention.py` read frozen cases that carry each check's tail,
-later-command pairs and incomplete-read pairs but no masked values. `levels_cases.py` sends no
-tails and freezes only the later-command and incomplete-read pairs. None of them freezes masked
-values. Freezing them would write credential-shaped values into case files and change the
-case packet that the marks digest and the inputs digest bind, so a sealed input would move. The
-effect is limited to an explanation: a masked value that a stored explanation quotes is not
-scrubbed in these studies' local results, while the runtime would scrub it. The prompt, which
-never carries those values, is unchanged, so the figures these tools report do not depend on it.
+[the drift replay record](../drift-replay/README.md#masked-values-2026-10-28)). The prospective
+Codex scorer recovers them from the sealed source cuts for the production explanation scrub,
+as described in [the security policy](../../SECURITY.md#prospective-codex-analysis-qualification-2026-11-09).
+The values stay out of frozen packets. Historical abstention packets and `levels_cases.py`
+carry no such values into the scrub, so a stored explanation from those studies can still
+quote a word masked in a check. The prompt never carries the set of masked values.
 
 ## Historical replay, case format 4
 
@@ -1300,6 +1296,8 @@ closed tokens and no source text, paths or tracebacks.
 
 The packet seals each parent/child prefix and capture boundary, the saved Intent, checks,
 person messages, lifecycle, parser, selected source identities and actual production prompt digest.
+Freeze screens and bounds the intent before sealing it. Recorded cases are refused when screening
+changes the request Analyze builds from the saved revision.
 Freeze applies the configured Analyze limits to the check listing and focused timeline.
 It also uses Analyze's bounded semantic history merge to recover eligible person instructions
 from the sealed parent when checks fill the timeline. This history is built in memory for the
@@ -1402,11 +1400,13 @@ study needs a new prospective decision, with the failed record retained.
 3. (c) Google evidence-sharing approval. Present the exact redacted screens locally. Before
    each send, the owner gives one approval covering exactly the listed payload digests,
    recipients, model/effort, purpose and call ceiling: the blind-marking set, then each review
-   batch. `mark_abstention.prepare_google_send` prepares that digest inventory locally;
+   batch. Run `mark_abstention.redact_google_screen` on the UTF-8 review text before showing the
+   resulting bytes to the owner. `mark_abstention.prepare_google_send` verifies those bytes
+   and inventories the digests from the same in-memory payload snapshot.
    `approve_google_send` seals the owner-approved inventory in a private one-use artifact. No
    Google sender exists here. Any future sender must call `consume_google_send` immediately
-   before transmitting the same in-memory bytes. Changed payloads or send bindings, a copied
-   artifact, or a consumed send refuse. A consumed send is never retried automatically. Google
+   before sending and transmit only the immutable bytes it returns. Changed payloads or send
+   bindings, a copied artifact, or a consumed send refuse. A consumed send is never retried automatically. Google
    receives only the approved intent, bounded evidence/screens and marking questions; later reviews may include approved answers and grades. Two independent
    blind marks, separate kind review and any arbitration precede producer output. Session ids,
    account identifiers, raw rollouts and ledger files stay local. Commands and excerpts can

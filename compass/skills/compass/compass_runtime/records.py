@@ -2227,7 +2227,7 @@ def _control_secret_matches(
     return _redaction_spans("".join(parts), source_slice=source_slice)
 
 
-def mask_prose(text: str) -> str:
+def mask_prose(text: str, *, preserve_layout_if_unmasked: bool = False) -> str:
     """A person's message with every value `mask_words` names masked, as one line.
 
     For a later direction's whole text (DRC-4682), which reaches further than
@@ -2238,6 +2238,9 @@ def mask_prose(text: str) -> str:
     spaces; and a credential shape wrapped by a line break is masked on both
     sides of the break, because joining the lines is what would publish its
     tail. Over-masking is the accepted direction, as for `_MASK_FLAGS`.
+
+    A caller that shares a separate field renderer can preserve the original
+    spelling if the prose scan found no mask to apply and the text stays nonempty.
     """
 
     # Invisible characters first: a zero-width space after a flag hid it from
@@ -2321,7 +2324,10 @@ def mask_prose(text: str) -> str:
                 )
             )
         )
-    return " ".join(_write_marked(context, found).split())
+    rendered = " ".join(_write_marked(context, found).split())
+    if preserve_layout_if_unmasked and rendered and rendered == " ".join(context.split()):
+        return original
+    return rendered
 
 
 def _prose_userinfo_matches(context: str) -> list[_SecretSpan]:

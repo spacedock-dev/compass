@@ -108,6 +108,51 @@ _SKILL = os.path.join(
 )
 
 
+def _screen_text(text: str) -> str:
+    _reading()
+    from compass_runtime import records  # noqa: PLC0415 - see `_reading`
+
+    # A mask can expose another match in a wrapped header. Settle the bytes here
+    # so the approval check can verify them without rewriting them.
+    for _ in range(3):
+        shaped = records.redact_secrets(text)
+        # Analyze keeps ordinary typography that the prose scan removes.
+        screened = records.mask_prose(shaped, preserve_layout_if_unmasked=True)
+        # Raw prose and the field renderer can discover masks the shape pass
+        # misses. Keep the whole field masked if the views cannot agree.
+        if shaped != text:
+            raw_prose = records.mask_prose(text, preserve_layout_if_unmasked=True)
+            if raw_prose not in (text, screened) and records.mask_prose(
+                records.redact_secrets(raw_prose)
+            ) != records.mask_prose(shaped):
+                return records.SECRET_MARKER
+        limit = len(text) * 16
+        safe = records.safe_text(text, limit)
+        if safe != shaped:
+            safe_prose = records.mask_prose(safe)
+            if safe.split() != shaped.split() or safe_prose != records.mask_prose(shaped):
+                if safe_prose != records.mask_prose(
+                    records.safe_text(screened, len(screened) * 16)
+                ):
+                    return records.SECRET_MARKER
+                screened = safe_prose
+        if text.endswith("\n") and not screened.endswith("\n"):
+            screened += "\n"
+        if screened == text:
+            return text
+        text = screened
+    return records.SECRET_MARKER
+
+
+def redact_google_screen(payload: bytes) -> bytes:
+    """Redact UTF-8 review text before showing the bytes to the owner."""
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise abstention_ledger.LedgerError("the Google screen must be UTF-8 text") from error
+    return _screen_text(text).encode("utf-8")
+
+
 def prepare_google_send(
     payloads: Sequence[bytes],
     *,
@@ -118,9 +163,31 @@ def prepare_google_send(
     call_ceiling: int,
 ) -> dict[str, Any]:
     """Inventory one blind-marking set or review send locally; this grants no permission."""
+    _, inventory = _google_send_inventory(
+        payloads,
+        purpose=purpose,
+        recipients=recipients,
+        model=model,
+        effort=effort,
+        call_ceiling=call_ceiling,
+    )
+    return inventory
+
+
+def _google_send_inventory(
+    payloads: Sequence[bytes],
+    *,
+    purpose: str,
+    recipients: list[str],
+    model: str,
+    effort: str,
+    call_ceiling: int,
+) -> tuple[tuple[bytes, ...], dict[str, Any]]:
+    # A caller's sequence can yield different bytes on its next pass.
+    snapshot = tuple(payloads)
     if (
-        not payloads
-        or any(not isinstance(p, bytes) or not p for p in payloads)
+        not snapshot
+        or any(not isinstance(p, bytes) or bytes.__len__(p) == 0 for p in snapshot)
         or purpose not in ("blind-marking", "review-batch-1", "review-batch-2", "review-batch-3")
         or not recipients
         or any(not isinstance(r, str) or not r.strip() for r in recipients)
@@ -130,7 +197,11 @@ def prepare_google_send(
         or call_ceiling < 1
     ):
         raise abstention_ledger.LedgerError("the Google send inventory is incomplete")
-    return {
+    # A bytes subclass can override decode or equality but its buffer is the data hashed.
+    snapshot = tuple(p if type(p) is bytes else memoryview(p).tobytes() for p in snapshot)
+    if any(redact_google_screen(payload) != payload for payload in snapshot):
+        raise abstention_ledger.LedgerError("redact the Google screens before approval")
+    return snapshot, {
         "v": 1,
         "provider": "Google",
         "purpose": purpose,
@@ -138,7 +209,7 @@ def prepare_google_send(
         "model": model,
         "effort": effort,
         "call_ceiling": call_ceiling,
-        "payload_digests": [hashlib.sha256(p).hexdigest() for p in payloads],
+        "payload_digests": [hashlib.sha256(p).hexdigest() for p in snapshot],
     }
 
 
@@ -171,13 +242,13 @@ def consume_google_send(
     model: str,
     effort: str,
     call_ceiling: int,
-) -> None:
-    """A sender MUST consume this check immediately before sending these exact bytes.
+) -> tuple[bytes, ...]:
+    """Consume approval and return the exact screened bytes a future sender must use.
 
     No Google sender exists here. Any future sender must transmit these same
     in-memory bytes, retain this receipt, and never retry a consumed send.
     """
-    expected = prepare_google_send(
+    snapshot, expected = _google_send_inventory(
         payloads,
         purpose=purpose,
         recipients=recipients,
@@ -198,6 +269,7 @@ def consume_google_send(
         path.with_name(path.name + ".consumed"),
         {"approval_digest": abstention_ledger.digest(approved)},
     )
+    return snapshot
 
 
 def _reading() -> Any:
@@ -2651,18 +2723,23 @@ def _question(case: dict[str, Any]) -> str:
 def _show_intent_case(body: dict[str, Any], case: dict[str, Any], position: str) -> None:
     """A format 5 screen: the case's own intent, then the frozen record, checks included."""
     revision = case_revision(case)
-    print("\n" + "=" * 72)
-    print(f"  {position}   {case.get('harness')} - {case.get('title') or case.get('id')}")
-    print(f"  Recorded lifecycle: {_reading().end_kind(case.get('row_snapshot') or {})}")
-    print(f"  Captured at: {case.get('captured_at')}")
+    screen = [
+        "\n" + "=" * 72,
+        f"  {position}   {case.get('harness')} - {case.get('title') or case.get('id')}",
+        f"  Recorded lifecycle: {_reading().end_kind(case.get('row_snapshot') or {})}",
+        f"  Captured at: {case.get('captured_at')}",
+    ]
     if case.get("asked_for"):
-        print(f"  Opening request (review context): {_short(case.get('asked_for') or '', 260)}")
-    print(f"\n  GOAL: {revision['goal']}")
+        asked = _screen_text(str(case["asked_for"]))
+        screen.append(f"  Opening request (review context): {_short(asked, 260)}")
+    screen.append(f"\n  GOAL: {_screen_text(revision['goal'])}")
     for k, line in enumerate(revision["lines"], 1):
         text = line.get("text") if isinstance(line, dict) else line
         source = line.get("source") if isinstance(line, dict) else ""
-        print(f"  OUTCOME LINE {k}: {text}" + (f"   ({source})" if source else ""))
-    print("  FROZEN PRODUCER LEDGER (review excerpts are not model evidence)")
+        screen.append(
+            f"  OUTCOME LINE {k}: {_screen_text(str(text))}" + (f"   ({source})" if source else "")
+        )
+    screen.append("  FROZEN PRODUCER LEDGER (review excerpts are not model evidence)")
     ledger = case_ledger(body, case)
     for entry in ledger:
         flags = [
@@ -2675,21 +2752,24 @@ def _show_intent_case(body: dict[str, Any], case: dict[str, Any], position: str)
             if on
         ]
         more = f"  [{', '.join(flags)}]" if flags else ""
-        print(f"    {entry['id']} | {entry['type']} | {entry['source']} | {entry['summary']}{more}")
+        screen.append(
+            f"    {entry['id']} | {entry['type']} | {entry['source']} | {entry['summary']}{more}"
+        )
         if entry.get("tail"):
-            print(f"        output tail: {entry['tail']}")
+            screen.append(f"        output tail: {entry['tail']}")
         if "production_reading" in case and entry.get("agent_words"):
-            print(f"        agent excerpt: {entry['agent_words']}")
+            screen.append(f"        agent excerpt: {entry['agent_words']}")
     if "production_reading" in case:
         result = case["production_reading"].get("newest_final")
         if isinstance(result, dict):
-            print(f"  NEWEST FINAL SOURCE: {result.get('outcome')}")
-            print(
+            screen.append(f"  NEWEST FINAL SOURCE: {result.get('outcome')}")
+            screen.append(
                 f"    {result.get('fact_id')} | {result.get('at')} | "
                 f"word digest {result.get('words_digest')}"
             )
     if not any(_reading().demonstrates_work(entry) for entry in ledger):
-        print("    no check or written file in this record")
+        screen.append("    no check or written file in this record")
+    print(_screen_text("\n".join(screen) + "\n"), end="")
 
 
 def _show_mark_case(body: dict[str, Any], case: dict[str, Any], position: str) -> None:
@@ -2717,12 +2797,12 @@ def _mark_question(body: dict[str, Any], case: dict[str, Any], constraint: str) 
     if is_intent_packet(body):
         revision = case_revision(case)
         if constraint == "goal":
-            what = f"this goal: {revision['goal']}"
+            what = f"this goal: {_screen_text(revision['goal'])}"
         elif constraint == "claims":
             what = "the agent's claims against the recorded work"
         else:
             k = int(constraint.rsplit("_", 1)[1])
-            what = f"outcome line {k}: {case_lines(case)[k - 1]}"
+            what = f"outcome line {k}: {_screen_text(case_lines(case)[k - 1])}"
         return (
             f"\n  Against {what}\n"
             "  Should Compass answer from the frozen record, or say it cannot tell?\n"

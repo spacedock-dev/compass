@@ -85,6 +85,12 @@ class CodexQualificationSourceTest(unittest.TestCase):
         with self.assertRaisesRegex(marker.FreezeError, "codex-authored-identities-required"):
             sources.freeze_case(self.config, self.authored_spec(verified_by="author"))
 
+    def test_freeze_refuses_an_authored_outcome_that_screens_to_empty(self) -> None:
+        spec = self.authored_spec()
+        spec["intent"]["lines"] = ["\u00ad"]
+        with self.assertRaisesRegex(marker.FreezeError, "^codex-screened-intent-empty$"):
+            sources.freeze_case(self.config, spec)
+
     def test_a_person_must_supply_nonblank_string_source_paths(self) -> None:
         spec = self.authored_spec()
         with contextlib.chdir(spec["sessions_root"]):
@@ -267,6 +273,59 @@ class CodexQualificationSourceTest(unittest.TestCase):
             marker.normalized_production_prompt(actual).encode(),
         )
 
+    def test_recorded_freeze_matches_an_independently_saved_analyze_revision(self) -> None:
+        root = self.home / "codex/sessions"
+        path = rollout(root / "2026/11/07")
+        spec = entry(root, path)
+        goal = "Run the checks with MODE=debug."
+        saved = annotation_store._revision(
+            {
+                **spec["intent"],
+                "goal": goal,
+                "lines": [{"text": line, "source": "typed"} for line in spec["intent"]["lines"]],
+            },
+            self.config.annotation_line_cap_chars,
+            self.config.annotation_goal_cap_chars,
+        )
+        assert saved is not None
+        spec["intent"] = {**saved, "lines": list(saved["lines"])}
+        production = self.analyze_prompt({"harness": "codex", "sid": SID, **spec["row"]}, saved)
+        self.assertIn(goal, production)
+        with self.assertRaisesRegex(marker.FreezeError, "codex-screened-production-prompt-differs"):
+            sources.freeze_case(self.config, spec)
+
+    def test_recorded_typography_freezes_with_the_saved_analyze_prompt(self) -> None:
+        root = self.home / "codex/sessions"
+        path = rollout(root / "2026/11/07")
+        for goal in (
+            "Review the instal\u00adlation steps.",
+            "Cross-check Figure\u20602.",
+            "Explain the formula a\u2062b.",
+        ):
+            with self.subTest(goal=goal):
+                spec = entry(root, path)
+                saved = annotation_store._revision(
+                    {
+                        **spec["intent"],
+                        "goal": goal,
+                        "lines": [
+                            {"text": line, "source": "typed"} for line in spec["intent"]["lines"]
+                        ],
+                    },
+                    self.config.annotation_line_cap_chars,
+                    self.config.annotation_goal_cap_chars,
+                )
+                assert saved is not None
+                spec["intent"] = {**saved, "lines": list(saved["lines"])}
+                case, analyze, frozen = self.analyze_and_freeze(spec)
+                self.assertIn(goal, analyze)
+                self.assert_prompt_equal(analyze, frozen)
+                self.assertEqual(
+                    marker.production_prompt_digest(analyze),
+                    case["production_reading"]["prompt_digest"],
+                )
+                self.assertEqual([], sources.content_refusal(self.config, case, str(path)))
+
     def analyze_and_freeze(self, spec: dict[str, Any]) -> tuple[dict[str, Any], str, str]:
         frozen_prompts: list[str] = []
         build_prompt = marker._reading().build_prompt
@@ -278,8 +337,12 @@ class CodexQualificationSourceTest(unittest.TestCase):
 
         with mock.patch.object(marker._reading(), "build_prompt", capture_frozen_prompt):
             case = sources.freeze_case(self.config, spec)
-        row = {**case["row_snapshot"], "project": "synthetic", "acquisition": "event"}
-        revision = cast("annotation_store.Revision", marker.case_revision(case))
+        self.assertEqual(1, len(frozen_prompts))
+        revision = cast("annotation_store.Revision", marker.case_revision(spec))
+        return case, self.analyze_prompt(case["row_snapshot"], revision), frozen_prompts[0]
+
+    def analyze_prompt(self, snapshot: dict[str, Any], revision: annotation_store.Revision) -> str:
+        row = {**snapshot, "project": "synthetic", "acquisition": "event"}
         handler = object.__new__(http_api._RequestHandler)
         handler.server = mock.Mock(
             application=mock.Mock(
@@ -311,8 +374,7 @@ class CodexQualificationSourceTest(unittest.TestCase):
                 mock.Mock(),
             )
         self.assertEqual(1, sink.call_count, why)
-        self.assertEqual(1, len(frozen_prompts))
-        return case, sink.call_args.args[0], frozen_prompts[0]
+        return cast("str", sink.call_args.args[0])
 
 
 class FrozenCodexRuntimeTest(unittest.TestCase):
