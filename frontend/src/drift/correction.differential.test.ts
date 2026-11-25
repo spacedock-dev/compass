@@ -36,7 +36,7 @@ import { readingShape } from './shape';
 /* The correction's pure half, run next to the legacy page: the edit arithmetic that decides what an
    over-the-cap paste keeps, the text composed from the server's parts and the list's numbers, whether it is
    stale, and whether there is anything to steer from. */
-/* The one deliberate departure from what the retired page said: every number it drew, " (#n in Compass)" on
+/* The deliberate change to the correction text: every number the retired page drew, " (#n in Compass)" on
    the first and " (#n)" after, became " (entry #n in Compass's activity list)" (owner, 2026-10-14) and is now
    drawn as nothing (owner, 2026-10-20), because the agent the text is pasted into never saw that list. The
    recorded answer is compared through this projection, which removes the old numbers, so the rest of the
@@ -292,7 +292,10 @@ describe('the correction text, staleness and offer match the legacy page', () =>
         annotate,
         drafted,
       });
-      const found = firstDifference(canonical(offerA), canonical(offerB));
+      /* The recordings predate the Codex offer. Keep their inputs and call order and hold the new offer
+         to SteerBack.test.tsx and the Codex correction stories. */
+      const recordedEraOffer = session['harness'] === 'codex' ? null : offerB;
+      const found = firstDifference(canonical(offerA), canonical(recordedEraOffer));
       if (found) failures.push(`seed ${String(seed)} offer: ${found}`);
       note(
         `offer:${
@@ -307,7 +310,7 @@ describe('the correction text, staleness and offer match the legacy page', () =>
       const dirA = legacy.call('nextCockpitOfferedDirection', ann, entries, session, legacyShape);
       const dirB = offeredDirection(ann, entries, session as never, shape, intentDraft(input));
       if (dirA !== dirB) failures.push(`seed ${String(seed)} direction: ${String(dirA)} / ${dirB}`);
-      if (offerB) {
+      if (recordedEraOffer) {
         /* Two deviations (2026-10-20 and 2026-10-21, docs/design-frontend-migration.md#the-drift-card-analyze-and-steer-back):
            a departure's trigger names its first cited entry, as its result row does, and a claim alone draws
            no trigger line, so the recorded side is asked with the claim taken out of the offer. A failed
@@ -333,9 +336,9 @@ describe('the correction text, staleness and offer match the legacy page', () =>
             source.scan,
           ),
         );
-        if (offerB.departed) {
+        if (recordedEraOffer.departed) {
           const triggerB = steerTrigger({
-            offer: offerB,
+            offer: recordedEraOffer,
             shape,
             entries,
             numbers: labels(numbers),

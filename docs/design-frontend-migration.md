@@ -16,6 +16,12 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+Departure (2026-11-25, Codex Steer back): the retired page offered corrections for Claude Code
+only. `correction.differential.test.ts` compares Codex offers at that historical limit and keeps
+its recorded calls for the other correction behavior. The mounted Steer back test and the
+Chromium stories verify the Codex offer and delivery hints. See the
+[owner amendment](design-reading-a-session.md#amended-2026-11-25-owner-steer-back-and-paste-recognition-for-codex).
+
 Departure (2026-11-24, saved progress): the far-right Sessions cell shows the current saved departure pill,
 Out of date or Goal too vague to check. `frontend/test/sessionCanvasRowDeviation.ts` sets aside that cell's
 `data-next-drift-pill` or `data-next-row-absence` in the comparison. The Sessions canvas story checks the

@@ -170,6 +170,6 @@ export const StoredProgressWithoutALevel: Story = {
     await expect(within(progress).getByText(/^Compass found 1 departure/)).toBeVisible();
     await expect(progress.querySelector('[data-next-progress-absence]')).toBeNull();
     await expect(canvasElement.querySelector('[data-next-session-progress]')).toBeNull();
-    await expect(within(progress).queryByRole('button', { name: 'Steer back' })).toBeNull();
+    await expect(within(progress).getByRole('button', { name: 'Steer back' })).toBeVisible();
   },
 };

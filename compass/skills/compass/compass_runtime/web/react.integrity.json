@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2488315,
+    "bytes": 2489035,
     "file": "react.html",
-    "sha256": "c9e691c8c67ea3eda3df90da3921ffdff9484347e1e6f37687e2b2d61939acb0"
+    "sha256": "3292253ff39d245fb385db849691ec34edc3175ccedc88854c5915e3f5aa9635"
   },
   "format": 1,
   "frontend": "react",
@@ -619,7 +619,7 @@
       },
       {
         "file": "frontend/src/drift/SteerBack.tsx",
-        "sha256": "920016accdfee958d3531399564c5f18be1a1ec60713cc1c3a42575ebf4c3897"
+        "sha256": "f1c1244d63811aeee3e80b358de29fb4b9a366b002030271b51d3879aeed5576"
       },
       {
         "file": "frontend/src/drift/UnaskedPermission.tsx",
@@ -731,7 +731,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "678192061c5637b93ba0499259b1caabf99fa177cfe358de6ea1a4e51df82bbc"
+        "sha256": "4f6324286b9ff1bdfa8184fde1bbb135ab9ab2223361b3c303ed96666d8ce9d9"
       },
       {
         "file": "frontend/src/drift/shape.ts",

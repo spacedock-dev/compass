@@ -1760,9 +1760,10 @@ class DriftCommandTest(HomeCase):
                 json_type,
                 json.dumps(context).encode(),
             ),
+            "/api/correction": self.answers()["/api/correction"],
         }
 
-    def test_a_person_in_a_codex_session_reads_that_session_s_drift_with_no_level(self) -> None:
+    def test_a_person_in_a_codex_session_reads_drift_and_the_correction_ready_line(self) -> None:
         env = {"CODEX_THREAD_ID": "abc"}
         version = terminal_client.release_version()
         for tty in (False, True):
@@ -1776,7 +1777,13 @@ class DriftCommandTest(HomeCase):
                 self.assertIn("Progress check · codex:abc", out)
                 self.assertIn("Departures:", out)
                 self.assertNotIn("Level:", out)
-                self.assertNotIn("/api/correction", [r[1] for r in fake.requests])
+                self.assertIn("A correction is ready to copy on the session page.", out)
+                command = (
+                    "spacedock-compass --drift --session codex:abc" if tty else "$compass drift"
+                )
+                self.assertIn(f"`{command}`", out)
+                self.assertNotIn("Keep accepting tabs.", out)
+                self.assertIn(("POST", "/api/correction"), fake.requests)
 
     def test_a_person_in_codex_may_name_a_codex_session_with_the_flag(self) -> None:
         version = terminal_client.release_version()
@@ -1785,6 +1792,8 @@ class DriftCommandTest(HomeCase):
 
         self.assertEqual(0, code)
         self.assertIn("Progress check · codex:abc", out)
+        self.assertIn("Correction to copy:\nKeep accepting tabs.", out)
+        self.assertNotIn("Level:", out)
 
     def test_a_person_in_codex_is_not_read_as_a_session_the_marker_does_not_name(self) -> None:
         # Another action cannot identify a Codex caller: only drift resolves the marker.

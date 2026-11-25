@@ -405,6 +405,11 @@ The page bound is the measured 2,419,703 bytes. The fixture allowance stays at 2
 On 2026-11-24, the rebased Sessions review fixes packaged at 2,488,543 bytes on Node 26.12.1
 and pnpm 12.19.0, setting the page bound to that measurement.
 
+On 2026-11-25, Codex Steer back packaged at 2,489,035 bytes on Node 26.10.0 and pnpm 12.19.0.
+The delivery hints and their session-type check add 720 bytes to the 2,488,315-byte starting
+page. The page bound rises by 492 bytes to the measured size. The sample fixture bound stays
+at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

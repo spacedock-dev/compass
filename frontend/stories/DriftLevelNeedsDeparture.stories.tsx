@@ -747,7 +747,7 @@ export const Progress12CodexDeparture: Story = {
     await expectNoLevel(progress);
     await expect(progress.querySelector('[data-next-progress-absence]')).toBeNull();
     await expect(canvasElement.querySelector('[data-next-session-progress]')).toBeNull();
-    await expect(card.queryByRole('button', { name: 'Steer back' })).toBeNull();
+    await expect(card.getByRole('button', { name: 'Steer back' })).toBeVisible();
   },
 };
 

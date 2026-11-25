@@ -473,9 +473,9 @@ def _scan(
             fact = project_context._semantic_fact_from_event(event, "steer", steer, "")  # noqa: SLF001
             text = records.extract_text(_raw_content(record, harness), cap=_MESSAGE_READ_CAP)
             whole = len(text) < _MESSAGE_READ_CAP
-            # What was copied is the correction, and Claude Code wraps a paste in its own tags
-            # (DRC-4920), so the digest reads the words between them.
-            pasted = records.strip_paste_wrapper(text)
+            # Claude Code adds paste tags (DRC-4920). Codex records the text verbatim,
+            # so the same tags there would be part of the reader's text.
+            pasted = records.strip_paste_wrapper(text) if harness == "claude" else text
             cap = records.INSTRUCTION_CAP_CHARS
             # `claude_data.latest_instruction`'s line, and `transcripts.first_prompt`'s.
             line = records.instruction_line(
@@ -601,8 +601,8 @@ def _recognise(
     taken = {match["fact_id"] for match in held.matches}
     found: list[tuple[str, Match]] = []
     for copy in held.copies:
-        # Both measured Codex resumes kept the rollout and one session_meta, so the copy's
-        # byte boundary still applies. See docs/captures/codex/correction-delivery-0.172.0-macos.jsonl.
+        # Both measured Codex resumes kept the rollout and one session_meta, so the copy's byte
+        # boundary still applies. See docs/captures/codex/correction-delivery-0.172.0-macos.jsonl.
         if copy["ino"] != ino or copy["offset"] > size:
             continue
         for message in messages:

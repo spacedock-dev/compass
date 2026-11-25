@@ -410,6 +410,15 @@ class CodexDeliveryTest(unittest.TestCase):
             with self.subTest(delivery=delivery), tempfile.TemporaryDirectory() as tmp:
                 self.check_delivery(Path(tmp), delivery, source, text)
 
+    def test_codex_recognises_literal_paste_tags_in_a_correction_edited_before_copying(
+        self,
+    ) -> None:
+        text = (
+            'Back to my goal: Preserve the literal <pasted_content id="1">example</pasted_content>.'
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            self.check_delivery(Path(tmp), "TUI mid-turn", "cli", text)
+
     def check_delivery(self, root: Path, delivery: str, source: str, text: str) -> None:
         case = copy.deepcopy(BY_NAME["codex-later-direction-unsettled"])
         row = case["session"]
