@@ -5807,10 +5807,11 @@ code references and short values. That broader prose protection remains in place
 Authorization schemes include Basic, Digest, Token, AWS4-HMAC-SHA256, Negotiate and Bearer;
 an unknown scheme word followed by a credential-shaped value is covered too. Header names are
 case-insensitive. Header lines, quoted JSON and YAML values, curl `-H` and `--header` values,
-and assignments use the same rule. Shell escapes for spaces after the header colon and scheme
-stay visible, including repeated escaped spaces. Joined curl header flags and escaped spaces
-between Digest or AWS parameters are covered. Header-setting call arguments and tuples cover
-every scheme, including complete parameter lists.
+and assignments use the same rule. Header values can follow shell-escaped spaces after the colon
+and scheme, including repeated escapes. The word-level mask in model-bound prose can also cover
+an escape after the colon or closing punctuation attached to a value. Joined curl header flags
+and escaped spaces between Digest or AWS parameters are covered. Header-setting call arguments
+and tuples cover every scheme, including complete parameter lists.
 A credential-shaped token directly after the header name is masked without a scheme too.
 Percent-encoded headers such as `Authorization%3A%20Basic%20...` are covered, including
 percent-encoded base64 padding, `+` and `/` characters.
@@ -5830,13 +5831,15 @@ ends at whitespace or punctuation. A header name or scheme with no value is left
 "use basic auth", "Bearer tokens expire" and `grep -n 'Authorization:' server.log`.
 Instructions such as "authorization: required for all routes" and "set the Authorization:
 Basic header and retry", and placeholders such as `<base64>`, `{token}` and `...`, stay readable.
-`Bearer <token>` and `Bearer %3Ctoken%3E` stay visible in an authorization header, with either
-case allowed for the percent-escape hex digits.
-Curl `-u`, `--user` and `--proxy-user` keep the username and mask the password in published and
-model-bound prose. This covers joined options, clustered short flags, quoted passwords,
-an empty username, uppercase or mixed-case `curl` names and backslash-continued commands.
-For `-u` and `--user`, a username alone and the literal examples `admin:`, `user:password`
-and `USER:PASS` stay readable. Other colon-terminated logins are masked in full.
+The Bearer examples `<token>` and `%3Ctoken%3E` stay visible in authorization headers when the
+source contains the placeholder literally. The percent-escape hex digits can use either case.
+Direct `-u` and `--user` credentials on lowercase `curl` mask the entire login in published and
+model-bound text. `--proxy-user`, clustered short flags such as `-sSu`, and mixed-case curl
+commands also mask passwords. The mask covers joined options, quoted values, an empty username
+and backslash-continued commands. For `-u` and `--user`, a username alone and the literal examples
+`admin:`, `user:password` and `USER:PASS` stay readable. Other empty-password logins are masked
+in full. The word-level mask in model-bound prose can consume a quote or semicolon attached to
+a credential.
 `git push -u` and `docker run -u 1000:1000` stay readable.
 Other cues mask the value up to whitespace or punctuation, and a quoted value whole, spaces and
 all. The cue stays and the value becomes the marker. Cued masking was added when the agent's own messages
