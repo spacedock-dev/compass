@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import shutil
@@ -11,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -459,6 +461,76 @@ class PlatformSensitiveChangesRunTheMacosLegsTest(unittest.TestCase):
                     self.assertEqual("true", found[lane], lane)
 
 
+JOBS = tuple(ci_scope.EVERYTHING.jobs())
+# The legs that check another interpreter or OS rather than the change itself.
+PORTABILITY = {"runtime-floor", "platform-tests", "platform-tests-current", "frontend-macos"}
+MACOS = {"platform-tests", "frontend-macos"}
+
+
+def every_lane(mode: str, *, platform: bool = True) -> ci_scope.Scope:
+    return replace(ci_scope.EVERYTHING, mode=mode, platform=platform)
+
+
+class EachEventRunsItsModeTest(unittest.TestCase):
+    def on(self, scope: ci_scope.Scope) -> set[str]:
+        return {job for job, run in scope.jobs().items() if run}
+
+    def test_a_pull_request_runs_every_job_its_lanes_turn_on(self) -> None:
+        # Every lane but contract, which the whole frontend lane already covers.
+        found = self.on(every_lane(ci_scope.PULL_REQUEST))
+        self.assertEqual(set(JOBS) - {"frontend-contract", "frontend-docs"}, found)
+        self.assertEqual(found, self.on(ci_scope.EVERYTHING))
+        self.assertEqual(found - MACOS, self.on(every_lane(ci_scope.PULL_REQUEST, platform=False)))
+
+    def test_a_queue_entry_checks_integration_and_skips_every_portability_leg(self) -> None:
+        queued = self.on(every_lane(ci_scope.QUEUE, platform=False))
+        self.assertEqual(self.on(ci_scope.EVERYTHING) - PORTABILITY, queued)
+        # Even a platform answer that reached it would run no macOS leg.
+        self.assertEqual(queued, self.on(every_lane(ci_scope.QUEUE)))
+
+    def test_a_queue_entry_runs_the_floor_when_it_is_the_only_suite_run(self) -> None:
+        # A document a Python test reads turns on the suites and nothing else; `test` does not run.
+        docs = ci_scope.Scope(
+            python=False,
+            frontend=False,
+            contract=False,
+            reasons=(),
+            suites=True,
+            mode=ci_scope.QUEUE,
+        )
+        self.assertEqual({"runtime-floor"}, self.on(docs))
+        self.assertEqual(docs.outputs()["python_suites"], "true")
+
+    def test_a_push_to_main_runs_only_the_portability_legs_with_macos(self) -> None:
+        main = ci_scope.decide("push", "", "", ROOT)
+        self.assertEqual(ci_scope.MAIN, main.mode)
+        self.assertEqual(PORTABILITY, self.on(main))
+        self.assertEqual("true", main.outputs()["platform"])
+
+    def test_every_suite_run_the_gate_makes_is_reported_as_python_suites(self) -> None:
+        # validate.yml skips its own suite copy on `python_suites`, so in every mode the gate must
+        # really run a Python suite whenever that output is true, and never claim one it skips.
+        suites = {"test", "runtime-floor", "platform-tests", "platform-tests-current"}
+        for mode in (ci_scope.PULL_REQUEST, ci_scope.QUEUE, ci_scope.MAIN, ci_scope.FULL):
+            for python, frontend, extra in (
+                (True, False, False),
+                (False, True, False),
+                (False, False, True),
+                (False, False, False),
+            ):
+                found = ci_scope.Scope(
+                    python=python,
+                    frontend=frontend,
+                    contract=False,
+                    reasons=(),
+                    suites=extra,
+                    mode=mode,
+                )
+                with self.subTest(mode=mode, python=python, frontend=frontend, suites=extra):
+                    ran = bool(self.on(found) & suites)
+                    self.assertEqual(found.python_suites, ran)
+
+
 class RuffAndRenamesTest(unittest.TestCase):
     def test_python_in_a_data_directory_is_linted_and_typed(self) -> None:
         for path in ("tests/raw_sessions/helper.py", ".claude/skills/burndown/helper.py"):
@@ -521,8 +593,8 @@ class TheWorkflowRunAsksGitTest(unittest.TestCase):
             ci_scope.decide("pull_request", base, head, self.tmp).outputs(),
         )
         # Real SHAs, so only the event can be what turns every lane on.
+        self.assertIs(ci_scope.MAIN_RUN, ci_scope.decide("push", base, head, self.tmp))
         for event, b, h in (
-            ("push", base, head),
             ("schedule", base, head),
             ("workflow_dispatch", base, head),
             ("pull_request", "", head),
@@ -564,18 +636,22 @@ class TheWorkflowRunAsksGitTest(unittest.TestCase):
                 self.assertEqual(
                     ("docs/notes.md: prose", "frontend/a.ts: frontend"), decided.reasons
                 )
-        # A queue entry with no base branch, or no head, is as unknown as a pull request with none.
-        self.assertIs(ci_scope.EVERYTHING, ci_scope.decide("merge_group", first, second, self.tmp))
-        self.assertIs(
-            ci_scope.EVERYTHING, ci_scope.decide("merge_group", "", "", self.tmp, "refs/heads/main")
-        )
+        # A queue entry with no base branch, or no head, is as unknown as a pull request with none:
+        # every lane, still without macOS.
+        for unknown in (
+            ci_scope.decide("merge_group", first, second, self.tmp),
+            ci_scope.decide("merge_group", "", "", self.tmp, "refs/heads/main"),
+        ):
+            with self.subTest(reasons=unknown.reasons):
+                self.assertEqual(
+                    {**ci_scope.EVERYTHING.outputs(), "platform": "false"}, unknown.outputs()
+                )
+                self.assertEqual(ci_scope.QUEUE, unknown.mode)
 
-    def test_a_merge_queue_entry_decides_platform_from_its_paths_as_a_pull_request_does(
-        self,
-    ) -> None:
-        # Not every lane, as a push is: the push to main once the entry lands runs macOS anyway.
-        # The entry ahead touches platform-sensitive code, so the entry behind it, measured on
-        # both, runs the macOS legs too.
+    def test_a_merge_queue_entry_never_runs_macos_even_behind_platform_code(self) -> None:
+        # The entry ahead touches platform-sensitive code, which turns `platform` on for its pull
+        # request. In the queue it stays off: the pull request ran macOS on its own head, and the
+        # push to main runs it again on what lands.
         self.git("init", "-q", "-b", "main")
         write_builder(self.tmp)
         runtime = self.tmp / "compass/skills/compass/compass_runtime"
@@ -586,29 +662,28 @@ class TheWorkflowRunAsksGitTest(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "base")
         self.git("update-ref", "refs/remotes/origin/main", "HEAD")
-        (self.tmp / "docs/notes.md").write_text("more words\n", encoding="utf-8")
-        self.git("commit", "-qam", "prose alone (#1)")
-        prose = self.git("rev-parse", "HEAD")
+        base = self.git("rev-parse", "HEAD")
         (runtime / "io.py").write_text("X = 2\n", encoding="utf-8")
-        self.git("commit", "-qam", "platform code (#2)")
+        self.git("commit", "-qam", "platform code (#1)")
         platform = self.git("rev-parse", "HEAD")
-        (self.tmp / "docs/notes.md").write_text("even more words\n", encoding="utf-8")
-        self.git("commit", "-qam", "prose behind it (#3)")
+        (self.tmp / "docs/notes.md").write_text("more words\n", encoding="utf-8")
+        self.git("commit", "-qam", "prose behind it (#2)")
         behind = self.git("rev-parse", "HEAD")
         cwd = Path.cwd()
         os.chdir(self.tmp)
         self.addCleanup(os.chdir, cwd)
-        main = "refs/heads/main"
         self.assertEqual(
-            ALL_OFF,
-            ci_scope.decide(
-                "merge_group", self.git("rev-parse", "HEAD~3"), prose, self.tmp, main
-            ).outputs(),
+            "true", ci_scope.decide("pull_request", base, platform, self.tmp).outputs()["platform"]
         )
+        queued = ci_scope.decide("merge_group", platform, behind, self.tmp, "refs/heads/main")
         self.assertEqual(
-            "true",
-            ci_scope.decide("merge_group", platform, behind, self.tmp, main).outputs()["platform"],
+            ("true", "false"), (queued.outputs()["python"], queued.outputs()["platform"])
         )
+        runs = queued.jobs()
+        for job in ("platform-tests", "frontend-macos", "platform-tests-current", "runtime-floor"):
+            self.assertFalse(runs[job], job)
+        for job in ("lint", "typecheck", "test", "coverage"):
+            self.assertTrue(runs[job], job)
 
     def test_a_move_counts_where_the_file_left_as_well_as_where_it_went(self) -> None:
         self.git("init", "-q", "-b", "main")
@@ -646,8 +721,17 @@ class TheWorkflowRunAsksGitTest(unittest.TestCase):
             ci_scope.main(["--root", str(ROOT), "--paths", "frontend/src/main.tsx"])
         self.assertEqual(
             "python=false\nlint=false\nfrontend=true\ncontract=false\npython_suites=true\n"
-            "frontend_docs=false\nfrontend_docs_tests=\nplatform=false\nworkflows=false\n",
+            "frontend_docs=false\nfrontend_docs_tests=\nplatform=false\nworkflows=false\n"
+            'jobs={"actionlint":false,"lint":false,"typecheck":false,"test":false,'
+            '"coverage":false,"runtime-floor":true,"platform-tests":false,'
+            '"platform-tests-current":false,"frontend":true,"frontend-macos":false,'
+            '"frontend-coverage":true,"frontend-production":true,"storybook":true,'
+            '"frontend-contract":false,"frontend-docs":false}\n',
             output.read_text(encoding="utf-8"),
+        )
+        self.assertEqual(
+            ci_scope.scope(["frontend/src/main.tsx"], ROOT, _REPOSITORY_DOCUMENTS).jobs(),
+            json.loads(output.read_text(encoding="utf-8").splitlines()[-1].removeprefix("jobs=")),
         )
         self.assertIn("frontend/src/main.tsx: frontend", out.getvalue())
 

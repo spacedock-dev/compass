@@ -28,7 +28,7 @@ runs only when a lane it belongs to is on. There are seven lanes:
 
 ``platform`` is not a lane of its own: it says whether the macOS legs of the ``python`` and
 ``frontend`` lanes run. On for the reviewed PLATFORM_PATHS, the gate's wiring, an unknown path,
-and every run that is not a pull request (a push to main, the nightly schedule, a manual dispatch).
+and every push to main, nightly run and manual dispatch. Never in the merge queue.
 
 The Python suites read nearly every file under ``frontend/`` (measured 2026-11-01 with an audit
 hook: every tracked frontend file was opened by at least one test), so a frontend change also runs
@@ -40,8 +40,21 @@ A merge queue entry (``merge_group``) is diffed against the branch it will land 
 head of the entry ahead of it, so that SHA would show this pull request alone, while the entry is
 measured on every pull request queued ahead of it too. The merge base with the base branch makes
 the diff their union, so a queue run turns on the lanes its pull requests turned on, and no more.
-Every other event (a push to main) runs every lane, so what a queue run skips is measured again
-once it lands.
+
+Each event runs one of four modes (``Scope.mode``), and ``Scope.jobs`` turns lanes and mode into
+the one yes or no per gate job that both the job's ``if:`` and the aggregator read:
+
+- A pull request runs its lanes, on every interpreter and, with ``platform``, on macOS.
+- A merge queue entry checks integration, not portability. It runs its lanes once on Linux and
+  skips the portability legs: the 3.12 floor (unless it is the entry's only suite run), the 3.15
+  leg and every macOS leg. The pull request already ran them on its own head, and the queue sat
+  waiting for macOS runners for hours on 2026-11-24 while nothing it would have measured had
+  changed. ``platform`` is off in the queue even when the detector fails open.
+- A push to main runs only those portability legs, every lane and macOS included. The queue has
+  just run everything else on that exact commit, which is what lands.
+- The nightly schedule and a manual dispatch run every job, so a fail-open gap surfaces within a
+  day. A pull request the detector cannot read runs every job too, and a queue entry every lane,
+  still without the portability legs.
 
 It FAILS OPEN. Anything it cannot compute, and any path it does not recognise, turns every lane
 on: a wrong "off" skips a job that could catch a regression, and a wrong "on" costs a runner. A
@@ -53,12 +66,13 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import json
 import os
 import posixpath
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -73,6 +87,12 @@ LINT = "lint"
 FRONTEND_DOCS = "frontend_docs"
 PLATFORM = "platform"
 WORKFLOWS = "workflows"
+
+# The run modes, one per kind of event (see the module docstring).
+PULL_REQUEST = "pull_request"
+QUEUE = "merge_group"
+MAIN = "push"
+FULL = "full"
 WORKFLOW_FILES = ".github/workflows/*"
 # Local composite actions, which actionlint checks wherever a workflow `uses:` one.
 ACTION_FILES = ".github/actions/*"
@@ -238,6 +258,7 @@ class Scope:
     frontend_docs_tests: tuple[str, ...] = ()
     platform: bool = False
     workflows: bool = False
+    mode: str = PULL_REQUEST
 
     @property
     def python_suites(self) -> bool:
@@ -261,6 +282,35 @@ class Scope:
         found["workflows"] = str(self.workflows).lower()
         return found
 
+    def jobs(self) -> dict[str, bool]:
+        """Whether each gate job runs, keyed by its job id in quality-gate.yml.
+
+        The job's `if:` and the aggregator read this one answer, so they cannot disagree, and the
+        aggregator fails when these keys and its `needs` differ.
+        """
+        integration = self.mode != MAIN
+        portability = self.mode != QUEUE
+        macos = self.platform and portability
+        return {
+            "actionlint": self.workflows and integration,
+            "lint": (self.python or self.lint) and integration,
+            "typecheck": self.python and integration,
+            "test": self.python and integration,
+            "coverage": self.python and integration,
+            # In the queue only when `test` runs no suite, so a document a test reads is still run.
+            "runtime-floor": self.python_suites and (portability or not self.python),
+            "platform-tests": self.python and macos,
+            "platform-tests-current": self.python and portability,
+            "frontend": self.frontend and integration,
+            "frontend-macos": self.frontend and macos,
+            "frontend-coverage": self.frontend and integration,
+            "frontend-production": self.frontend and integration,
+            # It also carries the release's two browser proofs, which the contract lane needs.
+            "storybook": (self.frontend or self.contract) and integration,
+            "frontend-contract": self.contract and integration,
+            "frontend-docs": bool(self.frontend_docs_tests) and integration,
+        }
+
 
 EVERYTHING = Scope(
     python=True,
@@ -269,7 +319,10 @@ EVERYTHING = Scope(
     reasons=("every lane: fail open",),
     platform=True,
     workflows=True,
+    mode=FULL,
 )
+# A push to main: every lane's portability legs, which the merge queue skipped.
+MAIN_RUN = replace(EVERYTHING, reasons=("push to main: the legs the merge queue skips",), mode=MAIN)
 
 
 def _matches(path: str, patterns: tuple[str, ...] | frozenset[str]) -> bool:
@@ -537,14 +590,21 @@ def queue_base(base_ref: str) -> str:
 def decide(event: str, base: str, head: str, root: Path, base_ref: str = "") -> Scope:
     """The scope of one workflow run. Every failure resolves to every lane on.
 
-    A merge queue entry is scoped as a pull request is, macOS included, from its paths. Anything
-    else (a push to main, the nightly schedule, a manual dispatch) runs everything, macOS
-    included: that is the safety net for what a pull request's or an entry's lanes skipped.
+    A pull request and a merge queue entry are scoped from their paths. A queue entry never runs
+    macOS, even failing open (the module docstring says why). A push to main runs the portability
+    legs; anything else (the nightly schedule, a manual dispatch) runs everything.
     """
-    if event == "merge_group":
-        base = queue_base(base_ref)
-    elif event != "pull_request":
+    if event == QUEUE:
+        found = _from_paths(queue_base(base_ref), head, root)
+        return replace(found, platform=False, mode=QUEUE)
+    if event == MAIN:
+        return MAIN_RUN
+    if event != PULL_REQUEST:
         return EVERYTHING
+    return _from_paths(base, head, root)
+
+
+def _from_paths(base: str, head: str, root: Path) -> Scope:
     if not base or not head:
         return EVERYTHING
     try:
@@ -580,6 +640,7 @@ def main(argv: list[str] | None = None) -> int:
     for line in result.reasons:
         print(line)
     lines = [f"{name}={value}" for name, value in result.outputs().items()]
+    lines.append(f"jobs={json.dumps(result.jobs(), separators=(',', ':'))}")
     print("\n".join(lines))
     output = os.environ.get("GITHUB_OUTPUT")
     if output:

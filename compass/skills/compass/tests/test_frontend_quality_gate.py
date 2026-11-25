@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import yaml
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 from . import test_quality_gate as detector
 from .test_workflow_caches import BOOTSTRAP_RUN, assert_locked_pnpm
@@ -109,159 +113,111 @@ class FrontendDetectorControlsTest(unittest.TestCase):
         self.assertEqual(("false", "false"), (found["python"], found["frontend"]))
 
 
-# Each result the aggregate reads, and the detector outputs that must all be on for its job to run.
-LANES_OF = {
-    "R_LINT": ("LINT",),
-    "R_TYPECHECK": ("PYTHON",),
-    "R_FLOOR": ("SUITES",),
-    "R_TEST": ("PYTHON",),
-    "R_COVERAGE": ("PYTHON",),
-    "R_PLATFORM": ("PYTHON", "PLATFORM"),
-    "R_PLATFORM_CURRENT": ("PYTHON",),
-    "R_FRONTEND": ("FRONTEND",),
-    "R_FRONTEND_MACOS": ("FRONTEND", "PLATFORM"),
-    "R_FRONTEND_COVERAGE": ("FRONTEND",),
-    "R_FRONTEND_PRODUCTION": ("FRONTEND",),
-    "R_STORYBOOK": ("FRONTEND",),
-    "R_CONTRACT": ("CONTRACT",),
-    "R_FRONTEND_DOCS": ("FRONTEND_DOCS",),
-    "R_ACTIONLINT": ("WORKFLOWS",),
-}
-# Results whose job runs when ANY of these lanes is on. The Storybook job also carries the
-# release's two browser proofs, which the runtime-contract lane must run too.
-EITHER_LANE = {"R_STORYBOOK": ("FRONTEND", "CONTRACT")}
-ALL_ON = {
-    "PYTHON": "true",
-    "LINT": "true",
-    "FRONTEND": "true",
-    "CONTRACT": "true",
-    "SUITES": "true",
-    "FRONTEND_DOCS": "true",
-    "PLATFORM": "true",
-    "WORKFLOWS": "true",
-}
-ALL_OFF = dict.fromkeys(ALL_ON, "false")
-# The aggregate's env name for each job's result, and the job it reads.
-RESULT_OF = {
-    "R_LINT": "lint",
-    "R_TYPECHECK": "typecheck",
-    "R_FLOOR": "runtime-floor",
-    "R_TEST": "test",
-    "R_COVERAGE": "coverage",
-    "R_PLATFORM": "platform-tests",
-    "R_PLATFORM_CURRENT": "platform-tests-current",
-    "R_FRONTEND": "frontend",
-    "R_FRONTEND_MACOS": "frontend-macos",
-    "R_FRONTEND_COVERAGE": "frontend-coverage",
-    "R_FRONTEND_PRODUCTION": "frontend-production",
-    "R_STORYBOOK": "storybook",
-    "R_CONTRACT": "frontend-contract",
-    "R_FRONTEND_DOCS": "frontend-docs",
-    "R_ACTIONLINT": "actionlint",
-}
+# Every gate job the aggregate reads, from the detector's own table.
+JOBS = tuple(detector._ci_scope().EVERYTHING.jobs())
 
 
 @unittest.skipUnless(detector.BASH, "the shipped aggregate uses Bash")
 class FrontendAggregateControlsTest(unittest.TestCase):
     def aggregate(
-        self, *, lanes: dict[str, str], results: dict[str, str]
+        self,
+        *,
+        runs: Mapping[str, object] | str,
+        results: dict[str, str],
+        changes: str = "success",
     ) -> subprocess.CompletedProcess[str]:
         script = next(step["run"] for step in jobs()["quality-gate"]["steps"] if "run" in step)
+        needs = {"changes": {"result": changes, "outputs": {}}}
+        needs |= {job: {"result": result, "outputs": {}} for job, result in results.items()}
         return subprocess.run(
             [detector.BASH or "bash", "-c", script],
-            env={**os.environ, **lanes, "R_CHANGES": "success", **results},
+            env={
+                **os.environ,
+                "R_CHANGES": changes,
+                "JOBS": runs if isinstance(runs, str) else json.dumps(runs),
+                "NEEDS": json.dumps(needs),
+            },
             capture_output=True,
             text=True,
             check=False,
             timeout=30,
         )
 
-    def test_every_required_result_rejects_failure_cancellation_and_unexpected_skip(self) -> None:
-        successful = dict.fromkeys(LANES_OF, "success")
-        for name in successful:
+    def test_every_job_that_should_run_rejects_failure_cancellation_and_skip(self) -> None:
+        runs = dict.fromkeys(JOBS, True)
+        successful = dict.fromkeys(JOBS, "success")
+        self.assertEqual(0, self.aggregate(runs=runs, results=successful).returncode)
+        for job in JOBS:
             for bad in ("failure", "cancelled", "skipped"):
-                with self.subTest(name=name, bad=bad):
-                    result = self.aggregate(lanes=ALL_ON, results={**successful, name: bad})
+                with self.subTest(job=job, bad=bad):
+                    result = self.aggregate(runs=runs, results={**successful, job: bad})
                     self.assertNotEqual(0, result.returncode, result.stdout)
-        self.assertEqual(0, self.aggregate(lanes=ALL_ON, results=successful).returncode)
 
-    def test_a_job_may_skip_only_when_its_own_lane_is_off(self) -> None:
-        skipped = dict.fromkeys(LANES_OF, "skipped")
-        self.assertEqual(0, self.aggregate(lanes=ALL_OFF, results=skipped).returncode)
+    def test_a_job_may_skip_only_when_the_detector_said_not_to_run_it(self) -> None:
+        skipped = dict.fromkeys(JOBS, "skipped")
+        nothing = dict.fromkeys(JOBS, False)
+        self.assertEqual(0, self.aggregate(runs=nothing, results=skipped).returncode)
         for bad in ("failure", "cancelled", "skipped"):
             with self.subTest(detector=bad):
-                self.assertNotEqual(
-                    0,
-                    self.aggregate(lanes=ALL_OFF, results={**skipped, "R_CHANGES": bad}).returncode,
-                )
-        for name in LANES_OF:
-            with self.subTest(failed=name):
-                self.assertNotEqual(
-                    0,
-                    self.aggregate(lanes=ALL_OFF, results={**skipped, name: "failure"}).returncode,
-                )
-        # One lane on: its jobs must have run, and every other job may skip.
-        for lane in ALL_ON:
-            on = {
-                name
-                for name, owners in LANES_OF.items()
-                if owners == (lane,) and name not in EITHER_LANE
-            } | {name for name, either in EITHER_LANE.items() if lane in either}
-            lanes = {**ALL_OFF, lane: "true"}
-            with self.subTest(lane=lane):
-                ran = {name: ("success" if name in on else "skipped") for name in LANES_OF}
-                self.assertEqual(0, self.aggregate(lanes=lanes, results=ran).returncode)
-                for name in on:
-                    result = self.aggregate(lanes=lanes, results={**ran, name: "skipped"})
-                    self.assertNotEqual(0, result.returncode, name)
-
-    def test_a_macos_leg_may_skip_when_platform_is_off_and_not_when_it_is_on(self) -> None:
-        macos = {name for name, owners in LANES_OF.items() if "PLATFORM" in owners}
-        self.assertEqual({"R_PLATFORM", "R_FRONTEND_MACOS"}, macos)
-        for name in sorted(macos):
-            lanes = {**ALL_OFF, **dict.fromkeys(LANES_OF[name], "true")}
-            ran = {
-                other: (
-                    "success"
-                    if set(owners) <= {k for k, v in lanes.items() if v == "true"}
-                    else "skipped"
-                )
-                for other, owners in LANES_OF.items()
-            }
-            with self.subTest(job=name):
-                self.assertEqual(0, self.aggregate(lanes=lanes, results=ran).returncode)
-                # The lane it shares is on and platform is off: the leg skipped on purpose.
-                off = {**lanes, "PLATFORM": "false"}
-                skipped = {**ran, name: "skipped"}
-                self.assertEqual(0, self.aggregate(lanes=off, results=skipped).returncode)
-                # Both on and the leg skipped: a dependency died, which is a failure.
-                result = self.aggregate(lanes=lanes, results=skipped)
+                result = self.aggregate(runs=nothing, results=skipped, changes=bad)
+                self.assertNotEqual(0, result.returncode)
+        for job in JOBS:
+            with self.subTest(failed=job):
+                result = self.aggregate(runs=nothing, results={**skipped, job: "failure"})
+                self.assertNotEqual(0, result.returncode)
+            # Only this job should run: it must have, and every other job may skip.
+            only = {**nothing, job: True}
+            ran = {**skipped, job: "success"}
+            with self.subTest(only=job):
+                self.assertEqual(0, self.aggregate(runs=only, results=ran).returncode)
+                result = self.aggregate(runs=only, results=skipped)
                 self.assertNotEqual(0, result.returncode, result.stdout)
 
-    def test_a_platform_answer_that_is_neither_true_nor_false_fails_the_gate(self) -> None:
-        # Every other lane fails closed on a missing output; a lost `platform` must not read as off.
-        python_only = {
-            name: ("skipped" if "PLATFORM" in owners else "success")
-            for name, owners in LANES_OF.items()
-        }
-        for value in ("", "True", "yes"):
-            with self.subTest(platform=value):
-                result = self.aggregate(lanes={**ALL_ON, "PLATFORM": value}, results=python_only)
+    def test_a_lost_or_garbled_answer_fails_the_gate(self) -> None:
+        # Every job skipped would pass if any of these read as "run nothing".
+        skipped = dict.fromkeys(JOBS, "skipped")
+        nothing = dict.fromkeys(JOBS, False)
+        for runs in ("", "null", "[]", "{", json.dumps({**nothing, "lint": "false"})):
+            with self.subTest(runs=runs):
+                result = self.aggregate(runs=runs, results=skipped)
                 self.assertNotEqual(0, result.returncode, result.stdout)
 
-    def test_the_aggregate_reads_every_job_it_needs(self) -> None:
-        aggregate = jobs()["quality-gate"]
+    def test_the_detector_and_the_aggregate_must_name_the_same_jobs(self) -> None:
+        successful = dict.fromkeys(JOBS, "success")
+        runs = dict.fromkeys(JOBS, True)
+        missing = dict(list(runs.items())[1:])
+        extra = {**runs, "new-job": True}
+        for found in (missing, extra):
+            with self.subTest(names=sorted(found)):
+                result = self.aggregate(runs=found, results=successful)
+                self.assertNotEqual(0, result.returncode, result.stdout)
+        # A job the aggregate needs and the detector never names fails too.
+        result = self.aggregate(runs=runs, results={**successful, "new-job": "success"})
+        self.assertNotEqual(0, result.returncode, result.stdout)
+
+    def test_the_aggregate_reads_every_job_it_needs_and_each_job_reads_its_answer(self) -> None:
+        workflow = jobs()
+        aggregate = workflow["quality-gate"]
+        self.assertEqual({"changes", *JOBS}, set(aggregate["needs"]))
         env = aggregate["steps"][0]["env"]
-        for variable, job in RESULT_OF.items():
-            with self.subTest(job=job):
-                self.assertEqual(f"${{{{ needs.{job}.result }}}}", env[variable])
-                self.assertIn(job, aggregate["needs"])
-        for output in ("frontend_docs", "platform", "workflows"):
-            with self.subTest(output=output):
-                self.assertIn(f"needs.changes.outputs.{output}", json.dumps(env))
         self.assertEqual(
-            set(RESULT_OF), {key for key in env if key.startswith("R_")} - {"R_CHANGES"}
+            {
+                "R_CHANGES": "${{ needs.changes.result }}",
+                "JOBS": "${{ needs.changes.outputs.jobs }}",
+                "NEEDS": "${{ toJSON(needs) }}",
+            },
+            env,
         )
+        self.assertEqual("${{ steps.detect.outputs.jobs }}", workflow["changes"]["outputs"]["jobs"])
+        for job in JOBS:
+            with self.subTest(job=job):
+                self.assertEqual(detector.runs_if(job), workflow[job]["if"])
+                needs = workflow[job]["needs"]
+                self.assertIn("changes", [needs] if isinstance(needs, str) else needs)
+        # The fallback for a detector that cannot run names every job too.
+        line = next(line for line in detector.detect_step().splitlines() if "jobs={" in line)
+        named = set(re.findall(r'"([a-z-]+)":', line))
+        self.assertEqual(set(JOBS), named)
 
 
 class FrontendWiringControlsTest(unittest.TestCase):
@@ -348,33 +304,23 @@ class FrontendWiringControlsTest(unittest.TestCase):
         )
         self.assertLessEqual(frontend["timeout-minutes"], 30)
         self.assertEqual("changes", frontend["needs"])
-        self.assertEqual("needs.changes.outputs.frontend == 'true'", frontend["if"])
-        for name, lane in (
-            ("lint", "lint"),
-            ("typecheck", "python"),
-            ("test", "python"),
-            ("coverage", "python"),
-            ("runtime-floor", "python_suites"),
-            ("frontend-contract", "contract"),
-            ("frontend-docs", "frontend_docs"),
-            ("platform-tests-current", "python"),
-            ("actionlint", "workflows"),
+        self.assertEqual(detector.runs_if("frontend"), frontend["if"])
+        # Which mode runs each job is the detector's (test_ci_scope); each job only reads it.
+        for name in (
+            "lint",
+            "typecheck",
+            "test",
+            "coverage",
+            "runtime-floor",
+            "frontend-contract",
+            "frontend-docs",
+            "platform-tests",
+            "platform-tests-current",
+            "frontend-macos",
+            "actionlint",
         ):
             with self.subTest(job=name):
-                self.assertEqual(
-                    f"needs.changes.outputs.{lane} == 'true'", workflow_jobs[name]["if"]
-                )
-        # A macOS leg runs only where macOS can differ from the Linux run beside it.
-        for name, lane in (
-            ("platform-tests", "python"),
-            ("frontend-macos", "frontend"),
-        ):
-            with self.subTest(job=name):
-                self.assertEqual(
-                    f"needs.changes.outputs.{lane} == 'true' && "
-                    "needs.changes.outputs.platform == 'true'",
-                    workflow_jobs[name]["if"],
-                )
+                self.assertEqual(detector.runs_if(name), workflow_jobs[name]["if"])
         aggregate = workflow_jobs["quality-gate"]
         self.assertEqual("always()", aggregate["if"])
         self.assertEqual(
@@ -400,16 +346,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
         )
         for comment in ("coverage-comment", "frontend-coverage-comment"):
             self.assertNotIn(comment, aggregate["needs"], "a comment never gates")
-        env = aggregate["steps"][0]["env"]
-        self.assertEqual("${{ needs.test.result }}", env["R_TEST"])
-        self.assertEqual("${{ needs.coverage.result }}", env["R_COVERAGE"])
-        self.assertEqual("${{ needs.frontend.result }}", env["R_FRONTEND"])
-        self.assertEqual("${{ needs.frontend-coverage.result }}", env["R_FRONTEND_COVERAGE"])
-        self.assertEqual("${{ needs.frontend-production.result }}", env["R_FRONTEND_PRODUCTION"])
-        self.assertEqual("${{ needs.storybook.result }}", env["R_STORYBOOK"])
-        self.assertEqual("${{ needs.frontend-contract.result }}", env["R_CONTRACT"])
         self.assertNotIn("frontend-proofs", workflow_jobs)
-        self.assertNotIn("R_FRONTEND_PROOFS", env)
 
     def test_runtime_floor_runs_as_parallel_legs_with_one_smoke_launch(self) -> None:
         floor = jobs()["runtime-floor"]
@@ -652,7 +589,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
         job = jobs()["frontend-production"]
         self.assertEqual("ubuntu-latest", job["runs-on"])
         self.assertEqual("changes", job["needs"])
-        self.assertEqual("needs.changes.outputs.frontend == 'true'", job["if"])
+        self.assertEqual(detector.runs_if("frontend-production"), job["if"])
         self.assertNotIn("strategy", job, "one rebuild, no shards")
         self.assertLessEqual(job["timeout-minutes"], 15)
         self.assertNotIn("permissions", job, "the job inherits the workflow's read-only token")
@@ -769,27 +706,16 @@ class StorybookChromiumInstallTest(unittest.TestCase):
         """A job-level `continue-on-error` makes `needs.<job>.result` read success for a red job; a weakened `if`
         lets the job skip where the aggregator expects it to run."""
         workflow_jobs = jobs()
-        for name, condition in (
-            ("frontend", "needs.changes.outputs.frontend == 'true'"),
-            (
-                "frontend-macos",
-                (
-                    "needs.changes.outputs.frontend == 'true' && "
-                    "needs.changes.outputs.platform == 'true'"
-                ),
-            ),
-            ("frontend-coverage", "needs.changes.outputs.frontend == 'true'"),
-            ("frontend-production", "needs.changes.outputs.frontend == 'true'"),
-            (
-                "storybook",
-                (
-                    "needs.changes.outputs.frontend == 'true' || "
-                    "needs.changes.outputs.contract == 'true'"
-                ),
-            ),
-            ("frontend-contract", "needs.changes.outputs.contract == 'true'"),
-            ("frontend-docs", "needs.changes.outputs.frontend_docs == 'true'"),
+        for name in (
+            "frontend",
+            "frontend-macos",
+            "frontend-coverage",
+            "frontend-production",
+            "storybook",
+            "frontend-contract",
+            "frontend-docs",
         ):
+            condition = detector.runs_if(name)
             with self.subTest(job=name):
                 job = workflow_jobs[name]
                 self.assertNotIn("continue-on-error", job)

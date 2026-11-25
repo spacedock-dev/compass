@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -58,7 +59,18 @@ def detect_in_process(changed: str) -> dict[str, str]:
     class, and the test beside it compares the two.
     """
     paths = changed.splitlines()
-    return dict(_ci_scope().scope(paths, ROOT, documents=_repository_documents()).outputs())
+    found = _ci_scope().scope(paths, ROOT, documents=_repository_documents())
+    return {**found.outputs(), "jobs": jobs_line(found.jobs())}
+
+
+def jobs_line(runs: dict[str, bool]) -> str:
+    """The `jobs` output as `scripts/ci_scope.py` writes it."""
+    return json.dumps(runs, separators=(",", ":"))
+
+
+def runs_if(job: str) -> str:
+    """The `if:` every gate job carries: the detector's own answer for that job."""
+    return f"fromJSON(needs.changes.outputs.jobs)['{job}']"
 
 
 def detect_step() -> str:
@@ -75,7 +87,12 @@ def detect_step() -> str:
 @unittest.skipUnless(BASH, "the Actions detector needs bash")
 class QualityGateDetectorTest(unittest.TestCase):
     def detect(
-        self, changed: str, *, root: Path = ROOT, python: str | None = None
+        self,
+        changed: str,
+        *,
+        root: Path = ROOT,
+        python: str | None = None,
+        event: str = "pull_request",
     ) -> dict[str, str]:
         """The lanes the shipped step writes to `$GITHUB_OUTPUT` for one changed-path list."""
         with tempfile.TemporaryDirectory(prefix="bld-hyg-gate-") as tmp:
@@ -98,7 +115,7 @@ class QualityGateDetectorTest(unittest.TestCase):
                 env={
                     **os.environ,
                     "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-                    "EVENT": "pull_request",
+                    "EVENT": event,
                     "BASE_SHA": "base",
                     "HEAD_SHA": "head",
                     "CHANGED": changed,
@@ -171,6 +188,7 @@ class QualityGateDetectorTest(unittest.TestCase):
                 "frontend_docs_tests": "",
                 "platform": "false",
                 "workflows": "false",
+                "jobs": jobs_line(dict.fromkeys(_ci_scope().EVERYTHING.jobs(), False)),
             },
             self.detect("docs/" + "design-harness-registry.md"),
         )
@@ -204,20 +222,21 @@ class QualityGateDetectorTest(unittest.TestCase):
 
     def test_a_detector_that_cannot_run_turns_every_lane_on(self) -> None:
         found = self.detect("docs/" + "design-harness-registry.md", python="#!/bin/sh\nexit 1\n")
-        self.assertEqual(
-            {
-                "python": "true",
-                "lint": "true",
-                "frontend": "true",
-                "contract": "false",
-                "python_suites": "true",
-                "frontend_docs": "false",
-                "frontend_docs_tests": "",
-                "platform": "true",
-                "workflows": "true",
-            },
-            found,
+        everything = _ci_scope().EVERYTHING
+        # The shell fallback writes what the script would have written for every lane.
+        self.assertEqual({**everything.outputs(), "jobs": jobs_line(everything.jobs())}, found)
+
+    def test_a_detector_that_cannot_run_in_the_queue_runs_no_portability_leg(self) -> None:
+        found = self.detect(
+            "docs/" + "design-harness-registry.md",
+            python="#!/bin/sh\nexit 1\n",
+            event="merge_group",
         )
+        # The shell fallback writes what the script decides for a queue entry it cannot read.
+        ci_scope = _ci_scope()
+        queued = ci_scope.decide("merge_group", "", "", ROOT)
+        self.assertEqual({**queued.outputs(), "jobs": jobs_line(queued.jobs())}, found)
+        self.assertEqual("false", found["platform"])
 
 
 class ActionlintInTheGateTest(unittest.TestCase):
@@ -227,7 +246,7 @@ class ActionlintInTheGateTest(unittest.TestCase):
         jobs = gate_jobs()
         job = jobs["actionlint"]
         self.assertEqual("changes", job["needs"])
-        self.assertEqual("needs.changes.outputs.workflows == 'true'", job["if"])
+        self.assertEqual(runs_if("actionlint"), job["if"])
         self.assertIn("actionlint", jobs["quality-gate"]["needs"])
         detect = jobs["changes"]
         self.assertEqual("${{ steps.detect.outputs.workflows }}", detect["outputs"]["workflows"])
@@ -323,7 +342,7 @@ class CoverageShardsTest(unittest.TestCase):
         job = gate_jobs()["coverage"]
         self.assertEqual("Tests + coverage threshold", job["name"])
         self.assertEqual(["changes", "test"], job["needs"])
-        self.assertEqual("needs.changes.outputs.python == 'true'", job["if"])
+        self.assertEqual(runs_if("coverage"), job["if"])
         # Read-only: the job restores the pip cache and runs what it installs (test_workflow_caches).
         self.assertEqual({"contents": "read", "pull-requests": "read"}, job["permissions"])
         steps = job["steps"]

@@ -6,8 +6,8 @@ name: Validate
 # required check, and a required check with a `paths:` filter never reports on
 # a PR that misses the filter — branch protection reads that as pending
 # forever, so the PR can never merge. See AGENTS.md, Calibrating Effort.
-# Only the dashboard suite at the end is conditional, and only on whether the
-# quality gate already runs it.
+# Only the test steps are conditional, and only on whether the quality gate
+# already runs them.
 on:
   push:
     branches: [main]
@@ -57,10 +57,6 @@ jobs:
           python3 -m pip install --only-binary=:all: --require-hashes -r requirements-release.txt
       - name: Validate plugin contracts
         run: python3 scripts/validate_plugins.py
-      - name: Run validator unit tests
-        run: python3 -m unittest scripts/tests/test_validate_plugins.py
-      - name: Run release bump-script unit tests
-        run: python3 -m unittest scripts/tests/test_bump_version.py
       - name: Check version-field parity across all owned locations
         run: python3 scripts/bump_version.py --current
       # The same lanes quality-gate.yml uses, from the same script.
@@ -73,6 +69,15 @@ jobs:
           BASE_REF: ${{ github.event.merge_group.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: python3 scripts/ci_scope.py
+      # Both modules are in the script suite, which the gate runs whenever it runs the Python
+      # suites, so these copies run only when it does not. A failed or missing answer is not
+      # `true`, so they fail open, as the dashboard suite below does.
+      - name: Run validator unit tests
+        if: steps.scope.outputs.python_suites != 'true'
+        run: python3 -m unittest scripts/tests/test_validate_plugins.py
+      - name: Run release bump-script unit tests
+        if: steps.scope.outputs.python_suites != 'true'
+        run: python3 -m unittest scripts/tests/test_bump_version.py
       # The backstop for a PR the quality gate runs no Python suite on, which is
       # a prose-only one. Then this is the only run, and deleting it would let a
       # prose edit that breaks a test merge green. Measured on
