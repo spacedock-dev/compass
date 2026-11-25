@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2489291,
+    "bytes": 2489263,
     "file": "react.html",
-    "sha256": "96d9e477e9136c43c86e2911f924c6d83244253aa15d9c724160e8d6133c28b9"
+    "sha256": "53d00c05e2ed370ffe7eb9dc15ab70afad47772278d0576e4742e6dca6de815d"
   },
   "format": 1,
   "frontend": "react",
@@ -1195,7 +1195,7 @@
       },
       {
         "file": "frontend/src/sessions/DetailParts.tsx",
-        "sha256": "15c17fc75d38d332c59a722aa9d54991c7dcf3ec51572c9ed385ecb882901bd7"
+        "sha256": "4ac0d880781d1f0481f8006c6a51e72f01a5c8b2934b3f375c5c310c836fc8e9"
       },
       {
         "file": "frontend/src/sessions/DriftSlot.tsx",
@@ -1279,7 +1279,7 @@
       },
       {
         "file": "frontend/src/sessions/intent.ts",
-        "sha256": "e94063b478e06f7f4a67fdaddbe9d3fae9f684cb582246c24b2a37452975202a"
+        "sha256": "3c9f643991df57983c3d55b327abe441a78038645d2e2fff94d8860320160371"
       },
       {
         "file": "frontend/src/sessions/notes.ts",
