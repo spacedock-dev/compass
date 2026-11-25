@@ -172,6 +172,9 @@ only when none is stored), `summary update` and `summary again` to request more,
 or turn off session summaries. [Ask Compass from inside a session](HOW_TO_USE.md#ask-compass-from-inside-a-session)
 explains which actions can spend and how they are guarded.
 
+You can also read a Codex session's project brief from your own terminal.
+[Read your project's brief](HOW_TO_USE_TERMINAL.md#read-your-projects-brief).
+
 ## 3. How it works
 
 Compass is a small Python server that runs on your machine. It reads the session records your agents
