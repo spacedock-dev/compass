@@ -34,6 +34,7 @@ from . import state as runtime_state
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
+    from typing import BinaryIO
 
     from .config import RuntimeConfig
     from .state import RuntimeState
@@ -64,11 +65,10 @@ _MESSAGE_READ_CAP = 4 * CORRECTION_CAP_CHARS + 1
 # The newest bytes of a transcript read for a match: the bound the semantic history store's
 # backfill reads a source to, so a message that store publishes is one this can recognise.
 _OPENING_SCAN_CAP_BYTES = project_context.SEMANTIC_BACKFILL_MAX_BYTES
-# A store past this reads back as nothing, un-marking every recognised paste at once, so it sits
-# well above the full bound. Measured: a copy is about 150 bytes on disk and a match about 93, and
-# at their widest (a 64-character sid, 17-digit times, 64-bit inode and offset) 173 and 97, so 256
-# sessions of eight copies and 32 matches write 1,180,437 bytes, which overran the old 1 MiB.
-_READ_CAP_BYTES = 2 << 20
+# A store past this reads back as nothing, un-marking every recognised paste at once.
+# The full-bound store test measured 2,286,101 bytes for 256 Codex sessions,
+# with the prefix proof and record digests at their widest.
+_READ_CAP_BYTES = 3 << 20
 _KEY_CAP_CHARS = 64
 # The copy route's own body bound, derived so no correction the box composes is refused for its
 # bytes (review, 2026-10-20): the shared 12,288 refused 4,216 CJK characters, the page still said
@@ -101,6 +101,8 @@ class Copy(TypedDict):
     # was whitespace still comes back as the correction (DRC-4920). Absent on a copy stored before
     # it existed, which keeps matching on `digest` alone.
     folded: NotRequired[str]
+    prefix_count: NotRequired[int]
+    prefix_digest: NotRequired[str]
 
 
 class Match(TypedDict):
@@ -109,6 +111,7 @@ class Match(TypedDict):
     fact_id: str
     at: float
     copied_at: float
+    record_digest: NotRequired[str]
 
 
 class Held(NamedTuple):
@@ -122,6 +125,7 @@ class _Message(NamedTuple):
     at: float
     digest: str | None
     folded: str | None
+    record_digest: str
     # What the row's `instruction` and `first_prompt` would carry for this message, each built
     # as its producer builds it, so the row's field can be placed on the message it quotes.
     line: str
@@ -188,6 +192,10 @@ def _copy(value: Any) -> Copy | None:
     folded = value.get("folded")
     if isinstance(folded, str) and _DIGEST.fullmatch(folded):
         copy["folded"] = folded
+    count, prefix = _count(value.get("prefix_count")), value.get("prefix_digest")
+    if count and isinstance(prefix, str) and _DIGEST.fullmatch(prefix):
+        copy["prefix_count"] = count
+        copy["prefix_digest"] = prefix
     return copy
 
 
@@ -201,7 +209,11 @@ def _match(value: Any) -> Match | None:
         return None
     if at is None or copied_at is None:
         return None
-    return {"fact_id": fact_id, "at": at, "copied_at": copied_at}
+    match: Match = {"fact_id": fact_id, "at": at, "copied_at": copied_at}
+    record_digest = value.get("record_digest")
+    if isinstance(record_digest, str) and _DIGEST.fullmatch(record_digest):
+        match["record_digest"] = record_digest
+    return match
 
 
 def _held(copies: Iterable[Copy], matches: Iterable[Match]) -> Held:
@@ -247,7 +259,11 @@ def _read(config: RuntimeConfig) -> dict[tuple[str, str], Held]:
         if not key[0] or not key[1]:
             continue
         found = _held(
-            (c for c in map(_copy, raw_copies if isinstance(raw_copies, list) else ()) if c),
+            (
+                c
+                for c in map(_copy, raw_copies if isinstance(raw_copies, list) else ())
+                if c and (key[0] != "codex" or "prefix_digest" in c)
+            ),
             (m for m in map(_match, raw_matches if isinstance(raw_matches, list) else ()) if m),
         )
         if found.copies or found.matches:
@@ -270,14 +286,87 @@ def _bounded(held: dict[tuple[str, str], Held], limit: int) -> dict[tuple[str, s
     return dict(ordered[-limit:]) if limit > 0 else {}
 
 
+_Position = tuple[int, int] | tuple[int, int, int, str]
+
+
+def _file_stamp(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _codex_prefixes(handle: BinaryIO, size: int) -> Iterable[tuple[int, int, str]]:
+    """Yield the end of each verifiable prefix of the rollout's prompt records.
+
+    Byte offsets can move if Codex rewrites context. Hash the ordered
+    session metadata and prompt records, so changing context can move the boundary
+    while changing the reader's earlier messages invalidates it.
+    """
+    proof = hashlib.sha256()
+    count = offset = 0
+    while offset < size:
+        raw = handle.readline(size - offset)
+        if not raw.endswith(b"\n"):
+            break
+        offset += len(raw)
+        if b"\\u" not in raw and not any(
+            marker in raw
+            for marker in (b'"session_meta"', b'"user"', b'"user_message"', b'"UserMessage"')
+        ):
+            continue
+        try:
+            record = records.as_dict(json.loads(raw))
+        except (ValueError, RecursionError):
+            continue
+        kind = record.get("type")
+        payload = records.as_dict(record.get("payload"))
+        item = records.as_dict(payload.get("item"))
+        if not (
+            kind == "session_meta"
+            or (kind == "response_item" and _raw_content(record, "codex") is not None)
+            or (
+                kind == "event_msg"
+                and (
+                    payload.get("type") == "user_message"
+                    or (
+                        payload.get("type") == "item_completed"
+                        and item.get("type") == "UserMessage"
+                    )
+                )
+            )
+        ):
+            continue
+        proof.update(raw)
+        count += 1
+        yield count, offset, proof.hexdigest()
+
+
+def _codex_position(path: str) -> _Position | None:
+    with os.fdopen(runtime_io.open_harness(path), "rb") as handle:
+        info = os.fstat(handle.fileno())
+        if not info.st_size:
+            return None
+        handle.seek(info.st_size - 1)
+        if handle.read(1) != b"\n":
+            return None
+        handle.seek(0)
+        last = None
+        for prefix in _codex_prefixes(handle, info.st_size):
+            last = prefix
+        if last and _file_stamp(info) == _file_stamp(os.stat(path)):
+            count, _, proof = last
+            return (info.st_ino, info.st_size, count, proof)
+    return None
+
+
 def transcript_position(
     config: RuntimeConfig, state: RuntimeState, harness: str, sid: str
-) -> tuple[int, int] | None:
-    """Where this session's transcript ends now, as (inode, size), or None with no transcript."""
+) -> _Position | None:
+    """Snapshot the end of the transcript when the copy arrives."""
     path = observer.resolve_transcript(config, state, harness, sid)
     if not path:
         return None
     try:
+        if harness == "codex":
+            return _codex_position(path)
         info = os.stat(path)
     except OSError:
         return None
@@ -315,7 +404,7 @@ def register(
     text: Any,
     *,
     now: float,
-    position: tuple[int, int] | None,
+    position: _Position | None,
     diagnostic_sink: Any = print,
 ) -> str:
     """Record that this text was copied for this session. Returns an outcome token.
@@ -336,6 +425,7 @@ def register(
         or not normalise(text)
         or moment is None
         or position is None
+        or (key[0] == "codex" and len(position) != 4)
     ):
         return OUTCOME_REFUSED
     copy: Copy = {
@@ -345,6 +435,8 @@ def register(
         "offset": position[1],
         "folded": folded_digest(text),
     }
+    if len(position) == 4:
+        copy["prefix_count"], copy["prefix_digest"] = position[2:]
 
     def change(stored: dict[tuple[str, str], Held]) -> dict[tuple[str, str], Held] | None:
         prior = stored.get(key, Held((), ()))
@@ -489,6 +581,7 @@ def _scan(
                     float(event["at"]),
                     digest(pasted) if whole else None,
                     folded_digest(pasted) if whole else None,
+                    transcripts.codex_prompt_record_digest(raw) if harness == "codex" else "",
                     str(line["text"]) if line else "",
                     records.safe_text(first, cap + 1) if first else "",
                 )
@@ -535,6 +628,9 @@ def _messages(
     cache_key = f"copied-corrections:{harness}:{sid}:{path}"
     with state.cache_lock:
         cached = state.metadata_cache.get(cache_key)
+    stamp = _file_stamp(info) if harness == "codex" else None
+    if harness == "codex" and cached is not None and cached.get("stamp") != stamp:
+        cached = None
     if (
         cached is not None
         and cached["ino"] == info.st_ino
@@ -560,6 +656,7 @@ def _messages(
             cache_key,
             {
                 "ino": info.st_ino,
+                "stamp": stamp,
                 "start": start,
                 "end": end,
                 "messages": tuple(messages),
@@ -580,48 +677,75 @@ def _same(message: _Message, copy: Copy) -> bool:
     return message.digest == copy["digest"] or (folded is not None and message.folded == folded)
 
 
+def _copy_boundaries(
+    path: str,
+    harness: str,
+    info: os.stat_result,
+    waiting: tuple[Copy, ...],
+) -> list[tuple[Copy, int]]:
+    if harness != "codex":
+        return [(copy, copy["offset"]) for copy in waiting]
+    same_file = [copy for copy in waiting if copy["ino"] == info.st_ino]
+    counts = {copy["prefix_count"] for copy in same_file if "prefix_count" in copy}
+    verified = {}
+    if counts:
+        with os.fdopen(runtime_io.open_harness(path), "rb") as handle:
+            last = max(counts)
+            for count, offset, proof in _codex_prefixes(handle, info.st_size):
+                if count in counts:
+                    verified[count] = (offset, proof)
+                if count == last:
+                    break
+    out = []
+    for copy in same_file:
+        boundary = verified.get(copy.get("prefix_count", 0))
+        if boundary and boundary[1] == copy.get("prefix_digest"):
+            out.append((copy, boundary[0]))
+    return out
+
+
 def _recognise(
-    config: RuntimeConfig, state: RuntimeState, key: tuple[str, str], held: Held
+    config: RuntimeConfig, state: RuntimeState, key: tuple[str, str], held: Held, path: str | None
 ) -> tuple[tuple[Match, ...], list[_Message]]:
     """This session's recognised messages, the stored ones and any found now, and the messages
     read on the way (the tail, at least), for `attach` to place the row's instruction among."""
-    harness, sid = key
+    harness, _ = key
     if harness not in HARNESSES:
         return (), []
-    path = observer.resolve_transcript(config, state, harness, sid)
     if not path:
         return held.matches, []
     try:
-        size = os.stat(path).st_size
-        waiting = [copy["offset"] for copy in held.copies]
-        start = min([max(0, size - config.tail_bytes), *waiting])
+        info = os.stat(path)
+        boundaries = _copy_boundaries(path, harness, info, held.copies)
+        # Keep the opening range for provenance even when Claude's saved offset
+        # no longer points into the current file.
+        waiting = (
+            [offset for _, offset in boundaries]
+            if harness == "codex"
+            else [copy["offset"] for copy in held.copies]
+        )
+        start = min([max(0, info.st_size - config.tail_bytes), *waiting])
         messages, ino, size = _messages(config, state, path, key, start)
+        if harness == "codex" and _file_stamp(info) != _file_stamp(os.stat(path)):
+            return held.matches, []
     except OSError:
         return held.matches, []
     taken = {match["fact_id"] for match in held.matches}
     found: list[tuple[str, Match]] = []
-    for copy in held.copies:
-        # Both measured Codex resumes kept the rollout and one session_meta, so the copy's byte
-        # boundary still applies. See docs/captures/codex/correction-delivery-0.172.0-macos.jsonl.
-        if copy["ino"] != ino or copy["offset"] > size:
-            continue
+    for copy, offset in (
+        (copy, offset) for copy, offset in boundaries if copy["ino"] == ino and offset <= size
+    ):
         for message in messages:
-            if (
-                message.position >= copy["offset"]
-                and _same(message, copy)
-                and message.fact_id not in taken
-            ):
+            if message.position >= offset and _same(message, copy) and message.fact_id not in taken:
                 taken.add(message.fact_id)
-                found.append(
-                    (
-                        copy["digest"],
-                        {
-                            "fact_id": message.fact_id,
-                            "at": message.at,
-                            "copied_at": copy["copied_at"],
-                        },
-                    )
-                )
+                match: Match = {
+                    "fact_id": message.fact_id,
+                    "at": message.at,
+                    "copied_at": copy["copied_at"],
+                }
+                if message.record_digest:
+                    match["record_digest"] = message.record_digest
+                found.append((copy["digest"], match))
                 break
     if found:
         _record(config, key, found)
@@ -645,7 +769,8 @@ def matched(
     entry = held if held is not None else load(config).get(key)
     if entry is None:
         return ()
-    found, _ = _recognise(config, state, key, entry)
+    path = observer.resolve_transcript(config, state, *key)
+    found, _ = _recognise(config, state, key, entry, path)
     return _published(found)
 
 
@@ -657,11 +782,11 @@ def _published(found: Iterable[Match]) -> tuple[dict[str, Any], ...]:
 
 
 def _quoted_as(
-    row: Mapping[str, Any], found: Iterable[Match], messages: list[_Message]
+    row: Mapping[str, Any], found: Iterable[Match], messages: list[_Message], title_digest: str
 ) -> dict[str, list[str]]:
     """For each recognised fact id, which of the row's prompt fields quote it.
 
-    Neither field carries a fact id, so each is placed on the message it quotes: the message with
+    Claude's fields carry no record id, so each is placed on the message it quotes: the message with
     the field's time whose own rendering is the field's text, the newest for `instruction` and the
     first for `first_prompt`, as their producers choose. A field quotes a recognised message when
     that message's fact id is one, so a message the reader typed in the same second as a paste
@@ -674,7 +799,16 @@ def _quoted_as(
         ("first_prompt", row.get("first_prompt"), row.get("first_prompt_at"), "first", 0),
     )
     recognised = {match["fact_id"]: match["at"] for match in found}
-    quoted: dict[str, list[str]] = {fact_id: [] for fact_id in recognised}
+    # A match stored before record digests can still be placed if its exact
+    # response is in the scan.
+    digests = {message.fact_id: message.record_digest for message in messages}
+    quoted = {
+        match["fact_id"]: ["title"]
+        if title_digest
+        and (match.get("record_digest") or digests.get(match["fact_id"])) == title_digest
+        else []
+        for match in found
+    }
     for field, text, raw_at, rendering, pick in fields:
         at = reading.valid_prompt_time(raw_at)
         if at is None or not isinstance(text, str) or not text:
@@ -697,11 +831,31 @@ def attach(config: RuntimeConfig, state: RuntimeState, rows: Iterable[dict[str, 
     quote it (`reading.QUOTED_AS`).
     """
     held = load(config)
+    codex_paths: dict[str, str] | None = None
     for row in rows:
         key = _key(row.get("harness"), row.get("sid"))
         entry = held.get(key)
-        found, messages = _recognise(config, state, key, entry) if entry else ((), [])
-        quoted = _quoted_as(row, found, messages) if found else {}
+        if entry is None:
+            row[reading.COPIED_PROMPTS] = []
+            continue
+        harness, sid = key
+        if harness == "codex":
+            if codex_paths is None:
+                codex_paths = observer.resolve_codex_transcripts(
+                    config, state, {sid for harness, sid in held if harness == "codex"}
+                )
+            path = codex_paths.get(sid)
+        else:
+            path = observer.resolve_transcript(config, state, harness, sid)
+        found, messages = _recognise(config, state, key, entry, path)
+        title_digest = ""
+        if found and path and key[0] == "codex" and row.get("title"):
+            prompt = transcripts.codex_instruction(config, state, path)
+            if prompt.get("title") == row["title"] and prompt.get("prompt_at") == row.get(
+                "prompt_at"
+            ):
+                title_digest = prompt.get("prompt_record_digest", "")
+        quoted = _quoted_as(row, found, messages, title_digest) if found else {}
         row[reading.COPIED_PROMPTS] = [
             {**item, reading.QUOTED_AS: quoted.get(item["fact_id"], [])}
             for item in _published(found)

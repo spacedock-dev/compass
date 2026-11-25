@@ -388,8 +388,8 @@ COPIED_PROMPTS = "copied_prompts"
 # (`compass_turns`) carries this flag: Full activity lists it, and no reader of evidence takes it.
 COMPASS_TURN_FLAG = "compass_turn"
 # Which of the row's prompt fields quote a recognised message, on that message's entry:
-# `"instruction"`, `"first_prompt"`, or both. `copied_corrections.attach` decides it by fact id, so
-# a message the reader typed in the same second as a paste stays theirs.
+# `"instruction"`, `"first_prompt"` or the Codex `"title"`. `copied_corrections.attach` uses record
+# identity so a message the reader typed at the same time as a paste stays theirs.
 QUOTED_AS = "quoted_as"
 
 # Which cited entries may carry a verdict about a deliverable. rule 7
@@ -8253,7 +8253,7 @@ class ClaudeReadingModel:
 
 
 def prompt_copied(row: Mapping[str, Any], field: str) -> bool:
-    """Whether the row's `field` ("instruction" or "first_prompt") quotes a copied correction.
+    """Whether the row's prompt field quotes a copied correction.
 
     Adoption, the board's assignment and every other surface that presents that field as the
     reader's words read this one answer (DRC-4678); `nextPromptCopied` was the same rule.

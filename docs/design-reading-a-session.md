@@ -4952,11 +4952,20 @@ withheld on every Codex surface pending qualification.
 Codex CLI 0.172.0 on macOS recorded the same user `response_item` with `input_text` for all four
 deliveries. An interactive paste submitted with Enter while Codex worked entered the current turn.
 After a `codex exec` run ended, `codex exec resume <session id> -` read a 1,613-character correction
-verbatim from standard input into a new turn in the same rollout. Quoted arguments are fragile
-because a correction can quote the agent's words. The page uses the measured `cli` and `exec`
-entrypoints to select the delivery hint. Copy records a local digest, and a matching user message
-after the copy is shown as Copied from Compass. See the
+verbatim from standard input into a new turn in the same rollout. The page uses the measured
+`cli` and `exec` entrypoints to select the hint. The exec hint uses the validated full session ID
+and says to add `--skip-git-repo-check` outside a trusted folder. See the
 [delivery capture](captures/codex/correction-delivery-0.172.0-macos.jsonl).
+
+Both resumes had one `session_meta` record. The capture did not verify that earlier bytes stayed
+in place. Codex copy matching verifies the ordered session metadata and pre-copy prompt records
+before accepting a paste. Rewrites of other context can move that boundary. If the prompt prefix
+cannot be verified, the paste remains unclassified. This ruling applies to Codex.
+
+The recognized response carries its own fact id. When Codex's separate `UserMessage` completion
+supplies the latest title, Compass identifies its response by the full text and their order in the
+rollout. The copied words cannot become a drafted or adopted goal or set the later-direction
+floor. A later typed prompt remains eligible.
 
 ### Amended 2026-10-05: verified request age belongs to a line
 

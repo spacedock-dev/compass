@@ -114,7 +114,7 @@ export function promptCandidate(
       text = String(asked['text'] || '');
       at = nextNumber(asked['at']);
     }
-  } else if (session['prompt_states_work'] === true) {
+  } else if (session['prompt_states_work'] === true && !promptCopied(session, 'title')) {
     text = String(session['title'] || '');
     at = nextNumber(session['prompt_at']);
   }

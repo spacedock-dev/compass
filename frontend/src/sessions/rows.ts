@@ -23,7 +23,7 @@ import {
   READING_ASSESSMENT_KEYS,
   READING_CLAIMS,
   readingNamesConstraint,
-  sessionInstruction,
+  promptCandidate,
   type PromptCandidate,
 } from './intent';
 import { datedClock } from '../observed/values';
@@ -246,12 +246,7 @@ export function goalCell(
       known: false,
     };
   const typed = String(source?.['annotation_goal'] || '').trim();
-  const asked = source?.['harness'] === 'claude' ? sessionInstruction(source, 'asked') : null;
-  const prompt = asked
-    ? String(asked['text'] || '').trim()
-    : source?.['harness'] === 'codex' && source['prompt_states_work'] === true
-      ? String(source['title'] || '').trim()
-      : '';
+  const prompt = promptCandidate(source, 'latest-prompt')?.text.trim() ?? '';
   /* The words the session page drafts, so the link lands on the words the cell named: the first prompt, or
      the latest where no first one with a time is published. Over a session that opened with a harness
      control the page drafts nothing, so the cell names nothing either. */

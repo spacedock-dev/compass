@@ -179,8 +179,8 @@ CORRECTION_READY: Final = (
     "it in your own terminal."
 )
 CORRECTION_READY_IN_SESSION: Final = (
-    "A correction is ready to copy on the session page. This output from `{command} drift` "
-    "shows only that it is ready."
+    "A correction is ready to copy on the session page. This output{invocation} shows only "
+    "that it is ready."
 )
 # Plain `--drift`, spelled out: `--drift again` presses, and would spend a second reading once this
 # one has ended. Plain `--drift` presses only where nothing was stored, which the line says.
@@ -541,7 +541,7 @@ def prompt_candidate(row: Mapping[str, Any], source: str) -> Draft | None:
         asked = _instruction(row, "asked")
         if asked is not None:
             text, at = _text(asked.get("text")), _number(asked.get("at"))
-    elif row.get("prompt_states_work") is True:
+    elif row.get("prompt_states_work") is True and not _copied(row, "title"):
         text, at = _text(row.get("title")), _number(row.get("prompt_at"))
     if not text:
         return None
@@ -1582,11 +1582,16 @@ class _Run:
             return []
         if self.at_shell:
             return ["Correction to copy:", text]
-        ready = (
-            CORRECTION_READY_IN_SESSION.format(command=skill_command(self.harness))
-            if self.in_session
-            else CORRECTION_READY.format(command=f"spacedock-compass --drift --session {self.key}")
-        )
+        if self.in_session:
+            invocation = ""
+            if self.harness == "codex":
+                action = "drift again" if self.again else "drift"
+                invocation = f" from `{skill_command(self.harness)} {action}`"
+            ready = CORRECTION_READY_IN_SESSION.format(invocation=invocation)
+        else:
+            ready = CORRECTION_READY.format(
+                command=f"spacedock-compass --drift --session {self.key}"
+            )
         return [ready]
 
 

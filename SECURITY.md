@@ -3153,9 +3153,11 @@ a SHA-256 of the text after one normalisation, applied to both sides, which is w
 2.1.283 was measured doing to a paste: CRLF and CR become LF, a tab becomes four spaces, and
 whitespace is trimmed at both ends. It also records a second digest of the same text with every run of
 whitespace folded to one space, so a paste whose only edit was whitespace still matches; a changed
-word, or a space inside a word, does not. The store holds the digests, the moment of the copy and where the
-session's transcript ended at that moment (its inode and size), and, once a message is recognised,
-that message's fact id and time. It never holds the text. It is `compass-copied-corrections.json`
+word, or a space inside a word, does not. The store holds the digests, the copy time, and the
+transcript's inode and size at that moment. For Codex it also holds a count and digest of the
+session metadata and prompt records present at copy time. After recognition it keeps the message's
+fact id and time, and for Codex a digest of the matched record. It never holds the text.
+It is `compass-copied-corrections.json`
 beside the annotation store, owner-only through a temp file and a rename, under an OS lock on the
 `.lock` file beside it. It is bounded at eight digests per session still waiting for their message
 and 32 recognised messages per session, the oldest of each dropped. Dropping the oldest waiting
@@ -3168,13 +3170,15 @@ had reached when the text was copied, whose digest computed from its raw text be
 or clipping matches exactly (or by the whitespace-folded digest), is Compass-assisted, whatever either
 clock says. Claude Code wraps a paste in its own `pasted_content` tags, which are taken off before
 either digest is computed. Words typed around the paste make a different message. The measured
-Codex TUI and exec deliveries carry the correction verbatim in a user message. The transcript is
-read from that point to its end, at most its newest 64 MiB plus its opening 32 MiB, matching the saved goal source reads,
-under the same unchanged digest and first-paste rules; the semantic history store
-reads a source to, so a paste the bounded tail never held is still recognised. Each digest binds the
+Codex TUI and exec deliveries carry the correction verbatim in a user message. While a Codex copy
+is waiting, Compass verifies the earlier prompt records in file order. If other context moves
+those records, their verified positions still locate the boundary. A changed prompt prefix or
+missing proof leaves the copy unmatched. The match scan covers at most the newest 64 MiB plus
+the opening 32 MiB, the same bounds used for historical sources. Each digest binds the
 first such message, and nothing before it, and a recognised message stays recognised after the
 tail moves past it. An assisted message is `derived` rather than person-authored evidence, is never
-adopted as the goal, does not open the evidence window of typed words, cannot be opened by
+adopted as the goal, including when Codex uses a separate completion record for the title. It
+does not open the evidence window of typed words, cannot be opened by
 `POST /api/direction`, is not an unsettled later direction, and is never shown as the stated goal,
 the assignment or an exact direction. Reader edits inside a copied correction are exempt from the
 later-direction floor: an edit made in Compass's box before copying is inside the digest, while an

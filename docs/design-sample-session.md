@@ -410,6 +410,10 @@ The delivery hints and their session-type check add 720 bytes to the 2,488,315-b
 page. The page bound rises by 492 bytes to the measured size. The sample fixture bound stays
 at 250,000 bytes.
 
+The Codex correction fixes package at 2,489,291 bytes with the same tools. The 256 added bytes
+cover the full exec resume command, the trusted-folder flag and copied-title handling. The page
+bound follows that measurement.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

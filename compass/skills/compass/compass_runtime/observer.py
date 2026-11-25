@@ -2273,13 +2273,17 @@ def _mtime(path: str) -> float:
         return 0.0
 
 
-def _resolve_codex_transcript(
+def resolve_codex_transcripts(
     config: RuntimeConfig,
     state: RuntimeState,
-    sid: str,
-) -> str | None:
-    roots: list[str] = []
-    children: list[str] = []
+    sids: set[str],
+) -> dict[str, str]:
+    """Resolve requested Codex IDs in one traversal, preferring roots to child threads."""
+    requested = {sid for sid in sids if _SAFE_ID_RE.match(sid)}
+    if not requested:
+        return {}
+    roots: dict[str, list[str]] = {}
+    children: dict[str, list[str]] = {}
     for path in runtime_io.glob_stores(
         config,
         "codex.sessions",
@@ -2290,14 +2294,14 @@ def _resolve_codex_transcript(
     ):
         meta = transcripts.codex_meta(config, state, path)
         if meta.get("subagent"):
-            if meta.get("parent_session_id") and meta.get("thread_id") == sid:
-                children.append(path)
-            continue
-        if meta.get("session_id") == sid:
-            roots.append(path)
-    if roots:
-        return max(roots, key=_mtime)
-    return max(children, key=_mtime) if children else None
+            sid = meta.get("thread_id")
+            if isinstance(sid, str) and sid in requested and meta.get("parent_session_id"):
+                children.setdefault(sid, []).append(path)
+        else:
+            sid = meta.get("session_id")
+            if isinstance(sid, str) and sid in requested:
+                roots.setdefault(sid, []).append(path)
+    return {sid: max(paths, key=_mtime) for sid, paths in (children | roots).items()}
 
 
 def codex_child_rollouts(
@@ -2458,7 +2462,7 @@ def resolve_transcript(
         ]
         return found[0] if len(found) == 1 else None
     if harness == "codex":
-        return _resolve_codex_transcript(config, state, sid)
+        return resolve_codex_transcripts(config, state, {sid}).get(sid)
     if harness != "pi":
         return None
     # Pi's default store is nested and a custom one is flat, so both shapes are

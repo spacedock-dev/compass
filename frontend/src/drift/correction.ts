@@ -258,8 +258,8 @@ export interface SteerOffer {
 
 /* Whether there is anything to steer from, by the server's own rule (`correction.compose`) over what this
    page holds, or null: saved words, and a departure that survives in a reading of those words, a failed
-   check after them, or a later direction. Claude Code only, as the copy route is, so a paste of it can be
-   recognised coming back. A claim alone is a question and always secondary. */
+   check after them, or a later direction. Offer it where the copy route can recognise a paste
+   coming back. A claim alone is a question and always secondary. */
 export function steerOffer(input: {
   readonly session: Row;
   readonly annotation: Annotation | null | undefined;

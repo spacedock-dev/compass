@@ -1247,9 +1247,7 @@ class SpendTest(unittest.TestCase):
         ready = next(line for line in out.splitlines() if "correction is ready" in line)
         self.assertNotIn("spacedock-compass", ready)
         self.assertNotIn("Steer back: keep tabs.", out)
-        self.assertIn(
-            "This output from `/compass:compass drift` shows only that it is ready.", ready
-        )
+        self.assertIn("This output shows only that it is ready.", ready)
 
     def test_a_person_in_a_session_is_told_to_type_drift_again_over_a_stale_reading(self) -> None:
         board = stored()
@@ -1535,13 +1533,29 @@ class ACodexReadingTest(unittest.TestCase):
         self.assertIn("Correction to copy:\nSteer back: keep tabs.", out)
         self.assertIn("/api/correction", [path for path, _ in board.posts])
 
-    def test_a_person_inside_codex_sees_only_that_a_correction_is_ready(self) -> None:
-        code, out, err = drift(a_codex_board(), harness="codex", at_shell=False, in_session=True)
-        self.assertEqual((0, ""), (code, err))
-        ready = next((line for line in out.splitlines() if "correction is ready" in line), "")
-        self.assertIn("`$compass drift`", ready)
-        self.assertNotIn("Steer back: keep tabs.", out)
-        self.assertNotIn("spacedock-compass", ready)
+    def test_ready_line_names_the_invoked_codex_action_and_preserves_claude_wording(self) -> None:
+        for harness, make_board in (("codex", a_codex_board), ("claude", stored)):
+            for again in (False, True):
+                with self.subTest(harness=harness, again=again):
+                    board = make_board()
+                    code, out, _err = drift(
+                        board,
+                        harness=harness,
+                        at_shell=False,
+                        in_session=True,
+                        again=again,
+                    )
+                    self.assertEqual(0, code)
+                    ready = next(line for line in out.splitlines() if "correction is ready" in line)
+                    action = "`$compass drift again`" if again else "`$compass drift`"
+                    subject = f"This output from {action}" if harness == "codex" else "This output"
+                    self.assertEqual(
+                        "A correction is ready to copy on the session page. "
+                        f"{subject} shows only that it is ready.",
+                        ready,
+                    )
+                    self.assertNotIn("Steer back: keep tabs.", out)
+                    self.assertEqual(int(again), board.model_calls)
 
     def test_a_person_sees_a_codex_earlier_departure_the_page_keeps_in_view(self) -> None:
         prior = {

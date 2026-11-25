@@ -252,8 +252,9 @@ Session page: http://127.0.0.1:4553/#n=session:compass:claude:abc
 - Use **Copy message** in Steer back on the Claude Code or Codex session page so Compass
   recognizes the correction when it reaches the session. Paste and press Enter in interactive
   Codex. For `codex exec`, wait for the run to end, then pass the correction on standard input
-  to `codex exec resume <session id> -`. Text copied from terminal output counts as a new message
-  from you. The next reading then marks every departure that message could change as `Can't tell`.
+  to `codex exec resume <session id> -`. The session page supplies the full ID. Outside a trusted
+  folder, add `--skip-git-repo-check`. Text copied from terminal output counts as a new message
+  from you. The next reading marks every departure that message could change as `Can't tell`.
 - Before a new check starts, the command prints an estimate of how much session text may be sent.
 - Without `--session`, or through a pipe, it prints no correction and stops waiting after about 100
   seconds. Run plain `--drift` later to collect the reading for free.

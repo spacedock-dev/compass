@@ -104,8 +104,9 @@ async function noOpeningLine(box: HTMLTextAreaElement) {
 
 const INTERACTIVE_HINT =
   'Paste it into the Codex session and press Enter. If Codex is working, Enter gives it to the current turn.';
-const EXEC_HINT =
-  'After the run ends, resume it with the correction on standard input using codex exec resume <session id> -.';
+const EXEC_ID = '019c3333-3333-7333-8333-333333333333';
+const EXEC_COMMAND = `codex exec resume ${EXEC_ID} -`;
+const EXEC_HINT = `After the run ends, resume it with the correction on standard input using ${EXEC_COMMAND}. Outside a trusted folder, add --skip-git-repo-check.`;
 const CODEX_CORRECTION =
   'Back to my goal: Ship the queue\nThe session departed from my goal at 00:08.\nPlease continue from here.';
 const CODEX_MESSAGE = fact(
@@ -129,7 +130,10 @@ const CODEX_ROUTE = { ...healthyRoute('codex'), destination: 'codex' };
 const codexDeparture = (headless: boolean): Scenario => ({
   harness: 'codex',
   route: CODEX_ROUTE,
-  session: session({ goal: departs(['m1'], GOAL_WHY, 'Ship the queue') }, { headless }),
+  session: session(
+    { goal: departs(['m1'], GOAL_WHY, 'Ship the queue') },
+    { headless, ...(headless ? { resume_id: EXEC_ID } : {}) },
+  ),
   facts: [CODEX_MESSAGE, CODEX_PASTE],
   work: { analysis_levels: [{ ...analysisRow('codex'), cites: ['m1'] }] },
   correction: { ok: true, parts: [CODEX_CORRECTION] },
@@ -148,6 +152,9 @@ function codexDelivery(headless: boolean, hint: string, otherHint: string): Stor
       const delivery = canvasElement.querySelector('#next-cockpit-correction-delivery');
       await expect(delivery).toBeVisible();
       await expect(delivery?.textContent).toBe(hint);
+      await expect(delivery?.querySelector('code')?.textContent).toBe(
+        headless ? EXEC_COMMAND : undefined,
+      );
       await expect(canvasElement).not.toHaveTextContent(otherHint);
       await expect(canvas.getByText(CORRECTION_HINT)).toBeVisible();
       await expect(canvasElement.querySelector('[data-next-drift-pill]')).toBeNull();
@@ -160,6 +167,43 @@ function codexDelivery(headless: boolean, hint: string, otherHint: string): Stor
 
 export const InteractiveCodexCorrection = codexDelivery(false, INTERACTIVE_HINT, EXEC_HINT);
 export const CodexExecCorrection = codexDelivery(true, EXEC_HINT, INTERACTIVE_HINT);
+
+const pastedBack: Scenario = {
+  harness: 'codex',
+  unsaved: true,
+  nav: {},
+  route: CODEX_ROUTE,
+  session: {
+    title: CODEX_PASTE.summary,
+    prompt_at: 995.05,
+    prompt_states_work: true,
+    first_prompt: '',
+    first_prompt_at: null,
+    copied_prompts: [{ fact_id: 'u2', at: 995, quoted_as: ['title'] }],
+  },
+  facts: [CODEX_PASTE],
+};
+
+export const CodexPasteBackLeavesGoalEmpty: Story = {
+  ...scenario(pastedBack),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const goal = await canvas.findByRole('region', { name: 'Goal' });
+    await expect(goal).not.toHaveTextContent(CODEX_PASTE.summary);
+    const activity = await openSessionTechnicalTab('Activity log', canvasElement);
+    await expect(await activity.findByText('Copied from Compass', { exact: true })).toBeVisible();
+    pastedBack.nav?.go?.('#n=sessions');
+    await waitFor(async () => {
+      const cell = canvasElement.querySelector('[data-next-session="s1"] [data-next-goal-absent]');
+      await expect(cell).toHaveTextContent('No goal yet');
+    });
+    pastedBack.nav?.go?.('#n=project:demo');
+    const project = await canvas.findByRole('region', { name: 'Where this project stands' });
+    await expect(within(project).getByText('No instruction published')).toBeVisible();
+    await expect(project).not.toHaveTextContent(CODEX_PASTE.summary);
+  },
+};
+
 export const CodexWithoutADeparture: Story = {
   ...scenario({
     harness: 'codex',

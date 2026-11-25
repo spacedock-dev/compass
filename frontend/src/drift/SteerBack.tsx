@@ -6,6 +6,7 @@ import { Button } from '../ui/button';
 import { Icon } from '../ui/icons';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useFocusKey } from '../controls';
+import { validResumeToken } from '../controls/resumeCommand';
 import { ActionButton } from '../intent/ActionButton';
 import { openGoalEditor } from '../intent/edit';
 import { GLOSSARY } from '../language/glossary';
@@ -93,6 +94,7 @@ function CorrectionBox({
   const { key, identity } = model;
   const headless = model.session['headless'];
   const showDelivery = model.harness === 'codex' && typeof headless === 'boolean';
+  const resumeId = model.session['resume_id'];
   const draft = correctionDraft(held);
   /* What the box last drew, for a recomposition to freeze before the record can renumber its parts. */
   useEffect(() => rememberShown(held, draft));
@@ -239,8 +241,19 @@ function CorrectionBox({
           <p className="next-cockpit-reading-why" id="next-cockpit-correction-delivery">
             {headless ? (
               <>
-                After the run ends, resume it with the correction on standard input using{' '}
-                <code>codex exec resume &lt;session id&gt; -</code>.
+                After the run ends, resume it with the correction on standard input
+                {validResumeToken(resumeId) ? (
+                  <>
+                    {' '}
+                    using{' '}
+                    <code>
+                      codex exec resume <span data-authored>{resumeId}</span> -
+                    </code>
+                    . Outside a trusted folder, add <code>--skip-git-repo-check</code>.
+                  </>
+                ) : (
+                  '. The session ID is unavailable.'
+                )}
               </>
             ) : (
               'Paste it into the Codex session and press Enter. If Codex is working, Enter gives it to the current turn.'

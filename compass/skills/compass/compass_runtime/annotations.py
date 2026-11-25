@@ -3997,7 +3997,11 @@ def prompt_candidate(row: dict[str, Any], source: str) -> tuple[str, float | Non
         if instruction.get("label") != "asked" or reading.prompt_copied(row, "instruction"):
             return "", None
         text, at = instruction.get("text"), instruction.get("at")
-    elif source == "latest-prompt" and row.get("prompt_states_work") is True:
+    elif (
+        source == "latest-prompt"
+        and row.get("prompt_states_work") is True
+        and not reading.prompt_copied(row, "title")
+    ):
         text, at = row.get("title"), row.get("prompt_at")
     elif source == reading.SESSION_GOAL and harness in records.SESSION_GOAL_HARNESSES:
         goal = records.as_dict(row.get("session_goal"))

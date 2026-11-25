@@ -404,7 +404,7 @@ def _prompt_candidate(session: dict[str, Json], source: str) -> dict[str, Json] 
         if asked:
             text = _text(asked.get("text"))
             at = _number(asked.get("at"))
-    elif session.get("prompt_states_work") is True:
+    elif session.get("prompt_states_work") is True and not _prompt_copied(session, "title"):
         text = _text(session.get("title"))
         at = _number(session.get("prompt_at"))
     if not text:

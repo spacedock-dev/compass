@@ -17,7 +17,11 @@ const COMMANDS = new Map<string, (token: string) => string>([
    the two in step. */
 const RESUME_TOKEN = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$/;
 
+export function validResumeToken(token: unknown): token is string {
+  return typeof token === 'string' && RESUME_TOKEN.test(token);
+}
+
 export function resumeCommand(harness: string, resumeId: string): string {
   const build = COMMANDS.get(harness);
-  return build && RESUME_TOKEN.test(resumeId) ? build(resumeId) : '';
+  return build && validResumeToken(resumeId) ? build(resumeId) : '';
 }

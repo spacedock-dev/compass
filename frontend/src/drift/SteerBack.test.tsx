@@ -45,30 +45,34 @@ function mountSteer(extra: Record<string, unknown> = {}) {
   });
 }
 
+function mountCodexSteer(text: string, extra: Record<string, unknown> = {}) {
+  return mountSteer({
+    hash: '#n=session:alpha%2Fapp:codex:s1',
+    session: { ...session, harness: 'codex', ...extra },
+    facts: [
+      fact('c1', 500, {
+        type: 'agent_message',
+        by: 'agent',
+        summary: 'I stopped working on the queue.',
+        source_session: { harness: 'codex', sid: 's1' },
+      }),
+    ],
+    payload: {
+      reading_routes: {
+        codex: { ...ROUTE, harness: 'codex', provider: 'codex', destination: 'codex' },
+      },
+    },
+    routes: {
+      '/api/correction': () => json({ ok: true, parts: [text] }),
+      '/api/correction/copied': () => json({ ok: true }),
+    },
+  });
+}
+
 describe('Steer back', () => {
   it('opens and copies a correction for a Codex departure', async () => {
     const text = 'Back to my goal: Ship the queue\nThe session departed from my goal at 00:08.';
-    const page = mountSteer({
-      hash: '#n=session:alpha%2Fapp:codex:s1',
-      session: { ...session, harness: 'codex' },
-      facts: [
-        fact('c1', 500, {
-          type: 'agent_message',
-          by: 'agent',
-          summary: 'I stopped working on the queue.',
-          source_session: { harness: 'codex', sid: 's1' },
-        }),
-      ],
-      payload: {
-        reading_routes: {
-          codex: { ...ROUTE, harness: 'codex', provider: 'codex', destination: 'codex' },
-        },
-      },
-      routes: {
-        '/api/correction': () => json({ ok: true, parts: [text] }),
-        '/api/correction/copied': () => json({ ok: true }),
-      },
-    });
+    const page = mountCodexSteer(text);
     await page.settle();
     const steer = byAction('steer-back');
     expect(steer, textOf('[data-next-drift-body]')).not.toBeNull();
@@ -82,6 +86,33 @@ describe('Steer back', () => {
       { harness: 'codex', sid: 's1', text },
     ]);
   });
+
+  it('exec delivery uses the full validated resume ID and names the trusted-folder flag', async () => {
+    const id = '019c3333-3333-7333-8333-333333333333';
+    const page = mountCodexSteer('Please continue from here.', { headless: true, resume_id: id });
+    await page.settle();
+    await press(byAction('steer-back'));
+    await page.settle();
+    const delivery = document.getElementById('next-cockpit-correction-delivery');
+    expect(delivery?.querySelector('code')?.textContent).toBe(`codex exec resume ${id} -`);
+    expect(delivery?.textContent).toBe(
+      `After the run ends, resume it with the correction on standard input using codex exec resume ${id} -. Outside a trusted folder, add --skip-git-repo-check.`,
+    );
+    expect(delivery?.textContent).not.toContain('press Enter');
+  });
+
+  it.each([undefined, '', '--last', 'safe; echo bad', 'a\n'])(
+    'withholds the exec command when its resume ID is unavailable (%s)',
+    async (resume_id) => {
+      const page = mountCodexSteer('Please continue from here.', { headless: true, resume_id });
+      await page.settle();
+      await press(byAction('steer-back'));
+      await page.settle();
+      const delivery = document.getElementById('next-cockpit-correction-delivery');
+      expect(delivery?.textContent).toContain('correction on standard input');
+      expect(delivery?.querySelector('code')).toBeNull();
+    },
+  );
 
   it('gives the feedback-only controls no dangling accessible names', async () => {
     const page = mountSteer({

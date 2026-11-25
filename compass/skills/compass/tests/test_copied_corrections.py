@@ -30,12 +30,22 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from compass_runtime import aggregate, http_api, observer, project_context
+from compass_runtime import (
+    aggregate,
+    drift_view,
+    http_api,
+    observer,
+    project_context,
+    terminal_drift,
+    terminal_sessions,
+    transcripts,
+)
 from compass_runtime import annotations as annotation_store
 from compass_runtime import copied_corrections as copies
 from compass_runtime import io as runtime_io
 from compass_runtime import reading as runtime_reading
 from compass_runtime import sessions as runtime_sessions
+from compass_runtime.collectors import codex
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
@@ -251,18 +261,26 @@ class CopyStoreTest(_Store):
         sessions = self.config.annotation_max_sessions
         moment = 1790000000.1234567
         held = {
-            ("claude", f"{n:0{copies._KEY_CAP_CHARS}d}"): copies.Held(
+            ("codex", f"{n:0{copies._KEY_CAP_CHARS}d}"): copies.Held(
                 tuple(
                     {
                         "digest": f"{n:032x}{c:032x}",
+                        "folded": "0" * 64,
                         "copied_at": moment + c,
                         "ino": 2**64 - 1,
                         "offset": 2**63 - 1,
+                        "prefix_count": 2**63 - 1,
+                        "prefix_digest": "1" * 64,
                     }
                     for c in range(copies.COPIES_PER_SESSION)
                 ),
                 tuple(
-                    {"fact_id": f"fact:{n:08x}{m:08x}", "at": moment + m, "copied_at": moment + m}
+                    {
+                        "fact_id": f"fact:{n:08x}{m:08x}",
+                        "at": moment + m,
+                        "copied_at": moment + m,
+                        "record_digest": "2" * 64,
+                    }
                     for m in range(copies.MATCHES_PER_SESSION)
                 ),
             )
@@ -393,6 +411,324 @@ class MatchingTest(_Store):
 
 
 class CodexDeliveryTest(unittest.TestCase):
+    @contextlib.contextmanager
+    def rollout(self) -> Any:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sessions = root / "sessions"
+            config = build_runtime_config(
+                environ={"HOME": str(root), "COMPASS_HOME": str(root / "state")},
+                platform_name="linux",
+                os_name="posix",
+                launcher_path=root / "server.py",
+                store_root_overrides={"codex.sessions": str(sessions)},
+            )
+            sid = "019c3333-3333-7333-8333-333333333333"
+            path = sessions / f"1970/01/01/rollout-{sid}.jsonl"
+            path.parent.mkdir(parents=True)
+            yield config, build_runtime_state(config, started=1000), sid, path
+
+    @staticmethod
+    def record(at: float, kind: str, **payload: Any) -> str:
+        stamp = datetime.fromtimestamp(at, UTC).isoformat()
+        return json.dumps({"timestamp": stamp, "type": kind, "payload": payload}) + "\n"
+
+    def message(self, at: float, words: str) -> str:
+        return self.record(
+            at,
+            "response_item",
+            type="message",
+            role="user",
+            content=[{"type": "input_text", "text": words}],
+        )
+
+    def completed(self, at: float, words: str) -> str:
+        return self.record(
+            at,
+            "event_msg",
+            type="item_completed",
+            item={
+                "type": "UserMessage",
+                "id": "item_1",
+                "content": [{"type": "text", "text": words, "text_elements": []}],
+            },
+        )
+
+    def test_same_inode_rewrite_cannot_reclassify_a_pre_copy_prompt(self) -> None:
+        for warm in (False, True):
+            with self.subTest(warm=warm), self.rollout() as (config, state, sid, path):
+                meta = self.record(80, "session_meta", id=sid, cwd="/stats", source="cli")
+                prior = self.message(170, STORED)
+                path.write_text(meta + prior, encoding="utf-8")
+                position = copies.transcript_position(config, state, "codex", sid)
+                self.assertEqual(
+                    "stored",
+                    copies.register(
+                        config,
+                        "codex",
+                        sid,
+                        STORED,
+                        now=180,
+                        position=position,
+                    ),
+                )
+                if warm:
+                    self.assertEqual((), copies.matched(config, state, "codex", sid))
+                extra = self.record(85, "turn_context", note="x" * (len(meta + prior) * 2))
+                ino = path.stat().st_ino
+                path.write_text(meta + extra + prior, encoding="utf-8")
+                os.utime(path, (200, 200))
+                self.assertEqual(ino, path.stat().st_ino)
+                self.assertEqual((), copies.matched(config, state, "codex", sid))
+                case = copy.deepcopy(BY_NAME["codex-later-direction-unsettled"])
+                row = {**case["session"], "sid": sid, "project": "stats", "active": True}
+                for fact in case["context"]["semantic"]["facts"]:
+                    if fact.get("source_session"):
+                        fact["source_session"]["sid"] = sid
+                collected = project_context.collect(
+                    config, state, [row], "stats", now=1000, focus=("codex", sid)
+                )
+                (person,) = (
+                    fact
+                    for fact in collected["semantic"]["facts"]
+                    if fact["type"] == "user_message" and fact["at"] == 170
+                )
+                copies.attach(config, state, [row])
+                self.assertEqual([], row["copied_prompts"])
+                case["session"] = row
+                case["context"]["semantic"]["facts"][1] = person
+                case["context"] = copies.mark(case["context"], [row])
+                self.assertEqual(
+                    runtime_reading.AUTHOR_PERSON,
+                    runtime_reading.author_of(case["context"]["semantic"]["facts"][1]),
+                )
+                self.assertEqual("cant-tell", view(case)["lines"][0]["state"])
+
+    def test_shrinking_non_user_context_cannot_hide_a_later_paste(self) -> None:
+        with self.rollout() as (config, state, sid, path):
+            meta = self.record(80, "session_meta", id=sid, cwd="/stats", source="cli")
+            first = self.message(90, FIRST)
+            context = self.record(150, "turn_context", note="x" * 5000)
+            path.write_text(meta + first + context, encoding="utf-8")
+            position = copies.transcript_position(config, state, "codex", sid)
+            self.assertEqual(
+                "stored",
+                copies.register(
+                    config,
+                    "codex",
+                    sid,
+                    STORED,
+                    now=160,
+                    position=position,
+                ),
+            )
+            self.assertEqual((), copies.matched(config, state, "codex", sid))
+            path.write_text(meta + first + self.message(170, STORED), encoding="utf-8")
+            self.assertEqual(
+                [170], [item["at"] for item in copies.matched(config, state, "codex", sid)]
+            )
+
+    def test_a_changed_pre_copy_user_record_leaves_the_boundary_unverified(self) -> None:
+        with self.rollout() as (config, state, sid, path):
+            meta = self.record(80, "session_meta", id=sid, cwd="/stats", source="cli")
+            path.write_text(meta + self.message(90, FIRST), encoding="utf-8")
+            position = copies.transcript_position(config, state, "codex", sid)
+            self.assertEqual(
+                "stored",
+                copies.register(
+                    config,
+                    "codex",
+                    sid,
+                    STORED,
+                    now=160,
+                    position=position,
+                ),
+            )
+            path.write_text(
+                meta + self.message(90, OWN) + self.message(170, STORED), encoding="utf-8"
+            )
+            self.assertEqual((), copies.matched(config, state, "codex", sid))
+
+    def test_a_legacy_codex_copy_without_prefix_proof_cannot_mark_a_paste(self) -> None:
+        with self.rollout() as (config, state, sid, path):
+            path.write_text(self.record(80, "session_meta", id=sid, source="cli"), encoding="utf-8")
+            old_copy: copies.Copy = {
+                "digest": copies.digest(STORED),
+                "copied_at": 160.0,
+                "ino": path.stat().st_ino,
+                "offset": path.stat().st_size,
+            }
+            copies._write(config, {("codex", sid): copies.Held((old_copy,), ())}, self.fail)
+            with path.open("a", encoding="utf-8") as output:
+                output.write(self.message(170, STORED))
+            self.assertEqual((), copies.matched(config, state, "codex", sid))
+
+    def test_recognised_latest_prompt_is_never_a_goal_or_direction_floor(self) -> None:
+        for delivery, last_at in (
+            ("completion", 170.05),
+            ("response-only", 170.0),
+            ("first-and-latest", 170.05),
+        ):
+            with self.subTest(delivery=delivery), self.rollout() as (config, state, sid, path):
+                opening = self.record(80, "session_meta", id=sid, cwd="/stats", source="cli")
+                if delivery != "first-and-latest":
+                    opening += self.record(85, "turn_context", note="x" * (2 << 20))
+                    opening += self.message(90, FIRST)
+                words = "Fix the queue and verify it using " + "the existing checks. " * 75
+                path.write_text(opening, encoding="utf-8")
+                position = copies.transcript_position(config, state, "codex", sid)
+                self.assertEqual(
+                    "stored",
+                    copies.register(
+                        config,
+                        "codex",
+                        sid,
+                        words,
+                        now=160,
+                        position=position,
+                    ),
+                )
+                with path.open("a", encoding="utf-8") as output:
+                    output.write(self.message(170, words))
+                    if delivery != "response-only":
+                        output.write(self.completed(last_at, words))
+                os.utime(path, (200, 200))
+
+                def row_after_attach() -> dict[str, Any]:
+                    (row,) = codex.collect(config, state, 200, 1, False)
+                    copies.attach(config, state, [row])
+                    return row
+
+                row = row_after_attach()
+                self.assertLess(len(row["title"]), len(words))
+                self.assertEqual(last_at, row["prompt_at"])
+                self.assertEqual(
+                    ("", None), annotation_store.prompt_candidate(row, "latest-prompt")
+                )
+                self.assertTrue(runtime_reading.prompt_copied(row, "title"))
+                if delivery == "first-and-latest":
+                    self.assertTrue(runtime_reading.prompt_copied(row, "first_prompt"))
+                else:
+                    self.assertFalse(row["first_prompt"])
+                self.assertEqual(
+                    "refused",
+                    annotation_store.adopt(
+                        config,
+                        state,
+                        row,
+                        source="latest-prompt",
+                        expected_text=row["title"],
+                        expected_at=last_at,
+                        now=200,
+                    ),
+                )
+                self.assertEqual((), annotation_store.load(config))
+                self.assertIsNone(annotation_store.direction_floor(None, row))
+                self.assertIsNone(drift_view.intent_draft({"annotate": True}, row, None))
+                self.assertIsNone(terminal_drift.draft(row, {"annotate": True}))
+                self.assertEqual(
+                    ("Goal", ""),
+                    terminal_sessions._goal(
+                        row,
+                        annotate=True,
+                        unreadable=False,
+                    ),
+                )
+
+                if delivery == "completion":
+                    with path.open("a", encoding="utf-8") as output:
+                        output.write(self.record(180, "turn_context", note="x" * 8200))
+                    os.utime(path, (200, 200))
+                    narrow = dataclasses.replace(
+                        config, direction_scan_max_bytes=4096, tail_bytes=4096
+                    )
+                    reopened = build_runtime_state(narrow, started=200)
+                    (persisted,) = codex.collect(narrow, reopened, 200, 1, False)
+                    copies.attach(narrow, reopened, [persisted])
+                    self.assertTrue(runtime_reading.prompt_copied(persisted, "title"))
+
+                # This prompt can share the copied title and clock. Its exact response differs.
+                typed = words + " Also check the queue worker."
+                expected = row["title"]
+                with path.open("a", encoding="utf-8") as output:
+                    output.write(self.message(last_at, typed))
+                os.utime(path, (201, 201))
+                row = row_after_attach()
+                self.assertFalse(runtime_reading.prompt_copied(row, "title"))
+                self.assertEqual(
+                    (expected, last_at), annotation_store.prompt_candidate(row, "latest-prompt")
+                )
+                self.assertEqual(
+                    "stored",
+                    annotation_store.adopt(
+                        config,
+                        state,
+                        row,
+                        source="latest-prompt",
+                        expected_text=expected,
+                        expected_at=last_at,
+                        now=201,
+                    ),
+                )
+
+    def test_warm_attach_indexes_codex_rollouts_once_for_completed_copies(self) -> None:
+        with self.rollout() as (config, state, _, path):
+            rows: list[dict[str, Any]] = []
+            for index in range(3):
+                sid = f"00000000-0000-4000-8000-{index:012d}"
+                root = path.with_name(f"rollout-root-{sid}.jsonl")
+                root.write_text(
+                    self.record(80, "session_meta", id=sid, source="cli"), encoding="utf-8"
+                )
+                child = path.with_name(f"rollout-child-{sid}.jsonl")
+                child.write_text(
+                    self.record(
+                        80,
+                        "session_meta",
+                        id=sid,
+                        session_id="another-root",
+                        thread_source="subagent",
+                        source={"subagent": {"thread_spawn": {"parent_thread_id": "another-root"}}},
+                    )
+                    + self.message(175, STORED),
+                    encoding="utf-8",
+                )
+                os.utime(child, (999, 999))
+                position = copies.transcript_position(config, state, "codex", sid)
+                self.assertEqual(
+                    "stored",
+                    copies.register(
+                        config,
+                        "codex",
+                        sid,
+                        STORED,
+                        now=160,
+                        position=position,
+                    ),
+                )
+                with root.open("a", encoding="utf-8") as output:
+                    output.write(self.message(170 + index, STORED))
+                os.utime(root, (200, 200))
+                rows.append(
+                    {
+                        "harness": "codex",
+                        "sid": sid,
+                        "title": transcripts.prompt_title(config, STORED),
+                        "prompt_at": 170 + index,
+                    }
+                )
+            copies.attach(config, state, rows)
+            expected = [row["copied_prompts"] for row in rows]
+            self.assertEqual([170, 171, 172], [found[0]["at"] for found in expected])
+            self.assertTrue(all(found[0]["quoted_as"] == ["title"] for found in expected))
+            self.assertFalse(any(entry.copies for entry in copies.load(config).values()))
+            with mock.patch.object(
+                transcripts, "codex_meta", wraps=transcripts.codex_meta
+            ) as lookup:
+                copies.attach(config, state, rows)
+            self.assertEqual(expected, [row["copied_prompts"] for row in rows])
+            self.assertLessEqual(lookup.call_count, 6)
+
     def test_captured_deliveries_keep_the_departure_and_match_the_collected_fact_id(self) -> None:
         capture_path = (
             SERVER_PATH.parents[3] / "docs/captures/codex/correction-delivery-0.172.0-macos.jsonl"
@@ -987,7 +1323,7 @@ class CopiedRouteTest(_App):
         real = copies.transcript_position
         pasted: list[float] = []
 
-        def position_then_paste(*args: Any) -> tuple[int, int] | None:
+        def position_then_paste(*args: Any) -> copies._Position | None:
             found = real(*args)
             pasted.append(_paste(self.session, STORED))
             self.session.save(self.path)

@@ -714,7 +714,9 @@ def _goal(source: Row, *, annotate: bool, unreadable: bool) -> tuple[str, str]:
     asked = _asked(source) if harness == "claude" else ""
     codex_prompt = (
         _text(source.get("title")).strip()
-        if harness == "codex" and source.get("prompt_states_work") is True
+        if harness == "codex"
+        and source.get("prompt_states_work") is True
+        and not _copied(source, "title")
         else ""
     )
     prompt = asked or codex_prompt
@@ -828,7 +830,7 @@ def _prompt_candidate(source: Row, which: str) -> tuple[str, str] | None:
         if asked:
             instruction = source["instruction"]
             text, at = _text(instruction.get("text")), _num(instruction.get("at"))
-    elif source.get("prompt_states_work") is True:
+    elif source.get("prompt_states_work") is True and not _copied(source, "title"):
         text, at = _text(source.get("title")), _num(source.get("prompt_at"))
     return (text, which) if text and at is not None and at > 0 else None
 

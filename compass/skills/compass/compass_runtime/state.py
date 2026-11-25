@@ -94,7 +94,8 @@ class RuntimeState:
     transcript_user_cache: dict[
         tuple[str, str, str], tuple[tuple[int, int, int, int], list[dict[str, Any]]]
     ] = field(default_factory=dict)
-    # transcript path -> ((mtime_ns, size), the published instruction reading).
+    # Codex keys on identity and change time as well, because the latest prompt's
+    # source digest must follow a rewrite even when the size and mtime are restored.
     # Both are `bounded_put` at `config.max_cache_entries`, like every cache
     # above them.
     #
@@ -103,13 +104,13 @@ class RuntimeState:
     # opposite case — an idle or `?all=1` row re-read on each refresh, where the
     # walk is over a file that stopped changing — and that is the population
     # where the walk is long, because it reaches back through a finished turn.
-    codex_instruction_cache: dict[str, tuple[int, int, dict[str, Any]]] = field(
+    codex_instruction_cache: dict[str, tuple[tuple[int, int, int, int], dict[str, Any]]] = field(
         default_factory=dict
     )
     claude_instruction_cache: dict[str, tuple[int, int, dict[str, Any] | None]] = field(
         default_factory=dict
     )
-    # Same key and the same reasoning as `codex_instruction_cache` above, and a
+    # Mtime and size, with the same reuse goal as the instruction caches above, and a
     # separate entry rather than a key inside it: the plan walk stops at the
     # newest `update_plan` and the instruction walk at the newest prompt, so one
     # of them reaching its record says nothing about how far the other must go.
