@@ -114,6 +114,7 @@ import urllib.request
 from typing import TYPE_CHECKING, Any, BinaryIO, Self
 
 import abstention_ledger
+import codex_case_sources
 import mark_abstention
 
 if TYPE_CHECKING:
@@ -161,13 +162,7 @@ PRODUCERS = ("claude", "codex")
 # The owner's ceiling, 28 real readings across every packet since 2026-10-01
 # (DRC-4666). `abstention_ledger` owns the cap and the one ledger.
 MAX_CALLS = abstention_ledger.MAX_CALLS
-PASSING_CHECK_ADVERSARIES = (
-    "goal-unrelated",
-    "outcome-unrelated",
-    "browser-unrelated",
-    "stale-before-write",
-    "partial-check",
-)
+PASSING_CHECK_ADVERSARIES = codex_case_sources.PASSING_CHECK_ADVERSARIES
 # Where the native installer puts each Claude Code version, one file per version
 # named for it. A `claude` resolving anywhere else is refused: a PATH stub
 # answered as `claude-sonnet-5` in review, and nothing in the result showed it.
@@ -176,10 +171,10 @@ CLAUDE_VERSIONS_ROOTS = () if _CLAUDE_VERSIONS_ROOT is None else (_CLAUDE_VERSIO
 _CLAUDE_VERSION_RE = re.compile(r"^(\d+\.\d+\.\d+) \(Claude Code\)$")
 
 # DEC-15's five kinds, as the rubric file must spell them.
-KIND_SUPPORTED_DEPARTURE = "supported-departure"
+KIND_SUPPORTED_DEPARTURE = codex_case_sources.KIND_SUPPORTED_DEPARTURE
 KIND_LEGITIMATE_CHANGE = "legitimate-change"
-KIND_INCORRECT_EXECUTION = "matching-intent-incorrect-execution"
-KIND_MISLEADING_COMPLETION = "misleading-completion"
+KIND_INCORRECT_EXECUTION = codex_case_sources.KIND_INCORRECT_EXECUTION
+KIND_MISLEADING_COMPLETION = codex_case_sources.KIND_MISLEADING_COMPLETION
 KIND_INSUFFICIENT_EVIDENCE = "insufficient-evidence"
 KINDS = (
     KIND_SUPPORTED_DEPARTURE,
@@ -205,7 +200,7 @@ COVERAGE_REQUIRED = "required"
 RUBRIC_HARNESSES = (*COVERAGE_HARNESSES, "pi")
 
 ORIGIN_RECORDED = "recorded"
-ORIGIN_SYNTHESISED = "synthesised"
+ORIGIN_SYNTHESISED = mark_abstention.ORIGIN_SYNTHESISED
 ORIGINS = (ORIGIN_RECORDED, ORIGIN_SYNTHESISED)
 # A frozen case the machine's own records do not vouch for (DRC-4666, F4):
 # scored, and never counted toward the recorded floor.
@@ -1259,6 +1254,13 @@ def score_case(  # noqa: PLR0913 - one keyword per thing a case decides
                         dict(case), config=config, reviewed_exports=reviewed_exports
                     ),
                 }
+                if harness == "codex":
+                    source_kwargs["max_prompt_bytes"] = mark_abstention.codex_analyze_limits(
+                        config
+                    ).analyze_prompt_bytes
+                    source_kwargs["message_source_lookup"] = (
+                        mark_abstention.native_codex_case_message_lookup(dict(case), config=config)
+                    )
                 model = _SourcePinnedModel(
                     model,
                     str(frozen["prompt_digest"]),
@@ -1266,7 +1268,7 @@ def score_case(  # noqa: PLR0913 - one keyword per thing a case decides
                     case=case,
                     config=config,
                 )
-                read_agent_words = True
+                read_agent_words = harness == "claude"
             assessment, why, spent = reading.produce(
                 config,
                 row,
@@ -1474,11 +1476,12 @@ def _dec17(records: Sequence[Mapping[str, Any]]) -> dict[str, list[str]]:
 def _coverage(
     rubric_records: Sequence[Mapping[str, Any]], producer: str = ""
 ) -> dict[str, dict[str, Any]]:
-    """Kinds per required harness that a recorded case carried to the model.
+    """Kinds per required harness that an eligible case carried to the model.
 
     Recorded only: DEC-17 asks for one recorded session per kind, and a
     synthesised case satisfying it would be the substitution the two-corpora
-    rule exists to refuse. Withheld cases count for nothing here, whatever
+    rule exists to refuse. The prospective Codex qualification permits only
+    its separately reviewed authored core kinds. Withheld cases count for nothing here, whatever
     kind they are tagged with: a producer that never saw the case proved
     nothing about the kind.
 
@@ -1490,16 +1493,25 @@ def _coverage(
     """
     out: dict[str, dict[str, Any]] = {}
     for harness in COVERAGE_HARNESSES:
-        kinds = {
-            str(r["kind"])
+        reached = [
+            r
             for r in rubric_records
             if r["harness"] == harness
-            and r["origin"] == "recorded"
             and r["admitted"]
             and r["reached_model"]
             and r["kind"] in KINDS
             and _fully_scored(r)
+        ]
+        kinds = {r["kind"] for r in reached if r["origin"] == ORIGIN_RECORDED}
+        authored_kinds = {
+            r["kind"]
+            for r in reached
+            if producer == harness == "codex"
+            and r["origin"] == ORIGIN_SYNTHESISED
+            and r.get("source") == "authored"
+            and r["kind"] in codex_case_sources.AUTHORED_CORE_KINDS
         }
+        kinds.update(authored_kinds)
         absent = [k for k in KINDS if k not in kinds]
         role = (
             COVERAGE_REQUIRED
@@ -1515,6 +1527,8 @@ def _coverage(
             "missing": [] if control else absent,
             "not_produced": absent if control else [],
         }
+        if authored_kinds:
+            out[harness]["authored_kinds"] = sorted(authored_kinds)
     return out
 
 
@@ -1633,6 +1647,7 @@ def summarize(
                     "kind": r["kind"],
                     "harness": r["harness"],
                     "origin": r["origin"],
+                    **({"source": "authored"} if r.get("source") == "authored" else {}),
                     "admitted": r["admitted"],
                     "refused": str(r.get("refused") or ""),
                     "scored": bool(r.get("scored", True)),
@@ -3817,10 +3832,25 @@ def _codex_expectations(case: Mapping[str, Any], entry: Mapping[str, Any]) -> bo
     )
 
 
-def _codex_cases(corpus: Corpus, config: Any) -> dict[str, Any]:  # noqa: C901 - source, mark and independent review guards precede every send
-    """Native revalidation and independent, source-bound kind review, before any send."""
-    import codex_case_sources  # noqa: PLC0415
+def _validate_authored_codex_review(
+    case: dict[str, Any], review: dict[str, Any], rubric: dict[str, Any], markers: list[str]
+) -> None:
+    author, verifier = case["authored_by"], case["verified_by"]
+    if review["reviewed_by"].strip() == author.strip() or {m.strip() for m in markers} & {
+        author.strip(),
+        verifier.strip(),
+    }:
+        raise mark_abstention.FreezeError("codex-independent-source-kind-unconfirmed")
+    if (
+        rubric.get("origin") != ORIGIN_SYNTHESISED
+        or rubric.get("generated_by") != author
+        or rubric.get("verified_by") != verifier
+    ):
+        raise mark_abstention.FreezeError("codex-authored-rubric-differs")
 
+
+def _codex_cases(corpus: Corpus, config: Any) -> dict[str, Any]:  # noqa: C901 - source, mark and independent review guards precede every send
+    """Source revalidation and independent, source-bound kind review, before any send."""
     body = dict(corpus.cases)
     if body.get("v") != mark_abstention.FORMAT_CODEX or mark_abstention.packet_mismatch(body):
         raise mark_abstention.FreezeError("codex-packet-required")
@@ -3842,14 +3872,16 @@ def _codex_cases(corpus: Corpus, config: Any) -> dict[str, Any]:  # noqa: C901 -
         raise mark_abstention.FreezeError("codex-ten-reviewed-cases-required")
     roles = []
     for cid, case in cases.items():
-        if case.get("origin") != ORIGIN_RECORDED or codex_case_sources.content_refusal(
-            config, case, str(case["sources"]["parent"]["path"])
-        ):
+        if codex_case_sources.content_refusal(config, case, str(case["sources"]["parent"]["path"])):
             raise mark_abstention.FreezeError("codex-native-source-unconfirmed")
         _production_source(case)
         review = reviews[cid]
         if not isinstance(review, dict):
             raise mark_abstention.FreezeError("codex-kind-review-required")
+        if case["origin"] == ORIGIN_SYNTHESISED and any(
+            review.get(field) != case[field] for field in ("kind", "authored_by", "verified_by")
+        ):
+            raise mark_abstention.FreezeError("codex-authored-kind-review-differs")
         kind = review.get("kind")
         markers = review.get("markers")
         if (
@@ -3875,11 +3907,13 @@ def _codex_cases(corpus: Corpus, config: Any) -> dict[str, Any]:  # noqa: C901 -
             or rubric_refusal(rubric[cid], "codex")
         ):
             raise mark_abstention.FreezeError("codex-independent-source-kind-unconfirmed")
+        if case["origin"] == ORIGIN_SYNTHESISED:
+            _validate_authored_codex_review(case, review, rubric[cid], markers)
         if not _codex_expectations(case, rubric[cid]):
             raise mark_abstention.FreezeError("codex-required-expectations-incomplete")
         roles.append(kind)
     if sorted(roles) != sorted((*KINDS, *PASSING_CHECK_ADVERSARIES)):
-        raise mark_abstention.FreezeError("codex-five-genuine-kinds-and-adversaries-required")
+        raise mark_abstention.FreezeError("codex-five-core-kinds-and-adversaries-required")
     return cases
 
 
@@ -3929,10 +3963,9 @@ def prepare_codex_requests(
                 ),
                 "evidence": [
                     "frozen intent",
-                    "selected person and agent messages",
+                    "selected person messages",
                     "recorded checks",
                     "permitted output",
-                    "agent source material",
                 ],
             }
         )
@@ -4282,8 +4315,11 @@ def _score_codex(  # noqa: C901, PLR0912, PLR0913, PLR0915 - batch admission and
                 case["id"],
                 case_origin=case["origin"],
             )
-            # Kind coverage is supplied exclusively by the independently reviewed native source.
+            # The source-bound review supplies the measured kind even if the rubric uses a
+            # different label for its expectation.
             judged["kind"] = corpus.cases["codex_kind_reviews"][case["id"]]["kind"]
+            if case["origin"] == ORIGIN_SYNTHESISED:
+                judged["source"] = "authored"
             classification = _repeat_classification(record, judged, charged.charge_id)
             if charged.transport_status in ("unstopped", "oversized"):
                 classification = "protection-failed"

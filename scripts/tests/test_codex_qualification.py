@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import dataclasses
 import io
 import json
 import os
@@ -207,12 +208,20 @@ class CodexQualificationTest(_CodexInstallationFixture):
         self.transport = scorer.codex_transport(self.config, self.verified)
         cases = []
         reviews = {}
+        authored = {scorer.KIND_MISLEADING_COMPLETION, scorer.PASSING_CHECK_ADVERSARIES[0]}
         for n, kind in enumerate((*scorer.KINDS, *scorer.PASSING_CHECK_ADVERSARIES)):
             sid = f"00000000-0000-4000-8000-{n + 1:012d}"
-            root = self.home / "codex/sessions"
+            root = self.home / ("authored-rollouts" if kind in authored else "codex/sessions")
             path = rollout(root, sid=sid)
             spec = entry(root, path)
             spec["sid"] = sid
+            if kind in authored:
+                spec.update(
+                    origin="synthesised",
+                    kind=kind,
+                    authored_by="author",
+                    verified_by="independent-verifier",
+                )
             case = sources.freeze_case(self.config, spec)
             cases.append(case)
             reviews[case["id"]] = {
@@ -226,26 +235,37 @@ class CodexQualificationTest(_CodexInstallationFixture):
                 "verified_by": "independent-verifier",
             }
         body = {"v": marker.FORMAT_CODEX, "cases": cases, "codex_kind_reviews": reviews}
-        marks: dict[str, Any] = {
-            "cases_digest": marker.cases_digest(body),
-            "marks": {
-                c["id"]: dict.fromkeys(c["production_reading"]["constraints"], "abstain")
-                for c in cases
-            },
-        }
+        cases_path = self.home / "cases.json"
+        marks_path = self.home / "marks.json"
+        cases_path.write_text(json.dumps(body))
+        with (
+            mock.patch.object(marker, "CASES_PATH", str(cases_path)),
+            mock.patch.object(marker, "MARKS_PATH", str(marks_path)),
+            mock.patch.object(authority, "LEDGER_PATH", str(self.home / "empty-ledger.json")),
+            # The committed Claude calls currently block even fresh Codex marking.
+            mock.patch.object(
+                authority, "CLAUDE_SUMMARY_PATH", str(self.home / "absent-claude-summary.json")
+            ),
+            mock.patch("builtins.input", return_value="n"),
+            contextlib.redirect_stdout(io.StringIO()) as marking,
+        ):
+            self.assertEqual(0, marker.main([]), marking.getvalue())
+        marks = json.loads(marks_path.read_bytes())
         rubric = {
             "v": 1,
             "cases": {
                 c["id"]: {
                     "kind": scorer.KIND_LEGITIMATE_CHANGE,
-                    "origin": "recorded",
+                    "origin": c["origin"],
+                    "generated_by": "author",
+                    "verified_by": "independent-verifier",
                     "harness": "codex",
                     "expect": {
                         key: {"result": "unverifiable", "cites": []}
                         for key in marks["marks"][c["id"]]
                     },
                 }
-                for n, c in enumerate(cases)
+                for c in cases
             },
         }
         self.corpus = scorer.Corpus(body, marks, json.dumps(marks).encode(), rubric)
@@ -446,6 +466,20 @@ class CodexQualificationTest(_CodexInstallationFixture):
         summary = json.loads(Path(self.summary).read_text())
         self.assertEqual("passed", summary["verdict"])
         self.assertEqual(["passed"] * 3, [r["summary"]["verdict"] for r in summary["repetitions"]])
+        for repetition in summary["repetitions"]:
+            native = repetition["summary"]
+            authored = {
+                row["kind"]
+                for row in native["rubric"]["cases"].values()
+                if row.get("source") == "authored" and row["reached_model"]
+            }
+            self.assertEqual(
+                {scorer.KIND_MISLEADING_COMPLETION, scorer.PASSING_CHECK_ADVERSARIES[0]},
+                authored,
+            )
+            self.assertEqual(
+                [scorer.KIND_MISLEADING_COMPLETION], native["coverage"]["codex"]["authored_kinds"]
+            )
         self.assertEqual(30, self.study().used())
         self.assertEqual(0, self.run_one(resume=True))
         self.assertEqual(30, len(self.launches))
@@ -621,6 +655,42 @@ class CodexQualificationTest(_CodexInstallationFixture):
         )
         with self.assertRaises(marker.FreezeError):
             scorer.prepare_codex_requests(self.corpus, self.config, self.transport)
+        self.assertEqual([], self.launches)
+
+    def test_a_person_cannot_prepare_an_authored_case_with_different_rubric_provenance(
+        self,
+    ) -> None:
+        case = next(c for c in self.corpus.cases["cases"] if c["origin"] == "synthesised")
+        for changes in (
+            {"origin": "recorded", "generated_by": "", "verified_by": ""},
+            {"origin": None},
+            {"generated_by": "other-author"},
+            {"verified_by": "other-verifier"},
+        ):
+            with self.subTest(changes=changes):
+                rubric = copy.deepcopy(self.corpus.rubric)
+                rubric["cases"][case["id"]].update(changes)
+                corpus = dataclasses.replace(self.corpus, rubric=rubric)
+                with self.assertRaisesRegex(marker.FreezeError, "codex-authored-rubric-differs"):
+                    scorer.prepare_codex_requests(corpus, self.config, self.transport)
+        self.assertEqual([], self.launches)
+
+    def test_a_person_cannot_review_their_own_kind_or_blind_mark_an_authored_case(self) -> None:
+        case = next(c for c in self.corpus.cases["cases"] if c["origin"] == "synthesised")
+        for changes in (
+            {"reviewed_by": " author "},
+            {"markers": [" author ", "marker-b"]},
+            {"markers": ["marker-a", " independent-verifier "]},
+        ):
+            with self.subTest(changes=changes):
+                body = copy.deepcopy(dict(self.corpus.cases))
+                body["codex_kind_reviews"][case["id"]].update(changes)
+                marks = {**self.corpus.marks, "cases_digest": marker.cases_digest(body)}
+                corpus = scorer.Corpus(body, marks, json.dumps(marks).encode(), self.corpus.rubric)
+                with self.assertRaisesRegex(
+                    marker.FreezeError, "codex-independent-source-kind-unconfirmed"
+                ):
+                    scorer.prepare_codex_requests(corpus, self.config, self.transport)
         self.assertEqual([], self.launches)
 
     def test_a_person_can_prepare_at_the_cli_without_claude_or_a_producer_launch(self) -> None:

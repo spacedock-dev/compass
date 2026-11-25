@@ -1771,10 +1771,12 @@ def _produce(
         marker = _marker()
         facts = list(case.get("producer_facts") or ())
         extra: dict[str, Any] = {
-            "read_agent_words": True,
             "admit_idle": True,
+            "max_prompt_bytes": marker.codex_analyze_limits(config).analyze_prompt_bytes,
             "person_source_lookup": marker.native_case_person_lookup(dict(case), config=config),
-            "final_source_lookup": marker.native_case_final_lookup(dict(case), config=config),
+            "message_source_lookup": marker.native_codex_case_message_lookup(
+                dict(case), config=config
+            ),
         }
     else:
         facts = list(case.get("facts") or ())

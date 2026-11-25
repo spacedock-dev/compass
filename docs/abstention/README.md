@@ -1231,18 +1231,23 @@ owns local reads, provider payloads, retention and accounting paths.
 
 ### Cases and blind review
 
-The packet must contain ten distinct cases. Five must be genuine recorded Codex cases, one of
-each kind: supported departure, legitimate change, matching-intent incorrect execution,
-misleading completion and insufficient evidence. The supported departure must be spontaneous;
-a departure the prompt requested cannot fill that kind. The other five are independently
+The packet must contain ten distinct cases. The 2026-11-09 protocol called for one recorded
+Codex case of each core kind: supported departure, legitimate change, matching-intent incorrect
+execution, misleading completion and insufficient evidence. The supported departure must be
+spontaneous. A departure the prompt requested cannot fill that kind. The other five are independently
 verified adversaries: goal-unrelated, outcome-unrelated, browser-unrelated, stale-before-write
-and partial-check. Record who authored and who independently verified each adversary, and
-distinguish authored material from recorded material. An owner-selected alias is permission to
-inspect a source, not proof of its kind or provenance.
+and partial-check. Record who authored and who independently verified each adversary.
+
+On 2026-11-25, the owner approved independently authored and verified Codex cases for only
+the missing core kinds: misleading completion, spontaneous supported departure and, if needed,
+matching-intent incorrect execution. Legitimate change and insufficient evidence still require
+recorded rollouts. The five adversaries may also use authored rollouts. Authored cases use
+`origin: "synthesised"` in the packet and are labelled `authored` in results. The owner
+still approves the source selection and a separate reviewer establishes each case's kind.
 
 Two independent blind markers must mark every required constraint against frozen evidence,
-without producer answers. A separate kind review must establish the five genuine recorded
-kinds and the adversaries before any producer output. An independent arbiter resolves marking
+without producer answers. A separate kind review must establish all five core kinds and the
+five adversaries before any producer output. An independent arbiter resolves marking
 disagreements before the key is sealed. Google marking and review receipts must record
 `gemini-3.8-flash-medium` with effort `medium`, or `gemini-3.8-flash-high` with effort `high`.
 Reviewer routing and call ceilings must be approved before sharing.
@@ -1277,15 +1282,31 @@ admitted must name the selected root there; a root must name itself. Historical 
 be relabelled as format 6. The legacy `--freeze` path refuses Codex entries with
 `codex-requires--freeze-codex`.
 
-Discovery reads every rollout head under the configured native root, independently of the
-selected descendants. An unrelated rollout with a head over 65,536 bytes, an empty or malformed
-first line, a first line other than `session_meta`, or untimed metadata blocks the freeze too.
+For an authored case, supply the same rollout files and capture fields in a separate private
+tree outside the repository and any configured native Codex sessions root. Add
+`origin: "synthesised"`, `kind`, `authored_by` and `verified_by` to its spec entry.
+Author and verifier must be distinct. The authored rollout uses the Codex record format and
+passes the same identity, descendant, capture, lifecycle and prompt checks. Its kind review
+must name the same kind and identities as the freeze.
+
+Both `sessions_root` and `transcript` must be nonblank path strings. Discovery checks the selected
+files and every rollout it finds for nested Git checkouts before reading any rollout head.
+It reads heads independently of the selected descendants. An unrelated rollout with a head
+over 65,536 bytes, an empty or malformed first line, a first line other than `session_meta`,
+or untimed metadata blocks the freeze too.
 Selection cannot scope this scan; ignoring unselected heads could hide a descendant. Check the
 inventory before selecting sources. Malformed case entries or inventory item types refuse with
 closed tokens and no source text, paths or tracebacks.
 
 The packet seals each parent/child prefix and capture boundary, the saved Intent, checks,
-messages, lifecycle, parser, selected source identities and actual production prompt digest.
+person messages, lifecycle, parser, selected source identities and actual production prompt digest.
+Freeze applies the configured Analyze limits to the check listing and focused timeline.
+It also uses Analyze's bounded semantic history merge to recover eligible person instructions
+from the sealed parent when checks fill the timeline. This history is built in memory for the
+freeze. Checks and writes stay subject to the focused timeline cap.
+Freeze and replay use the configured Analyze prompt byte limit and recover the selected
+person message text from the sealed prefix.
+The Codex Analyze prompt carries no assistant messages or final reply.
 Checks are derived after the sources are cut, so later failures or writes cannot change the
 latest check at the capture. Revalidation rebuilds the case from those native sources.
 Later appends beyond the boundary are harmless; a changed or truncated prefix, omitted child,
@@ -1314,9 +1335,13 @@ prints transport, input and registration bindings. Only a local sink receives th
 preparation records no approval and launches no producer. The private packet's
 `codex_kind_reviews` binds each case's digest to its independently reviewed kind, two distinct
 blind markers, a separate kind reviewer and review receipt digest. Supported departure requires
-an explicit spontaneous ruling. Each adversary also names different authors and verifiers.
-Rubric labels cannot supply recorded coverage. Every required expectation must exist before
-preparation succeeds.
+an explicit spontaneous ruling. Each adversary and authored core case also names a distinct
+author and verifier. For an authored case, the kind reviewer must be independent of the author.
+Both blind markers must be independent of the author and verifier. A format 6 rubric refers to
+each frozen case by id and supplies its expectations. An authored rubric entry uses
+`origin: "synthesised"`. Its `generated_by` matches the frozen `authored_by` and its
+`verified_by` matches the frozen `verified_by`. The scorer takes provenance from the case and
+kind from the bound review. Every required expectation must exist before preparation succeeds.
 
 `--score --producer codex` requires the separately sealed grant and reviewed genesis. Before
 asking for approval it lists the ten slots (case alias and repetition), every request digest,
@@ -1339,9 +1364,10 @@ only for three complete passing repetitions. PASS still requires the owner's sep
 Register thirty exposures: the same ten distinct cases in three complete repetitions through
 the pinned production reader. Each repetition must pass. PASS requires zero judged
 should-abstain constraints, zero rubric false reassurances, no unscored required expectations,
-and all five recorded kinds reaching the producer in every repetition. A withheld case that
-never reaches the producer cannot fill coverage. Report over-abstention separately; neither
-PASS nor a question count establishes an accuracy threshold or an accuracy claim.
+and all five core kinds reaching the producer in every repetition through recorded rollouts
+or the approved authored substitutions. A withheld case cannot fill coverage. Results identify
+authored cases and list any authored core kinds that counted toward coverage. Report
+over-abstention separately. PASS establishes no accuracy claim or threshold.
 
 The proposed producer allowance is thirty readings plus at most one charged availability retry.
 The retry must replace an unusable attempt in a registered slot, remain visible with its original
@@ -1372,7 +1398,7 @@ study needs a new prospective decision, with the failed record retained.
    rollouts, capture cuts and local evidence processing. Only then inspect selected content,
    propose roles and freeze the packet. No raw content, session mapping or source path enters
    Git or leaves for a provider. Nothing leaves the machine at this gate. Admission must
-   establish the five genuine kinds and five verified adversaries named above.
+   establish the five core kinds and five verified adversaries named above.
 3. (c) Google evidence-sharing approval. Present the exact redacted screens locally. Before
    each send, the owner gives one approval covering exactly the listed payload digests,
    recipients, model/effort, purpose and call ceiling: the blind-marking set, then each review
@@ -1391,8 +1417,8 @@ study needs a new prospective decision, with the failed record retained.
    digests, model/effort, CLI binding, evidence categories, whether the single availability
    retry is included and remaining allowance. The owner approves that batch; consume one
    listed slot under the account lock before each launch. OpenAI receives the production
-   reader's redacted frozen intent and selected messages, checks, permitted output and agent
-   source material. The allowance is thirty registered readings and at most one charged
+   reader's redacted frozen intent, selected person messages, checks and permitted output.
+   The allowance is thirty registered readings and at most one charged
    availability retry across the study. Review each batch before the next begins; Google sends
    have one approval each covering exactly their listed payload digests. After producer
    qualification, admit and blind-mark the separate [analysis-level cohort](../drift-levels/README.md#prospective-codex-analysis-level-cohort-2026-11-09),

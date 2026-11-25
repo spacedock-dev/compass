@@ -265,7 +265,7 @@ historical Claude packet.
 The spec for `--build` declares the matrix: `{"v": 1, "cohort": "codex", "matrix": [...], "cases":
 [...]}`, with each case's kind drawn from `admissible-support`, `unrelated-or-partial-check`,
 `stale-pass`, `failure-timing`, `missing-citation`, `legitimate-change`, `misleading-claim`,
-`insufficient-evidence`, `goal-only` or `other`. A case is the approved frozen Codex source (its
+`insufficient-evidence`, `goal-only` or `other`. A case is an approved recorded Codex source (its
 parent and every child rollout, rebuilt rather than trusted) plus the checks and counts the level
 functions read. Every declared kind needs a case, no case may have an undeclared kind, and a
 cohort is at most twelve cases. Marking asks for the analysis level only. The committed digest

@@ -9913,6 +9913,7 @@ def frozen_codex_checks(
     *,
     until: float,
     child_paths: Sequence[str] = (),
+    listed_cap: int = TOOL_REPORT_MAX_ENTRIES,
 ) -> tuple[list[dict[str, Any]], PressChecks]:
     """Derive latest checks and changed-after only after freezing every rollout.
 
@@ -9935,7 +9936,7 @@ def frozen_codex_checks(
             raise FrozenCheckCutoffUnreachableError("codex checks incomplete")
         facts = [
             _semantic_fact_from_event(row, str(row["kind"]), _SEMANTIC_FACT_TYPES[row["kind"]], "")
-            for row in tally.entries(sid)
+            for row in tally.entries(sid, cap=listed_cap)
         ]
         return facts, _press(tally)
 
@@ -9979,8 +9980,6 @@ def _codex_message_facts(
     config: RuntimeConfig,
     lines: Iterable[str],
     sid: str,
-    *,
-    agent: bool,
 ) -> list[dict[str, Any]]:
     facts: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -9989,55 +9988,21 @@ def _codex_message_facts(
         if record is None or record.get("type") != "response_item":
             continue
         payload = records.as_dict(record.get("payload"))
-        if payload.get("type") != "message" or payload.get("role") != (
-            "assistant" if agent else "user"
-        ):
+        if payload.get("type") != "message" or payload.get("role") != "user":
             continue
-        if agent:
-            # Normalize only the container; eligibility, redaction, clipping and fact
-            # identity still belong to the existing agent-message derivation.
-            normalized = {
-                "type": "assistant",
-                "timestamp": record.get("timestamp"),
-                "uuid": payload.get("id"),
-                "message": payload,
-            }
-            event = _agent_message_event(config, normalized, "claude", sid, text_cap=len(raw))
-            if event is not None:
-                event["harness"] = "codex"
-        else:
-            event = (
-                _instruction_event(config, record, "codex", sid)
-                if codex_person_record(record)
-                else None
-            )
+        event = (
+            _instruction_event(config, record, "codex", sid)
+            if codex_person_record(record)
+            else None
+        )
         if event is None:
             continue
-        kind = _AGENT_SAY if agent else "steer"
-        fact = _semantic_fact_from_event(event, kind, _SEMANTIC_FACT_TYPES[kind], "")
+        fact = _semantic_fact_from_event(event, "steer", _SEMANTIC_FACT_TYPES["steer"], "")
         key = str(fact["fact_id"])
         if key not in seen:
             facts.append(fact)
             seen.add(key)
     return facts
-
-
-def _frozen_codex_messages(
-    config: RuntimeConfig,
-    transcript_path: str,
-    sid: str,
-    *,
-    until: float,
-    size: int | None,
-    agent: bool,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    with frozen_codex_sources(config, transcript_path, until=until) as (path, _children):
-        if size is not None and os.path.getsize(path) != size:
-            raise FrozenCheckCutoffUnreachableError("codex message prefix differs")
-        with open(path, encoding="utf-8") as handle:
-            whole = _codex_message_facts(config, handle, sid, agent=agent)
-        tail = _codex_message_facts(config, runtime_io.read_tail(config, path), sid, agent=agent)
-        return whole, tail
 
 
 def frozen_codex_user_messages(
@@ -10049,19 +10014,13 @@ def frozen_codex_user_messages(
     size: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """All and bounded-tail attributable person messages in a historical Codex cut."""
-    return _frozen_codex_messages(config, transcript_path, sid, until=until, size=size, agent=False)
-
-
-def frozen_codex_agent_messages(
-    config: RuntimeConfig,
-    transcript_path: str,
-    sid: str,
-    *,
-    until: float,
-    size: int | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """All and bounded-tail agent facts, without enabling live Codex claim publication."""
-    return _frozen_codex_messages(config, transcript_path, sid, until=until, size=size, agent=True)
+    with frozen_codex_sources(config, transcript_path, until=until) as (path, _children):
+        if size is not None and os.path.getsize(path) != size:
+            raise FrozenCheckCutoffUnreachableError("codex message prefix differs")
+        with open(path, encoding="utf-8") as handle:
+            whole = _codex_message_facts(config, handle, sid)
+        tail = _codex_message_facts(config, runtime_io.read_tail(config, path), sid)
+        return whole, tail
 
 
 def codex_activity_between(transcript_path: str, after: float, until: float) -> bool:
@@ -10608,78 +10567,6 @@ def _final_word_outcome(  # noqa: PLR0911 - preserve the existing closed strict-
     if not words:
         return {"outcome": "not-final"}
     return {"outcome": "whole", "fact_id": fact_id, "at": at, "words": words}
-
-
-def codex_newest_final_words(  # noqa: C901 - native identity and finality guards
-    config: RuntimeConfig,
-    path: str,
-    sid: str,
-    wanted: Sequence[Mapping[str, Any]],
-    *,
-    expected_stamp: tuple[int, int, int, int] | None = None,
-) -> dict[str, Any]:
-    """Recover a selected native final_answer; complete words live only in memory.
-
-    The offline source bundle has already proved parent identity and the cutoff.
-    Conflicting message IDs, unavailable selected messages and tied newest replies
-    refuse a whole reply rather than borrowing one from a different record.
-    """
-    before = transcript_stamp(path)
-    if before is None or (expected_stamp is not None and before != expected_stamp):
-        return {"outcome": "unproven"}
-    rows = _final_word_rows(wanted)
-    found: dict[tuple[str, Any], tuple[str, str, str | None]] = {}
-    signatures: dict[str, str] = {}
-    conflicted: set[str] = set()
-    if before[2] > FINAL_WORDS_SCAN_MAX_BYTES:
-        return {"outcome": "scan-limit"}
-    with os.fdopen(runtime_io.open_harness(path), "rb") as handle:
-        for raw in handle:
-            record = _json_dict(raw)
-            if record is None:
-                return {"outcome": "unproven"}
-            payload = records.as_dict(record.get("payload"))
-            if (
-                record.get("type") != "response_item"
-                or payload.get("type") != "message"
-                or payload.get("role") != "assistant"
-            ):
-                continue
-            identity = payload.get("id")
-            if (
-                not isinstance(identity, str)
-                or not identity
-                or len(raw) > FINAL_WORDS_RECORD_MAX_BYTES
-            ):
-                return {"outcome": "unproven"}
-            signature = hashlib.sha256(raw).hexdigest()
-            if identity in signatures and signatures[identity] != signature:
-                conflicted.add(identity)
-            signatures[identity] = signature
-            facts = _codex_message_facts(config, [raw.decode("utf-8")], sid, agent=True)
-            if not facts:
-                continue
-            key = (str(facts[0]["fact_id"]), facts[0]["at"])
-            if key in rows:
-                status = (
-                    "final"
-                    if payload.get("phase") == "final_answer"
-                    else "nonfinal"
-                    if payload.get("phase") == "commentary"
-                    else "refused"
-                )
-                found[key] = (
-                    status,
-                    identity,
-                    _agent_whole_words(record, len(raw)) if status == "final" else "",
-                )
-    if transcript_stamp(path) != before:
-        return {"outcome": "unproven"}
-    return _final_word_outcome(
-        _FinalWordRead(
-            rows=rows, harness="codex", sid=sid, source_sid=sid, found=found, conflicted=conflicted
-        )
-    )
 
 
 def transcript_newest_final_words(  # noqa: PLR0911 - one bounded scan and its source guards
