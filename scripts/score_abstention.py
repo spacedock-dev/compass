@@ -2423,10 +2423,7 @@ def parser_mismatch(corpus: Corpus, *, rechecked: bool = False) -> list[str]:
     unvouched run never rebuilds it and demotes nothing.
     """
     if corpus.cases.get("v") == mark_abstention.FORMAT_CODEX:
-        import codex_case_sources  # noqa: PLC0415
-
-        here = codex_case_sources.parser_digest()
-        if any(c.get("parser") != here for c in corpus.cases.get("cases", [])):
+        if codex_case_sources.packet_parser_changed(corpus.cases.get("cases", [])):
             return ["Refused: the recorded Codex parser stamp changed or is missing."]
         return []
     if corpus.cases.get("v") != mark_abstention.FORMAT_INTENT:
@@ -3849,6 +3846,11 @@ def _validate_authored_codex_review(
         raise mark_abstention.FreezeError("codex-authored-rubric-differs")
 
 
+def _independent_identities(*names: object) -> bool:
+    normalized = {name.strip() for name in names if isinstance(name, str) and name.strip()}
+    return len(normalized) == len(names)
+
+
 def _codex_cases(corpus: Corpus, config: Any) -> dict[str, Any]:  # noqa: C901 - source, mark and independent review guards precede every send
     """Source revalidation and independent, source-bound kind review, before any send."""
     body = dict(corpus.cases)
@@ -3889,19 +3891,13 @@ def _codex_cases(corpus: Corpus, config: Any) -> dict[str, Any]:  # noqa: C901 -
             or review.get("case_digest") != abstention_ledger.digest(case)
             or not isinstance(markers, list)
             or len(markers) != 2
-            or not all(isinstance(m, str) and m for m in markers)
-            or markers[0] == markers[1]
-            or not isinstance(review.get("reviewed_by"), str)
-            or not review["reviewed_by"]
-            or review["reviewed_by"] in markers
+            or not _independent_identities(*markers, review.get("reviewed_by"))
             or not abstention_ledger.codex_digest_valid(review.get("review_receipt"))
             or (kind == KIND_SUPPORTED_DEPARTURE and review.get("spontaneous") is not True)
             or (
                 kind in PASSING_CHECK_ADVERSARIES
-                and (
-                    not review.get("authored_by")
-                    or not review.get("verified_by")
-                    or review["authored_by"] == review["verified_by"]
+                and not _independent_identities(
+                    review.get("authored_by"), review.get("verified_by")
                 )
             )
             or rubric_refusal(rubric[cid], "codex")

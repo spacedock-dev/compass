@@ -657,6 +657,28 @@ class CodexQualificationTest(_CodexInstallationFixture):
             scorer.prepare_codex_requests(self.corpus, self.config, self.transport)
         self.assertEqual([], self.launches)
 
+    def test_a_person_cannot_reuse_a_review_identity_with_surrounding_whitespace(self) -> None:
+        case = self.corpus.cases["cases"][-1]
+        self.assertEqual("recorded", case["origin"])
+        for changes in (
+            {"markers": ["marker-a", " marker-a\t"]},
+            {"markers": ["marker-a", " \t"]},
+            {"reviewed_by": " marker-a\t"},
+            {"reviewed_by": " \t"},
+            {"authored_by": " author", "verified_by": "author\t"},
+            {"verified_by": " \t"},
+        ):
+            with self.subTest(changes=changes):
+                body = copy.deepcopy(dict(self.corpus.cases))
+                body["codex_kind_reviews"][case["id"]].update(changes)
+                marks = {**self.corpus.marks, "cases_digest": marker.cases_digest(body)}
+                corpus = scorer.Corpus(body, marks, json.dumps(marks).encode(), self.corpus.rubric)
+                with self.assertRaisesRegex(
+                    marker.FreezeError, "codex-independent-source-kind-unconfirmed"
+                ):
+                    scorer.prepare_codex_requests(corpus, self.config, self.transport)
+        self.assertEqual([], self.launches)
+
     def test_a_person_cannot_prepare_an_authored_case_with_different_rubric_provenance(
         self,
     ) -> None:

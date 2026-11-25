@@ -1300,8 +1300,9 @@ closed tokens and no source text, paths or tracebacks.
 
 The packet seals each parent/child prefix and capture boundary, the saved Intent, checks,
 person messages, lifecycle, parser, selected source identities and actual production prompt digest.
-Freeze applies the configured Analyze limits to the check listing and focused timeline.
-It also uses Analyze's bounded semantic history merge to recover eligible person instructions
+Freeze uses the configured Analyze scan limit for the sealed rollout bundle and check reads.
+It applies the Analyze limits to the check listing and focused timeline, then uses Analyze's
+bounded semantic history merge to recover eligible person instructions
 from the sealed parent when checks fill the timeline. This history is built in memory for the
 freeze. Checks and writes stay subject to the focused timeline cap.
 Freeze and replay use the configured Analyze prompt byte limit and recover the selected
@@ -1330,13 +1331,19 @@ approval, spend authority or qualification result.
 
 ### Scoring tooling
 
+Run `mark_abstention.py` with the frozen format 6 packet in its private `COMPASS_HOME` to
+write the local answer key. Codex marking uses its own qualification authority and can run
+alongside the committed Claude history. A different parser stamp requires a fresh freeze before
+marking. Finish marking before preparing the Codex grant or initializing its spend ledger.
+
 `score_abstention.py --prepare-codex --producer codex` derives the thirty requests locally and
 prints transport, input and registration bindings. Only a local sink receives the prompts; the
 preparation records no approval and launches no producer. The private packet's
 `codex_kind_reviews` binds each case's digest to its independently reviewed kind, two distinct
 blind markers, a separate kind reviewer and review receipt digest. Supported departure requires
 an explicit spontaneous ruling. Each adversary and authored core case also names a distinct
-author and verifier. For an authored case, the kind reviewer must be independent of the author.
+author and verifier. Independence checks ignore surrounding whitespace in identities.
+For an authored case, the kind reviewer must be independent of the author.
 Both blind markers must be independent of the author and verifier. A format 6 rubric refers to
 each frozen case by id and supplies its expectations. An authored rubric entry uses
 `origin: "synthesised"`. Its `generated_by` matches the frozen `authored_by` and its

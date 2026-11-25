@@ -8,6 +8,7 @@ import json
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from unittest import mock
@@ -42,6 +43,7 @@ else:
         stamp,
         write,
     )
+import abstention_ledger
 import codex_case_sources as sources
 import levels_cases as levels
 import mark_abstention as marker
@@ -83,7 +85,7 @@ class CodexQualificationSourceTest(unittest.TestCase):
 
     def test_a_person_cannot_verify_their_own_authored_case(self) -> None:
         with self.assertRaisesRegex(marker.FreezeError, "codex-authored-identities-required"):
-            sources.freeze_case(self.config, self.authored_spec(verified_by="author"))
+            sources.freeze_case(self.config, self.authored_spec(verified_by=" author\t"))
 
     def test_a_person_must_supply_nonblank_string_source_paths(self) -> None:
         spec = self.authored_spec()
@@ -132,11 +134,85 @@ class CodexQualificationSourceTest(unittest.TestCase):
         with (
             mock.patch.object(marker, "CASES_PATH", str(cases_path)),
             mock.patch.object(marker, "MARKS_PATH", str(marks_path)),
-            mock.patch.object(marker, "_ledger_refusal", return_value=False),
+            mock.patch.object(marker, "_codex_marking_refusal", return_value=False),
             contextlib.redirect_stdout(io.StringIO()),
         ):
             self.assertEqual(1, marker.mark())
         self.assertEqual(before, marks_path.read_bytes())
+
+    def freeze_at_cli(self, spec: dict[str, Any], cases_path: Path) -> None:
+        spec_path = self.home / "spec.json"
+        spec_path.write_text(json.dumps({"cases": [spec]}))
+        with (
+            mock.patch.object(marker, "_runtime_config", return_value=self.config),
+            mock.patch.object(marker, "CASES_PATH", str(cases_path)),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(0, marker.main(["--freeze-codex", str(spec_path)]))
+
+    def mark_at_cli(self, cases_path: Path, marks_path: Path) -> tuple[int, str, int]:
+        printed = io.StringIO()
+        with (
+            mock.patch.object(marker, "CASES_PATH", str(cases_path)),
+            mock.patch.object(marker, "MARKS_PATH", str(marks_path)),
+            mock.patch.object(abstention_ledger, "LEDGER_PATH", str(self.home / "claude-ledger")),
+            mock.patch.object(abstention_ledger, "canonical_home", return_value=str(self.home)),
+            mock.patch.object(abstention_ledger, "CODEX_GRANT_PATH", str(self.home / "grant.json")),
+            mock.patch("builtins.input", return_value="n") as answer,
+            contextlib.redirect_stdout(printed),
+        ):
+            result = marker.main([])
+        return result, printed.getvalue(), answer.call_count
+
+    def test_a_person_can_mark_codex_with_committed_claude_history(self) -> None:
+        root = self.home / "codex/sessions"
+        cases_path, marks_path = self.home / "cases.json", self.home / "marks.json"
+        self.freeze_at_cli(entry(root, rollout(root)), cases_path)
+        self.assertGreater((abstention_ledger.committed_chain() or {}).get("calls", 0), 0)
+        result, printed, asked = self.mark_at_cli(cases_path, marks_path)
+        self.assertEqual(0, result, printed)
+        self.assertGreater(asked, 0)
+        body = json.loads(cases_path.read_text())
+        (case,) = body["cases"]
+        self.assertEqual(
+            {
+                "v": 4,
+                "cases_digest": marker.cases_digest(body),
+                "marks": {
+                    case["id"]: dict.fromkeys(case["production_reading"]["constraints"], "abstain")
+                },
+            },
+            json.loads(marks_path.read_text()),
+        )
+
+    def test_a_person_cannot_mark_a_packet_frozen_on_another_codex_parser(self) -> None:
+        cases_path, marks_path = self.home / "cases.json", self.home / "marks.json"
+        self.freeze_at_cli(self.authored_spec(), cases_path)
+        with (
+            mock.patch.object(sources, "parser_digest", return_value="0" * 64),
+            mock.patch.object(
+                abstention_ledger, "CLAUDE_SUMMARY_PATH", str(self.home / "no-summary.json")
+            ),
+        ):
+            result, printed, asked = self.mark_at_cli(cases_path, marks_path)
+        self.assertEqual(1, result, printed)
+        self.assertIn("frozen-on-another-parser", printed)
+        self.assertEqual(0, asked)
+        self.assertFalse(marks_path.exists())
+
+    def test_a_person_cannot_mark_after_codex_accounting_has_started(self) -> None:
+        cases_path, marks_path = self.home / "cases.json", self.home / "marks.json"
+        self.freeze_at_cli(self.authored_spec(), cases_path)
+        ledger = self.home / ".cargento/codex-qualification-spend.json"
+        ledger.parent.mkdir()
+        ledger.write_text("unreadable ledger")
+        with mock.patch.object(
+            abstention_ledger, "CLAUDE_SUMMARY_PATH", str(self.home / "no-summary.json")
+        ):
+            result, printed, asked = self.mark_at_cli(cases_path, marks_path)
+        self.assertEqual(1, result, printed)
+        self.assertEqual(0, asked)
+        self.assertFalse(marks_path.exists())
 
     def test_a_person_freezes_the_analyze_prompt_without_codex_agent_text(self) -> None:
         root = self.home / "codex/sessions/2026/11/07"
@@ -239,6 +315,29 @@ class CodexQualificationSourceTest(unittest.TestCase):
         for name, prompt in (("frozen", frozen), ("scored", scored), ("levels", leveled)):
             with self.subTest(prompt=name):
                 self.assertIn(sentinel, prompt)
+                self.assert_prompt_equal(production, prompt)
+
+    def test_a_person_freezes_and_replays_checks_beyond_the_turn_scan_budget(self) -> None:
+        root = self.home / "codex/sessions"
+        path = rollout(root / "2026/11/07")
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        early_check = "python3 -m pytest tests/test_early.py"
+        rows[3:3] = [
+            command(2, command_text=early_check),
+            *[command(2.1 + number / 100) for number in range(16)],
+        ]
+        write(path, rows)
+        self.config = replace(self.config, turn_scan_max_bytes=2_048)
+        limits = settings.DEFAULTS._replace(analyze_scan_megabytes=1)
+        size = path.stat().st_size
+        self.assertGreater(size, self.config.turn_scan_max_bytes)
+        self.assertLess(size, 1024 * 1024)
+        with mock.patch.object(settings, "load", return_value=limits):
+            case, production, frozen = self.analyze_and_freeze(entry(root, path))
+            scored, leveled = self.replay_prompts(case)
+        self.assertIn(early_check, production)
+        for name, prompt in (("frozen", frozen), ("scored", scored), ("levels", leveled)):
+            with self.subTest(prompt=name):
                 self.assert_prompt_equal(production, prompt)
 
     def replay_prompts(self, case: dict[str, Any]) -> tuple[str, str]:
@@ -403,8 +502,6 @@ class FrozenCodexRuntimeTest(unittest.TestCase):
             self.assertNotIn(secret[:-2], json.dumps(whole))
 
     def test_a_person_cannot_freeze_an_unreachable_cutoff(self) -> None:
-        from dataclasses import replace  # noqa: PLC0415
-
         with self.assertRaises(context.FrozenCheckCutoffUnreachableError):
             context.frozen_codex_checks(
                 replace(self.config, turn_scan_max_bytes=64), str(self.path), SID, until=AT + 10

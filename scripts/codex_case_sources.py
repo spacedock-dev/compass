@@ -13,6 +13,7 @@ import ast
 import contextlib
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -90,6 +91,16 @@ def parser_digest() -> str:
             ast.dump(ast.parse(path.read_bytes()), include_attributes=False).encode() + b"\0"
         )
     return digest.hexdigest()
+
+
+def packet_parser_changed(cases: Iterable[dict[str, Any]]) -> bool:
+    here = parser_digest()
+    return any(case.get("parser") != here for case in cases)
+
+
+def _analyze_scan_config(config: Any) -> Any:
+    limits = marker.codex_analyze_limits(config)
+    return replace(config, turn_scan_max_bytes=limits.analyze_scan_megabytes * 1024 * 1024)
 
 
 def _head(path: Path) -> tuple[str, str, float | None, str]:
@@ -307,8 +318,6 @@ def _focused_facts(
 
 
 def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
-    from dataclasses import replace
-
     from compass_runtime import project_context as context
     from compass_runtime import transcripts
     from compass_runtime.collectors import codex
@@ -333,26 +342,26 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
         or not marker.case_lines({"intent": intent})
     ):
         raise marker.FreezeError("codex-saved-intent-required")
+    scan_config = _analyze_scan_config(config)
     sources: dict[str, Any] = {
         "v": 1,
         "root": str(root),
         "captured_at": captured,
-        "parent": _seal(config, path, captured),
-        "children": [_seal(config, child, captured) for child in children],
+        "parent": _seal(scan_config, path, captured),
+        "children": [_seal(scan_config, child, captured) for child in children],
         "intent_digest": marker._source_digest(intent),
     }
     sources["selection_digest"] = marker._source_digest(
         [str(root), str(path), [str(p) for p in children]]
     )
     with context.frozen_codex_sources(
-        config, str(path), until=captured, child_paths=[str(p) for p in children]
+        scan_config, str(path), until=captured, child_paths=[str(p) for p in children]
     ) as (cut, child_cuts):
         _verify_cuts((cut, *child_cuts), sources)
         # Analyze the entire already-bounded prefix. A current tail could lose the
         # task_complete needed to distinguish a late result from a resumed turn.
-        info = transcripts.analyze_codex_transcript(
-            replace(config, tail_bytes=config.turn_scan_max_bytes), cut
-        )
+        lifecycle_config = replace(config, tail_bytes=scan_config.turn_scan_max_bytes)
+        info = transcripts.analyze_codex_transcript(lifecycle_config, cut)
         stop = codex.transcript_turn_end(
             config, info, work_activity=float(info.get("last_turn_ts") or 0), blocked=False
         )
@@ -373,9 +382,7 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
         if captured < stop + config.reading_settle_sec:
             raise marker.FreezeError("captured-before-settled")
         for child in child_cuts:
-            child_info = transcripts.analyze_codex_transcript(
-                replace(config, tail_bytes=config.turn_scan_max_bytes), child
-            )
+            child_info = transcripts.analyze_codex_transcript(lifecycle_config, child)
             child_stop = codex.transcript_turn_end(
                 config,
                 child_info,
@@ -388,7 +395,7 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
                 or child_info.get("last_event_ts", 0) > stop
             ):
                 raise marker.FreezeError("codex-child-active")
-        facts, press = _focused_facts(config, cut, child_cuts, sid, captured)
+        facts, press = _focused_facts(scan_config, cut, child_cuts, sid, captured)
         refusals = _refusals(cut, sid)
     case: dict[str, Any] = {
         "codex_format": marker.FORMAT_CODEX,
@@ -453,12 +460,13 @@ def historical_source(config: Any, case: dict[str, Any], transcript: str) -> Any
         "selection_digest"
     ) != marker._source_digest([str(root), str(path), [str(p) for p in children]]):
         raise marker.FreezeError("codex-source-selection-differs")
-    if sources["parent"] != _seal(config, path, captured) or sources["children"] != [
-        _seal(config, child, captured) for child in children
+    scan_config = _analyze_scan_config(config)
+    if sources["parent"] != _seal(scan_config, path, captured) or sources["children"] != [
+        _seal(scan_config, child, captured) for child in children
     ]:
         raise marker.FreezeError("production-source-differs")
     with context.frozen_codex_sources(
-        config, str(path), until=captured, child_paths=[str(p) for p in children]
+        scan_config, str(path), until=captured, child_paths=[str(p) for p in children]
     ) as (cut, cuts):
         _verify_cuts((cut, *cuts), sources)
         yield cut, sources["parent"]["sha256"]

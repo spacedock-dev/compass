@@ -2814,9 +2814,33 @@ def _ledger_refusal(*, continuation: bool = False, cases_digest: str = "") -> bo
     return True
 
 
+def _codex_marking_refusal() -> bool:
+    ledger = abstention_ledger.study_path("codex-qualification-spend.json")
+    if ledger is None:
+        print("The account's canonical Codex spend ledger is unavailable.")
+        return True
+    grant = abstention_ledger.CODEX_GRANT_PATH
+    result = os.path.join(os.path.dirname(grant), "codex-results.json")
+    # A grant or genesis already binds the marks. Receipts and the result keep the
+    # key frozen even if the ledger is missing.
+    for path in (grant, ledger, f"{ledger}.receipts", result):
+        try:
+            os.lstat(path)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            print("The Codex qualification authority could not be checked. The key is frozen.")
+            return True
+        print("The Codex qualification authority already binds the answer key. The key is frozen.")
+        return True
+    return False
+
+
 def _save_marks(body: dict[str, Any], entries: dict[str, Any], *, continuation: bool) -> bool:
     """Save the key, sharing the charge lock only for a continuation's final write."""
     if not continuation:
+        if body.get("v") == FORMAT_CODEX and _codex_marking_refusal():
+            return False
         _write(MARKS_PATH, _bound_marks(body, entries))
         return True
     path = abstention_ledger.LEDGER_PATH
@@ -2832,16 +2856,32 @@ def _save_marks(body: dict[str, Any], entries: dict[str, Any], *, continuation: 
     return True
 
 
-def mark(*, continuation: bool = False) -> int:  # noqa: PLR0911 - guard before and after marking
-    body = _load(CASES_PATH)
-    print_packet(CASES_PATH, body)
-    if _ledger_refusal(continuation=continuation, cases_digest=cases_digest(body)):
-        return 1
+def _markable_cases(body: dict[str, Any], *, continuation: bool) -> list[dict[str, Any]] | None:
+    codex = body.get("v") == FORMAT_CODEX
+    if (continuation or not codex) and _ledger_refusal(
+        continuation=continuation, cases_digest=cases_digest(body)
+    ):
+        return None
     cases = body.get("cases") if isinstance(body.get("cases"), list) else None
     if not cases:
         print(f"No cases at {CASES_PATH}. Run --build first.")
-        return 1
+        return None
     if _refuse_mismatch(body, "Nothing was shown or marked."):
+        return None
+    if codex:
+        if _codex_sources().packet_parser_changed(cases):
+            print("frozen-on-another-parser: freeze a fresh Codex packet before marking.")
+            return None
+        if _codex_marking_refusal():
+            return None
+    return cast("list[dict[str, Any]]", cases)
+
+
+def mark(*, continuation: bool = False) -> int:
+    body = _load(CASES_PATH)
+    print_packet(CASES_PATH, body)
+    cases = _markable_cases(body, continuation=continuation)
+    if cases is None:
         return 1
     saved = _load(MARKS_PATH)
     entries = _marks(saved)
@@ -3039,6 +3079,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912 
         if _ledger_refusal():
             return 1
         if os.path.exists(MARKS_PATH):
+            if _load(CASES_PATH).get("v") == FORMAT_CODEX and _codex_marking_refusal():
+                return 1
             os.remove(MARKS_PATH)
             print(f"Discarded {MARKS_PATH}. The cases are untouched.")
         else:
