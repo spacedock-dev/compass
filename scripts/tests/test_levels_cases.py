@@ -798,6 +798,17 @@ class ReadTest(CaseToolTestCase):
         self.assertEqual(row["analysis"]["level"], "high")
         self.assertEqual(row["analysis"]["outcome"], levels_cases.MATCH)
 
+    def test_an_edited_claude_replayed_reading_refuses_at_scoring(self) -> None:
+        case_id = self.marked("h", "h")
+        self.assertEqual(0, self.read(case_id))
+        self.assertEqual(0, self.attach_replayed())
+        path = Path(levels_cases._paths(str(self.home))["readings"])
+        body = json.loads(path.read_text())
+        body["readings"][case_id]["read_at"] += 1
+        path.write_text(json.dumps(body))
+        self.assertEqual(1, self.score())
+        self.assertEqual("refused:unbound", self.results()["cases"][case_id]["analysis"]["outcome"])
+
     def test_the_frozen_record_and_intent_are_what_is_sent(self) -> None:
         case_id = self.marked("h", "h")
         self.read(case_id)
@@ -1356,7 +1367,21 @@ class CodexReplayTestCase(CodexCohortTestCase):
     ALLOWANCE = 2
 
     def setUp(self) -> None:
+        from unittest import mock  # noqa: PLC0415
+
         super().setUp()
+        checkpoint = mock.patch(
+            "abstention_ledger.checkpoint_root",
+            return_value=str(self.root / "witness"),
+        )
+        checkpoint.start()
+        self.addCleanup(checkpoint.stop)
+        self.committed_checkpoint: dict[str, Any] = {}
+        committed = mock.patch(
+            "abstention_ledger.committed_study_json", return_value=self.committed_checkpoint
+        )
+        committed.start()
+        self.addCleanup(committed.stop)
         self.reading_home = self.root / "reading-home"
         self.config = levels_cases.reading_config(str(self.reading_home))
         self.policy = _runtime_module("reading_policy")
@@ -1377,9 +1402,14 @@ class CodexReplayTestCase(CodexCohortTestCase):
         return self.answer
 
     def allow(self, total: int | None = None) -> int:
-        return levels_cases.approve_replay_allowance(
+        status = levels_cases.approve_replay_allowance(
             self.allowance_path, self.ALLOWANCE if total is None else total, now=1.0, say=self.say
         )
+        if status == 0:
+            self.committed_checkpoint.update(
+                json.loads((self.root / "witness/codex-replay.json").read_text())
+            )
+        return status
 
     def used(self) -> int:
         return int(self.policy.status(self.config, now=time.time(), provider="codex")["used"])
@@ -1505,22 +1535,64 @@ class CodexAllowanceTest(CodexReplayTestCase):
         self.assertEqual(self.read(case_id), 1)
         self.assertEqual(self.model.prompts, [])
 
-    def test_a_ledger_replaced_by_a_fresh_one_does_not_match_the_attached_readings(self) -> None:
+    def test_a_committed_checkpoint_refuses_even_a_restored_local_witness(self) -> None:
+        first, second = self.two_cases()
+        self.allow(2)
+        witness = self.root / "witness/codex-replay.json"
+        receipts = Path(str(self.allowance_path) + ".receipts")
+        saved_witness = witness.read_bytes()
+        saved_ledger = self.allowance_path.read_bytes()
+        saved_receipts = set(receipts.iterdir())
+        self.assertEqual(0, self.read(first))
+        self.committed_checkpoint.update(json.loads(witness.read_bytes()))
+        witness.write_bytes(saved_witness)
+        self.allowance_path.write_bytes(saved_ledger)
+        for receipt in set(receipts.iterdir()) - saved_receipts:
+            receipt.unlink()
+        self.assertEqual(1, self.read(second))
+        self.assertEqual(1, len(self.model.prompts))
+
+    def test_an_emptied_event_index_cannot_renew_the_replay_allowance(self) -> None:
+        first, second = self.two_cases()
+        self.allow(1)
+        self.assertEqual(0, self.read(first))
+        body = self.ledger()
+        body["events"] = []
+        self.allowance_path.write_text(json.dumps(body))
+        self.assertEqual(1, self.read(second))
+        self.assertEqual(1, len(self.model.prompts))
+
+    def test_a_symlinked_replay_lock_refuses_before_approval(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow()
+        lock = Path(str(self.allowance_path) + ".lock")
+        target = lock.with_name("other-lock")
+        lock.rename(target)
+        lock.symlink_to(target)
+        self.assertEqual(1, self.read(case_id))
+        self.assertEqual([], self.asked)
+
+    def test_a_symlinked_replay_receipt_refuses_before_approval(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow()
+        receipt = Path(str(self.allowance_path) + ".receipts", "genesis.json")
+        target = self.root / "other-genesis"
+        receipt.rename(target)
+        receipt.symlink_to(target)
+        self.assertEqual(1, self.read(case_id))
+        self.assertEqual([], self.asked)
+
+    def test_deleting_the_ledger_and_all_receipts_cannot_renew_the_allowance(self) -> None:
         (case_id,) = self.marked("n")
         self.allow(1)
-        self.assertEqual(self.read(case_id), 0, self.out)
-        self.assertEqual(self.attach_replayed(), 0, self.out)
-        old_events = self.ledger()["events"]
+        self.assertEqual(0, self.read(case_id))
+        self.assertEqual(0, self.attach_replayed())
         shutil.rmtree(str(self.allowance_path) + ".receipts")
         self.allowance_path.unlink()
-        self.assertEqual(self.allow(1), 0, self.out)
-        fresh = self.ledger()
-        fresh["events"] = old_events
-        self.allowance_path.write_text(json.dumps(fresh), encoding="utf-8")
-        self.assertEqual(self.score(), 1)
-        self.assertEqual(self.results()["verdict"], levels_cases.VERDICT_REFUSED)
-        row = self.results()["cases"][case_id]["analysis"]
-        self.assertEqual(row["outcome"], "refused:unbound")
+        self.assertEqual(1, self.allow(1))
+        self.assertEqual(1, self.score())
+        self.assertEqual(levels_cases.VERDICT_REFUSED, self.results()["verdict"])
+        self.assertEqual("refused:unbound", self.results()["cases"][case_id]["analysis"]["outcome"])
 
     def test_a_replay_on_windows_reads_nothing_and_charges_nothing(self) -> None:
         (case_id,) = self.marked("n")
@@ -1593,6 +1665,24 @@ class CodexReplayTest(CodexReplayTestCase):
             levels_cases._marker().production_prompt_digest(self.model.prompts[0]),
             case["production_reading"]["prompt_digest"],
         )
+
+    def test_a_gate_without_a_prepared_request_never_calls_the_model(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow()
+        produce = levels_cases._produce
+
+        def no_preparation(config: Any, case: Any, model: Any, *args: Any) -> Any:
+            if isinstance(model, levels_cases._Spy):
+                return None, "test-withheld", False
+            return produce(config, case, model, *args)
+
+        from unittest import mock  # noqa: PLC0415
+
+        with mock.patch.object(levels_cases, "_produce", side_effect=no_preparation):
+            self.assertEqual(1, self.read(case_id))
+        self.assertEqual([], self.model.prompts)
+        self.assertEqual([], self.asked)
+        self.assertEqual([], self.charges())
 
     def test_a_replay_with_no_way_to_approve_a_call_refuses_before_any_call(self) -> None:
         (case_id,) = self.marked("n")

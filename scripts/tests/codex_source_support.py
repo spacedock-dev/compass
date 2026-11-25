@@ -164,3 +164,13 @@ def entry(root: Path, path: Path) -> dict[str, Any]:
         },
         "row": {"state": "idle", "turn_end_at": AT + 6},
     }
+
+
+def review_receipt(study: Any, batch: int, checkpoint: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "v": 1,
+        "grant": study.binding,
+        "batch": batch,
+        "checkpoint": checkpoint,
+        "review": {"model": "gemini-3.8-flash-medium", "effort": "medium"},
+    }

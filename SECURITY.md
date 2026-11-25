@@ -4202,18 +4202,32 @@ transport digest, never its absolute CLI paths or actual argv. Approval is speci
 registered batch and lists its ten exact request digests and retry permission. Each slot is
 consumed under the same lock that records the charge. A valid checkpoint can resume unconsumed
 slots under that batch receipt across process invocations; charges are never renewed.
-Receipts are written before the ledger index; an interrupted write leaves a blocking orphan, not renewed
-allowance. The scorer checkpoints a charge before launch and keeps an exclusive per-charge
-attempt record under `~/.cargento/codex-qualification-spend.json.results/`. Those records hold
-local outcomes and bounded model explanations, not prompts or recovered source replies. Resume
-compares them with the packet's checkpoint and the ledger's charge and settlement receipts;
-missing, changed or symlinked records refuse. The approved argv names a private transient output
-alias of the production executor's temporary file; both names are removed after the invocation.
-Native executable and installation hashes are checked again immediately before its runner. These are operator guards over reviewed artifacts, not authentication of the owner
-or isolation from another process under the same account. The activation anchor binds only the
-empty genesis, so restoring a backup of `~/.cargento` taken after some charges resets the
-allowance undetected. Only the owner's own record of the approvals given can show it. The proposed allowance registers
-thirty producer exposures plus at most one charged availability retry, not an accuracy retry.
+The producer writes and syncs each exclusive receipt, then advances a progress witness before
+replacing the ledger index. The witness is under the canonical account's
+`~/.compass-qualification-checkpoints/`, outside the study and packet homes. It binds the genesis,
+event and reservation counts, and event digest. Both ledgers also lock there so replacing
+a study-home lock cannot create a second writer. A partial write or a restored, erased or
+rewritten study ledger refuses against these records. Committed genesis and batch review
+receipts also bind the corresponding event prefixes. Keep the owner-reviewed commits
+independently. A process able to replace the witness and the trusted repository can defeat
+local integrity checks. The protocol does not authenticate the owner or isolate processes
+sharing a UID.
+
+The scorer checkpoints the charge and records a durable launch fence before giving Codex
+control. It keeps an exclusive, digest-bound attempt record under
+`~/.cargento/codex-qualification-spend.json.results/`. These records hold local outcomes and
+bounded model explanations. Prompts and raw replies stay out. Resume compares the packet
+checkpoint and each attempt to the witnessed ledger. Missing, rewritten or symlinked records
+refuse. The owner can settle an interrupted charge offline. A refund requires a reservation
+that never crossed the launch fence. An unavailable result can retain the charge as unusable.
+An existing attempt must match its witnessed digest before its classification can be kept.
+
+The approved argv invokes npm's `bin/codex.js` with the pinned Node found first on the child
+PATH. The scorer rechecks the launcher, Node, npm manifests and native executable before launch.
+The argv names a private transient output alias of the production executor's temporary file.
+A stale alias refuses before reservation, including the retry. The alias is removed after the
+invocation. The proposed allowance registers thirty producer exposures and at most one charged
+availability retry.
 Google marking and review need their own approved schedule and call ceilings. The proposed
 schedule allows 74 to 96 Google calls across both full cohorts, including two markers,
 independent kind/source reviews, bounded arbitration, handoff, batch and final reviews.
@@ -4222,24 +4236,20 @@ maximum proposed evaluation budget is 139 calls. These are proposed ceilings, no
 the owner must approve the exact schedule and allowances before calls. Coding-agent turns are
 outside this evaluation budget, and no dollar quote is established here.
 
-Later analysis-level replay needs a separate approved fixed total allowance, tracked in
-`~/.cargento/codex-levels-replay-spend.json`. `levels_cases.py --cohort codex` writes it once,
-privately, and records each approved charge and its settlement as events in that one file under a
-lock. Beside it a receipts folder keeps the zero-charge genesis, with the total, so while that folder
-survives, a ledger file that is moved or deleted is not created again and a total edited upward
-no longer matches its genesis; every replay then refuses. Deleting both the ledger and its
-receipts, or emptying the ledger's events, resets the allowance undetected, like restoring a
-backup; these are same-account changes this study does not authenticate against. A charge is recorded before the call is launched and never
-removed, and no input is charged twice. The settlement records a digest of the reading the call
-returned, and each attached reading carries that digest, so a verdict edited after the call, or
-a reading swapped between cases, is refused at attach and again at scoring. The scored result
-records the genesis the readings were attached under, so a replacement ledger cannot score them.
-The same fixed-home rule applies as for the producer ledger: Windows and a moved `HOME` refuse,
-because the account home there depends on the environment. The file is not authenticated
-against another process under the same account, and restoring a backup of `~/.cargento` taken
-after some charges resets the allowance undetected; only the owner's own record of the approvals
-given can show it. The same digest check is not yet applied to the Claude cohort's replayed
-readings.
+Later analysis-level replay needs a separate fixed total in
+`~/.cargento/codex-levels-replay-spend.json`. Fix it once with `levels_cases.py --cohort codex`
+and commit the printed genesis checkpoint before approving calls. The replay ledger uses
+durable per-event receipts and its own progress witness alongside the producer witness. The
+committed checkpoint can advance to later printed prefixes. An erased or restored study ledger
+refuses, including one whose receipts were restored with it. Symlinked lock or receipt files
+also refuse. Each charge lands before launch and remains charged even after a failure. A replay
+with no uniquely prepared request stops before approval or charge. Windows or a moved `HOME`
+refuses the account ledger.
+
+Codex replay settlements bind each reading's contents to its charge. The Claude cohort writes
+a separate content witness under Git's common directory, keyed to the case and the committed
+marks. Attachment and scoring check those digests, so an edited replay or attached verdict
+refuses. The study records only the allowance genesis in the committable score.
 Each replay also needs one-call approval, reading consent, tool-output consent and capacity in
 the ordinary rolling reading-permission ledger. Deterministic level scoring makes no model
 call. Reuse needs exact input, prompt and producer bindings, with blind level marks predating

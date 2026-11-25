@@ -1208,15 +1208,17 @@ and confer no authority on this study.
 `CodexLedger` and `CodexCampaign` require a separately prepared grant, its reviewed zero-charge
 genesis and freshly recomputed input and transport bindings. Source intake establishes provenance;
 the scorer separately verifies the resolved npm installation, package version and actual native
-executable, records their hashes and rechecks their identity immediately before launch. Unknown
-installation layouts refuse. This is a structural installation check with owner-reviewed hashes,
-not a publisher signature; a version string alone is insufficient.
+executable. It launches npm's `bin/codex.js` through its pinned Node and rechecks those files
+and the two npm manifests when present. The owner reviews the installation hashes. A version
+string or an unknown layout is insufficient.
 The grant holds only the transport digest; absolute CLI paths and actual argv stay local.
 A batch approval lists the exact ten registered slot/request digests of one repetition and
 whether it includes the single availability retry. Reservation consumes one listed slot at a
 time under the account lock before returning a charge. A changed or already consumed slot
-refuses. Missing receipts or an interrupted write block further reservations. Each ten-case repetition needs a recorded batch review before
-the next begins; recording that review does not claim the repetition passed.
+refuses. The local ledger must match the progress witness outside the study home. A restored
+ledger and receipt directory together still refuse. Missing receipts or an interrupted write
+block further reservations. Each ten-case repetition needs a committed batch review before
+the next begins. Review and passing the repetition are separate decisions.
 
 The proposed claim is limited to Codex analysis levels. Live estimate and Live monitor stay
 Claude-only. The [owner ruling](../design-reading-a-session.md#owner-ruling-2026-11-09-prospective-codex-analysis-qualification)
@@ -1317,14 +1319,34 @@ asking for approval it lists the ten slots (case alias and repetition), every re
 model/effort, CLI binding digests, evidence categories, whether the retry is included and the
 remaining allowance. Type `approve` to record one batch receipt. The scorer then runs that
 batch sequentially, checkpointing each charge before launch and each result after settlement.
-It stops at the batch boundary, names the records to review and lists the next batch's proposed
-approval. Three approvals cover the thirty registered readings. There is no unattended approval
-flag. Resume with `--score --producer codex --resume`; a valid checkpoint resumes the unconsumed
-slots of the existing batch approval without asking again. An interrupted launch remains charged
-and blocks for reconciliation; it is never relaunched. The local results use
-`abstention-codex-results.json` in the packet home; the committable half uses
-`docs/abstention/codex-results.json`. Neither exists until execution. A pending charge,
-missing immutable attempt record or changed checkpoint blocks resume for owner reconciliation.
+It stops at the batch boundary, prints the review checkpoint, and lists the next proposed
+approval. Three approvals cover the thirty registered readings. Resume with
+`--score --producer codex --resume`. A matching checkpoint resumes the unconsumed slots of
+the existing approval. A leftover `codex-qualification-output.txt` blocks before the scorer
+reserves a slot or the retry. Review and clear that alias after establishing that its earlier
+process has stopped.
+
+For an interrupted charge, run `python3 scripts/score_abstention.py reconcile-codex usable`
+to retain a scorer-written attempt whose digest matches. Its original grading still applies.
+Choose `unusable` to retain the charge when the output is missing, or `refunded` when the
+durable launch fence proves the call was never sent. The command asks for the exact charge ID.
+In a non-interactive invocation pass `--confirm-charge ID`. Reconciliation records the
+immutable attempt and advances the checkpoint without a producer call. A refund retains its
+audit record and restores the same approved slot. Uncertain sends stay charged.
+
+The local results use `abstention-codex-results.json` in the packet home. The committable
+half uses `docs/abstention/codex-results.json`.
+
+Commit `docs/abstention/codex-reviews.json` as an object keyed by the canonical ledger
+digest of each receipt. Each receipt contains `v` (1), `grant` (the stable grant digest),
+`batch` (0 for genesis, 1 to 3 for repetition reviews), `checkpoint`, and `review`
+(the review model and effort). For genesis, get the grant digest and empty checkpoint from
+`CodexLedger.binding` and `abstention_ledger.progress(anchor, [])`, where `anchor` is returned by
+`initialize()`. Set `genesis_review` in the sealed grant to the committed genesis receipt digest.
+For each finished batch, use the printed checkpoint and pass the committed receipt's digest
+to `CodexCampaign.review_batch`. A receipt for another grant or event prefix cannot advance
+the study. Reviewers and publication still need the owner approvals below.
+
 The scorer returns status 2 while qualification is incomplete, 1 for a measured failure and 0
 only for three complete passing repetitions. PASS still requires the owner's separate acceptance.
 

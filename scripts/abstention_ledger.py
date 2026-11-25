@@ -35,11 +35,13 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import itertools
 import json
 import math
 import os
 import re
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -965,7 +967,17 @@ def _unlock_file(handle: IO[bytes]) -> None:
 def locked(path: str) -> Iterator[None]:
     """An exclusive lock on a sidecar file, held across processes."""
     os.makedirs(os.path.dirname(path) or ".", mode=0o700, exist_ok=True)
-    with open(f"{path}.lock", "a+b") as handle:
+    target = f"{path}.lock"
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        if os.path.islink(target):
+            raise LedgerError("the spend lock is a symlink")
+        descriptor = os.open(target, flags, 0o600)
+    except OSError as error:
+        raise LedgerError("the spend lock cannot be opened") from error
+    with os.fdopen(descriptor, "r+b") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            raise LedgerError("the spend lock is not a regular file")
         _lock_file(handle)
         try:
             yield
@@ -1296,7 +1308,15 @@ CODEX_BINDINGS = frozenset(
 )
 _CODEX_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _CODEX_ID = re.compile(r"[0-9a-f]{32}\Z")
-CODEX_STATUSES = ("usable", "unusable", "semantic-failed", "coverage-failed", "protection-failed")
+CODEX_STATUSES = (
+    "usable",
+    "unusable",
+    "semantic-failed",
+    "coverage-failed",
+    "protection-failed",
+    "refunded",
+)
+CODEX_REVIEWS = "docs/abstention/codex-reviews.json"
 
 
 def codex_digest_valid(value: Any) -> bool:
@@ -1394,9 +1414,10 @@ def _codex_sync_dir(folder: str) -> None:
             os.close(descriptor)
 
 
-def _codex_receipt(path: str, body: Mapping[str, Any]) -> None:
+def write_receipt(path: str, body: Mapping[str, Any]) -> None:
     """Exclusive durable receipt first; an interrupted index write leaves a blocking orphan."""
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         json.dump(body, handle, sort_keys=True)
         handle.flush()
@@ -1404,12 +1425,87 @@ def _codex_receipt(path: str, body: Mapping[str, Any]) -> None:
     _codex_sync_dir(os.path.dirname(path))
 
 
+def checkpoint_root() -> str:
+    path = canonical_path(".compass-qualification-checkpoints")
+    if path is None or os.path.islink(path):
+        raise LedgerError("the independent qualification checkpoint directory is unavailable")
+    return path
+
+
+def progress(genesis: str, events: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "genesis": genesis,
+        "event_count": len(events),
+        "charge_count": sum(
+            isinstance(event, dict) and event.get("kind") == "charge" for event in events
+        ),
+        "events_digest": digest(events),
+    }
+
+
+def read_progress(path: str, expected: Mapping[str, Any]) -> None:
+    if _review_json(path, "qualification progress witness", cap=4096) != expected:
+        raise LedgerError("qualification progress differs from its independent checkpoint")
+
+
+def write_progress(path: str, value: Mapping[str, Any], *, initialize: bool = False) -> None:
+    folder = os.path.dirname(path)
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    _codex_sync_dir(os.path.dirname(folder))
+    if initialize:
+        write_receipt(path, value)
+    else:
+        _write(path, value)
+        _codex_sync_dir(folder)
+
+
+def committed_study_json(path: str, *, optional: bool = False) -> dict[str, Any]:
+    """The owner can retain a committed checkpoint outside the private study directory."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        result = subprocess.run(  # noqa: S603 - fixed Git command for a committed review artifact
+            ["git", "-C", root, "show", f"HEAD:{path}"],  # noqa: S607
+            capture_output=True,
+            env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+            check=False,
+            timeout=5,
+        )
+        if result.returncode != 0 and optional:
+            return {}
+        if result.returncode != 0 or len(result.stdout) > 128_000:
+            raise LedgerError("the committed study checkpoint is missing or too large")
+        value = json.loads(result.stdout)
+    except (OSError, ValueError, RecursionError, subprocess.SubprocessError) as error:
+        raise LedgerError("the committed study checkpoint cannot be read") from error
+    if not isinstance(value, dict):
+        raise LedgerError("the committed study checkpoint is invalid")
+    return value
+
+
+def codex_reviews() -> dict[str, Any]:
+    return committed_study_json(CODEX_REVIEWS)
+
+
+def require_progress_prefix(checkpoint: Any, genesis: str, events: list[dict[str, Any]]) -> None:
+    if (
+        not isinstance(checkpoint, dict)
+        or type(checkpoint.get("event_count")) is not int
+        or not 0 <= checkpoint["event_count"] <= len(events)
+        or checkpoint != progress(genesis, events[: checkpoint["event_count"]])
+    ):
+        raise LedgerError("qualification progress does not extend the committed checkpoint")
+
+
+def charged_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [call for call in calls if call["status"] != "refunded"]
+
+
 class CodexLedger:
     """Fixed account accounting, independent of every Claude allowance.
 
     No arbitrary ledger path or empty-on-missing fallback is admitted. These
     authority primitives gate the scorer before every launch. They
-    guard operator mistakes, not malicious rewriting by the same OS account.
+    witness progress outside the study home and require committed owner reviews.
     """
 
     def __init__(self, *, bindings: Mapping[str, str], transport: Mapping[str, Any]) -> None:
@@ -1426,6 +1522,7 @@ class CodexLedger:
         self.binding = _codex_key(self.grant)
         self.path = study_path("codex-qualification-spend.json") or ""
         self.receipts = Path(self.path + ".receipts")
+        self.progress_path = os.path.join(checkpoint_root(), "codex-producer.json")
         self.invocation = uuid.uuid4().hex
         self.process_id = os.getpid()
         self._authority()
@@ -1443,6 +1540,8 @@ class CodexLedger:
             self.path,
             str(self.receipts),
             self.path + ".lock",
+            os.path.dirname(self.progress_path),
+            self.progress_path,
         ):
             if os.path.islink(path):
                 raise LedgerError("Codex accounting cannot follow symlinks")
@@ -1454,19 +1553,54 @@ class CodexLedger:
         ):
             raise LedgerError("the Codex grant, inputs or transport changed")
 
+    @contextlib.contextmanager
+    def locked(self) -> Iterator[None]:
+        # Replacing a study-home lock cannot create a second writer to the shared witness.
+        with locked(self.progress_path), locked(self.path):
+            yield
+
     def _persist(self, body: Mapping[str, Any]) -> None:
         _write(self.path, body)
         _codex_sync_dir(os.path.dirname(self.path))
 
+    def _progress(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        return progress(digest(dict(body, events=[])), body["events"])
+
+    def checkpoint(self) -> dict[str, Any]:
+        with self.locked():
+            return self._progress(self._state()[0])
+
+    def _require_review(
+        self, proof: Any, batch: int, checkpoint: Mapping[str, Any], reviews: Mapping[str, Any]
+    ) -> None:
+        from analyze_campaign import review_receipt_valid  # noqa: PLC0415 - shared review rules
+
+        if not codex_digest_valid(proof):
+            raise LedgerError("the Codex review digest is invalid")
+        receipt = reviews.get(proof)
+        if (
+            not isinstance(receipt, dict)
+            or set(receipt) != {"v", "grant", "batch", "checkpoint", "review"}
+            or receipt["v"] != 1
+            or receipt["grant"] != self.binding
+            or type(receipt["batch"]) is not int
+            or receipt["batch"] != batch
+            or receipt["checkpoint"] != checkpoint
+            or not review_receipt_valid(receipt["review"])
+            or digest(receipt) != proof
+        ):
+            raise LedgerError("the Codex review does not attest this committed checkpoint")
+
     def initialize(self) -> str:
         """Prepare zero-charge genesis once for review; never activate or launch anything."""
         self._authority()
-        with locked(self.path):
+        with self.locked():
             self._authority()
             if (
                 self.grant["phase"] != "prepared"
                 or os.path.lexists(self.path)
-                or self.receipts.exists()
+                or os.path.lexists(self.receipts)
+                or os.path.lexists(self.progress_path)
             ):
                 raise LedgerError("the Codex genesis cannot be initialized again")
             self.receipts.mkdir(mode=0o700)
@@ -1476,7 +1610,8 @@ class CodexLedger:
                 "genesis_nonce": uuid.uuid4().hex,
                 "events": [],
             }
-            _codex_receipt(str(self.receipts / "genesis.json"), genesis)
+            write_receipt(str(self.receipts / "genesis.json"), genesis)
+            write_progress(self.progress_path, self._progress(genesis), initialize=True)
             self._persist(genesis)
             return digest(genesis)
 
@@ -1488,6 +1623,7 @@ class CodexLedger:
         request: Any,
         retry: Any,
     ) -> None:
+        calls = charged_calls(calls)
         entries = self.grant["exposures"]
         entry = next((entry for entry in entries if entry["slot"] == slot), None)
         if not entry or entry["request_digest"] != request or type(retry) is not bool:
@@ -1538,7 +1674,7 @@ class CodexLedger:
             or requests != expected
             or type(retry) is not bool
             or any(a.get("repetition") == repetition for a in approvals.values())
-            or (retry and any(c["retry"] for c in calls))
+            or (retry and any(c["retry"] for c in charged_calls(calls)))
         ):
             raise LedgerError("the exact Codex batch is changed, already approved or unavailable")
         self._eligible(calls, reviews, next(iter(expected)), expected[next(iter(expected))], False)
@@ -1557,7 +1693,7 @@ class CodexLedger:
             if (
                 receipt["requests"].get(slot) != request
                 or (retry and not receipt["retry"])
-                or any(c["slot"] == slot and c["retry"] == retry for c in calls)
+                or any(c["slot"] == slot and c["retry"] == retry for c in charged_calls(calls))
             ):
                 raise LedgerError("the Codex batch slot is unlisted, changed or consumed")
         elif (
@@ -1569,12 +1705,15 @@ class CodexLedger:
         ):
             raise LedgerError("the Codex approval is missing, stale or consumed")
 
-    def _replay_event(  # noqa: C901, PLR0912 - validate each immutable event before replay
+    def _replay_event(  # noqa: C901 - validate each immutable event before replay
         self,
         event: dict[str, Any],
         approvals: dict[str, dict[str, Any]],
         calls: list[dict[str, Any]],
         reviews: dict[int, str],
+        *,
+        checkpoint: Mapping[str, Any] | None = None,
+        review_receipts: Mapping[str, Any] | None = None,
     ) -> None:
         common = {"id", "kind", "grant_digest"}
         if event["kind"] == "approval":
@@ -1607,7 +1746,9 @@ class CodexLedger:
             approved = approvals.get(event["approval"])
             is_batch = bool(approved and "requests" in approved)
             fields = {"slot", "request_digest", "retry"} if is_batch else set()
-            if set(event) != common | {"approval"} | fields or not approved:
+            guarded = event.get("guarded") is True
+            guard_field = {"guarded"} if guarded and is_batch else set()
+            if set(event) != common | {"approval"} | fields | guard_field or not approved:
                 raise LedgerError("the Codex charge receipt changed")
             requested = event if is_batch else approved
             slot, request, retry = (requested[k] for k in ("slot", "request_digest", "retry"))
@@ -1621,18 +1762,11 @@ class CodexLedger:
                     "request_digest": request,
                     "retry": retry,
                     "status": "charged",
+                    **({"launch_armed": False} if guarded else {}),
                 }
             )
-        elif event["kind"] == "settlement":
-            call = next((call for call in calls if call["id"] == event.get("charge")), None)
-            if (
-                set(event) != common | {"charge", "status"}
-                or not call
-                or call["status"] != "charged"
-                or event.get("status") not in CODEX_STATUSES
-            ):
-                raise LedgerError("the Codex settlement is invalid or already recorded")
-            call["status"] = event["status"]
+        elif event["kind"] in ("launch", "result", "settlement"):
+            self._replay_charge_event(event, calls, common)
         elif event["kind"] == "review":
             batch = event.get("batch")
             if (
@@ -1640,22 +1774,76 @@ class CodexLedger:
                 or type(batch) is not int
                 or batch not in (1, 2, 3)
                 or batch in reviews
-                or not codex_digest_valid(event.get("proof_digest"))
+                or checkpoint is None
+                or review_receipts is None
                 or event["checkpoint"] != digest(calls)
             ):
                 raise LedgerError("the Codex batch review changed")
             group = {
                 entry["slot"] for entry in self.grant["exposures"] if entry["repetition"] == batch
             }
-            if group != {call["slot"] for call in calls if call["slot"] in group} or any(
-                call["status"] == "charged" for call in calls
-            ):
+            if group != {
+                call["slot"] for call in charged_calls(calls) if call["slot"] in group
+            } or any(call["status"] == "charged" for call in calls):
                 raise LedgerError("the Codex batch has not completed all registered attempts")
+            self._require_review(event["proof_digest"], batch, checkpoint, review_receipts)
             reviews[batch] = event["proof_digest"]
         else:
             raise LedgerError("the Codex receipt kind is unknown")
 
-    def _state(
+    def _replay_charge_event(
+        self, event: Mapping[str, Any], calls: list[dict[str, Any]], common: set[str]
+    ) -> None:
+        call = next((row for row in calls if row["id"] == event.get("charge")), None)
+        if call is None or call["status"] != "charged":
+            raise LedgerError("the Codex charge is missing or already settled")
+        fields = set(event) - common - {"charge"}
+        if event["kind"] == "launch" and not fields and call.get("launch_armed") is False:
+            call["launch_armed"] = True
+        elif (
+            event["kind"] == "result"
+            and "launch_armed" in call
+            and (
+                (fields == {"result_digest"} and "result_digest" not in call)
+                or (
+                    fields == {"result_digest", "missing_result"}
+                    and "result_digest" in call
+                    and event["missing_result"] == call["result_digest"]
+                )
+            )
+            and codex_digest_valid(event.get("result_digest"))
+        ):
+            call["result_digest"] = event["result_digest"]
+        elif (
+            event["kind"] == "settlement"
+            and fields == {"status"}
+            and event["status"] in CODEX_STATUSES
+            and (event["status"] != "refunded" or call.get("launch_armed") is False)
+            and ("launch_armed" not in call or "result_digest" in call)
+        ):
+            call["status"] = event["status"]
+        else:
+            raise LedgerError("the Codex charge transition is invalid")
+
+    def _charge_event(self, charge_id: str, kind: str, **fields: Any) -> None:
+        self._authority()
+        with self.locked():
+            body, _, calls, _ = self._state()
+            self._replay_charge_event(
+                {"kind": kind, "charge": charge_id, **fields}, calls, {"kind"}
+            )
+            self._append(body, kind, charge=charge_id, **fields)
+
+    def arm_launch(self, charge_id: str) -> None:
+        self._charge_event(charge_id, "launch")
+
+    def witness_result(
+        self, charge_id: str, result_digest: str, *, missing_result: str | None = None
+    ) -> None:
+        fields = {} if missing_result is None else {"missing_result": missing_result}
+        self._charge_event(charge_id, "result", result_digest=result_digest, **fields)
+
+    def _state(  # noqa: C901 - revalidate both witnesses and every ledger receipt
         self,
     ) -> tuple[dict[str, Any], dict[str, dict[str, Any]], list[dict[str, Any]], dict[int, str]]:
         self._authority()
@@ -1683,19 +1871,27 @@ class CodexLedger:
             != genesis
         ):
             raise LedgerError("the Codex genesis does not match reviewed activation")
+        read_progress(self.progress_path, self._progress(body))
+        anchor = digest(genesis)
+        review_receipts = codex_reviews()
+        self._require_review(self.grant["genesis_review"], 0, progress(anchor, []), review_receipts)
+        for receipt in review_receipts.values():
+            if isinstance(receipt, dict) and receipt.get("grant") == self.binding:
+                require_progress_prefix(receipt.get("checkpoint"), anchor, body["events"])
         expected = {"genesis.json"}
         approvals: dict[str, dict[str, Any]] = {}
         calls: list[dict[str, Any]] = []
         reviews: dict[int, str] = {}
         ids: set[str] = set()
-        for event in body["events"]:
+        for index, event in enumerate(body["events"]):
             if (
                 not isinstance(event, dict)
                 or not isinstance(event.get("id"), str)
                 or not _CODEX_ID.fullmatch(event["id"])
                 or event["id"] in ids
                 or event.get("grant_digest") != self.binding
-                or event.get("kind") not in ("approval", "charge", "settlement", "review")
+                or event.get("kind")
+                not in ("approval", "charge", "launch", "result", "settlement", "review")
             ):
                 raise LedgerError("the Codex receipt identity changed")
             ids.add(event["id"])
@@ -1706,10 +1902,18 @@ class CodexLedger:
                 != event
             ):
                 raise LedgerError("the Codex receipt was removed or rewritten")
-            self._replay_event(event, approvals, calls, reviews)
+            checkpoint = (
+                progress(anchor, body["events"][:index]) if event["kind"] == "review" else None
+            )
+            self._replay_event(
+                event,
+                approvals,
+                calls,
+                reviews,
+                checkpoint=checkpoint,
+                review_receipts=review_receipts,
+            )
         # Bound the scan so foreign contents cannot turn authority checks into an unbounded read.
-        import itertools  # noqa: PLC0415 - Codex-only bounded receipt inventory
-
         try:
             names = {item.name for item in itertools.islice(self.receipts.iterdir(), 258)}
         except OSError as error:
@@ -1722,22 +1926,17 @@ class CodexLedger:
         if len(body["events"]) >= 256:
             raise LedgerError("the bounded Codex event allowance is full")
         event = {"id": uuid.uuid4().hex, "kind": kind, "grant_digest": self.binding, **fields}
-        _codex_receipt(str(self.receipts / f"{kind}-{event['id']}.json"), event)
+        write_receipt(str(self.receipts / f"{kind}-{event['id']}.json"), event)
         body["events"].append(event)
+        write_progress(self.progress_path, self._progress(body))
         self._persist(body)
         return str(event["id"])
 
     def used(self) -> int:
         self._authority()
-        with locked(self.path):
-            return len(self._state()[2])
+        with self.locked():
+            return len(charged_calls(self._state()[2]))
 
     def settle(self, charge_id: str, status: str) -> None:
         """Classify once, retaining every charge. No invocation, retry or producer is launched."""
-        self._authority()
-        with locked(self.path):
-            body, _, calls, _ = self._state()
-            call = next((call for call in calls if call["id"] == charge_id), None)
-            if not call or call["status"] != "charged" or status not in CODEX_STATUSES:
-                raise LedgerError("the Codex charge is not pending or its status is invalid")
-            self._append(body, "settlement", charge=charge_id, status=status)
+        self._charge_event(charge_id, "settlement", status=status)

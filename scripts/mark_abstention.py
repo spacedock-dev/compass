@@ -144,7 +144,7 @@ def prepare_google_send(
 
 def _google_send_receipt(path: pathlib.Path, body: dict[str, Any]) -> None:
     try:
-        abstention_ledger._codex_receipt(str(path.absolute()), body)  # noqa: SLF001 - shared exclusive durable receipt
+        abstention_ledger.write_receipt(str(path.absolute()), body)
     except OSError as error:
         raise abstention_ledger.LedgerError(
             "the Google send receipt exists or cannot be written"

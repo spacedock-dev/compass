@@ -198,7 +198,8 @@ lost, and reads a `pending` one again only when the ledger says that job was nev
 a stopped case anyway, delete its entry from `replay.json`, knowing it will be charged again.
 
 `--read` writes `replayed-readings.json` in exactly the shape `--attach-readings` takes, and
-`--attach-readings` and `--score` run on it unchanged. `replay.json` holds, per case id, the status,
+`--attach-readings` and `--score` check each reading against its recorded content digest.
+`replay.json` holds, per case id, the status,
 the withheld token, whether the call spent, whether it was charged, and when, and for a call in
 flight its marker and ledger job id, made of a case id and a time. It holds no session id,
 intent text or model prose. `--dry-run` runs the producer up to the model with a stub that sends
@@ -297,13 +298,13 @@ alias, the digest of the exact request and the allowance left, as well as the or
 consent, tool-output consent and rolling reading budget. The call is prepared locally first, which
 sends nothing, and the request approved is the only one sent. Failed or interrupted calls remain
 charged, and no input is ever charged twice, so rerunning cannot silently retry or renew the total
-allowance. While its receipts folder survives, a moved or deleted allowance file is not created again;
-deleting both resets it undetected, as restoring a backup does. Windows or a moved `HOME`
-refuses it. The replay sends the prompt the production reader built when the case was frozen, and
-a reading attaches only with its producer, request digest, exact inputs, approved charge and a
-digest of its own contents, each checked again at scoring, so an edited or swapped reading is
-refused. The result records the allowance the readings were attached under. Restoring a backup
-of the account's study folder taken after some charges resets the allowance undetected. The accounting and refusal rules are in
-[SECURITY.md](../../SECURITY.md#prospective-codex-analysis-qualification-2026-11-09).
+allowance. The allowance command prints the genesis checkpoint to commit as
+`docs/drift-levels/codex-replay-checkpoint.json` before the first replay. After each run, the
+owner can commit the printed progress checkpoint to retain the latest reviewed prefix.
+A restored index and receipt folder still fail against the separate progress witness.
+Windows or a moved `HOME` refuses the account ledger. A reading attaches only with its
+producer, request digest, exact inputs, approved charge and content digest. The scorer checks
+those bindings again. The [security contract](../../SECURITY.md#prospective-codex-analysis-qualification-2026-11-09)
+owns the accounting and refusal rules.
 Passing the scorer then requires a separate owner decision before Codex analysis levels may be
 enabled or results published.

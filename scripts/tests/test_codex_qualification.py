@@ -23,9 +23,9 @@ import mark_abstention as marker
 import score_abstention as scorer
 
 if TYPE_CHECKING:
-    from tests.codex_source_support import AT, config, entry, rollout
+    from tests.codex_source_support import AT, config, entry, review_receipt, rollout
 else:
-    from codex_source_support import AT, config, entry, rollout
+    from codex_source_support import AT, config, entry, review_receipt, rollout
 
 
 class _CodexInstallationFixture(unittest.TestCase):
@@ -35,10 +35,15 @@ class _CodexInstallationFixture(unittest.TestCase):
         self.home = Path(temp.name).resolve()
         self.package = self.home / "node_modules/@openai/codex"
         self.launcher = self.package / "bin/codex.js"
+        self.node = self.home / "bin/node"
         self.native = self.package / "vendor/x86_64-unknown-linux-musl/codex/codex"
         self.launcher.parent.mkdir(parents=True)
         self.native.parent.mkdir(parents=True)
         self.launcher.write_text("#!/usr/bin/env node\n// @openai/codex launcher\n")
+        self.launcher.chmod(0o700)
+        self.node.parent.mkdir()
+        self.node.write_bytes(b"FAKE NODE; NEVER EXECUTE")
+        self.node.chmod(0o700)
         self.native.write_bytes(b"\x7fELF" + b"FAKE TEST EXECUTABLE; NEVER EXECUTE")
         self.native.chmod(0o700)
         (self.package / "package.json").write_text(
@@ -53,6 +58,7 @@ class _CodexInstallationFixture(unittest.TestCase):
     def verify(self) -> Any:
         return scorer.verify_codex_binary(
             binary_resolver=lambda _: str(self.launcher),
+            node_resolver=lambda _: str(self.node),
             runner=self.version_runner,
             platform="linux",
             machine="x86_64",
@@ -86,12 +92,21 @@ class _CodexInstallationFixture(unittest.TestCase):
 class CodexInstallationTest(_CodexInstallationFixture):
     def test_a_person_records_the_installation_and_native_bytes_separately(self) -> None:
         verified = self.verify()
-        self.assertEqual(str(self.native), verified.path)
+        self.assertEqual(str(self.launcher), verified.path)
+        self.assertEqual(str(self.native), verified.native)
         self.assertEqual(scorer.file_identity(str(self.native)), verified.identity)
         self.assertEqual("codex-cli 0.167.0", verified.version)
         self.version_runner.assert_called_once()
         self.assertEqual([str(self.native), "--version"], self.version_runner.call_args.args[0])
         self.assertNotEqual(verified.installation_digest, verified.identity[-1])
+
+    def test_the_pinned_executable_is_the_production_npm_launcher(self) -> None:
+        verified = self.verify()
+        pinned = scorer.PinnedCodex(verified)
+        self.assertEqual(str(self.launcher), pinned("codex"))
+        self.launcher.write_bytes(self.launcher.read_bytes() + b"// changed")
+        with self.assertRaises(scorer.BinaryError):
+            pinned("codex")
 
     def test_a_person_cannot_trust_a_version_string_from_an_unrecognized_installation(self) -> None:
         fake = self.home / "codex"
@@ -106,8 +121,8 @@ class CodexInstallationTest(_CodexInstallationFixture):
     def test_a_person_cannot_launch_after_the_native_binary_or_installation_changes(self) -> None:
         verified = self.verify()
         pinned = scorer.PinnedCodex(verified)
-        self.assertEqual(str(self.native), pinned("codex"))
-        for path in (self.native, self.launcher, self.package / "package.json"):
+        self.assertEqual(str(self.launcher), pinned("codex"))
+        for path in (self.native, self.node, self.launcher, self.package / "package.json"):
             with self.subTest(path=path.name):
                 before = path.read_bytes()
                 path.write_bytes(before + b" ")
@@ -125,7 +140,7 @@ class CodexInstallationTest(_CodexInstallationFixture):
 
     def test_a_person_can_pin_the_current_platform_package_layout(self) -> None:
         self.platform_package()
-        self.assertEqual(str(self.native), self.verify().path)
+        self.assertEqual(str(self.native), self.verify().native)
 
     def test_a_person_cannot_accept_a_native_version_that_differs_from_the_package(self) -> None:
         self.version_runner.return_value.stdout = "codex-cli 0.168.0"
@@ -182,6 +197,7 @@ class CodexQualificationTest(_CodexInstallationFixture):
     def setUp(self) -> None:
         super().setUp()
         self.config = config(self.home)
+        self.reviews: dict[str, Any] = {}
         parser_patch = mock.patch.object(sources, "parser_digest", return_value=self.parser)
         parser_patch.start()
         self.addCleanup(parser_patch.stop)
@@ -190,6 +206,7 @@ class CodexQualificationTest(_CodexInstallationFixture):
         (self.home / "codex").mkdir(mode=0o700)
         for patch in (
             mock.patch.object(authority, "real_home", return_value=str(self.home)),
+            mock.patch.object(authority, "codex_reviews", return_value=self.reviews),
             mock.patch.object(authority, "CODEX_GRANT_PATH", str(self.home / "grant.json")),
             mock.patch.object(scorer, "HOME", str(self.home / "packet")),
             mock.patch.dict(
@@ -269,8 +286,12 @@ class CodexQualificationTest(_CodexInstallationFixture):
         }
         self.grant_path = self.home / "grant.json"
         self.write_grant()
-        anchor = self.study().initialize()
-        self.grant.update(phase="sealed", activation_anchor=anchor, genesis_review="d" * 64)
+        study = self.study()
+        anchor = study.initialize()
+        receipt = review_receipt(study, 0, authority.progress(anchor, []))
+        proof = authority.digest(receipt)
+        self.reviews[proof] = receipt
+        self.grant.update(phase="sealed", activation_anchor=anchor, genesis_review=proof)
         self.write_grant()
         self.results = str(self.home / "packet/abstention-codex-results.json")
         self.summary = str(self.home / "codex-results.json")
@@ -287,6 +308,13 @@ class CodexQualificationTest(_CodexInstallationFixture):
     def study(self) -> Any:
         return campaign.CodexCampaign(bindings=self.inputs, transport=self.transport)
 
+    def review_batch(self, batch: int) -> None:
+        study = self.study()
+        receipt = review_receipt(study, batch, study.checkpoint())
+        proof = authority.digest(receipt)
+        self.reviews[proof] = receipt
+        study.review_batch(batch, proof)
+
     def fake_runner(self, argv: list[str], **kwargs: Any) -> Any:
         if self.before_launch:
             self.before_launch()
@@ -294,6 +322,8 @@ class CodexQualificationTest(_CodexInstallationFixture):
         self.assertEqual("charged", calls[-1]["status"])
         self.launches.append({"argv": argv, "prompt": kwargs["input"], "charge": calls[-1]["id"]})
         self.assertEqual(argv, self.transport["argv"])
+        self.assertEqual(str(self.launcher), argv[0])
+        self.assertEqual(str(self.node.parent), kwargs["env"]["PATH"].split(os.pathsep)[0])
         if self.interrupt:
             raise KeyboardInterrupt
         names = self.corpus.cases["cases"][0]["production_reading"]["constraints"]
@@ -328,6 +358,22 @@ class CodexQualificationTest(_CodexInstallationFixture):
                 codex_approve=(lambda _report: approve),
                 resume=prior,
             )
+
+    def reconcile(self, charge: str | None, status: str) -> int:
+        with (
+            mock.patch.object(scorer, "verify_codex_binary", return_value=self.verified),
+            mock.patch.object(scorer, "_load_corpus", return_value=self.corpus),
+            mock.patch.object(scorer, "results_path_for", return_value=self.results),
+            mock.patch.object(
+                scorer._runtime()[0], "build_runtime_config", return_value=self.config
+            ),
+            contextlib.redirect_stdout(io.StringIO()),
+            mock.patch.object(sys, "stdin", io.StringIO()),
+        ):
+            args = ["reconcile-codex", status, "--out", self.summary]
+            if charge is not None:
+                args.extend(("--confirm-charge", charge))
+            return scorer.main(args)
 
     def test_a_person_prepares_thirty_registered_exposures_without_launching(self) -> None:
         self.assertEqual(30, len(self.requests))
@@ -442,7 +488,7 @@ class CodexQualificationTest(_CodexInstallationFixture):
             self.assertEqual(0 if n == 2 else 2, code, self.output.getvalue())
             self.assertEqual((n + 1) * 10, len(self.launches))
             if n < 2:
-                self.study().review_batch(n + 1, authority.digest([n, "review"]))
+                self.review_batch(n + 1)
         summary = json.loads(Path(self.summary).read_text())
         self.assertEqual("passed", summary["verdict"])
         self.assertEqual(["passed"] * 3, [r["summary"]["verdict"] for r in summary["repetitions"]])
@@ -473,13 +519,100 @@ class CodexQualificationTest(_CodexInstallationFixture):
         self.assertEqual(10, len(self.launches))
         calls = self.study()._state()[2]
         self.assertTrue(all(c["status"] == "semantic-failed" and not c["retry"] for c in calls))
-        self.study().review_batch(1, authority.digest("failed batch review"))
+        self.review_batch(1)
         self.semantic = False
         self.run_one(resume=True)
         self.assertEqual(20, len(self.launches))
         calls = self.study()._state()[2]
         self.assertEqual(20, len({c["slot"] for c in calls}))
         self.assertTrue(all(not c["retry"] for c in calls))
+
+    def test_a_stale_output_alias_refuses_before_spending_a_slot_or_retry(self) -> None:
+        argv = self.transport["argv"]
+        output = Path(argv[argv.index("--output-last-message") + 1])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text("left behind")
+        self.assertEqual(2, self.run_one())
+        self.assertEqual(0, self.study().used())
+        self.assertEqual([], self.launches)
+        self.assertEqual("left behind", output.read_text())
+        output.unlink()
+        self.assertEqual(2, self.run_one())
+        self.assertEqual(10, self.study().used())
+        self.assertFalse(any(call["retry"] for call in self.study()._state()[2]))
+
+    def test_the_owner_can_settle_an_interrupted_charge_and_resume(self) -> None:
+        self.interrupt = True
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_one()
+        self.interrupt = False
+        charge = self.launches[0]["charge"]
+        self.assertEqual(2, self.reconcile(charge, "refunded"))
+        self.assertEqual(0, self.reconcile(charge, "unusable"))
+        attempt = Path(self.study().path + ".results", charge + ".json")
+        self.assertEqual("unusable", json.loads(attempt.read_text())["classification"])
+        self.assertEqual(2, self.run_one(resume=True))
+        self.assertEqual(11, len(self.launches))
+        self.assertEqual(1, sum(row["charge"] == charge for row in self.launches))
+
+    def test_reconciliation_keeps_the_witnessed_output_if_settlement_was_interrupted(self) -> None:
+        with (
+            mock.patch.object(authority.CodexLedger, "settle", side_effect=KeyboardInterrupt),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            self.run_one()
+        charge = self.launches[0]["charge"]
+        record = Path(self.study().path + ".results", charge + ".json")
+        written = record.read_bytes()
+        self.assertEqual(0, self.reconcile(charge, "usable"))
+        self.assertEqual(written, record.read_bytes())
+        self.assertEqual(2, self.run_one(resume=True))
+        self.assertEqual(10, len(self.launches))
+
+    def test_a_refund_before_the_launch_fence_reopens_the_same_slot_without_a_retry(self) -> None:
+        checkpoint = scorer._codex_checkpoint
+
+        def stop_before_launch(*args: Any, **kwargs: Any) -> Any:
+            result = checkpoint(*args, **kwargs)
+            if kwargs.get("pending"):
+                raise KeyboardInterrupt
+            return result
+
+        with (
+            mock.patch.object(scorer, "_codex_checkpoint", side_effect=stop_before_launch),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            self.run_one()
+        charge = self.study()._state()[2][-1]["id"]
+        self.assertEqual([], self.launches)
+        self.assertEqual(2, self.reconcile("0" * 32, "refunded"))
+        self.assertEqual(2, self.reconcile(None, "refunded"))
+        self.assertEqual(0, self.reconcile(charge, "refunded"))
+        self.assertEqual(0, self.study().used())
+        self.assertEqual(2, self.run_one(resume=True))
+        self.assertEqual(10, len(self.launches))
+        local = json.loads(Path(self.results).read_text())
+        self.assertEqual("refunded", local["records"]["attempts"][0]["classification"])
+        self.assertFalse(any(row["retry"] for row in local["calls"]))
+
+    def test_a_witnessed_but_missing_output_can_be_reconciled_as_unusable(self) -> None:
+        write = authority.write_receipt
+
+        def stop_before_result(path: str, body: Any) -> None:
+            if Path(path).parent.name.startswith(".attempt-"):
+                Path(path).write_bytes(b'{"partial":')
+                raise KeyboardInterrupt
+            write(path, body)
+
+        with (
+            mock.patch.object(authority, "write_receipt", side_effect=stop_before_result),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            self.run_one()
+        charge = self.launches[0]["charge"]
+        self.assertEqual(2, self.reconcile(charge, "usable"))
+        self.assertEqual(0, self.reconcile(charge, "unusable"))
+        self.assertEqual(2, self.run_one(resume=True))
 
     def test_a_person_cannot_resume_an_interrupted_launch_as_an_unused_slot(self) -> None:
         self.interrupt = True

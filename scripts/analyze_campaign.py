@@ -2588,6 +2588,7 @@ def validate_codex_transport_binding(value: Any) -> None:
             "binary",
             "binary_sha256",
             "cli_version",
+            "installation_digest",
             "argv",
             "destination",
             "runtime_digest",
@@ -2600,6 +2601,7 @@ def validate_codex_transport_binding(value: Any) -> None:
         or not os.path.isabs(value["binary"])
         or not authority.codex_digest_valid(value.get("binary_sha256"))
         or not authority.codex_digest_valid(value.get("runtime_digest"))
+        or not authority.codex_digest_valid(value.get("installation_digest"))
         or not isinstance(value.get("cli_version"), str)
         or not value["cli_version"].strip()
         or not isinstance(value.get("argv"), list)
@@ -2638,12 +2640,10 @@ def verified_codex_transport_binding(
 ) -> dict[str, Any]:
     """Bind already verified CLI bytes/version and the exact prepared argv, without execution.
 
-    `verified.path`, `.version` and `.identity[-1]` come from the future native
-    verifier (PR 4). This helper rehashes bytes but does not authenticate an
-    installation or execute --version. Actual source recovery and argv capture
-    are future scorer responsibilities. Nothing here can launch a producer.
+    The native binary has its own hash. The installation digest also binds the
+    launcher, manifests and Node that select and start that binary.
     """
-    path = Path(verified.path)
+    path = Path(verified.native)
     try:
         actual = hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError as error:
@@ -2654,8 +2654,9 @@ def verified_codex_transport_binding(
         "producer": "codex",
         "model": model,
         "effort": effort,
-        "binary": str(path),
+        "binary": verified.path,
         "binary_sha256": actual,
+        "installation_digest": verified.installation_digest,
         "cli_version": verified.version,
         "argv": list(argv),
         "destination": destination,
@@ -2673,7 +2674,7 @@ class CodexCampaign(authority.CodexLedger):
     ) -> str:
         """Approve ten exact registered requests, optionally including one availability retry."""
         self._authority()
-        with authority.locked(self.path):
+        with self.locked():
             body, approvals, calls, reviews = self._state()
             listed = dict(requests)
             self._batch_eligible(approvals, calls, reviews, repetition, listed, retry)
@@ -2690,7 +2691,7 @@ class CodexCampaign(authority.CodexLedger):
     def approve_slot(self, slot: str, binding: str, *, retry: bool = False) -> str:
         """Record one owner's approval for this invocation, request, slot and retry bit."""
         self._authority()
-        with authority.locked(self.path):
+        with self.locked():
             body, _, calls, reviews = self._state()
             self._eligible(calls, reviews, slot, binding, retry)
             return self._append(
@@ -2703,10 +2704,12 @@ class CodexCampaign(authority.CodexLedger):
                 checkpoint=authority.digest(calls),
             )
 
-    def reserve(self, slot: str, binding: str, *, approval: str, retry: bool = False) -> str:
+    def reserve(
+        self, slot: str, binding: str, *, approval: str, retry: bool = False, guarded: bool = False
+    ) -> str:
         """Consume one invocation-bound approval and charge atomically under the account lock."""
         self._authority()
-        with authority.locked(self.path):
+        with self.locked():
             body, approvals, calls, reviews = self._state()
             self._eligible(calls, reviews, slot, binding, retry)
             receipt = approvals.get(approval)
@@ -2720,12 +2723,16 @@ class CodexCampaign(authority.CodexLedger):
                 if "requests" in receipt
                 else {}
             )
+            if guarded:
+                if "requests" not in receipt:
+                    raise authority.LedgerError("the launch fence requires a batch reservation")
+                fields["guarded"] = True
             return self._append(body, "charge", approval=approval, **fields)
 
     def review_batch(self, batch: int, proof_digest: str) -> None:
         """Record owner-reviewed batch results without claiming the batch passed or sending data."""
         self._authority()
-        with authority.locked(self.path):
+        with self.locked():
             body, approvals, calls, reviews = self._state()
             fields = {
                 "batch": batch,
@@ -2737,5 +2744,7 @@ class CodexCampaign(authority.CodexLedger):
                 approvals,
                 calls,
                 reviews,
+                checkpoint=self._progress(body),
+                review_receipts=authority.codex_reviews(),
             )
             self._append(body, "review", **fields)

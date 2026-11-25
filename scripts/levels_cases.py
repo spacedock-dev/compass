@@ -39,7 +39,9 @@ says why it replays rather than presses a live board, and what the replay row is
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
+import itertools
 import json
 import os
 import pathlib
@@ -54,7 +56,7 @@ import abstention_ledger
 import store_paths
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterator, Mapping
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SKILL = os.path.join(_ROOT, "compass", "skills", "compass")
@@ -85,6 +87,7 @@ COHORT_CODEX = "codex"
 CODEX_SUBDIR = "drift-levels-codex"
 CODEX_DIGEST_PATH = os.path.join(_ROOT, "docs", "drift-levels", "codex-marks-digest.json")
 CODEX_RESULTS_PATH = os.path.join(_ROOT, "docs", "drift-levels", "codex-results.json")
+CODEX_REPLAY_CHECKPOINT = "docs/drift-levels/codex-replay-checkpoint.json"
 CODEX_MAX_CASES = 12
 # The kinds the cohort's matrix is drawn from (docs/drift-levels/README.md, the Codex cohort).
 # The spec declares which of them it covers before any output, and the digest binds that choice.
@@ -952,138 +955,218 @@ def approve_replay_allowance(
     if type(total) is not int or not 0 <= total <= REPLAY_ALLOWANCE_MAX:
         say(f"Refused: the allowance is a whole number from 0 to {REPLAY_ALLOWANCE_MAX}.")
         return 1
-    target = str(path)
-    receipts = target + RECEIPTS_SUFFIX
-    with abstention_ledger.locked(target):
-        # The receipts folder outlives a moved or deleted ledger file, so an activated allowance
-        # is never created a second time (the producer ledger refuses the same way).
-        if os.path.lexists(target) or os.path.lexists(receipts):
-            say("Refused: the replay allowance is already fixed; it is never raised or renewed.")
-            return 1
-        genesis = {"v": 1, "allowance": total, "approved_at": now, "nonce": uuid.uuid4().hex}
-        os.makedirs(receipts, mode=0o700)
-        with open(os.path.join(receipts, "genesis.json"), "x", encoding="utf-8") as handle:
-            json.dump(genesis, handle, sort_keys=True)
-            handle.flush()
-            os.fsync(handle.fileno())
-        _write(
-            target,
-            {
-                "v": 1,
-                "allowance": total,
-                "approved_at": now,
-                "genesis": digest(genesis),
-                "events": [],
-            },
-        )
-    say(f"Fixed the Codex replay allowance at {total}. Each call still needs its own approval.")
+    ledger = ReplayLedger(str(path))
+    try:
+        anchor = ledger.initialize(total, now)
+    except ReplayLedgerError as error:
+        say(f"Refused: {error}.")
+        return 1
+    say(f"Fixed the Codex replay allowance at {total}. Genesis digest {anchor}.")
+    say(
+        f"Commit {CODEX_REPLAY_CHECKPOINT} before replaying: "
+        f"{json.dumps(abstention_ledger.progress(anchor, []), sort_keys=True)}"
+    )
     return 0
 
 
 class ReplayLedger:
-    """What the Codex replays were approved for and charged, in one file of events.
-
-    A charge is recorded before the call is launched and is never removed. A failed, timed-out or
-    interrupted call keeps its charge, and no input is ever charged twice, so a rerun cannot
-    renew what a failed case spent.
-    """
+    """The Codex replay allowance, checked against durable receipts and the progress witness."""
 
     def __init__(self, path: str | None) -> None:
         self.path = path or ""
+        self.receipts = self.path + RECEIPTS_SUFFIX
+
+    def _progress_path(self) -> str:
+        return os.path.join(abstention_ledger.checkpoint_root(), "codex-replay.json")
+
+    def _require_paths(self) -> None:
+        if not self.path or any(
+            os.path.islink(path)
+            for path in (os.path.dirname(self.path), self.path, self.receipts, self.path + ".lock")
+        ):
+            msg = "the replay accounting paths are unavailable or symlinked"
+            raise ReplayLedgerError(msg)
+
+    @contextlib.contextmanager
+    def _locked(self) -> Iterator[None]:
+        try:
+            self._require_paths()
+            with (
+                abstention_ledger.locked(self._progress_path()),
+                abstention_ledger.locked(self.path),
+            ):
+                self._require_paths()
+                yield
+        except (OSError, abstention_ledger.LedgerError) as error:
+            raise ReplayLedgerError(str(error)) from error
+
+    def initialize(self, total: int, now: float) -> str:
+        with self._locked():
+            progress_path = self._progress_path()
+            if any(
+                os.path.lexists(path) for path in (self.path, self.receipts, progress_path)
+            ) or abstention_ledger.committed_study_json(CODEX_REPLAY_CHECKPOINT, optional=True):
+                msg = "the replay allowance is already fixed; it is never raised or renewed"
+                raise ReplayLedgerError(msg)
+            genesis = {"v": 2, "allowance": total, "approved_at": now, "nonce": uuid.uuid4().hex}
+            anchor = digest(genesis)
+            os.makedirs(self.receipts, mode=0o700)
+            abstention_ledger.write_receipt(os.path.join(self.receipts, "genesis.json"), genesis)
+            body = {"v": 2, "allowance": total, "approved_at": now, "genesis": anchor, "events": []}
+            abstention_ledger.write_progress(
+                progress_path, abstention_ledger.progress(anchor, []), initialize=True
+            )
+            self._persist(body)
+            return anchor
+
+    def _persist(self, body: Mapping[str, Any]) -> None:
+        abstention_ledger._write(self.path, body)  # noqa: SLF001 - same durable update as producer
+        abstention_ledger._codex_sync_dir(os.path.dirname(self.path))  # noqa: SLF001
 
     def load(self) -> dict[str, Any]:
-        body = _load(self.path) if self.path and not os.path.islink(self.path) else {}
-        events = body.get("events")
-        allowance = body.get("allowance")
+        with self._locked():
+            return self._load()
+
+    def _load(self) -> dict[str, Any]:
+        read = abstention_ledger._review_json  # noqa: SLF001 - bounded no-follow accounting reader
+        body = read(self.path, "replay allowance", cap=64_000)
         if (
-            body.get("v") != 1
-            or type(allowance) is not int
-            or not 0 <= allowance <= REPLAY_ALLOWANCE_MAX
-            or not isinstance(events, list)
-            or not all(isinstance(e, dict) for e in events)
+            not isinstance(body, dict)
+            or set(body) != {"v", "allowance", "approved_at", "genesis", "events"}
+            or body["v"] != 2
+            or type(body["allowance"]) is not int
+            or not 0 <= body["allowance"] <= REPLAY_ALLOWANCE_MAX
+            or not isinstance(body["events"], list)
+            or len(body["events"]) > 2 * body["allowance"]
+            or not all(isinstance(event, dict) for event in body["events"])
         ):
-            msg = "the replay allowance is not fixed, or its file cannot be read"
+            msg = "the replay allowance is not fixed, or its index is invalid"
             raise ReplayLedgerError(msg)
-        if self._genesis_problem(body):
-            msg = "the replay allowance does not match the genesis it was fixed under"
+        genesis = read(os.path.join(self.receipts, "genesis.json"), "replay genesis", cap=4096)
+        if (
+            not isinstance(genesis, dict)
+            or digest(genesis) != body["genesis"]
+            or any(genesis.get(key) != body[key] for key in ("v", "allowance", "approved_at"))
+        ):
+            msg = "the replay allowance does not match its genesis"
             raise ReplayLedgerError(msg)
+        abstention_ledger.read_progress(
+            self._progress_path(), abstention_ledger.progress(body["genesis"], body["events"])
+        )
+        committed = abstention_ledger.committed_study_json(CODEX_REPLAY_CHECKPOINT)
+        abstention_ledger.require_progress_prefix(committed, body["genesis"], body["events"])
+        self._verify_events(body)
         return body
 
-    def _genesis_problem(self, body: Mapping[str, Any]) -> bool:
-        """Whether the file's total and anchor differ from the receipt written when it was fixed."""
-        genesis = _load(os.path.join(self.path + RECEIPTS_SUFFIX, "genesis.json"))
-        return (
-            digest(genesis) != body.get("genesis")
-            or genesis.get("allowance") != body.get("allowance")
-            or os.path.islink(self.path + RECEIPTS_SUFFIX)
-        )
+    def _verify_events(self, body: Mapping[str, Any]) -> None:
+        expected = {"genesis.json"}
+        charged: set[str] = set()
+        settled: set[str] = set()
+        for event in body["events"]:
+            kind, event_id = event.get("kind"), event.get("id")
+            if kind not in ("charge", "settlement") or not _replay_id(event_id):
+                msg = "the replay event identity changed"
+                raise ReplayLedgerError(msg)
+            name = f"{event_id}.json"
+            if (
+                name in expected
+                or abstention_ledger._review_json(  # noqa: SLF001
+                    os.path.join(self.receipts, name), "replay event receipt", cap=4096
+                )
+                != event
+            ):
+                msg = "a replay receipt was repeated or rewritten"
+                raise ReplayLedgerError(msg)
+            expected.add(name)
+            if kind == "charge":
+                charged.add(event_id)
+            elif event.get("charge") not in charged - settled:
+                msg = "a replay settlement has no open charge"
+                raise ReplayLedgerError(msg)
+            else:
+                settled.add(event["charge"])
+        with os.scandir(self.receipts) as scan:
+            files = {item.name for item in itertools.islice(scan, 2 * REPLAY_ALLOWANCE_MAX + 2)}
+        if len(charged) > body["allowance"] or files != expected:
+            msg = "the replay receipt chain has missing or orphan events"
+            raise ReplayLedgerError(msg)
 
     def genesis(self) -> str:
-        """The anchor this allowance was fixed under, which a recreated ledger cannot reproduce."""
         return str(self.load()["genesis"])
 
-    def events(self, kind: str) -> list[dict[str, Any]]:
-        return [e for e in self.load()["events"] if e.get("kind") == kind]
+    def checkpoint(self) -> dict[str, Any]:
+        body = self.load()
+        return abstention_ledger.progress(body["genesis"], body["events"])
 
     def charges(self) -> list[dict[str, Any]]:
-        return self.events("charge")
+        return [event for event in self.load()["events"] if event["kind"] == "charge"]
 
     def remaining(self) -> int:
-        return int(self.load()["allowance"]) - len(self.charges())
+        body = self.load()
+        events: list[dict[str, Any]] = body["events"]
+        return int(body["allowance"]) - len(
+            [event for event in events if event["kind"] == "charge"]
+        )
 
     def charged_inputs(self) -> set[str]:
-        return {str(e.get("inputs")) for e in self.charges()}
+        return {str(event["inputs"]) for event in self.charges()}
+
+    def _append(self, body: dict[str, Any], **fields: Any) -> str:
+        event_id = uuid.uuid4().hex
+        event = {"id": event_id, **fields}
+        abstention_ledger.write_receipt(os.path.join(self.receipts, event_id + ".json"), event)
+        body["events"].append(event)
+        abstention_ledger.write_progress(
+            self._progress_path(), abstention_ledger.progress(body["genesis"], body["events"])
+        )
+        self._persist(body)
+        return event_id
 
     def charge(self, *, case: str, inputs: str, request: str, approval: str, now: float) -> str:
         """Record one approved call before it is launched; refuse past the total or a repeat."""
-        with abstention_ledger.locked(self.path):
-            body = self.load()
-            charges = [e for e in body["events"] if e.get("kind") == "charge"]
+        with self._locked():
+            body = self._load()
+            charges = [e for e in body["events"] if e["kind"] == "charge"]
             if len(charges) >= body["allowance"]:
                 msg = "the fixed replay allowance is spent"
                 raise ReplayLedgerError(msg)
-            if any(e.get("inputs") == inputs for e in charges):
+            if any(e["inputs"] == inputs for e in charges):
                 msg = "these inputs were charged already; a call is never silently charged again"
                 raise ReplayLedgerError(msg)
-            if any(e.get("approval") == approval for e in charges):
+            if any(e["approval"] == approval for e in charges):
                 msg = "this approval was used already"
                 raise ReplayLedgerError(msg)
-            event = {
-                "id": uuid.uuid4().hex,
-                "kind": "charge",
-                "case": case,
-                "inputs": inputs,
-                "request": request,
-                "approval": approval,
-                "at": now,
-            }
-            body["events"].append(event)
-            _write(self.path, body)
-        return str(event["id"])
+            return self._append(
+                body,
+                kind="charge",
+                case=case,
+                inputs=inputs,
+                request=request,
+                approval=approval,
+                at=now,
+            )
 
     def settle(self, charge: str, status: str, *, now: float, reading: str | None = None) -> None:
-        """Say how a charged call ended, and the digest of the reading it returned.
-
-        Nothing here ever gives a charge back. The digest is what binds a reading's contents to
-        its charge, so a verdict edited afterwards no longer matches the call that made it.
-        """
-        with abstention_ledger.locked(self.path):
-            body = self.load()
-            if any(
-                e.get("kind") == "settlement" and e.get("charge") == charge for e in body["events"]
-            ):
+        with self._locked():
+            body = self._load()
+            kinds = {
+                e["kind"] for e in body["events"] if e["id"] == charge or e.get("charge") == charge
+            }
+            if "settlement" in kinds:
                 return
-            body["events"].append(
-                {
-                    "id": uuid.uuid4().hex,
-                    "kind": "settlement",
-                    "charge": charge,
-                    "status": status,
-                    "reading": reading,
-                    "at": now,
-                }
+            if "charge" not in kinds:
+                msg = "the replay settlement has no charge"
+                raise ReplayLedgerError(msg)
+            self._append(
+                body, kind="settlement", charge=charge, status=status, reading=reading, at=now
             )
-            _write(self.path, body)
+
+
+def _replay_id(value: Any) -> bool:
+    # The receipt name must never be a path supplied by the mutable index.
+    return (
+        isinstance(value, str) and len(value) == 32 and all(c in "0123456789abcdef" for c in value)
+    )
 
 
 def _producer(case: Mapping[str, Any]) -> str:
@@ -1106,6 +1189,41 @@ _BINDING_KEYS = frozenset({"producer", "request", "inputs", "charge", "reading"}
 def reading_digest(reading: Any) -> str:
     """A hash of a reading as stored, so a file can be held to what the call returned."""
     return digest(json.loads(json.dumps(reading)))
+
+
+class _ClaudeWitness:
+    """Bind content to the committed marks outside the private packet tree."""
+
+    def __init__(self, repo_root: str, committed: Committed) -> None:
+        self.commit = committed.commit
+        directory = _git(repo_root, "rev-parse", "--git-common-dir")
+        if directory is None:
+            raise abstention_ledger.LedgerError(
+                "the Claude reading witness directory is unavailable"
+            )
+        self.folder = os.path.join(repo_root, directory.strip(), "compass-level-readings")
+        if os.path.islink(self.folder):
+            raise abstention_ledger.LedgerError("the Claude reading witness directory is symlinked")
+
+    def _path(self, key: str) -> str:
+        return os.path.join(self.folder, digest([self.commit, key]) + ".json")
+
+    def matches(self, key: str, reading: Any) -> bool:
+        try:
+            found = abstention_ledger._review_json(  # noqa: SLF001
+                self._path(key), "Claude reading witness", cap=4096
+            )
+        except abstention_ledger.LedgerError:
+            return False
+        return isinstance(found, dict) and found == {"reading": reading_digest(reading)}
+
+    def bind(self, key: str, reading: Any) -> None:
+        os.makedirs(self.folder, mode=0o700, exist_ok=True)
+        try:
+            abstention_ledger.write_receipt(self._path(key), {"reading": reading_digest(reading)})
+        except FileExistsError:
+            if not self.matches(key, reading):
+                raise abstention_ledger.LedgerError("the Claude reading has changed") from None
 
 
 def _binding_problem(
@@ -1175,7 +1293,7 @@ def _genesis(allowance_path: str | None) -> str:
         return ""
 
 
-def attach_readings(  # noqa: C901 - one refusal per binding
+def attach_readings(  # noqa: C901, PLR0912 - one refusal per binding
     spec_path: str | os.PathLike[str],
     *,
     home: str,
@@ -1229,6 +1347,13 @@ def attach_readings(  # noqa: C901 - one refusal per binding
             )
         ):
             problems.append(f"{key}: binding refused: {why}")
+    if not codex and not problems:
+        try:
+            witness = _ClaudeWitness(repo_root, committed)
+            for key, value in readings.items():
+                witness.bind(key, value)
+        except (OSError, abstention_ledger.LedgerError) as error:
+            problems.append(str(error))
     for problem in problems:
         say(f"  {problem}")
     if problems:
@@ -1257,12 +1382,13 @@ def attach_readings(  # noqa: C901 - one refusal per binding
     return 0
 
 
-def _reading_for(
+def _reading_for(  # noqa: PLR0911 - keep each distinct refusal token
     case: Mapping[str, Any],
     attached: Mapping[str, Any],
     committed: Committed,
     config: Any,
     charges: Mapping[str, Mapping[str, Any]] | None = None,
+    witness: _ClaudeWitness | None = None,
 ) -> tuple[Any, str]:
     """The reading to score for a case, or a refusal token (T1 item 5), or neither.
 
@@ -1290,6 +1416,8 @@ def _reading_for(
     read_at = _number(value.get("read_at")) if isinstance(value, dict) else None
     if read_at is None or read_at <= committed.committed_at:
         return None, "predates-marks"
+    if witness is not None and not witness.matches(str(case["id"]), value):
+        return None, "unbound"
     admitted = _admit(config, value)
     return (admitted, "") if admitted is not None else (None, "malformed")
 
@@ -1344,7 +1472,7 @@ def _score_case(
     }
 
 
-def score(
+def score(  # noqa: C901, PLR0911, PLR0915 - validate inputs before scoring either cohort
     *,
     home: str,
     repo_root: str,
@@ -1396,12 +1524,17 @@ def score(
         if codex
         else None
     )
+    try:
+        witness = None if codex else _ClaudeWitness(repo_root, committed)
+    except abstention_ledger.LedgerError as error:
+        say(f"Not scored: {error}. Nothing was written.")
+        return 1
     rows = {
         str(case["id"]): _score_case(
             levels,
             case,
             entries[str(case["id"])],
-            _reading_for(case, attached, committed, config, charges),
+            _reading_for(case, attached, committed, config, charges, witness),
         )
         for case in cases
     }
@@ -1625,8 +1758,8 @@ def _read_preflight(
     chosen: list[str] | None,
     say: Any,
     cohort: str = COHORT_CLAUDE,
-) -> tuple[list[str], dict[str, dict[str, Any]], dict[str, dict[str, Any]]] | None:
-    """(chosen, every case, its marks) once the marks bind them; None, having said why, if not.
+) -> tuple[list[str], dict[str, dict[str, Any]], dict[str, dict[str, Any]], Committed] | None:
+    """The chosen cases, inventory, marks and committed digest, once checked.
 
     No case chosen means the Claude cohort's named five, or every case of a Codex cohort.
     """
@@ -1645,7 +1778,7 @@ def _read_preflight(
         # The marks file hashes to the committed digest, so its case digest is
         # the committed one: any change to a case since marking lands here.
         why = "the cases changed since they were marked"
-    if why:
+    if why or isinstance(committed, str):
         say(f"Refused: {why}. Nothing was read and nothing was charged.")
         return None
     cases = {str(c.get("id")): c for c in body["cases"] if isinstance(c, dict)}
@@ -1660,7 +1793,7 @@ def _read_preflight(
     if problems:
         say("Refused. Nothing was read and nothing was charged.")
         return None
-    return chosen, cases, entries
+    return chosen, cases, entries, committed
 
 
 def _budget_refusal(answer: Mapping[str, Any], calls: int, *, granted: bool) -> str:
@@ -1836,7 +1969,7 @@ def read_cases(  # noqa: C901, PLR0911, PLR0912, PLR0913 - one keyword per thing
     bound = _read_preflight(home, repo_root, digest_path, case_ids, say, cohort)
     if bound is None:
         return 1
-    chosen, every, marks = bound
+    chosen, every, marks, committed = bound
     cases = {key: every[key] for key in chosen}
     ledger = ReplayLedger(
         allowance_path if allowance_path is not None or not codex else default_allowance_path()
@@ -1890,7 +2023,8 @@ def read_cases(  # noqa: C901, PLR0911, PLR0912, PLR0913 - one keyword per thing
         return 1
     if dry_run:
         return _dry_run(press, cases, marks, plan.groups, clock, say)
-    files = _Files(paths, held, record, bindings)
+    claude_witness = None if codex else _ClaudeWitness(repo_root, committed)
+    files = _Files(paths, held, record, bindings, claude_witness)
     gate = _Gate(ledger, approve) if codex else None
     for key, sibling in plan.reused.items():
         held[key] = held[sibling]
@@ -1907,8 +2041,11 @@ def read_cases(  # noqa: C901, PLR0911, PLR0912, PLR0913 - one keyword per thing
     if plan.reused:
         files.save()
     for keys in plan.groups.values():
-        _read_group(press, cases, keys, model, clock, files, say, gate)
+        if not _read_group(press, cases, keys, model, clock, files, say, gate):
+            return 1
     files.save()
+    if gate is not None:
+        say(f"Codex replay checkpoint: {json.dumps(ledger.checkpoint(), sort_keys=True)}")
     if held:
         say(f"Readings for --attach-readings: {paths['replayed']}")
     return 0
@@ -1998,7 +2135,9 @@ class _Files:
         held: dict[str, Any],
         record: dict[str, Any],
         bindings: dict[str, Any] | None = None,
+        claude_witness: _ClaudeWitness | None = None,
     ):
+        self.claude_witness = claude_witness
         self.paths = paths
         self.held = held
         self.record = record
@@ -2007,6 +2146,9 @@ class _Files:
     def save(self) -> None:
         _write(self.paths["replay"], {"v": 1, "cases": self.record})
         if self.held:
+            if self.claude_witness is not None:
+                for key, reading in self.held.items():
+                    self.claude_witness.bind(key, reading)
             body: dict[str, Any] = {"v": 1, "readings": self.held}
             if self.bindings is not None:
                 body["bindings"] = self.bindings
@@ -2082,7 +2224,7 @@ def _read_group(  # noqa: C901 - the gate adds one stage to each group
     files: _Files,
     say: Any,
     gate: _Gate | None = None,
-) -> None:
+) -> bool:
     """One producer call for cases that share every input, charged once at the model seam.
 
     With a `gate`, the call is prepared locally first (which sends nothing), the owner approves
@@ -2098,21 +2240,24 @@ def _read_group(  # noqa: C901 - the gate adds one stage to each group
     if gate is not None:
         spy = _Spy()
         _produce(press.config, case, spy, press.tool_output(case), clock())
-        if spy.prompts:
-            request = _marker().production_prompt_digest(spy.prompts[0])
-            approval = uuid.uuid4().hex
-            asked = {
-                "case": keys[0],
-                "cases": list(keys),
-                "request_digest": request,
-                "inputs": inputs,
-                "remaining": gate.ledger.remaining(),
-                "provider": READ_PROVIDER,
-                "destination": press.where,
-            }
-            if not gate.approve(asked):
-                say(f"  {keys[0]}: not approved; nothing was sent and nothing was charged")
-                return
+        if len(spy.prompts) != 1:
+            say(f"  {keys[0]}: no unique request prepared; nothing was sent or charged")
+            return False
+        request = _marker().production_prompt_digest(spy.prompts[0])
+        approval = uuid.uuid4().hex
+        asked = {
+            "case": keys[0],
+            "cases": list(keys),
+            "request_digest": request,
+            "inputs": inputs,
+            "remaining": gate.ledger.remaining(),
+            "checkpoint": gate.ledger.checkpoint(),
+            "provider": READ_PROVIDER,
+            "destination": press.where,
+        }
+        if not gate.approve(asked):
+            say(f"  {keys[0]}: not approved; nothing was sent and nothing was charged")
+            return True
 
     def mark(status: str, **extra: Any) -> None:
         at = clock()
@@ -2180,6 +2325,7 @@ def _read_group(  # noqa: C901 - the gate adds one stage to each group
         }
         say(f"  {key}: {files.record[key]['status']}{f' ({why})' if why else ''}")
     files.save()
+    return True
 
 
 def _reachable(
@@ -2286,6 +2432,7 @@ def _ask_approval(call: Mapping[str, Any]) -> bool:
     print(
         f"\n  Replay call: case {call['case']} to {call['destination']}\n"
         f"    request digest {call['request_digest']}\n"
+        f"    checkpoint {json.dumps(call['checkpoint'], sort_keys=True)}\n"
         f"    allowance left {call['remaining']}; this call is charged once and never given back."
     )
     try:

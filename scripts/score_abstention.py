@@ -416,14 +416,17 @@ class _Charged:
                 output_cap_bytes,
                 codex_transport=dict(self.codex_transport),
             )
+            _require_empty_codex_output(self.codex_transport)
             self.charge_id = self.ledger.reserve(
                 f"{self.case_id}:r{self.repeat}",
                 request,
                 approval=self.codex_approval,
                 retry=self.retry,
+                guarded=True,
             )
             if self.on_charge is not None:
                 self.on_charge(self.charge_id)
+            self.ledger.arm_launch(self.charge_id)
             raw, self.transport_status = self.model(prompt, output_cap_bytes=output_cap_bytes)
             return raw, self.transport_status
         available = getattr(self.model, "available", None)
@@ -781,21 +784,28 @@ class VerifiedCodex:
     identity: Identity
     installation: tuple[tuple[str, Identity], ...]
     installation_digest: str
+    native: str
+    node: str
+    node_target: str
 
 
 class PinnedCodex:
-    """Resolve only the verified native CLI; rehash the installation before every use."""
+    """Resolve the production launcher only while its installation and interpreter still match."""
 
     def __init__(self, verified: VerifiedCodex) -> None:
         self.verified = verified
 
     def __call__(self, name: str) -> str:
         try:
-            if name != "codex" or any(
-                file_identity(path) != identity for path, identity in self.verified.installation
+            if (
+                name != "codex"
+                or os.path.realpath(self.verified.node) != self.verified.node_target
+                or any(
+                    file_identity(path) != identity for path, identity in self.verified.installation
+                )
             ):
                 raise BinaryError("the verified Codex installation changed")
-            if file_identity(self.verified.path) != self.verified.identity:
+            if file_identity(self.verified.native) != self.verified.identity:
                 raise BinaryError("the verified native Codex executable changed")
         except OSError as error:
             raise BinaryError("the verified Codex executable is unavailable") from error
@@ -813,9 +823,10 @@ def _codex_manifest(path: pathlib.Path) -> dict[str, Any]:
     return value
 
 
-def verify_codex_binary(  # noqa: C901, PLR0915 - explicit installation and native identity guards
+def verify_codex_binary(  # noqa: C901, PLR0912, PLR0915 - independent installation guards
     *,
     binary_resolver: Callable[[str], Any] = shutil.which,
+    node_resolver: Callable[[str], Any] = shutil.which,
     runner: Callable[..., Any] = subprocess.run,
     platform: str = sys.platform,
     machine: str | None = None,
@@ -844,6 +855,15 @@ def verify_codex_binary(  # noqa: C901, PLR0915 - explicit installation and nati
         package = launcher.parent.parent
         if launcher != package / "bin" / "codex.js" or package.name != "codex":
             raise BinaryError("the resolved Codex is not a recognized npm installation")
+        node = node_resolver("node")
+        if not node or not os.path.isabs(node) or os.path.basename(node) != "node":
+            raise BinaryError("Codex needs an absolute Node executable for its launcher")
+        node_target = os.path.realpath(node)
+        with _open_cli(str(launcher)) as stream:
+            if stream.readline(128) != b"#!/usr/bin/env node\n":
+                raise BinaryError("the Codex npm launcher does not use the verified Node route")
+        if not os.access(launcher, os.X_OK) or not os.access(node_target, os.X_OK):
+            raise BinaryError("the Codex launcher or Node is not executable")
         manifest_path = package / "package.json"
         manifest = _codex_manifest(manifest_path)
         version = manifest.get("version")
@@ -856,7 +876,7 @@ def verify_codex_binary(  # noqa: C901, PLR0915 - explicit installation and nati
         ):
             raise BinaryError("the resolved Codex package identity is not recognized")
         platform_package = package.parent / f"codex-{package_suffix}"
-        metadata = [launcher, manifest_path]
+        metadata = [launcher, manifest_path, pathlib.Path(node_target)]
         native_root = package
         if platform_package.exists():
             platform_manifest_path = platform_package / "package.json"
@@ -909,11 +929,17 @@ def verify_codex_binary(  # noqa: C901, PLR0915 - explicit installation and nati
         if result.returncode != 0 or result.stdout.strip() != f"codex-cli {version}":
             raise BinaryError("the native Codex version differs from its npm installation")
         verified = VerifiedCodex(
-            str(native),
+            str(launcher),
             result.stdout.strip(),
             native_identity,
             installation,
-            abstention_ledger.digest([(path, identity[-1]) for path, identity in installation]),
+            abstention_ledger.digest(
+                [(str(native), native_identity[-1]), (node, node_target)]
+                + [(path, identity[-1]) for path, identity in installation]
+            ),
+            str(native),
+            node,
+            node_target,
         )
         PinnedCodex(verified)("codex")
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
@@ -3674,6 +3700,18 @@ def _codex_argv(command: Sequence[str], output: str) -> list[str]:
     return argv
 
 
+def _codex_output(transport: Mapping[str, Any]) -> str:
+    argv = transport["argv"]
+    return str(argv[argv.index("--output-last-message") + 1])
+
+
+def _require_empty_codex_output(transport: Mapping[str, Any]) -> None:
+    if os.path.lexists(_codex_output(transport)):
+        raise abstention_ledger.LedgerError(
+            "the Codex qualification output alias already exists; review it before continuing"
+        )
+
+
 def _codex_route(config: Any, verified: VerifiedCodex) -> Mapping[str, Any]:
     _runtime()
     from compass_runtime import observer, reading_route  # noqa: PLC0415
@@ -3766,7 +3804,7 @@ def codex_model(
     pin = PinnedCodex(verified)
     actual_runner = runner or supervise.run
     approved = list(transport["argv"])
-    output = approved[approved.index("--output-last-message") + 1]
+    output = _codex_output(transport)
 
     def launch(command: Sequence[str], **kwargs: Any) -> Any:
         if _codex_argv(command, output) != approved:
@@ -3775,7 +3813,13 @@ def codex_model(
         # Exclusive link creation refuses an existing file, directory or symlink.
         os.link(original, output)
         try:
-            pin("codex")  # Recheck immediately before the real runner, after approval.
+            pin("codex")
+            # The npm shebang resolves Node through PATH. Keep the production runner's other
+            # entries for the native CLI, with the verified interpreter ahead of every entry.
+            env = dict(kwargs["env"])
+            path = os.path.dirname(verified.node)
+            env["PATH"] = path + os.pathsep + env["PATH"] if env.get("PATH") else path
+            kwargs["env"] = env
             if actual_runner is supervise.run:
                 kwargs["output_limit"] = (output, observer.OUTPUT_FILE_LIMIT_BYTES)
                 kwargs["before_spawn"] = lambda: pin("codex")
@@ -3976,7 +4020,10 @@ def _codex_checkpoint(
         "pending": pending,
         "records_digest": _run_digest(records, binding),
     }
-    mark_abstention._write(results_path, local)  # noqa: SLF001
+    folder = os.path.dirname(results_path) or "."
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    abstention_ledger._write(results_path, local)  # noqa: SLF001 - durable before the launch fence
+    abstention_ledger._codex_sync_dir(folder)  # noqa: SLF001
     return local
 
 
@@ -3984,13 +4031,24 @@ def _codex_resume(
     ledger: Any, resume: Mapping[str, Any] | None, corpus: Corpus, binding: Mapping[str, str]
 ) -> list[dict[str, Any]]:
     calls = ledger._state()[2]  # noqa: SLF001
+    return _codex_check_attempts(ledger, resume, corpus, binding, calls)
+
+
+def _codex_check_attempts(
+    ledger: Any,
+    resume: Mapping[str, Any] | None,
+    corpus: Corpus,
+    binding: Mapping[str, str],
+    calls: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     if resume is None:
         if calls:
             raise abstention_ledger.LedgerError(
                 "Codex charges already exist; resume their immutable results"
             )
         return []
-    attempts = resume.get("records", {}).get("attempts")
+    records = resume.get("records")
+    attempts = records.get("attempts") if isinstance(records, dict) else None
     if (
         resume.get("v") != 2
         or resume.get("protocol") != "codex-three-repeats"
@@ -4007,15 +4065,51 @@ def _codex_resume(
             "Codex resume changed or an interrupted charge needs owner reconciliation"
         )
     for attempt, call in zip(attempts, calls, strict=True):
-        path = pathlib.Path(ledger.path + ".results") / (call["id"] + ".json")
-        if (
-            path.is_symlink()
-            or attempt != json.loads(path.read_bytes())
-            or attempt.get("charge_id") != call["id"]
-            or attempt.get("classification") != call["status"]
-        ):
+        if call["status"] == "charged" or attempt != _codex_read_attempt(ledger, call):
             raise abstention_ledger.LedgerError("an earlier Codex result was removed or rewritten")
     return list(attempts)
+
+
+def _codex_attempt_path(ledger: Any, charge_id: str) -> str:
+    return os.path.join(ledger.path + ".results", charge_id + ".json")
+
+
+def _codex_read_attempt(ledger: Any, call: Mapping[str, Any]) -> dict[str, Any]:
+    record = abstention_ledger._review_json(  # noqa: SLF001 - bounded immutable attempt reader
+        _codex_attempt_path(ledger, call["id"]), "Codex immutable attempt", cap=2_000_000
+    )
+    if (
+        not isinstance(record, dict)
+        or abstention_ledger.digest(record) != call.get("result_digest")
+        or record.get("charge_id") != call["id"]
+        or record.get("request_digest") != call["request_digest"]
+        or record.get("retry") is not call["retry"]
+        or record.get("classification") not in abstention_ledger.CODEX_STATUSES
+        or (call["status"] != "charged" and record["classification"] != call["status"])
+    ):
+        raise abstention_ledger.LedgerError("the Codex immutable attempt does not match its charge")
+    return record
+
+
+def _codex_save_attempt(
+    ledger: Any, record: Mapping[str, Any], *, missing_result: str | None = None
+) -> None:
+    charge_id = record["charge_id"]
+    path = _codex_attempt_path(ledger, charge_id)
+    folder = os.path.dirname(path)
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    abstention_ledger._codex_sync_dir(os.path.dirname(folder))  # noqa: SLF001
+    record_digest = abstention_ledger.digest(record)
+    if record_digest != missing_result:
+        ledger.witness_result(charge_id, record_digest, missing_result=missing_result)
+    # Publishing only the synced file lets reconciliation distinguish missing output from
+    # an existing immutable attempt, even after interruption during serialization.
+    with tempfile.TemporaryDirectory(prefix=".attempt-", dir=folder) as temporary:
+        staged = os.path.join(temporary, charge_id + ".json")
+        abstention_ledger.write_receipt(staged, record)
+        os.link(staged, path, follow_symlinks=False)
+        abstention_ledger._codex_sync_dir(folder)  # noqa: SLF001
+    ledger.settle(charge_id, record["classification"])
 
 
 def _codex_summary(
@@ -4026,6 +4120,8 @@ def _codex_summary(
     binding: Mapping[str, str],
     now: float,
 ) -> dict[str, Any]:
+    refunds = sum(a["classification"] == "refunded" for a in attempts)
+    attempts = [a for a in attempts if a["classification"] != "refunded"]
     repetitions, verdict = _repetition_summaries(corpus, attempts, now, binding, cases)
     # Only digests of local CLI/argv bindings may leave the machine.
     public_binding = {key: value for key, value in binding.items() if key != "binary"}
@@ -4042,6 +4138,7 @@ def _codex_summary(
         "repetitions": repetitions,
         "counts": {
             "attempts": len(attempts),
+            "refunded_attempts": refunds,
             "registered_exposures": len({(a["id"], a["repeat"]) for a in attempts}),
             "unique_cases": len({a["id"] for a in attempts}),
             "unusable_attempts": sum(a["classification"] == "unusable" for a in attempts),
@@ -4100,7 +4197,12 @@ def _codex_batch_pause(
     requests: list[dict[str, Any]],
     binding: Mapping[str, str],
     calls: list[dict[str, Any]],
+    ledger: Any,
 ) -> None:
+    print(
+        "Codex review checkpoint:",
+        json.dumps({"grant": ledger.binding, "checkpoint": ledger.checkpoint()}, sort_keys=True),
+    )
     print(
         f"Review batch {repetition}: immutable attempts, grades, coverage and charges; "
         "record review_batch with the review artifact digest before the next batch."
@@ -4114,6 +4216,130 @@ def _codex_batch_pause(
                 sort_keys=True,
             )
         )
+
+
+def _codex_score_attempt(
+    corpus: Corpus,
+    config: Any,
+    case: Mapping[str, Any],
+    model: Callable[..., tuple[str, str]],
+    *,
+    withhold: str = "",
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    record = score_case(
+        config,
+        case,
+        case["row_snapshot"],
+        case["producer_facts"],
+        mark_abstention._marks(dict(corpus.marks))[case["id"]],  # noqa: SLF001
+        model=model,
+        now=case["captured_at"],
+        revision=mark_abstention.case_revision(dict(case)),
+        tool_output=_tool_output(case, "OpenAI", reading_label("codex"), corpus.cases),
+        withhold=withhold,
+    )
+    judged = rubric_case(
+        _rubric_entries(corpus.rubric)[case["id"]], record, case["id"], case_origin=case["origin"]
+    )
+    judged["kind"] = corpus.cases["codex_kind_reviews"][case["id"]]["kind"]
+    return record, judged
+
+
+def _reconcile_prior(
+    ledger: Any,
+    results_path: str,
+    corpus: Corpus,
+    binding: Mapping[str, str],
+    calls: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    resume = abstention_ledger._review_json(  # noqa: SLF001
+        results_path, "Codex result checkpoint", cap=20_000_000, optional=True
+    )
+    if resume is abstention_ledger._MISSING:  # noqa: SLF001
+        return _codex_check_attempts(ledger, None, corpus, binding, calls[:-1])
+    if not isinstance(resume, dict):
+        raise abstention_ledger.LedgerError("the Codex result checkpoint is invalid")
+    if resume.get("pending") == calls[-1]["id"]:
+        charge = dict(calls[-1], status="charged", launch_armed=False)
+        charge.pop("result_digest", None)
+        if resume.get("calls") != [*calls[:-1], charge]:
+            raise abstention_ledger.LedgerError("the pending Codex checkpoint changed")
+        resume = dict(resume, pending="", calls=calls[:-1])
+    return _codex_check_attempts(ledger, resume, corpus, binding, calls[:-1])
+
+
+def _confirm_reconciliation(charge: str, choice: str, confirm_charge: str | None) -> bool:
+    print(f"Reconcile Codex charge {charge} as {choice}.")
+    if confirm_charge is not None:
+        return confirm_charge == charge
+    return sys.stdin.isatty() and input("Type the charge ID to confirm: ").strip() == charge
+
+
+def _reconcile_codex(
+    corpus: Corpus,
+    config: Any,
+    transport: Mapping[str, Any],
+    binding: Mapping[str, str],
+    results_path: str,
+    summary_path: str,
+    *,
+    choice: str,
+    confirm_charge: str | None,
+) -> int:
+    ledger = _scoring_ledger(None, corpus, binding, 31, codex_transport=transport)
+    with abstention_ledger.locked(ledger.progress_path + ".scorer"):
+        _codex_output_guard(ledger, results_path, summary_path)
+        calls = ledger._state()[2]  # noqa: SLF001
+        if not calls or "launch_armed" not in calls[-1]:
+            raise abstention_ledger.LedgerError("no interrupted scorer charge can be reconciled")
+        call = calls[-1]
+        charge = call["id"]
+        prior = _reconcile_prior(ledger, results_path, corpus, binding, calls)
+        if not _confirm_reconciliation(charge, choice, confirm_charge):
+            raise abstention_ledger.LedgerError("reconciliation requires the exact charge ID")
+        if choice == "refunded" and call["launch_armed"]:
+            raise abstention_ledger.LedgerError("the Codex charge may have reached the producer")
+        if os.path.lexists(_codex_attempt_path(ledger, charge)):
+            record = _codex_read_attempt(ledger, call)
+            permitted = (
+                record["classification"] in ("usable", "semantic-failed", "coverage-failed")
+                if choice == "usable"
+                else record["classification"] == choice
+            )
+            if not permitted:
+                raise abstention_ledger.LedgerError(
+                    "the choice conflicts with the existing attempt"
+                )
+            if call["status"] == "charged":
+                ledger.settle(charge, record["classification"])
+        else:
+            if choice == "usable" or call["status"] != "charged":
+                raise abstention_ledger.LedgerError("reconciliation needs the existing attempt")
+            entry = next(item for item in ledger.grant["exposures"] if item["slot"] == call["slot"])
+            case = next(case for case in corpus.cases["cases"] if case["id"] == entry["case"])
+            record, judged = _codex_score_attempt(
+                corpus,
+                config,
+                case,
+                lambda *_a, **_k: ("", "failed"),
+                withhold="interrupted-charge",
+            )
+            record.update(
+                repeat=entry["repetition"],
+                retry=call["retry"],
+                charge_id=charge,
+                classification=choice,
+                rubric=judged,
+                request_digest=call["request_digest"],
+            )
+            _codex_save_attempt(ledger, record, missing_result=call.get("result_digest"))
+        attempts = [*prior, record]
+        _codex_checkpoint(ledger, attempts, binding, corpus, results_path)
+        cases = {case["id"]: case for case in corpus.cases["cases"]}
+        summary = _codex_summary(corpus, cases, attempts, ledger, binding, time.time())
+        mark_abstention._write(summary_path, summary)  # noqa: SLF001
+        print(f"Reconciled Codex charge {charge}.")
+        return 0
 
 
 def _score_codex(  # noqa: C901, PLR0912, PLR0913, PLR0915 - batch admission and per-exposure checkpoints
@@ -4130,6 +4356,7 @@ def _score_codex(  # noqa: C901, PLR0912, PLR0913, PLR0915 - batch admission and
     resume: Mapping[str, Any] | None,
 ) -> int:
     """Consume one batch approval, checkpoint each exposure, then stop for owner review."""
+    locks = contextlib.ExitStack()
     try:
         reading = _runtime()[1]
         if (
@@ -4152,6 +4379,7 @@ def _score_codex(  # noqa: C901, PLR0912, PLR0913, PLR0915 - batch admission and
         requests = prepare_codex_requests(corpus, config, transport)
         cases = {case["id"]: case for case in corpus.cases["cases"]}
         ledger = _scoring_ledger(None, corpus, binding, 31, codex_transport=transport)
+        locks.enter_context(abstention_ledger.locked(ledger.progress_path + ".scorer"))
         _codex_output_guard(ledger, results_path, summary_path)
         attempts = _codex_resume(ledger, resume, corpus, binding)
         registered = [
@@ -4166,7 +4394,8 @@ def _score_codex(  # noqa: C901, PLR0912, PLR0913, PLR0915 - batch admission and
             raise abstention_ledger.LedgerError(  # noqa: TRY301 - report one closed admission refusal
                 "a fresh Codex run never overwrites earlier results"
             )
-        _, approvals, calls, reviews = ledger._state()  # noqa: SLF001
+        _, approvals, audit_calls, reviews = ledger._state()  # noqa: SLF001
+        calls = abstention_ledger.charged_calls(audit_calls)
         requested = next((r for r in requests if r["slot"] not in {c["slot"] for c in calls}), None)
         # A settled last-slot interruption still owes its already approved retry.
         retry_receipt = next(
@@ -4187,7 +4416,7 @@ def _score_codex(  # noqa: C901, PLR0912, PLR0913, PLR0915 - batch admission and
             requested = next(r for r in requests if r["slot"] == calls[-1]["slot"])
         if requested is None:
             summary = _codex_summary(corpus, cases, attempts, ledger, binding, now)
-            _codex_batch_pause(3, requests, binding, calls)
+            _codex_batch_pause(3, requests, binding, calls, ledger)
             return (
                 0
                 if summary["verdict"] == VERDICT_PASSED
@@ -4197,14 +4426,16 @@ def _score_codex(  # noqa: C901, PLR0912, PLR0913, PLR0915 - batch admission and
             )
         repetition = requested["repetition"]
         if repetition > 1 and repetition - 1 not in reviews:
-            _codex_batch_pause(repetition - 1, requests, binding, calls)
+            _codex_batch_pause(repetition - 1, requests, binding, calls, ledger)
             return 2
         group = [r for r in requests if r["repetition"] == repetition]
         listed = {r["slot"]: r["request_digest"] for r in group}
         receipt = next((a for a in approvals.values() if a.get("repetition") == repetition), None)
+        _require_empty_codex_output(transport)
         if receipt is None:
             ledger._batch_eligible(approvals, calls, reviews, repetition, listed, False)  # noqa: SLF001
             report = _codex_batch_report(requests, repetition, binding, calls)
+            report["checkpoint"] = ledger.checkpoint()
             print(json.dumps(report, indent=2, sort_keys=True))
             if not _codex_owner_approval(report, approve):
                 print("No approval consumed; nothing launched.")
@@ -4218,6 +4449,7 @@ def _score_codex(  # noqa: C901, PLR0912, PLR0913, PLR0915 - batch admission and
                 raise abstention_ledger.LedgerError(  # noqa: TRY301 - report closed admission
                     "Codex inputs changed during approval"
                 )
+            _require_empty_codex_output(transport)
             approval = ledger.approve_batch(repetition, listed, retry=report["retry"])
             receipt = ledger._state()[1][approval]  # noqa: SLF001
         else:
@@ -4227,7 +4459,8 @@ def _score_codex(  # noqa: C901, PLR0912, PLR0913, PLR0915 - batch admission and
                     "the approved Codex batch changed"
                 )
         while True:
-            _, _, calls, reviews = ledger._state()  # noqa: SLF001
+            _, _, audit_calls, reviews = ledger._state()  # noqa: SLF001
+            calls = abstention_ledger.charged_calls(audit_calls)
             retry = bool(
                 receipt["retry"]
                 and calls
@@ -4264,26 +4497,7 @@ def _score_codex(  # noqa: C901, PLR0912, PLR0913, PLR0915 - batch admission and
                     ledger, attempts, binding, corpus, results_path, pending=charge
                 ),
             )
-            case = cases[requested["case"]]
-            record = score_case(
-                config,
-                case,
-                case["row_snapshot"],
-                case["producer_facts"],
-                mark_abstention._marks(dict(corpus.marks))[case["id"]],  # noqa: SLF001
-                model=charged,
-                now=case["captured_at"],
-                revision=mark_abstention.case_revision(case),
-                tool_output=_tool_output(case, "OpenAI", reading_label("codex"), corpus.cases),
-            )
-            judged = rubric_case(
-                _rubric_entries(corpus.rubric)[case["id"]],
-                record,
-                case["id"],
-                case_origin=case["origin"],
-            )
-            # Kind coverage is supplied exclusively by the independently reviewed native source.
-            judged["kind"] = corpus.cases["codex_kind_reviews"][case["id"]]["kind"]
+            record, judged = _codex_score_attempt(corpus, config, cases[requested["case"]], charged)
             classification = _repeat_classification(record, judged, charged.charge_id)
             if charged.transport_status in ("unstopped", "oversized"):
                 classification = "protection-failed"
@@ -4299,18 +4513,7 @@ def _score_codex(  # noqa: C901, PLR0912, PLR0913, PLR0915 - batch admission and
                 rubric=judged,
                 request_digest=requested["request_digest"],
             )
-            folder = pathlib.Path(ledger.path + ".results")
-            folder.mkdir(mode=0o700, exist_ok=True)
-            descriptor = os.open(
-                folder / (charged.charge_id + ".json"),
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
-                0o600,
-            )
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                json.dump(record, stream, sort_keys=True)
-                stream.flush()
-                os.fsync(stream.fileno())
-            ledger.settle(charged.charge_id, classification)
+            _codex_save_attempt(ledger, record)
             attempts.append(record)
             _codex_checkpoint(ledger, attempts, binding, corpus, results_path)
             summary = _codex_summary(corpus, cases, attempts, ledger, binding, now)
@@ -4319,7 +4522,13 @@ def _score_codex(  # noqa: C901, PLR0912, PLR0913, PLR0915 - batch admission and
             f"Codex qualification: {len(attempts)} charged attempts; {summary['verdict']}. "
             "Stopped at the batch review boundary."
         )
-        _codex_batch_pause(repetition, requests, binding, ledger._state()[2])  # noqa: SLF001
+        _codex_batch_pause(
+            repetition,
+            requests,
+            binding,
+            abstention_ledger.charged_calls(ledger._state()[2]),  # noqa: SLF001
+            ledger,
+        )
         return (
             0
             if summary["verdict"] == VERDICT_PASSED
@@ -4338,6 +4547,8 @@ def _score_codex(  # noqa: C901, PLR0912, PLR0913, PLR0915 - batch admission and
     ) as error:
         print(f"Refused: {error}. No further Codex launch.")
         return 2
+    finally:
+        locks.close()
 
 
 def _claude_model_arg(value: str) -> str:
@@ -4381,7 +4592,21 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
     parser.add_argument(
         "--reviewed-exports-sha256", metavar="SHA256", help="independently pinned manifest digest"
     )
+    commands = parser.add_subparsers(dest="command")
+    reconcile = commands.add_parser(
+        "reconcile-codex", help="settle an interrupted Codex charge locally"
+    )
+    reconcile.add_argument("choice", choices=("usable", "unusable", "refunded"))
+    reconcile.add_argument("--confirm-charge", metavar="ID", help="confirm this specific charge ID")
+    reconcile.add_argument("--rubric", default=argparse.SUPPRESS)
+    reconcile.add_argument("--out", default=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.command == "reconcile-codex":
+        if args.producer == "claude" or any(
+            (args.score, args.report, args.prepare_codex, args.resume, args.probe_argv)
+        ):
+            parser.error("reconcile-codex runs on its own")
+        args.producer = "codex"
     if args.producer == "codex" and (args.reviewed_exports or args.reviewed_exports_sha256):
         print("Refused: reviewed Claude exports do not authorize Codex sources.")
         return 2
@@ -4428,6 +4653,17 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
             codex_verified = verify_codex_binary()
             transport = codex_transport(config, codex_verified)
             requests = prepare_codex_requests(corpus, config, transport)
+            if args.command == "reconcile-codex":
+                return _reconcile_codex(
+                    corpus,
+                    config,
+                    transport,
+                    codex_result_binding(transport, codex_verified),
+                    results_path_for("codex"),
+                    out,
+                    choice=args.choice,
+                    confirm_charge=args.confirm_charge,
+                )
             if not args.score:
                 print(
                     json.dumps(
@@ -4449,8 +4685,14 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
                 print("Prepared locally; no approval recorded and no producer launched.")
                 return 0
             results_path = results_path_for("codex")
-            resume = mark_abstention._load(results_path) if args.resume else None  # noqa: SLF001
-            if args.resume and not resume:
+            resume = (
+                abstention_ledger._review_json(  # noqa: SLF001 - refuse symlinks before reading a checkpoint
+                    results_path, "Codex result checkpoint", cap=20_000_000
+                )
+                if args.resume
+                else None
+            )
+            if args.resume and not isinstance(resume, dict):
                 print("Refused: no earlier Codex checkpoint to resume.")
                 return 2
             return score(
@@ -4466,7 +4708,14 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
                 codex_transport=transport,
                 resume=resume,
             )
-        except (BinaryError, mark_abstention.FreezeError, abstention_ledger.LedgerError) as error:
+        except (
+            BinaryError,
+            mark_abstention.FreezeError,
+            abstention_ledger.LedgerError,
+            OSError,
+            ValueError,
+            EOFError,
+        ) as error:
             print(f"Refused: {error}.")
             return 2
     if not args.score:

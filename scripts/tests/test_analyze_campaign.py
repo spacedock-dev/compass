@@ -958,6 +958,7 @@ class CodexRequestBindings(unittest.TestCase):
             "effort": "max",
             "binary": "/fake/codex",
             "binary_sha256": "a" * 64,
+            "installation_digest": "a" * 64,
             "cli_version": "codex 1",
             "argv": [
                 "/fake/codex",
@@ -975,6 +976,7 @@ class CodexRequestBindings(unittest.TestCase):
         )
         for field, change in {
             "binary_sha256": "d" * 64,
+            "installation_digest": "d" * 64,
             "cli_version": "codex 2",
             "runtime_digest": "d" * 64,
             "argv": [*transport["argv"], "--ephemeral"],
@@ -1044,6 +1046,8 @@ class CodexRequestBindings(unittest.TestCase):
             binary.write_bytes(b"fake executable, never run")
             verified = SimpleNamespace(
                 path=str(binary),
+                native=str(binary),
+                installation_digest="a" * 64,
                 version="codex test",
                 identity=(hashlib.sha256(binary.read_bytes()).hexdigest(),),
             )
@@ -1084,6 +1088,7 @@ class CodexRequestBindings(unittest.TestCase):
             "effort": "max",
             "binary": "/fake/codex",
             "binary_sha256": "a" * 64,
+            "installation_digest": "a" * 64,
             "cli_version": "codex 1",
             "argv": [
                 "/fake/codex",
@@ -1107,6 +1112,7 @@ class CodexRequestBindings(unittest.TestCase):
             "effort": "max",
             "binary": "/fake/codex",
             "binary_sha256": "a" * 64,
+            "installation_digest": "a" * 64,
             "cli_version": "codex 1",
             "argv": [
                 "/fake/codex",

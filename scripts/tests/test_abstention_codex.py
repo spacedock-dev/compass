@@ -8,15 +8,22 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import abstention_ledger as authority
 import analyze_campaign as campaign
+
+if TYPE_CHECKING:
+    from tests import codex_source_support as source_support
+else:
+    import codex_source_support as source_support
 
 
 @unittest.skipIf(sys.platform == "win32", "Codex account authority currently refuses Windows")
@@ -26,8 +33,10 @@ class CodexAuthority(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.home = Path(temporary.name)
         self.grant_path = self.home / "codex-grant.json"
+        self.reviews: dict[str, Any] = {}
         for patch in (
             mock.patch.object(authority, "real_home", return_value=str(self.home)),
+            mock.patch.object(authority, "codex_reviews", return_value=self.reviews),
             mock.patch.object(authority, "CODEX_GRANT_PATH", str(self.grant_path), create=True),
             mock.patch.dict(
                 os.environ, {"HOME": str(self.home), "COMPASS_HOME": str(self.home / "packet")}
@@ -41,6 +50,7 @@ class CodexAuthority(unittest.TestCase):
             "effort": "max",
             "binary": "/fake/codex",
             "binary_sha256": "b" * 64,
+            "installation_digest": "a" * 64,
             "cli_version": "codex 1.0",
             "argv": [
                 "/fake/codex",
@@ -106,10 +116,20 @@ class CodexAuthority(unittest.TestCase):
         return campaign.CodexCampaign(bindings=self.inputs, transport=self.transport)
 
     def activate(self) -> Any:
-        anchor = self.study().initialize()
-        self.grant.update(phase="sealed", activation_anchor=anchor, genesis_review="d" * 64)
+        study = self.study()
+        anchor = study.initialize()
+        receipt = source_support.review_receipt(study, 0, authority.progress(anchor, []))
+        proof = authority.digest(receipt)
+        self.reviews[proof] = receipt
+        self.grant.update(phase="sealed", activation_anchor=anchor, genesis_review=proof)
         self.write_grant()
         return self.study()
+
+    def review_batch(self, study: Any, batch: int) -> None:
+        receipt = source_support.review_receipt(study, batch, study.checkpoint())
+        proof = authority.digest(receipt)
+        self.reviews[proof] = receipt
+        study.review_batch(batch, proof)
 
     def approve(self, study: Any, *, slot: str | None = None, retry: bool = False) -> str:
         return str(study.approve_slot(slot or self.slots[0], self.request, retry=retry))
@@ -140,7 +160,7 @@ class CodexAuthority(unittest.TestCase):
             self.batch(study)
         with self.assertRaises(authority.LedgerError):
             self.batch(study, 2)
-        study.review_batch(1, "e" * 64)
+        self.review_batch(study, 1)
         second = self.batch(study, 2)
         with self.assertRaises(authority.LedgerError):
             self.reserve(study, approval, slot=self.slots[10])
@@ -223,6 +243,92 @@ class CodexAuthority(unittest.TestCase):
         with self.assertRaises(authority.LedgerError):
             self.reserve(self.study(), "f" * 32)
         self.launch.assert_not_called()
+
+    def test_a_valid_looking_but_unknown_review_digest_is_refused(self) -> None:
+        self.activate()
+        self.grant["genesis_review"] = "f" * 64
+        self.write_grant()
+        with self.assertRaises(authority.LedgerError):
+            self.approve(self.study())
+
+    def test_a_batch_review_requires_a_receipt_for_its_exact_checkpoint(self) -> None:
+        study = self.activate()
+        approval = self.batch(study)
+        for slot in self.slots[:10]:
+            study.settle(self.reserve(study, approval, slot=slot), "usable")
+        with self.assertRaises(authority.LedgerError):
+            study.review_batch(1, "f" * 64)
+        wrong = source_support.review_receipt(study, 2, study.checkpoint())
+        digest = authority.digest(wrong)
+        self.reviews[digest] = wrong
+        with self.assertRaises(authority.LedgerError):
+            study.review_batch(1, digest)
+        self.review_batch(study, 1)
+
+    def test_committed_reviews_are_read_from_git_instead_of_the_working_copy(self) -> None:
+        import subprocess  # noqa: PLC0415 - temporary Git repository only
+
+        root = self.home / "checkout"
+        path = root / authority.CODEX_REVIEWS
+        path.parent.mkdir(parents=True)
+
+        def git(*args: str) -> None:
+            subprocess.run(
+                ["git", "-C", str(root), *args],  # noqa: S607 - same local Git as the reader
+                capture_output=True,
+                check=True,
+            )
+
+        git("init", "-q")
+        path.write_text('{"committed": true}')
+        git("add", authority.CODEX_REVIEWS)
+        git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.test",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-qm",
+            "fixture",
+        )
+        path.write_text('{"working_copy": true}')
+        with mock.patch.object(authority, "__file__", str(root / "scripts/abstention_ledger.py")):
+            self.assertEqual(
+                {"committed": True}, authority.committed_study_json(authority.CODEX_REVIEWS)
+            )
+
+    def test_restoring_the_index_and_all_receipts_cannot_refund_a_charge(self) -> None:
+        study = self.activate()
+        saved_body = Path(study.path).read_bytes()
+        original = set(study.receipts.iterdir())
+        self.reserve(study, self.approve(study))
+        Path(study.path).write_bytes(saved_body)
+        for receipt in set(study.receipts.iterdir()) - original:
+            receipt.unlink()
+        with self.assertRaises(authority.LedgerError):
+            self.approve(self.study())
+
+    def test_the_lock_never_opens_a_symlink(self) -> None:
+        source = self.home / "redirect"
+        source.touch()
+        path = str(self.home / "ledger")
+        Path(path + ".lock").symlink_to(source)
+        with self.assertRaises(authority.LedgerError), authority.locked(path):
+            self.fail("the lock followed a symlink")
+
+    def test_a_symlinked_charge_receipt_cannot_authorize_more_spend(self) -> None:
+        study = self.activate()
+        charge = self.reserve(study, self.approve(study))
+        path = study.receipts / f"charge-{charge}.json"
+        moved = self.home / "charge.json"
+        path.rename(moved)
+        path.symlink_to(moved)
+        with self.assertRaises(authority.LedgerError):
+            study.used()
 
     def test_a_person_must_review_zero_charge_genesis_before_activation(self) -> None:
         self.grant.update(phase="sealed", activation_anchor="a" * 64, genesis_review="b" * 64)
@@ -360,7 +466,7 @@ class CodexAuthority(unittest.TestCase):
             if n % 10 == 0:
                 with self.assertRaises(authority.LedgerError):
                     self.approve(study, slot=slot)
-                study.review_batch(n // 10, "e" * 64)
+                self.review_batch(study, n // 10)
             try:
                 charge = self.reserve(study, self.approve(study, slot=slot), slot=slot)
             except authority.LedgerError as error:
@@ -436,13 +542,64 @@ class CodexAuthority(unittest.TestCase):
         self.assertEqual(1, study.used())
         self.launch.assert_called_once()
 
+    def test_replacing_the_study_lock_cannot_split_the_reservation_lock(self) -> None:
+        first = self.activate()
+        second = self.study()
+        approval = self.batch(first)
+        reached = threading.Event()
+        release = threading.Event()
+        attempted = threading.Event()
+        second_read = threading.Event()
+        append = first._append
+        read_state = second._state
+
+        def pause_before_receipt(*args: Any, **kwargs: Any) -> str:
+            reached.set()
+            if not release.wait(5):
+                self.fail("first reservation did not resume")
+            return str(append(*args, **kwargs))
+
+        def second_state() -> Any:
+            second_read.set()
+            return read_state()
+
+        def reserve_again() -> None:
+            attempted.set()
+            with self.assertRaises(authority.LedgerError):
+                second.reserve(self.slots[0], self.request, approval=approval)
+
+        with (
+            mock.patch.object(first, "_append", side_effect=pause_before_receipt),
+            mock.patch.object(second, "_state", side_effect=second_state),
+            ThreadPoolExecutor(max_workers=2) as pool,
+        ):
+            pending = pool.submit(first.reserve, self.slots[0], self.request, approval=approval)
+            try:
+                self.assertTrue(reached.wait(5))
+                Path(first.path + ".lock").unlink()
+                duplicate = pool.submit(reserve_again)
+                self.assertTrue(attempted.wait(5))
+                self.assertFalse(second_read.wait(0.5))
+            finally:
+                release.set()
+            pending.result(timeout=5)
+            duplicate.result(timeout=5)
+        self.assertEqual(1, first.used())
+
     def test_a_person_in_another_process_cannot_spend_the_approval(self) -> None:
         import subprocess  # noqa: PLC0415 - a Python child with a fake transport only
 
         study = self.activate()
         approval = self.approve(study)
         fixture = self.home / "child-input.json"
-        fixture.write_text(json.dumps({"bindings": self.inputs, "transport": self.transport}))
+        fixture.write_text(
+            json.dumps(
+                {
+                    "inputs": {"bindings": self.inputs, "transport": self.transport},
+                    "reviews": self.reviews,
+                }
+            )
+        )
         child = """
 import json, os, sys
 from unittest import mock
@@ -450,9 +607,10 @@ import abstention_ledger as authority
 import analyze_campaign as campaign
 home, grant, fixture, slot, request, approval = sys.argv[1:]
 with open(fixture) as handle:
-    inputs = json.load(handle)
-with mock.patch.object(authority, 'real_home', return_value=home), mock.patch.object(authority, 'CODEX_GRANT_PATH', grant):
-    study = campaign.CodexCampaign(**inputs)
+    body = json.load(handle)
+with mock.patch.object(authority, 'real_home', return_value=home), mock.patch.object(authority, 'CODEX_GRANT_PATH', grant), mock.patch.object(authority, 'codex_reviews', return_value=body['reviews']):
+    study = campaign.CodexCampaign(**body['inputs'])
+    assert study.used() == 0
     try:
         study.reserve(slot, request, approval=approval)
     except authority.LedgerError:
@@ -612,7 +770,7 @@ with mock.patch.object(authority, 'real_home', return_value=home), mock.patch.ob
         for n, slot in enumerate(self.slots[:10]):
             charge = self.reserve(study, self.approve(study, slot=slot), slot=slot)
             study.settle(charge, "unusable" if n == 9 else "usable")
-        study.review_batch(1, "e" * 64)
+        self.review_batch(study, 1)
         with self.assertRaises(authority.LedgerError):
             self.approve(study, slot=self.slots[9], retry=True)
         self.assertEqual(10, study.used())
