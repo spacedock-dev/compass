@@ -5807,8 +5807,11 @@ code references and short values. That broader prose protection remains in place
 Authorization schemes include Basic, Digest, Token, AWS4-HMAC-SHA256, Negotiate and Bearer;
 an unknown scheme word followed by a credential-shaped value is covered too. Header names are
 case-insensitive. Header lines, quoted JSON and YAML values, curl `-H` and `--header` values,
-and assignments use the same rule, including curl backslash-escaped header spaces. Header-setting
-call arguments and tuples cover every scheme, including complete Digest and AWS parameter lists.
+and assignments use the same rule. Header values can follow shell-escaped spaces after the colon
+and scheme, including repeated escapes. The word-level mask in model-bound prose can also cover
+an escape after the colon or closing punctuation attached to a value. Joined curl header flags
+and escaped spaces between Digest or AWS parameters are covered. Header-setting call arguments
+and tuples cover every scheme, including complete parameter lists.
 A credential-shaped token directly after the header name is masked without a scheme too.
 Percent-encoded headers such as `Authorization%3A%20Basic%20...` are covered, including
 percent-encoded base64 padding, `+` and `/` characters.
@@ -5818,8 +5821,9 @@ Basic, Token, Negotiate and NTLM also cue a standalone
 credential, including in f-strings, escaped JSON, header-setting calls and wrapped headers.
 These standalone values need at least 12 characters from the base64 or token alphabet and
 a digit, `+`, `/` or `=`, or at least eight base64 characters with lowercase letters and an uppercase
-letter after the first character. That mixed-case rule applies only after a known scheme word
-and at the end of the value; "Basic JavaScript tutorial" stays readable.
+letter after the first character. That mixed-case rule applies after a known scheme word at the
+end of the value. "Basic JavaScript tutorial" stays readable. The standalone example
+`Token PowerShell` stays readable when written literally at the end of a line.
 In prose, a header's value can continue on the next line when it meets that
 shape; a following ordinary word stays readable. The scheme stays visible and the value becomes the marker, including a complete
 comma-separated Digest or AWS parameter list. Quotes enclose a whole value; an unquoted token
@@ -5827,10 +5831,16 @@ ends at whitespace or punctuation. A header name or scheme with no value is left
 "use basic auth", "Bearer tokens expire" and `grep -n 'Authorization:' server.log`.
 Instructions such as "authorization: required for all routes" and "set the Authorization:
 Basic header and retry", and placeholders such as `<base64>`, `{token}` and `...`, stay readable.
-Curl `-u user:password`, `--user user:password` and `--user=user:password` values are masked
-in both published and model-bound prose, including commands continued with a backslash and a
-line break. A username with no password, `git push -u` and
-`docker run -u 1000:1000` stay readable.
+The Bearer examples `<token>` and `%3Ctoken%3E` stay visible in authorization headers when the
+source contains the placeholder literally. The percent-escape hex digits can use either case.
+Direct `-u` and `--user` credentials on lowercase `curl` mask the entire login in published and
+model-bound text. `--proxy-user`, clustered short flags such as `-sSu`, and mixed-case curl
+commands also mask passwords. The mask covers joined options, quoted values, an empty username
+and backslash-continued commands. For `-u` and `--user`, a username alone and the literal examples
+`admin:`, `user:password` and `USER:PASS` stay readable. Other empty-password logins are masked
+in full. The word-level mask in model-bound prose can consume a quote or semicolon attached to
+a credential.
+`git push -u` and `docker run -u 1000:1000` stay readable.
 Other cues mask the value up to whitespace or punctuation, and a quoted value whole, spaces and
 all. The cue stays and the value becomes the marker. Cued masking was added when the agent's own messages
 began reaching a reading model, because an agent repeats what it read. Left alone, because each
@@ -5875,7 +5885,7 @@ Comments and tags are read in document order, so a comment opener inside an attr
 comment. Neither comments nor these characters acquire the 16,384-character bound, so a long
 transcript with an emoji in it is read rather than withheld. Only a matched credential changes,
 so the joiners Persian, Indic scripts and emoji sequences are spelled with stay where they are in
-every other word. The same view reads `curl -u` and `curl --user` through a hidden character inside
+every other word. The same view reads curl credential flags through a hidden character inside
 the command or flag. On a published row the C1 controls and the Arabic letter mark become spaces,
 as the other controls and bidi marks already did, and they are masked before they become spaces,
 so the second view can still read through them. Normalized spaces also receive contextual

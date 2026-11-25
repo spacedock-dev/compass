@@ -104,6 +104,8 @@ _AUTH_QUOTED_VALUE: Final = (
     r"|'(?:[^'\\\r\n]|\\(?:[^\r\n]|(?=[\r\n]|$)))*(?:'|(?=[\r\n]|$)))"
 )
 _AUTH_CLOSED_QUOTED_VALUE: Final = r"(?:\"(?:[^\"\\\r\n]|\\[^\r\n])*\"|'(?:[^'\\\r\n]|\\[^\r\n])*')"
+_AUTH_SPACE: Final = r"(?:[ \t]|\\[ \t])"
+_AUTH_NAME: Final = r"(?:(?<![\w-])|(?<=-H))(?i:(?:proxy-)?authorization)[\"']?"
 _AUTH_PARAMETER: Final = (
     r"[A-Za-z][\w-]*[ \t]*=[ \t]*"
     rf"(?:(?(authparams){_AUTH_QUOTED_VALUE}|{_AUTH_CLOSED_QUOTED_VALUE})|[^\s,\"'`)}}]+)"
@@ -300,13 +302,13 @@ _SECRET_SHAPES: Final = (
         0,
         False,
         (
-            r"(?<![\w-])(?i:(?:proxy-)?authorization)[\"']?[ \t]*(?:[:=]|,)[ \t]*"
+            rf"{_AUTH_NAME}[ \t]*(?:[:=]|,){_AUTH_SPACE}*"
             r"(?P<authquote>[\"'])?(?P<authkind>(?:(?P<authparams>(?i:digest|aws4-hmac-sha256))"
-            r"|[A-Za-z][A-Za-z0-9!#$%&'*+.^_`|~-]*))(?:[ \t]+|\\[ \t]+)"
+            rf"|[A-Za-z][A-Za-z0-9!#$%&'*+.^_`|~-]*)){_AUTH_SPACE}+"
             r"(?P<authval>(?(authquote)"
             r"(?:(?!(?P=authquote))[^\\\r\n]|\\(?:[^\r\n]|(?=[\r\n]|$)))+"
             r"(?:(?=(?P=authquote))|(?=[\r\n])|$)"
-            rf"|(?:(?:{_AUTH_PARAMETER})(?:[ \t]*,[ \t]*(?:{_AUTH_PARAMETER}))*"
+            rf"|(?:(?:{_AUTH_PARAMETER})(?:{_AUTH_SPACE}*,{_AUTH_SPACE}*(?:{_AUTH_PARAMETER}))*"
             rf"|{_AUTH_QUOTED_VALUE}"
             r"|\{[^{}\s]*\}|[^\s\"'`,;&)}]+)))"
         ),
@@ -318,8 +320,8 @@ _SECRET_SHAPES: Final = (
         0,
         False,
         (
-            r"(?<![\w-])(?i:(?:proxy-)?authorization)[\"']?[ \t]*[:=][ \t]*[\"']?"
-            r"(?P<authbareval>[^\s\"'`,;&)]+)"
+            rf"{_AUTH_NAME}[ \t]*[:=]{_AUTH_SPACE}*[\"']?"
+            r"(?!\\[ \t])(?P<authbareval>[^\s\"'`,;&)]+)"
         ),
     ),
     (
@@ -340,7 +342,8 @@ _SECRET_SHAPES: Final = (
         0,
         False,
         (
-            r"(?<![\w-])(?i:basic|token|negotiate|ntlm)\s+"
+            rf"(?<![\w-])(?P<schemeheader>{_AUTH_NAME}\s*[:=](?:\\[ \t]|\s)*[\"']?)?"
+            r"(?P<schemeword>(?i:basic|token|negotiate|ntlm))\s+"
             r"(?P<schemeval>[A-Za-z0-9._~+/=-]{8,})"
         ),
     ),
@@ -622,6 +625,7 @@ _KEY_ASSIGNMENT_NAME_RE: Final = re.compile(
 
 _AUTH_CREDENTIAL_WORD: Final = re.compile(r"(?=[A-Za-z0-9._~+/=-]*[0-9+/=])[A-Za-z0-9._~+/=-]{12,}")
 _AUTH_PLACEHOLDER: Final = re.compile(r"(?:<[^<>]*>|\{[^{}]*\}|\.{3,})$")
+_BEARER_TOKEN_PLACEHOLDER: Final = re.compile(r"<token>|%3[Cc]token%3[Ee]")
 # After `Basic`, base64 of a short `user:pass` can be letters only with no padding
 # (`dXNlcjpwYXNz`), which `_CREDENTIAL_LIKE_RE` reads as a word. Mixed case past the
 # first letter is what a word lacks: `Authentication` stays readable.
@@ -646,6 +650,10 @@ _BASIC_PROSE: Final = frozenset(
 )
 # Match at the value's end without slicing the remaining text on each candidate.
 _AUTH_VALUE_END: Final = re.compile(r"[ \t]*(?=$|[\r\n`),;}<\]&]|\\?[\"'])")
+_BASIC_TOKEN_END: Final = re.compile(r"([A-Za-z0-9+/=]+)\]")
+_CURL_HEADER_FLAG: Final = re.compile(
+    r"(?:^|\s)(?:-H[ \t]*|--(?:proxy-)?header(?:=|[ \t]+))[\"']?$"
+)
 
 
 def _explicit_basic_value_is_secret(value: str, *, at_end: bool) -> bool:
@@ -659,8 +667,19 @@ def _explicit_basic_value_is_secret(value: str, *, at_end: bool) -> bool:
     )
 
 
-def _auth_value_is_secret(value: str, *, cued: bool = False, basic: bool = False) -> bool:
+def _auth_value_is_secret(
+    value: str,
+    *,
+    cued: bool = False,
+    basic: bool = False,
+    bearer: bool = False,
+    literal: bool = True,
+) -> bool:
     value = value.strip("'\"")
+    if bearer:
+        return not _CODE_VALUE_RE.match(value) and not (
+            _BEARER_TOKEN_PLACEHOLDER.fullmatch(value) and literal
+        )
     return (
         not _CODE_VALUE_RE.match(value)
         and not _AUTH_PLACEHOLDER.fullmatch(value)
@@ -709,14 +728,33 @@ def _structural_key_role_start(match: re.Match[str]) -> int | None:
     return at if "".join(reversed(role)).lower() in _STRUCTURAL_KEY_ROLES else None
 
 
-def _cued_value_is_secret(match: re.Match[str]) -> bool:
+def _literal_bearer_value(
+    value: str, first: int, source_slice: Callable[[int, int], str] | None
+) -> bool:
+    # Formatting removal can join fragments into an apparent example.
+    return source_slice is None or (
+        _BEARER_TOKEN_PLACEHOLDER.fullmatch(value.strip("'\"")) is not None
+        and source_slice(first, first + len(value)).strip("'\"") == value.strip("'\"")
+    )
+
+
+def _cued_value_is_secret(
+    match: re.Match[str], source_slice: Callable[[int, int], str] | None
+) -> bool:
     """Whether a `cued` candidate holds a credential, per the rules beside the shape."""
     quoted = match.group("cuedquoted")
     value = quoted if quoted is not None else match.group("cuedvalue") or ""
     if _CODE_VALUE_RE.match(value.strip()):
         return False
     credential_like = bool(_CREDENTIAL_LIKE_RE.match(value)) and len(value) >= 3
-    if match.group("cueauth") is not None or match.group("cueflag") is not None:
+    if match.group("cueauth") is not None:
+        group = "cuedquoted" if quoted is not None else "cuedvalue"
+        return _auth_value_is_secret(
+            value,
+            bearer=True,
+            literal=_literal_bearer_value(value, match.start(group), source_slice),
+        )
+    if match.group("cueflag") is not None:
         return True
     if match.group("cuebearer") is not None:
         return len(value) >= 16 and credential_like
@@ -738,7 +776,9 @@ def _cued_value_is_secret(match: re.Match[str]) -> bool:
     return len(value) >= 3
 
 
-def _mark_secret(match: re.Match[str]) -> str | None:
+def _mark_secret(
+    match: re.Match[str], *, source_slice: Callable[[int, int], str] | None = None
+) -> str | None:
     """The marked replacement, or None if admission rejects the candidate.
 
     None rather than the match text, because the caller has to tell the two
@@ -762,7 +802,7 @@ def _mark_secret(match: re.Match[str]) -> str | None:
         if (previous == "-" and name != "google") or not (name in _SECRET_DISTINCTIVE or evidence):
             return None
     if name == "cued":
-        if not _cued_value_is_secret(match):
+        if not _cued_value_is_secret(match, source_slice):
             return None
         quoted = match.group("cuedquoted") is not None
         start = match.start("cuedquoted" if quoted else "cuedvalue") - match.start()
@@ -773,15 +813,36 @@ def _mark_secret(match: re.Match[str]) -> str | None:
         if name == "authorization":
             value = match.group(value_group)
             kind = match.group("authkind").lower()
+            escaped_header = "\\" in match.string[match.start() : match.start("authkind")]
+            # Keep a bracket only if the older recognizer left it visible.
+            if (
+                kind == "basic"
+                and not match.group("authquote")
+                and (token := _BASIC_TOKEN_END.fullmatch(value))
+                and (escaped_header or not _auth_value_is_secret(value))
+            ):
+                last = first + token.end(1)
+                value = token[1]
             at_end = bool(_AUTH_VALUE_END.match(match.string, last)) or (
                 len(value) > 1 and value[0] in "'\"" and value[-1] == value[0]
             )
-            # A shell-escaped scheme separator supplies a header, not prose.
-            basic_cued = at_end or match.string[match.end("authkind")] == "\\"
+            # A following URL leaves a curl header argument as explicit as a closing quote.
+            basic_cued = at_end or (
+                match.string[match.end("authkind")] == "\\"
+                and (
+                    not escaped_header
+                    or _CURL_HEADER_FLAG.search(
+                        match.string, max(0, match.start() - 64), match.start()
+                    )
+                    is not None
+                )
+            )
             secret = _auth_value_is_secret(
                 value,
-                cued=bool(match.group("authparams")) or kind == "bearer",
+                cued=bool(match.group("authparams")),
                 basic=kind in _AUTH_TOKEN_SCHEMES and (kind != "basic" or basic_cued),
+                bearer=kind == "bearer",
+                literal=_literal_bearer_value(value, first, source_slice),
             ) or (kind == "basic" and _explicit_basic_value_is_secret(value, at_end=basic_cued))
             if not secret:
                 # A schemeless token followed by prose can occupy the scheme
@@ -800,6 +861,18 @@ def _mark_secret(match: re.Match[str]) -> str | None:
                     last -= 1
         elif name == "authscheme":
             value = match.group(value_group)
+            # A formatting-free view can reconstruct the documentation example from a credential.
+            if value == "PowerShell" and match.group("schemeheader") is None:
+                start = match.start("schemeword")
+                source = (
+                    match.string[start : last + 1]
+                    if source_slice is None
+                    else source_slice(start, last + 1)
+                )
+                if source == "Token PowerShell" or source.startswith(
+                    ("Token PowerShell\r", "Token PowerShell\n")
+                ):
+                    return None
             if not (
                 _AUTH_CREDENTIAL_WORD.fullmatch(value)
                 or (_BASIC_BASE64.fullmatch(value) and _AUTH_VALUE_END.match(match.string, last))
@@ -817,6 +890,8 @@ def _mark_secret(match: re.Match[str]) -> str | None:
                     value,
                     basic=name == "authencoded"
                     and match.group("encodedkind").lower() in _AUTH_TOKEN_SCHEMES,
+                    bearer=name == "authencoded" and match.group("encodedkind").lower() == "bearer",
+                    literal=_literal_bearer_value(value, first, source_slice),
                 )
             ):
                 return None
@@ -843,7 +918,9 @@ def _secret_span(first: int, last: int, marked: str, *, contextual: bool = False
     return _SecretSpan(first, last, head, tail, first + len(head), last - len(tail), contextual)
 
 
-def _secret_matches(text: str) -> list[_SecretSpan]:
+def _secret_matches(
+    text: str, *, source_slice: Callable[[int, int], str] | None = None
+) -> list[_SecretSpan]:
     """Accepted full and masked-body spans, merged by `_write_marked`."""
     found: list[_SecretSpan] = []
     for opener in _SECRET_OPENER_RE.finditer(text):
@@ -856,7 +933,7 @@ def _secret_matches(text: str) -> list[_SecretSpan]:
     for pattern in _OVERLAP_CONTEXT_RES:
         pos = 0
         while (match := pattern.search(text, pos)) is not None:
-            marked = _mark_secret(match)
+            marked = _mark_secret(match, source_slice=source_slice)
             if marked is not None:
                 found.append(
                     _secret_span(
@@ -945,6 +1022,16 @@ def _view(text: str, spans: list[tuple[int, int]]) -> tuple[str, list[int], list
     return "".join(parts), cuts, removed
 
 
+def _after_view_cut(cuts: list[int], removed: list[int], at: int) -> int:
+    cut = bisect_right(cuts, at)
+    return at + (removed[cut - 1] if cut else 0)
+
+
+def _before_view_cut(cuts: list[int], removed: list[int], at: int) -> int:
+    cut = bisect_left(cuts, at)
+    return at + (removed[cut - 1] if cut else 0)
+
+
 def _trim_secret_context(text: str, span: _SecretSpan) -> _SecretSpan:
     # Raw, unchanged cues need no replacement. Leaving them in a match merges
     # disjoint masked values in its head, such as NAME=Basic followed by a token.
@@ -1007,7 +1094,9 @@ def _write_marked(text: str, found: list[_SecretSpan]) -> str:
 
 def _marked_view(
     text: str, found: list[_SecretSpan], *, marker: str = _SECRET_MARKER
-) -> tuple[str, Callable[[list[_SecretSpan]], list[_SecretSpan]]]:
+) -> tuple[
+    str, Callable[[list[_SecretSpan]], list[_SecretSpan]], Callable[[int, int], tuple[int, int]]
+]:
     # Earlier masks can remove a quote or whitespace that blocked a later
     # recognizer. A bounded derived pass supplements the original-input passes;
     # mapping its bodies back means it can only withhold more source text.
@@ -1024,23 +1113,29 @@ def _marked_view(
             parts.append(part)
             length += len(part)
 
+    def source_interval(first: int, last: int) -> tuple[int, int]:
+        left = bisect_right(starts, first) - 1
+        right = bisect_left(starts, last) - 1
+        if left < 0 or right < 0:
+            return first, last
+        source_first, _, copied = sources[left]
+        if copied:
+            source_first += first - starts[left]
+        right_first, source_last, copied = sources[right]
+        if copied:
+            source_last = right_first + last - starts[right]
+        return source_first, source_last
+
     def project(matches: list[_SecretSpan]) -> list[_SecretSpan]:
         mapped = []
         for span in matches:
-            left = bisect_right(starts, span.body_first) - 1
-            right = bisect_left(starts, span.body_last) - 1
-            if left < 0 or right < 0 or span.body_last <= span.body_first:
+            if not starts or span.body_last <= span.body_first:
                 continue
-            first, _, copied = sources[left]
-            if copied:
-                first += span.body_first - starts[left]
-            source_first, last, copied = sources[right]
-            if copied:
-                last = source_first + span.body_last - starts[right]
+            first, last = source_interval(span.body_first, span.body_last)
             mapped.append(_secret_span(first, last, _SECRET_MARKER, contextual=True))
         return mapped
 
-    return "".join(parts), project
+    return "".join(parts), project, source_interval
 
 
 def _ordered_secret_spans(found: list[_SecretSpan]) -> list[_SecretSpan]:
@@ -1057,7 +1152,9 @@ def _ordered_secret_spans(found: list[_SecretSpan]) -> list[_SecretSpan]:
     return ordered
 
 
-def _inline_secret_matches(text: str) -> list[_SecretSpan]:
+def _inline_secret_matches(
+    text: str, *, source_slice: Callable[[int, int], str] | None = None
+) -> list[_SecretSpan]:
     """Map credentials in a formatting-free view back to their original spans.
 
     The view drops inline element tags, HTML comments and characters that render
@@ -1079,34 +1176,48 @@ def _inline_secret_matches(text: str) -> list[_SecretSpan]:
         return []
     plain, cuts, removed = _view(text, spans)
     scan = _needs_secret_scan(plain)
-    if not scan and "-u" not in plain:
-        return []
 
-    def original(span: _SecretSpan) -> _SecretSpan:
-        def start(first: int) -> int:
-            cut = bisect_right(cuts, first)
-            return first + (removed[cut - 1] if cut else 0)
+    def start(first: int) -> int:
+        return _after_view_cut(cuts, removed, first)
 
-        def end(last: int) -> int:
-            cut = bisect_left(cuts, last)
-            return last + (removed[cut - 1] if cut else 0)
+    def end(last: int) -> int:
+        return _before_view_cut(cuts, removed, last)
 
+    def from_source(first: int, last: int) -> str:
+        first, last = end(first), start(last)
+        return text[first:last] if source_slice is None else source_slice(first, last)
+
+    def original(span: _SecretSpan, *, curl: bool = False) -> _SecretSpan:
         # Body coordinates need their own mapping: formatting removed inside
         # a kept prefix or tail changes their distance from the full span ends.
+        last = end(span.last)
+        body_last = end(span.body_last)
+        # A comment or hidden run touching a curl value can split its raw and inline spans.
+        if (
+            curl
+            and body_last == last
+            and (text.startswith("<!--", last) or _HIDDEN_CHARS_RE.match(text, last))
+        ):
+            body_last = last = start(span.last)
         return _SecretSpan(
             start(span.first),
-            end(span.last),
+            last,
             span.head,
             span.tail,
             start(span.body_first),
-            end(span.body_last),
+            body_last,
             span.contextual,
         )
 
-    matches = _secret_matches(plain) if scan else []
-    if "-u" in plain:
-        matches.extend(_curl_secret_matches(plain))
-    found = [original(match) for match in matches]
+    found = (
+        [original(match) for match in _secret_matches(plain, source_slice=from_source)]
+        if scan
+        else []
+    )
+    found.extend(
+        original(match, curl=True)
+        for match in _curl_secret_matches(plain, source_slice=from_source)
+    )
     # Also from just after each removed span. There the view joins a key to the word or key in
     # front of it, and a key's capped body can run on into the next key's prefix.
     # Matched on a slice, because the lookbehinds read the characters in
@@ -1160,36 +1271,147 @@ def _needs_secret_scan(text: str) -> bool:
 
 # One forward pass tracks curl until a command boundary. Starting a new search
 # at every `curl` and scanning to a later `-u` would rescan long rejected lines.
+_CURL_SHORT_SWITCHES: Final = "aBfgGiIjJklLMnNOpqRsSvVZ"
+_CURL_EXAMPLES: Final = frozenset({"admin:", "user:password", "USER:PASS"})
+_CURL_DOUBLE_BODY: Final = r'(?:[^"\\\r\n]|\\(?:[^\r\n]|(?=[\r\n]|$)))++'
+_CURL_WORD_DELIMITERS: Final = r"\s\"';|&"
+_CURL_UNQUOTED_END_RE: Final = re.compile(rf"[{_CURL_WORD_DELIMITERS}]")
 _CURL_USER_RE: Final = re.compile(
-    r"(?P<curl>(?<![\w-])curl(?=[ \t]))"
+    r"(?P<curl>(?<![\w.-])(?i:curl)(?=[ \t]))"
+    r"|(?P<dotted_curl>(?<=\.)curl(?=[ \t]))"
     r"|(?P<continuation>\\\r?\n)"
     r"|(?P<end>[\r\n;|&])"
-    r"|(?<![\w-])(?:-u[ \t]*|--user(?:=|[ \t]+))"
-    r"(?P<userquote>[\"'])?(?P<userval>(?(userquote)"
-    r"(?:(?!(?P=userquote))[^\r\n])+|[^\s\"';|&]+))"
-    r"(?(userquote)(?:(?P=userquote)|(?=[\r\n]|$)))"
+    r"|(?<![\w-])(?P<optionquote>(?:(?P<optiondouble>\")|')(?=--(?:proxy-)?user=|-u[^ \t]))?"
+    rf"(?:-u[ \t]*|(?P<cluster>-[{_CURL_SHORT_SWITCHES}]+u)[ \t]+"
+    r"|(?:--user|(?P<proxy>--proxy-user))(?:=|[ \t]+))"
+    rf"(?(optionquote)(?P<quotedoptionval>(?(optiondouble){_CURL_DOUBLE_BODY}|[^'\r\n]+))"
+    r"(?:(?P=optionquote)|(?=[\r\n]|$))|"
+    r"(?P<userquote>(?P<userdouble>\")|')?(?P<userval>(?(userquote)"
+    rf"(?(userdouble){_CURL_DOUBLE_BODY}|[^'\r\n]+)"
+    rf"|[^{_CURL_WORD_DELIMITERS}]++(?:(?<=:){_AUTH_QUOTED_VALUE})?))"
+    r"(?(userquote)(?:(?P=userquote)|(?=[\r\n]|$))))"
 )
 
 
-def _curl_secret_matches(text: str) -> list[_SecretSpan]:
+def _curl_text_example(
+    value: str,
+    first: int,
+    *,
+    unquoted: bool,
+    markdown: bool,
+    source_slice: Callable[[int, int], str] | None,
+) -> bool:
+    literal = value
+    if unquoted:
+        example, tick, after = value.partition("`")
+        if tick and (not after or (markdown and after[0] in ",.)]")):
+            value, literal = example, example + tick
+    return value in _CURL_EXAMPLES and (
+        source_slice is None or source_slice(first, first + len(literal)) == literal
+    )
+
+
+def _curl_password_is_reference(match: re.Match[str], password: str, *, full_login: bool) -> bool:
+    if _CODE_VALUE_RE.match(password):
+        return True
+    if not _AUTH_PLACEHOLDER.fullmatch(password):
+        return False
+    # A longer quoted match can turn a formerly masked prefix into a placeholder.
+    if not full_login:
+        return True
+    if match.group("optionquote"):
+        return _CURL_UNQUOTED_END_RE.search(password) is None
+    return not (match.group("userdouble") and '"' in password)
+
+
+def _curl_secret_matches(
+    text: str, *, source_slice: Callable[[int, int], str] | None = None
+) -> list[_SecretSpan]:
+    if "-" not in text or "curl" not in text.lower():
+        return []
     found: list[_SecretSpan] = []
-    curl = False
+    curl = legacy_curl = literal_curl = markdown = False
     for match in _CURL_USER_RE.finditer(text):
-        if match.group("curl"):
+        if match.group("dotted_curl"):
+            legacy_curl = True
+        elif command := match.group("curl"):
+            # Older direct user flags also masked after `.curl` and URL tokens.
+            # That evidence must survive without arming the newer proxy and cluster forms.
+            legacy_curl |= command == "curl"
+            token_start = match.start()
+            while token_start and not text[token_start - 1].isspace():
+                token_start -= 1
+            if text.find("://", token_start, match.start()) != -1:
+                continue
             curl = True
+            literal_curl = source_slice is None or source_slice(*match.span()) == command
+            markdown = text.startswith("`", token_start) and not text.startswith("``", token_start)
         elif match.group("continuation"):
             continue
         elif match.group("end"):
-            curl = False
-        elif curl:
-            value = match.group("userval")
-            if ":" not in value:
+            curl = legacy_curl = literal_curl = markdown = False
+        elif curl or legacy_curl:
+            group = "quotedoptionval" if match.group("optionquote") else "userval"
+            first, last = match.span(group)
+            value = match.group(group)
+            user, colon, password = value.partition(":")
+            proxy = match.group("proxy") is not None
+            cluster = match.group("cluster") is not None
+            unquoted = group == "userval" and not match.group("userquote")
+            if (
+                not colon
+                or (not curl and (proxy or cluster))
+                or (
+                    not proxy
+                    and literal_curl
+                    and _curl_text_example(
+                        value,
+                        first,
+                        unquoted=unquoted,
+                        markdown=markdown,
+                        source_slice=source_slice,
+                    )
+                    and (
+                        source_slice is None
+                        or source_slice(match.start(), first) == text[match.start() : first]
+                    )
+                )
+            ):
                 continue
-            user, password = value.split(":", 1)
-            if not user or not _auth_value_is_secret(password, cued=True):
+            quote = ""
+            tail = ""
+            if unquoted and password.startswith(("'", '"')):
+                quote = password[0]
+                password = password[1:]
+                if password.endswith(quote):
+                    tail = quote
+                    password = password[:-1]
+            full_login = bool(user) and legacy_curl and not proxy and not cluster
+            if not proxy and _curl_password_is_reference(match, password, full_login=full_login):
+                if full_login and quote:
+                    # The old unquoted match covered the login even if the quoted value is code.
+                    found.append(_secret_span(first, first + len(user) + 1, _SECRET_MARKER))
                 continue
-            first, last = match.span("userval")
-            found.append(_secret_span(first, last, _SECRET_MARKER))
+            # Prose can drop a closing option quote on its first pass. A later
+            # pass must keep neighboring words after the already masked option.
+            if (password == _SECRET_MARKER and not full_login) or (
+                group == "quotedoptionval"
+                and last == match.end()
+                and (first_word := value.partition(" ")[0])
+                and (
+                    first_word == _SECRET_MARKER
+                    or (not full_login and first_word.partition(":")[2] == _SECRET_MARKER)
+                )
+            ):
+                continue
+            # A bare login can carry the credential itself. Lowercase -u and --user also
+            # masked the entire login before the password-only recognizers were added.
+            head = "" if full_login or not password else user + colon + quote
+            if full_login or not password:
+                tail = ""
+            found.append(
+                _SecretSpan(first, last, head, tail, first + len(head), last - len(tail), True)
+            )
     return found
 
 
@@ -1212,20 +1434,27 @@ def redact_secrets(text: str) -> str:
     return _write_marked(text, _redaction_spans(text))
 
 
-def _redaction_spans(text: str) -> list[_SecretSpan]:
+def _redaction_spans(
+    text: str, *, source_slice: Callable[[int, int], str] | None = None
+) -> list[_SecretSpan]:
     # Primary recognizers read the same input. Publishing a marker between them
     # can destroy a later cue, command opener, or overlapping credential prefix.
-    inline = _inline_secret_matches(text)
+    inline = _inline_secret_matches(text, source_slice=source_slice)
     found = list(inline)
-    if "-u" in text:
-        found.extend(_curl_secret_matches(text))
+    found.extend(_curl_secret_matches(text, source_slice=source_slice))
     if _needs_secret_scan(text):
-        found.extend(_secret_matches(text))
+        found.extend(_secret_matches(text, source_slice=source_slice))
     if inline:
-        view, project = _marked_view(text, found)
-        derived = _secret_matches(view) if _needs_secret_scan(view) else []
-        if "-u" in view:
-            derived.extend(_curl_secret_matches(view))
+        view, project, source_interval = _marked_view(text, found)
+
+        def derived_source(first: int, last: int) -> str:
+            first, last = source_interval(first, last)
+            return text[first:last] if source_slice is None else source_slice(first, last)
+
+        derived = (
+            _secret_matches(view, source_slice=derived_source) if _needs_secret_scan(view) else []
+        )
+        derived.extend(_curl_secret_matches(view, source_slice=derived_source))
         found.extend(project(derived))
     return found
 
@@ -1400,6 +1629,7 @@ _MASK_USER_FLAGS: Final = frozenset({"-u", "--user", "--proxy-user"})
 _MASK_HTTPIE_PROGRAMS: Final = frozenset({"http", "https", "xh"})
 # curl takes `-u` inside a cluster of short flags (`-sSu`, `-fsSLu`).
 _MASK_CURL_USER_CLUSTER: Final = re.compile(r"^-[A-Za-z]*u$")
+_CURL_JOINED_USER_FLAG: Final = re.compile(r"^(?:--user=|-u)")
 _MASK_COOKIE_FLAGS: Final = frozenset({"--cookie"})
 # Joined spellings of the same flags, for the HTTP clients only.
 _MASK_HTTP_WORD_FORMS: Final = (
@@ -1726,23 +1956,48 @@ def _positional_credential(words: list[str], start: int, program: str) -> int:
 _PYTEST_PLUGIN_OFF: Final = re.compile(r"no:[A-Za-z_][A-Za-z0-9_.]*")
 
 
+def _unquote_curl_word(word: str) -> str:
+    return word[1:-1] if len(word) > 1 and word[0] in "'\"" and word[-1] == word[0] else word
+
+
+def _curl_word_example(word: str, *, joined: bool = False) -> bool:
+    if word[-1:] in {";", "`"}:
+        word = word[:-1]
+    word = _unquote_curl_word(word)
+    if joined:
+        flag = _CURL_JOINED_USER_FLAG.match(word)
+        return flag is not None and _unquote_curl_word(word[flag.end() :]) in _CURL_EXAMPLES
+    return word in _CURL_EXAMPLES
+
+
 def mask_words(  # noqa: PLR0915 - one branch per masked form, read in one pass
-    words: list[str], *, prose: bool = False, pytest: bool = False
+    words: list[str],
+    *,
+    prose: bool = False,
+    pytest: bool = False,
+    source_unchanged: Callable[[int], bool] | None = None,
 ) -> list[str]:
     """Each word of a command with every value a named form carries replaced.
 
     Per word, before the words are joined and re-quoted, so a quoted value with
     whitespace in it is masked whole (review, 2026-09-24). A named flag masks
     the word after it, except that a pytest runner's `-p no:<name>` is shown.
-    `prose` reads a person's sentence rather than a command: the forms that need
-    a command around them (a header after `-H`, an HTTP client's `-u`) are left
-    out, so ordinary words are not taken for values.
+    `prose` leaves out header-flag parsing because a person's sentences can
+    name flags. An identified HTTP client still supplies a cue for `-u`.
     [DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work)
     """
     start = _program(words)
     program = os.path.basename(words[start]) if start < len(words) else ""
+    if program.lower() == "curl" and "://" not in words[start]:
+        program = "curl"
     flags = _MASK_FLAGS | _MASK_COMMAND_FLAGS.get(program, frozenset())
     http = program in _MASK_HTTP_PROGRAMS
+    curl_prose = prose and program == "curl"
+    curl_examples = (
+        curl_prose
+        and "://" not in words[start]
+        and (source_unchanged is None or source_unchanged(start))
+    )
     user_flags = _MASK_USER_FLAGS | {"-a"} if program in _MASK_HTTPIE_PROGRAMS else _MASK_USER_FLAGS
     word_forms = _MASK_WORD_FORMS + (_MASK_HTTP_WORD_FORMS if http else ())
     word_forms += _MASK_COMMAND_WORD_FORMS.get(program, ())
@@ -1758,7 +2013,8 @@ def mask_words(  # noqa: PLR0915 - one branch per masked form, read in one pass
             word_forms += (_MASK_AWS_VALUE_FORM,)
     positional = _positional_credential(words, start, program)
     masked: list[str] = []
-    mask_next = user_next = header_owed = scheme_next = plugin_flag = pair_next = False
+    mask_next = header_owed = scheme_next = plugin_flag = pair_next = False
+    user_flag = ""
     for index, word in enumerate(words):
         header_here = not prose and index > 0 and words[index - 1] in _MASK_HEADER_FLAGS
         if header_owed:
@@ -1779,11 +2035,24 @@ def mask_words(  # noqa: PLR0915 - one branch per masked form, read in one pass
             key, equals, _value = word.partition("=")
             masked.append(key + equals + _SECRET_MARKER if equals else _SECRET_MARKER)
             continue
-        if user_next:
-            user_next = False
-            user, colon, _rest = word.partition(":")
+        if user_flag:
+            example = (
+                curl_examples
+                and user_flag != "--proxy-user"
+                and _curl_word_example(word)
+                and (
+                    source_unchanged is None
+                    or (source_unchanged(index - 1) and source_unchanged(index))
+                )
+            )
+            user_flag = ""
+            user, colon, rest = word.partition(":")
             if colon:
-                masked.append(user + colon + _SECRET_MARKER)
+                if example:
+                    masked.append(word)
+                else:
+                    head = "" if curl_prose and not _unquote_curl_word(rest) else user + colon
+                    masked.append(head + _SECRET_MARKER)
                 continue
         if index == positional:
             masked.append(_SECRET_MARKER)
@@ -1804,13 +2073,22 @@ def mask_words(  # noqa: PLR0915 - one branch per masked form, read in one pass
             word in user_flags or (program == "curl" and _MASK_CURL_USER_CLUSTER.match(word))
         ):
             masked.append(word)
-            user_next = True
+            user_flag = word
             continue
         if not prose and _MASK_HEADER_ALONE.match(word) and _is_header_word(word, header_here):
             masked.append(word)
             header_owed = scheme_next = True
             continue
-        masked.append(_mask_one_word(word, word_forms, header_here=header_here, prose=prose))
+        if (
+            curl_examples
+            and _curl_word_example(word, joined=True)
+            and (source_unchanged is None or source_unchanged(index))
+        ):
+            # The fallback must keep literal examples, even if a shell delimiter
+            # or quote made the whitespace word longer than the example itself.
+            masked.append(word)
+        else:
+            masked.append(_mask_one_word(word, word_forms, header_here=header_here, prose=prose))
     return masked
 
 
@@ -1880,7 +2158,7 @@ _MASK_PROSE_LINE_BREAK: Final = re.compile(r"[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]
 
 # Zero-width space, word joiner, invisible operators, BOM, soft hyphen and
 # the Mongolian vowel separator: invisible, and none of them spells a word.
-_MASK_INVISIBLE: Final = frozenset("\u200b\u2060\u2061\u2062\u2063\u2064\ufeff\u00ad\u180e")
+_MASK_INVISIBLE: Final = re.compile("[\u200b\u2060\u2061\u2062\u2063\u2064\ufeff\u00ad\u180e]+")
 # The control characters `str.splitlines` breaks on, so a key split by any of
 # them is still joined and masked.
 _LINE_BREAKS: Final = frozenset("\n\r\x0b\x0c\x1c\x1d\x1e\x85")
@@ -1933,7 +2211,9 @@ def _ordinary_key_name_spans(text: str) -> list[tuple[int, int]]:
     return ordinary
 
 
-def _control_secret_matches(original: str, context: str) -> list[_SecretSpan]:
+def _control_secret_matches(
+    original: str, context: str, *, source_slice: Callable[[int, int], str]
+) -> list[_SecretSpan]:
     # Replacing controls must not invent a mixed-case cue inside an exempt
     # name, including in derived scans whose projected spans keep only bodies.
     # Retain the original name controls in this same-length recognition view;
@@ -1944,7 +2224,7 @@ def _control_secret_matches(original: str, context: str) -> list[_SecretSpan]:
         parts.extend((context[at:first], original[first:last]))
         at = last
     parts.append(context[at:])
-    return _redaction_spans("".join(parts))
+    return _redaction_spans("".join(parts), source_slice=source_slice)
 
 
 def mask_prose(text: str) -> str:
@@ -1968,35 +2248,79 @@ def mask_prose(text: str) -> str:
     def control(ch: str) -> bool:
         return unicodedata.category(ch) == "Cc" and ch not in _LINE_BREAKS
 
-    text = "".join("" if ch in _MASK_INVISIBLE else ch for ch in text)
-    found = _redaction_spans(text)
+    original = text
+    invisible = [match.span() for match in _MASK_INVISIBLE.finditer(original)]
+    text, cuts, removed = _view(original, invisible) if invisible else (original, [], [])
+
+    def source_slice(first: int, last: int) -> str:
+        return original[
+            _before_view_cut(cuts, removed, first) : _after_view_cut(cuts, removed, last)
+        ]
+
+    found = _redaction_spans(text, source_slice=source_slice if cuts else None)
     # An ASCII stand-in keeps a key-shaped NAME=value syntactically an
     # assignment in the derived command view. It is never published.
     raw_evidence = _ordered_secret_spans(found)
-    raw_view, raw_project = _marked_view(text, raw_evidence, marker="RedactedValue123")
+    raw_view, raw_project, raw_interval = _marked_view(
+        text, raw_evidence, marker="RedactedValue123"
+    )
     # Controls become spaces only in the contextual view. Its offsets still map
     # directly to the shape view, which must read through controls inside keys.
     context = "".join(" " if control(ch) else ch for ch in text)
     if context != text:
-        found.extend(_control_secret_matches(text, context))
+        found.extend(_control_secret_matches(text, context, source_slice=source_slice))
     found.extend(_prose_userinfo_matches(context))
-    view, project = _marked_view(context, found, marker="RedactedValue123")
-    found.extend(_prose_secret_matches(context, found))
+    view, project, interval = _marked_view(context, found, marker="RedactedValue123")
+    found.extend(_prose_secret_matches(context, found, source_slice=source_slice if cuts else None))
     if view != context:
-        found.extend(project(_prose_secret_matches(view, [], marker="RedactedValue123")))
+        found.extend(
+            project(
+                _prose_secret_matches(
+                    view,
+                    [],
+                    marker="RedactedValue123",
+                    source_slice=lambda a, b: source_slice(*interval(a, b)),
+                )
+            )
+        )
     raw_context = "".join(" " if control(ch) else ch for ch in raw_view)
     if raw_context not in (view, context):
-        found.extend(raw_project(_prose_secret_matches(raw_context, [], marker="RedactedValue123")))
+        found.extend(
+            raw_project(
+                _prose_secret_matches(
+                    raw_context,
+                    [],
+                    marker="RedactedValue123",
+                    source_slice=lambda a, b: source_slice(*raw_interval(a, b)),
+                )
+            )
+        )
     if context != text and raw_evidence:
         # Control normalization historically followed an initial shape pass.
         # Its real marker can expose another header before userinfo is read;
         # the ASCII command stand-in alone cannot preserve that admission.
-        control_view, control_project = _marked_view(text, raw_evidence)
+        control_view, control_project, source_interval = _marked_view(text, raw_evidence)
         control_context = "".join(" " if control(ch) else ch for ch in control_view)
-        control_found = _control_secret_matches(control_view, control_context)
-        control_rendered, body_project = _marked_view(control_context, control_found)
+
+        def control_source(first: int, last: int) -> str:
+            return source_slice(*source_interval(first, last))
+
+        control_found = _control_secret_matches(
+            control_view, control_context, source_slice=control_source
+        )
+        control_rendered, body_project, body_interval = _marked_view(control_context, control_found)
         found.extend(control_project(control_found))
-        found.extend(control_project(body_project(_prose_secret_matches(control_rendered, []))))
+        found.extend(
+            control_project(
+                body_project(
+                    _prose_secret_matches(
+                        control_rendered,
+                        [],
+                        source_slice=lambda a, b: control_source(*body_interval(a, b)),
+                    )
+                )
+            )
+        )
     return " ".join(_write_marked(context, found).split())
 
 
@@ -2009,7 +2333,11 @@ def _prose_userinfo_matches(context: str) -> list[_SecretSpan]:
 
 
 def _prose_secret_matches(
-    context: str, evidence: list[_SecretSpan], *, marker: str = _SECRET_MARKER
+    context: str,
+    evidence: list[_SecretSpan],
+    *,
+    marker: str = _SECRET_MARKER,
+    source_slice: Callable[[int, int], str] | None = None,
 ) -> list[_SecretSpan]:
     found = _prose_userinfo_matches(context)
     tokens = [(m.start(), m.end(), m.group()) for m in _MASK_PROSE_TOKEN.finditer(context)]
@@ -2096,6 +2424,7 @@ def _prose_secret_matches(
                         basic=bool(words)
                         and words[-1].strip("'\"").lower() == "basic"
                         and index + 1 == len(line),
+                        bearer=bool(words) and words[-1].strip("'\"").lower() == "bearer",
                     )
                     or masked_here
                 )
@@ -2113,7 +2442,15 @@ def _prose_secret_matches(
                 and (named.group(1).strip("'\"").lower() not in _MASK_AUTH_SCHEMES)
             ):
                 header = False
-    for masked in (words, mask_words(original_words, prose=True)):
+
+    def source_unchanged(index: int) -> bool:
+        first, last, word = tokens[index]
+        return source_slice is None or source_slice(first, last) == word
+
+    for masked in (
+        words,
+        mask_words(original_words, prose=True, source_unchanged=source_unchanged),
+    ):
         for (first, last, word), shown in zip(tokens, masked, strict=True):
             if word != shown:
                 found.append(_secret_span(first, last, shown, contextual=True))
@@ -2163,20 +2500,26 @@ def fenced(tag: str, text: str, *, nonce: str, **attributes: object) -> str:
     return f'<{tag}{attrs} id="{nonce}">\n{text}\n</{tag} id="{nonce}">\n'
 
 
-def _safe_controls(text: str) -> str:
+def _safe_controls(text: str) -> tuple[str, list[int], list[int]]:
     # Turning `so<ZWSP>rt_key` into
     # `so rt_key` would create a new cue after the full name was exempted.
     # Join controls only inside structural names, after original redaction.
-    if "k" not in text and "K" not in text:
-        return _UNSAFE_CHARS.sub(" ", text)
-    parts: list[str] = []
+    def collapsed(first: int, last: int) -> Iterator[tuple[int, int]]:
+        for run in _UNSAFE_CHARS.finditer(text, first, last):
+            if run.end() - run.start() > 1:
+                yield run.start() + 1, run.end()
+
+    dropped: list[tuple[int, int]] = []
     at = 0
-    for first, last in _ordinary_key_name_spans(text):
-        parts.append(_UNSAFE_CHARS.sub(" ", text[at:first]))
-        parts.append(_UNSAFE_CHARS.sub("", text[first:last]))
+    names = _ordinary_key_name_spans(text) if "k" in text or "K" in text else []
+    for first, last in names:
+        dropped.extend(collapsed(at, first))
+        dropped.extend(run.span() for run in _UNSAFE_CHARS.finditer(text, first, last))
         at = last
-    parts.append(_UNSAFE_CHARS.sub(" ", text[at:]))
-    return "".join(parts)
+    dropped.extend(collapsed(at, len(text)))
+    # Literal examples still need the original spelling after control runs become spaces.
+    text, cuts, removed = _view(text, dropped) if dropped else (text, [], [])
+    return _UNSAFE_CHARS.sub(" ", text), cuts, removed
 
 
 def safe_text(value: Any, limit: int) -> str:
@@ -2215,25 +2558,50 @@ def safe_text(value: Any, limit: int) -> str:
     text = str(value or "").encode("utf-8", "replace").decode("utf-8")
     if _printable_ascii(text) or _UNSAFE_CHARS.search(text) is None:
         return redact_clip(text, limit)
+    original = text
+    breaks = [
+        (match.start() + 1, match.end())
+        for match in _UNSAFE_BREAKS.finditer(original)
+        if match.end() - match.start() > 1
+    ]
+    text, cuts, removed = _view(original, breaks) if breaks else (original, [], [])
     text = _UNSAFE_BREAKS.sub(" ", text)
+
+    def source_slice(first: int, last: int) -> str:
+        return original[
+            _after_view_cut(cuts, removed, first) : _after_view_cut(cuts, removed, last)
+        ]
+
+    found = _redaction_spans(text, source_slice=source_slice)
     if _UNSAFE_CHARS.search(text) is None:
-        return redact_clip(text, limit)
-    marked = redact_secrets(text)
-    normalized = _safe_controls(marked)
+        return _clip_marked(_write_marked(text, found), limit)
+    marked, _, source_interval = _marked_view(text, found)
+    normalized, control_cuts, control_removed = _safe_controls(marked)
+
+    def normalized_source(first: int, last: int) -> str:
+        return source_slice(
+            *source_interval(
+                _after_view_cut(control_cuts, control_removed, first),
+                _after_view_cut(control_cuts, control_removed, last),
+            )
+        )
+
     # Space normalization admits new boundaries (`s<NUL>ORT_KEY`, `Bearer<NUL>`).
     # Controls are already gone: ANSI logs need only the gated contextual scans,
     # while retained joiners/markup may still split a cue beside a new space.
-    found = _secret_matches(normalized) if _needs_secret_scan(normalized) else []
-    if "-u" in normalized:
-        found.extend(_curl_secret_matches(normalized))
+    found = (
+        _secret_matches(normalized, source_slice=normalized_source)
+        if _needs_secret_scan(normalized)
+        else []
+    )
+    found.extend(_curl_secret_matches(normalized, source_slice=normalized_source))
     if "<" in normalized or not _printable_ascii(normalized):
-        inline = _inline_secret_matches(normalized)
+        inline = _inline_secret_matches(normalized, source_slice=normalized_source)
         found.extend(inline)
         if inline:
-            view, project = _marked_view(normalized, found)
+            view, project, _ = _marked_view(normalized, found)
             derived = _secret_matches(view) if _needs_secret_scan(view) else []
-            if "-u" in view:
-                derived.extend(_curl_secret_matches(view))
+            derived.extend(_curl_secret_matches(view))
             found.extend(project(derived))
     return _clip_marked(_write_marked(normalized, found), limit)
 
