@@ -320,11 +320,6 @@ class RefusalTest(HomeCase):
                                     else f"The {action} action was given no Claude Code session id, so {outcomes[action]}.\n"
                                 )
                             )
-                            if action == "project" and other:
-                                expected = (
-                                    "No project brief was read. A Codex project brief requires "
-                                    "an explicitly selected session.\n"
-                                )
                             self.assertEqual(expected, err.getvalue())
                             self.assertEqual([], fake.requests)
                         if not tty or other:

@@ -171,6 +171,9 @@ SENTENCES: Final[dict[str, str]] = {
         "No project brief was read. A Codex project brief requires an explicitly selected session."
     ),
     "bad_session_flag": "The session must look like claude:SESSION_ID, with no spaces.",
+    "bad_project_session_flag": (
+        "The session must look like claude:SESSION_ID or codex:SESSION_ID, with no spaces."
+    ),
     "unreadable_reply": "Compass answered, but its session list could not be read.",
     "caller_unknown": (
         "Compass could not tell which session is asking, so this list may include it."
@@ -1234,7 +1237,9 @@ def resolve_session(  # noqa: PLR0911 - one exit per way the caller is named or 
     if flag is not None:
         match = _SESSION_FLAG.fullmatch(flag)
         if match is None:
-            return Unresolved(sentence("bad_session_flag"))
+            return Unresolved(
+                sentence("bad_project_session_flag" if action == "project" else "bad_session_flag")
+            )
         sid = match.group(2)
         if action == "group" and (
             re.fullmatch(
@@ -1249,7 +1254,8 @@ def resolve_session(  # noqa: PLR0911 - one exit per way the caller is named or 
     value = status_line.get("session_id") if status_line is not None else None
     if isinstance(value, str) and _SESSION_ID.fullmatch(value):
         return Session("claude", value, "status line")
-    if action == "drift" and not environ.get(CLAUDE_SESSION_ENV):
+    value = environ.get(CLAUDE_SESSION_ENV)
+    if action == "drift" and not value:
         # Only drift infers a Codex caller: a Codex thread id names the session the typed
         # `$compass drift` came from. Both markers set is Codex started inside Claude Code, or the
         # reverse, and which one asked cannot be told, so it stays refused below.
@@ -1257,8 +1263,9 @@ def resolve_session(  # noqa: PLR0911 - one exit per way the caller is named or 
         if thread is not None and _SESSION_ID.fullmatch(thread):
             return Session("codex", thread, "environment")
     if any(environ.get(name) for name in OTHER_SESSION_ENV):
+        if action == "project" and not value and environ.get(CODEX_SESSION_ENV):
+            return Unresolved(sentence("project_explicit_codex"))
         return unresolved_caller("other_harness", action)
-    value = environ.get(CLAUDE_SESSION_ENV)
     if value is not None and _SESSION_ID.fullmatch(value):
         return Session("claude", value, "environment")
     return unresolved_caller("no_session", action)
@@ -1269,8 +1276,6 @@ def unresolved_caller(reason: str, action: str | None) -> Unresolved:
         return Unresolved(sentence(reason))
     if action == "drift":
         return Unresolved(sentence("no_session_in_session" if reason == "no_session" else reason))
-    if action == "project" and reason == "other_harness":
-        return Unresolved(sentence("project_explicit_codex"))
     outcomes = {
         "monitor": "no Live monitor was started or stopped",
         "project": "no project brief was read",

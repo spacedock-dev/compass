@@ -696,7 +696,11 @@ class ProjectCommandTest(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with (
             FakeDashboard(answers=answers) as fake,
-            mock.patch.dict("os.environ", {}, clear=True),
+            mock.patch.dict(
+                "os.environ",
+                {"CODEX_THREAD_ID": "019c0000-1111-7222-8333-000000000000"},
+                clear=True,
+            ),
             contextlib.redirect_stdout(out),
             contextlib.redirect_stderr(err),
         ):
@@ -724,6 +728,22 @@ class ProjectCommandTest(unittest.TestCase):
             fake.requests,
         )
 
+    def test_a_malformed_project_session_flag_shows_both_accepted_forms(self) -> None:
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            mock.patch.dict("os.environ", {}, clear=True),
+            mock.patch.object(terminal_client, "ensure_dashboard") as dashboard,
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            code = entry.main(["--project", "--session", "codex:"])
+        self.assertEqual((1, ""), (code, out.getvalue()))
+        dashboard.assert_not_called()
+        self.assertEqual(
+            "The session must look like claude:SESSION_ID or codex:SESSION_ID, with no spaces.\n",
+            err.getvalue(),
+        )
+
     def test_a_codex_thread_id_does_not_name_the_project_caller(self) -> None:
         caller = next(
             row
@@ -731,9 +751,18 @@ class ProjectCommandTest(unittest.TestCase):
             if row["harness"] == "codex"
         )
         codex_env = {"CODEX_THREAD_ID": caller["sid"]}
-        for env in (
-            codex_env,
-            {**codex_env, "CLAUDE_CODE_SESSION_ID": "a1b2c3d4-1111-2222-3333-444455556666"},
+        for env, expected in (
+            (
+                codex_env,
+                "No project brief was read. A Codex project brief requires an explicitly selected session.\n",
+            ),
+            (
+                {**codex_env, "CLAUDE_CODE_SESSION_ID": "a1b2c3d4-1111-2222-3333-444455556666"},
+                (
+                    "The project action cannot identify this caller inside another tool's session, "
+                    "so no project brief was read.\n"
+                ),
+            ),
         ):
             with self.subTest(env=env):
                 out, err = io.StringIO(), io.StringIO()
@@ -746,7 +775,7 @@ class ProjectCommandTest(unittest.TestCase):
                     code = entry.main(["--project"])
                 self.assertEqual((1, ""), (code, out.getvalue()))
                 dashboard.assert_not_called()
-                self.assertIn("requires an explicitly selected session", err.getvalue())
+                self.assertEqual(expected, err.getvalue())
 
     def test_a_person_is_not_marked_as_a_peer_with_the_same_short_session_id(self) -> None:
         answers = self.answers()

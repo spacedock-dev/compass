@@ -335,6 +335,8 @@ can leave the line empty. Open the session page or use `--drift` for a stored pr
 
 `spacedock-compass --project --session codex:ID` reads the project brief for a Codex session.
 For a Claude Code session, use `--session claude:ID` or omit `--session` inside that session.
+If Compass sees both a Claude Code session and a Codex thread in the shell, use `--session`
+to choose which one to read.
 
 The brief lists the project's sessions, the current task, your latest instruction and what is
 running now. It ends with a `Needs you:` line, which reads one of these:
