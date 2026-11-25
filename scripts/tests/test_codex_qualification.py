@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import errno
 import io
 import json
 import os
@@ -58,11 +59,11 @@ class _CodexInstallationFixture(unittest.TestCase):
         self.version_runner = mock.Mock(
             return_value=mock.Mock(returncode=0, stdout="codex-cli 0.167.0\n")
         )
-        resolve = scorer._codex_optional_manifest
+        self.resolve_manifest = scorer._codex_optional_manifest
 
         def resolve_package(node: str, launcher: str, package: str) -> str | None:
             if Path(node) != self.home / "bin/node":
-                return resolve(node, launcher, package)
+                return self.resolve_manifest(node, launcher, package)
             manifest = self.package.parent / "codex-linux-x64/package.json"
             return str(manifest) if manifest.is_file() else None
 
@@ -198,10 +199,9 @@ process.exit(child.status ?? 1);
         self.assertEqual(str(self.native), verified.native)
         self.assertEqual(scorer.file_identity(str(self.native)), verified.identity)
         self.assertEqual("codex-cli 0.167.0", verified.version)
-        self.version_runner.assert_called_once()
         self.assertEqual(
-            [str(self.node), str(self.launcher), "--version"],
-            self.version_runner.call_args.args[0],
+            [[str(self.native), "--version"], [str(self.node), str(self.launcher), "--version"]],
+            [call.args[0] for call in self.version_runner.call_args_list],
         )
         self.assertNotEqual(verified.installation_digest, verified.identity[-1])
 
@@ -243,14 +243,70 @@ process.exit(child.status ?? 1);
             self.verify()
         self.version_runner.assert_not_called()
 
+    def test_a_person_refuses_a_missing_native_executable_before_starting_node(self) -> None:
+        self.native.unlink()
+        with (
+            mock.patch.object(scorer, "_codex_optional_manifest", self.resolve_manifest),
+            mock.patch.object(
+                subprocess, "run", return_value=mock.Mock(returncode=0, stdout="null")
+            ) as node,
+            self.assertRaisesRegex(scorer.BinaryError, "native Codex installation is missing"),
+        ):
+            self.verify()
+        self.assertEqual(0, node.call_count)
+        self.version_runner.assert_not_called()
+
+    def test_local_codex_checks_use_pinned_node_and_no_producer_credentials(self) -> None:
+        identity = scorer.file_identity
+        identified = set()
+        node = str(self.node)
+        credentials = {
+            "OPENAI_API_KEY": "synthetic",
+            "OPENAI_ACCESS_TOKEN": "synthetic",
+            "ANTHROPIC_API_KEY": "synthetic",
+            "CODEX_HOME": str(self.home),
+            "NODE_OPTIONS": "synthetic",
+            "NODE_PATH": "synthetic",
+        }
+        unpinned = []
+        forwarded = set()
+
+        def record(path: str) -> Any:
+            result = identity(path)
+            identified.add(path)
+            return result
+
+        def probe(argv: list[str], *, env: dict[str, str], **_kwargs: Any) -> Any:
+            if argv[0] == node and node not in identified:
+                unpinned.append(argv[1])
+            forwarded.update(credentials.keys() & env.keys())
+            return mock.Mock(returncode=0, stdout="null" if "-e" in argv else "codex-cli 0.167.0")
+
+        self.version_runner.side_effect = probe
+        with (
+            mock.patch.dict(os.environ, credentials),
+            mock.patch.object(scorer, "_codex_optional_manifest", self.resolve_manifest),
+            mock.patch.object(scorer, "file_identity", side_effect=record),
+            mock.patch.object(subprocess, "run", side_effect=probe) as lookup,
+        ):
+            self.verify()
+        lookup.assert_called()
+        self.version_runner.assert_called()
+        self.assertEqual(([], set()), (unpinned, forwarded))
+
     def test_a_person_can_pin_the_current_platform_package_layout(self) -> None:
         self.platform_package()
         self.assertEqual(str(self.native), self.verify().native)
 
-    def test_a_person_cannot_accept_a_native_version_that_differs_from_the_package(self) -> None:
-        self.version_runner.return_value.stdout = "codex-cli 0.168.0"
-        with self.assertRaises(scorer.BinaryError):
-            self.verify()
+    def test_a_person_refuses_if_either_codex_version_differs_from_the_package(self) -> None:
+        def version(argv: list[str], **_kwargs: Any) -> Any:
+            advertised = "0.166.0" if argv[0] == mismatched else "0.167.0"
+            return mock.Mock(returncode=0, stdout=f"codex-cli {advertised}")
+
+        self.version_runner.side_effect = version
+        for mismatched in (str(self.native), str(self.node)):
+            with self.subTest(mismatched=mismatched), self.assertRaises(scorer.BinaryError):
+                self.verify()
 
     def test_a_person_refuses_malformed_package_metadata_before_running_version(self) -> None:
         path = self.package / "package.json"
@@ -918,6 +974,84 @@ class CodexQualificationTest(_CodexInstallationFixture):
         self.assertEqual(10, len(self.launches))
         self.assertFalse(any(attempt["retry"] for attempt in calls))
 
+    def test_a_launch_receipt_write_failure_refuses_without_spawning_or_retrying(self) -> None:
+        from compass_runtime import supervise  # noqa: PLC0415 - deferred runtime
+
+        construct = scorer.codex_model
+        write = authority.write_receipt
+        injected = False
+
+        def no_space(path: str, body: dict[str, Any]) -> None:
+            nonlocal injected
+            if body.get("kind") == "launch" and not injected:
+                injected = True
+                raise OSError(errno.ENOSPC, "injected receipt allocation failure")
+            write(path, body)
+
+        with (
+            mock.patch.object(authority, "write_receipt", side_effect=no_space),
+            mock.patch.object(
+                scorer,
+                "codex_model",
+                side_effect=lambda config, verified, transport, **_kw: construct(
+                    config, verified, transport
+                ),
+            ),
+            mock.patch.object(supervise, "_spawn", side_effect=KeyboardInterrupt) as spawn,
+            contextlib.suppress(KeyboardInterrupt),
+        ):
+            self.assertEqual(2, self.run_one())
+        self.assertTrue(injected)
+        self.assertEqual(0, spawn.call_count)
+        self.assertIn(
+            "Refused: the Codex launch fence could not be persisted. No further Codex launch.",
+            self.output.getvalue(),
+        )
+        (call,) = self.study()._state()[2]
+        self.assertEqual("charged", call["status"])
+        self.assertIs(call["launch_armed"], False)
+        self.assertIs(call["retry"], False)
+        self.assertEqual(0, self.reconcile(call["id"], "refunded"))
+
+    def test_supervised_fence_and_node_checks_leave_the_spawn_lock_available(self) -> None:
+        from compass_runtime import supervise  # noqa: PLC0415 - deferred runtime
+
+        construct = scorer.codex_model
+        arm = authority.CodexLedger.arm_launch
+        resolve = scorer._codex_optional_manifest
+        during: list[tuple[str, bool]] = []
+
+        def fence(ledger: Any, charge: str) -> None:
+            during.append(("fence", supervise._LOCK.locked()))
+            arm(ledger, charge)
+
+        def lookup(node: str, launcher: str, package: str) -> str | None:
+            if during:
+                during.append(("lookup", supervise._LOCK.locked()))
+            return resolve(node, launcher, package)
+
+        def spawn(*_args: Any, **_kwargs: Any) -> Any:
+            (call,) = self.study()._state()[2]
+            self.assertIs(call["launch_armed"], True)
+            raise KeyboardInterrupt
+
+        with (
+            mock.patch.object(authority.CodexLedger, "arm_launch", fence),
+            mock.patch.object(scorer, "_codex_optional_manifest", side_effect=lookup),
+            mock.patch.object(
+                scorer,
+                "codex_model",
+                side_effect=lambda config, verified, transport, **_kw: construct(
+                    config, verified, transport
+                ),
+            ),
+            mock.patch.object(supervise, "_spawn", side_effect=spawn) as attempted,
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            self.run_one()
+        attempted.assert_called_once()
+        self.assertEqual([("fence", False), ("lookup", False)], during)
+
     def test_a_person_cannot_swap_the_cli_while_the_launch_fence_lands(self) -> None:
         arm = authority.CodexLedger.arm_launch
 
@@ -1050,7 +1184,7 @@ class CodexQualificationTest(_CodexInstallationFixture):
                 ),
                 kwargs["output_limit"],
             )
-            kwargs["before_spawn"]()
+            kwargs["prepare_spawn"]()
             return self.fake_runner(argv, **kwargs)
 
         construct = scorer.codex_model

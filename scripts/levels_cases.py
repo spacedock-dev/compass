@@ -1208,16 +1208,53 @@ class _ClaudeWitness:
     def _path(self, key: str) -> str:
         return os.path.join(self.folder, digest([self.commit, key]) + ".json")
 
-    def _read(self, key: str) -> Any:
+    def _batch_root(self) -> str:
+        path = os.path.join(self.folder, digest(self.commit) + ".batches")
+        if os.path.islink(path):
+            raise abstention_ledger.LedgerError(
+                "the Claude reading witness batch directory is symlinked"
+            )
+        return path
+
+    @staticmethod
+    def _read_receipt(path: str) -> Any:
         return abstention_ledger._review_json(  # noqa: SLF001
-            self._path(key), "Claude reading witness", cap=4096, optional=True
+            path, "Claude reading witness", cap=4096, optional=True
         )
 
-    def _check(self, key: str, reading: Any, *, allow_missing: bool = False) -> None:
+    def _read(self, key: str) -> Any:
+        path = self._path(key)
+        missing = abstention_ledger._MISSING  # noqa: SLF001
+        receipt = self._read_receipt(path)
+        if receipt is not missing:
+            return receipt
+        try:
+            batches = os.scandir(self._batch_root())
+        except FileNotFoundError:
+            return missing
+        with batches:
+            for batch in batches:
+                if not batch.is_dir(follow_symlinks=False):
+                    raise abstention_ledger.LedgerError(
+                        "a Claude reading witness batch is not a directory"
+                    )
+                receipt = self._read_receipt(os.path.join(batch.path, os.path.basename(path)))
+                if receipt is not missing:
+                    return receipt
+        return missing
+
+    def _missing(self, key: str, reading: Any) -> bool:
         found = self._read(key)
-        if allow_missing and found is abstention_ledger._MISSING:  # noqa: SLF001
-            return
+        if found is abstention_ledger._MISSING:  # noqa: SLF001
+            return True
         if found != {"reading": reading_digest(reading)}:
+            raise abstention_ledger.LedgerError(
+                f"{key}: the Claude reading has changed or is unbound"
+            )
+        return False
+
+    def _check(self, key: str, reading: Any) -> None:
+        if self._missing(key, reading):
             raise abstention_ledger.LedgerError(
                 f"{key}: the Claude reading has changed or is unbound"
             )
@@ -1240,18 +1277,36 @@ class _ClaudeWitness:
                 )
 
     def bind_attachment(self, readings: Mapping[str, Any]) -> None:
-        for key, reading in readings.items():
-            self._check(key, reading, allow_missing=True)
-        for key, reading in readings.items():
-            self.bind(key, reading)
+        with abstention_ledger.locked(self.folder):
+            pending = {
+                os.path.basename(self._path(key)): {"reading": reading_digest(reading)}
+                for key, reading in readings.items()
+                if self._missing(key, reading)
+            }
+            if pending:
+                self._publish_batch(pending)
+
+    def _publish_batch(self, receipts: Mapping[str, Any]) -> None:
+        batches = self._batch_root()
+        # A partial or interrupted staging write never appears in the witness inventory.
+        with tempfile.TemporaryDirectory(
+            prefix=".compass-level-attach-", dir=os.path.dirname(self.folder)
+        ) as staging:
+            for filename, receipt in receipts.items():
+                abstention_ledger.write_receipt(os.path.join(staging, filename), receipt)
+            os.makedirs(batches, mode=0o700, exist_ok=True)
+            abstention_ledger._codex_sync_dir(self.folder)  # noqa: SLF001
+            os.replace(staging, os.path.join(batches, os.path.basename(staging)))
+            abstention_ledger._codex_sync_dir(batches)  # noqa: SLF001
+            abstention_ledger._codex_sync_dir(os.path.dirname(self.folder))  # noqa: SLF001
 
     def bind(self, key: str, reading: Any) -> None:
-        os.makedirs(self.folder, mode=0o700, exist_ok=True)
-        try:
-            abstention_ledger.write_receipt(self._path(key), {"reading": reading_digest(reading)})
-        except FileExistsError:
-            if not self.matches(key, reading):
-                raise abstention_ledger.LedgerError("the Claude reading has changed") from None
+        with abstention_ledger.locked(self.folder):
+            if self._missing(key, reading):
+                os.makedirs(self.folder, mode=0o700, exist_ok=True)
+                abstention_ledger.write_receipt(
+                    self._path(key), {"reading": reading_digest(reading)}
+                )
 
 
 def _binding_problem(

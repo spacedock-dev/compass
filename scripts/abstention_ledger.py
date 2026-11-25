@@ -185,6 +185,10 @@ class OtherPacketError(LedgerError):
     """The ledger holds calls charged under other marks or other inputs."""
 
 
+class LaunchFenceError(LedgerError):
+    """A Codex reservation could not be fenced and requires offline reconciliation."""
+
+
 def digest(value: Any) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
@@ -1853,7 +1857,11 @@ class CodexLedger:
             self._append(body, kind, charge=charge_id, **fields)
 
     def arm_launch(self, charge_id: str) -> None:
-        self._charge_event(charge_id, "launch")
+        try:
+            self._charge_event(charge_id, "launch")
+        except (LedgerError, OSError) as error:
+            # The observer treats an OS error as a retryable transport failure.
+            raise LaunchFenceError("the Codex launch fence could not be persisted") from error
 
     def witness_result(
         self,

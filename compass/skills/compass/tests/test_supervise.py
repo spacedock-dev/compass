@@ -1366,6 +1366,21 @@ class TheReservationAndTheShutdownShareALockTest(unittest.TestCase):
             self.assertFalse(open_)
 
 
+class SpawnPreparationTest(unittest.TestCase):
+    def test_shutdown_during_preparation_still_refuses_spawn(self) -> None:
+        def prepare() -> None:
+            self.assertFalse(supervise._LOCK.locked())
+            supervise.kill_all()
+
+        with (
+            mock.patch.object(supervise, "_SHUTDOWN", threading.Event()),
+            mock.patch.object(supervise, "_spawn") as spawn,
+            self.assertRaises(supervise.ClosedError),
+        ):
+            supervise.run([sys.executable], prepare_spawn=prepare)
+        spawn.assert_not_called()
+
+
 class _UnreadStdin:
     """A Windows pipe nobody reads: a write blocks until the test ends."""
 

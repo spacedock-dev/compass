@@ -4214,7 +4214,8 @@ local integrity checks. The protocol does not authenticate the owner or isolate 
 sharing a UID.
 
 The scorer checkpoints the charge and records a durable launch fence after acquiring the
-output alias and checking the installation, immediately before spawning Codex. It keeps an
+output alias and checking the installation. It rechecks the installation before spawning Codex.
+A fence write failure stops scoring before another reservation. The scorer keeps an
 exclusive, digest-bound attempt record under
 `~/.cargento/codex-qualification-spend.json.results/`. These records hold local outcomes and
 bounded model explanations. Prompts and raw replies stay out. Resume compares the packet
@@ -4225,9 +4226,11 @@ protection failures even if the attempt file is missing. An existing attempt mus
 its witnessed digest and any witnessed classification before it can be retained.
 
 The approved argv invokes npm's `bin/codex.js` with the pinned Node found first on the child
-PATH. The scorer checks the version through that launcher and interpreter. It verifies Node's
-platform and architecture before resolving the platform package. Before launch it rechecks
-the launcher, Node, the package resolution, the npm manifests and the native executable.
+PATH. The scorer locates a candidate native executable and pins Node before running it.
+Both the native executable and the launcher must report the package version. Local resolution
+and version checks receive only `HOME` and `PATH` from the caller's environment. The scorer
+checks Node's target platform and architecture during package resolution. Before launch it
+rechecks the launcher, Node, the package resolution, the npm manifests and the native executable.
 The argv names a private transient output alias of the production executor's temporary file.
 A stale alias refuses before reservation, including the retry. The alias is removed after the
 invocation. The proposed allowance registers thirty producer exposures and at most one charged

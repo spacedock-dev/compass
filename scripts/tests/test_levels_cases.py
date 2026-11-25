@@ -8,6 +8,7 @@ marks' digest and the scored expectations reach the repository.
 from __future__ import annotations
 
 import datetime as dt
+import errno
 import hashlib
 import json
 import os
@@ -24,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import abstention_ledger
 import levels_cases
 
 START = dt.datetime(2026, 9, 24, 3, 0, tzinfo=dt.UTC)
@@ -819,6 +821,37 @@ class ReadTest(CaseToolTestCase):
         self.assertEqual(1, self.attach({second: reading, first: edited}))
         self.assertEqual(before, {p.name: p.read_bytes() for p in witnesses.iterdir()})
 
+    def test_an_interrupted_attachment_leaves_the_witness_inventory_and_dry_run_intact(
+        self,
+    ) -> None:
+        first, second, third, _ = self.four_cases()
+        self.assertEqual(0, self.read(first))
+        reading = self.replayed()["readings"][first]
+        witnesses = self.repo / ".git/compass-level-readings"
+        before = {p.name: p.read_bytes() for p in witnesses.iterdir()}
+        write = abstention_ledger.write_receipt
+        attempted = []
+
+        def no_space(path: str, body: Any) -> None:
+            attempted.append(path)
+            if len(attempted) == 2:
+                raise OSError(errno.ENOSPC, "injected second witness allocation failure")
+            write(path, body)
+
+        with unittest.mock.patch.object(abstention_ledger, "write_receipt", side_effect=no_space):
+            self.assertEqual(1, self.attach({second: reading, third: reading}), self.out)
+        self.assertEqual(2, len(attempted))
+        self.assertIn("injected second witness allocation failure", "\n".join(self.out))
+        self.assertEqual(before, {p.name: p.read_bytes() for p in witnesses.iterdir()})
+        self.assertEqual(0, self.read(second, third, dry_run=True), self.out)
+        self.assertEqual(1, len(self.model.prompts))
+        self.assertEqual(1, self.used())
+        self.assertEqual(0, self.attach({second: reading, third: reading}), self.out)
+        for case_id in (second, third):
+            with self.subTest(case_id=case_id):
+                self.assertEqual(1, self.read(case_id, dry_run=True), self.out)
+                self.assertIn("the witnessed Claude reading is missing", self.out[-1])
+
     def test_orphan_witness_refuses_repeated_reads_without_charges(self) -> None:
         first, second, *_ = self.four_cases()
         self.assertEqual(0, self.read(first))
@@ -854,7 +887,13 @@ class ReadTest(CaseToolTestCase):
                     witnesses.symlink_to(backup, target_is_directory=True)
                 held = replayed.read_bytes()
                 try:
-                    self.assertEqual(1, self.read(second))
+                    with unittest.mock.patch.object(
+                        levels_cases, "_plan", side_effect=AssertionError("replay reached planning")
+                    ) as plan:
+                        for dry_run in (False, True):
+                            with self.subTest(dry_run=dry_run):
+                                self.assertEqual(1, self.read(second, dry_run=dry_run), self.out)
+                        plan.assert_not_called()
                     self.assertEqual(record, replay.read_bytes())
                     self.assertEqual(held, replayed.read_bytes())
                     self.assertEqual(1, len(self.model.prompts))

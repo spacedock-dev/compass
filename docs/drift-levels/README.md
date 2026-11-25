@@ -198,9 +198,10 @@ lost, and reads a `pending` one again only when the ledger says that job was nev
 
 `--read` writes `replayed-readings.json` in exactly the shape `--attach-readings` takes, and
 `--attach-readings` and `--score` check readings against the witnesses under Git's common
-directory. An attachment checks for conflicts before creating any new witness. Replay refuses
-before spending if a retained reading is unbound or changed, or if a selected case has a witness
-but its retained reading is missing.
+directory. An attachment checks for conflicts, stages its new witnesses, then publishes the batch
+in one directory rename. If a staging write fails, the original witness inventory remains available.
+Replay checks retained readings before planning any calls, including on a dry run. An unbound or
+changed reading refuses, as does a selected case whose witness survives its retained reading.
 `replay.json` holds, per case id, the status,
 the withheld token, whether the call spent, whether it was charged, and when, and for a call in
 flight its marker and ledger job id, made of a case id and a time. It holds no session id,

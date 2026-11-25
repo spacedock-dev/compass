@@ -829,11 +829,10 @@ class PinnedCodex:
         return self.verified.path
 
 
-def _codex_cli_environment() -> dict[str, str]:
-    _runtime()
-    from compass_runtime import observer  # noqa: PLC0415 - deferred runtime
-
-    return observer.codex_environment(os.environ)
+def _codex_probe_environment() -> dict[str, str]:
+    # HOME participates in Node's package lookup. Keep producer sign-in and Node
+    # overrides out of subprocesses that only inspect the installation.
+    return {key: os.environ[key] for key in ("HOME", "PATH") if key in os.environ}
 
 
 def _codex_optional_manifest(node: str, launcher: str, package: str) -> str | None:
@@ -855,7 +854,7 @@ process.stdout.write(JSON.stringify(manifest));
         text=True,
         check=False,
         timeout=10,
-        env=_codex_cli_environment(),
+        env=_codex_probe_environment(),
     )
     if result.returncode == 2:
         raise BinaryError("the Node platform does not match the verified Codex target")
@@ -877,6 +876,10 @@ def _codex_manifest(path: pathlib.Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise BinaryError("the Codex package metadata is not an object")
     return value
+
+
+def _codex_native_candidates(root: pathlib.Path, target: str) -> list[pathlib.Path]:
+    return [root / "vendor" / target / directory / "codex" for directory in ("bin", "codex")]
 
 
 def verify_codex_binary(  # noqa: C901, PLR0912, PLR0915 - independent installation guards
@@ -932,6 +935,19 @@ def verify_codex_binary(  # noqa: C901, PLR0912, PLR0915 - independent installat
         ):
             raise BinaryError("the resolved Codex package identity is not recognized")
         platform_package = f"@openai/codex-{package_suffix}"
+        # Decline a missing installation without executing PATH-selected Node. Its
+        # own resolver still has to confirm which package the launcher would use.
+        roots = [
+            package,
+            *(parent / "node_modules" / platform_package for parent in launcher.parents),
+        ]
+        if not any(
+            path.is_file() for root in roots for path in _codex_native_candidates(root, target)
+        ):
+            raise BinaryError("the native Codex installation is missing or ambiguous")
+        node_identity = file_identity(node_target)
+        if os.path.realpath(node) != node_target:
+            raise BinaryError("the verified Node executable changed")
         resolved_manifest = _codex_optional_manifest(node_target, str(launcher), platform_package)
         if resolved_manifest is None and (package.parent / f"codex-{package_suffix}").exists():
             raise BinaryError("the Codex launcher cannot resolve its installed platform package")
@@ -956,9 +972,7 @@ def verify_codex_binary(  # noqa: C901, PLR0912, PLR0915 - independent installat
             native_root = platform_manifest_path.parent
         # The upstream launcher moved the executable from codex/codex to bin/codex.
         # Exactly one known candidate must exist; no guessed executable or shell wrapper.
-        candidates = [
-            native_root / "vendor" / target / directory / "codex" for directory in ("bin", "codex")
-        ]
+        candidates = _codex_native_candidates(native_root, target)
         present = [candidate for candidate in candidates if candidate.is_file()]
         if len(present) != 1:
             raise BinaryError("the native Codex installation is missing or ambiguous")
@@ -981,7 +995,10 @@ def verify_codex_binary(  # noqa: C901, PLR0912, PLR0915 - independent installat
             raise BinaryError("Codex must resolve to a native executable, not a script")
         native_identity = file_identity(str(native))
         native_target = os.path.realpath(native)
-        installation = tuple((str(path), file_identity(str(path))) for path in metadata)
+        installation = tuple(
+            (str(path), node_identity if str(path) == node_target else file_identity(str(path)))
+            for path in metadata
+        )
         verified = VerifiedCodex(
             str(launcher),
             f"codex-cli {version}",
@@ -1000,17 +1017,21 @@ def verify_codex_binary(  # noqa: C901, PLR0912, PLR0915 - independent installat
             resolved_manifest,
         )
         PinnedCodex(verified)("codex")
-        result = runner(
-            [node_target, str(launcher), "--version"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=10,
-            env=_codex_cli_environment(),
-        )
-        if result.returncode != 0 or result.stdout.strip() != verified.version:
-            raise BinaryError("the Codex launcher cannot run the verified npm version")
-        PinnedCodex(verified)("codex")
+        for label, command in (
+            ("native executable", [str(native), "--version"]),
+            ("launcher", [node_target, str(launcher), "--version"]),
+        ):
+            result = runner(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+                env=_codex_probe_environment(),
+            )
+            if result.returncode != 0 or result.stdout.strip() != verified.version:
+                raise BinaryError(f"the Codex {label} did not report the verified npm version")
+            PinnedCodex(verified)("codex")
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         raise BinaryError("the Codex installation could not be independently verified") from error
     else:
@@ -1394,6 +1415,9 @@ def score_case(  # noqa: PLR0913 - one keyword per thing a case decides
                 ),
                 **source_kwargs,
             )
+        except abstention_ledger.LaunchFenceError:
+            # A pending reservation needs reconciliation before scoring can classify it.
+            raise
         except abstention_ledger.SpendCapError:
             assessment, why, spent = None, WITHHELD_SPEND_CAP, False
         except abstention_ledger.LedgerError:
@@ -3893,7 +3917,7 @@ def codex_model(
             env["PATH"] = path + os.pathsep + env["PATH"] if env.get("PATH") else path
             kwargs["env"] = env
 
-            def before_spawn() -> None:
+            def prepare_spawn() -> None:
                 pin("codex")
                 if arm is not None:
                     arm()
@@ -3903,12 +3927,15 @@ def codex_model(
 
             if actual_runner is supervise.run:
                 kwargs["output_limit"] = (output, observer.OUTPUT_FILE_LIMIT_BYTES)
-                # The offline scorer already holds its cross-process scorer lock. Its fence
-                # must land after the supervisor admits this launch, before it spawns a child.
-                kwargs["before_spawn"] = before_spawn
+                # The offline scorer holds its cross-process lock. Its durable fence and
+                # package checks can block, so they run outside the supervisor's spawn lock.
+                kwargs["prepare_spawn"] = prepare_spawn
             else:
-                before_spawn()
-            result = actual_runner(approved, **kwargs)
+                prepare_spawn()
+            try:
+                result = actual_runner(approved, **kwargs)
+            except supervise.ClosedError as error:
+                raise BinaryError("the Codex launch was refused during shutdown") from error
             # Native writers may replace the output atomically, breaking the alias.
             # Preserve the production reader's bounded file even in that case.
             with _open_cli(output) as stream:

@@ -547,6 +547,7 @@ def run(  # noqa: PLR0913 (subprocess.run's keywords, one each)
     timeout: float | None = None,
     check: bool = False,
     on_spawn: Callable[[Group], None] | None = None,
+    prepare_spawn: Callable[[], None] | None = None,
     before_spawn: Callable[[], None] | None = None,
     output_limit: tuple[str, int] | None = None,
     output_limits: tuple[tuple[str, int], ...] = (),
@@ -559,12 +560,18 @@ def run(  # noqa: PLR0913 (subprocess.run's keywords, one each)
     would not exit, and `OversizedError` when the file `output_limit` names
     passed its size in bytes. Additional files in `output_limits` are watched
     independently, including stderr; they never replace `output_limit`.
-    `before_spawn` runs after blocking launch admission, immediately before spawn.
+    `prepare_spawn` can do blocking I/O. Shutdown can proceed during preparation,
+    and the locked shutdown check still decides whether a child may spawn.
+    `before_spawn` runs immediately before spawn.
     It must be cheap and nonblocking: it holds the global spawn lock and must
     not acquire other locks or read external state. Raising prevents launch.
     """
     if subprocess.PIPE in (stdout, stderr):
         raise ValueError("supervise.run writes output to a file or nowhere, never a pipe")
+    if prepare_spawn is not None:
+        if closed():
+            raise ClosedError("Compass is shutting down")
+        prepare_spawn()
     with _LOCK:
         if _SHUTDOWN.is_set():
             raise ClosedError("Compass is shutting down")

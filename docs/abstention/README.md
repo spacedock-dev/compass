@@ -1208,8 +1208,9 @@ and confer no authority on this study.
 `CodexLedger` and `CodexCampaign` require a separately prepared grant, its reviewed zero-charge
 genesis and freshly recomputed input and transport bindings. Source intake establishes provenance;
 the scorer separately verifies the resolved npm installation, package version and actual native
-executable. It checks the version through npm's `bin/codex.js` with its pinned Node. Before
-launch it checks the files again and verifies that Node still resolves the same platform
+executable. It checks the native version directly and through npm's `bin/codex.js` with its
+pinned Node. Both responses must match the package manifest. Before launch it checks the
+files again and verifies that Node still resolves the same platform
 package or the same bundled fallback. The owner reviews the installation hashes.
 The grant holds only the transport digest; absolute CLI paths and actual argv stay local.
 A batch approval lists the exact ten registered slot/request digests of one repetition and
@@ -1330,7 +1331,8 @@ For an interrupted charge, run `python3 scripts/score_abstention.py reconcile-co
 to retain a scorer-written attempt whose digest matches, including a protection failure.
 If the attempt is missing and its charge is unsettled, choose `unusable`. A witnessed
 semantic, coverage or protection failure keeps its classification and remains ineligible
-for an availability retry. Choose `refunded` only for a reservation that never crossed
+for an availability retry. Failure to persist the launch fence stops the run before another
+reservation. Choose `refunded` only for a reservation that never crossed
 the durable launch fence. The command asks for the exact charge ID. In a non-interactive
 invocation pass `--confirm-charge ID`. Reconciliation records the attempt and advances the
 checkpoint without a producer call. A refund retains its audit record and restores the
