@@ -106,15 +106,15 @@ def _head(path: Path) -> tuple[str, str, float | None, str]:
     if not isinstance(row, dict) or row.get("type") != "session_meta":
         raise marker.FreezeError("codex-source-identity-unconfirmed")
     payload = records.as_dict(row.get("payload"))
-    sid = payload.get("id")
-    if not isinstance(sid, str) or len(sid) != 36 or not path.name.endswith(sid + ".jsonl"):
+    sid = transcripts.codex_rollout_id(str(path), payload)
+    if not sid:
         raise marker.FreezeError("codex-source-identity-unconfirmed")
     parent = context._codex_parent(row, str(path))
     # A subagent rollout records its chain root as `session_id` (all 697 of the owner's, measured
     # by metadata on 2026-11-09); a root records its own id. Discovery holds a descendant to the
     # selected root's id.
     session = (
-        sid if transcripts.codex_is_user_root(payload, parent) else payload.get("session_id", sid)
+        sid if transcripts.codex_is_user_fork(payload, parent) else payload.get("session_id", sid)
     )
     if not isinstance(session, str) or len(session) != 36 or (session != sid and not parent):
         raise marker.FreezeError("codex-source-identity-unconfirmed")

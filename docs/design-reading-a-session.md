@@ -1288,9 +1288,11 @@ Before any future run, the ruling lists these fixes:
   roots, and the freezer's handling was unverified. The inventory now counts these forks as
   children. The freezer requires the descendants reached through parent links to match the
   rollouts that name the selected session as their root at the capture cut. A missing link or
-  cycle leaves that case unconfirmed. An explicit user fork without a spawn link owns its
-  rollout ID even when its session ID names the original. The board and transcript lookup
-  use that same identity, so a newer fork keeps a row and transcript of its own.
+  cycle leaves that case unconfirmed. A user-tagged head with fork ancestry can use its
+  rollout ID even when its session ID names the original. The exception requires the rollout
+  ID to match the filename and the head to carry no spawn or subagent evidence. The board
+  and transcript lookup use the same rule, so a verified fork keeps its own row and resumed
+  files still group by session ID.
 - Ledger hardening.
 - Redaction gaps, which matter before any case leaves the machine.
 

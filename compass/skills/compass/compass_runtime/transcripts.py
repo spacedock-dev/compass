@@ -87,8 +87,24 @@ def codex_parent_thread(payload: dict[str, Any]) -> str:
     return _codex_spawn_parent(payload) or _codex_fork_parent(payload)
 
 
-def codex_is_user_root(payload: dict[str, Any], parent: str) -> bool:
-    return payload.get("thread_source") == "user" and not parent
+def codex_is_user_fork(payload: dict[str, Any], parent: str) -> bool:
+    if not (payload.get("thread_source") == "user" and not parent):
+        return False
+    fork = payload.get("forked_from_id")
+    if not isinstance(fork, str) or not fork.strip():
+        return False
+    source = records.as_dict(payload.get("source"))
+    # Incomplete worker metadata can leave the parent unknown while still claiming a root.
+    return (
+        "parent_thread_id" not in payload or bool(_codex_spawn_parent(payload, allow_nested=False))
+    ) and ("subagent" not in source or bool(_codex_spawn_parent(payload)))
+
+
+def codex_rollout_id(path: str, payload: dict[str, Any]) -> str:
+    sid = payload.get("id")
+    if isinstance(sid, str) and len(sid) == 36 and os.path.basename(path).endswith(sid + ".jsonl"):
+        return sid
+    return ""
 
 
 def codex_meta(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[str, Any]:
@@ -103,6 +119,9 @@ def codex_meta(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[st
         nickname = p.get("agent_nickname")
         agent_path = p.get("agent_path") or _codex_spawn(p).get("agent_path")
         parent = codex_parent_thread(p)
+        session_id = p.get("session_id") or p.get("id")
+        if codex_is_user_fork(p, parent):
+            session_id = codex_rollout_id(path, p) or session_id
         label = (
             nickname
             if isinstance(nickname, str) and nickname
@@ -114,9 +133,7 @@ def codex_meta(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[st
             )
         )
         return {
-            "session_id": (
-                p.get("id") if codex_is_user_root(p, parent) else p.get("session_id") or p.get("id")
-            ),
+            "session_id": session_id,
             # Current Codex subagent metadata carries two identities: session_id
             # is the top-level root and id is this rollout thread. Collection
             # groups on the former; nested-parent traversal needs the latter.

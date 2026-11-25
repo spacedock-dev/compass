@@ -262,6 +262,71 @@ class CodexCollectorTest(RuntimeTestCase):
                             expected_path, observer.resolve_transcript(config, state, "codex", sid)
                         )
 
+    def test_user_tagged_non_forks_keep_the_session_identity_of_a_resume(self) -> None:
+        original = "11111111-1111-4111-8111-111111111111"
+        resumed = "22222222-2222-4222-8222-222222222222"
+        now = time.time()
+        for fields in ({"id": resumed}, {}, {"id": None}, {"id": {"invalid": "id"}}):
+            with self.subTest(fields=fields), tempfile.TemporaryDirectory() as tmp:
+                day = Path(tmp) / "2026" / "11" / "08"
+                day.mkdir(parents=True)
+                older = day / f"rollout-2026-11-08T00-00-00-{original}.jsonl"
+                newer = day / f"rollout-2026-11-08T00-01-00-{resumed}.jsonl"
+                meta = {"session_id": original, "thread_source": "user", "source": "cli"}
+                _write_identity_rollout(older, now - 60, {**meta, "id": original})
+                _write_identity_rollout(newer, now, fields | meta)
+                with store_patch(CODEX_SESSIONS_DIR=tmp):
+                    config, state = runtime()
+                    for remove_older in (False, True):
+                        with self.subTest(remove_older=remove_older):
+                            if remove_older:
+                                older.unlink()
+                            rows = codex_collector.collect(config, state, now, 24, False)
+                            self.assertEqual(
+                                [(original, original)],
+                                [(row["sid"], row["resume_id"]) for row in rows],
+                            )
+                            self.assertEqual(
+                                str(newer),
+                                observer.resolve_transcript(config, state, "codex", original),
+                            )
+
+    def test_a_user_fork_with_a_mismatched_filename_cannot_take_another_row(self) -> None:
+        original = "11111111-1111-4111-8111-111111111111"
+        fork = "22222222-2222-4222-8222-222222222222"
+        independent = "33333333-3333-4333-8333-333333333333"
+        now = time.time()
+        with tempfile.TemporaryDirectory() as tmp:
+            day = Path(tmp) / "2026" / "11" / "08"
+            day.mkdir(parents=True)
+            for sid, project, mtime in (
+                (original, "original", now - 60),
+                (independent, "independent", now - 30),
+                (fork, "fork", now),
+            ):
+                fields = {"session_id": sid, "id": sid, "cwd": f"/{project}", "source": "cli"}
+                if sid == fork:
+                    fields.update(
+                        session_id=original,
+                        id=independent,
+                        forked_from_id=original,
+                        thread_source="user",
+                    )
+                _write_identity_rollout(
+                    day / f"rollout-2026-11-08T00-00-00-{sid}.jsonl", mtime, fields
+                )
+            with store_patch(CODEX_SESSIONS_DIR=tmp):
+                config, state = runtime()
+                rows = codex_collector.collect(config, state, now, 24, False)
+                with self.subTest(surface="board"):
+                    projects = {row["sid"]: row["project"] for row in rows}
+                    self.assertEqual("independent", projects[independent])
+                with self.subTest(surface="transcript"):
+                    self.assertEqual(
+                        str(day / f"rollout-2026-11-08T00-00-00-{independent}.jsonl"),
+                        observer.resolve_transcript(config, state, "codex", independent),
+                    )
+
     def test_a_malformed_child_thread_does_not_hide_a_healthy_session(self) -> None:
         now = time.time()
         parent = "11111111-1111-4111-8111-111111111111"
@@ -1014,6 +1079,12 @@ def _task_started(when: float) -> dict[str, Any]:
         "type": "event_msg",
         "payload": {"type": "task_started", "started_at": when},
     }
+
+
+def _write_identity_rollout(path: Path, mtime: float, fields: dict[str, Any]) -> None:
+    head = {"timestamp": _stamp(mtime - 30), "type": "session_meta", "payload": fields}
+    path.write_text(json.dumps(head) + "\n" + json.dumps(_task_started(mtime - 10)) + "\n")
+    os.utime(path, (mtime, mtime))
 
 
 def _padding(when: float, filler: int = 1000) -> dict[str, Any]:

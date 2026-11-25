@@ -887,6 +887,69 @@ class CodexPacketSourceTest(unittest.TestCase):
     def test_a_person_can_freeze_with_an_unrelated_user_fork_after_the_cut(self) -> None:
         self.assert_unrelated_user_fork_allows_freeze(after_cut=True)
 
+    def test_a_user_tag_cannot_hide_an_unconfirmed_child_from_the_freezer(self) -> None:
+        source_shapes: dict[str, dict[str, Any]] = {
+            "review": {"source": {"subagent": "review"}},
+            "incomplete nested spawn": {
+                "source": {"subagent": {"thread_spawn": {"depth": 1}}},
+            },
+            "malformed top-level link": {"parent_thread_id": {"invalid": True}},
+            "null top-level link": {"parent_thread_id": None},
+            "empty top-level link": {"parent_thread_id": ""},
+        }
+        child = self.support.rollout(self.root, sid=self.support.CHILD)
+        rows = [json.loads(line) for line in child.read_text().splitlines()]
+        head = rows[0]["payload"]
+        for shape, fields in {
+            "no fork link": {},
+            "empty fork link": {"forked_from_id": ""},
+            **{
+                shape: {"forked_from_id": self.support.SID, **fields}
+                for shape, fields in source_shapes.items()
+            },
+        }.items():
+            with self.subTest(shape=shape):
+                rows[0]["payload"] = {
+                    **head,
+                    "session_id": self.support.SID,
+                    "thread_source": "user",
+                    **fields,
+                }
+                self.support.write(child, rows)
+                with self.assertRaisesRegex(
+                    mark_abstention.FreezeError, "^codex-source-identity-unconfirmed$"
+                ):
+                    self.freeze()
+
+    def test_a_user_tag_preserves_a_confirmed_spawn_in_discovery_and_freezing(self) -> None:
+        from compass_runtime import observer, state  # noqa: PLC0415
+
+        day = self.root / "2026" / "11" / "07"
+        day.mkdir(parents=True)
+        self.path = self.path.rename(day / self.path.name)
+        self.entry["transcript"] = str(self.path)
+        child = self.support.rollout(day, sid=self.support.CHILD, parent=self.support.SID)
+        rows = [json.loads(line) for line in child.read_text().splitlines()]
+        head = rows[0]["payload"]
+        self.entry["children"] = [str(child)]
+        for link in ("nested", "top-level"):
+            with self.subTest(link=link):
+                payload = {**head, "thread_source": "user", "forked_from_id": self.support.SID}
+                if link == "top-level":
+                    payload.update(source="cli", parent_thread_id=self.support.SID)
+                rows[0]["payload"] = payload
+                self.support.write(child, rows)
+                runtime = state.build_runtime_state(self.config, started=self.support.AT)
+                with self.subTest(surface="discovery"):
+                    self.assertEqual(
+                        [str(child)],
+                        observer.codex_child_rollouts(self.config, runtime, str(self.path)),
+                    )
+                with self.subTest(surface="freezer"):
+                    case = self.freeze()
+                    self.assertEqual(1, len(case["sources"]["children"]))
+                    self.assertEqual([], self.reasons(case))
+
     def test_a_person_cannot_freeze_a_fork_with_a_missing_parent_in_their_session(self) -> None:
         missing = "00000000-0000-4000-8000-0000000000aa"
         self.support.forked_rollout(self.root, parent=missing, session=self.support.SID)
