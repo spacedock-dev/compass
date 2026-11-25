@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2489035,
+    "bytes": 2489291,
     "file": "react.html",
-    "sha256": "3292253ff39d245fb385db849691ec34edc3175ccedc88854c5915e3f5aa9635"
+    "sha256": "96d9e477e9136c43c86e2911f924c6d83244253aa15d9c724160e8d6133c28b9"
   },
   "format": 1,
   "frontend": "react",
@@ -431,7 +431,7 @@
       },
       {
         "file": "frontend/src/controls/resumeCommand.ts",
-        "sha256": "9df736ff215a4514aaeea80a94a489c816b014b9f04b9f1e6b20250161b9ee7c"
+        "sha256": "ecab476b45bcf29980ee903f4f214da9a80c0ecf5417d05b628b9e8b9f02d4e7"
       },
       {
         "file": "frontend/src/controls/testControls.ts",
@@ -619,7 +619,7 @@
       },
       {
         "file": "frontend/src/drift/SteerBack.tsx",
-        "sha256": "f1c1244d63811aeee3e80b358de29fb4b9a366b002030271b51d3879aeed5576"
+        "sha256": "97920c3a8feebdf259929be2cd62036b4be4cf9a306db318ad789e3a02e20a3d"
       },
       {
         "file": "frontend/src/drift/UnaskedPermission.tsx",
@@ -655,7 +655,7 @@
       },
       {
         "file": "frontend/src/drift/correction.ts",
-        "sha256": "6e6974e3a9b148ffcaa7551b7d3dbc323ea9c694345ca3fac4b1f3a682f28588"
+        "sha256": "75736a9e5560bdc51c0b5f169b4905194411512a1941cab84ca3f908b4b73445"
       },
       {
         "file": "frontend/src/drift/drift.css",
@@ -1279,7 +1279,7 @@
       },
       {
         "file": "frontend/src/sessions/intent.ts",
-        "sha256": "ffcbc9b66524404b09135c0bd198ffcf3b54578f9ea67b361b320c1b986ea122"
+        "sha256": "e94063b478e06f7f4a67fdaddbe9d3fae9f684cb582246c24b2a37452975202a"
       },
       {
         "file": "frontend/src/sessions/notes.ts",
@@ -1291,7 +1291,7 @@
       },
       {
         "file": "frontend/src/sessions/rows.ts",
-        "sha256": "066c76b75d6590c7948b0a8b81419a0c1898fc29b657c3cd09ec21f7bee2021f"
+        "sha256": "4d1f6e6853a04bac5622021a71d2ba2cd24d3d785401a3f2fbf7dc2959590ffb"
       },
       {
         "file": "frontend/src/sessions/sessions.css",
