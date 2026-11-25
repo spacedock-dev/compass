@@ -3265,7 +3265,7 @@ def _load_corpus(rubric_path: str) -> Corpus:
 def results_path_for(producer: str) -> str:
     """The local half, one per producer, so a resume never picks up the other's run."""
     if producer == "codex":
-        return os.path.join(HOME, "abstention-codex-results.json")
+        return os.path.join(HOME, abstention_ledger.CODEX_CHECKPOINT_NAME)
     if producer == "claude":
         return local_results_path(abstention_ledger.generation())
     return RESULTS_PATH

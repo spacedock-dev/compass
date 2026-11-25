@@ -1289,8 +1289,10 @@ def has_calls(path: str | None = "") -> bool:
         return True
 
 
-# A separate prospective study. Nothing below is connected to a producer or CLI.
+# Codex qualification has its own grant and spend ledger.
 CODEX_GRANT_PATH = os.path.join(os.path.dirname(CLAUDE_SUMMARY_PATH), "codex-grant.json")
+CODEX_LEDGER_NAME = "codex-qualification-spend.json"
+CODEX_CHECKPOINT_NAME = "abstention-codex-results.json"
 CODEX_BINDINGS = frozenset(
     {"packet", "cases", "marks", "rubric", "source", "protocol", "runtime", "scorer"}
 )
@@ -1304,12 +1306,11 @@ def codex_digest_valid(value: Any) -> bool:
 
 
 def codex_grant() -> dict[str, Any]:
-    """Read only the fixed Codex grant, never Claude continuations or private cases.
+    """Read the fixed Codex grant and validate its registration."""
+    return _validate_codex_grant(_review_json(CODEX_GRANT_PATH, "Codex grant", cap=128_000))
 
-    No grant is shipped. Digests supplied by future intake/scorer code must be
-    independently recomputed before reservation. This PR cannot launch a producer.
-    """
-    value = _review_json(CODEX_GRANT_PATH, "Codex grant", cap=128_000)
+
+def _validate_codex_grant(value: Any) -> dict[str, Any]:
     if (
         not isinstance(value, dict)
         or set(value)
@@ -1385,6 +1386,54 @@ def _codex_key(grant: Mapping[str, Any]) -> str:
     )
 
 
+def codex_run_artifacts(ledger: str, packet_home: str) -> tuple[str, ...]:
+    return (
+        ledger,
+        f"{ledger}.receipts",
+        f"{ledger}.results",
+        os.path.join(os.path.dirname(CODEX_GRANT_PATH), "codex-results.json"),
+        os.path.join(packet_home, CODEX_CHECKPOINT_NAME),
+    )
+
+
+def codex_artifact_exists(path: str) -> bool:
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def publish_codex_grant(value: dict[str, Any], marks_path: str) -> None:
+    """Install the owner's already-reviewed grant against the current answer key."""
+    grant = _validate_codex_grant(value)
+    ledger = study_path(CODEX_LEDGER_NAME)
+    if ledger is None or sys.platform == "win32" or home_moved():
+        raise LedgerError("Codex authority requires an unchanged canonical account HOME")
+    with locked(ledger):
+        try:
+            with open(marks_path, "rb") as handle:
+                marks = hashlib.file_digest(handle, "sha256").hexdigest()
+        except OSError as error:
+            raise LedgerError("the Codex answer key cannot be read") from error
+        if marks != grant["bindings"]["marks"]:
+            raise LedgerError("the Codex answer key changed before grant publication")
+        if codex_artifact_exists(CODEX_GRANT_PATH):
+            current = codex_grant()
+            if not (
+                current["phase"] == "prepared"
+                and grant["phase"] == "sealed"
+                and _codex_key(current) == _codex_key(grant)
+            ):
+                raise LedgerError("the existing Codex grant cannot be replaced")
+        elif grant["phase"] != "prepared" or any(
+            map(codex_artifact_exists, codex_run_artifacts(ledger, os.path.dirname(marks_path)))
+        ):
+            raise LedgerError("an earlier Codex qualification exists or preparation is missing")
+        _write(CODEX_GRANT_PATH, grant)
+        _codex_sync_dir(os.path.dirname(CODEX_GRANT_PATH))
+
+
 def _codex_sync_dir(folder: str) -> None:
     if sys.platform != "win32":
         descriptor = os.open(folder, os.O_RDONLY)
@@ -1424,7 +1473,7 @@ class CodexLedger:
         self.transport = transport
         self.grant = codex_grant()
         self.binding = _codex_key(self.grant)
-        self.path = study_path("codex-qualification-spend.json") or ""
+        self.path = study_path(CODEX_LEDGER_NAME) or ""
         self.receipts = Path(self.path + ".receipts")
         self.invocation = uuid.uuid4().hex
         self.process_id = os.getpid()
@@ -1436,7 +1485,7 @@ class CodexLedger:
             raise LedgerError("a Codex approval cannot cross a process boundary")
         if sys.platform == "win32" or home_moved():
             raise LedgerError("Codex authority requires an unchanged canonical account HOME")
-        if self.path != study_path("codex-qualification-spend.json"):
+        if self.path != study_path(CODEX_LEDGER_NAME):
             raise LedgerError("the Codex account path moved")
         for path in (
             os.path.dirname(self.path),

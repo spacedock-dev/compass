@@ -4208,6 +4208,10 @@ transport digest, never its absolute CLI paths or actual argv. Approval is speci
 registered batch and lists its ten exact request digests and retry permission. Each slot is
 consumed under the same lock that records the charge. A valid checkpoint can resume unconsumed
 slots under that batch receipt across process invocations; charges are never renewed.
+Grant publication and the final Codex answer-key write share the charge lock. A surviving
+grant, ledger, receipts, immutable attempt records, public results or private packet checkpoint
+keep the answer key frozen. The [qualification protocol](docs/abstention/README.md#scoring-tooling)
+describes how to install an approved grant.
 Receipts are written before the ledger index; an interrupted write leaves a blocking orphan, not renewed
 allowance. The scorer checkpoints a charge before launch and keeps an exclusive per-charge
 attempt record under `~/.cargento/codex-qualification-spend.json.results/`. Those records hold

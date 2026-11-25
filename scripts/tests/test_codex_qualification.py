@@ -304,6 +304,61 @@ class CodexQualificationTest(_CodexInstallationFixture):
     def write_grant(self) -> None:
         self.grant_path.write_text(json.dumps(self.grant))
 
+    def test_a_person_can_publish_only_a_grant_that_binds_the_key_under_the_charge_lock(
+        self,
+    ) -> None:
+        prepared = {
+            **self.grant,
+            "phase": "prepared",
+            "activation_anchor": "",
+            "genesis_review": "",
+        }
+        self.grant_path.write_text(json.dumps(prepared))
+        previous = self.grant_path.read_bytes()
+        marks = self.home / "answer-key.json"
+        marks.write_bytes(self.corpus.marks_bytes)
+        lock = authority.locked
+
+        @contextlib.contextmanager
+        def change_key_before_lock_is_acquired(path: str) -> Any:
+            self.assertEqual(self.study().path, path)
+            marks.write_bytes(self.corpus.marks_bytes + b"\n")
+            with lock(path):
+                yield
+
+        with (
+            mock.patch.object(authority, "locked", side_effect=change_key_before_lock_is_acquired),
+            self.assertRaisesRegex(authority.LedgerError, "answer key changed"),
+        ):
+            authority.publish_codex_grant(self.grant, str(marks))
+        self.assertEqual(previous, self.grant_path.read_bytes())
+
+        marks.write_bytes(self.corpus.marks_bytes)
+        authority.publish_codex_grant(self.grant, str(marks))
+        self.assertEqual(self.grant, authority.codex_grant())
+
+    def test_a_person_cannot_prepare_a_new_grant_while_immutable_results_survive(self) -> None:
+        ledger = Path(self.study().path)
+        prepared = {
+            **self.grant,
+            "phase": "prepared",
+            "activation_anchor": "",
+            "genesis_review": "",
+        }
+        for path in (self.grant_path, ledger, Path(f"{ledger}.receipts")):
+            path.rename(path.with_name(f"{path.name}.removed"))
+        marks = self.home / "answer-key.json"
+        marks.write_bytes(self.corpus.marks_bytes)
+        attempts = Path(f"{ledger}.results")
+        attempts.mkdir()
+        with self.assertRaisesRegex(authority.LedgerError, "earlier Codex qualification exists"):
+            authority.publish_codex_grant(prepared, str(marks))
+        self.assertFalse(self.grant_path.exists())
+
+        attempts.rmdir()
+        authority.publish_codex_grant(prepared, str(marks))
+        self.assertEqual(prepared, authority.codex_grant())
+
     def study(self) -> Any:
         return campaign.CodexCampaign(bindings=self.inputs, transport=self.transport)
 

@@ -1304,7 +1304,9 @@ Freeze uses the configured Analyze scan limit for the sealed rollout bundle and 
 It applies the Analyze limits to the check listing and focused timeline, then uses Analyze's
 bounded semantic history merge to recover eligible person instructions
 from the sealed parent when checks fill the timeline. This history is built in memory for the
-freeze. Checks and writes stay subject to the focused timeline cap.
+freeze. If an instruction within the history window falls outside that backfill, freeze refuses
+with `codex-person-history-unconfirmed`. An earlier board refresh could have retained it and
+changed the prompt. Checks and writes stay subject to the focused timeline cap.
 Freeze and replay use the configured Analyze prompt byte limit and recover the selected
 person message text from the sealed prefix.
 The Codex Analyze prompt carries no assistant messages or final reply.
@@ -1334,7 +1336,16 @@ approval, spend authority or qualification result.
 Run `mark_abstention.py` with the frozen format 6 packet in its private `COMPASS_HOME` to
 write the local answer key. Codex marking uses its own qualification authority and can run
 alongside the committed Claude history. A different parser stamp requires a fresh freeze before
-marking. Finish marking before preparing the Codex grant or initializing its spend ledger.
+marking. An existing key must be readable and bound to this packet, and it must still match the
+bytes read before the questions. A grant, ledger, receipts, immutable attempt records, public
+results or the packet's private checkpoint freeze the key.
+
+Finish marking before preparing the grant or initializing its spend ledger. In the same checkout
+as marking and genesis, install each owner-approved grant draft with
+`abstention_ledger.publish_codex_grant(grant, marks_path)` from `scripts/`. Pass the parsed grant
+object and the private answer key path. Publication checks the grant's marks digest under the
+same account lock used to save marks and initialize genesis. The reviewed sealed grant can
+replace its matching prepared grant after genesis review.
 
 `score_abstention.py --prepare-codex --producer codex` derives the thirty requests locally and
 prints transport, input and registration bindings. Only a local sink receives the prompts; the

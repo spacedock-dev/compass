@@ -212,23 +212,29 @@ def _seal(config: Any, path: Path, captured: float) -> dict[str, Any]:
     }
 
 
-def _refusals(path: str, sid: str) -> list[dict[str, Any]]:
+def _refusals(config: Any, path: str, sid: str, now: float) -> list[dict[str, Any]]:
     from compass_runtime import observer, records
     from compass_runtime import project_context as context
 
     result: list[dict[str, Any]] = []
+    since = now - context.SEMANTIC_HISTORY_HORIZON_SEC
     with open(path, "rb") as handle:
+        floor = Path(path).stat().st_size - context.SEMANTIC_BACKFILL_MAX_BYTES
+        offset = 0
         for index, raw in enumerate(handle):
+            # The reverse reader needs the preceding newline to include this line.
+            outside_history = floor > 0 and offset <= floor
+            offset += len(raw)
             record = json.loads(raw)
             payload = records.as_dict(record.get("payload"))
-            if (
+            if not (
                 record.get("type") == "response_item"
                 and payload.get("type") == "message"
                 and payload.get("role") == "user"
-                and (
-                    not context.codex_person_record(record)
-                    or observer.parse_reader_record(record, cap=len(raw)) is None
-                )
+            ):
+                continue
+            if not context.codex_person_record(record) or (
+                observer.parse_reader_record(record, cap=len(raw)) is None
             ):
                 result.append(
                     {
@@ -236,6 +242,12 @@ def _refusals(path: str, sid: str) -> list[dict[str, Any]]:
                         "reason": "person-authorship-unconfirmed",
                     }
                 )
+            elif outside_history:
+                event = context._instruction_event(config, record, "codex", sid)
+                # An earlier refresh can retain a direction a cold board would miss.
+                # Backfilling it here would change the cold board's prompt.
+                if event is not None and event["at"] >= since:
+                    raise marker.FreezeError("codex-person-history-unconfirmed")
     return result
 
 
@@ -395,8 +407,8 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
                 or child_info.get("last_event_ts", 0) > stop
             ):
                 raise marker.FreezeError("codex-child-active")
+        refusals = _refusals(scan_config, cut, sid, captured)
         facts, press = _focused_facts(scan_config, cut, child_cuts, sid, captured)
-        refusals = _refusals(cut, sid)
     case: dict[str, Any] = {
         "codex_format": marker.FORMAT_CODEX,
         "id": marker._case_id("codex", sid),

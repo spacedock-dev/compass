@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -150,7 +151,9 @@ class CodexQualificationSourceTest(unittest.TestCase):
         ):
             self.assertEqual(0, marker.main(["--freeze-codex", str(spec_path)]))
 
-    def mark_at_cli(self, cases_path: Path, marks_path: Path) -> tuple[int, str, int]:
+    def mark_at_cli(
+        self, cases_path: Path, marks_path: Path, *, answer: Any = None
+    ) -> tuple[int, str, int]:
         printed = io.StringIO()
         with (
             mock.patch.object(marker, "CASES_PATH", str(cases_path)),
@@ -158,11 +161,11 @@ class CodexQualificationSourceTest(unittest.TestCase):
             mock.patch.object(abstention_ledger, "LEDGER_PATH", str(self.home / "claude-ledger")),
             mock.patch.object(abstention_ledger, "canonical_home", return_value=str(self.home)),
             mock.patch.object(abstention_ledger, "CODEX_GRANT_PATH", str(self.home / "grant.json")),
-            mock.patch("builtins.input", return_value="n") as answer,
+            mock.patch("builtins.input", return_value="n", side_effect=answer) as prompt,
             contextlib.redirect_stdout(printed),
         ):
             result = marker.main([])
-        return result, printed.getvalue(), answer.call_count
+        return result, printed.getvalue(), prompt.call_count
 
     def test_a_person_can_mark_codex_with_committed_claude_history(self) -> None:
         root = self.home / "codex/sessions"
@@ -212,6 +215,108 @@ class CodexQualificationSourceTest(unittest.TestCase):
             result, printed, asked = self.mark_at_cli(cases_path, marks_path)
         self.assertEqual(1, result, printed)
         self.assertEqual(0, asked)
+        self.assertFalse(marks_path.exists())
+
+    def test_a_person_cannot_overwrite_an_unreadable_foreign_key(self) -> None:
+        cases_path, marks_path = self.home / "cases.json", self.home / "marks.json"
+        self.freeze_at_cli(self.authored_spec(), cases_path)
+        foreign = marker._bound_marks(
+            {"v": marker.FORMAT_INTENT, "cases": []},
+            {"claude-case": {"goal": "judge", "line_1": "abstain"}},
+        )
+        previous = json.dumps(foreign).encode()
+        marks_path.write_bytes(previous)
+
+        def deny_key(path: Any, *args: Any, **kwargs: Any) -> Any:
+            if path == str(marks_path):
+                raise PermissionError("the previous answer key cannot be read")
+            return open(path, *args, **kwargs)
+
+        with mock.patch.object(marker, "open", side_effect=deny_key, create=True):
+            result, printed, asked = self.mark_at_cli(cases_path, marks_path)
+        self.assertEqual((1, 0), (result, asked), printed)
+        self.assertEqual(previous, marks_path.read_bytes())
+
+    def test_a_person_cannot_overwrite_a_key_created_at_publication(self) -> None:
+        cases_path, marks_path = self.home / "cases.json", self.home / "marks.json"
+        self.freeze_at_cli(self.authored_spec(), cases_path)
+        body = json.loads(cases_path.read_text())
+        (case,) = body["cases"]
+        winner = marker._bound_marks(body, {case["id"]: {"goal": "judge", "line_1": "judge"}})
+        winner_bytes = json.dumps(winner).encode()
+        grant = self.home / "grant.json"
+
+        def interleave(publish: Any) -> Any:
+            def competing_writer(source: str, destination: str) -> None:
+                if Path(destination) == marks_path:
+                    with marks_path.open("xb") as handle:
+                        handle.write(winner_bytes)
+                    grant.touch()
+                publish(source, destination)
+
+            return competing_writer
+
+        with (
+            mock.patch.object(abstention_ledger, "locked", wraps=abstention_ledger.locked) as lock,
+            mock.patch.object(os, "replace", side_effect=interleave(os.replace)),
+            mock.patch.object(os, "link", side_effect=interleave(os.link)),
+        ):
+            result, printed, asked = self.mark_at_cli(cases_path, marks_path)
+        lock.assert_called_once_with(str(self.home / ".cargento/codex-qualification-spend.json"))
+        self.assertGreater(asked, 0)
+        self.assertTrue(grant.exists())
+        self.assertEqual(1, result, printed)
+        self.assertEqual(winner_bytes, marks_path.read_bytes())
+
+    def test_a_person_cannot_overwrite_a_key_changed_during_marking(self) -> None:
+        cases_path, marks_path = self.home / "cases.json", self.home / "marks.json"
+        self.freeze_at_cli(self.authored_spec(), cases_path)
+        body = json.loads(cases_path.read_text())
+        (case,) = body["cases"]
+        marks_path.write_text(json.dumps(marker._bound_marks(body, {})))
+        winner = marker._bound_marks(body, {case["id"]: {"goal": "judge", "line_1": "judge"}})
+        winner_bytes = json.dumps(winner).encode()
+
+        def answer(_prompt: str) -> str:
+            marks_path.write_bytes(winner_bytes)
+            return "n"
+
+        result, printed, asked = self.mark_at_cli(cases_path, marks_path, answer=answer)
+        self.assertGreater(asked, 0)
+        self.assertEqual(1, result, printed)
+        self.assertEqual(winner_bytes, marks_path.read_bytes())
+
+    def test_a_person_cannot_mark_after_a_grant_appears_during_input(self) -> None:
+        cases_path, marks_path = self.home / "cases.json", self.home / "marks.json"
+        self.freeze_at_cli(self.authored_spec(), cases_path)
+
+        def answer(_prompt: str) -> str:
+            (self.home / "grant.json").touch()
+            return "n"
+
+        result, printed, asked = self.mark_at_cli(cases_path, marks_path, answer=answer)
+        self.assertGreater(asked, 0)
+        self.assertEqual(1, result, printed)
+        self.assertFalse(marks_path.exists())
+
+    def test_a_person_cannot_mark_when_only_codex_attempt_records_survive(self) -> None:
+        cases_path, marks_path = self.home / "cases.json", self.home / "marks.json"
+        self.freeze_at_cli(self.authored_spec(), cases_path)
+        attempts = self.home / ".cargento/codex-qualification-spend.json.results"
+        attempts.mkdir(parents=True)
+        (attempts / ("ab" * 16 + ".json")).write_text("{}")
+        result, printed, asked = self.mark_at_cli(cases_path, marks_path)
+        self.assertEqual((1, 0), (result, asked), printed)
+        self.assertFalse(marks_path.exists())
+
+    def test_a_person_cannot_mark_when_only_the_packet_checkpoint_survives(self) -> None:
+        cases_path, marks_path = self.home / "cases.json", self.home / "marks.json"
+        self.freeze_at_cli(self.authored_spec(), cases_path)
+        (self.home / "abstention-codex-results.json").write_text(
+            json.dumps({"v": 2, "protocol": "codex-three-repeats", "pending": "ab" * 16})
+        )
+        result, printed, asked = self.mark_at_cli(cases_path, marks_path)
+        self.assertEqual((1, 0), (result, asked), printed)
         self.assertFalse(marks_path.exists())
 
     def test_a_person_freezes_the_analyze_prompt_without_codex_agent_text(self) -> None:
@@ -340,6 +445,66 @@ class CodexQualificationSourceTest(unittest.TestCase):
             with self.subTest(prompt=name):
                 self.assert_prompt_equal(production, prompt)
 
+    def test_a_person_cannot_freeze_when_an_earlier_refresh_can_change_the_prompt(self) -> None:
+        root = self.home / "codex/sessions"
+        path = rollout(root / "2026/11/07")
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        instruction = "preserve the report appendix and its index."
+        rows[2] = message(f"Please {instruction}")
+        self.config = replace(self.config, turn_scan_max_bytes=2_048, tail_bytes=1_800)
+        warm = state.RuntimeState(self.config, AT)
+        spec = entry(root, path)
+        limits = settings.DEFAULTS._replace(analyze_scan_megabytes=1)
+        write(path, rows[:3])
+        row = self.analyze_row(spec)
+        with (
+            mock.patch.object(context, "SEMANTIC_BACKFILL_MAX_BYTES", 4_096),
+            mock.patch.object(settings, "load", return_value=limits),
+        ):
+            context.collect(self.config, warm, [row], "synthetic", now=AT + 1, focus=("codex", SID))
+            write(
+                path, [*rows[:3], event("thread_settings_applied", 2, pad="x" * 14_000), *rows[3:]]
+            )
+            self.assertIn(instruction, self.analyze_prompt(spec, warm))
+            with mock.patch.object(
+                self, "config", replace(self.config, state_home=str(self.home / "cold"))
+            ):
+                self.assertNotIn(instruction, self.analyze_prompt(spec))
+            with self.assertRaisesRegex(marker.FreezeError, "codex-person-history-unconfirmed"):
+                sources.freeze_case(self.config, spec)
+
+    def test_a_person_freezes_with_a_stop_beyond_the_collector_tail(self) -> None:
+        spec = self.authored_spec()
+        path = Path(spec["transcript"])
+        self.config = replace(self.config, turn_scan_max_bytes=2_048)
+        with path.open("a") as handle:
+            for number in range(16):
+                handle.write(json.dumps(event("thread_settings_applied", 7 + number / 100)) + "\n")
+        limits = settings.DEFAULTS._replace(analyze_scan_megabytes=1)
+        self.assertNotIn(b"task_complete", path.read_bytes()[-self.config.turn_scan_max_bytes :])
+        with mock.patch.object(settings, "load", return_value=limits):
+            case = sources.freeze_case(self.config, spec)
+        self.assertEqual(spec["row"]["turn_end_at"], case["row_snapshot"]["turn_end_at"])
+
+    def test_a_person_cannot_freeze_a_rollout_above_the_analyze_scan_limit(self) -> None:
+        spec = self.authored_spec()
+        path = Path(spec["transcript"])
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        checks = [command(2 + number / 100) for number in range(12)]
+        for check in checks:
+            check["payload"]["item"]["aggregated_output"] = "x" * 90_000
+        write(path, [*rows[:3], *checks, *rows[3:]])
+        self.config = replace(self.config, turn_scan_max_bytes=2_048)
+        with (
+            mock.patch.object(
+                settings, "load", return_value=settings.DEFAULTS._replace(analyze_scan_megabytes=1)
+            ),
+            self.assertRaisesRegex(
+                context.FrozenCheckCutoffUnreachableError, "codex cutoff exceeds byte budget"
+            ),
+        ):
+            sources.freeze_case(self.config, spec)
+
     def replay_prompts(self, case: dict[str, Any]) -> tuple[str, str]:
         tool_output = scorer._tool_output(case, "OpenAI", "Codex", {"v": marker.FORMAT_CODEX})
         score_sink = mock.Mock(return_value=("{}", "ok"))
@@ -377,13 +542,27 @@ class CodexQualificationSourceTest(unittest.TestCase):
 
         with mock.patch.object(marker._reading(), "build_prompt", capture_frozen_prompt):
             case = sources.freeze_case(self.config, spec)
-        row = {**case["row_snapshot"], "project": "synthetic", "acquisition": "event"}
-        revision = cast("annotation_store.Revision", marker.case_revision(case))
+        self.assertEqual(1, len(frozen_prompts))
+        return case, self.analyze_prompt(spec), frozen_prompts[0]
+
+    @staticmethod
+    def analyze_row(spec: dict[str, Any]) -> dict[str, Any]:
+        return {
+            **spec["row"],
+            "harness": "codex",
+            "sid": SID,
+            "project": "synthetic",
+            "acquisition": "event",
+        }
+
+    def analyze_prompt(self, spec: dict[str, Any], board: state.RuntimeState | None = None) -> str:
+        row = self.analyze_row(spec)
+        revision = cast("annotation_store.Revision", marker.case_revision(spec))
         handler = object.__new__(http_api._RequestHandler)
         handler.server = mock.Mock(
             application=mock.Mock(
                 config=self.config,
-                state=state.RuntimeState(self.config, AT),
+                state=board if board is not None else state.RuntimeState(self.config, AT),
                 clock=lambda: AT + 20,
             )
         )
@@ -410,8 +589,7 @@ class CodexQualificationSourceTest(unittest.TestCase):
                 mock.Mock(),
             )
         self.assertEqual(1, sink.call_count, why)
-        self.assertEqual(1, len(frozen_prompts))
-        return case, sink.call_args.args[0], frozen_prompts[0]
+        return cast("str", sink.call_args.args[0])
 
 
 class FrozenCodexRuntimeTest(unittest.TestCase):

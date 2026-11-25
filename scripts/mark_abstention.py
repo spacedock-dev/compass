@@ -2502,7 +2502,7 @@ def freeze(  # noqa: C901, PLR0911 - refuse each distinct harness/source/identit
     return 0
 
 
-def _write(path: str, body: dict[str, Any]) -> None:
+def _write(path: str, body: dict[str, Any], *, exclusive: bool = False) -> None:
     """Atomically, because this file is somebody's evening.
 
     v2 truncated in place: a Ctrl-C between `open` and `dump` left a zero length
@@ -2511,10 +2511,18 @@ def _write(path: str, body: dict[str, Any]) -> None:
     os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     # Its own temporary file: two runs sharing one `.tmp` crashed in review.
     descriptor, tmp = tempfile.mkstemp(prefix=".write-", suffix=".tmp", dir=os.path.dirname(path))
-    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-        json.dump(body, handle, indent=2)
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(body, handle, indent=2)
+        os.chmod(tmp, 0o600)
+        if exclusive:
+            # Publish complete JSON without replacing a key created by another marker.
+            os.link(tmp, path)
+        else:
+            os.replace(tmp, path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp)
 
 
 def _load(path: str) -> dict[str, Any]:
@@ -2815,32 +2823,66 @@ def _ledger_refusal(*, continuation: bool = False, cases_digest: str = "") -> bo
 
 
 def _codex_marking_refusal() -> bool:
-    ledger = abstention_ledger.study_path("codex-qualification-spend.json")
+    ledger = abstention_ledger.study_path(abstention_ledger.CODEX_LEDGER_NAME)
     if ledger is None:
         print("The account's canonical Codex spend ledger is unavailable.")
         return True
-    grant = abstention_ledger.CODEX_GRANT_PATH
-    result = os.path.join(os.path.dirname(grant), "codex-results.json")
-    # A grant or genesis already binds the marks. Receipts and the result keep the
-    # key frozen even if the ledger is missing.
-    for path in (grant, ledger, f"{ledger}.receipts", result):
-        try:
-            os.lstat(path)
-        except FileNotFoundError:
-            continue
-        except OSError:
-            print("The Codex qualification authority could not be checked. The key is frozen.")
-            return True
-        print("The Codex qualification authority already binds the answer key. The key is frozen.")
+    paths = abstention_ledger.codex_run_artifacts(ledger, os.path.dirname(CASES_PATH))
+    try:
+        frozen = any(
+            map(
+                abstention_ledger.codex_artifact_exists,
+                (abstention_ledger.CODEX_GRANT_PATH, *paths),
+            )
+        )
+    except OSError:
+        print("The Codex qualification authority could not be checked. The key is frozen.")
         return True
-    return False
+    if frozen:
+        print("The Codex qualification authority already binds the answer key. The key is frozen.")
+    return frozen
 
 
-def _save_marks(body: dict[str, Any], entries: dict[str, Any], *, continuation: bool) -> bool:
-    """Save the key, sharing the charge lock only for a continuation's final write."""
+def _codex_marks_snapshot() -> bytes | None:
+    try:
+        info = os.lstat(MARKS_PATH)
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(info.st_mode):
+        raise ValueError("the existing answer key is not a regular file")
+    with open(MARKS_PATH, "rb") as handle:
+        return handle.read()
+
+
+def _save_codex_marks(
+    body: dict[str, Any], entries: dict[str, Any], previous: bytes | None
+) -> bool:
+    path = abstention_ledger.study_path(abstention_ledger.CODEX_LEDGER_NAME)
+    if path is None:
+        print("The account's canonical Codex spend ledger is unavailable.")
+        return False
+    try:
+        # Grant publication and genesis use this lock. Input may take an evening.
+        with abstention_ledger.locked(path):
+            if _codex_marking_refusal():
+                return False
+            if _codex_marks_snapshot() != previous:
+                print("The Codex answer key changed during marking. Nothing was written.")
+                return False
+            _write(MARKS_PATH, _bound_marks(body, entries), exclusive=previous is None)
+    except (OSError, ValueError):
+        print("The Codex answer key could not be safely written.")
+        return False
+    return True
+
+
+def _save_marks(
+    body: dict[str, Any], entries: dict[str, Any], *, continuation: bool, previous: bytes | None
+) -> bool:
+    """Share the applicable charge lock for the final write."""
     if not continuation:
-        if body.get("v") == FORMAT_CODEX and _codex_marking_refusal():
-            return False
+        if body.get("v") == FORMAT_CODEX:
+            return _save_codex_marks(body, entries, previous)
         _write(MARKS_PATH, _bound_marks(body, entries))
         return True
     path = abstention_ledger.LEDGER_PATH
@@ -2877,16 +2919,37 @@ def _markable_cases(body: dict[str, Any], *, continuation: bool) -> list[dict[st
     return cast("list[dict[str, Any]]", cases)
 
 
+def _saved_marks(body: dict[str, Any], digest: str) -> tuple[dict[str, Any], bytes | None]:
+    if body.get("v") != FORMAT_CODEX:
+        return _load(MARKS_PATH), None
+    previous = _codex_marks_snapshot()
+    if previous is None:
+        return {}, None
+    saved = json.loads(previous)
+    if (
+        not isinstance(saved, dict)
+        or saved.get("v") != 4
+        or not isinstance(saved.get("marks"), dict)
+        or saved.get("cases_digest") != digest
+    ):
+        raise ValueError("the existing answer key does not belong to this Codex packet")
+    return saved, previous
+
+
 def mark(*, continuation: bool = False) -> int:
     body = _load(CASES_PATH)
     print_packet(CASES_PATH, body)
     cases = _markable_cases(body, continuation=continuation)
     if cases is None:
         return 1
-    saved = _load(MARKS_PATH)
+    digest = cases_digest(body)
+    try:
+        saved, previous = _saved_marks(body, digest)
+    except (OSError, ValueError, RecursionError):
+        print("Could not verify the existing Codex answer key. Nothing was changed.")
+        return 1
     entries = _marks(saved)
     replay = body.get("v") == 4 or is_intent_packet(body)
-    digest = cases_digest(body)
     if replay and entries and saved.get("cases_digest") != digest:
         print("These marks belong to a different or unfrozen case set. Nothing was changed.")
         print("Keep that key with its original cases; use a separate COMPASS_HOME for this packet.")
@@ -2914,7 +2977,7 @@ def mark(*, continuation: bool = False) -> int:
         entries[case["id"]] = answers
         done += 1
 
-    if not _save_marks(body, entries, continuation=continuation):
+    if not _save_marks(body, entries, continuation=continuation, previous=previous):
         return 1
     _warn_if_unanimous(entries, cases)
 
