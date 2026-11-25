@@ -266,4 +266,10 @@ agy plugin validate ./compass
      pass clarified where the release browser proofs run, how release resolution reads checksums,
      and which runtime modules keep the board and footer in agreement. -->
 
-<!-- docs-synced-through: bb3f0ac1 (2026-11-25) -->
+<!-- Reconciled bb3f0ac1..c3b8aa5e: the previous docs pass and macOS test flakes, CI checks split
+     by event, test workers exiting with their runner, a patch release, and masking for escaped
+     authorization headers and curl passwords while keeping documented placeholders readable.
+     This pass clarified when the merge queue runs the Python floor and recorded worker cleanup.
+     The harness and platform matrices still apply. -->
+
+<!-- docs-synced-through: c3b8aa5e (2026-11-25) -->

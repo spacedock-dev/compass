@@ -344,6 +344,7 @@ coverage report   # enforces the fail_under threshold from pyproject.toml
 # It holds what a passing test prints, as `unittest -b` does; `--no-buffer` shows it.
 # It runs a failed test once more on its own, and `REAL_TIME_TESTS` modules after the
 # workers; `--no-retry` fails on the first failure. See Flaky tests under Parallel Work.
+# Workers also exit if the test runner is killed outright.
 # On Python 3.14, `COVERAGE_CORE=sysmon` cuts the coverage run several-fold, as CI does;
 # older Pythons refuse it with branch coverage and fall back to the slow tracer.
 # `test_capture_terminal_identity` and `test_capture_focus_raise` exercise AppleScript
@@ -668,7 +669,7 @@ event's mode, in `scripts/ci_scope.py`, says which of those jobs run:
 | Event | Runs | Skips |
 |---|---|---|
 | Pull request | every job its lanes turn on, with the macOS legs when `platform` is on | nothing its lanes need |
-| Merge queue entry | its lanes once on Linux: lint, types, the coverage run, the frontend jobs, Storybook, actionlint, and the 3.12 floor only when it is the entry's one suite run | the portability legs: the 3.12 floor, 3.15 and every macOS leg. `platform` stays off even when the detector fails open |
+| Merge queue entry | its lanes once on Linux: lint, types, the coverage run, the frontend jobs, Storybook, actionlint, and the 3.12 floor only when it is the entry's one suite run | the 3.15 and macOS portability legs. `platform` stays off even when the detector fails open |
 | Push to main | the portability legs for every lane, macOS included | the jobs the queue just ran on the same commit, which is the commit that lands |
 | Nightly schedule, manual dispatch | every job | nothing |
 
