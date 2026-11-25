@@ -1774,6 +1774,9 @@ def _produce(
             "admit_idle": True,
             "max_prompt_bytes": marker.codex_analyze_limits(config).analyze_prompt_bytes,
             "person_source_lookup": marker.native_case_person_lookup(dict(case), config=config),
+            "message_source_lookup": marker.native_codex_case_message_lookup(
+                dict(case), config=config
+            ),
         }
     else:
         facts = list(case.get("facts") or ())

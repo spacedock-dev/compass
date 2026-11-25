@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 if TYPE_CHECKING:
     from tests.codex_source_support import (
         AT,
+        CHILD,
         SID,
         command,
         config,
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
 else:
     from codex_source_support import (
         AT,
+        CHILD,
         SID,
         command,
         config,
@@ -41,12 +43,15 @@ else:
         write,
     )
 import codex_case_sources as sources
+import levels_cases as levels
 import mark_abstention as marker
+import score_abstention as scorer
 from compass_runtime import annotations as annotation_store
 from compass_runtime import (
     http_api,
     reading_policy,
     reading_route,
+    settings,
     state,
 )
 from compass_runtime import (
@@ -79,6 +84,32 @@ class CodexQualificationSourceTest(unittest.TestCase):
     def test_a_person_cannot_verify_their_own_authored_case(self) -> None:
         with self.assertRaisesRegex(marker.FreezeError, "codex-authored-identities-required"):
             sources.freeze_case(self.config, self.authored_spec(verified_by="author"))
+
+    def test_a_person_must_supply_nonblank_string_source_paths(self) -> None:
+        spec = self.authored_spec()
+        with contextlib.chdir(spec["sessions_root"]):
+            for field in ("sessions_root", "transcript"):
+                for value in ("", " \t", None, 1):
+                    with (
+                        self.subTest(field=field, value=value),
+                        self.assertRaisesRegex(marker.FreezeError, "codex-source-root-invalid"),
+                    ):
+                        sources.freeze_case(self.config, {**spec, field: value})
+
+    def test_a_person_cannot_freeze_rollouts_from_a_nested_checkout(self) -> None:
+        spec = self.authored_spec()
+        nested = Path(spec["sessions_root"]) / "checkout"
+        nested.mkdir()
+        (nested / ".git").mkdir()
+        path = rollout(nested, sid=CHILD)
+        for selection in ({**spec, "transcript": str(path), "sid": CHILD}, spec):
+            with (
+                self.subTest(transcript=selection["transcript"]),
+                mock.patch.object(sources, "_head", wraps=sources._head) as head,
+                self.assertRaisesRegex(marker.FreezeError, "codex-source-outside-selection"),
+            ):
+                sources.freeze_case(self.config, selection)
+            head.assert_not_called()
 
     def test_a_person_cannot_reuse_marks_after_an_authored_case_changes(self) -> None:
         spec = self.authored_spec()
@@ -131,6 +162,88 @@ class CodexQualificationSourceTest(unittest.TestCase):
             },
         )
         write(path, rows)
+        case, production, frozen = self.analyze_and_freeze(entry(root.parents[2], path))
+        self.assertIn("python3 -m pytest", production)
+        self.assertGreater(len(production.encode()), 16_384)
+        for text in (commentary, final):
+            self.assertNotIn(text, production)
+            self.assertNotIn(text, frozen)
+            self.assertNotIn(text, json.dumps(case))
+        self.assert_prompt_equal(production, frozen)
+        self.assertEqual(
+            marker.production_prompt_digest(production), case["production_reading"]["prompt_digest"]
+        )
+
+    def test_a_person_freezes_the_focused_timeline_when_checks_fill_it(self) -> None:
+        root = self.home / "codex/sessions"
+        path = rollout(root / "2026/11/07")
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        settings.save(self.config, {"analyze_record_events": 100})
+        rows[3:3] = [
+            command(2 + number / 250, command_text=f"python3 -m pytest tests/test_{number:03d}.py")
+            for number in range(120)
+        ]
+        change = command(4.5)
+        change["payload"]["item"] = {
+            "id": "write-proof",
+            "type": "FileChange",
+            "status": "completed",
+            "changes": {"/synthetic/project/src/example.py": {"type": "add", "content": "sample"}},
+            "stdout": "",
+            "stderr": "",
+        }
+        rows.insert(-1, change)
+        write(path, rows)
+        spec = entry(root, path)
+        spec["intent"]["at"] = AT + 2.95
+        _, production, frozen = self.analyze_and_freeze(spec)
+        self.assertNotIn("src/example.py", production)
+        self.assert_prompt_equal(production, frozen)
+
+    def test_a_persons_long_message_survives_freeze_and_both_replays(self) -> None:
+        root = self.home / "codex/sessions"
+        path = rollout(root / "2026/11/07")
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        sentinel = "TAIL_MARKER_PAST_1500: do not touch billing.py."
+        rows[2] = message(
+            "Please verify the change. " + "Background context sentence. " * 60 + sentinel
+        )
+        write(path, rows)
+        case, production, frozen = self.analyze_and_freeze(entry(root, path))
+        tool_output = scorer._tool_output(case, "OpenAI", "Codex", {"v": marker.FORMAT_CODEX})
+        score_sink = mock.Mock(return_value=("{}", "ok"))
+        result = scorer.score_case(
+            self.config,
+            case,
+            case["row_snapshot"],
+            case["producer_facts"],
+            {},
+            model=score_sink,
+            now=case["captured_at"],
+            revision=marker.case_revision(case),
+            tool_output=tool_output,
+        )
+        levels_sink = mock.Mock(return_value=("{}", "ok"))
+        levels._produce(self.config, case, levels_sink, tool_output, case["captured_at"])
+        self.assertEqual(1, score_sink.call_count, result)
+        levels_sink.assert_called_once()
+        for name, prompt in (
+            ("production", production),
+            ("frozen", frozen),
+            ("scored", score_sink.call_args.args[0]),
+            ("levels", levels_sink.call_args.args[0]),
+        ):
+            with self.subTest(prompt=name):
+                self.assertIn(sentinel, prompt)
+                self.assert_prompt_equal(production, prompt)
+
+    def assert_prompt_equal(self, expected: str, actual: str) -> None:
+        self.assertEqual(
+            marker.normalized_production_prompt(expected).encode(),
+            marker.normalized_production_prompt(actual).encode(),
+        )
+
+    def analyze_and_freeze(self, spec: dict[str, Any]) -> tuple[dict[str, Any], str, str]:
         frozen_prompts: list[str] = []
         build_prompt = marker._reading().build_prompt
 
@@ -140,7 +253,7 @@ class CodexQualificationSourceTest(unittest.TestCase):
             return result
 
         with mock.patch.object(marker._reading(), "build_prompt", capture_frozen_prompt):
-            case = sources.freeze_case(self.config, entry(root.parents[2], path))
+            case = sources.freeze_case(self.config, spec)
         row = {**case["row_snapshot"], "project": "synthetic", "acquisition": "event"}
         revision = cast("annotation_store.Revision", marker.case_revision(case))
         handler = object.__new__(http_api._RequestHandler)
@@ -174,21 +287,8 @@ class CodexQualificationSourceTest(unittest.TestCase):
                 mock.Mock(),
             )
         self.assertEqual(1, sink.call_count, why)
-        production = sink.call_args.args[0]
-        self.assertIn("python3 -m pytest", production)
-        self.assertGreater(len(production.encode()), 16_384)
         self.assertEqual(1, len(frozen_prompts))
-        for text in (commentary, final):
-            self.assertNotIn(text, production)
-            self.assertNotIn(text, frozen_prompts[0])
-            self.assertNotIn(text, json.dumps(case))
-        self.assertEqual(
-            marker.normalized_production_prompt(production).encode(),
-            marker.normalized_production_prompt(frozen_prompts[0]).encode(),
-        )
-        self.assertEqual(
-            marker.production_prompt_digest(production), case["production_reading"]["prompt_digest"]
-        )
+        return case, sink.call_args.args[0], frozen_prompts[0]
 
 
 class FrozenCodexRuntimeTest(unittest.TestCase):

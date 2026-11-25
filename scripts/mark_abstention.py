@@ -100,7 +100,7 @@ import abstention_ledger
 import store_paths
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Callable, Iterator, Mapping, Sequence
     from typing import BinaryIO
 
 _SKILL = os.path.join(
@@ -626,6 +626,19 @@ def codex_analyze_limits(config: Any) -> Any:
     return settings.load(config)
 
 
+def _codex_message_lookup(
+    config: Any, path: str, sid: str, stamp: tuple[int, int, int, int] | None
+) -> Callable[[Sequence[Mapping[str, Any]], int], list[dict[str, Any]]]:
+    from compass_runtime import project_context  # noqa: PLC0415 - see `_reading`
+
+    def lookup(wanted: Sequence[Mapping[str, Any]], cap: int) -> list[dict[str, Any]]:
+        return project_context.transcript_message_words(
+            config, path, "codex", sid, wanted, max_bytes=cap, expected_stamp=stamp
+        )
+
+    return lookup
+
+
 def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> dict[str, Any]:
     """Capture the actual production selection using a model-free prompt sink."""
     reading = _reading()
@@ -701,6 +714,11 @@ def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> d
                 read_incomplete=incomplete,
             ),
             person_source_lookup=person,
+            message_source_lookup=(
+                _codex_message_lookup(config, path, str(case["sid"]), stamp)
+                if harness == "codex"
+                else None
+            ),
             final_source_lookup=final if read_agent_words else None,
         )
     if len(prompts) != 1 or "person_wanted" not in frozen:
@@ -802,6 +820,24 @@ def native_case_final_lookup(
     if case.get("harness") != "claude":
         return None
     return _native_source_lookup(case, _reading().AGENT_MESSAGE_TYPE, **kwargs)
+
+
+def native_codex_case_message_lookup(
+    case: dict[str, Any], *, config: Any
+) -> Callable[[Sequence[Mapping[str, Any]], int], list[dict[str, Any]]]:
+    """Widen selected person messages from the sealed prefix during replay."""
+    from compass_runtime import project_context  # noqa: PLC0415 - see `_reading`
+
+    path = str(case["sources"]["parent"]["path"])
+    sid = str(case["sid"])
+
+    def lookup(wanted: Sequence[Mapping[str, Any]], cap: int) -> list[dict[str, Any]]:
+        with _historical_source(case, path, config=config) as (cut, _digest):
+            return _codex_message_lookup(config, cut, sid, project_context.transcript_stamp(cut))(
+                wanted, cap
+            )
+
+    return lookup
 
 
 def _get(url: str, timeout: int = 30) -> Any:

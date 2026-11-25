@@ -1289,16 +1289,20 @@ Author and verifier must be distinct. The authored rollout uses the Codex record
 passes the same identity, descendant, capture, lifecycle and prompt checks. Its kind review
 must name the same kind and identities as the freeze.
 
-Discovery reads every rollout head under the selected root, independently of the
-selected descendants. An unrelated rollout with a head over 65,536 bytes, an empty or malformed
-first line, a first line other than `session_meta`, or untimed metadata blocks the freeze too.
+Both `sessions_root` and `transcript` must be nonblank path strings. Discovery checks the selected
+files and every rollout it finds for nested Git checkouts before reading any rollout head.
+It reads heads independently of the selected descendants. An unrelated rollout with a head
+over 65,536 bytes, an empty or malformed first line, a first line other than `session_meta`,
+or untimed metadata blocks the freeze too.
 Selection cannot scope this scan; ignoring unselected heads could hide a descendant. Check the
 inventory before selecting sources. Malformed case entries or inventory item types refuse with
 closed tokens and no source text, paths or tracebacks.
 
 The packet seals each parent/child prefix and capture boundary, the saved Intent, checks,
 person messages, lifecycle, parser, selected source identities and actual production prompt digest.
-Freeze and replay use the configured Analyze limits for prompt bytes and listed checks.
+Freeze applies the configured Analyze limits to the check listing and focused timeline.
+Freeze and replay use the configured Analyze prompt byte limit and recover the selected
+person message text from the sealed prefix.
 The Codex Analyze prompt carries no assistant messages or final reply.
 Checks are derived after the sources are cut, so later failures or writes cannot change the
 latest check at the capture. Revalidation rebuilds the case from those native sources.
@@ -1329,10 +1333,12 @@ preparation records no approval and launches no producer. The private packet's
 `codex_kind_reviews` binds each case's digest to its independently reviewed kind, two distinct
 blind markers, a separate kind reviewer and review receipt digest. Supported departure requires
 an explicit spontaneous ruling. Each adversary and authored core case also names a distinct
-author and verifier. A format 6 rubric refers to each frozen case by id and supplies its
-expectations. An authored rubric entry uses `origin: "synthesised"` and names distinct
-`generated_by` and `verified_by`. The scorer takes provenance from the case and kind from
-the bound review. Every required expectation must exist before preparation succeeds.
+author and verifier. For an authored case, the kind reviewer must be independent of the author.
+Both blind markers must be independent of the author and verifier. A format 6 rubric refers to
+each frozen case by id and supplies its expectations. An authored rubric entry uses
+`origin: "synthesised"`. Its `generated_by` matches the frozen `authored_by` and its
+`verified_by` matches the frozen `verified_by`. The scorer takes provenance from the case and
+kind from the bound review. Every required expectation must exist before preparation succeeds.
 
 `--score --producer codex` requires the separately sealed grant and reviewed genesis. Before
 asking for approval it lists the ten slots (case alias and repetition), every request digest,

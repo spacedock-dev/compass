@@ -116,8 +116,15 @@ def _head(path: Path) -> tuple[str, str, float | None, str]:
 
 
 def _selection(config: Any, entry: dict[str, Any]) -> tuple[Path, Path, list[Path]]:  # noqa: C901, PLR0912 - independent native membership guards
-    root = Path(str(entry.get("sessions_root") or "")).absolute()
-    path = Path(str(entry.get("transcript") or "")).absolute()
+    raw_root, raw_path = entry.get("sessions_root"), entry.get("transcript")
+    if (
+        not isinstance(raw_root, str)
+        or not raw_root.strip()
+        or not isinstance(raw_path, str)
+        or not raw_path.strip()
+    ):
+        raise marker.FreezeError("codex-source-root-invalid")
+    root, path = Path(raw_root).absolute(), Path(raw_path).absolute()
     if not root.is_dir() or root.is_symlink() or not outside_repository(root):
         raise marker.FreezeError("codex-source-root-invalid")
     native_roots = {
@@ -136,16 +143,20 @@ def _selection(config: Any, entry: dict[str, Any]) -> tuple[Path, Path, list[Pat
     if not isinstance(selected, list) or not all(isinstance(p, str) for p in selected):
         raise marker.FreezeError("codex-children-selection-required")
     children = sorted(Path(p).absolute() for p in selected)
-    for source in (path, *children):
-        if not source.resolve().is_relative_to(root.resolve()) or source.is_symlink():
-            raise marker.FreezeError("codex-source-outside-selection")
-    sid, parent, _, _ = _head(path)
-    if sid != entry.get("sid") or parent:
-        raise marker.FreezeError("codex-source-other-session")
     # Metadata-only discovery is independent of the owner's selected children.
     paths = sorted(root.rglob("rollout-*.jsonl"))
     if len(paths) > MAX_FILES:
         raise marker.FreezeError("codex-source-discovery-limit")
+    for source in dict.fromkeys((path, *children, *paths)):
+        if (
+            not source.resolve().is_relative_to(resolved_root)
+            or source.is_symlink()
+            or not outside_repository(source)
+        ):
+            raise marker.FreezeError("codex-source-outside-selection")
+    sid, parent, _, _ = _head(path)
+    if sid != entry.get("sid") or parent:
+        raise marker.FreezeError("codex-source-other-session")
     heads: dict[str, tuple[Path, str]] = {}
     sessions: dict[str, str] = {}
     for candidate in paths:
@@ -220,6 +231,41 @@ def _verify_cuts(paths: tuple[str, ...], sources: dict[str, Any]) -> None:
         for path, seal in zip(paths, seals, strict=True)
     ):
         raise marker.FreezeError("production-source-moved")
+
+
+def _focused_facts(
+    config: Any, cut: str, child_cuts: tuple[str, ...], sid: str
+) -> tuple[list[dict[str, Any]], Any]:
+    from compass_runtime import io as runtime_io
+    from compass_runtime import project_context as context
+
+    tally = context._codex_tally(config, cut, child_paths=child_cuts)
+    if tally is None:
+        raise context.FrozenCheckCutoffUnreachableError("codex commands unreadable")
+    if (
+        tally.named_unread
+        or tally.parent_failed
+        or tally.scan.get("subagent_transcripts_unread")
+        or tally.scan.get("unread_calls")
+    ):
+        raise context.FrozenCheckCutoffUnreachableError("codex checks incomplete")
+    people: dict[tuple[float, str], dict[str, Any]] = {}
+    for raw in runtime_io.read_tail(config, cut):
+        record = context._json_dict(raw.encode())
+        if record is None or record.get("type") != "response_item":
+            continue
+        if context.codex_person_record(record):
+            event = context._instruction_event(config, record, "codex", sid)
+            if event is not None:
+                people.setdefault((event["at"], event["title"]), event)
+    limits = marker.codex_analyze_limits(config)
+    checks = tally.entries(sid, cap=limits.analyze_listed_checks)
+    # The live timeline reserves check slots before other events. Capping facts
+    # after projection could leave a file write that Analyze never kept.
+    timeline = context._project_timeline(
+        [*people.values(), *checks], ("codex", sid), cap=limits.analyze_record_events
+    )
+    return context._semantic_model(timeline, [])["facts"], context._press(tally)
 
 
 def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
@@ -304,15 +350,7 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
                 or child_info.get("last_event_ts", 0) > stop
             ):
                 raise marker.FreezeError("codex-child-active")
-        checks, press = context.frozen_codex_checks(
-            config,
-            cut,
-            sid,
-            until=captured,
-            child_paths=child_cuts,
-            listed_cap=marker.codex_analyze_limits(config).analyze_listed_checks,
-        )
-        _, people = context.frozen_codex_user_messages(config, cut, sid, until=captured)
+        facts, press = _focused_facts(config, cut, child_cuts, sid)
         refusals = _refusals(cut, sid)
     case: dict[str, Any] = {
         "codex_format": marker.FORMAT_CODEX,
@@ -335,7 +373,7 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
         "transcript_bytes": sources["parent"]["bytes"],
         "transcript_cut": "capture",
         "lifecycle_from": "codex-transcript",
-        "producer_facts": [*people, *checks],
+        "producer_facts": facts,
         "message_refusals": refusals,
         "unconfirmed": [],
         "tool_output": {

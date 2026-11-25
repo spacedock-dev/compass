@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import dataclasses
 import io
 import json
 import os
@@ -234,12 +235,22 @@ class CodexQualificationTest(_CodexInstallationFixture):
                 "verified_by": "independent-verifier",
             }
         body = {"v": marker.FORMAT_CODEX, "cases": cases, "codex_kind_reviews": reviews}
-        with mock.patch("builtins.input", return_value="n"):
-            answers = {c["id"]: marker._mark_one(body, c) for c in cases}
-        marks = marker._bound_marks(
-            body,
-            answers,
-        )
+        cases_path = self.home / "cases.json"
+        marks_path = self.home / "marks.json"
+        cases_path.write_text(json.dumps(body))
+        with (
+            mock.patch.object(marker, "CASES_PATH", str(cases_path)),
+            mock.patch.object(marker, "MARKS_PATH", str(marks_path)),
+            mock.patch.object(authority, "LEDGER_PATH", str(self.home / "empty-ledger.json")),
+            # The committed Claude calls currently block even fresh Codex marking.
+            mock.patch.object(
+                authority, "CLAUDE_SUMMARY_PATH", str(self.home / "absent-claude-summary.json")
+            ),
+            mock.patch("builtins.input", return_value="n"),
+            contextlib.redirect_stdout(io.StringIO()) as marking,
+        ):
+            self.assertEqual(0, marker.main([]), marking.getvalue())
+        marks = json.loads(marks_path.read_bytes())
         rubric = {
             "v": 1,
             "cases": {
@@ -644,6 +655,42 @@ class CodexQualificationTest(_CodexInstallationFixture):
         )
         with self.assertRaises(marker.FreezeError):
             scorer.prepare_codex_requests(self.corpus, self.config, self.transport)
+        self.assertEqual([], self.launches)
+
+    def test_a_person_cannot_prepare_an_authored_case_with_different_rubric_provenance(
+        self,
+    ) -> None:
+        case = next(c for c in self.corpus.cases["cases"] if c["origin"] == "synthesised")
+        for changes in (
+            {"origin": "recorded", "generated_by": "", "verified_by": ""},
+            {"origin": None},
+            {"generated_by": "other-author"},
+            {"verified_by": "other-verifier"},
+        ):
+            with self.subTest(changes=changes):
+                rubric = copy.deepcopy(self.corpus.rubric)
+                rubric["cases"][case["id"]].update(changes)
+                corpus = dataclasses.replace(self.corpus, rubric=rubric)
+                with self.assertRaisesRegex(marker.FreezeError, "codex-authored-rubric-differs"):
+                    scorer.prepare_codex_requests(corpus, self.config, self.transport)
+        self.assertEqual([], self.launches)
+
+    def test_a_person_cannot_review_their_own_kind_or_blind_mark_an_authored_case(self) -> None:
+        case = next(c for c in self.corpus.cases["cases"] if c["origin"] == "synthesised")
+        for changes in (
+            {"reviewed_by": " author "},
+            {"markers": [" author ", "marker-b"]},
+            {"markers": ["marker-a", " independent-verifier "]},
+        ):
+            with self.subTest(changes=changes):
+                body = copy.deepcopy(dict(self.corpus.cases))
+                body["codex_kind_reviews"][case["id"]].update(changes)
+                marks = {**self.corpus.marks, "cases_digest": marker.cases_digest(body)}
+                corpus = scorer.Corpus(body, marks, json.dumps(marks).encode(), self.corpus.rubric)
+                with self.assertRaisesRegex(
+                    marker.FreezeError, "codex-independent-source-kind-unconfirmed"
+                ):
+                    scorer.prepare_codex_requests(corpus, self.config, self.transport)
         self.assertEqual([], self.launches)
 
     def test_a_person_can_prepare_at_the_cli_without_claude_or_a_producer_launch(self) -> None:

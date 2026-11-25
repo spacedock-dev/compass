@@ -1258,6 +1258,9 @@ def score_case(  # noqa: PLR0913 - one keyword per thing a case decides
                     source_kwargs["max_prompt_bytes"] = mark_abstention.codex_analyze_limits(
                         config
                     ).analyze_prompt_bytes
+                    source_kwargs["message_source_lookup"] = (
+                        mark_abstention.native_codex_case_message_lookup(dict(case), config=config)
+                    )
                 model = _SourcePinnedModel(
                     model,
                     str(frozen["prompt_digest"]),
@@ -3829,6 +3832,23 @@ def _codex_expectations(case: Mapping[str, Any], entry: Mapping[str, Any]) -> bo
     )
 
 
+def _validate_authored_codex_review(
+    case: dict[str, Any], review: dict[str, Any], rubric: dict[str, Any], markers: list[str]
+) -> None:
+    author, verifier = case["authored_by"], case["verified_by"]
+    if review["reviewed_by"].strip() == author.strip() or {m.strip() for m in markers} & {
+        author.strip(),
+        verifier.strip(),
+    }:
+        raise mark_abstention.FreezeError("codex-independent-source-kind-unconfirmed")
+    if (
+        rubric.get("origin") != ORIGIN_SYNTHESISED
+        or rubric.get("generated_by") != author
+        or rubric.get("verified_by") != verifier
+    ):
+        raise mark_abstention.FreezeError("codex-authored-rubric-differs")
+
+
 def _codex_cases(corpus: Corpus, config: Any) -> dict[str, Any]:  # noqa: C901 - source, mark and independent review guards precede every send
     """Source revalidation and independent, source-bound kind review, before any send."""
     body = dict(corpus.cases)
@@ -3887,6 +3907,8 @@ def _codex_cases(corpus: Corpus, config: Any) -> dict[str, Any]:  # noqa: C901 -
             or rubric_refusal(rubric[cid], "codex")
         ):
             raise mark_abstention.FreezeError("codex-independent-source-kind-unconfirmed")
+        if case["origin"] == ORIGIN_SYNTHESISED:
+            _validate_authored_codex_review(case, review, rubric[cid], markers)
         if not _codex_expectations(case, rubric[cid]):
             raise mark_abstention.FreezeError("codex-required-expectations-incomplete")
         roles.append(kind)
