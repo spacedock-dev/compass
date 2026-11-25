@@ -13,7 +13,7 @@ from typing import Any
 from unittest import mock
 
 from compass_runtime import io as runtime_io
-from compass_runtime import records, spacedock
+from compass_runtime import observer, records, spacedock
 from compass_runtime import records as runtime_records
 from compass_runtime import transcripts as runtime_transcripts
 from compass_runtime import turns as runtime_turns
@@ -168,6 +168,7 @@ class CodexCollectorTest(RuntimeTestCase):
         parent = "11111111-1111-4111-8111-111111111111"
         fork = "22222222-2222-4222-8222-222222222222"
         user_fork = "33333333-3333-4333-8333-333333333333"
+        untagged_fork = "44444444-4444-4444-8444-444444444444"
         with tempfile.TemporaryDirectory() as tmp:
             day = Path(tmp) / "2026" / "11" / "08"
             day.mkdir(parents=True)
@@ -184,6 +185,7 @@ class CodexCollectorTest(RuntimeTestCase):
                     },
                 ),
                 (user_fork, {"forked_from_id": parent, "thread_source": "user"}),
+                (untagged_fork, {"forked_from_id": parent}),
             ):
                 path = day / f"rollout-2026-11-08T00-00-00-{sid}.jsonl"
                 head = {
@@ -208,7 +210,7 @@ class CodexCollectorTest(RuntimeTestCase):
                     for row in codex_collector.collect(config, state, now, 24, False)
                 }
 
-        self.assertEqual({parent, user_fork}, set(rows))
+        self.assertEqual({parent, user_fork, untagged_fork}, set(rows))
         self.assertEqual(
             [("worker", fork, 1)],
             [
@@ -217,16 +219,61 @@ class CodexCollectorTest(RuntimeTestCase):
             ],
         )
 
+    def test_a_newer_user_fork_has_its_own_row_and_transcript(self) -> None:
+        now = time.time()
+        original = "11111111-1111-4111-8111-111111111111"
+        fork = "22222222-2222-4222-8222-222222222222"
+        with tempfile.TemporaryDirectory() as tmp:
+            day = Path(tmp) / "2026" / "11" / "08"
+            day.mkdir(parents=True)
+            paths = {}
+            for sid, project, mtime, fields in (
+                (original, "actual-root", now - 60, {}),
+                (fork, "user-fork", now, {"forked_from_id": original, "thread_source": "user"}),
+            ):
+                path = day / f"rollout-2026-11-08T00-00-00-{sid}.jsonl"
+                paths[sid] = str(path)
+                head = {
+                    "timestamp": _stamp(mtime - 30),
+                    "type": "session_meta",
+                    "payload": {
+                        "session_id": original,
+                        "id": sid,
+                        "cwd": f"/{project}",
+                        "source": "cli",
+                        **fields,
+                    },
+                }
+                path.write_text(
+                    json.dumps(head) + "\n" + json.dumps(_task_started(mtime - 10)) + "\n"
+                )
+                os.utime(path, (mtime, mtime))
+            with store_patch(CODEX_SESSIONS_DIR=tmp):
+                config, state = runtime()
+                rows = codex_collector.collect(config, state, now, 24, False)
+                with self.subTest(surface="board"):
+                    self.assertEqual(
+                        {original: "actual-root", fork: "user-fork"},
+                        {row["sid"]: row["project"] for row in rows},
+                    )
+                for sid, expected_path in paths.items():
+                    with self.subTest(transcript=sid):
+                        self.assertEqual(
+                            expected_path, observer.resolve_transcript(config, state, "codex", sid)
+                        )
+
     def test_a_malformed_child_thread_does_not_hide_a_healthy_session(self) -> None:
         now = time.time()
         parent = "11111111-1111-4111-8111-111111111111"
-        child = "22222222-2222-4222-8222-222222222222"
+        object_child = "22222222-2222-4222-8222-222222222222"
+        null_child = "33333333-3333-4333-8333-333333333333"
         with tempfile.TemporaryDirectory() as tmp:
             day = Path(tmp) / "2026" / "11" / "08"
             day.mkdir(parents=True)
             for sid, fields in (
                 (parent, {"id": parent}),
-                (child, {"id": {"invalid": "id"}, "parent_thread_id": parent}),
+                (object_child, {"id": {"invalid": "id"}, "parent_thread_id": parent}),
+                (null_child, {"id": None, "parent_thread_id": parent}),
             ):
                 path = day / f"rollout-2026-11-08T00-00-00-{sid}.jsonl"
                 head = {

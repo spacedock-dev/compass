@@ -94,7 +94,7 @@ def parser_digest() -> str:
 
 def _head(path: Path) -> tuple[str, str, float | None, str]:
     from compass_runtime import project_context as context
-    from compass_runtime import records
+    from compass_runtime import records, transcripts
 
     if path.is_symlink():
         raise marker.FreezeError("codex-source-linked")
@@ -113,7 +113,9 @@ def _head(path: Path) -> tuple[str, str, float | None, str]:
     # A subagent rollout records its chain root as `session_id` (all 697 of the owner's, measured
     # by metadata on 2026-11-09); a root records its own id. Discovery holds a descendant to the
     # selected root's id.
-    session = payload.get("session_id", sid)
+    session = (
+        sid if transcripts.codex_is_user_root(payload, parent) else payload.get("session_id", sid)
+    )
     if not isinstance(session, str) or len(session) != 36 or (session != sid and not parent):
         raise marker.FreezeError("codex-source-identity-unconfirmed")
     return sid, parent, context._record_timestamp(row), session

@@ -1288,7 +1288,9 @@ Before any future run, the ruling lists these fixes:
   roots, and the freezer's handling was unverified. The inventory now counts these forks as
   children. The freezer requires the descendants reached through parent links to match the
   rollouts that name the selected session as their root at the capture cut. A missing link or
-  cycle leaves that case unconfirmed.
+  cycle leaves that case unconfirmed. An explicit user fork without a spawn link owns its
+  rollout ID even when its session ID names the original. The board and transcript lookup
+  use that same identity, so a newer fork keeps a row and transcript of its own.
 - Ledger hardening.
 - Redaction gaps, which matter before any case leaves the machine.
 
@@ -4714,9 +4716,10 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   reads the first 4,096 bytes and requires the known opening with the root's and child's IDs.
   The original measurement found an early `parent_thread_id` in 589 of 589 child heads and
   none of 498 roots. The largest field, `base_instructions`, came later in 1,077 of 1,087 heads.
-  The reader decodes complete fields in that opening and credits an explicit spawn link when
-  visible. A recognized fork with an incomplete head and no visible spawn link stays discoverable
-  under its root, with its immediate parent unknown.
+  The reader credits a visible top-level spawn link, including when the parent ID's closing
+  quote is the last byte read. With an incomplete payload, a nested spawn link or a recognized
+  fork keeps the child discoverable under its root with its immediate parent unknown. A
+  top-level link beyond the prefix could name a different spawner.
 - Discovery keeps what each rollout's head said, since a head is written once: a store that moved
   reads only the heads it has not read. The index #697 built already listed the store only when a
   day folder moved; past the shared metadata cache each rebuild still re-read every head, 0.7 to

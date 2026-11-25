@@ -852,6 +852,41 @@ class CodexPacketSourceTest(unittest.TestCase):
         self.assertEqual(case["sources"]["children"], [])
         self.assertEqual(self.reasons(case), [])
 
+    def assert_unrelated_user_fork_allows_freeze(self, *, after_cut: bool) -> None:
+        other = "00000000-0000-4000-8000-0000000000aa"
+        for origin in ("recorded", "synthesised"):
+            with self.subTest(origin=origin):
+                root = self.root if origin == "recorded" else self.home / "authored"
+                self.path = self.support.rollout(root)
+                self.entry = self.support.entry(root, self.path)
+                if origin == "synthesised":
+                    self.entry.update(
+                        origin=origin,
+                        kind="misleading-completion",
+                        authored_by="author",
+                        verified_by="different-person",
+                    )
+                self.support.rollout(root, sid=other)
+                fork = self.support.rollout(root, sid=self.support.CHILD)
+                rows = [json.loads(line) for line in fork.read_text().splitlines()]
+                rows[0]["payload"].update(
+                    session_id=other, thread_source="user", forked_from_id=other
+                )
+                if after_cut:
+                    for offset, row in enumerate(rows, start=21):
+                        row["timestamp"] = self.support.stamp(offset)
+                self.support.write(fork, rows)
+                case = self.freeze()
+                self.assertEqual(case["origin"], origin)
+                self.assertEqual(case["sources"]["children"], [])
+                self.assertEqual(self.reasons(case), [])
+
+    def test_a_person_can_freeze_with_an_unrelated_user_fork_in_the_store(self) -> None:
+        self.assert_unrelated_user_fork_allows_freeze(after_cut=False)
+
+    def test_a_person_can_freeze_with_an_unrelated_user_fork_after_the_cut(self) -> None:
+        self.assert_unrelated_user_fork_allows_freeze(after_cut=True)
+
     def test_a_person_cannot_freeze_a_fork_with_a_missing_parent_in_their_session(self) -> None:
         missing = "00000000-0000-4000-8000-0000000000aa"
         self.support.forked_rollout(self.root, parent=missing, session=self.support.SID)

@@ -1328,27 +1328,34 @@ class ASubagentsCheckReachesThePageFromTheStore(CodexChecksTestCase):
         child = Rollout(self.cwd, thread=GRANDCHILD, parent=CHILD, start_ms=self.rollout.ms)
         child.command("ls", "one file")
         path = self.store / f"rollout-2026-10-30T03-00-00-{GRANDCHILD}.jsonl"
-        for fields in (
-            {"parent_thread_id": CHILD},
-            {"forked_from_ordinal_exclusive": 7, "parent_thread_id": CHILD},
-            {"source": child.rows[0]["payload"]["source"]},
+        for early, late, oversized_parent in (
+            ({"parent_thread_id": CHILD}, {}, CHILD),
+            ({"forked_from_ordinal_exclusive": 7, "parent_thread_id": CHILD}, {}, CHILD),
+            ({"source": child.rows[0]["payload"]["source"]}, {}, ""),
+            (
+                {"source": {"subagent": {"thread_spawn": {"parent_thread_id": SID}}}},
+                {"parent_thread_id": CHILD},
+                "",
+            ),
         ):
             for size in (0, self.config.first_line_json_cap_bytes + 1):
-                with self.subTest(spawner=fields, size=size):
+                with self.subTest(early=early, late=late, size=size):
                     child.rows[0]["payload"] = {
                         "session_id": SID,
                         "id": GRANDCHILD,
                         "forked_from_id": SID,
-                        **fields,
+                        **early,
                         "thread_source": "subagent",
                         "base_instructions": {"text": "x" * size},
+                        **late,
                     }
                     child.save(path)
                     state = build_runtime_state(self.config, started=self.NOW)
                     found = observer.codex_child_rollouts(self.config, state, str(self.path))
                     self.assertEqual([str(path)], found)
                     self.assertEqual(
-                        CHILD, project_context._codex_parent_of(self.config, str(path))
+                        oversized_parent if size else CHILD,
+                        project_context._codex_parent_of(self.config, str(path)),
                     )
                     entries, scan = project_context.codex_tool_reports(
                         self.config, str(self.path), SHORT, child_paths=found
@@ -1356,6 +1363,36 @@ class ASubagentsCheckReachesThePageFromTheStore(CodexChecksTestCase):
                     (check,) = [row for row in entries if row["subject"] == "check"]
                     self.assertEqual(1, scan["subagent_transcripts_unread"])
                     self.assertTrue(check["read_incomplete"])
+
+    def test_the_bounded_head_keeps_a_parent_whose_closing_quote_fits(self) -> None:
+        self.rollout.save(self.path)
+        path = self.long_head_child()
+        raw = path.read_bytes()
+        field = f'"parent_thread_id":"{SID}"'.encode()
+        start = raw.index(field)
+        limit = transcripts.CODEX_HEAD_PREFIX_BYTES
+        for overflow in (0, 1):
+            with self.subTest(overflow=overflow):
+                padding = b" " * (limit - start - len(field) + overflow)
+                path.write_bytes(raw[:start] + padding + raw[start:])
+                state = build_runtime_state(self.config, started=self.NOW)
+                found = observer.codex_child_rollouts(self.config, state, str(self.path))
+                self.assertEqual([] if overflow else [str(path)], found)
+                self.assertEqual(
+                    "" if overflow else SID,
+                    project_context._codex_parent_of(self.config, str(path)),
+                )
+                entries, _ = project_context.codex_tool_reports(
+                    self.config, str(self.path), SHORT, child_paths=found
+                )
+                self.assertEqual(
+                    [] if overflow else [("failed", "subagent")],
+                    [
+                        (row["result"], row["worker_kind"])
+                        for row in entries
+                        if row["subject"] == "check"
+                    ],
+                )
 
     def test_a_fork_with_an_unread_spawner_does_not_satisfy_a_spawn(self) -> None:
         self.rollout.function_call("spawn_agent", {"message": "missing direct child"})

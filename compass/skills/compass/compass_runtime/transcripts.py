@@ -53,11 +53,12 @@ def _codex_spawn(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _codex_spawn_parent(payload: dict[str, Any]) -> str:
-    for parent in (payload.get("parent_thread_id"), _codex_spawn(payload).get("parent_thread_id")):
-        if isinstance(parent, str) and parent:
-            return parent
-    return ""
+def _codex_spawn_parent(payload: dict[str, Any], *, allow_nested: bool = True) -> str:
+    parent = payload.get("parent_thread_id")
+    if isinstance(parent, str) and parent:
+        return parent
+    nested = _codex_spawn(payload).get("parent_thread_id") if allow_nested else None
+    return nested if isinstance(nested, str) else ""
 
 
 def _codex_fork_parent(payload: dict[str, Any]) -> str:
@@ -86,6 +87,10 @@ def codex_parent_thread(payload: dict[str, Any]) -> str:
     return _codex_spawn_parent(payload) or _codex_fork_parent(payload)
 
 
+def codex_is_user_root(payload: dict[str, Any], parent: str) -> bool:
+    return payload.get("thread_source") == "user" and not parent
+
+
 def codex_meta(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[str, Any]:
     """Codex session_meta: identity, cwd, entrypoint and subagent thread lineage."""
 
@@ -109,7 +114,9 @@ def codex_meta(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[st
             )
         )
         return {
-            "session_id": p.get("session_id") or p.get("id"),
+            "session_id": (
+                p.get("id") if codex_is_user_root(p, parent) else p.get("session_id") or p.get("id")
+            ),
             # Current Codex subagent metadata carries two identities: session_id
             # is the top-level root and id is this rollout thread. Collection
             # groups on the former; nested-parent traversal needs the latter.
@@ -177,17 +184,25 @@ def codex_child_head(path: str) -> dict[str, Any]:
         except (ValueError, RecursionError):
             break
         rest = rest[end:].lstrip()
-        if not rest.startswith((",", "}")):
+        # A closing quote proves a parent string is whole even if the comma falls beyond the cap.
+        parent_at_limit = (
+            not rest
+            and len(opening) == CODEX_HEAD_PREFIX_BYTES
+            and field[1] == "parent_thread_id"
+            and isinstance(value, str)
+        )
+        if not rest.startswith((",", "}")) and not parent_at_limit:
             break
         payload[field[1]] = value
-    parent = _codex_spawn_parent(payload)
+    spawn = _codex_spawn_parent(payload)
     fork = _codex_fork_parent(payload)
-    if not parent and not fork:
+    if not spawn and not fork:
         return {}
-    # A fork can identify a child even when an explicit spawn link may be beyond the prefix.
-    # Crediting that fork to a parent could let it satisfy a different worker's spawn.
-    if not parent and rest.startswith("}"):
-        parent = fork
+    # Nested and fork links establish discovery, but a later top-level link could change
+    # which worker gets credit for the spawn.
+    parent = (
+        spawn or fork if rest.startswith("}") else _codex_spawn_parent(payload, allow_nested=False)
+    )
     return {
         "session_id": session_id,
         "thread_id": thread_id,
