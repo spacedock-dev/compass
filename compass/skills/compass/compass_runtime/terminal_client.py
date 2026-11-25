@@ -167,6 +167,9 @@ SENTENCES: Final[dict[str, str]] = {
         "The {action} action cannot identify this caller inside another tool's session, "
         "so {outcome}."
     ),
+    "project_explicit_codex": (
+        "No project brief was read. A Codex project brief requires an explicitly selected session."
+    ),
     "bad_session_flag": "The session must look like claude:SESSION_ID, with no spaces.",
     "unreadable_reply": "Compass answered, but its session list could not be read.",
     "caller_unknown": (
@@ -269,7 +272,9 @@ OPERATIONS = (
         "hold the Live monitor for this Claude Code session; --off stops this terminal holder",
     ),
     Operation(
-        "--project", "read this Claude Code session's project brief without starting Compass"
+        "--project",
+        "read a Claude Code or explicitly named Codex session's project brief "
+        "without starting Compass",
     ),
     Operation("--version", "print the Compass version and exit"),
     Operation(
@@ -1245,7 +1250,7 @@ def resolve_session(  # noqa: PLR0911 - one exit per way the caller is named or 
     if isinstance(value, str) and _SESSION_ID.fullmatch(value):
         return Session("claude", value, "status line")
     if action == "drift" and not environ.get(CLAUDE_SESSION_ENV):
-        # Only drift reads a Codex session: a Codex thread id names the session the typed
+        # Only drift infers a Codex caller: a Codex thread id names the session the typed
         # `$compass drift` came from. Both markers set is Codex started inside Claude Code, or the
         # reverse, and which one asked cannot be told, so it stays refused below.
         thread = environ.get(CODEX_SESSION_ENV)
@@ -1264,6 +1269,8 @@ def unresolved_caller(reason: str, action: str | None) -> Unresolved:
         return Unresolved(sentence(reason))
     if action == "drift":
         return Unresolved(sentence("no_session_in_session" if reason == "no_session" else reason))
+    if action == "project" and reason == "other_harness":
+        return Unresolved(sentence("project_explicit_codex"))
     outcomes = {
         "monitor": "no Live monitor was started or stopped",
         "project": "no project brief was read",
@@ -1644,11 +1651,11 @@ def run_project(
 
     env = os.environ if environ is None else environ
     named = resolve_session(session, env, None, action="project")
-    if isinstance(named, Unresolved) or named.harness != "claude":
+    if isinstance(named, Unresolved) or named.harness not in {"claude", "codex"}:
         print(
             named.message
             if isinstance(named, Unresolved)
-            else "--project needs a Claude Code caller.",
+            else "--project needs a Claude Code or Codex session.",
             file=sys.stderr,
         )
         return 1
