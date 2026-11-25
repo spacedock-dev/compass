@@ -1,4 +1,4 @@
-"""Offline native Codex source admission. No dashboard, observer state or model calls.
+"""Offline Codex rollout admission. No dashboard, observer state or model calls.
 
 Private packet paths are explicit. A selection grants access, never source integrity:
 identity, descendant membership, capture prefix and every derived field are rebuilt.
@@ -19,6 +19,43 @@ from typing import Any
 import mark_abstention as marker
 from codex_case_candidates import MAX_FILES, outside_repository
 
+PASSING_CHECK_ADVERSARIES = (
+    "goal-unrelated",
+    "outcome-unrelated",
+    "browser-unrelated",
+    "stale-before-write",
+    "partial-check",
+)
+KIND_SUPPORTED_DEPARTURE = "supported-departure"
+KIND_INCORRECT_EXECUTION = "matching-intent-incorrect-execution"
+KIND_MISLEADING_COMPLETION = "misleading-completion"
+AUTHORED_CORE_KINDS = (
+    KIND_SUPPORTED_DEPARTURE,
+    KIND_INCORRECT_EXECUTION,
+    KIND_MISLEADING_COMPLETION,
+)
+
+
+def _provenance(entry: dict[str, Any]) -> dict[str, str]:
+    origin = entry.get("origin", "recorded")
+    if origin == "recorded":
+        return {"origin": origin}
+    if origin != marker.ORIGIN_SYNTHESISED:
+        raise marker.FreezeError("codex-source-origin-invalid")
+    kind = entry.get("kind")
+    if kind not in (*AUTHORED_CORE_KINDS, *PASSING_CHECK_ADVERSARIES):
+        raise marker.FreezeError("codex-authored-kind-ineligible")
+    author, verifier = entry.get("authored_by"), entry.get("verified_by")
+    if (
+        not isinstance(author, str)
+        or not isinstance(verifier, str)
+        or not author.strip()
+        or not verifier.strip()
+        or author.strip() == verifier.strip()
+    ):
+        raise marker.FreezeError("codex-authored-identities-required")
+    return {"origin": origin, "kind": kind, "authored_by": author, "verified_by": verifier}
+
 
 def parser_digest() -> str:
     digest = hashlib.sha256(b"compass-codex-source-ast-v1\0")
@@ -35,6 +72,7 @@ def parser_digest() -> str:
             "project_scripts.py",
             "ci_read.py",
             "config.py",
+            "settings.py",
             "reading_maps.py",
             "entry_numbers.py",
             "git_status.py",
@@ -82,8 +120,17 @@ def _selection(config: Any, entry: dict[str, Any]) -> tuple[Path, Path, list[Pat
     path = Path(str(entry.get("transcript") or "")).absolute()
     if not root.is_dir() or root.is_symlink() or not outside_repository(root):
         raise marker.FreezeError("codex-source-root-invalid")
-    native_roots = config.store_roots.get("codex.sessions", ())
-    if root.resolve() not in {Path(native).resolve() for native in native_roots}:
+    native_roots = {
+        Path(native).resolve() for native in config.store_roots.get("codex.sessions", ())
+    }
+    resolved_root = root.resolve()
+    if entry.get("origin") == marker.ORIGIN_SYNTHESISED:
+        if any(
+            resolved_root.is_relative_to(native) or native.is_relative_to(resolved_root)
+            for native in native_roots
+        ):
+            raise marker.FreezeError("codex-authored-root-overlaps-native-store")
+    elif resolved_root not in native_roots:
         raise marker.FreezeError("codex-source-not-native-store")
     selected = entry.get("children")
     if not isinstance(selected, list) or not all(isinstance(p, str) for p in selected):
@@ -190,6 +237,7 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
         raise marker.FreezeError("codex-source-spec-invalid")
     captured = float(entry["captured_at"])
     sid = str(entry.get("sid") or "")
+    provenance = _provenance(entry)
     root, path, children = _selection(config, entry)
     intent = entry.get("intent")
     if (
@@ -257,17 +305,21 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
             ):
                 raise marker.FreezeError("codex-child-active")
         checks, press = context.frozen_codex_checks(
-            config, cut, sid, until=captured, child_paths=child_cuts
+            config,
+            cut,
+            sid,
+            until=captured,
+            child_paths=child_cuts,
+            listed_cap=marker.codex_analyze_limits(config).analyze_listed_checks,
         )
         _, people = context.frozen_codex_user_messages(config, cut, sid, until=captured)
-        _, agents = context.frozen_codex_agent_messages(config, cut, sid, until=captured)
         refusals = _refusals(cut, sid)
     case: dict[str, Any] = {
         "codex_format": marker.FORMAT_CODEX,
         "id": marker._case_id("codex", sid),
         "harness": "codex",
         "sid": sid,
-        "origin": "recorded",
+        **provenance,
         "captured_at": captured,
         "row_snapshot": {
             "harness": "codex",
@@ -283,7 +335,7 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
         "transcript_bytes": sources["parent"]["bytes"],
         "transcript_cut": "capture",
         "lifecycle_from": "codex-transcript",
-        "producer_facts": [*people, *agents, *checks],
+        "producer_facts": [*people, *checks],
         "message_refusals": refusals,
         "unconfirmed": [],
         "tool_output": {
@@ -301,6 +353,7 @@ def source_entry(case: dict[str, Any], transcript: str) -> dict[str, Any]:
     if transcript != sources["parent"]["path"]:
         raise marker.FreezeError("codex-source-selection-differs")
     return {
+        **_provenance(case),
         "harness": "codex",
         "sid": case["sid"],
         "sessions_root": sources["root"],

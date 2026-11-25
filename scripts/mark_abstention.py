@@ -244,6 +244,7 @@ INTENT_AT = 1.0
 # A frozen case the machine's own records do not vouch for: scored, and never
 # counted toward the recorded floor (DRC-4666 review, F4).
 ORIGIN_SYNTHETIC = "synthetic"
+ORIGIN_SYNTHESISED = "synthesised"
 # Where a recorded session's words can come from. A transcript anywhere else
 # was written by somebody, not recorded by the harness.
 CLAUDE_PROJECTS_ROOT = abstention_ledger.canonical_path(".claude", "projects")
@@ -491,7 +492,7 @@ def case_ledger(body: dict[str, Any], case: dict[str, Any]) -> tuple[Any, ...]:
             tool_output=tails,
             changed_after=changed,
             read_incomplete=incomplete,
-            read_agent_words="production_reading" in case,
+            read_agent_words=case.get("harness") == "claude" and "production_reading" in case,
         )
     )
 
@@ -618,6 +619,13 @@ def production_prompt_digest(prompt: str) -> str:
     return hashlib.sha256(normalized_production_prompt(prompt).encode()).hexdigest()
 
 
+def codex_analyze_limits(config: Any) -> Any:
+    """A Codex qualification replay reads the same limits as an Analyze press."""
+    from compass_runtime import settings  # noqa: PLC0415 - see `_reading`
+
+    return settings.load(config)
+
+
 def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> dict[str, Any]:
     """Capture the actual production selection using a model-free prompt sink."""
     reading = _reading()
@@ -631,6 +639,7 @@ def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> d
     ):
         raise FreezeError("production-intent-source-unsupported")
     harness = str(case["harness"])
+    read_agent_words = harness in project_context.AGENT_MESSAGE_HARNESSES
     frozen: dict[str, Any] = {"v": 1, "final_wanted": [], "newest_final": None}
     with _historical_source(case, transcript, config=config) as (path, digest):
         frozen["prefix_digest"] = digest
@@ -651,14 +660,8 @@ def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> d
 
         def final(rows: Sequence[Any]) -> dict[str, Any]:
             frozen["final_wanted"] = _wanted(rows, reading.AGENT_MESSAGE_TYPE)
-            result = (
-                project_context.codex_newest_final_words(
-                    config, path, str(case["sid"]), rows, expected_stamp=stamp
-                )
-                if harness == "codex"
-                else project_context.transcript_newest_final_words(
-                    config, path, harness, str(case["sid"]), rows, expected_stamp=stamp
-                )
+            result = project_context.transcript_newest_final_words(
+                config, path, harness, str(case["sid"]), rows, expected_stamp=stamp
             )
             frozen["newest_final"] = _final_metadata(result)
             return result
@@ -681,12 +684,15 @@ def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> d
             stamp_text="native source freeze",
             model=sink,
             read_lines=True,
-            read_agent_words=True,
+            read_agent_words=read_agent_words,
             admit_turn_stop=True,
             # Not the idle admission of 2026-10-20, as `score_abstention` passes it: the cases are
             # marked under the earlier rule, which withheld an idle session with no recorded
             # finish, and a freeze that admitted one would capture a prompt the scorer never sends.
             admit_idle=harness == "codex",
+            max_prompt_bytes=(
+                codex_analyze_limits(config).analyze_prompt_bytes if harness == "codex" else None
+            ),
             tool_output=reading.ToolOutput(
                 destination="native-dry",
                 label="native dry",
@@ -695,7 +701,7 @@ def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> d
                 read_incomplete=incomplete,
             ),
             person_source_lookup=person,
-            final_source_lookup=final,
+            final_source_lookup=final if read_agent_words else None,
         )
     if len(prompts) != 1 or "person_wanted" not in frozen:
         raise FreezeError("production-prompt-unavailable")
@@ -761,14 +767,8 @@ def _native_source_lookup(  # noqa: C901 - separate native harness source recove
             stamp = project_context.transcript_stamp(source)
             result: Any
             if final:
-                result = (
-                    project_context.codex_newest_final_words(
-                        actual_config, source, str(case["sid"]), rows, expected_stamp=stamp
-                    )
-                    if harness == "codex"
-                    else project_context.transcript_newest_final_words(
-                        actual_config, source, harness, str(case["sid"]), rows, expected_stamp=stamp
-                    )
+                result = project_context.transcript_newest_final_words(
+                    actual_config, source, harness, str(case["sid"]), rows, expected_stamp=stamp
                 )
                 matches = _final_metadata(result) == frozen.get("newest_final")
             else:
@@ -799,6 +799,8 @@ def native_case_final_lookup(
     case: dict[str, Any], **kwargs: Any
 ) -> Callable[[Sequence[Any]], Any] | None:
     """Recover the bound newest final in memory; the packet retains only its digest."""
+    if case.get("harness") != "claude":
+        return None
     return _native_source_lookup(case, _reading().AGENT_MESSAGE_TYPE, **kwargs)
 
 
@@ -2807,7 +2809,7 @@ def mark(*, continuation: bool = False) -> int:  # noqa: PLR0911 - guard before 
         return 1
     saved = _load(MARKS_PATH)
     entries = _marks(saved)
-    replay = body.get("v") in (4, FORMAT_INTENT)
+    replay = body.get("v") == 4 or is_intent_packet(body)
     digest = cases_digest(body)
     if replay and entries and saved.get("cases_digest") != digest:
         print("These marks belong to a different or unfrozen case set. Nothing was changed.")

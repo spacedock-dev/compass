@@ -1120,7 +1120,7 @@ class CodexPacketSourceTest(unittest.TestCase):
             mark_abstention.production_prompt_digest(prompts[0]),
         )
         self.assertIn("Please repair", prompts[0])
-        self.assertIn("example is repaired", prompts[0])
+        self.assertNotIn("example is repaired", prompts[0])
         self.assertNotIn(str(self.path), prompts[0])
 
     def test_a_person_is_told_when_the_parser_has_changed(self) -> None:
@@ -1128,7 +1128,7 @@ class CodexPacketSourceTest(unittest.TestCase):
         case["parser"] = "stale"
         self.assertEqual(self.reasons(case), ["frozen-on-another-parser"])
 
-    def test_a_person_cannot_drop_a_failed_check_an_agent_message_or_a_refusal(self) -> None:
+    def test_a_person_cannot_drop_a_failed_check_a_person_message_or_a_refusal(self) -> None:
         rows = [json.loads(line) for line in self.path.read_text().splitlines()]
         rows[3] = self.support.command(3, 1, "python3 -m unittest")
         rows.insert(
@@ -1142,7 +1142,7 @@ class CodexPacketSourceTest(unittest.TestCase):
         import copy  # noqa: PLC0415
 
         self.assertTrue(any(fact.get("result") == "failed" for fact in case["producer_facts"]))
-        for kind in ("failed", "agent_message", "user_message", "message_refusals"):
+        for kind in ("failed", "user_message", "message_refusals"):
             changed = copy.deepcopy(case)
             if kind == "message_refusals":
                 changed[kind] = []

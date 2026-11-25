@@ -2,22 +2,193 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 if TYPE_CHECKING:
-    from tests.codex_source_support import AT, SID, command, config, event, message, rollout, write
+    from tests.codex_source_support import (
+        AT,
+        SID,
+        command,
+        config,
+        entry,
+        event,
+        message,
+        rollout,
+        stamp,
+        write,
+    )
 else:
-    from codex_source_support import AT, SID, command, config, event, message, rollout, write
+    from codex_source_support import (
+        AT,
+        SID,
+        command,
+        config,
+        entry,
+        event,
+        message,
+        rollout,
+        stamp,
+        write,
+    )
+import codex_case_sources as sources
+import mark_abstention as marker
+from compass_runtime import annotations as annotation_store
+from compass_runtime import (
+    http_api,
+    reading_policy,
+    reading_route,
+    state,
+)
 from compass_runtime import (
     project_context as context,
 )
+
+
+class CodexQualificationSourceTest(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name).resolve()
+        self.config = config(self.home)
+
+    def authored_spec(self, **changes: Any) -> dict[str, Any]:
+        root = self.home / "authored"
+        return {
+            **entry(root, rollout(root)),
+            "origin": "synthesised",
+            "kind": "misleading-completion",
+            "authored_by": "author",
+            "verified_by": "different-person",
+            **changes,
+        }
+
+    def test_a_person_cannot_author_an_uncovered_kind(self) -> None:
+        with self.assertRaisesRegex(marker.FreezeError, "codex-authored-kind-ineligible"):
+            sources.freeze_case(self.config, self.authored_spec(kind="legitimate-change"))
+
+    def test_a_person_cannot_verify_their_own_authored_case(self) -> None:
+        with self.assertRaisesRegex(marker.FreezeError, "codex-authored-identities-required"):
+            sources.freeze_case(self.config, self.authored_spec(verified_by="author"))
+
+    def test_a_person_cannot_reuse_marks_after_an_authored_case_changes(self) -> None:
+        spec = self.authored_spec()
+        case = sources.freeze_case(self.config, spec)
+        body = {"v": marker.FORMAT_CODEX, "cases": [case]}
+        with mock.patch("builtins.input", return_value="n"):
+            marks = marker._bound_marks(body, {case["id"]: marker._mark_one(body, case)})
+        self.assertEqual(
+            set(case["production_reading"]["constraints"]), set(marks["marks"][case["id"]])
+        )
+        cases_path = self.home / "cases.json"
+        marks_path = self.home / "marks.json"
+        cases_path.write_text(json.dumps(body))
+        marks_path.write_text(json.dumps(marks))
+        before = marks_path.read_bytes()
+        body["cases"] = [
+            sources.freeze_case(self.config, {**spec, "verified_by": "other-verifier"})
+        ]
+        cases_path.write_text(json.dumps(body))
+        with (
+            mock.patch.object(marker, "CASES_PATH", str(cases_path)),
+            mock.patch.object(marker, "MARKS_PATH", str(marks_path)),
+            mock.patch.object(marker, "_ledger_refusal", return_value=False),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(1, marker.mark())
+        self.assertEqual(before, marks_path.read_bytes())
+
+    def test_a_person_freezes_the_analyze_prompt_without_codex_agent_text(self) -> None:
+        root = self.home / "codex/sessions/2026/11/07"
+        path = rollout(root)
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        rows[3:3] = [
+            command(2 + number / 100, command_text=f"python3 -m pytest tests/test_{number:02d}.py")
+            for number in range(64)
+        ]
+        commentary = "Distinct synthetic commentary."
+        final = rows[-2]["payload"]["content"][0]["text"]
+        rows.insert(
+            -2,
+            {
+                **rows[-2],
+                "timestamp": stamp(4.5),
+                "payload": {
+                    **rows[-2]["payload"],
+                    "id": "commentary-a",
+                    "phase": "commentary",
+                    "content": [{"type": "output_text", "text": commentary}],
+                },
+            },
+        )
+        write(path, rows)
+        frozen_prompts: list[str] = []
+        build_prompt = marker._reading().build_prompt
+
+        def capture_frozen_prompt(*args: Any, **kwargs: Any) -> Any:
+            result = build_prompt(*args, **kwargs)
+            frozen_prompts.append(result[0])
+            return result
+
+        with mock.patch.object(marker._reading(), "build_prompt", capture_frozen_prompt):
+            case = sources.freeze_case(self.config, entry(root.parents[2], path))
+        row = {**case["row_snapshot"], "project": "synthetic", "acquisition": "event"}
+        revision = cast("annotation_store.Revision", marker.case_revision(case))
+        handler = object.__new__(http_api._RequestHandler)
+        handler.server = mock.Mock(
+            application=mock.Mock(
+                config=self.config,
+                state=state.RuntimeState(self.config, AT),
+                clock=lambda: AT + 20,
+            )
+        )
+        sink = mock.Mock(return_value=("{}", "ok"))
+        route = cast(
+            "reading_route.Route",
+            {
+                "provider": reading_route.CODEX,
+                "harness": "codex",
+                "model": "gpt-5.6-luna",
+                "label": "Codex",
+                "destination": "OpenAI",
+                "words_destination": "OpenAI",
+            },
+        )
+        with (
+            mock.patch.object(reading_policy, "GuardedModel", return_value=sink),
+            mock.patch.object(http_api, "_read_ci", return_value=None),
+        ):
+            _, why, _ = handler._compose_reading(
+                row,
+                {"harness": "codex", "sid": SID, "revisions": (revision,)},
+                route,
+                mock.Mock(),
+            )
+        self.assertEqual(1, sink.call_count, why)
+        production = sink.call_args.args[0]
+        self.assertIn("python3 -m pytest", production)
+        self.assertGreater(len(production.encode()), 16_384)
+        self.assertEqual(1, len(frozen_prompts))
+        for text in (commentary, final):
+            self.assertNotIn(text, production)
+            self.assertNotIn(text, frozen_prompts[0])
+            self.assertNotIn(text, json.dumps(case))
+        self.assertEqual(
+            marker.normalized_production_prompt(production).encode(),
+            marker.normalized_production_prompt(frozen_prompts[0]).encode(),
+        )
+        self.assertEqual(
+            marker.production_prompt_digest(production), case["production_reading"]["prompt_digest"]
+        )
 
 
 class FrozenCodexRuntimeTest(unittest.TestCase):
@@ -192,29 +363,3 @@ class FrozenCodexRuntimeTest(unittest.TestCase):
             self.assertEqual(os.stat(Path(cut).parent).st_mode & 0o777, 0o700)
             raise ValueError("synthetic refusal")
         self.assertFalse(Path(cut).exists())
-
-    def test_a_person_cannot_call_a_conflicting_or_nonfinal_reply_whole(self) -> None:
-        whole, _ = context.frozen_codex_agent_messages(
-            self.config, str(self.path), SID, until=AT + 10
-        )
-        wanted = [
-            {"id": fact["fact_id"], "at": fact["at"], "author": "agent", "type": "agent_message"}
-            for fact in whole
-        ]
-        self.assertEqual(
-            context.codex_newest_final_words(self.config, str(self.path), SID, wanted)["outcome"],
-            "whole",
-        )
-        rows = [json.loads(line) for line in self.path.read_text().splitlines()]
-        rows[5]["payload"]["phase"] = "commentary"
-        write(self.path, rows)
-        self.assertEqual(
-            context.codex_newest_final_words(self.config, str(self.path), SID, wanted)["outcome"],
-            "not-final",
-        )
-        rows.append({**rows[5], "payload": {**rows[5]["payload"], "phase": "final_answer"}})
-        write(self.path, rows)
-        self.assertEqual(
-            context.codex_newest_final_words(self.config, str(self.path), SID, wanted)["outcome"],
-            "unproven",
-        )

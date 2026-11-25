@@ -205,9 +205,9 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         2,
         "frozen_codex_sources: Exclusive owner-only copy inside a newly created private temporary directory.",
     ),
-    ("compass_runtime/project_context.py", "_frozen_codex_messages"): (
+    ("compass_runtime/project_context.py", "frozen_codex_user_messages"): (
         1,
-        "_frozen_codex_messages: Reads its private frozen transcript copy.",
+        "frozen_codex_user_messages: Reads its private frozen transcript copy.",
     ),
     ("compass_runtime/project_scripts.py", "_read_regular"): (
         1,

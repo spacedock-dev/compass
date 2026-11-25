@@ -207,12 +207,20 @@ class CodexQualificationTest(_CodexInstallationFixture):
         self.transport = scorer.codex_transport(self.config, self.verified)
         cases = []
         reviews = {}
+        authored = {scorer.KIND_MISLEADING_COMPLETION, scorer.PASSING_CHECK_ADVERSARIES[0]}
         for n, kind in enumerate((*scorer.KINDS, *scorer.PASSING_CHECK_ADVERSARIES)):
             sid = f"00000000-0000-4000-8000-{n + 1:012d}"
-            root = self.home / "codex/sessions"
+            root = self.home / ("authored-rollouts" if kind in authored else "codex/sessions")
             path = rollout(root, sid=sid)
             spec = entry(root, path)
             spec["sid"] = sid
+            if kind in authored:
+                spec.update(
+                    origin="synthesised",
+                    kind=kind,
+                    authored_by="author",
+                    verified_by="independent-verifier",
+                )
             case = sources.freeze_case(self.config, spec)
             cases.append(case)
             reviews[case["id"]] = {
@@ -226,26 +234,27 @@ class CodexQualificationTest(_CodexInstallationFixture):
                 "verified_by": "independent-verifier",
             }
         body = {"v": marker.FORMAT_CODEX, "cases": cases, "codex_kind_reviews": reviews}
-        marks: dict[str, Any] = {
-            "cases_digest": marker.cases_digest(body),
-            "marks": {
-                c["id"]: dict.fromkeys(c["production_reading"]["constraints"], "abstain")
-                for c in cases
-            },
-        }
+        with mock.patch("builtins.input", return_value="n"):
+            answers = {c["id"]: marker._mark_one(body, c) for c in cases}
+        marks = marker._bound_marks(
+            body,
+            answers,
+        )
         rubric = {
             "v": 1,
             "cases": {
                 c["id"]: {
                     "kind": scorer.KIND_LEGITIMATE_CHANGE,
-                    "origin": "recorded",
+                    "origin": c["origin"],
+                    "generated_by": "author",
+                    "verified_by": "independent-verifier",
                     "harness": "codex",
                     "expect": {
                         key: {"result": "unverifiable", "cites": []}
                         for key in marks["marks"][c["id"]]
                     },
                 }
-                for n, c in enumerate(cases)
+                for c in cases
             },
         }
         self.corpus = scorer.Corpus(body, marks, json.dumps(marks).encode(), rubric)
@@ -446,6 +455,20 @@ class CodexQualificationTest(_CodexInstallationFixture):
         summary = json.loads(Path(self.summary).read_text())
         self.assertEqual("passed", summary["verdict"])
         self.assertEqual(["passed"] * 3, [r["summary"]["verdict"] for r in summary["repetitions"]])
+        for repetition in summary["repetitions"]:
+            native = repetition["summary"]
+            authored = {
+                row["kind"]
+                for row in native["rubric"]["cases"].values()
+                if row.get("source") == "authored" and row["reached_model"]
+            }
+            self.assertEqual(
+                {scorer.KIND_MISLEADING_COMPLETION, scorer.PASSING_CHECK_ADVERSARIES[0]},
+                authored,
+            )
+            self.assertEqual(
+                [scorer.KIND_MISLEADING_COMPLETION], native["coverage"]["codex"]["authored_kinds"]
+            )
         self.assertEqual(30, self.study().used())
         self.assertEqual(0, self.run_one(resume=True))
         self.assertEqual(30, len(self.launches))

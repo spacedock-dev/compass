@@ -4139,9 +4139,10 @@ no Claude grant, ledger allowance or historical acceptance authorizes this work.
 The first local read is an owner-approved metadata-only inventory under `~/.codex/sessions`:
 rollout shape, size and dates, with no content. Nothing from that inventory goes to a provider
 or Git. After the owner selects aliases and approves exact parent/child rollouts and capture
-cuts, local processing may read their bounded native content, saved intent revision, messages,
-checks and permitted output, agent source material and lifecycle evidence. The packet binds
-full source identities, prefixes, parser and selection digests. Source mappings, raw rollouts,
+cuts, local processing may read bounded rollout content, saved intent revision, person messages,
+checks, permitted output and lifecycle evidence. The same approvals apply to authored rollouts
+in a separate private source tree, under the [Codex case protocol](docs/abstention/README.md#cases-and-blind-review).
+The packet binds full source identities, prefixes, parser and selection digests. Source mappings, raw rollouts,
 private paths, cases, rubric, marks and detailed readings stay in a private packet under
 `~/.compass`. Packet homes may move; accounting may not.
 
@@ -4149,8 +4150,8 @@ The offline source freeze and production source recovery use transient raw cuts 
 owner-only directory (0700) and file (0600). They retain a cut only during derivation or the
 pinned reader invocation and remove it on completion, refusal or exception. Abrupt termination may leave a private
 temporary copy for the owner to remove. This promises neither secure erasure nor isolation from
-another process running under the same account. Redact before clipping or displaying screens;
-complete recovered replies must not enter a new cache, history or public artifact.
+another process running under the same account. Redact before clipping or displaying screens.
+Keep raw cuts out of caches, history and public artifacts.
 
 Before each OpenAI batch, show all ten registered slots (case alias and repetition), each exact
 request digest, model/effort, verified CLI binding digests, evidence categories, whether the
@@ -4158,11 +4159,12 @@ single availability retry is included and remaining allowance. The owner approve
 of ten; consume each listed slot once under the charge lock before launch. Three approvals
 cover the thirty registered readings. A batch approval may include the study's single
 availability retry for an unusable attempt in that batch. OpenAI receives the production
-reader's redacted frozen intent, selected user and agent messages, recorded
-checks, permitted output and agent source material through `reading.CodexReadingModel` and
+reader's redacted frozen intent, selected person messages, recorded checks and permitted
+output through `reading.CodexReadingModel` and
 `observer.codex_exec`, selected by `reading_route.resolve`. The proposed pin is today's
 `gpt-5.6-luna`, effort `max`, to OpenAI; no fallback inherits it. Preparing a prompt locally
-authorizes no send. A changed, unlisted or consumed slot refuses.
+authorizes no send. A changed, unlisted or consumed slot refuses. The Codex production prompt
+omits assistant messages and final replies.
 
 Before each Google evidence-sharing step, present the exact redacted screens locally and obtain
 one owner approval per send covering exactly the listed payload digests, recipients,
