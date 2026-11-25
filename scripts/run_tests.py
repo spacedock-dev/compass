@@ -34,6 +34,8 @@ fixtures and verdict, and spreads the work:
   parallel worker has exited, one at a time in one more worker, so they share
   the machine with nothing else in the run. Under ``--shard`` each such module
   still belongs to one leg, so it runs in exactly one leg's serial pass.
+- A worker exits as soon as its parent does, so a run killed outright leaves no
+  worker behind (``exit_with_parent``).
 - A test that fails or errors runs once more, on its own, after everything
   else. Passing then does not fail the run: it is listed under "Passed only on
   retry" with its first failure, and printed as a ``FLAKY-RETRY-PASSED: <id>``
@@ -68,6 +70,7 @@ import queue
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 import traceback
 import unittest
@@ -274,6 +277,27 @@ def summarise(unit: str, result: unittest.TestResult, seconds: float) -> dict[st
     }
 
 
+def exit_with_parent() -> None:
+    """End this worker the moment the process that started it ends, however it ended.
+
+    A parent that exits normally sends every worker the sentinel. One killed outright (a timeout,
+    an agent's sandbox, ``kill -9``) never does, and its workers then wait forever: in a test, on
+    a task queue whose write end they hold themselves, or at exit, flushing results into a pipe
+    nobody reads. Measured 2026-11-25: 38 such workers from runs killed between 2026-10-28 and
+    2026-11-14 were still alive. The parent's sentinel becomes ready when it dies, so the thread
+    blocks on it and costs nothing until then. Coverage and results are lost, as is the run.
+    """
+    parent = multiprocessing.parent_process()
+    if parent is None:
+        return
+
+    def watch() -> None:
+        parent.join()
+        os._exit(1)
+
+    threading.Thread(target=watch, name="exit-with-parent", daemon=True).start()
+
+
 def worker(
     index: int, config: dict[str, Any], tasks: Queue[str | None], results: Queue[tuple[Any, ...]]
 ) -> None:
@@ -281,6 +305,7 @@ def worker(
 
     With ``by_id`` in the config a task names one test, which runs as its own top-level suite.
     """
+    exit_with_parent()
     cov = None
     if config["coverage"]:
         import coverage  # noqa: PLC0415 - optional, and absent on the runtime floor
