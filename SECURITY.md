@@ -638,6 +638,10 @@ binds this compatibility behavior. Pause all AI use and `--no-observer-model` st
 | The answer to an ask | The option you chose, returned to the session that asked, which wrote the options. This is the only path by which what you do in Compass reaches a running session. | `--no-ask` | `test_http_api.AskEndpointTest.test_the_rollback_switch_answers_503_on_all_four_routes`; an answer outside the asker's options is refused: `test_asks.AskRegistryTest.test_answer_refuses_an_out_of_range_index` |
 | The hand-off request | Not built. [Hand-off requests](#hand-off-requests-one-verb-into-a-session) states the one shape it may take. | Not applicable | None for the verb itself, because no code sends it. `test_launch_and_send_pins.ThePostRoutesAreTheListedOnesTest` pins the exact set of POST routes, so adding one fails a test and sends its author here. The journey test above adds a check for a Unix-domain socket connection, the path a hand-off would take, on the routes it calls only. |
 
+The same output disclosure applies when an agent runs `--project --session codex:SESSION_ID`
+as a shell tool call. The brief becomes part of the invoking session's context and can reach
+its model provider. Run the command in your own terminal to keep the output there.
+
 ### Drift commands and typed consent
 
 A stored reading is printed and costs nothing. With none, a first `drift` asks the model for one
