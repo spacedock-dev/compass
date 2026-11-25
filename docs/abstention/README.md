@@ -1301,6 +1301,9 @@ closed tokens and no source text, paths or tracebacks.
 The packet seals each parent/child prefix and capture boundary, the saved Intent, checks,
 person messages, lifecycle, parser, selected source identities and actual production prompt digest.
 Freeze applies the configured Analyze limits to the check listing and focused timeline.
+It also uses Analyze's bounded semantic history merge to recover eligible person instructions
+from the sealed parent when checks fill the timeline. This history is built in memory for the
+freeze. Checks and writes stay subject to the focused timeline cap.
 Freeze and replay use the configured Analyze prompt byte limit and recover the selected
 person message text from the sealed prefix.
 The Codex Analyze prompt carries no assistant messages or final reply.

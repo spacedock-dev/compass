@@ -200,6 +200,26 @@ class CodexQualificationSourceTest(unittest.TestCase):
         self.assertNotIn("src/example.py", production)
         self.assert_prompt_equal(production, frozen)
 
+    def test_a_persons_in_window_message_survives_a_timeline_full_of_checks(self) -> None:
+        root = self.home / "codex/sessions"
+        path = rollout(root / "2026/11/07")
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        instruction = rows[2]["payload"]["content"][0]["text"]
+        settings.save(self.config, {"analyze_record_events": 100})
+        # The two existing runs of the same command contribute one latest check.
+        rows[3:3] = [
+            command(2 + number / 250, command_text=f"python3 -m pytest tests/test_{number:03d}.py")
+            for number in range(99)
+        ]
+        write(path, rows)
+        case, production, frozen = self.analyze_and_freeze(entry(root, path))
+        self.assertEqual(100, sum(fact["type"] == "tool_report" for fact in case["producer_facts"]))
+        scored, leveled = self.replay_prompts(case)
+        self.assertIn(instruction, production)
+        for name, prompt in (("frozen", frozen), ("scored", scored), ("levels", leveled)):
+            with self.subTest(prompt=name):
+                self.assert_prompt_equal(production, prompt)
+
     def test_a_persons_long_message_survives_freeze_and_both_replays(self) -> None:
         root = self.home / "codex/sessions"
         path = rollout(root / "2026/11/07")
@@ -210,6 +230,18 @@ class CodexQualificationSourceTest(unittest.TestCase):
         )
         write(path, rows)
         case, production, frozen = self.analyze_and_freeze(entry(root, path))
+        original = rows[2]["payload"]["content"][0]["text"]
+        duplicate = message(original.replace(sentinel, "Verify billing.py instead."))
+        with path.open("a") as handle:
+            for row in (event("task_started", 40, turn_id="turn-b"), duplicate):
+                handle.write(json.dumps(row) + "\n")
+        scored, leveled = self.replay_prompts(case)
+        for name, prompt in (("frozen", frozen), ("scored", scored), ("levels", leveled)):
+            with self.subTest(prompt=name):
+                self.assertIn(sentinel, prompt)
+                self.assert_prompt_equal(production, prompt)
+
+    def replay_prompts(self, case: dict[str, Any]) -> tuple[str, str]:
         tool_output = scorer._tool_output(case, "OpenAI", "Codex", {"v": marker.FORMAT_CODEX})
         score_sink = mock.Mock(return_value=("{}", "ok"))
         result = scorer.score_case(
@@ -227,15 +259,7 @@ class CodexQualificationSourceTest(unittest.TestCase):
         levels._produce(self.config, case, levels_sink, tool_output, case["captured_at"])
         self.assertEqual(1, score_sink.call_count, result)
         levels_sink.assert_called_once()
-        for name, prompt in (
-            ("production", production),
-            ("frozen", frozen),
-            ("scored", score_sink.call_args.args[0]),
-            ("levels", levels_sink.call_args.args[0]),
-        ):
-            with self.subTest(prompt=name):
-                self.assertIn(sentinel, prompt)
-                self.assert_prompt_equal(production, prompt)
+        return score_sink.call_args.args[0], levels_sink.call_args.args[0]
 
     def assert_prompt_equal(self, expected: str, actual: str) -> None:
         self.assertEqual(
@@ -296,7 +320,7 @@ class FrozenCodexRuntimeTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
-        self.path = rollout(self.home / "sessions")
+        self.path = rollout(self.home / "codex/sessions")
         self.config = config(self.home)
 
     def test_a_person_gets_the_checks_that_existed_before_a_later_failure(self) -> None:
@@ -404,6 +428,8 @@ class FrozenCodexRuntimeTest(unittest.TestCase):
         write(self.path, rows)
         with self.assertRaises(context.FrozenCheckCutoffUnreachableError):
             context.frozen_codex_checks(self.config, str(self.path), SID, until=AT + 10)
+        with self.assertRaisesRegex(context.FrozenCheckCutoffUnreachableError, "checks incomplete"):
+            sources.freeze_case(self.config, entry(self.path.parent, self.path))
 
     def test_a_person_cannot_lose_a_named_worker_when_its_rollout_is_missing(self) -> None:
         rows = [json.loads(line) for line in self.path.read_text().splitlines()]
@@ -423,6 +449,8 @@ class FrozenCodexRuntimeTest(unittest.TestCase):
         write(self.path, rows)
         with self.assertRaises(context.FrozenCheckCutoffUnreachableError):
             context.frozen_codex_checks(self.config, str(self.path), SID, until=AT + 10)
+        with self.assertRaisesRegex(context.FrozenCheckCutoffUnreachableError, "checks incomplete"):
+            sources.freeze_case(self.config, entry(self.path.parent, self.path))
 
     def test_a_person_keeps_changed_after_as_it_was_before_a_later_write(self) -> None:
         _, press = context.frozen_codex_checks(self.config, str(self.path), SID, until=AT + 10)

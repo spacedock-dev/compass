@@ -14,10 +14,13 @@ import contextlib
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import mark_abstention as marker
 from codex_case_candidates import MAX_FILES, outside_repository
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 PASSING_CHECK_ADVERSARIES = (
     "goal-unrelated",
@@ -77,6 +80,7 @@ def parser_digest() -> str:
             "entry_numbers.py",
             "git_status.py",
             "claude_data.py",
+            "semantic_history.py",
         )
     ]
     paths += [Path(__file__), Path(marker.__file__)]
@@ -233,8 +237,43 @@ def _verify_cuts(paths: tuple[str, ...], sources: dict[str, Any]) -> None:
         raise marker.FreezeError("production-source-moved")
 
 
+def _person_events(config: Any, lines: Iterable[str], sid: str) -> list[dict[str, Any]]:
+    from compass_runtime import project_context as context
+
+    people: dict[tuple[float, str], dict[str, Any]] = {}
+    for raw in lines:
+        record = context._json_dict(raw.encode())
+        if record is None or record.get("type") != "response_item":
+            continue
+        if context.codex_person_record(record):
+            event = context._instruction_event(config, record, "codex", sid)
+            if event is not None:
+                people.setdefault((event["at"], event["title"]), event)
+    return list(people.values())
+
+
+def _person_history(config: Any, cut: str, sid: str, now: float) -> dict[str, Any]:
+    from compass_runtime import io as runtime_io
+    from compass_runtime import project_context as context
+    from compass_runtime import semantic_history
+
+    lines = reversed(
+        list(runtime_io.reverse_lines(config, cut, max_bytes=context.SEMANTIC_BACKFILL_MAX_BYTES))
+    )
+    decoded = (line.decode("utf-8", "replace") for line in lines)
+    since = now - context.SEMANTIC_HISTORY_HORIZON_SEC
+    people = [event for event in _person_events(config, decoded, sid) if event["at"] >= since]
+    history = context._semantic_model(context._dedupe_project_events(people), [], now=now)
+    incoming = [
+        event
+        for fact in history["facts"]
+        if (event := semantic_history._event_from_fact(fact, {})) is not None
+    ]
+    return {"events": semantic_history._redact_history(semantic_history._merge([], incoming))}
+
+
 def _focused_facts(
-    config: Any, cut: str, child_cuts: tuple[str, ...], sid: str
+    config: Any, cut: str, child_cuts: tuple[str, ...], sid: str, now: float
 ) -> tuple[list[dict[str, Any]], Any]:
     from compass_runtime import io as runtime_io
     from compass_runtime import project_context as context
@@ -249,23 +288,22 @@ def _focused_facts(
         or tally.scan.get("unread_calls")
     ):
         raise context.FrozenCheckCutoffUnreachableError("codex checks incomplete")
-    people: dict[tuple[float, str], dict[str, Any]] = {}
-    for raw in runtime_io.read_tail(config, cut):
-        record = context._json_dict(raw.encode())
-        if record is None or record.get("type") != "response_item":
-            continue
-        if context.codex_person_record(record):
-            event = context._instruction_event(config, record, "codex", sid)
-            if event is not None:
-                people.setdefault((event["at"], event["title"]), event)
+    people = _person_events(config, runtime_io.read_tail(config, cut), sid)
     limits = marker.codex_analyze_limits(config)
     checks = tally.entries(sid, cap=limits.analyze_listed_checks)
     # The live timeline reserves check slots before other events. Capping facts
     # after projection could leave a file write that Analyze never kept.
     timeline = context._project_timeline(
-        [*people.values(), *checks], ("codex", sid), cap=limits.analyze_record_events
+        [*people, *checks], ("codex", sid), cap=limits.analyze_record_events
     )
-    return context._semantic_model(timeline, [])["facts"], context._press(tally)
+    # Analyze can recover a reader instruction even when checks fill every timeline slot.
+    # The sealed parent supplies that history so the qualification needs no observer store.
+    semantic = context._merge_semantic_history(
+        context._semantic_model(timeline, [], now=now),
+        _person_history(config, cut, sid, now),
+        now=now,
+    )
+    return semantic["facts"], context._press(tally)
 
 
 def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
@@ -350,7 +388,7 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
                 or child_info.get("last_event_ts", 0) > stop
             ):
                 raise marker.FreezeError("codex-child-active")
-        facts, press = _focused_facts(config, cut, child_cuts, sid)
+        facts, press = _focused_facts(config, cut, child_cuts, sid, captured)
         refusals = _refusals(cut, sid)
     case: dict[str, Any] = {
         "codex_format": marker.FORMAT_CODEX,
