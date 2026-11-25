@@ -619,7 +619,7 @@
       },
       {
         "file": "frontend/src/drift/SteerBack.tsx",
-        "sha256": "97920c3a8feebdf259929be2cd62036b4be4cf9a306db318ad789e3a02e20a3d"
+        "sha256": "d686bb9f4895693ad2415a17a07eca8698eb70df4b259e6da305e6c8d82a993f"
       },
       {
         "file": "frontend/src/drift/UnaskedPermission.tsx",
