@@ -154,6 +154,7 @@ export interface SessionRecordQuery {
 export function createApiClient(deps: {
   readonly fetch: FetchLike;
   readonly onTunnelPortMismatch?: () => void;
+  readonly onLoopbackOnly?: () => void;
 }) {
   const get = <T>(path: string, signal: AbortSignal | undefined, readRevision = false) =>
     settle<T>(() => fetchBounded(deps.fetch, path, undefined, signal), signal, readRevision);
@@ -180,13 +181,10 @@ export function createApiClient(deps: {
       false,
     );
 
-    if (
-      result.kind === 'http-error' &&
-      result.status === 403 &&
-      isRecord(result.body) &&
-      result.body['reason'] === 'tunnel-port-mismatch'
-    )
-      deps.onTunnelPortMismatch?.();
+    if (result.kind === 'http-error' && result.status === 403 && isRecord(result.body)) {
+      if (result.body['reason'] === 'tunnel-port-mismatch') deps.onTunnelPortMismatch?.();
+      else if (result.body['reason'] === 'loopback-only') deps.onLoopbackOnly?.();
+    }
     return result;
   };
 

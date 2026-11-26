@@ -20,6 +20,10 @@ const RESET_DETAIL: Readonly<Record<HistoryResetReason, string>> = {
   version: 'It was written by a different version of Compass.',
 };
 
+/* The page's own copy of the server's sentence: a refusal body's text is never rendered. */
+export const LOOPBACK_ONLY =
+  'This action works only on the computer running Compass, or through an ssh -L tunnel to it. Through a web proxy or a network address you can read the board but not run it.';
+
 const BUILD_WHY =
   'Compass was restarted with a different version after this page loaded, and this page may send what that version refuses.';
 
@@ -147,6 +151,17 @@ export function Notices({
           <span>
             {"For an ssh -L tunnel, the local port must match the Compass server's port."}
           </span>
+        </Alert>
+      ) : null}
+      {snapshot.loopbackOnly ? (
+        <Alert
+          variant="shell-notice"
+          className="next-stalled"
+          data-next-state="loopback-only"
+          role="status"
+        >
+          <strong>Action refused.</strong>
+          <span>{LOOPBACK_ONLY}</span>
         </Alert>
       ) : null}
       <StalledNotice snapshot={snapshot} now={now} retryMs={retryMs} onRetry={onRetry} />

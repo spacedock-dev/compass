@@ -1262,7 +1262,10 @@ payload, where legacy printed zeros that read as a measured empty board, and Ret
 A POST refused because a loopback tunnel's local port differs from the listening port shows the
 fixed same-port instruction in a shell notice. It survives refresh and route changes; the
 [reader-state record](design-reader-state.md) owns its lifetime. The API client recognizes only
-403 with the closed `tunnel-port-mismatch` reason and never renders arbitrary error-body text.
+403 with the closed `tunnel-port-mismatch` reason and never renders arbitrary error-body text. A
+POST refused with the closed `loopback-only` reason, which a board read through a login proxy or a
+`--host` bind receives for actions only a reader on the Compass computer may run, shows a second
+fixed notice the same way and with the same lifetime.
 
 Copy briefing announces why it cannot copy (the project is no longer in the payload) instead of blaming
 the clipboard. The control that copies a session link, the project briefing, the "Attention updated"

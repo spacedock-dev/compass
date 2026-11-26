@@ -69,6 +69,8 @@ export interface BoardSnapshot {
   readonly pending: readonly string[];
   /** A POST refusal for this document's authority, kept until the reader opens a new origin. */
   readonly tunnelPortMismatch: boolean;
+  /** A POST refused because only a reader on the Compass computer may run it, kept for the document. */
+  readonly loopbackOnly: boolean;
 }
 
 const MAX_REPORTED_LISTENER_ERRORS = 10;
@@ -88,6 +90,7 @@ const INITIAL: BoardSnapshot = Object.freeze({
   observer: { requests: [], states: new Map(), notices: new Map() },
   pending: [],
   tunnelPortMismatch: false,
+  loopbackOnly: false,
 });
 
 function sameList(a: readonly string[], b: readonly string[]): boolean {
@@ -231,6 +234,11 @@ export function createBoardStore(deps: {
     refuseTunnelPort(): void {
       if (snapshot.tunnelPortMismatch) return;
       publish({ ...snapshot, tunnelPortMismatch: true });
+    },
+
+    refuseLoopbackOnly(): void {
+      if (snapshot.loopbackOnly) return;
+      publish({ ...snapshot, loopbackOnly: true });
     },
 
     setPending(keys: readonly string[]): void {

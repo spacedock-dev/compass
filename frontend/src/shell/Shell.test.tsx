@@ -4,6 +4,7 @@ import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '.
 import { act, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { REGION_IDS } from './announcer';
+import { LOOPBACK_ONLY } from './Notices';
 import { BOARD, flush, mountShell } from './testing';
 
 const region = (name: keyof typeof REGION_IDS) =>
@@ -160,6 +161,50 @@ describe('an open list holds a poll paint, and closing it shows the board', () =
     });
     expect(page.shell.display.getSnapshot().data?.generated).toBe(2000);
     choice.unmount();
+  });
+});
+
+describe('an action refused because it needs the computer running Compass', () => {
+  const loopbackOnly = () =>
+    new Response(
+      JSON.stringify({ ok: false, reason: 'loopback-only', message: 'server text, not shown' }),
+      { status: 403 },
+    );
+
+  it('explains the refusal in fixed words and keeps it through refresh and navigation', async () => {
+    const page = mountShell({ data: BOARD, postResponse: loopbackOnly });
+    await page.settle();
+    expect(screen.queryByText(LOOPBACK_ONLY)).toBeNull();
+    await act(async () => {
+      await page.shell.runtime.client.postDismiss({ harness: 'claude', sid: 'shared-sid' });
+    });
+    expect(screen.getByText(LOOPBACK_ONLY)).toBeVisible();
+    expect(screen.queryByText('server text, not shown')).toBeNull();
+    expect(screen.queryByText(/For an ssh -L tunnel, the local port/)).toBeNull();
+    await act(async () => {
+      await page.shell.runtime.refresh();
+    });
+    await page.go('#n=projects');
+    expect(screen.getByText(LOOPBACK_ONLY)).toBeVisible();
+    expect(page.posts()).toBe(1);
+  });
+
+  it('does not explain an unrelated refusal or a different status this way', async () => {
+    for (const [status, reason] of [
+      [403, 'admission-refused'],
+      [503, 'loopback-only'],
+    ] as const) {
+      const page = mountShell({
+        data: BOARD,
+        postResponse: () => new Response(JSON.stringify({ reason }), { status }),
+      });
+      await page.settle();
+      await act(async () => {
+        await page.shell.runtime.client.postDismiss({ harness: 'claude', sid: 'shared-sid' });
+      });
+      expect(screen.queryByText(LOOPBACK_ONLY)).toBeNull();
+      page.unmount();
+    }
   });
 });
 

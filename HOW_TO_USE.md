@@ -604,6 +604,12 @@ address it resolves to, and that is the rebinding defense rather than a bug. `--
 itself on Windows and carries the address across, so a detached remote-bound dashboard stays remote
 bound.
 
+A board opened this way, or through a login proxy with `--allow-host`, shows every session, but
+the actions that spend a model call or open a message's whole text stay on the dashboard's own
+machine: Summarize, Check progress, opening a later direction, corrections, Find goal, the Live
+monitor and saving Settings. Pressing one shows "This action works only on the computer running
+Compass, or through an ssh -L tunnel to it." Use the tunnel above for those.
+
 Both `--status` and `--stop` find a live instance by probing the port, so neither needs the home the
 dashboard was started with. Tested: a dashboard started under a scratch `COMPASS_HOME` was stopped
 by a `--stop` issued with no `COMPASS_HOME` at all, and its state file was cleaned up anyway, because

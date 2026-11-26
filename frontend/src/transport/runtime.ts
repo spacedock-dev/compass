@@ -49,6 +49,7 @@ export function createBoardRuntime(options: RuntimeOptions) {
   const client = createApiClient({
     fetch: options.fetch,
     onTunnelPortMismatch: () => store.refuseTunnelPort(),
+    onLoopbackOnly: () => store.refuseLoopbackOnly(),
   });
   const revisions = createRevisionMemo();
 
