@@ -328,8 +328,15 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
             headers += [("Origin", f"http://127.0.0.1:{1 if port == 65535 else port + 1}")]
         if kind.startswith("tunnel"):
             headers = self.tunnel_headers(port, kind)
-        if kind == "lan":
-            headers = [("Host", "board.example"), ("Origin", "https://board.example")]
+        named = [("Host", "board.example"), ("Origin", "https://board.example")]
+        # What a hosted login proxy forwards: the allowed name, its HTTPS origin and the
+        # X-Forwarded-* trio, from a loopback peer.
+        forwarded = [
+            ("X-Forwarded-For", "192.0.2.10"),
+            ("X-Forwarded-Proto", "https"),
+            ("X-Forwarded-Host", "board.example"),
+        ]
+        headers = {"lan": named, "login-proxy": named + forwarded}.get(kind, headers)
         if path == "/api/interaction/stream":
             headers += [
                 ("Upgrade", "websocket"),
@@ -447,6 +454,44 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
                 # A different local service or a forwarding proxy earns no tunnel diagnosis.
                 self.assertEqual(403, self.request("POST", "/api/reading", kind))
                 self.assertNotIn(b"tunnel-port-mismatch", self.last_body)
+
+    def test_a_remote_reader_is_told_which_actions_need_this_computer(self) -> None:
+        # A remote reader passes admission and sees these buttons, so a bare 403 surfaced as a
+        # failed summary or an unreadable message. Every other route keeps its own answer.
+        explained = {
+            "/api/correction",
+            "/api/correction/copied",
+            "/api/direction",
+            "/api/goal/find",
+            "/api/live-monitor",
+            "/api/reading",
+            "/api/reading-long-discard",
+            "/api/reading/cancel",
+            "/api/settings",
+            "/api/summary",
+            "/api/summary/cancel",
+            "/api/summary/delete",
+            "/api/usage/claude",
+        }
+        expected = {
+            "ok": False,
+            "reason": "loopback-only",
+            "message": http_api.LOOPBACK_ONLY_SENTENCE,
+        }
+        for kind in ("login-proxy", "lan", "proxy"):
+            answered = set()
+            for path in sorted(POST):
+                with self.subTest(kind=kind, path=path):
+                    status = self.request("POST", path, kind)
+                    if b"loopback-only" in self.last_body:
+                        self.assertEqual(403, status)
+                        self.assertEqual(expected, json.loads(self.last_body))
+                        answered.add(path)
+            self.assertEqual(explained, answered, kind)
+        for kind in ("local", "navigation", "cross-port", "tunnel"):
+            with self.subTest(kind=kind):
+                self.request("POST", "/api/summary", kind)
+                self.assertNotIn(b"loopback-only", self.last_body)
 
     def test_a_refused_board_action_names_admission_instead_of_a_restart(self) -> None:
         for kind in ("duplicate", "cross-port", "lan", "proxy"):

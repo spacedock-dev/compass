@@ -8721,7 +8721,16 @@ class SummaryJobHTTPTest(unittest.TestCase):
             handler.client_address = ("192.0.2.1", 9999)
             with mock.patch.object(handler, "_read_body", side_effect=AssertionError("body read")):
                 handler.do_POST()
-            handler._reject.assert_called_once_with(403)
+            handler._reject.assert_not_called()
+            self.assertEqual(403, handler._send.call_args.args[2])
+            self.assertEqual(
+                {
+                    "ok": False,
+                    "reason": "loopback-only",
+                    "message": http_api.LOOPBACK_ONLY_SENTENCE,
+                },
+                json.loads(handler._send.call_args.args[0]),
+            )
 
     def discard(self) -> dict[str, Any]:
         handler = self.handler("/api/annotate", b'{"harness":"claude","sid":"root","clear":true}')

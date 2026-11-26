@@ -405,6 +405,10 @@ The page bound is the measured 2,419,703 bytes. The fixture allowance stays at 2
 On 2026-11-24, the rebased Sessions review fixes packaged at 2,488,543 bytes on Node 26.12.1
 and pnpm 12.19.0, setting the page bound to that measurement.
 
+On 2026-11-26, the notice for an action refused through a web proxy or network address
+packaged at 2,489,131 bytes on Node 26.12.1 and pnpm 12.19.0, up 588 bytes. The page bound
+rises to that measurement. The fixture bound stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

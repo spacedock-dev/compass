@@ -701,6 +701,12 @@ PAGE_OUTDATED = (
     "to analyze."
 )
 
+# The page shows its own copy of this sentence (frontend/src/shell/Notices.tsx), never this one.
+LOOPBACK_ONLY_SENTENCE = (
+    "This action works only on the computer running Compass, or through an ssh -L tunnel to it. "
+    "Through a web proxy or a network address you can read the board but not run it."
+)
+
 
 def _outdated_route(route: runtime_reading_route.Route) -> runtime_reading_route.Route:
     """The route an older page draws as "reload", in place of the one that runs."""
@@ -2086,6 +2092,32 @@ class _RequestHandler(BaseHTTPRequestHandler):
             for name in self.headers
         )
 
+    def _resource_admitted(self) -> bool:
+        """`_loopback_resource_ok` for a POST, which a document navigation never carries."""
+        return not self._is_document_navigation() and self._loopback_resource_ok()
+
+    def _refuse_resource(self) -> None:
+        """Refuse a loopback-only POST, saying why when the request came from somewhere else.
+
+        A board read through a login proxy or a `--host` bind passes admission, so its reader sees
+        every button, and a bare 403 left the page to report a failed summary or an unreadable
+        message instead. The reason is closed and the sentence fixed: neither echoes a header, and
+        both are sent before the body is read, so availability and body validity stay undisclosed.
+        A direct loopback request refused for its fetch metadata, or any navigation, keeps the bare
+        403: those are another page's requests, not this board's reader.
+        """
+        if self._is_document_navigation() or self._direct_loopback():
+            self._reject(403)
+            return
+        self._drain_body()
+        self._send(
+            json.dumps(
+                {"ok": False, "reason": "loopback-only", "message": LOOPBACK_ONLY_SENTENCE}
+            ).encode(),
+            "application/json",
+            403,
+        )
+
     def _loopback_read_ok(self) -> bool:
         """`_loopback_resource_ok` for a GET a page fetches and never navigates to."""
         return (
@@ -2978,8 +3010,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         nothing; and every admitted body is answered with success, because a status line must
         never see a Compass error.
         """
-        if self._is_document_navigation() or not self._loopback_resource_ok():
-            self._reject(403)
+        if not self._resource_admitted():
+            self._refuse_resource()
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -3083,8 +3115,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         before any is written (`settings.save`), and the answer is the whole published state, so
         the screen redraws from what the store now holds rather than from what it sent.
         """
-        if self._is_document_navigation() or not self._loopback_resource_ok():
-            self._reject(403)
+        if not self._resource_admitted():
+            self._refuse_resource()
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -3571,8 +3603,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         )
 
     def _reading_long_discard(self) -> None:
-        if self._is_document_navigation() or not self._loopback_resource_ok():
-            self._reject(403)
+        if not self._resource_admitted():
+            self._refuse_resource()
             return
         application = self.server.application
         try:
@@ -3659,8 +3691,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         for `_focus`'s ruling: a harness name is public and a session id is
         not, so a 404 here would be an existence oracle.
         """
-        if self._is_document_navigation() or not self._loopback_resource_ok():
-            self._reject(403)
+        if not self._resource_admitted():
+            self._refuse_resource()
             return
         application = self.server.application
         config = application.config
@@ -3682,9 +3714,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _reading_dispatch(self, payload: dict[str, Any]) -> None:
         application = self.server.application
         refusal: int | None
-        if self._is_document_navigation() or not self._loopback_resource_ok():
-            refusal = 403
-        elif not reading_long_preview.valid_ingress(payload) or (
+        if not self._resource_admitted():
+            self._refuse_resource()
+            return
+        if not reading_long_preview.valid_ingress(payload) or (
             "typed_action" in payload
             and (
                 payload["typed_action"] not in ("drift", "drift again")
@@ -4036,8 +4069,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         and reserves nothing, and it never waits for the reap: the job's own
         thread does that.
         """
-        if self._is_document_navigation() or not self._loopback_resource_ok():
-            self._reject(403)
+        if not self._resource_admitted():
+            self._refuse_resource()
             return
         config = self.server.application.config
         try:
@@ -4090,8 +4123,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         """
         # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)  # noqa: E501
         config = self.server.application.config
-        if self._is_document_navigation() or not self._loopback_resource_ok():
-            self._reject(403)
+        if not self._resource_admitted():
+            self._refuse_resource()
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -4248,8 +4281,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         charge is the model seam's (`reading_policy.GuardedModel`), the same one Analyze pays at.
         An unknown session answers as a session with no prompts does, for `_focus`'s reason.
         """
-        if self._is_document_navigation() or not self._loopback_resource_ok():
-            self._reject(403)
+        if not self._resource_admitted():
+            self._refuse_resource()
             return
         config = self.server.application.config
         try:
@@ -4869,8 +4902,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if not config.annotations_enabled:
             self._reject(503)
             return
-        if self._is_document_navigation() or not self._loopback_resource_ok():
-            self._reject(403)
+        if not self._resource_admitted():
+            self._refuse_resource()
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -4982,8 +5015,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if not config.annotations_enabled:
             self._reject(503)
             return
-        if self._is_document_navigation() or not self._loopback_resource_ok():
-            self._reject(403)
+        if not self._resource_admitted():
+            self._refuse_resource()
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -5064,8 +5097,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if not config.annotations_enabled:
             self._reject(503)
             return
-        if self._is_document_navigation() or not self._loopback_resource_ok():
-            self._reject(403)
+        if not self._resource_admitted():
+            self._refuse_resource()
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -5693,8 +5726,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         )
 
     def _summary_payload(self) -> dict[str, Any] | None:
-        if self._is_document_navigation() or not self._loopback_resource_ok():
-            self._reject(403)
+        if not self._resource_admitted():
+            self._refuse_resource()
             return None
         try:
             length = int(self.headers.get("Content-Length") or 0)

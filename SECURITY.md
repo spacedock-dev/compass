@@ -1432,7 +1432,8 @@ accepted below says so in the same words.
 A refused focus capability answers 403 with JSON reason `stale-capability`, so the page asks for
 a reload only for that refusal. POST admission refusals answer 403 with `admission-refused`
 and a fixed sentence about direct loopback and same-origin access, or `tunnel-port-mismatch`
-with the matching-port sentence. Admission runs first; neither refusal echoes supplied headers.
+with the matching-port sentence. A request that passes admission but not a loopback-only route's
+own check answers `loopback-only`, described with the loopback-only routes below. Admission runs first; neither refusal echoes supplied headers.
 Older clients still receive 403, and successful focus replies keep their single boolean.
 
 A rate ceiling and an in-flight gate, so a repeated or looped request cannot repeat the raise. The
@@ -6011,7 +6012,7 @@ leaving literal-address access available to an operator opening a remote board.
 
 `--allow-host` is intended for that last setting: an authenticated HTTPS proxy whose public
 hostname is the only way to reach a VM. For example, start with
-`--daemon --host 0.0.0.0 --port 8000 --allow-host content-pipeline-dev.exe.xyz`.
+`--daemon --host 0.0.0.0 --port 8000 --allow-host board.example.com`.
 Repeat the flag for another exact name. Names are case-insensitive and one trailing dot is
 stripped; only ASCII DNS labels are accepted (punycode for internationalized names). Invalid
 names, IP literals, wildcards and values containing a scheme, path or port are startup errors.
@@ -6031,8 +6032,8 @@ explicit or omitted, regardless of Compass's listening port. HTTP admits only an
 listening port for direct access, and refuses port 80 even if Compass listens there. Other
 scheme and port combinations are refused. An explicit Host port must match the admitted Origin
 port; an omitted Host port uses that Origin's port. This admits
-`Host: content-pipeline-dev.exe.xyz` with
-`Origin: https://content-pipeline-dev.exe.xyz` when Compass listens on 8000, without trusting
+`Host: board.example.com` with
+`Origin: https://board.example.com` when Compass listens on 8000, without trusting
 another service on a different port of the same name. Capability tokens and model consent are
 unchanged by an allowed name.
 
@@ -6056,6 +6057,15 @@ closed, because the parser stops there and every header after it would go unseen
 Reading POST routes refuse navigation and non-loopback or forwarded requests with 403 before
 checking body size, JSON validity or reading availability. Those refusals disclose neither the
 body's validity nor whether readings are enabled.
+
+A loopback-only POST the page can press (Summarize and its cancel and delete, Check progress and its
+cancel and discard, opening a later direction's whole text, corrections, Find goal, the Live
+monitor, saving Settings) and the Claude quota receipt answer a non-loopback or forwarded request
+with JSON reason `loopback-only` and one fixed sentence: the action works only on the computer
+running Compass or through an ssh -L tunnel to it. The refusal is sent at the same point the bare
+403 was, before the body is read, and echoes no header, so it discloses only what this section
+already states. A document navigation, or a direct loopback request refused for its fetch
+metadata, still gets a bare 403. The page shows its own copy of the sentence and never the body's.
 
 Loopback-only routes require both a loopback TCP peer and a loopback Host authority: a
 `LOCAL_HOSTS` name (`localhost`, `127.0.0.1`, `::1`) or a loopback IP. An allowed DNS name never

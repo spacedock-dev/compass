@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2488315,
+    "bytes": 2489131,
     "file": "react.html",
-    "sha256": "c9e691c8c67ea3eda3df90da3921ffdff9484347e1e6f37687e2b2d61939acb0"
+    "sha256": "ddfd93684039b2443cc85ecd4e01db05ec32756fb70950024e22be347efcf8cf"
   },
   "format": 1,
   "frontend": "react",
@@ -207,7 +207,7 @@
       },
       {
         "file": "frontend/src/api/client.ts",
-        "sha256": "c5e85ca1f34458c5c407d975fa3147b6082d3f16f1ac6c1d6ca41710241e969d"
+        "sha256": "e58e79d30aeea328104d7ad0661b7dbb89f30064c86aabb93112dbacbd821f37"
       },
       {
         "file": "frontend/src/api/explanations.ts",
@@ -395,7 +395,7 @@
       },
       {
         "file": "frontend/src/controls/displayGate.ts",
-        "sha256": "67f4980c65e9ac89093812f3dba3731e7e9fda7d89a1923c8dac5b5270aa7400"
+        "sha256": "de0c3f112821d1de8faf526d5973cd88f5dbab2db39aa26ca6a1b1365e7926fd"
       },
       {
         "file": "frontend/src/controls/fieldMemory.ts",
@@ -1391,7 +1391,7 @@
       },
       {
         "file": "frontend/src/shell/Notices.tsx",
-        "sha256": "c8a914a9ec70357ee07713d1f140a1e69c020e41b1e8c2499789383ac472ec41"
+        "sha256": "4d86067839746a78bf2d6f14643def6e792aba550d31fed3ae84fc4330b48778"
       },
       {
         "file": "frontend/src/shell/Page.tsx",
@@ -1559,7 +1559,7 @@
       },
       {
         "file": "frontend/src/store/board.ts",
-        "sha256": "df9daa8586629c268ff7bf3cc4e632d29fc5c9456a07e6f2dc642ce94cf95fb1"
+        "sha256": "1ca933a44a9ed31abc03d1c4610614e9799c4957239af46405b64e7b65de528e"
       },
       {
         "file": "frontend/src/store/commit-gate.ts",
@@ -1719,7 +1719,7 @@
       },
       {
         "file": "frontend/src/transport/runtime.ts",
-        "sha256": "23ab8405814805842ef563e7b7e17c625bc3c2ed5d008986766d4202174b51c4"
+        "sha256": "355bef508d2954882dbd13d6a4f3521c7e083c4211ecc4144da0162ada37c22e"
       },
       {
         "file": "frontend/src/transport/testing.ts",
