@@ -214,6 +214,20 @@ def allowed_host(value: str) -> str:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
+def login_proxy(value: str) -> str:
+    try:
+        return runtime_config.normalize_login_proxy(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def allowed_user(value: str) -> str:
+    try:
+        return runtime_config.normalize_allowed_user(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def positive_float(value: str) -> float:
     """A float above zero, or an argparse error naming what was wrong.
 
@@ -309,6 +323,36 @@ def https_reach_url(value: str) -> str:
     return url
 
 
+def _add_proxy_options(parser: argparse.ArgumentParser) -> None:
+    """The options for a board read through a login proxy: the names it serves, and its readers."""
+    parser.add_argument(
+        "--allow-host",
+        action="append",
+        type=allowed_host,
+        default=[],
+        metavar="NAME",
+        help="trust an exact DNS hostname behind a login proxy (repeatable)",
+    )
+    parser.add_argument(
+        "--login-proxy",
+        type=login_proxy,
+        default=None,
+        metavar="PROXY",
+        help=(
+            "the login proxy in front of an --allow-host name (exe.dev); with --allow-user, "
+            "its signed-in reader may run the board's actions"
+        ),
+    )
+    parser.add_argument(
+        "--allow-user",
+        action="append",
+        type=allowed_user,
+        default=[],
+        metavar="EMAIL",
+        help="an email --login-proxy may sign in to run the board's actions (repeatable)",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The CLI surface. argparse owns --help and its own usage errors."""
     # Abbreviations are off so a removed option stays refused: `--frontend` is a unique prefix of
@@ -360,16 +404,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="127.0.0.1",
         help="bind address: 127.0.0.1 (default) or 0.0.0.0 for remote access",
     )
-    parser.add_argument(
-        "--allow-host",
-        action="append",
-        type=allowed_host,
-        default=[],
-        metavar="NAME",
-        help=(
-            "trust an exact DNS hostname behind a login proxy (repeatable; requires --host 0.0.0.0)"
-        ),
-    )
+    _add_proxy_options(parser)
     parser.add_argument(
         "--diagnose",
         action="store_true",
@@ -651,6 +686,8 @@ def build_runtime(
         launcher_path=launcher_path,
         host=args.host,
         allowed_hosts=tuple(args.allow_host),
+        login_proxy=args.login_proxy or "",
+        allowed_users=tuple(args.allow_user),
         port=args.port,
         window_hours=args.window_hours,
         spacedock_enabled=not args.no_spacedock,
@@ -1069,6 +1106,9 @@ def run_one_shot(
     return None
 
 
+_STARTUP_OPTIONS = ("--allow-host", "--host", "--login-proxy", "--allow-user")
+
+
 def _client_server_argv(args: argparse.Namespace, argv: Sequence[str]) -> list[str]:
     if not args.allow_host:
         return list(argv)
@@ -1077,9 +1117,9 @@ def _client_server_argv(args: argparse.Namespace, argv: Sequence[str]) -> list[s
     rest: list[str] = []
     tokens = iter(argv)
     for token in tokens:
-        if token in {"--allow-host", "--host"}:
+        if token in _STARTUP_OPTIONS:
             next(tokens)
-        elif not token.startswith(("--allow-host=", "--host=")):
+        elif not token.startswith(tuple(option + "=" for option in _STARTUP_OPTIONS)):
             rest.append(token)
     return rest
 
@@ -1097,6 +1137,20 @@ def _group_without_port(argv: list[str]) -> list[str]:
     return remaining
 
 
+def refuse_login_proxy_without_its_parts(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> None:
+    """A trusted user header needs the proxy that sets it, a name it serves, and a reader list.
+
+    Any one alone would read as switched on while admitting nobody, or, worse, an --allow-user
+    list with no proxy would look like protection that nothing enforces.
+    """
+    if (args.login_proxy or args.allow_user) and not (
+        args.login_proxy and args.allow_user and args.allow_host
+    ):
+        parser.error("--login-proxy and --allow-user need each other and at least one --allow-host")
+
+
 def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int | None:  # noqa: PLR0912 - one dispatch per operation
     """The operations the terminal client owns, when `args` named one; None to carry on.
 
@@ -1108,7 +1162,9 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
     if (args.update or args.again) and not args.summary:
         build_parser().error("--update and --again need --summary")
     startup = terminal_client.server_start_kwargs(
-        terminal_client.ServerOptions(args.host, tuple(args.allow_host))
+        terminal_client.ServerOptions(
+            args.host, tuple(args.allow_host), args.login_proxy or "", tuple(args.allow_user)
+        )
         if args.allow_host
         else None
     )
@@ -1220,12 +1276,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
     lifecycle.unignore_sigterm()
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.allow_host and args.host == "127.0.0.1":
-        print(
-            "Compass: --allow-host has no effect on a loopback bind; "
-            "remote access requires an explicit --host 0.0.0.0.",
-            file=sys.stderr,
-        )
+    refuse_login_proxy_without_its_parts(parser, args)
     answered = run_client_operation(args, sys.argv[1:] if argv is None else argv)
     if answered is not None:
         return answered

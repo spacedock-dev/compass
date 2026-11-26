@@ -20,6 +20,15 @@ nonzero; Codex still emitted `PostToolUse`. The latter cannot establish successf
 The recorder was registered in isolated Claude settings and Codex inline TOML; project Codex
 hook-file discovery was a negative registration probe, not negative payload evidence.
 
+[exe.dev login proxy headers](exe-dev/login-proxy-headers-2026-11-26.jsonl) is not a harness
+capture: it records what the exe.dev HTTPS proxy sends a VM, by header name and verdict only, from a
+filtered packet capture on 2026-11-26. The proxy connects from loopback. It replaces any
+`X-ExeDev-Email` or `X-ExeDev-UserID` a client sends, in either case, with exactly one copy naming
+the signed-in user, and refuses a request with no sign-in before it reaches the VM. It keeps a
+client's `X-Forwarded-For` as the first entry and passes `X-Real-IP` through unchanged, so neither
+names anyone. `--login-proxy exe.dev` rests on this file. No hostname, address, email or user id is
+kept.
+
 [Claude transcript tool shapes](claude/transcript-tool-shapes-2.1.281-macos.jsonl) is not a hook
 capture either: it records, by field name and type name only, the three transcript records DEC-23
 reads, taken from interactive Claude Code 2.1.281 sessions on Haiku 4.5. A background shell call's

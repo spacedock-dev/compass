@@ -2749,12 +2749,79 @@ class AllowedHostTest(RuntimeTestCase):
         handler.headers.replace_header("Origin", "http://localhost:8000")
         self.assertTrue(handler._local_ok())
 
-    def test_loopback_bind_keeps_allowlist_inactive(self) -> None:
-        # Restoring the single-address bind check must admit the named rows.
+    def test_loopback_bind_admits_allowed_names_and_nothing_wider(self) -> None:
+        # A login proxy on this machine connects over loopback, so a trusted name needs no
+        # wider bind; an unlisted name and a remote address literal stay refused.
         for bound in ("127.0.0.1", "127.0.0.2", "127.255.255.254", "::1", "localhost"):
             with self.subTest(bound=bound):
-                self.assertFalse(self._handler("vm.exe.xyz", bound=bound)._local_ok())
+                self.assertTrue(self._handler("vm.exe.xyz", bound=bound)._local_ok())
                 self.assertTrue(self._handler("localhost:8000", bound=bound)._local_ok())
+                self.assertFalse(self._handler("evil.example", bound=bound)._local_ok())
+                self.assertFalse(self._handler("192.0.2.1:8000", bound=bound)._local_ok())
+
+    def _signed_in(
+        self,
+        host: str = "vm.exe.xyz",
+        emails: tuple[str, ...] = ("reader@example.com",),
+        *,
+        peer: str = "127.0.0.1",
+        proxy: str = "exe.dev",
+        users: tuple[str, ...] = ("reader@example.com",),
+    ) -> Any:
+        handler = self._handler(host, "https://" + host.partition(":")[0], method="POST")
+        handler.headers["Sec-Fetch-Site"] = "same-origin"
+        handler.headers["X-Forwarded-For"] = "198.51.100.7"
+        for address in emails:
+            handler.headers["X-ExeDev-Email"] = address
+        handler.client_address = (peer, 12345)
+        handler.server.application.config.login_proxy = proxy
+        handler.server.application.config.allowed_users = users
+        return handler
+
+    def test_a_listed_reader_signed_in_through_the_proxy_reaches_reader_routes(self) -> None:
+        for address in ("reader@example.com", "Reader@Example.COM", " reader@example.com\t"):
+            with self.subTest(address=address):
+                handler = self._signed_in(emails=(address,))
+                self.assertTrue(handler._signed_in_reader())
+                self.assertTrue(handler._reader_resource_ok())
+                # The desktop, terminal and status-line routes stay this machine's alone.
+                self.assertFalse(handler._loopback_resource_ok())
+
+    def test_a_signed_in_reader_is_refused_whenever_any_part_does_not_hold(self) -> None:
+        for label, handler in (
+            ("unlisted reader", self._signed_in(emails=("other@example.com",))),
+            ("no header", self._signed_in(emails=())),
+            ("two headers", self._signed_in(emails=("reader@example.com", "reader@example.com"))),
+            ("two addresses", self._signed_in(emails=("reader@example.com, a@example.com",))),
+            ("unreadable address", self._signed_in(emails=("<reader@example.com>",))),
+            ("remote peer", self._signed_in(peer="192.0.2.10")),
+            ("container peer", self._signed_in(peer="172.17.0.2")),
+            ("loopback Host", self._signed_in(host="127.0.0.1:8000")),
+            ("unlisted name", self._signed_in(host="evil.example")),
+            ("wrong named port", self._signed_in(host="vm.exe.xyz:9999")),
+            ("no proxy configured", self._signed_in(proxy="")),
+            ("unknown proxy", self._signed_in(proxy="cloudflare")),
+            ("no readers configured", self._signed_in(users=())),
+        ):
+            with self.subTest(label):
+                self.assertFalse(handler._signed_in_reader())
+                self.assertFalse(handler._reader_resource_ok())
+
+    def test_a_signed_in_reader_still_needs_the_board_origin_and_fetch_metadata(self) -> None:
+        for label, change in (
+            ("foreign origin", ("Origin", "https://evil.example")),
+            ("no origin", ("Origin", None)),
+            ("cross-site", ("Sec-Fetch-Site", "cross-site")),
+            ("same-site", ("Sec-Fetch-Site", "same-site")),
+        ):
+            with self.subTest(label):
+                handler = self._signed_in()
+                name, value = change
+                del handler.headers[name]
+                if value is not None:
+                    handler.headers[name] = value
+                self.assertTrue(handler._signed_in_reader())
+                self.assertFalse(handler._reader_resource_ok())
 
     def test_loopback_proxy_does_not_grant_local_only_access(self) -> None:
         # Removing the authority check would authenticate the proxy's socket.

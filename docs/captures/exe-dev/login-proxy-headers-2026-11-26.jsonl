@@ -1,0 +1,9 @@
+{"record": "method", "date": "2026-11-26", "how": "a 50-second tcpdump on the VM, filtered to requests carrying a probe marker, printing request lines and header names; Cookie and Authorization masked; nothing written on the VM", "requests": "GET /api/health through the exe.dev HTTPS proxy: one browser navigation and three same-origin fetches signed in, one curl not signed in"}
+{"record": "connection", "peer": "loopback", "interface": "lo", "verdict": "every proxied request reached Compass from 127.0.0.1"}
+{"record": "headers", "signed_in": true, "added_by_proxy": ["X-Exedev-Email", "X-Exedev-Userid", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto"], "host": "the VM's public name, without a port"}
+{"record": "probe", "client_sent": ["X-ExeDev-Email", "X-ExeDev-UserID"], "verdict": "replaced: exactly one X-Exedev-Email and one X-Exedev-Userid reached the VM, both naming the signed-in user"}
+{"record": "probe", "client_sent": ["x-exedev-email"], "verdict": "replaced, as above"}
+{"record": "probe", "client_sent": ["X-Forwarded-For"], "verdict": "kept as the first entry; the proxy appended the address it saw"}
+{"record": "probe", "client_sent": ["X-Real-IP"], "verdict": "passed through unchanged"}
+{"record": "probe", "signed_in": false, "client_sent": ["X-ExeDev-Email", "X-ExeDev-UserID"], "status": 401, "verdict": "refused by the proxy; never reached the VM"}
+{"record": "bind", "flag": "--host 0.0.0.0", "listening_interfaces": ["lo", "eth0", "docker0"], "firewall_input_policy": "ACCEPT", "verdict": "the port is open beyond the loopback the proxy uses"}

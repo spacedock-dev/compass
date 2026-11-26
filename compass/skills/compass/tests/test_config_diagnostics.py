@@ -236,6 +236,133 @@ class CompassServerTest(RuntimeTestCase):
         self.assertTrue(config.store_roots)
 
 
+class LoginProxyFlagTest(unittest.TestCase):
+    """--login-proxy and --allow-user: a measured proxy, its readers, and nothing alone."""
+
+    PROXIED = ("--allow-host", "vm.exe.xyz", "--login-proxy", "exe.dev")
+
+    def parse(self, *argv: str) -> Any:
+        return cli.build_parser().parse_args(list(argv))
+
+    def test_readers_are_normalized_into_runtime_config(self) -> None:
+        args = self.parse(
+            *self.PROXIED, "--allow-user", "Reader@Example.COM.", "--allow-user", "b.c+d@x.example"
+        )
+        config, _ = cli.build_runtime(args, started=1.0)
+        self.assertEqual("exe.dev", config.login_proxy)
+        self.assertEqual(("reader@example.com", "b.c+d@x.example"), config.allowed_users)
+        self.assertEqual("127.0.0.1", config.host)
+
+    def test_without_the_flags_nothing_is_trusted(self) -> None:
+        config, _ = cli.build_runtime(self.parse("--allow-host", "vm.exe.xyz"), started=1.0)
+        self.assertEqual(("", ()), (config.login_proxy, config.allowed_users))
+
+    def test_only_a_measured_proxy_is_accepted(self) -> None:
+        for proxy in ("EXE.DEV", "exe.dev"):
+            with self.subTest(proxy=proxy):
+                args = self.parse(
+                    "--allow-host",
+                    "vm.exe.xyz",
+                    "--login-proxy",
+                    proxy,
+                    "--allow-user",
+                    "a@b.example",
+                )
+                self.assertEqual("exe.dev", args.login_proxy)
+        for proxy in ("", "cloudflare", "exe.dev.", "oauth2-proxy"):
+            with (
+                self.subTest(proxy=proxy),
+                contextlib.redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit),
+            ):
+                self.parse("--login-proxy", proxy)
+
+    def test_an_address_that_could_hide_a_second_one_is_refused(self) -> None:
+        for user in (
+            "",
+            "reader",
+            "@example.com",
+            "reader@",
+            "a@b@example.com",
+            "a,b@example.com",
+            "a@example.com,b@example.com",
+            "a b@example.com",
+            "<a@example.com>",
+            '"a"@example.com',
+            ".a@example.com",
+            "a.@example.com",
+            "a..b@example.com",
+            "a@[192.0.2.1]",
+            "a@192.0.2.1",
+            "a@*.example.com",
+            "r\u00e9@example.com",
+            "a@example.com\n",
+            "a" * 65 + "@example.com",
+        ):
+            with (
+                self.subTest(user=user),
+                contextlib.redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit),
+            ):
+                self.parse("--allow-user", user)
+
+    def test_each_part_needs_the_others(self) -> None:
+        for argv in (
+            ["--login-proxy", "exe.dev", "--allow-user", "a@b.example"],
+            ["--allow-host", "vm.exe.xyz", "--login-proxy", "exe.dev"],
+            ["--allow-host", "vm.exe.xyz", "--allow-user", "a@b.example"],
+            ["--allow-user", "a@b.example"],
+        ):
+            captured = io.StringIO()
+            with (
+                self.subTest(argv=argv),
+                contextlib.redirect_stderr(captured),
+                mock.patch.object(cli, "run_one_shot", return_value=0) as served,
+                self.assertRaises(SystemExit) as raised,
+            ):
+                cli.main(argv)
+            self.assertEqual(2, raised.exception.code)
+            served.assert_not_called()
+            self.assertIn("--login-proxy and --allow-user need each other", captured.getvalue())
+
+    def test_daemon_respawn_and_automatic_starts_keep_the_readers(self) -> None:
+        args = self.parse(
+            *self.PROXIED, "--allow-user", "a@b.example", "--allow-user", "c@d.example"
+        )
+        config, _ = cli.build_runtime(args, started=1.0)
+        argv = lifecycle.spawn_argv(config, args)
+        expected = [
+            "--allow-host",
+            "vm.exe.xyz",
+            "--login-proxy",
+            "exe.dev",
+            "--allow-user",
+            "a@b.example",
+            "--allow-user",
+            "c@d.example",
+        ]
+        self.assertEqual(expected, argv[-len(expected) :])
+        with (
+            tempfile.TemporaryDirectory() as home,
+            mock.patch.dict(os.environ, {"COMPASS_HOME": home}, clear=True),
+            mock.patch.object(terminal_client, "find_dashboard", return_value=None),
+            mock.patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0)) as run,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            entry.main(
+                [
+                    *self.PROXIED,
+                    "--allow-user=a@b.example",
+                    "--drift",
+                    "--session",
+                    "claude:one",
+                    "--allow-user",
+                    "c@d.example",
+                ]
+            )
+        self.assertEqual(expected, run.call_args.args[0][-len(expected) :])
+
+
 class AllowedHostFlagTest(unittest.TestCase):
     # Dropping validation, normalization, runtime wiring, or the loopback warning
     # must break these literal expectations from the flag's public contract.
@@ -304,15 +431,14 @@ class AllowedHostFlagTest(unittest.TestCase):
                 self.assertIn("--allow-host", captured.getvalue())
                 self.assertIn("DNS hostname", captured.getvalue())
 
-    def test_loopback_launch_warns_without_widening_bind(self) -> None:
+    def test_loopback_launch_admits_names_without_widening_bind(self) -> None:
         captured = io.StringIO()
         with (
             contextlib.redirect_stderr(captured),
             mock.patch.object(cli, "run_one_shot", return_value=0),
         ):
             self.assertEqual(0, cli.main(["--allow-host", "vm.exe.xyz"]))
-        self.assertIn("--allow-host has no effect", captured.getvalue())
-        self.assertIn("--host 0.0.0.0", captured.getvalue())
+        self.assertEqual("", captured.getvalue())
         args = cli.build_parser().parse_args(["--allow-host", "vm.exe.xyz"])
         config, _ = cli.build_runtime(args, started=1.0)
         self.assertEqual("127.0.0.1", config.host)
@@ -410,7 +536,7 @@ class AllowedHostFlagTest(unittest.TestCase):
             ],
             run.call_args.args[0],
         )
-        self.assertIn("--allow-host has no effect", captured.getvalue())
+        self.assertNotIn("--allow-host", captured.getvalue())
 
     def test_goal_read_with_allow_host_starts_nothing(self) -> None:
         with (

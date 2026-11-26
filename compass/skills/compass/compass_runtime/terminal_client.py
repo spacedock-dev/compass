@@ -329,6 +329,8 @@ SWITCHES = (
 class ServerOptions(NamedTuple):
     host: str = "127.0.0.1"
     allowed_hosts: tuple[str, ...] = ()
+    login_proxy: str = ""
+    allowed_users: tuple[str, ...] = ()
 
 
 def server_start_kwargs(
@@ -1024,6 +1026,10 @@ def start_daemon(
             argv.extend(["--host", server_options.host])
         for name in server_options.allowed_hosts:
             argv.extend(["--allow-host", name])
+        if server_options.login_proxy:
+            argv.extend(["--login-proxy", server_options.login_proxy])
+        for user in server_options.allowed_users:
+            argv.extend(["--allow-user", user])
     try:
         completed = subprocess.run(  # noqa: S603 — our own interpreter and launcher, with an integer port
             argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, check=False

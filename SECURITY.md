@@ -6011,17 +6011,37 @@ machine. Rebinding needs a name to rebind. Refusing untrusted names closes that 
 leaving literal-address access available to an operator opening a remote board.
 
 `--allow-host` is intended for that last setting: an authenticated HTTPS proxy whose public
-hostname is the only way to reach a VM. For example, start with
-`--daemon --host 0.0.0.0 --port 8000 --allow-host board.example.com`.
+hostname is the only way to reach a VM. When the proxy runs on the same machine and connects over
+loopback, as exe.dev's was measured to
+([capture](docs/captures/exe-dev/login-proxy-headers-2026-11-26.jsonl)), keep the default bind:
+`--daemon --port 8000 --allow-host board.example.com`. Only a proxy on another machine needs
+`--host 0.0.0.0`, which also opens the port on every other interface, including a container
+bridge on the same machine.
 Repeat the flag for another exact name. Names are case-insensitive and one trailing dot is
 stripped; only ASCII DNS labels are accepted (punycode for internationalized names). Invalid
 names, IP literals, wildcards and values containing a scheme, path or port are startup errors.
-The flag alone changes no listening address. On the default loopback bind it warns and admits
-no additional hosts; the allowlist also stays inactive on any other loopback bind, including
-all IPv4 addresses in `127.0.0.0/8`, `::1` and `localhost`. Daemon detach, Windows respawn and
-automatic starts from terminal operations retain every name and any explicit bind.
-Names alone still start on loopback; only an explicit `--host 0.0.0.0`
-opens remote access. A read starts nothing, and an existing dashboard keeps its own configuration.
+The flag alone changes no listening address. On a loopback bind, the default or any other
+address in `127.0.0.0/8`, `::1` or `localhost`, the names are admitted for whatever reaches that
+loopback, which is the local proxy and the machine's own processes. A loopback bind admits no
+remote address literal. Daemon detach, Windows respawn and automatic starts from terminal
+operations retain every name and any explicit bind. Names alone still start on loopback; only an
+explicit `--host 0.0.0.0` opens the port to other machines. A read starts nothing, and an existing
+dashboard keeps its own configuration.
+
+`--login-proxy exe.dev` with one or more `--allow-user EMAIL` lets a reader that proxy has signed
+in run the board's own actions (the loopback-only reader routes below) through an allowed name.
+It trusts one header, `X-ExeDev-Email`, and only because the capture shows the proxy replaces any
+copy a client sends, in either case, and refuses an unsigned request before it reaches the VM.
+A request qualifies only when all of these hold: the TCP peer is loopback, Host is an allowed name
+with an admitted port, the usual named Origin and fetch-metadata rules pass, exactly one user
+header is present, and its address, normalized as the flag's own value is, is on the list.
+`X-Forwarded-For` and `X-Real-IP` are never read for this, because the capture shows a client's
+own values reach Compass unchanged. A peer on any other interface is refused even with a matching
+header, because it could have written the header itself. A process on the Compass machine can
+send the header too; it already holds every loopback power, so this grants it nothing new. Each
+flag needs the others and a missing one is a usage error, so a reader list never sits unenforced.
+Raising a terminal window, the terminal interaction and the status line's quota receipt stay
+direct loopback only, and model spending keeps its own consent, pause and daily limits.
 
 For an allowed name, Host may omit the port or explicitly use the listening port, 80 or 443.
 Ports in named Host and Origin authorities must be nonzero decimal numbers without leading
@@ -6069,10 +6089,12 @@ metadata, still gets a bare 403. The page shows its own copy of the sentence and
 
 Loopback-only routes require both a loopback TCP peer and a loopback Host authority: a
 `LOCAL_HOSTS` name (`localhost`, `127.0.0.1`, `::1`) or a loopback IP. An allowed DNS name never
-grants those powers, even when a local reverse proxy connects from `127.0.0.1`. They also refuse
-any request carrying `Forwarded`, `Via`, `X-Real-IP` or any `X-Forwarded-*` header, whatever its
-peer and Host, so a proxied request never reaches them. Compass reads those headers only to refuse;
-it never infers identity or authentication from them. The hook forwarders' destinations remain
+grants those powers, even when a local reverse proxy connects from `127.0.0.1`, except that the
+reader routes also admit a signed-in reader under `--login-proxy` and `--allow-user`, as above.
+Apart from that reader, they refuse any request carrying `Forwarded`, `Via`, `X-Real-IP` or any
+`X-Forwarded-*` header, whatever its peer and Host, so a proxied request never reaches them.
+Compass reads those headers only to refuse; it never infers identity or authentication from them.
+The one identity it reads is the measured login proxy's user header, as above. The hook forwarders' destinations remain
 loopback-only.
 
 A reverse proxy in front of `--allow-host` must forward the client's exact Host: the allowed name
