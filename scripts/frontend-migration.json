@@ -1672,6 +1672,16 @@
       ],
       "contract": "Kept for the life of the document after a POST receives 403 with tunnel-port-mismatch; refresh and route changes keep it, and only that closed refusal reason creates it.",
       "disposition": "store-held"
+    },
+    {
+      "name": "An action refused as needing the Compass computer",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/shell/Shell.test.tsx",
+        "frontend/stories/LoopbackOnly.stories.tsx"
+      ],
+      "contract": "Kept for the life of the document after a POST receives 403 with loopback-only; refresh and route changes keep it, only that closed refusal reason creates it, and the server's text is never rendered.",
+      "disposition": "store-held"
     }
   ],
   "storage": [
