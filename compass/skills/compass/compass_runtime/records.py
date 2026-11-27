@@ -1495,20 +1495,76 @@ def _redaction_spans(
     return found
 
 
-# An ASCII boundary admits links after Markdown emphasis and adjacent non-ASCII
-# prose. Keep any leading dashes outside the authority.
+# The link starts the board has always masked. An ASCII boundary admits links after Markdown
+# emphasis and adjacent non-ASCII prose. Leading dashes stay outside the authority.
+_OPAQUE_SCHEMES: Final = ("mailto", "data", "tel", "urn", "javascript", "blob", "magnet", "slack")
+_OPAQUE: Final = "|".join(_OPAQUE_SCHEMES)
+_ASCII_HOST: Final = r"""(?:[a-z0-9-]{1,63}\.){1,127}(?:xn--[a-z0-9-]{1,59}|[a-z]{2,63})
+                       |localhost|(?:[0-9]{1,3}\.){3}[0-9]{1,3}"""
 _URL_START = re.compile(
-    r"""(?ix)
+    rf"""(?ix)
     (?<!(?-i:[A-Za-z0-9.-]))(?P<dash>-*+)(?:
-        [a-z][a-z0-9+.-]*:[/\\]+|[/\\]{2}|(?:mailto|data|tel|urn|javascript|blob|magnet|slack):
-        |(?P<domain>(?:[a-z0-9-]{1,63}\.){1,127}(?:xn--[a-z0-9-]{1,59}|[a-z]{2,63})
-                       |localhost|(?:[0-9]{1,3}\.){3}[0-9]{1,3}
-                       |[a-z0-9]+[^\W\x00-\x7f][\w.-]*\.[a-z]{2,63})
-            (?::[0-9]{1,5})?(?=[/?#:])
+        [a-z][a-z0-9+.-]*:[/\\]+|[/\\]{{2}}|(?:{_OPAQUE}):
+        |(?P<domain>{_ASCII_HOST}
+                       |[a-z0-9]+[^\W\x00-\x7f][\w.-]*\.[a-z]{{2,63}})
+            (?::[0-9]{{1,5}})?(?=[/?#:])
         |www\.
     )
     """
 )
+# Searched directly, `_URL_START` restarts two branches inside one run: a scheme after each
+# `+`, and a host whose ASCII head is glued to non-ASCII text after each such letter. 250 KB
+# of `aä` took 90 seconds. `_KnownLinks` finds the same offsets in linear time from these
+# and matches `_URL_START` only at the earliest, which picks the branch as a search would.
+_URL_START_REST = re.compile(
+    rf"""(?ix)
+    (?<!(?-i:[A-Za-z0-9.-]))-*+(?:
+        [/\\]{{2}}|(?:{_OPAQUE}):|(?:{_ASCII_HOST})(?::[0-9]{{1,5}})?(?=[/?#:])|www\.
+    )
+    """
+)
+_SCHEME_RUN = re.compile(r"(?i)(?<![a-z0-9+.-])[a-z0-9+.-]++:[/\\]")
+_SCHEME_TAIL = re.compile(r"(?i)[a-z0-9+.-]*+:[/\\]")
+_SCHEME_HEAD = re.compile(r"(?ix)(?<!(?-i:[A-Za-z0-9.-]))-*+[a-z]")
+_GLUED_HEAD = re.compile(r"(?ix)(?<!(?-i:[A-Za-z0-9.-]))-*+[a-z0-9]+?[^\W\x00-\x7f]")
+_NOT_HOST_CHAR = re.compile(r"[^\w.-]")
+_TOP_LEVEL_LETTERS = re.compile(r"(?i)[a-z]{2,63}")
+
+# Forms the board masks only where `_URL_START` finds no link before the token ends, so each
+# reveals nothing that matcher hid. Every unbounded repetition is possessive and starts only
+# where its own run cannot continue, which keeps a scan linear.
+#
+# Label separators: UTS 46, which WHATWG applies to a host, reads the ideographic,
+# full-width and half-width full stops as dots and `urlsplit` does not, so a host spelt with
+# one is masked and never named.
+_LINK_DOTS: Final = ".\u3002\uff0e\uff61"
+_ADDED_AFTER_RUN: Final = rf"""
+    # `localhost` and dotted quads glued to a word, digit or hyphen before them.
+    (?P<glued>localhost|(?:[0-9]{{1,3}}[{_LINK_DOTS}]){{3}}[0-9]{{1,3}})
+        (?::[0-9]{{1,5}})?(?=[/?#:\\])
+    |(?<!(?-i:[A-Za-z]))(?:{_OPAQUE}):(?=\S)
+    # A `data:` URI glued to a letter; its media type sets it apart from prose.
+    |data:(?:[a-z0-9.+-]{{1,63}}/[a-z0-9.+-]{{1,63}}(?:;[^\s,;]{{1,64}}){{0,8}})?,
+    # An scp-style git remote, `user@host:path`. The path needs a slash or a `.git`
+    # ending, so `alice@corp: hello` and `image@sha256:abc` stay prose.
+    |(?<![\w.+~-])[\w.+~-]++@(?P<scp>\[[0-9a-f:.]{{2,45}}\]|[\w{_LINK_DOTS}-]++):
+        (?=[^\s:/\\]++[/\\]|[^\s:/\\][^\s:]*?\.git(?![^\W_]|-))
+"""
+# A dotted host read as a whole run of label characters, followed by a path, a query, a
+# fragment, a port or a backslash. `_run_host` accepts it only when it ends in a top-level
+# domain; otherwise the branches after it are tried at the same offset.
+_ADDED_START = re.compile(
+    rf"""(?ix)
+    (?<![\w{_LINK_DOTS}-])(?P<run>[\w{_LINK_DOTS}-]++)(?=[/?#:\\])
+    |{_ADDED_AFTER_RUN}
+    """
+)
+_ADDED_START_AFTER_RUN = re.compile("(?ix)" + _ADDED_AFTER_RUN)
+_LINK_DOT = re.compile(f"[{_LINK_DOTS}]")
+_TOP_LEVEL_LABEL = re.compile(r"xn--[a-z0-9-]{1,59}|[^\W\d_]{2,63}", re.IGNORECASE)
+# A host is named from its first ASCII letter or digit before any ASCII dot, so prose glued to
+# it, such as CJK text with no space before a link, stays beside it.
+_ASCII_ALNUM = re.compile("[A-Za-z0-9]")
 _LINK_SPACE = re.compile(r"\s")
 _URL_SYNTAX_END = re.compile(r"""[\s<>"'`]""")
 _BARE_BOUNDARY = re.compile(r"""[\s<"'`]""")
@@ -1539,20 +1595,166 @@ def _userinfo_start(text: str, host: int) -> int:
     return start if start < host - 1 else host
 
 
-def link_host(target: str) -> str | None:
-    """Name a link's host without a scheme, port, userinfo, path, query or fragment."""
+class _KnownLinks:
+    """Where `_URL_START` first matches from an offset, found in linear time."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        # Per branch: the offset searched from and the start found there.
+        self._found: dict[int, tuple[int, int | None]] = {}
+        # The run of host characters after a glued head: its first head end, its end, its
+        # last dot and whether it ends in a top-level domain before a path or port.
+        self._run = (0, -1, -1, False)
+
+    def match(self, position: int) -> re.Match[str] | None:
+        finders = (self._scheme, self._rest, self._glued)
+        while True:
+            found = [
+                start
+                for branch, finder in enumerate(finders)
+                if (start := self._cached(branch, position, finder)) is not None
+            ]
+            if not found:
+                return None
+            offset = min(found)
+            if (match := _URL_START.match(self.text, offset)) is not None:
+                return match
+            position = offset + 1
+
+    def _cached(
+        self, branch: int, position: int, finder: Callable[[int], int | None]
+    ) -> int | None:
+        searched = self._found.get(branch)
+        if searched is not None and searched[0] <= position:
+            start = searched[1]
+            if start is None or start >= position:
+                return start
+        start = finder(position)
+        self._found[branch] = (position, start)
+        return start
+
+    def _scheme(self, position: int) -> int | None:
+        text = self.text
+        run = _SCHEME_TAIL.match(text, position) or _SCHEME_RUN.search(text, position)
+        while run is not None:
+            head = _SCHEME_HEAD.search(text, max(position, run.start()), run.end() - 2)
+            if head is not None:
+                return head.start()
+            run = _SCHEME_RUN.search(text, run.end())
+        return None
+
+    def _rest(self, position: int) -> int | None:
+        match = _URL_START_REST.search(self.text, position)
+        return None if match is None else match.start()
+
+    def _glued(self, position: int) -> int | None:
+        while (head := _GLUED_HEAD.search(self.text, position)) is not None:
+            if self._glued_tail(head.end()):
+                return head.start()
+            position = head.start() + 1
+        return None
+
+    def _glued_tail(self, head_end: int) -> bool:
+        text = self.text
+        first, end, dot, valid = self._run
+        if not first <= head_end <= end:
+            stop = _NOT_HOST_CHAR.search(text, head_end)
+            first, end = head_end, len(text) if stop is None else stop.start()
+            dot = text.rfind(".", first, end)
+            valid = (
+                dot >= 0
+                and text[end : end + 1] in ("/", "?", "#", ":")
+                and _TOP_LEVEL_LETTERS.fullmatch(text, dot + 1, end) is not None
+            )
+            self._run = (first, end, dot, valid)
+        return valid and dot >= head_end
+
+
+class _LinkStart(NamedTuple):
+    match: re.Match[str]
+    start: int
+    # The host to name; empty when the link is masked unnamed.
+    host: str
+
+
+def _run_host(run: str) -> tuple[int, str] | None:
+    """The offset and text of the dotted host a run of label characters ends with."""
+    body = run.rstrip(_LINK_DOTS)
+    labels = _LINK_DOT.split(body)
+    if len(labels) < 2 or not _TOP_LEVEL_LABEL.fullmatch(labels[-1]):
+        return None
+    first = len(labels) - 1
+    while first and labels[first - 1]:
+        first -= 1
+    if first == len(labels) - 1:
+        return None
+    offset = sum(len(label) + 1 for label in labels[:first])
+    if (
+        (alnum := _ASCII_ALNUM.search(body, offset)) is not None
+        and "." not in body[offset : alnum.start()]
+        and _LINK_DOT.search(body, alnum.start()) is not None
+    ):
+        offset = alnum.start()
+    return offset, body[offset:]
+
+
+def _added_start(match: re.Match[str]) -> _LinkStart:
+    if (host := match["glued"]) is not None:
+        return _LinkStart(match, match.start(), host)
+    if (host := match["scp"]) is not None:
+        # An opaque scheme's name before the colon is masked as that scheme, unnamed.
+        return _LinkStart(match, match.start(), "" if host.lower() in _OPAQUE_SCHEMES else host)
+    return _LinkStart(match, match.start(), "")
+
+
+class _AddedLinks:
+    """Where a link form `_URL_START` does not recognise first starts from an offset."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self._found: tuple[int, _LinkStart | None] | None = None
+
+    def start(self, position: int) -> _LinkStart | None:
+        if (searched := self._found) is not None and searched[0] <= position:
+            found = searched[1]
+            if found is None or found.match.start() >= position:
+                return found
+        found = self._search(position)
+        self._found = (position, found)
+        return found
+
+    def _search(self, position: int) -> _LinkStart | None:
+        text = self.text
+        while (match := _ADDED_START.search(text, position)) is not None:
+            if (run := match["run"]) is None:
+                return _added_start(match)
+            if (host := _run_host(run)) is not None:
+                return _LinkStart(match, match.start() + host[0], host[1])
+            if (other := _ADDED_START_AFTER_RUN.match(text, match.start())) is not None:
+                return _added_start(other)
+            position = match.start() + 1
+        return None
+
+
+def _link_target(target: str) -> str:
     if stop := _URL_SYNTAX_END.search(target):
         target = target[: stop.start()]
     target = target.rstrip(".,;)}")
     if target.endswith("]"):
         excess = max(0, target.count("]") - target.count("["))
         target = target[: max(len(target.rstrip("]")), len(target) - excess)]
+    return target
+
+
+def link_host(target: str) -> str | None:
+    """Name a link's host without a scheme, port, userinfo, path, query or fragment."""
+    target = _link_target(target)
     if "\\" in target:
         return None
     start = _URL_START.match(target)
     if (
         start is None
-        and (candidate := _URL_START.search(target)) is not None
+        and (candidate := _KnownLinks(target).match(0)) is not None
         and candidate["domain"]
         and _userinfo_start(target, candidate.start()) == 0
     ):
@@ -1629,8 +1831,25 @@ def _markdown_links(text: str) -> Iterator[_LinkSpan]:
 
 
 def _bare_links(text: str) -> Iterator[_LinkSpan]:
+    known, added = _KnownLinks(text), _AddedLinks(text)
     previous = 0
-    while (match := _URL_START.search(text, previous)) is not None:
+    while True:
+        match = known.match(previous)
+        found = added.start(previous)
+        if found is not None and (match is None or found.match.start() < match.start()):
+            end = _bare_destination_end(text, found.match)
+            # A known link starting before this token ends keeps its own span and host.
+            if match is None or match.start() >= end:
+                start = found.start
+                named = found.host and "\\" not in _link_target(text[start:end])
+                host = _validated_link_host("//" + found.host) if named else None
+                if (userinfo := _userinfo_start(text, found.match.start())) < found.match.start():
+                    start = max(previous, userinfo)
+                previous = end
+                yield _LinkSpan(start, end, host or _URL_UNNAMED, host)
+                continue
+        if match is None:
+            return
         start = match.end("dash")
         end = _bare_destination_end(text, match)
         host = link_host(text[start:end])

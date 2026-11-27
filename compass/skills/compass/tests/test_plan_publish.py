@@ -21,6 +21,7 @@ from compass_runtime import (
     git_status,
     history,
     http_api,
+    records,
     sessions,
 )
 from compass_runtime import io as runtime_io
@@ -330,6 +331,33 @@ class PlanPublicationTest(PlanRepoTestCase):
             ("[ref]: ./CANARY_REFERENCE.md", "[ref]"),
             (r"[a\]]: ./secret/CANARY_ESCAPED_REF.md", r"[a\]]"),
             (f"Authorization: Bearer {credential}", "REDACTED"),
+            # A backslash after a host is a path separator to WHATWG, so the link is unnamed.
+            ("example.test\\CANARY_BACKSLASH", "[link]"),
+            ("localhost:3000\\CANARY_BACKSLASH_LOCAL", "[link]"),
+            ("example.рф/r?c=CANARY_IDN_TLD", "[link]"),
+            ("пример.рф/r?c=CANARY_IDN_HOST", "[link]"),
+            ("sub.пример.рф/r?c=CANARY_IDN_SUB", "[link]"),
+            ("example。test/CANARY_IDEOGRAPHIC_DOT", "[link]"),
+            ("example\uff0etest/CANARY_FULLWIDTH_DOT", "[link]"),
+            ("example｡test/CANARY_HALFWIDTH_DOT", "[link]"),
+            ("example.test./CANARY_TRAILING_DOT", "example.test"),
+            ("a-localhost:3000/reset/CANARY_GLUED_LOCAL", "localhost"),
+            ("1localhost:3000/reset/CANARY_DIGIT_LOCAL", "localhost"),
+            ("a.192.168.1.10/admin/CANARY_DOT_IP", "192.168.1.10"),
+            ("a-10.0.0.5:8080/CANARY_DASH_IP", "10.0.0.5"),
+            ("1192.168.1.10/admin/CANARY_DIGIT_IP", "192.168.1.10"),
+            ("a-data:text/plain,CANARY_DASH_DATA", "[link]"),
+            ("1data:text/plain,CANARY_DIGIT_DATA", "[link]"),
+            ("adata:text/plain;base64,CANARY_LETTER_DATA", "[link]"),
+            ("git@host:CANARY_ORG/CANARY_REPO.git", "host"),
+            ("git@github.com:CANARY_ORG/repo.git", "github.com"),
+            ("git@[::1]:CANARY_ORG/repo.git", "[::1]"),
+            ("git@host:CANARY_REPO_ONLY.git", "host"),
+            ("_git@host:CANARY_EMPHASIS.git_", "host"),
+            ("user:CANARY_REMOTE_PASS@host:CANARY_ORG/repo.git", "host"),
+            ("git@host:CANARY_ORG\\repo.git", "[link]"),
+            ("git@host:/srv/CANARY_ABSOLUTE.git", "[link]"),
+            ("[repo](git@host:CANARY_ORG/repo.git)", "[repo]"),
         )
         self.write_sources(
             {
@@ -364,7 +392,10 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertNotIn(b"CANARY_", body)
         self.assertNotIn(b"https://", body)
         self.assertNotIn(credential.encode(), body)
-        self.assertNotIn("-docs.example.test", payload["diagrams"][0]["linkHosts"])
+        hosts = payload["diagrams"][0]["linkHosts"]
+        self.assertNotIn("-docs.example.test", hosts)
+        self.assertTrue({"host", "github.com", "[::1]", "localhost", "10.0.0.5"} <= set(hosts))
+        self.assertFalse([host for host in hosts if not host.isascii() or "\\" in host])
 
     def test_multiline_diagram_link_destinations_are_stripped(self) -> None:
         long_label = "[" + "a" * 1000 + "]"
@@ -964,3 +995,62 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertEqual(payload["goals"], [])
         refused = [source for source in payload["sources"] if source["reason"] == "git timed out"]
         self.assertEqual(len(refused), 10)
+
+
+class LinkProjectionTest(unittest.TestCase):
+    def test_prose_that_only_resembles_a_link_is_kept(self) -> None:
+        for text in (
+            "metadata: foo, bar",
+            "ping alice@corp: hello",
+            "image@sha256:abcdef01",
+            "release v1.2.3.4 shipped",
+            "i.e.: see below",
+            "notes on records.md",
+            "a@b and c@d",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(records.hosts_only(text), (text, ()))
+
+    def test_text_glued_to_a_link_stays_beside_its_host(self) -> None:
+        for text, expected, host in (
+            ("完了。https://example.test/p/CANARY", "完了。example.test", "example.test"),
+            ("完了。example.test/p/CANARY", "完了。example.test", "example.test"),
+            ("参考docs.example.test/d/CANARY", "参考docs.example.test", "docs.example.test"),
+            ("a-localhost:3000/CANARY", "a-localhost", "localhost"),
+            ("user:CANARY@host:org/repo.git", "user:host", "host"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(records.hosts_only(text), (expected, (host,)))
+
+
+class LinkProjectionTimingTest(unittest.TestCase):
+    # Measures elapsed time on adversarial input, to keep every link matcher linear.
+    REAL_TIME_TESTS = True
+
+    def test_adversarial_text_is_projected_in_linear_time(self) -> None:
+        size = 250_000
+        cases = {
+            name: unit * (size // len(unit)) + "!"
+            for name, unit in (
+                ("ascii and non-ascii letters", "aä"),
+                ("non-ascii letters and hyphens", "ä-a"),
+                ("scheme characters after plus signs", "a+"),
+                ("ideographic dots", "a。"),
+                ("full-width dotted labels", "ab\uff0e"),
+                ("non-ascii labels", "äb."),
+                ("dashes", "-"),
+                ("scp-like remotes", "a@b:"),
+                ("userinfo", "a@"),
+                ("cyrillic", "п"),
+                ("digits and dots", "1."),
+                ("glued data", "adata:"),
+                ("backslashes", "a.bc\\"),
+                ("brackets", "["),
+            )
+        }
+        cases["markdown destination"] = "[x](" + "aä" * (size // 2) + ")"
+        for name, text in cases.items():
+            with self.subTest(name=name):
+                started = time.monotonic()
+                records.hosts_only(text)
+                self.assertLess(time.monotonic() - started, 1.0)
