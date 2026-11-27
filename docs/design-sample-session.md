@@ -437,6 +437,10 @@ into one row and counting the lane briefs that were read package at 2,522,259 by
 and pnpm 12.19.0, up 1,188 bytes. The bound follows the measured package. The fixture bound stays
 at 250,000 bytes.
 
+The review fixes for that list package at 2,522,607 bytes on Node 26.12.1 and pnpm 12.19.0, up 348
+bytes, for counting refused lane briefs that have no lane name by reason. The bound follows the
+measured package. The fixture bound stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.
