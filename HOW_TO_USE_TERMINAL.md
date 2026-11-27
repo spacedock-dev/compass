@@ -391,6 +391,9 @@ board to do these things:
 - use Check progress for harnesses other than Claude Code and Codex
 - summarize a Codex goal: choose `Summarize this session` in the project's technical details. The cited session summary is Claude Code only
 - choose Resume AI use, or turn summaries back on
+- read the Plan page: goals and their lanes, open asks, product decisions, tracker items and
+  diagrams from your plan files. `--diagnose` reports refused plan settings and sources;
+  [set up the plan board](HOW_TO_USE.md#set-up-the-plan-board) says how
 
 [How it works](docs/how-it-works.md#finding-your-way-around) tours the board.
 

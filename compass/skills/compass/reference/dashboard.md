@@ -250,7 +250,8 @@ With no outcome line, Compass reads your goal's end state. A goal too vague to r
 the board no longer holds names that session and says it is not in the current payload.
 
 The route lives in the URL fragment: `#n=sessions`, `#n=projects`, `#n=attention` (Needs you),
-`#n=intent` (Goal history), `#n=settings`, `#n=help`,
+`#n=intent` (Goal history), `#n=plan` (Plan; it opens Sessions when no plan is configured, under
+`--no-plan`, or in a browser off the Compass computer), `#n=settings`, `#n=help`,
 `#n=project:<encoded-project>` with an optional tab suffix, or a session route containing the
 project, harness and session ID. The project part is empty for a session that published no project
 label. A bookmarked project link that named a session opens that session's own page, including
