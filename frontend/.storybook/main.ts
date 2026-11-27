@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { xtermIntegrity } from '../build/xterm-integrity.mjs';
 import type { StorybookConfig } from '@storybook/react-vite';
 import tailwindcss from '@tailwindcss/vite';
@@ -18,9 +19,20 @@ const config: StorybookConfig = {
   },
   async viteFinal(config) {
     const { mergeConfig } = await import('vite');
+    const entry = fileURLToPath(new URL('../src/styles/tailwind.css', import.meta.url));
     return mergeConfig(config, {
       define: xtermIntegrity(),
-      plugins: [tailwindcss()],
+      plugins: [
+        {
+          name: 'storybook-plan-utilities',
+          enforce: 'pre',
+          async load(id: string) {
+            // Plan has no app route yet. Scan it only when Storybook builds the shared entry.
+            if (id === entry) return `${await readFile(entry, 'utf8')}\n@source '../plan';\n`;
+          },
+        },
+        tailwindcss(),
+      ],
       // Late optimizer discovery invalidated first-story requests with a 504. Keep its browser entries explicit.
       optimizeDeps: {
         noDiscovery: true,

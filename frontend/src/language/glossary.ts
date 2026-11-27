@@ -138,6 +138,13 @@ export const ACTIVITY_LOG_FILTER_LABELS = {
   cited: 'Cited',
 } as const;
 
+export const PLAN_WORDS = {
+  blocked: 'Blocked',
+  inProgress: 'In progress',
+  lane: 'Lane',
+  productDecisions: 'Product decisions',
+} as const;
+
 export const GLOSSARY = /* @__PURE__ */ (() =>
   ({
     // Shell and project tabs.
@@ -1045,6 +1052,35 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       ],
       null,
     ),
+    // Plan board.
+    planBlocked: kept([
+      PLAN_WORDS.blocked,
+      'New label',
+      'A lane with work that cannot continue',
+      'A session waiting for a reply',
+      'Plan lane and tracker group',
+    ]),
+    planInProgress: kept([
+      PLAN_WORDS.inProgress,
+      'New label',
+      'A lane with work underway',
+      'Working, a session state',
+      'Plan lane and tracker group',
+    ]),
+    planLane: kept([
+      PLAN_WORDS.lane,
+      'New label',
+      'A line of work serving a plan goal',
+      'Working, a session state',
+      'Plan goals and lane counts',
+    ]),
+    planProductDecisions: kept([
+      PLAN_WORDS.productDecisions,
+      'New label',
+      'Decisions from the plan design notes',
+      'Decisions, the Project tab',
+      'Design section on Plan',
+    ]),
   }) as const)();
 
 /* Only literal retired labels are compiled from Replaces. Rows that describe
