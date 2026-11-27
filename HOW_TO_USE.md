@@ -905,7 +905,10 @@ every bound the read keeps, the 60 second deadline over the whole GitLab read am
    `briefs.lane_folders`. To show each lane's state, add a column to your tracker table that
    holds the lane's brief slug and name its header in `tracker.lane_column`. Every tracker table
    needs that column once you declare it; a table without it is refused as malformed, and
-   `--diagnose` shows the refusal. Put exactly one slug in a row's lane cell. The lane takes the
+   `--diagnose` shows the refusal. The same goes for any table with a header that names your title,
+   status or lane column but lacks one of the others, such as a misspelt `Statuz`, and for two
+   tables with no blank line between them that cannot be told apart. A table with none of those
+   headers is ignored. Put exactly one slug in a row's lane cell. The lane takes the
    group of the one row that names it. A lane named by no row, or by two, shows as not measured.
    A cell such as `hull, paint` or `hull.` counts against every lane it mentions, so those lanes
    also show as not measured. Plan groups each goal's lanes by state and
