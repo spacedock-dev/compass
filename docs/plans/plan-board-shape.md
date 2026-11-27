@@ -114,9 +114,20 @@ Decided in [#1104](https://github.com/spacedock-dev/compass/issues/1104), owner 
 
 - Delivery. A new SessionStart hook script is registered in `hooks.json` and `codex-hooks.json`. It
   prints only `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":...}}`,
-  the shape both harnesses declare. That shape was read from the harness binaries and not measured,
-  so one capture per harness is required before it counts as checked. Every other path prints
-  nothing and exits 0.
+  the shape both harnesses declare. That shape was measured on 2026-11-27 in
+  [Claude Code 2.1.332](../captures/claude/session-start-context-2.1.332-macos.jsonl) and
+  [codex-cli 0.172.0](../captures/codex/session-start-context-0.172.0-macos.jsonl). Both accept
+  it, the text reaches the session's context, and printing nothing adds nothing. Every other path
+  prints nothing and exits 0.
+- Measured limits. Claude Code injects up to 10,000 characters whole and replaces anything longer
+  with a 2 KB preview of a saved file. Codex injects up to 10,000 bytes whole and cuts anything
+  longer in the middle. The 1,500-byte bound sits well under both. Both harnesses wait for the hook
+  before the first model request, so its run time is added to session start. A hook past its
+  `timeout` is killed and injects nothing; Codex says nothing when that happens. Codex `exec` skips
+  an untrusted hook silently, and its trust is stored per hook definition, so a changed hook command
+  must be trusted again. Asked to repeat the text, the Codex model declined, but it acted on it.
+  Both harnesses keep the text in the session's own transcript. Neither capture measured a hook
+  registered by an installed plugin or the default timeout.
 - It builds the summary from the plan files with the board's own code, so it works with the
   dashboard down.
 - It is off until the person turns it on in the settings file. `--plan-slice` shows what a session
