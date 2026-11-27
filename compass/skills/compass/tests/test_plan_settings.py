@@ -585,3 +585,18 @@ class PlanSettingsTest(unittest.TestCase):
         doc["private"]["roots"] = ["/private"]
         doc["log"]["path"] = str(self.log).removeprefix("/private")
         self.assertEqual(self.loaded(doc).sources.events.reason, "private")
+
+
+class LineRuleTest(unittest.TestCase):
+    def test_the_line_rule_matches_the_category_rule_for_every_code_point(self) -> None:
+        refused = {"Cc", "Cs", "Zl", "Zp"}
+        bidi = set("\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
+        wrong = [
+            point
+            for point in range(0x110000)
+            if grammar.is_line(char := chr(point))
+            != (unicodedata.category(char) not in refused and char not in bidi and char != "\ufeff")
+        ]
+        self.assertEqual(wrong, [])
+        self.assertTrue(grammar.is_line("plain words ⚓ 船"))
+        self.assertFalse(grammar.is_line("two\nlines"))

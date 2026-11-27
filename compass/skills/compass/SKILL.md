@@ -100,7 +100,8 @@ Compass reads harness data and skips broken stores. A model call can send sessio
 Before opening a session or starting a reading, read the
 [goals and progress checks reference](reference/intent-and-drift.md) for model destinations, content sent,
 stored summaries, CI reads through your own account, budgets, consent and the controls that stop
-them. Compass never writes into a session. A reading is evidence for the person to review;
+them. Compass writes into a session only through the opt-in plan summary at session start, which
+is off until the person turns it on in `compass-plan.json`. A reading is evidence for the person to review;
 it does not authorize an agent to change the goal or act on the reading.
 
 Before configuring hooks, notifications, off-machine reach or unasked readings, read the

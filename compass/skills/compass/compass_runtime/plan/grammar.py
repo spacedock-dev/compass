@@ -23,13 +23,16 @@ _BIDI_CONTROLS = frozenset(
 )
 
 
+# Cc, Cs, Zl and Zp are closed sets of code points, so one character class matches the category
+# test exactly (`test_plan_settings` checks every code point). The log reader runs this on each
+# line under the SessionStart hook's two-second limit, where the per-character loop cost a second.
+_NOT_A_LINE = re.compile(
+    "[\x00-\x1f\x7f-\x9f\ud800-\udfff\u2028\u2029\ufeff" + "".join(sorted(_BIDI_CONTROLS)) + "]"
+)
+
+
 def is_line(text: str) -> bool:
-    return all(
-        unicodedata.category(char) not in {"Cc", "Cs", "Zl", "Zp"}
-        and char not in _BIDI_CONTROLS
-        and char != "\ufeff"
-        for char in text
-    )
+    return _NOT_A_LINE.search(text) is None
 
 
 def string(value: object, max_chars: int = 128) -> str:

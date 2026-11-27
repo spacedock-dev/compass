@@ -277,8 +277,13 @@ def _event_fields(raw: bytes, spec: settings.Log) -> dict[str, str] | None:
 
 
 def _read_log(
-    config: settings.Settings, lane_names: set[str]
+    config: settings.Settings, lane_names: set[str], *, only: str | None = None
 ) -> tuple[model.Source, tuple[model.Ask, ...], dict[str, model.ItemDate], int | None]:
+    """Open asks in log order. With `only`, other lanes' asks are kept as keys, not rows.
+
+    Every line is still matched, because a later answer or a repeated key anywhere in the log
+    decides whether an ask is open.
+    """
     result = config.sources.read_log()
     declared = config.sources.events
     spec = config.log
@@ -287,7 +292,8 @@ def _read_log(
         return source, (), {}, None
 
     seen: set[str] = set()
-    pending: dict[str, model.Ask] = {}
+    # Another lane's open ask under `only` is held as None: its key still pairs with an answer.
+    pending: dict[str, model.Ask | None] = {}
     lane_dates: dict[str, model.ItemDate] = {}
     rejected = 0
     # A CR or an invalid byte poisons its physical LF record, including text after that byte.
@@ -304,23 +310,48 @@ def _read_log(
             if key in seen:
                 rejected += 1
                 continue
-            pending[key] = model.Ask(
-                fields["id"],
-                fields.get("text"),
-                timestamp,
-                source.label,
-                lane,
+            pending[key] = (
+                model.Ask(fields["id"], fields.get("text"), timestamp, source.label, lane)
+                if only is None or lane == only
+                else None
             )
             seen.add(key)
-        elif role == "answer" and pending.pop(key, None) is None:
+        elif role == "answer" and key not in pending:
             rejected += 1
             continue
+        elif role == "answer":
+            del pending[key]
         if lane is not None and lane in lane_names:
             if timestamp is None:
                 lane_dates.pop(lane, None)
             else:
                 lane_dates[lane] = model.ItemDate("from the log", timestamp)
-    return source, tuple(pending.values()), lane_dates, rejected
+    return source, tuple(ask for ask in pending.values() if ask is not None), lane_dates, rejected
+
+
+def lane_briefs(config: settings.Settings, slug: str) -> tuple[model.Lane, ...]:
+    """Every admitted brief for one lane, read as `read_plan` reads it, opening no other brief.
+
+    Names are listed and checked exactly as `_read_briefs` does, so a lane `read_plan` would not
+    publish is not returned here either.
+    """
+    names = config.sources.brief_names().names
+    normalised = Counter(unicodedata.normalize("NFC", name) for name in names)
+    lanes = []
+    for name in names:
+        key = unicodedata.normalize("NFC", name)
+        fields = config.briefs.filename.match(key)
+        if normalised[key] > 1 or fields is None or fields["lane"] != slug:
+            continue
+        _, lane = _read_brief(name, config)
+        if lane is not None:
+            lanes.append(lane)
+    return tuple(lanes)
+
+
+def lane_asks(config: settings.Settings, slug: str) -> tuple[model.Ask, ...]:
+    """The open asks `read_plan` would publish for this lane, in log order."""
+    return _read_log(config, {slug}, only=slug)[1]
 
 
 def _link_goals(

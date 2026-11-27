@@ -2373,6 +2373,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.plan.model",
             "compass_runtime.plan.readers",
             "compass_runtime.plan.settings",
+            "compass_runtime.plan.summary_states",
             "compass_runtime.records",
             "compass_runtime.state",
         },
@@ -2386,6 +2387,14 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.plan.settings",
             "compass_runtime.plan.sources",
             "compass_runtime.state",
+        },
+        # The lane states the board saves for the session summary; `config` only for --forget.
+        "compass_runtime.plan.summary_states": {
+            "compass_runtime.config",
+            "compass_runtime.io",
+            "compass_runtime.plan.grammar",
+            "compass_runtime.plan.markdown",
+            "compass_runtime.plan.settings",
         },
         "compass_runtime.plan.settings": {
             "compass_runtime.io",

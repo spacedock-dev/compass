@@ -590,6 +590,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/plan/readers.py",
     "skills/compass/compass_runtime/plan/settings.py",
     "skills/compass/compass_runtime/plan/sources.py",
+    "skills/compass/compass_runtime/plan/summary_states.py",
     "skills/compass/compass_runtime/collectors/__init__.py",
     "skills/compass/compass_runtime/collectors/claude.py",
     "skills/compass/compass_runtime/collectors/codex.py",

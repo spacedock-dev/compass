@@ -13,7 +13,7 @@ import platform
 import sys
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from compass_runtime import (
     aggregate,
@@ -1042,6 +1042,17 @@ def _forget_stores(config: RuntimeConfig) -> int:
         else f"Compass: no copied-correction store at {runtime_io.value(copies_path)}",
         print,
     )
+    # The lane states the board saved for the SessionStart summary: published state words and
+    # lane IDs only, and the board's to write again on its next plan read.
+    from compass_runtime.plan import summary_states  # noqa: PLC0415 - plan modules load on demand
+
+    states_path = summary_states.path(config.state_home)
+    runtime_io.diag(
+        f"Compass: deleted {runtime_io.value(states_path)}"
+        if summary_states.forget(config.state_home)
+        else f"Compass: no saved plan lane states at {runtime_io.value(states_path)}",
+        print,
+    )
     summary_outcome = summary_store.forget(config)
     runtime_io.diag(
         f"Compass: summary store {runtime_io.value(summaries_path)}: {summary_outcome}",
@@ -1172,6 +1183,35 @@ def refuse_login_proxy_without_its_parts(
         parser.error("--login-proxy and --allow-user need each other and at least one --allow-host")
 
 
+# What may ride with --plan-slice: its own lane, the plan switch it honours, and the update-check
+# switch, which a preview never uses. Anything else names a second operation.
+_PLAN_SLICE_COMPANIONS: Final = frozenset({"plan_slice", "lane", "no_plan", "no_update_check"})
+
+
+def _plan_slice(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    defaults = vars(build_parser().parse_args([]))
+    if any(
+        value != defaults[name]
+        for name, value in vars(args).items()
+        if name not in _PLAN_SLICE_COMPANIONS
+    ):
+        parser.error("--plan-slice stands alone, with only --lane and --no-plan")
+    if args.no_plan:
+        return 0
+    from compass_runtime.plan import publish  # noqa: PLC0415 - only the preview needs it here
+
+    summary = publish.session_summary(
+        terminal_client.state_home(os.environ),
+        lane=args.lane if args.lane is not None else os.environ.get("COMPASS_LANE"),
+    )
+    if summary:
+        # The bytes a session would get, whatever this terminal's encoding.
+        sys.stdout.flush()
+        sys.stdout.buffer.write(summary.encode("utf-8") + b"\n")
+        sys.stdout.buffer.flush()
+    return 0
+
+
 def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int | None:  # noqa: PLR0912 - one dispatch per operation
     """The operations the terminal client owns, when `args` named one; None to carry on.
 
@@ -1298,16 +1338,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.plan_slice:
-        from compass_runtime.plan import publish  # noqa: PLC0415 - only the preview needs it here
-
-        if not args.no_plan and (
-            summary := publish.session_summary(
-                terminal_client.state_home(os.environ),
-                lane=args.lane if args.lane is not None else os.environ.get("COMPASS_LANE"),
-            )
-        ):
-            print(summary)
-        return 0
+        return _plan_slice(parser, args)
     if args.lane is not None:
         parser.error("--lane requires --plan-slice")
     refuse_login_proxy_without_its_parts(parser, args)
