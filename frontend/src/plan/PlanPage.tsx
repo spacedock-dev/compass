@@ -12,11 +12,11 @@ import type {
   PlanLaneState,
   PlanModel,
   PlanNote,
-  PlanRefusalReason,
   PlanRepoDate,
   PlanSessionReference,
   PlanTrackerStatus,
 } from './model';
+import { SOURCE_REFUSALS } from './model';
 
 /* Group order on a goal card. The counted groups come first; the count is done lanes over the
    lanes rendered in them. Dropped lanes, then lanes whose status is unknown, sit apart below. */
@@ -24,8 +24,8 @@ const countedLaneLabels = {
   blocked: PLAN_WORDS.blocked,
   waiting: PLAN_WORDS.waiting,
   running: PLAN_WORDS.inProgress,
-  not_started: 'Planned',
-  done: 'Done',
+  not_started: PLAN_WORDS.planned,
+  done: PLAN_WORDS.done,
 } as const;
 const trackerLabels = {
   ...countedLaneLabels,
@@ -36,8 +36,8 @@ const laneGroups: readonly { readonly state: PlanLaneState; readonly label: stri
     state,
     label: trackerLabels[state],
   })),
-  { state: 'Status not recognised', label: 'Status not recognised' },
-  { state: null, label: 'Not measured' },
+  { state: 'Status not recognised', label: PLAN_WORDS.statusNotRecognised },
+  { state: null, label: PLAN_WORDS.notMeasured },
 ];
 
 const sessionStates = {
@@ -49,17 +49,6 @@ const sessionStates = {
 } as const;
 
 const rowLayout = 'flex min-w-0 flex-col items-start gap-x-6 gap-y-1 leading-6 sm:flex-row';
-
-const refusalReasons = {
-  unknown: 'The source could not be read.',
-  'git reads are off': 'Git reads are off.',
-  unreadable: 'The source could not be read.',
-  malformed: 'The source did not have the expected format.',
-  symlink: 'The file is a symbolic link.',
-  'hard-link': 'The same file has another name.',
-  private: 'Marked private.',
-  'unknown-structural-status': 'Compass did not recognise a required status.',
-} satisfies Record<PlanRefusalReason, string>;
 
 function PlanSection({
   title,
@@ -79,7 +68,7 @@ function PlanSection({
         </h2>
         {sourceLabels.length > 0 && (
           <p className="m-0 text-label text-muted-foreground">
-            From {[...new Set(sourceLabels)].join(', ')}
+            From <span data-authored>{[...new Set(sourceLabels)].join(', ')}</span>
           </p>
         )}
       </div>
@@ -127,7 +116,9 @@ function PlanSessionRef({
       <span role="img" aria-label={word} className={cn('grid shrink-0 place-items-center', ink)}>
         <Icon name={SESSION_TILE_ICONS[word]} size={16} />
       </span>
-      <span className="max-w-[28ch] truncate">{name}</span>
+      <span className="max-w-[28ch] truncate" data-authored>
+        {name}
+      </span>
     </RouteAnchor>
   );
 }
@@ -190,7 +181,9 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
                           !!sessions?.length && 'sm:mt-2.5',
                         )}
                       >
-                        <p className="m-0 max-w-[var(--measure)] font-semibold">{text}</p>
+                        <p className="m-0 max-w-[var(--measure)] font-semibold" data-authored>
+                          {text}
+                        </p>
                         <p className="m-0 text-label leading-relaxed text-muted-foreground">
                           {hasDate ? (
                             <>
@@ -206,11 +199,11 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
                           ) : (
                             ''
                           )}
-                          {source}
+                          <span data-authored>{source}</span>
                         </p>
                         {lane && (
                           <p className="m-0 text-label leading-relaxed text-muted-foreground">
-                            {PLAN_WORDS.lane}: {lane.title}
+                            {PLAN_WORDS.lane}: <span data-authored>{lane.title}</span>
                           </p>
                         )}
                       </div>
@@ -232,34 +225,45 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
                 aria-label="Sessions waiting for a reply"
                 className="m-0 grid list-none gap-3 p-0"
               >
-                {waitingSessions.map(({ key, title, harnessLabel, request }, index) => {
-                  const descriptorId = `${waitingId}-${index}-descriptor`;
-                  const requestId = `${waitingId}-${index}-request`;
-                  return (
-                    <li key={fragmentForRoute(key)}>
-                      <RouteAnchor
-                        route={fromPlan(key)}
-                        label={title}
-                        extra={{ 'aria-describedby': `${descriptorId} ${requestId}` }}
-                        className="group grid gap-1 rounded-control text-foreground no-underline"
-                      >
-                        <span className="max-w-[var(--measure)] font-semibold underline-offset-[3px] group-hover:underline group-focus-visible:underline">
-                          {title}
-                        </span>
-                        <span id={descriptorId} className="text-label text-muted-foreground">
-                          {harnessLabel}
-                          {key.project.trim() && ` · ${key.project}`}
-                        </span>
-                        <span
-                          id={requestId}
-                          className="max-w-[var(--measure)] text-muted-foreground"
+                {waitingSessions.map(
+                  ({ key, title, harnessLabel, request, requestAuthored }, index) => {
+                    const descriptorId = `${waitingId}-${index}-descriptor`;
+                    const requestId = `${waitingId}-${index}-request`;
+                    return (
+                      <li key={fragmentForRoute(key)}>
+                        <RouteAnchor
+                          route={fromPlan(key)}
+                          label={title}
+                          extra={{ 'aria-describedby': `${descriptorId} ${requestId}` }}
+                          className="group grid gap-1 rounded-control text-foreground no-underline"
                         >
-                          {request}
-                        </span>
-                      </RouteAnchor>
-                    </li>
-                  );
-                })}
+                          <span
+                            className="max-w-[var(--measure)] font-semibold underline-offset-[3px] group-hover:underline group-focus-visible:underline"
+                            data-authored
+                          >
+                            {title}
+                          </span>
+                          <span id={descriptorId} className="text-label text-muted-foreground">
+                            {harnessLabel}
+                            {key.project.trim() && (
+                              <>
+                                {' · '}
+                                <span data-authored>{key.project}</span>
+                              </>
+                            )}
+                          </span>
+                          <span
+                            id={requestId}
+                            className="max-w-[var(--measure)] text-muted-foreground"
+                            data-authored={requestAuthored || undefined}
+                          >
+                            {request}
+                          </span>
+                        </RouteAnchor>
+                      </li>
+                    );
+                  },
+                )}
               </ul>
             </div>
           )}
@@ -296,13 +300,16 @@ function GoalCard({ goal }: { readonly goal: PlanGoal }) {
 
   return (
     <Card as="article" aria-labelledby={headingId} className="grid gap-4 max-sm:p-4">
-      <h3 id={headingId} className="m-0 text-value font-bold">
+      <h3 id={headingId} className="m-0 text-value font-bold" data-authored>
         {goal.title}
       </h3>
       {goal.proposal && <p className="m-0 text-label text-muted-foreground">{goal.proposal}</p>}
       <dl className="m-0 grid gap-1">
         <dt className="text-label font-semibold text-muted-foreground">Done when</dt>
-        <dd className="m-0 max-w-[var(--measure)]">
+        <dd
+          className="m-0 max-w-[var(--measure)]"
+          data-authored={goal.doneWhen !== null || undefined}
+        >
           {goal.doneWhen ?? 'No completion condition is listed.'}
         </dd>
       </dl>
@@ -347,6 +354,7 @@ function GoalCard({ goal }: { readonly goal: PlanGoal }) {
                           'min-w-0 flex-1 text-body',
                           !!sessions?.length && 'sm:mt-2.5',
                         )}
+                        data-authored
                       >
                         {title}
                       </span>
@@ -363,16 +371,30 @@ function GoalCard({ goal }: { readonly goal: PlanGoal }) {
   );
 }
 
-function NotesList({ notes }: { readonly notes: readonly PlanNote[] }) {
+function NotesList({
+  notes,
+  label,
+}: {
+  readonly notes: readonly PlanNote[];
+  readonly label?: string;
+}) {
   return (
-    <ul role="list" className="m-0 grid list-none gap-4 p-0">
+    <ul role="list" aria-label={label} className="m-0 grid list-none gap-4 p-0">
       {notes.map(({ id, title, summary, date, linkHosts }) => (
         <li key={id} className="grid gap-1">
-          <p className="m-0 max-w-[var(--measure)] font-semibold">{title}</p>
-          {summary && <p className="m-0 max-w-[var(--measure)] text-muted-foreground">{summary}</p>}
+          <p className="m-0 max-w-[var(--measure)] font-semibold" data-authored>
+            {title}
+          </p>
+          {summary && (
+            <p className="m-0 max-w-[var(--measure)] text-muted-foreground" data-authored>
+              {summary}
+            </p>
+          )}
           {date && <RepoDate date={date} />}
           {linkHosts && linkHosts.length > 0 && (
-            <p className="m-0 text-label text-muted-foreground">{linkHosts.join(', ')}</p>
+            <p className="m-0 text-label text-muted-foreground" data-authored>
+              {linkHosts.join(', ')}
+            </p>
           )}
         </li>
       ))}
@@ -391,11 +413,15 @@ function Tracker({ items }: { readonly items: PlanModel['tracker'] }) {
             {items.map(({ id, title, status, date }) => (
               <li key={id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1.5">
                 <div className="grid min-w-0 gap-1">
-                  <p className="m-0 max-w-[var(--measure)] font-semibold">{title}</p>
+                  <p className="m-0 max-w-[var(--measure)] font-semibold" data-authored>
+                    {title}
+                  </p>
                   {date && <RepoDate date={date} />}
                 </div>
                 {status === 'Status not recognised' ? (
-                  <span className="text-label text-muted-foreground">Status not recognised</span>
+                  <span className="text-label text-muted-foreground">
+                    {PLAN_WORDS.statusNotRecognised}
+                  </span>
                 ) : (
                   <Badge>{trackerLabels[status]}</Badge>
                 )}
@@ -418,14 +444,16 @@ function PlanSources({ sources, limits }: Pick<PlanModel, 'sources' | 'limits'>)
           <ul role="list" className="m-0 grid list-none gap-2 p-0">
             {sources.map((source) => (
               <li key={source.id} className="flex flex-wrap items-baseline gap-x-3">
-                <span className="font-semibold">{source.name}</span>
+                <span className="font-semibold" data-authored>
+                  {source.name}
+                </span>
                 {source.status === 'ok' ? (
                   <span className="text-label text-muted-foreground">Read</span>
                 ) : (
                   <>
                     <span className="text-label font-semibold text-muted-foreground">Refused</span>
                     <span className="text-label text-muted-foreground">
-                      {refusalReasons[source.reason]}
+                      {SOURCE_REFUSALS[source.reason]}
                     </span>
                   </>
                 )}
@@ -460,30 +488,42 @@ export function RefusedPlanPage({ reason }: { readonly reason: string }) {
       'Compass cannot read Plan settings on this platform.',
   };
   return (
-    <section className={cn(pageLayout, 'grid gap-3')}>
-      <h1 className="m-0 text-hero leading-tight font-extrabold">{SHOWN.plan}</h1>
-      <p className="m-0 text-muted-foreground">
-        {Object.hasOwn(detail, reason) ? detail[reason] : 'The Plan settings could not be read.'}
-      </p>
+    <PlanNotice>
+      {Object.hasOwn(detail, reason) ? detail[reason] : 'The Plan settings could not be read.'}
+    </PlanNotice>
+  );
+}
+
+/* A Plan page that has no plan to draw: the heading and one sentence, as a region named Plan. */
+function PlanNotice({ children }: { readonly children: ReactNode }) {
+  const headingId = useId();
+  return (
+    <section
+      aria-labelledby={headingId}
+      data-next-view-body="plan"
+      className={cn(pageLayout, 'grid gap-3')}
+    >
+      <h1 id={headingId} className="m-0 text-hero leading-tight font-extrabold">
+        {SHOWN.plan}
+      </h1>
+      <p className="m-0 text-muted-foreground">{children}</p>
     </section>
   );
 }
 
 export function PlanReadFailed() {
   return (
-    <section className={cn(pageLayout, 'grid gap-3')}>
-      <h1 className="m-0 text-hero leading-tight font-extrabold">{SHOWN.plan}</h1>
-      <p className="m-0 text-muted-foreground">
-        Compass could not read the plan. It tries again on the next refresh.
-      </p>
-    </section>
+    <PlanNotice>Compass could not read the plan. It tries again on the next refresh.</PlanNotice>
   );
 }
 
 export function PlanPage({ model }: { readonly model: PlanModel }) {
   const headingId = useId();
+  // A note the decision log has not marked decided never sits under Product decisions.
+  const decided = model.design.filter((note) => note.decided !== false);
+  const undecided = model.design.filter((note) => note.decided === false);
   return (
-    <div className={pageLayout}>
+    <div className={pageLayout} data-next-view-body="plan">
       <section aria-labelledby={headingId} className="grid gap-8">
         <h1 id={headingId} className="m-0 text-hero leading-tight font-extrabold">
           {SHOWN.plan}
@@ -493,16 +533,29 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
           {model.goals.length === 0 ? (
             <p className="m-0 text-muted-foreground">No goals are listed.</p>
           ) : (
-            model.goals.map((goal) => <GoalCard key={goal.id} goal={goal} />)
+            // Goal ids come from headings in the plan files, and two files may share one.
+            model.goals.map((goal, index) => <GoalCard key={`${goal.id}:${index}`} goal={goal} />)
           )}
         </PlanSection>
         <PlanSection title="Design" sourceLabels={model.design.map((note) => note.source)}>
           {model.design.length === 0 ? (
             <p className="m-0 text-muted-foreground">No product decisions are listed.</p>
           ) : (
-            <Card className="grid gap-3 max-sm:p-4">
-              <h3 className="m-0 text-value font-bold">{PLAN_WORDS.productDecisions}</h3>
-              <NotesList notes={model.design} />
+            <Card className="grid gap-4 max-sm:p-4">
+              {[
+                { label: PLAN_WORDS.productDecisions, notes: decided },
+                { label: PLAN_WORDS.notDecidedYet, notes: undecided },
+              ]
+                .filter(({ notes }) => notes.length > 0)
+                .map(({ label, notes }) => (
+                  <div
+                    key={label}
+                    className="grid gap-3 border-0 border-solid border-[var(--rule)] not-first:border-t not-first:pt-4"
+                  >
+                    <h3 className="m-0 text-value font-bold">{label}</h3>
+                    <NotesList notes={notes} label={label} />
+                  </div>
+                ))}
             </Card>
           )}
         </PlanSection>

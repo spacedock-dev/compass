@@ -10,11 +10,13 @@ import { createFakeClock, createFakeEnvironment } from '../src/transport/testing
 import {
   hostileDiagramBody,
   planBoard,
+  planWaiting,
   readyPlan,
   refusedPlanSettings,
   unconfiguredPlan,
 } from '../test/plan-fixtures';
 import { fakeBackend } from '../test/storage_backends';
+import { overflowReport } from './a11y.audit';
 import { atPageWidth } from './PageFit';
 import { settledRect } from './settled-layout';
 
@@ -105,6 +107,28 @@ async function expectPublishedPlan(canvasElement: HTMLElement) {
   });
   await expect(shelfLinks).toHaveLength(2);
   await expect(plan.queryByRole('link', { name: /missing|weekend rota/i })).toBeNull();
+  const waiting = plan.getByRole('list', { name: 'Sessions waiting for a reply' });
+  await expect(
+    within(waiting)
+      .getAllByRole('listitem')
+      .map((row) => row.textContent),
+  ).toEqual(planWaiting.map((parts) => parts.join('')));
+  for (const [title] of planWaiting) {
+    await expect(within(waiting).getByRole('link', { name: title }).getAttribute('href')).toMatch(
+      /^#n=session:Library%20pickup:[a-z]+:[^&]+&from=plan$/,
+    );
+  }
+  const decisions = within(plan.getByRole('list', { name: 'Product decisions' }));
+  await expect(
+    decisions.getByText('Use the entrance alcove for pickups', { exact: true }),
+  ).toBeVisible();
+  const labels = plan.getByText('Print labels for the pickup shelf', { exact: true }).closest('li');
+  if (!labels) throw new Error('The tracker row needs a row.');
+  await expect(within(labels).getByText('Done', { exact: true })).toBeVisible();
+  const diagrams = within(canvas.getByRole('region', { name: 'Diagrams' }));
+  await expect(
+    diagrams.getByText('From the library entrance to the pickup shelf', { exact: true }),
+  ).toBeVisible();
   await expect(plan.getByText('Status not recognised', { exact: true })).toBeVisible();
   await expect(plan.queryByText('No tracker items are listed.')).toBeNull();
   const sources = within(canvas.getByRole('region', { name: 'Sources' }));
@@ -117,7 +141,14 @@ async function expectPublishedPlan(canvasElement: HTMLElement) {
 
 export const PublishedPlan: Story = {
   args: { plan: readyPlan },
-  play: async ({ canvasElement }) => expectPublishedPlan(canvasElement),
+  play: async ({ canvasElement }) => {
+    await expectPublishedPlan(canvasElement);
+    const nav = await primary(within(canvasElement));
+    await expect(nav.getByRole('link', { name: 'Plan', current: 'page' })).toHaveAttribute(
+      'href',
+      '#n=plan',
+    );
+  },
 };
 
 export const PublishedPlanOnPhone: Story = {
@@ -137,6 +168,29 @@ export const PublishedPlanOnPhone: Story = {
       const { left, right } = await settledRect(goal);
       await expect(left).toBe(16);
       await expect(right).toBe(384);
+    }),
+};
+
+// The layout floor: the shell keeps 8 px either side, and Plan keeps its 16 px gutter inside the page.
+export const PublishedPlanAt320: Story = {
+  args: { plan: readyPlan },
+  parameters: {
+    viewport: {
+      options: { planFloor: { name: '320 px', styles: { width: '320px', height: '800px' } } },
+    },
+  },
+  globals: { viewport: { value: 'planFloor', isRotated: false } },
+  play: async ({ canvasElement }) =>
+    atPageWidth(320, async () => {
+      const canvas = within(canvasElement);
+      await expect(await canvas.findByRole('heading', { name: 'Plan', level: 1 })).toBeVisible();
+      const goal = canvas.getByRole('article', { name: 'Make library pickup easier' });
+      const { left, right } = await settledRect(goal);
+      await expect(left).toBe(16);
+      await expect(right).toBe(304);
+      const report = overflowReport();
+      await expect(report.page).toBeLessThanOrEqual(report.client);
+      await expect(report.wide).toEqual([]);
     }),
 };
 
@@ -212,9 +266,16 @@ export const RefusedSettings: Story = {
   },
 };
 
+// Shown text that looks like markup must stay text, as the diagram body must stay unread.
+const markupCaption =
+  '<img src="https://diagram-canary.example.test/caption" onerror="window.planDiagramRan=true">Route map';
+
 export const InertDiagram: Story = {
   args: {
-    plan: { ...readyPlan, diagrams: [{ ...readyPlan.diagrams[0], body: hostileDiagramBody }] },
+    plan: {
+      ...readyPlan,
+      diagrams: [{ ...readyPlan.diagrams[0], caption: markupCaption, body: hostileDiagramBody }],
+    },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -224,12 +285,16 @@ export const InertDiagram: Story = {
       section.getByText('From the library entrance to the pickup shelf', { exact: true }),
     ).toBeVisible();
     await expect(section.getByText('diagrams.example.org', { exact: true })).toBeVisible();
+    await expect(section.getByText(markupCaption, { exact: true })).toBeVisible();
     await expect(section.queryByText('Run diagram', { exact: true })).toBeNull();
     await waitFor(async () => {
       await expect(diagrams.querySelector('img, script, a, iframe, object')).toBeNull();
       await expect(Reflect.get(window, 'planDiagramRan')).toBeUndefined();
       await expect(performance.getEntriesByType('resource').map(({ name }) => name)).not.toContain(
         'https://diagram-canary.example.test/plan-image',
+      );
+      await expect(performance.getEntriesByType('resource').map(({ name }) => name)).not.toContain(
+        'https://diagram-canary.example.test/caption',
       );
     });
     // The Storybook offline guard also fails this story on any external request attempt.

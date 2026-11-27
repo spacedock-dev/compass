@@ -22,8 +22,27 @@ export const planBoard = {
       title: 'Check the weekend rota',
       state: 'working',
     },
+    // Waiting on you through the harness's own hook, with no ask sent through Compass.
+    {
+      harness: 'claude',
+      sid: 'pytest',
+      project: 'Library pickup',
+      title: 'Run the shelf checks',
+      state: 'needs_input',
+      state_detail: 'Approve running the shelf checks',
+    },
+    {
+      harness: 'claude',
+      sid: 'labels',
+      project: 'Library pickup',
+      title: 'Print the shelf labels',
+      state: 'needs_input',
+    },
   ],
-  harnesses: [{ key: 'codex', label: 'Codex' }],
+  harnesses: [
+    { key: 'codex', label: 'Codex' },
+    { key: 'claude', label: 'Claude Code' },
+  ],
   ask: true,
   asks: [
     {
@@ -33,6 +52,22 @@ export const planBoard = {
     },
   ],
 };
+
+/* What each waiting session says on Plan: the ask it sent, the request its harness published, or a plain
+   sentence when neither was published. */
+export const planWaiting = [
+  [
+    'Review the shelf layout',
+    'Codex · Library pickup',
+    'Please confirm which shelves to keep clear.',
+  ],
+  ['Run the shelf checks', 'Claude Code · Library pickup', 'Approve running the shelf checks'],
+  [
+    'Print the shelf labels',
+    'Claude Code · Library pickup',
+    'The agent is waiting for your input.',
+  ],
+] as const;
 
 export const refusedPlanSettings = { state: 'refused', reason: 'malformed settings' } as const;
 export const unconfiguredPlan = { state: 'not-configured' } as const;

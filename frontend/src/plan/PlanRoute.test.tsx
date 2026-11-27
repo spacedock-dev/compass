@@ -1,9 +1,10 @@
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { expect } from 'storybook/test';
-import { describe, it } from 'vitest';
+import { describe, it, vi } from 'vitest';
 import {
   hostileDiagramBody,
   planBoard,
+  planWaiting,
   readyPlan,
   refusedPlanSettings,
   unconfiguredPlan,
@@ -121,6 +122,20 @@ describe('the Plan destination follows the published plan', () => {
     expect(screen.getByText('Marked private.')).toBeVisible();
   });
 
+  it('lists every session waiting on you with what it asked, or a plain sentence when nothing was published', async () => {
+    const page = mountPlan();
+    await page.settle();
+    const list = screen.getByRole('list', { name: 'Sessions waiting for a reply' });
+    const rows = within(list).getAllByRole('listitem');
+    expect(rows.map((row) => row.textContent)).toEqual(planWaiting.map((parts) => parts.join('')));
+    for (const [title, descriptor, request] of planWaiting) {
+      expect(within(list).getByRole('link', { name: title })).toHaveAccessibleDescription(
+        `${descriptor} ${request}`,
+      );
+    }
+    expect(list).not.toHaveTextContent('No exact request published');
+  });
+
   it('counts only the lanes rendered under the goal', async () => {
     const page = mountPlan({
       ...readyPlan,
@@ -210,6 +225,89 @@ describe('the Plan destination follows the published plan', () => {
     await act(async () => fireEvent.keyDown(document.body, { key: 'Escape' }));
     await page.settle();
     expect(screen.getByRole('heading', { name: 'All sessions', level: 2 })).toBeVisible();
+  });
+
+  it('keeps a design note that is not decided out of Product decisions', async () => {
+    const page = mountPlan({
+      ...readyPlan,
+      design: [
+        ...readyPlan.design,
+        { ...readyPlan.design[0], title: 'Add pickup lockers', decided: false },
+      ],
+    });
+    await page.settle();
+    const decided = within(screen.getByRole('list', { name: 'Product decisions' }));
+    expect(decided.getAllByRole('listitem')).toHaveLength(1);
+    expect(decided.queryByText('Add pickup lockers')).toBeNull();
+    const open = within(screen.getByRole('list', { name: 'Not decided yet' }));
+    expect(open.getByText('Add pickup lockers')).toBeVisible();
+  });
+
+  it.each([
+    ['missing', 'The file is missing.'],
+    ['unreadable', 'The source could not be read.'],
+    ['not an owned regular file', 'The file is not a regular file you own.'],
+    ['symbolic link', 'The file is a symbolic link.'],
+    ['hard link', 'The same file has another name.'],
+    ['private', 'Marked private.'],
+    ['over the byte cap', 'The file is larger than Compass reads.'],
+    ['over the row cap', 'The file has more rows than Compass reads.'],
+    [
+      'over the brief folder entry cap',
+      'The lane-brief folder has more entries than Compass reads.',
+    ],
+    [
+      'guarded plan reads are unavailable on this platform',
+      'Compass cannot read plan files on this platform.',
+    ],
+    ['file changed before it could be read', 'The file changed while Compass read it.'],
+    ['malformed', 'The source did not have the expected format.'],
+    ['Status not recognised', 'Compass did not recognise a status the source needs.'],
+    ['not named in settings', 'The Plan settings do not name this file.'],
+    ['outside declared root', 'The file is outside the folder the Plan settings declare.'],
+    ['git reads are off', 'Git reads are off.'],
+    ['git timed out', 'Git did not answer in time.'],
+    ['git unavailable', 'Git is not available.'],
+    ['branch missing', 'The branch is missing.'],
+    ['not in branch', 'The file is not on the branch.'],
+    ['not a regular file in branch', 'The file on the branch is not a regular file.'],
+    ['unsafe lane identifier', 'The lane name has characters Compass does not accept.'],
+    ['a reason from a newer server', 'The source could not be read.'],
+  ])('says why a source was refused: %s', async (reason, sentence) => {
+    const page = mountPlan({
+      ...readyPlan,
+      sources: [{ label: 'Pickup tracker', kind: 'tracker', state: 'refused', reason }],
+    });
+    await page.settle();
+    const row = within(screen.getByRole('region', { name: 'Sources' })).getByRole('listitem');
+    expect(within(row).getByText('Refused', { exact: true })).toBeVisible();
+    expect(within(row).getByText(sentence, { exact: true })).toBeVisible();
+    // The server's own words never reach the page; only the sentence does.
+    expect(row.textContent).toBe(`Pickup trackerRefused${sentence}`);
+  });
+
+  it('draws two goals that share an id, each once, without a duplicate key', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const page = mountPlan({
+        ...readyPlan,
+        goals: [readyPlan.goals[0], { ...readyPlan.goals[1], id: readyPlan.goals[0].id }],
+      });
+      await page.settle();
+      expect(screen.getAllByRole('article')).toHaveLength(2);
+      expect(error.mock.calls.flat().join(' ')).not.toMatch(/same key/);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('names the refused and failed Plan pages as regions', async () => {
+    const page = mountPlan(refusedPlanSettings);
+    await page.settle();
+    expect(screen.getByRole('region', { name: 'Plan' })).toHaveAttribute(
+      'data-next-view-body',
+      'plan',
+    );
   });
 
   it('draws only the diagram caption and hosts from a hostile diagram', async () => {

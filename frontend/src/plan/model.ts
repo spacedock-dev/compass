@@ -1,6 +1,6 @@
 import type { PlanGroup, PublishedLaneState, PublishedPlanDate, ReadyPlan } from '../api/plan';
 import type { PayloadData } from '../api/types';
-import { sessionKey, sessionState, sessionTile, type Row } from '../observed';
+import { SESSION_TEXT_ORIGIN, sessionKey, sessionState, sessionTile, type Row } from '../observed';
 import { observedFor } from '../observed/select';
 import { harnessLabels } from '../sessions/rows';
 import type { SessionRoute } from '../router/grammar';
@@ -54,6 +54,8 @@ interface PlanWaitingSession {
   readonly title: string;
   readonly harnessLabel: string;
   readonly request: string;
+  /** False for the plain sentence Compass shows when the session published no request. */
+  readonly requestAuthored: boolean;
 }
 
 export type PlanRepoDate = {
@@ -68,6 +70,8 @@ export interface PlanNote {
   readonly source: string;
   readonly date?: PlanRepoDate | undefined;
   readonly linkHosts?: readonly string[];
+  /** Design notes only: false for a note the decision log has not marked decided. */
+  readonly decided?: boolean;
 }
 
 interface PlanTrackerItem {
@@ -78,15 +82,35 @@ interface PlanTrackerItem {
   readonly date?: PlanRepoDate | undefined;
 }
 
-export type PlanRefusalReason =
-  | 'unknown'
-  | 'git reads are off'
-  | 'unreadable'
-  | 'malformed'
-  | 'symlink'
-  | 'hard-link'
-  | 'private'
-  | 'unknown-structural-status';
+/* The closed reasons the server gives for a refused source, each with its plain sentence. The page
+   shows the sentence and never the server's words; a reason not on this list reads as unreadable. */
+export const SOURCE_REFUSALS = {
+  missing: 'The file is missing.',
+  unreadable: 'The source could not be read.',
+  'not an owned regular file': 'The file is not a regular file you own.',
+  'symbolic link': 'The file is a symbolic link.',
+  'hard link': 'The same file has another name.',
+  private: 'Marked private.',
+  'over the byte cap': 'The file is larger than Compass reads.',
+  'over the row cap': 'The file has more rows than Compass reads.',
+  'over the brief folder entry cap': 'The lane-brief folder has more entries than Compass reads.',
+  'guarded plan reads are unavailable on this platform':
+    'Compass cannot read plan files on this platform.',
+  'file changed before it could be read': 'The file changed while Compass read it.',
+  malformed: 'The source did not have the expected format.',
+  'Status not recognised': 'Compass did not recognise a status the source needs.',
+  'not named in settings': 'The Plan settings do not name this file.',
+  'outside declared root': 'The file is outside the folder the Plan settings declare.',
+  'git reads are off': 'Git reads are off.',
+  'git timed out': 'Git did not answer in time.',
+  'git unavailable': 'Git is not available.',
+  'branch missing': 'The branch is missing.',
+  'not in branch': 'The file is not on the branch.',
+  'not a regular file in branch': 'The file on the branch is not a regular file.',
+  'unsafe lane identifier': 'The lane name has characters Compass does not accept.',
+} as const;
+
+export type PlanRefusalReason = keyof typeof SOURCE_REFUSALS;
 
 export type PlanSource = {
   readonly id: string;
@@ -135,20 +159,20 @@ function repoDate(date: PublishedPlanDate | null): PlanRepoDate | undefined {
 }
 
 function sourceRefusal(reason: string | null): PlanRefusalReason {
-  switch (reason) {
-    case 'symbolic link':
-      return 'symlink';
-    case 'hard link':
-      return 'hard-link';
-    case 'unreadable':
-    case 'malformed':
-    case 'private':
-    case 'unknown-structural-status':
-    case 'git reads are off':
-      return reason;
-    default:
-      return 'unknown';
-  }
+  return reason !== null && Object.hasOwn(SOURCE_REFUSALS, reason)
+    ? (reason as PlanRefusalReason)
+    : 'unreadable';
+}
+
+/* The ask a session sent through Compass, else the request its harness published with the wait, else
+   the plain sentence Needs you uses. An unconfirmed wait's note is not a request, so it is not shown. */
+function waitingRequest(row: ReturnType<typeof observedFor>['sessions'][number]): {
+  readonly request: string;
+  readonly requestAuthored: boolean;
+} {
+  if (row.askKnown) return { request: row.askText, requestAuthored: true };
+  if (row[SESSION_TEXT_ORIGIN].blockNote) return { request: row.blockNote, requestAuthored: true };
+  return { request: 'The agent is waiting for your input.', requestAuthored: false };
 }
 
 export function planModel(plan: ReadyPlan, board: PayloadData | null): PlanModel {
@@ -176,7 +200,7 @@ export function planModel(plan: ReadyPlan, board: PayloadData | null): PlanModel
         key,
         title: row.titleText,
         harnessLabel: labels.get(row.harness) ?? row.harness,
-        request: row.askText,
+        ...waitingRequest(row),
       });
     }
   }
@@ -216,6 +240,7 @@ export function planModel(plan: ReadyPlan, board: PayloadData | null): PlanModel
       id: String(index),
       title: item.title,
       summary: item.summary,
+      decided: item.decided,
       source: item.source,
       date: repoDate(item.date),
     })),

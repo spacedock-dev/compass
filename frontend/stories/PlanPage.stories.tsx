@@ -126,17 +126,20 @@ const waitingSession = {
   title: shelfSession.name,
   harnessLabel: 'Codex',
   request: 'Please confirm which shelves to keep clear.',
+  requestAuthored: true,
 } as const;
 const waitingHoursSession = {
   key: hoursSession.key,
   title: hoursSession.name,
   harnessLabel: 'Claude Code',
   request: 'Please confirm the closing time.',
+  requestAuthored: true,
 } as const;
 const changedDesign = {
   id: 'entrance',
   title: 'Use the entrance alcove for pickups',
   summary: 'Readers can see the shelf as soon as they arrive.',
+  decided: true,
   date: { kind: 'changed', at: changedAt },
   source: sourceByKind.design.name,
 } as const;
@@ -144,7 +147,15 @@ const proposedDesign = {
   id: 'sign',
   title: 'Add a sign beside the return slot',
   summary: 'The sign would direct readers to the pickup shelf.',
+  decided: true,
   date: { kind: 'proposed', at: proposedAt },
+  source: sourceByKind.design.name,
+} as const;
+const undecidedDesign = {
+  id: 'lockers',
+  title: 'Add pickup lockers by the side door',
+  summary: 'Lockers would let readers collect after hours.',
+  decided: false,
   source: sourceByKind.design.name,
 } as const;
 const knownTrackerRow = {
@@ -190,7 +201,7 @@ const complete: PlanModel = {
   asks: [askWithLane],
   waitingSessions: [waitingSession],
   goals: [goal, goalWithLanesApart, goalWithoutLanes],
-  design: [changedDesign, proposedDesign],
+  design: [changedDesign, proposedDesign, undecidedDesign],
   tracker: [knownTrackerRow, unknownTrackerRow],
   diagrams: [pickupDiagram],
   sources: [...sourceList, refusedSource],
@@ -264,6 +275,13 @@ async function expectLinksBelowHeading(heading: HTMLElement, list: HTMLElement) 
   for (const link of within(list).queryAllByRole('link')) {
     await expect((await settledRect(link)).top).toBeGreaterThanOrEqual(bottom);
   }
+}
+
+/* The element whose whole text is this, though authored words sit in their own span inside it. */
+function fullText(text: string) {
+  return (_: string, element: Element | null) =>
+    element?.textContent === text &&
+    ![...element.children].some((child) => child.textContent === text);
 }
 
 function section(element: HTMLElement, name: string) {
@@ -658,6 +676,43 @@ export const GoalWithLanesApart: Story = {
   },
 };
 
+// Words a person wrote into their plan files are theirs: the first-layer audit reads them as authored.
+const authoredWords = 'Fix SHELF LABELS from 3f9c2ab [2]';
+export const AuthoredPlanText: Story = {
+  args: {
+    model: {
+      ...empty,
+      asks: [{ ...askWithLane, text: authoredWords, lane: { id: 'a', title: authoredWords } }],
+      goals: [
+        {
+          ...goal,
+          title: authoredWords,
+          doneWhen: authoredWords,
+          lanes: [
+            {
+              ...goal.lanes[0],
+              title: authoredWords,
+              // A session name reaches the link's accessible name, which the audit cannot mark as authored.
+              sessions: [shelfSession],
+            },
+          ],
+        },
+      ],
+      design: [{ ...changedDesign, title: authoredWords, summary: authoredWords }],
+      tracker: [{ ...knownTrackerRow, title: authoredWords }],
+      diagrams: [{ ...pickupDiagram, title: authoredWords, summary: authoredWords }],
+      sources: [{ ...sourceByKind.goals, name: authoredWords }],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const body = canvasElement.querySelector('[data-next-view-body="plan"]');
+    await expect(body).not.toBeNull();
+    for (const node of within(canvasElement).getAllByText(authoredWords, { exact: false })) {
+      await expect(node.closest('[data-authored]'), node.outerHTML).not.toBeNull();
+    }
+  },
+};
+
 export const LaneWithOneSession: Story = {
   args: { model: { ...empty, goals: [{ ...goal, lanes: [goal.lanes[0]] }] } },
   play: async ({ canvasElement }) => {
@@ -818,7 +873,7 @@ export const AskWithLaneSessions: Story = {
       section(canvasElement, 'Waiting on you').getByRole('list', { name: 'Open asks' }),
     );
     await expect(asks.getByText(ask.text, { exact: true })).toBeVisible();
-    await expect(asks.getByText('Lane: Agree on weekend hours', { exact: true })).toBeVisible();
+    await expect(asks.getByText(fullText('Lane: Agree on weekend hours'))).toBeVisible();
     await expectAskMetadata(asks);
     await expect(asks.getAllByRole('link')).toHaveLength(1);
     await expectSessionLink(asks, hoursSession.name, 'Waiting on you', hoursHref);
@@ -905,7 +960,7 @@ export const AskWithGoalsSourceRefused: Story = {
   },
   play: async ({ canvasElement }) => {
     const asks = openAsks(canvasElement);
-    await expect(asks.getByText('Lane: Agree on weekend hours', { exact: true })).toBeVisible();
+    await expect(asks.getByText(fullText('Lane: Agree on weekend hours'))).toBeVisible();
     await expectAskMetadata(asks);
     await expectSessionLink(asks, hoursSession.name, 'Waiting on you', hoursHref);
     await expectSessionLink(asks, rotaSession.name, 'Working', rotaHref);
@@ -951,7 +1006,7 @@ export const WaitingRowsLinkToSessions: Story = {
       const link = row.getByRole('link', { name });
       await expect(link).toBeVisible();
       await expect(link).toHaveAttribute('href', href);
-      await expect(row.getByText(descriptor, { exact: true })).toBeVisible();
+      await expect(row.getByText(fullText(descriptor))).toBeVisible();
       await expect(row.getByText(request, { exact: true })).toBeVisible();
       await expect(link).toHaveAccessibleDescription(`${descriptor} ${request}`);
       await expectKeyboardLink(link, name, href);
@@ -990,7 +1045,7 @@ export const SectionSources: Story = {
       ['Diagrams', 'From Library diagrams'],
     ] as const) {
       const view = section(canvasElement, name);
-      await expect(view.getByText(label, { exact: true })).toBeVisible();
+      await expect(view.getByText(fullText(label))).toBeVisible();
       await expect(view.queryByRole('link')).toBeNull();
     }
   },
@@ -1069,6 +1124,14 @@ const trackerStates = [
     { ...knownTrackerRow, id: 'trial', title: 'Schedule the pickup trial', status: 'not_started' },
     'Planned',
   ],
+  [
+    { ...knownTrackerRow, id: 'carts', title: 'Order the book carts', status: 'waiting' },
+    'Waiting',
+  ],
+  [
+    { ...knownTrackerRow, id: 'kiosk', title: 'Build a pickup kiosk', status: 'dropped' },
+    'Dropped',
+  ],
 ] as const;
 const trackerWithMetadata = {
   ...knownTrackerRow,
@@ -1110,14 +1173,16 @@ export const RefusedSource: Story = {
 const refusedSources = [
   ['unreadable', 'Library goals', 'The source could not be read.'],
   ['malformed', 'Library design notes', 'The source did not have the expected format.'],
-  ['symlink', 'Pickup work tracker', 'The file is a symbolic link.'],
-  ['hard-link', 'Library diagrams', 'The same file has another name.'],
+  ['symbolic link', 'Pickup work tracker', 'The file is a symbolic link.'],
+  ['hard link', 'Library diagrams', 'The same file has another name.'],
   ['private', 'Annex design notes', 'Marked private.'],
   [
-    'unknown-structural-status',
+    'Status not recognised',
     'Pickup lane briefs',
-    'Compass did not recognise a required status.',
+    'Compass did not recognise a status the source needs.',
   ],
+  ['branch missing', 'Library plan log', 'The branch is missing.'],
+  ['git timed out', 'Annex tracker', 'Git did not answer in time.'],
 ] as const;
 
 export const SourceRefusalReasons: Story = {
@@ -1162,6 +1227,37 @@ export const UnusableDates: Story = {
     await expect(proposedRow.getByText(proposed, { exact: true })).toBeVisible();
     await expect(within(canvasElement).queryByRole('time')).toBeNull();
     await expect(canvasElement).not.toHaveTextContent(/Invalid Date|Asked |Changed /);
+  },
+};
+
+export const UndecidedDesignNotes: Story = {
+  args: { model: { ...empty, design: [changedDesign, undecidedDesign] } },
+  play: async ({ canvasElement }) => {
+    const design = section(canvasElement, 'Design');
+    await expect(design.getAllByRole('heading', { level: 3 }).map((el) => el.textContent)).toEqual([
+      'Product decisions',
+      'Not decided yet',
+    ]);
+    const decided = within(design.getByRole('list', { name: 'Product decisions' }));
+    await expect(decided.getAllByRole('listitem')).toHaveLength(1);
+    await expect(decided.getByText(changedDesign.title, { exact: true })).toBeVisible();
+    await expect(decided.queryByText(undecidedDesign.title, { exact: true })).toBeNull();
+    const open = within(design.getByRole('list', { name: 'Not decided yet' }));
+    await expect(open.getByText(undecidedDesign.title, { exact: true })).toBeVisible();
+    await expect(open.getByText(undecidedDesign.summary, { exact: true })).toBeVisible();
+    const rule = design.getByRole('heading', { name: 'Not decided yet' }).parentElement;
+    await expect(rule).toHaveStyle({ borderTopWidth: '1px' });
+  },
+};
+
+export const OnlyUndecidedDesignNotes: Story = {
+  args: { model: { ...empty, design: [undecidedDesign] } },
+  play: async ({ canvasElement }) => {
+    const design = section(canvasElement, 'Design');
+    await expect(design.getAllByRole('heading', { level: 3 }).map((el) => el.textContent)).toEqual([
+      'Not decided yet',
+    ]);
+    await expect(design.queryByRole('heading', { name: 'Product decisions' })).toBeNull();
   },
 };
 
