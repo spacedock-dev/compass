@@ -417,6 +417,19 @@ A reader's press on Claude Code reads past the tail
 ([2026-10-13](#amended-2026-10-13-a-press-reads-the-message-record-back-to-the-window-start)); the
 suppression here still reads the board's own, tail-bound record.
 
+### Amended 2026-11-27: an opt-in plan summary at session start
+
+The owner ruled that one path may add text to a new session's context: a plan summary, delivered
+by a SessionStart hook. That path is off until the person turns it on, and it is built from the
+published plan board only.
+
+Compass still writes nothing else into a session. A correction stays copy-only
+([DEC-25](#dec-25-a-correction-stays-yours-to-copy) is unchanged), and the steer box still holds a
+note in the reader's browser rather than sending one.
+
+This is ruled and not yet built. The shape is in
+[the plan board plan](plans/plan-board-shape.md#the-agent-summary).
+
 ## DEC-17: the shape contract
 
 DEC-15 requires an evaluation rubric "before automatic assessments are enabled". A reader requested
