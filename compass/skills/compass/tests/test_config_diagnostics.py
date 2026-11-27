@@ -292,6 +292,9 @@ class LoginProxyFlagTest(unittest.TestCase):
             ".a@example.com",
             "a.@example.com",
             "a..b@example.com",
+            # A restarted daemon gets the address as its own argv token, where it would be an option.
+            "-a@example.com",
+            "--host=0.0.0.0@example.com",
             "a@[192.0.2.1]",
             "a@192.0.2.1",
             "a@*.example.com",

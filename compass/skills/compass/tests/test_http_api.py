@@ -2767,8 +2767,12 @@ class AllowedHostTest(RuntimeTestCase):
         peer: str = "127.0.0.1",
         proxy: str = "exe.dev",
         users: tuple[str, ...] = ("reader@example.com",),
+        bound: str = "0.0.0.0",
+        method: str = "POST",
     ) -> Any:
-        handler = self._handler(host, "https://" + host.partition(":")[0], method="POST")
+        # A browser sends Origin on a same-origin POST and not on a same-origin GET.
+        origin = "https://" + host.partition(":")[0] if method == "POST" else None
+        handler = self._handler(host, origin, bound=bound, method=method)
         handler.headers["Sec-Fetch-Site"] = "same-origin"
         handler.headers["X-Forwarded-For"] = "198.51.100.7"
         for address in emails:
@@ -2813,6 +2817,8 @@ class AllowedHostTest(RuntimeTestCase):
             ("no origin", ("Origin", None)),
             ("cross-site", ("Sec-Fetch-Site", "cross-site")),
             ("same-site", ("Sec-Fetch-Site", "same-site")),
+            ("typed or bookmarked", ("Sec-Fetch-Site", "none")),
+            ("no fetch metadata", ("Sec-Fetch-Site", None)),
         ):
             with self.subTest(label):
                 handler = self._signed_in()
@@ -2822,6 +2828,21 @@ class AllowedHostTest(RuntimeTestCase):
                     handler.headers[name] = value
                 self.assertTrue(handler._signed_in_reader())
                 self.assertFalse(handler._reader_resource_ok())
+
+    def test_a_signed_in_reader_on_either_bind_needs_same_origin_fetch_metadata_on_a_get(
+        self,
+    ) -> None:
+        # The GET routes carry no Origin, so fetch metadata is what tells the board's own fetch
+        # from a top-level link on another site that the proxy's sign-in cookie rides along with.
+        for bound in ("127.0.0.1", "0.0.0.0"):
+            for site, admitted in (("same-origin", True), ("none", False), (None, False)):
+                with self.subTest(bound=bound, site=site):
+                    handler = self._signed_in(bound=bound, method="GET")
+                    del handler.headers["Sec-Fetch-Site"]
+                    if site is not None:
+                        handler.headers["Sec-Fetch-Site"] = site
+                    self.assertTrue(handler._signed_in_reader())
+                    self.assertIs(handler._reader_resource_ok(), admitted)
 
     def test_loopback_proxy_does_not_grant_local_only_access(self) -> None:
         # Removing the authority check would authenticate the proxy's socket.

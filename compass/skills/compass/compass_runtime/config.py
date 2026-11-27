@@ -909,7 +909,9 @@ def normalize_allowed_user(value: str) -> str:
 
     Deliberately narrower than RFC 5321: no quoted local part, no comment, no IP-literal domain,
     and no space or comma, so a header value can never smuggle a second address past the
-    one-value check. The domain follows the --allow-host hostname rules.
+    one-value check. A leading hyphen is refused because a daemon restart forwards the address
+    as its own argv token, where it would parse as an option. The domain follows the
+    --allow-host hostname rules.
     """
     local, separator, domain = value.lower().partition("@")
     if (
@@ -917,7 +919,7 @@ def normalize_allowed_user(value: str) -> str:
         or not value.isascii()
         or len(value) > 254
         or re.fullmatch(r"[a-z0-9!#$%&'*+/=?^_`{|}~.-]{1,64}", local, flags=re.ASCII) is None
-        or local.startswith(".")
+        or local.startswith((".", "-"))
         or local.endswith(".")
         or ".." in local
     ):

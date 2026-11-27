@@ -341,13 +341,20 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
             ("X-Forwarded-Proto", "https"),
             ("X-Forwarded-Host", "board.example"),
         ]
-        signed_in = [("X-ExeDev-Email", "reader@example.com")]
+        # The board's own fetch sends same-origin fetch metadata, which a signed-in reader needs.
+        board_fetch = [("Sec-Fetch-Site", "same-origin")]
+        signed_in = [*board_fetch, ("X-ExeDev-Email", "reader@example.com")]
         headers = {
             "lan": named,
             "login-proxy": named + forwarded,
             "signed-in": named + forwarded + signed_in,
             "signed-in-remote": named + signed_in,
-            "signed-in-unlisted": named + forwarded + [("X-ExeDev-Email", "other@example.com")],
+            "signed-in-unlisted": (
+                named + forwarded + board_fetch + [("X-ExeDev-Email", "other@example.com")]
+            ),
+            "signed-in-no-fetch-metadata": (
+                named + forwarded + [("X-ExeDev-Email", "reader@example.com")]
+            ),
         }.get(kind, headers)
         if path == "/api/interaction/stream":
             headers += [
@@ -538,21 +545,30 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
             )
         }
         differences: list[str] = []
-        for method, path in ROWS:
-            if path == "/api/stream":
-                continue  # A stream answers 200 either way and never ends on its own.
-            without = self.request(method, path, "login-proxy")
-            with_reader = self.request(method, path, "signed-in")
-            differences.extend(
-                f"{kind} {method} {path} differs from no reader"
-                for kind in ("signed-in-remote", "signed-in-unlisted")
-                if self.request(method, path, kind) != without
-            )
-            if (method, path) in reader:
-                if without != 403 or with_reader == 403:
-                    differences.append(f"{method} {path}: {without} -> {with_reader}")
-            elif with_reader != without:
-                differences.append(f"{method} {path} changed: {without} -> {with_reader}")
+        # exe.dev's proxy reaches the default loopback bind; a proxy elsewhere needs 0.0.0.0.
+        for bound in ("127.0.0.1", "0.0.0.0"):
+            self.httpd.bound_host = bound
+            for method, path in ROWS:
+                if path == "/api/stream":
+                    continue  # A stream answers 200 either way and never ends on its own.
+                without = self.request(method, path, "login-proxy")
+                with_reader = self.request(method, path, "signed-in")
+                differences.extend(
+                    f"{bound} {kind} {method} {path} differs from no reader"
+                    for kind in (
+                        "signed-in-remote",
+                        "signed-in-unlisted",
+                        "signed-in-no-fetch-metadata",
+                    )
+                    if self.request(method, path, kind) != without
+                )
+                if (method, path) in reader:
+                    if without != 403 or with_reader == 403:
+                        differences.append(f"{bound} {method} {path}: {without} -> {with_reader}")
+                elif with_reader != without:
+                    differences.append(
+                        f"{bound} {method} {path} changed: {without} -> {with_reader}"
+                    )
         self.assertEqual([], differences, "\n".join(differences))
 
     def test_a_refused_board_action_names_admission_instead_of_a_restart(self) -> None:

@@ -2122,12 +2122,15 @@ class _RequestHandler(BaseHTTPRequestHandler):
         The reader routes: what the board's own buttons spend or open. The native desktop, the
         terminal interaction and the status line's receipt stay `_loopback_resource_ok` alone,
         because they act on this machine's screen and processes rather than on the board.
+
+        A signed-in reader must also send `Sec-Fetch-Site: same-origin`, not merely lack a
+        cross-site value: the proxy's sign-in cookie rides a top-level link from another site, and
+        on a browser without fetch metadata that link would otherwise pass for the board's own
+        fetch on the GET routes, where no Origin is sent and one of them can spend a model call.
         """
         site = (self.headers.get("Sec-Fetch-Site") or "").lower()
         return self._loopback_resource_ok() or (
-            self._signed_in_reader()
-            and site not in {"same-site", "cross-site"}
-            and self._local_ok()
+            self._signed_in_reader() and site == "same-origin" and self._local_ok()
         )
 
     def _proxied(self) -> bool:
