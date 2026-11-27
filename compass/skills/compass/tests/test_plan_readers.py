@@ -206,31 +206,58 @@ class PlanReadersTest(PlanRepoTestCase):
         substitute = self.root / "other"
         substitute.mkdir()
         config = self.only_goals(private={"roots": [str(substitute)]})
-        admitted = self.repo.stat()
-        disallowed = substitute.stat()
         original = git_status.plan_reader
-        started = []
-
-        def record(argv: tuple[str, ...], *, cwd: str, check: bool, **kwargs: Any) -> Any:
-            info = os.stat(cwd)
-            started.append((info.st_dev, info.st_ino))
-            return subprocess.run(argv, cwd=cwd, check=check, **kwargs)
+        runner = mock.Mock(wraps=subprocess.run)
 
         def factory(*args: Any, **kwargs: Any) -> git_status.PlanTreeReader:
             self.repo.rename(self.root / "original")
             substitute.rename(self.repo)
-            return original(*args, **kwargs, runner=record)
+            return original(*args, **kwargs, runner=runner)
 
         with mock.patch.object(git_status, "plan_reader", side_effect=factory):
             result = readers.read_plan(config).model
-        self.assertNotEqual(admitted.st_ino, disallowed.st_ino)
-        self.assertNotIn((disallowed.st_dev, disallowed.st_ino), started)
-        # Either the original read succeeds, or the replaced path is refused.
-        self.assertEqual(
-            [row.title for row in result.goals], ["Admitted repo"] if result.goals else []
-        )
-        if not result.goals:
-            self.assertIn(result.sources[0].reason, ("private", io.PlanRefusal.CHANGED))
+        self.assertEqual(runner.call_count, 0)
+        self.assertEqual(result.sources[0].reason, io.PlanRefusal.CHANGED)
+        self.assertEqual(result.goals, ())
+
+    def test_swap_during_git_run_discards_output(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: Admitted repo\n"})
+        config = self.only_goals()
+        substitute = self.root / "other"
+        substitute.mkdir()
+        canary = "Swapped bytes"
+        original = git_status.plan_reader
+        calls: list[tuple[str, ...]] = []
+
+        def runner(
+            argv: tuple[str, ...], *, check: bool, **kwargs: Any
+        ) -> subprocess.CompletedProcess[bytes]:
+            if argv[-3:-1] == ("cat-file", "blob"):
+                calls.append(argv)
+                self.repo.rename(self.root / "original")
+                substitute.rename(self.repo)
+                return subprocess.CompletedProcess(
+                    argv, 0, f"## Goals\n- G1: {canary}\n".encode(), b""
+                )
+            return subprocess.run(argv, check=check, **kwargs)
+
+        def factory(cwd: str, *, timeout_sec: float) -> git_status.PlanTreeReader:
+            return original(cwd, timeout_sec=timeout_sec, runner=runner)
+
+        with mock.patch.object(git_status, "plan_reader", side_effect=factory):
+            result = readers.read_plan(config).model
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn(canary, json.dumps(asdict(result)))
+        self.assertEqual(result.sources[0].reason, io.PlanRefusal.CHANGED)
+        self.assertEqual(result.goals, ())
+
+    def test_frozen_build_reads_git_sources(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: Admitted repo\n"})
+        config = self.only_goals()
+        with mock.patch.object(sys, "frozen", True, create=True):
+            result = readers.read_plan(config).model
+        self.assertIsNone(result.sources[0].reason)
+        self.assertEqual([row.title for row in result.goals], ["Admitted repo"])
 
     def test_unknown_goal_reference_is_a_measured_mismatch(self) -> None:
         self.write_sources({"goals": "## Goals\n- G1: Sample goal\n"})

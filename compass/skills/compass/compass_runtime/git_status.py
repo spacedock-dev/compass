@@ -54,7 +54,6 @@ import os
 import re
 import stat
 import subprocess
-import sys
 import threading
 import time
 from array import array
@@ -525,6 +524,8 @@ _TREE_ENTRY = re.compile(rb"^(\d{6}) (\w+) ([0-9a-f]+) +(\d+|-)\t(.+)$", re.DOTA
 _PATH_NAME = re.compile(r"[A-Za-z0-9._-]{1,64}")
 # The least a repository can be asked to name: a regular file (100644 or 100755).
 _REGULAR_MODES: Final = frozenset({"100644", "100755"})
+# Same closed reason as io.PlanRefusal.CHANGED. The Git reader stays independent of io.
+_PLAN_CWD_CHANGED: Final = "file changed before it could be read"
 
 
 @dataclass(frozen=True)
@@ -561,6 +562,19 @@ def _read(
         return None
 
 
+def _require_plan_cwd(cwd: str, directory: int) -> None:
+    try:
+        held = os.fstat(directory)
+        current = os.stat(cwd, follow_symlinks=False)
+    except OSError:
+        raise PlanGitError(_PLAN_CWD_CHANGED) from None
+    if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (
+        held.st_dev,
+        held.st_ino,
+    ):
+        raise PlanGitError(_PLAN_CWD_CHANGED)
+
+
 def _run_read(
     args: tuple[str, ...],
     cwd: str,
@@ -575,27 +589,9 @@ def _run_read(
     if remaining <= 0:
         raise subprocess.TimeoutExpired(args, 0)
     command = (resolved, *_SAFE_READ, *args)
-    inherit: dict[str, Any] = {}
+    env = dict(environ)
     if directory is not None:
-        # Set the cwd in an isolated child. A pathname can be swapped at dispatch,
-        # and a preexec_fn is unsafe in the board's threaded server.
-        command = (
-            sys.executable,
-            "-I",
-            "-S",
-            "-c",
-            (
-                "import os, sys\n"
-                "fd = int(sys.argv[1])\n"
-                "os.fchdir(fd)\n"
-                "os.close(fd)\n"
-                "os.execv(sys.argv[2], sys.argv[2:])"
-            ),
-            str(directory),
-            *command,
-        )
-        cwd = "/"
-        inherit["pass_fds"] = (directory,)
+        _require_plan_cwd(cwd, directory)
     result = runner(
         command,
         cwd=cwd,
@@ -603,9 +599,10 @@ def _run_read(
         stdin=subprocess.DEVNULL,
         timeout=remaining,
         check=False,
-        env=dict(environ),
-        **inherit,
+        env=env,
     )
+    if directory is not None:
+        _require_plan_cwd(cwd, directory)
     if getattr(result, "returncode", 1) != 0:
         return None
     out = getattr(result, "stdout", b"")
@@ -712,10 +709,6 @@ class PlanTreeReader:
             raise PlanGitError("git timed out")
         if self._resolved is None:
             raise PlanGitError("git unavailable")
-        if self.directory is not None and (
-            not os.path.isabs(sys.executable) or getattr(sys, "frozen", False)
-        ):
-            raise PlanGitError("guarded git dispatch unavailable")
         try:
             result = _run_read(
                 args,
