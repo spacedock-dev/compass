@@ -102,18 +102,27 @@ class Tracker:
     status_columns: tuple[str, ...]
     title_column: str
     status: WordGrammar
+    # Names the lane whose state a row sets. Without it no lane state is measured.
+    lane_column: str | None = None
 
 
 def _tracker(value: object) -> Tracker:
-    raw = keys(value, "form status_column title_column case strip tail_separators words")
+    raw = keys(
+        value,
+        "form status_column title_column case strip tail_separators words",
+        optional="lane_column",
+    )
     status = raw["status_column"]
     columns = strings(status, 8, min_items=1) if isinstance(status, list) else (string(status),)
     title = string(raw["title_column"])
-    shared = {grammar.folded(column) for column in (*columns, title)}
-    if len(shared) != len(columns) + 1:
+    lane = string(raw["lane_column"]) if "lane_column" in raw else None
+    if lane is not None and not lane.strip():
+        raise SettingsError
+    named = (*columns, title) if lane is None else (*columns, title, lane)
+    if len({grammar.folded(column) for column in named}) != len(named):
         raise SettingsError
     return Tracker(
-        choice(raw["form"], ("table",)), columns, title, _word_grammar(raw, BOARD_GROUPS)
+        choice(raw["form"], ("table",)), columns, title, _word_grammar(raw, BOARD_GROUPS), lane
     )
 
 

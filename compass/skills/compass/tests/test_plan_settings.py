@@ -186,6 +186,17 @@ class PlanSettingsTest(unittest.TestCase):
             plan.goals.templates[0].match("- P42a: A goal"), {"id": "P42a", "title": "A goal"}
         )
 
+    def test_tracker_lane_column_is_optional_and_distinct(self) -> None:
+        self.assertEqual(self.loaded(self.fixture()).tracker.lane_column, "Lane")
+        self.assertIsNone(self.loaded(self.fixture("variant")).tracker.lane_column)
+        for value in ("", " ", "Item", "item", "STATE", ["Lane"], 7, None, "L" * 129, "La\nne"):
+            with self.subTest(value=value):
+                doc = self.fixture()
+                doc["tracker"]["lane_column"] = value
+                loaded = self.load(doc)
+                self.assertEqual(loaded.reason, "malformed settings")
+                self.assertIsNone(loaded.settings)
+
     def test_private_identity_refuses_at_load_and_before_source_open(self) -> None:
         folder = self.private / "nested"
         folder.mkdir()

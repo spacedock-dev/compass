@@ -27,7 +27,7 @@ from compass_runtime.plan import model, publish, readers, settings, sources
 
 from .support import make_config
 from .test_history import stub_application
-from .test_plan_readers import STAND_IN, VARIANT, PlanRepoTestCase
+from .test_plan_readers import LANE_TRACKER, STAND_IN, VARIANT, PlanRepoTestCase
 from .test_project_script_checks import GIT, git
 from .test_sessions import DECLARED_SESSION_FIELDS
 
@@ -215,6 +215,48 @@ class PlanPublicationTest(PlanRepoTestCase):
                         self.assertTrue(rows[name])
                         for row in rows[name]:
                             self.assertEqual(set(row), fields)
+
+    def test_lane_state_is_a_closed_group_or_null(self) -> None:
+        self.assertEqual(
+            publish.LANE_STATES,
+            (
+                "not_started",
+                "running",
+                "waiting",
+                "blocked",
+                "done",
+                "dropped",
+                "Status not recognised",
+            ),
+        )
+        self.write_sources({"tracker": LANE_TRACKER})
+        for slug in ("hull", "paint", "mast", "keel"):
+            (self.briefs / f"{slug}.md").write_text("## Goal\nSample lane\n", encoding="utf-8")
+        self.configure()
+        plan, body = self.payload()
+        self.assertEqual(
+            {lane["id"]: lane["state"] for lane in plan["lanes"]},
+            {"hull": "done", "paint": "Status not recognised", "mast": None, "keel": None},
+        )
+        self.assertNotIn(b"unusual seabird", body)
+        self.assertTrue(
+            all(set(row) == publish.PLAN_ITEM_FIELDS["tracker"] for row in plan["tracker"])
+        )
+
+        unmeasured, _ = self.payload(self.application(git_probe_enabled=False))
+        self.assertEqual({lane["state"] for lane in unmeasured["lanes"]}, {None})
+
+    def test_projection_publishes_only_closed_lane_states(self) -> None:
+        source = model.Source("lane brief", "hull", "")
+        lanes = tuple(
+            model.Lane(f"lane-{n}", "Sample", None, (), source, state=state)
+            for n, state in enumerate(("done", "Status not recognised", None, "seabird", "Done"))
+        )
+        plan = model.PlanModel((), (), (), (), (), lanes, (), (), None)
+        self.assertEqual(
+            [lane["state"] for lane in publish._project(plan, {})["lanes"]],
+            ["done", "Status not recognised", None, None, None],
+        )
 
     def test_no_git_refuses_git_sources_and_keeps_the_log(self) -> None:
         self.write_sources(STAND_IN)

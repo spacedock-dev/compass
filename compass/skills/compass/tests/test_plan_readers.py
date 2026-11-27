@@ -671,3 +671,117 @@ class PlanReadersTest(PlanRepoTestCase):
             self.configure().sources.tree_source("Example", "main", "plan/gone").reason,
             sources.NOT_NAMED,
         )
+
+
+LANE_TRACKER = (
+    "| Item | Lane | Status |\n| --- | --- | --- |\n"
+    "| Cut the hull | `Hull` | fixed |\n"
+    "| Paint the deck | paint | unusual seabird |\n"
+    "| Rig the mast | mast | open |\n"
+    "| Rig the mast again | mast | driving |\n"
+    "| Unassigned work | | open |\n"
+    "| Not a lane id | Not a lane | open |\n\n"
+    "| State | Item |\n| --- | --- |\n| open | Buy sandpaper |\n"
+)
+
+
+@unittest.skipIf(GIT is None or os.name == "nt", "Needs Git and POSIX directory descriptors")
+class PlanLaneStateTest(PlanRepoTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        for slug in ("hull", "paint", "mast", "keel"):
+            (self.briefs / f"{slug}.md").write_text("## Goal\nSample lane\n", encoding="utf-8")
+
+    def states(self, config: settings.Settings) -> dict[str, str | None]:
+        return {lane.slug: lane.state for lane in readers.read_plan(config).model.lanes}
+
+    def test_one_tracker_row_sets_the_lane_state_and_others_are_not_measured(self) -> None:
+        self.write_sources({"tracker": LANE_TRACKER})
+        result = readers.read_plan(self.configure())
+        self.assertEqual(
+            {lane.slug: lane.state for lane in result.model.lanes},
+            # One row each for hull and paint; two rows name mast; no row names keel.
+            {"hull": "done", "paint": "Status not recognised", "mast": None, "keel": None},
+        )
+        self.assertEqual(
+            [row.lane for row in result.model.tracker],
+            ["hull", "paint", "mast", "mast", None, None, None],
+        )
+        self.assertNotIn("unusual seabird", repr(result.model))
+        self.assertEqual(
+            [word.word for word in result.diagnostics.unknown_statuses], ["unusual seabird"]
+        )
+
+    def test_no_declared_lane_column_measures_no_lane(self) -> None:
+        self.write_sources({"tracker": LANE_TRACKER})
+        file = self.home / settings.FILENAME
+        self.configure()
+        doc = json.loads(file.read_bytes())
+        del doc["tracker"]["lane_column"]
+        file.write_text(json.dumps(doc), encoding="utf-8")
+        loaded = settings.load(str(self.home))
+        assert loaded.settings is not None
+        model = readers.read_plan(loaded.settings).model
+        self.assertEqual(set(self.states(loaded.settings).values()), {None})
+        self.assertEqual({row.lane for row in model.tracker}, {None})
+
+    def test_a_table_without_the_lane_column_names_no_lane(self) -> None:
+        self.write_sources({"tracker": STAND_IN["tracker"]})
+        model = readers.read_plan(self.configure()).model
+        self.assertEqual(len(model.tracker), 4)
+        self.assertEqual({lane.state for lane in model.lanes}, {None})
+
+    def test_a_repeated_lane_column_withdraws_the_tracker(self) -> None:
+        self.write_sources(
+            {
+                "tracker": "| Item | Lane | Status | Lane |\n| --- | --- | --- | --- |\n"
+                "| Cut the hull | hull | fixed | hull |\n"
+            }
+        )
+        model = readers.read_plan(self.configure()).model
+        self.assertEqual(model.tracker, ())
+        self.assertEqual([s.reason for s in model.sources if s.kind == "tracker"], ["malformed"])
+        self.assertEqual({lane.state for lane in model.lanes}, {None})
+
+    def test_an_unread_tracker_source_leaves_every_lane_unmeasured(self) -> None:
+        self.write_sources({"tracker": LANE_TRACKER})
+        file = self.home / settings.FILENAME
+        self.configure()
+        doc = json.loads(file.read_bytes())
+        # The second file cannot be read, so it could hold a second row for hull.
+        doc["repos"][0]["files"] = {"tracker": ["plan/tracker.md", "plan/absent.md"]}
+        file.write_text(json.dumps(doc), encoding="utf-8")
+        loaded = settings.load(str(self.home))
+        assert loaded.settings is not None
+        self.assertEqual(set(self.states(loaded.settings).values()), {None})
+
+    def test_rows_across_tracker_files_are_counted_together(self) -> None:
+        self.write_sources(
+            {
+                "tracker": LANE_TRACKER,
+                "more": "| Item | Lane | Status |\n| --- | --- | --- |\n"
+                "| Lay the keel | keel | driving |\n| Recut the hull | hull | open |\n",
+            }
+        )
+        file = self.home / settings.FILENAME
+        self.configure()
+        doc = json.loads(file.read_bytes())
+        doc["repos"][0]["files"] = {"tracker": ["plan/tracker.md", "plan/more.md"]}
+        file.write_text(json.dumps(doc), encoding="utf-8")
+        loaded = settings.load(str(self.home))
+        assert loaded.settings is not None
+        self.assertEqual(
+            self.states(loaded.settings),
+            {"hull": None, "paint": "Status not recognised", "mast": None, "keel": "running"},
+        )
+
+    def test_a_draft_only_row_does_not_set_a_lane_state(self) -> None:
+        self.write_sources({"tracker": LANE_TRACKER})
+        git(self.repo, "switch", "-qc", "draft/plan")
+        self.write_sources(
+            {"tracker": LANE_TRACKER.replace("| Unassigned work | |", "| Lay the keel | keel |")}
+        )
+        git(self.repo, "switch", "main")
+        model = readers.read_plan(self.configure()).model
+        self.assertIn("keel", [row.lane for row in model.tracker if row.origin.source.draft])
+        self.assertIsNone({lane.slug: lane.state for lane in model.lanes}["keel"])

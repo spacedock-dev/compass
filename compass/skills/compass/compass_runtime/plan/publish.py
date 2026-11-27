@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from compass_runtime import io, records
 
-from . import grammar, model, readers, settings
+from . import grammar, markdown, model, readers, settings
 
 if TYPE_CHECKING:
     from compass_runtime.config import RuntimeConfig
@@ -44,6 +44,8 @@ PLAN_ITEM_FIELDS: Final = MappingProxyType(
         "sources": frozenset({"label", "kind", "state", "reason"}),
     }
 )
+# A lane's state is one of these, or null when no single primary tracker row names the lane.
+LANE_STATES: Final = (*settings.BOARD_GROUPS, markdown.STATUS_UNKNOWN)
 LIMITS: Final = (
     "Compass cannot detect health information or confidential text typed into these sources."
 )
@@ -159,7 +161,7 @@ def _project(plan: model.PlanModel, matched: dict[str, list[str]]) -> dict[str, 
                 "id": lane.slug,
                 "title": lane_titles[lane.slug],
                 "doneWhen": _text(lane.done),
-                "state": None,
+                "state": lane.state if lane.state in LANE_STATES else None,
                 "date": _date(lane.date),
                 "sessions": matched.get(lane.slug),
             }

@@ -1178,6 +1178,11 @@ when both inputs were available, including brief references to missing goals. Di
 can show up to 32 characters of ordinary unknown tracker and inventory status words. For
 other unknown values it shows `Status not recognised`.
 
+An optional tracker lane column names the lane a row belongs to. Compass strips the declared
+decorations from that cell, folds its case when the tracker folds status words, and keeps it
+only when it fits the lane ID rule. A table without that column names no lanes, and a table
+that repeats it is malformed. The lane cell itself is never published.
+
 ### Plan reads of committed files
 
 Compass checks the declared repository and each tree path's parent directories at settings load
@@ -1251,7 +1256,7 @@ A configured reply has `state: ready` and the following fields.
 | Field | Published contents |
 |---|---|
 | `goals` | `id`, `title`, `doneWhen`, `lanes` (stable lane IDs) and `proposal` (`Proposed, not merged` for draft-only goals, null otherwise). |
-| `lanes` | `id` (the admitted brief slug), `title`, `doneWhen`, `state` (always null), `date` and `sessions` (board session keys or null). |
+| `lanes` | `id` (the admitted brief slug), `title`, `doneWhen`, `state`, `date` and `sessions` (board session keys or null). `state` is one of the six board groups or `Status not recognised`, taken from the one tracker row that names the lane. It is null when the settings declare no lane column, no row or more than one row names the lane, the only row is on a draft branch, or a declared tracker file could not be read. |
 | `asks` | `id`, `text`, `at` (the log time or null), `timeLabel` (`from the log` when timestamped, otherwise null), `source` and `lane` (its `id` and `title`, or null). |
 | `design` | `title`, `summary` (always null), `decided`, `source` and `date`. |
 | `tracker`, `inventory` | `title`, `group` (including the closed fallback `Status not recognised`), `source` and `date`. |

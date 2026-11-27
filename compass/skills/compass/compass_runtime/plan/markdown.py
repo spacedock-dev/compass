@@ -375,8 +375,8 @@ def _divider(line: Line, width: int) -> bool:
 
 
 def _table(
-    text: str, state_columns: tuple[str, ...], title_column: str
-) -> Iterator[tuple[str, str, int]]:
+    text: str, state_columns: tuple[str, ...], title_column: str, lane_column: str | None = None
+) -> Iterator[tuple[str, str, int, str | None]]:
     lines = prose(text)
     index = 0
     found = False
@@ -388,6 +388,12 @@ def _table(
         # A neighboring table can start without an intervening blank line.
         states = _column(head, state_columns)
         titles = _column(head, (title_column,))
+        # A table without the declared lane column names no lanes; a repeated one is ambiguous.
+        lanes = (
+            _column(head, (lane_column,))
+            if lane_column is not None and lane_column in head
+            else None
+        )
         if not _divider(lines[index + 1], len(head)):
             raise ParseError
         found = True
@@ -402,7 +408,8 @@ def _table(
                 break
             if len(cells) != len(head):
                 raise ParseError
-            yield cells[titles], cells[states], lines[index].number
+            lane = cells[lanes] if lanes is not None else None
+            yield cells[titles], cells[states], lines[index].number, lane
             index += 1
         if (
             index < len(lines)
@@ -419,6 +426,18 @@ def _status_word(cell: str, spec: settings.WordGrammar) -> str | None:
     word = cell[:end].strip()
     if len(word) > MAX_TEXT_CHARS:
         return None
+    return _undecorated(word, spec)
+
+
+def _lane_id(cell: str | None, spec: settings.WordGrammar) -> str | None:
+    if cell is None or len(cell) > MAX_TEXT_CHARS:
+        return None
+    word = _undecorated(cell.strip(), spec)
+    lane = grammar.folded(word) if spec.case == "fold" else word
+    return lane if grammar.is_safe_lane_id(lane) else None
+
+
+def _undecorated(word: str, spec: settings.WordGrammar) -> str:
     while word:
         for decoration in spec.strip:
             if decoration == "emoji":
@@ -439,18 +458,20 @@ def _status_word(cell: str, spec: settings.WordGrammar) -> str | None:
 
 
 def _items(
-    rows: Iterator[tuple[str, str, int | None]], spec: settings.WordGrammar, source: model.Source
+    rows: Iterator[tuple[str, str, int | None, str | None]],
+    spec: settings.WordGrammar,
+    source: model.Source,
 ) -> tuple[tuple[model.Item, ...], tuple[model.UnknownStatus, ...]]:
     items: list[model.Item] = []
     unknown: list[model.UnknownStatus] = []
-    for title, state, line in rows:
+    for title, state, line, lane in rows:
         if len(items) >= MAX_ROWS:
             raise ParseError(TOO_MANY_ROWS)
         word = _status_word(state, spec)
         key = grammar.folded(word) if word is not None and spec.case == "fold" else word
         status = spec.words.get(key, STATUS_UNKNOWN) if key is not None else STATUS_UNKNOWN
         origin = model.Origin(source, line)
-        items.append(model.Item(_text(title), status, origin))
+        items.append(model.Item(_text(title), status, origin, _lane_id(lane, spec)))
         if status == STATUS_UNKNOWN:
             if not word:
                 detail = "empty status" if word == "" else "over the status word cap"
@@ -463,10 +484,11 @@ def _items(
 def tracker(
     text: str, spec: settings.Tracker, source: model.Source
 ) -> tuple[tuple[model.Item, ...], tuple[model.UnknownStatus, ...]]:
-    return _items(_table(text, spec.status_columns, spec.title_column), spec.status, source)
+    rows = _table(text, spec.status_columns, spec.title_column, spec.lane_column)
+    return _items(rows, spec.status, source)
 
 
-def _json_items(text: str, state: str, title: str) -> Iterator[tuple[str, str, None]]:
+def _json_items(text: str, state: str, title: str) -> Iterator[tuple[str, str, None, None]]:
     try:
         rows = json.loads(text)
     except (ValueError, RecursionError):
@@ -483,7 +505,7 @@ def _json_items(text: str, state: str, title: str) -> Iterator[tuple[str, str, N
             or not all(grammar.is_line(value) for value in (name, word))
         ):
             raise ParseError
-        yield name, word, None
+        yield name, word, None, None
 
 
 def inventory(

@@ -338,6 +338,24 @@ def _link_goals(
     return tuple(goals), tuple(linked_lanes), mismatches
 
 
+def _lane_states(files: list[_FileRows], config: settings.Settings) -> dict[str, str]:
+    """Each lane's group from the one primary tracker row that names it."""
+    trackers = [file for file in files if file.source.kind == "tracker" and not file.source.draft]
+    # An unread tracker file could hold a second row for any lane, so nothing is measured.
+    if (
+        config.tracker.lane_column is None
+        or not trackers
+        or any(file.source.reason is not None for file in trackers)
+    ):
+        return {}
+    named: dict[str, list[str]] = defaultdict(list)
+    for file in trackers:
+        for row in file.rows:
+            if isinstance(row, model.Item) and row.lane is not None:
+                named[row.lane].append(row.status)
+    return {lane: groups[0] for lane, groups in named.items() if len(groups) == 1}
+
+
 def read_plan(
     config: settings.Settings,
     *,
@@ -357,6 +375,8 @@ def read_plan(
     goals, lanes, mismatches = _link_goals(
         tuple(row for row in rows if isinstance(row, model.Goal)), lanes, lane_dates
     )
+    lane_states = _lane_states(files, config)
+    lanes = tuple(replace(lane, state=lane_states.get(lane.slug)) for lane in lanes)
     compared = (
         config.goals.lanes_label is not None
         and any(s.kind == "goals" and not s.draft for s in states)
