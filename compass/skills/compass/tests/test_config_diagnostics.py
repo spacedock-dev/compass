@@ -1114,7 +1114,7 @@ class DiagnoseTest(unittest.TestCase):
             self.skipTest("Git is not on PATH")
         fixture = Path(__file__).parent / "fixtures" / "plan" / "stand-in.json"
         doc = json.loads(fixture.read_text(encoding="utf-8"))
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir="/tmp" if sys.platform == "darwin" else None) as tmp:
             root = Path(tmp).resolve()
             home = root / "state"
             repo = root / "project"

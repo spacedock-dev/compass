@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, cast
 from urllib.parse import ParseResult, parse_qs, urlparse
 
+import compass_runtime.plan.publish as plan_publish
 from compass_runtime import (
     analyze_capacity,
     board_explanations,
@@ -2252,6 +2253,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "/api/cleared": self._cleared,
             "/api/annotations": self._annotations,
             "/api/settings": self._settings_get,
+            "/api/plan": self._plan_get,
             "/api/stream": self._stream,
             "/api/health": self._health,
         }.get(url.path)
@@ -2259,6 +2261,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return False
         bare()
         return True
+
+    def _plan_get(self) -> None:
+        if not self._loopback_read_ok():
+            self.send_error(403)
+            return
+        application = self.server.application
+        if not application.config.plan_enabled:
+            self.send_error(404)
+            return
+        payload = plan_publish.payload(application.config, application.state)
+        self._send(json.dumps(payload).encode(), "application/json")
 
     def _interaction_get(self, url: ParseResult) -> None:
         prototype = self.server.interaction_prototype

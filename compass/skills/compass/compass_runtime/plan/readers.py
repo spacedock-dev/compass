@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from compass_runtime import git_status
+from compass_runtime import git_status, io
 
 from . import dates, grammar, markdown, model, sources
 
@@ -53,10 +53,15 @@ def _parse_file(text: str, source: model.Source, config: settings.Settings) -> _
 
 
 def _tree_source(
-    repo: sources.Repository, config: settings.Settings, ref: str, kind: str, path: str
+    repo: sources.Repository,
+    config: settings.Settings,
+    ref: str,
+    kind: str,
+    path: str,
+    directory: int | None,
 ) -> model.Source:
-    checked = config.sources.tree_source(repo.label, ref, path, kind=kind)
-    return model.Source(kind, repo.label, path, ref, reason=checked.reason)
+    checked = config.sources.tree_source(repo.label, ref, path, kind=kind, directory=directory)
+    return model.Source(kind, repo.label, path, ref, reason=checked.reason, draft=ref != repo.ref)
 
 
 def _read_file(
@@ -64,8 +69,14 @@ def _read_file(
 ) -> _FileRows:
     if source.reason is not None:
         return _FileRows(source)
+    checked = config.sources.tree_source(
+        source.label, source.ref or "", source.path, kind=source.kind, directory=tree.directory
+    )
+    if checked.reason is not None:
+        return _FileRows(replace(source, reason=checked.reason))
     source = replace(source, commit=tip)
     try:
+        tree.check_markers(tip, source.path, config.sources.policy.marker_files)
         data = tree.tree_file(tip, source.path, max_bytes=MAX_REPO_FILE_BYTES)
         return _parse_file(markdown.decode(data), source, config)
     except (git_status.PlanGitError, markdown.ParseError) as exc:
@@ -90,38 +101,40 @@ def _draft_files(
     repo: sources.Repository,
     config: settings.Settings,
     primary: list[_FileRows],
+    directory: int,
 ) -> list[_FileRows]:
     if repo.draft_ref is None:
         return []
     # A failed primary read cannot establish that the branch lacks an item.
     comparable = [
-        _tree_source(repo, config, repo.draft_ref, file.source.kind, file.source.path)
+        _tree_source(repo, config, repo.draft_ref, file.source.kind, file.source.path, directory)
         for file in primary
         if file.source.reason in (None, "not in branch")
     ]
     if not any(source.reason is None for source in comparable):
-        return []
+        return [_FileRows(source) for source in comparable]
     try:
         tip = tree.tip(repo.draft_ref)
-    except git_status.PlanGitError:
-        return []
+    except git_status.PlanGitError as exc:
+        return [
+            _FileRows(replace(source, reason=source.reason or exc.reason)) for source in comparable
+        ]
     merged = {_row_key(row) for file in primary for row in file.rows}
     proposed = None
     result = []
     for source in comparable:
         file = _read_file(tree, tip, source, config)
         new_rows = tuple(row for row in file.rows if _row_key(row) not in merged)
-        if new_rows:
-            if proposed is None:
-                proposed = dates.proposed(tree, tip)
-            origins = {row.origin for row in new_rows}
-            result.append(
-                replace(
-                    file,
-                    rows=tuple(_with_date(row, proposed) for row in new_rows),
-                    unknown=tuple(item for item in file.unknown if item.origin in origins),
-                )
+        if new_rows and proposed is None:
+            proposed = dates.proposed(tree, tip)
+        origins = {row.origin for row in new_rows}
+        result.append(
+            replace(
+                file,
+                rows=tuple(_with_date(row, proposed) for row in new_rows),
+                unknown=tuple(item for item in file.unknown if item.origin in origins),
             )
+        )
     return result
 
 
@@ -130,11 +143,47 @@ def _repo_files(
     config: settings.Settings,
     timeout_sec: float,
     state: RuntimeState | None,
+    git_deadline: float | None,
 ) -> list[_FileRows]:
-    declared = [_tree_source(repo, config, repo.ref, kind, path) for kind, path in repo.files]
+    declared = [
+        model.Source(
+            kind,
+            repo.label,
+            path,
+            repo.ref,
+            reason=config.sources.declared_tree_source(repo, kind, path).reason,
+        )
+        for kind, path in repo.files
+    ]
     if not any(source.reason is None for source in declared):
         return [_FileRows(source) for source in declared]
-    tree = git_status.plan_reader(repo.path, timeout_sec=timeout_sec)
+    try:
+        with config.sources.hold_repository(repo) as directory:
+            return _read_repository(repo, config, timeout_sec, state, git_deadline, directory)
+    except io.PlanReadError as exc:
+        return [
+            _FileRows(replace(source, reason=source.reason or exc.reason)) for source in declared
+        ]
+
+
+def _read_repository(
+    repo: sources.Repository,
+    config: settings.Settings,
+    timeout_sec: float,
+    state: RuntimeState | None,
+    git_deadline: float | None,
+    directory: int,
+) -> list[_FileRows]:
+    declared = [
+        _tree_source(repo, config, repo.ref, kind, path, directory) for kind, path in repo.files
+    ]
+    if not any(source.reason is None for source in declared):
+        return [_FileRows(source) for source in declared]
+    tree = replace(
+        git_status.plan_reader(repo.path, timeout_sec=timeout_sec),
+        request_deadline=git_deadline,
+        directory=directory,
+    )
     try:
         tip = tree.tip(repo.ref)
     except git_status.PlanGitError as exc:
@@ -152,7 +201,7 @@ def _repo_files(
                 rows=tuple(_with_date(row, dates.changed(row.origin, times)) for row in file.rows),
             )
         primary.append(file)
-    return [*primary, *_draft_files(tree, repo, config, primary)]
+    return [*primary, *_draft_files(tree, repo, config, primary, directory)]
 
 
 def _read_brief(name: str, config: settings.Settings) -> tuple[model.Source, model.Lane | None]:
@@ -161,6 +210,10 @@ def _read_brief(name: str, config: settings.Settings) -> tuple[model.Source, mod
     if fields is None:
         return model.Source(declaration.kind, "", declaration.path, reason=sources.NOT_NAMED), None
     slug = fields["lane"]
+    if not grammar.is_safe_lane_id(slug):
+        return model.Source(
+            declaration.kind, "", declaration.path, reason="unsafe lane identifier"
+        ), None
     source = model.Source(declaration.kind, slug, declaration.path)
     result = config.sources.read_brief(name)
     if result.data is None:
@@ -203,7 +256,7 @@ def _log_lane(fields: dict[str, str], spec: settings.Log) -> str | None:
         parts = fields["id"].split(spec.lane.separator)
         if len(parts) > 1 and spec.lane.part < len(parts):
             lane = parts[spec.lane.part]
-    return lane if lane is not None and grammar.is_slug(lane) else None
+    return lane if lane is not None and grammar.is_safe_lane_id(lane) else None
 
 
 def _event_fields(raw: bytes, spec: settings.Log) -> dict[str, str] | None:
@@ -270,13 +323,14 @@ def _link_goals(
     counts = Counter(goal.id for goal in rows)
     links: dict[str, list[str]] = defaultdict(list)
     linked_lanes = []
+    mismatches = 0
     for lane in lanes:
         serves = tuple(goal for goal in lane.serves if counts[goal] == 1)
+        mismatches += sum(counts[goal] == 0 for goal in lane.serves)
         linked_lanes.append(replace(lane, serves=serves, date=lane_dates.get(lane.slug)))
         for goal_id in serves:
             links[goal_id].append(lane.slug)
     goals = []
-    mismatches = 0
     for goal in rows:
         actual = tuple(links[goal.id])
         goals.append(replace(goal, lanes=actual))
@@ -285,12 +339,16 @@ def _link_goals(
 
 
 def read_plan(
-    config: settings.Settings, *, git_timeout_sec: float = 5.0, state: RuntimeState | None = None
+    config: settings.Settings,
+    *,
+    git_timeout_sec: float = 5.0,
+    state: RuntimeState | None = None,
+    git_deadline: float | None = None,
 ) -> model.PlanResult:
     files = [
         file
         for repo in config.sources.repositories
-        for file in _repo_files(repo, config, git_timeout_sec, state)
+        for file in _repo_files(repo, config, git_timeout_sec, state, git_deadline)
     ]
     states = [file.source for file in files]
     rows = [row for file in files for row in file.rows]
@@ -301,11 +359,16 @@ def read_plan(
     )
     compared = (
         config.goals.lanes_label is not None
-        and bool(goals)
+        and any(s.kind == "goals" and not s.draft for s in states)
         and all(
             source.reason is None
-            for source in (*[s for s in states if s.kind == "goals"], *brief_states)
+            for source in (*[s for s in states if s.kind == "goals" and not s.draft], *brief_states)
         )
+    )
+    refused_folders = tuple(
+        model.Source("lane folder", lane.slug, "", reason=lane.folder_reason)
+        for lane in lanes
+        if lane.folder_reason is not None
     )
     return model.PlanResult(
         model.PlanModel(
@@ -324,7 +387,7 @@ def read_plan(
             tuple(row for row in rows if isinstance(row, model.Diagram)),
             lanes,
             asks,
-            (*states, *brief_states, log_source),
+            (*states, *brief_states, *refused_folders, log_source),
             rejected,
         ),
         model.PlanDiagnostics(

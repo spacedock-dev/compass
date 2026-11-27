@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from compass_runtime import records
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
@@ -119,6 +121,10 @@ def is_slug(text: str) -> bool:
         1 <= len(text) <= _FIELD_CAPS["slug"]
         and _FIELD_PATTERNS["slug"].fullmatch(text) is not None
     )
+
+
+def is_safe_lane_id(text: str) -> bool:
+    return is_slug(text) and records.redact_secrets(text) == text
 
 
 def is_goal_id(text: str) -> bool:

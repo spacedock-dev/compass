@@ -25,6 +25,8 @@ SnapshotKey = tuple[float, bool]
 # The server start stamp paired with a per-process counter. See the module
 # docstring for why a bare counter is not enough.
 Revision = tuple[float, int]
+# Harness, published session ID, and private working directory, in board order.
+SessionFolders = tuple[tuple[str, str, str], ...]
 
 
 class Entry(NamedTuple):
@@ -33,6 +35,7 @@ class Entry(NamedTuple):
     published_at: float
     published_monotonic: float | None
     validate: Callable[[], bool] | None
+    folders: SessionFolders
 
 
 def format_revision(revision: Revision) -> str:
@@ -70,6 +73,7 @@ class Snapshot:
         monotonic_now: float | None = None,
         generation: int | None = None,
         validate: Callable[[], bool] | None = None,
+        folders: SessionFolders = (),
     ) -> tuple[Revision, bool]:
         """Mint a revision for `body`, and keep it unless a `clear` came after `generation`.
 
@@ -89,7 +93,7 @@ class Snapshot:
             revision = (self.server_started, self._counter)
             kept = generation is None or generation == self._generation
             if kept:
-                self._entries[key] = Entry(revision, body, now, monotonic_now, validate)
+                self._entries[key] = Entry(revision, body, now, monotonic_now, validate, folders)
             return revision, kept
 
     def current(self, key: SnapshotKey) -> tuple[Revision, bytes] | None:
@@ -98,6 +102,12 @@ class Snapshot:
         if entry is None:
             return None
         return entry.revision, entry.body
+
+    def session_folders(self, key: SnapshotKey) -> SessionFolders | None:
+        """Private folder evidence for the same board rows and generation as the payload."""
+        with self._lock:
+            entry = self._entries.get(key)
+        return None if entry is None else entry.folders
 
     def fresh(
         self, key: SnapshotKey, *, now: float, max_age: float, monotonic_now: float | None = None

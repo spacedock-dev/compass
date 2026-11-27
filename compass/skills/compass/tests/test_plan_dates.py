@@ -111,6 +111,36 @@ class PlanDatesTest(PlanRepoTestCase):
             ("Changed", "2026-01-02"),
         )
 
+    def test_renamed_lines_keep_first_parent_dates(self) -> None:
+        self.write_sources({"old name": STAND_IN["tracker"]}, when=INITIAL)
+        git(self.repo, "mv", "plan/old name.md", "plan/tracker.md")
+        self.write_sources(
+            {"tracker": STAND_IN["tracker"].replace("Cut the hull", "Cut the deck")},
+            when=LATER,
+        )
+        model = readers.read_plan(self.configure()).model
+        self.assertEqual(
+            [date_fields(row.origin.date) for row in model.tracker[:2]],
+            [("Changed", "2026-01-02"), ("Changed", "2026-01-01")],
+        )
+        self.assertNotIn("old name.md", repr(asdict(model)))
+
+    def test_blame_color_cannot_remove_dates(self) -> None:
+        self.write_sources(STAND_IN, when=INITIAL)
+        self.write_sources(
+            {"tracker": STAND_IN["tracker"].replace("Cut the hull", "Cut the deck")},
+            when=LATER,
+        )
+        git(self.repo, "config", "color.ui", "always")
+        for mode in ("repeatedLines", "highlightRecent"):
+            with self.subTest(mode=mode):
+                git(self.repo, "config", "blame.coloring", mode)
+                model = readers.read_plan(self.configure()).model
+                self.assertEqual(
+                    [date_fields(row.origin.date) for row in model.tracker[:2]],
+                    [("Changed", "2026-01-02"), ("Changed", "2026-01-01")],
+                )
+
     def test_main_dates_a_merged_line_at_the_first_parent_merge(self) -> None:
         self.write_sources(STAND_IN, when=INITIAL)
         git(self.repo, "switch", "-qc", "topic")
@@ -192,6 +222,19 @@ class PlanDatesTest(PlanRepoTestCase):
         self.assertEqual([g.id for g in model.goals], ["G1", "G2"])
         self.assertEqual(len(model.tracker), 4)
         self.assertFalse(any("refs/remotes/origin/draft/plan" in argv for argv, _ in self.calls))
+
+    def test_failed_primary_cannot_promote_draft(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: Initial\n"}, when=INITIAL)
+        git(self.repo, "switch", "-qc", "draft/plan")
+        self.write_sources({"goals": "## Goals\n- G2: Draft goal\n"}, when=LATER)
+        git(self.repo, "switch", "main")
+        (self.repo / "plan" / "goals.md").write_bytes(b"\xff\n")
+        git(self.repo, "add", "plan/goals.md")
+        git(self.repo, "commit", "-qm", "Unreadable primary")
+        model = readers.read_plan(self.only_goals()).model
+        self.assertEqual(model.sources[0].reason, "malformed")
+        self.assertEqual(model.goals, ())
+        self.assertFalse(any("refs/heads/draft/plan" in argv for argv, _ in self.calls))
 
     def test_json_inventory_has_no_line_date(self) -> None:
         self.write_sources({"built": '[{"label": "Mirror", "phase": "shipped"}]'}, when=INITIAL)

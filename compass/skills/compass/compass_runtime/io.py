@@ -13,6 +13,7 @@ import secrets
 import stat
 import sys
 import time
+import unicodedata
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, BinaryIO, TextIO
@@ -834,6 +835,23 @@ def plan_directory_identities(paths: tuple[str, ...]) -> frozenset[tuple[int, in
     return frozenset(identities)
 
 
+def plan_private_prefixes(
+    roots: tuple[str, ...], private_ids: frozenset[tuple[int, int]]
+) -> dict[tuple[int, int], set[tuple[str, ...]]]:
+    """Remember where each private root sits below directory identities, including repo roots."""
+    prefixes: dict[tuple[int, int], set[tuple[str, ...]]] = {}
+    for root in roots:
+        ancestry = _plan_ancestry(
+            os.path.realpath(root, strict=True), PlanPathPolicy(), require_owner=False
+        )
+        if ancestry[-1][1] not in private_ids:
+            raise PlanReadError(PlanRefusal.CHANGED)
+        names = tuple(name for name, _ in ancestry)
+        for index, (_, identity) in enumerate(ancestry[:-1]):
+            prefixes.setdefault(identity, set()).add(names[index + 1 :])
+    return prefixes
+
+
 @dataclass(frozen=True)
 class PlanPathPolicy:
     private_ids: frozenset[tuple[int, int]] = frozenset()
@@ -843,6 +861,8 @@ class PlanPathPolicy:
     repo_ids: frozenset[tuple[int, int]] = frozenset()
 
     def check(self, directory: int, name: str, info: os.stat_result) -> None:
+        if not info.st_ino:
+            raise PlanReadError(PlanRefusal.UNREADABLE)
         identity = _identity(info)
         if identity in self.repo_ids:
             raise PlanReadError(PlanRefusal.INSIDE_REPO)
@@ -850,8 +870,21 @@ class PlanPathPolicy:
             raise PlanReadError(PlanRefusal.PRIVATE)
         if self.settings_file and _git_directory_at(directory):
             raise PlanReadError(PlanRefusal.INSIDE_REPO)
-        if any(_present_at(directory, marker) for marker in self.marker_files):
+        if self.marker_files and _marker_at(directory, self.marker_files):
             raise PlanReadError(PlanRefusal.PRIVATE)
+
+
+def _marker_at(directory: int, markers: tuple[str, ...]) -> bool:
+    if any(_present_at(directory, marker) for marker in markers):
+        return True
+    folded = {unicodedata.normalize("NFC", marker).casefold() for marker in markers}
+    with os.scandir(directory) as entries:
+        for index, entry in enumerate(entries, start=1):
+            if index > 4096:
+                raise PlanReadError(PlanRefusal.UNREADABLE)
+            if unicodedata.normalize("NFC", entry.name).casefold() in folded:
+                return True
+    return False
 
 
 def _present_at(directory: int, name: str) -> bool:
@@ -875,15 +908,62 @@ def _plan_directory_fd(path: str, policy: PlanPathPolicy) -> int:
     return _directory_fd(path, follow_links=False, directory_check=policy.check)
 
 
-def inspect_plan_directory(path: str, policy: PlanPathPolicy) -> tuple[int, int]:
+@contextlib.contextmanager
+def hold_plan_directory(
+    path: str, policy: PlanPathPolicy, *, parent_fd: int | None = None
+) -> Iterator[int]:
     try:
-        directory = _plan_directory_fd(path, policy)
+        if parent_fd is None:
+            directory = _plan_directory_fd(path, policy)
+        else:
+            directory = _directory_fd(
+                path, parent_fd=parent_fd, follow_links=False, directory_check=policy.check
+            )
         try:
-            return _identity(os.fstat(directory))
+            yield directory
         finally:
             os.close(directory)
     except OSError as exc:
         raise _plan_refusal(exc) from None
+
+
+def inspect_plan_directory(path: str, policy: PlanPathPolicy) -> tuple[int, int]:
+    with hold_plan_directory(path, policy) as directory:
+        return _identity(os.fstat(directory))
+
+
+def _plan_ancestry(
+    path: str, policy: PlanPathPolicy, *, require_owner: bool = True
+) -> list[tuple[str, tuple[int, int]]]:
+    ancestry: list[tuple[str, tuple[int, int]]] = []
+
+    def check(directory: int, name: str, info: os.stat_result) -> None:
+        policy.check(directory, name, info)
+        ancestry.append((name, _identity(info)))
+
+    os.close(
+        _directory_fd(path, follow_links=False, directory_check=check, require_owner=require_owner)
+    )
+    return ancestry
+
+
+def plan_session_ancestry(path: str, policy: PlanPathPolicy) -> frozenset[tuple[int, int]]:
+    if os.name == "nt" or not os.path.isabs(path):
+        return frozenset()
+    try:
+        resolved = os.path.realpath(path, strict=True)
+        ancestry = _plan_ancestry(resolved, policy)
+        if path != resolved:
+            # Check the alias route too, without using it for the join.
+            alias = _directory_fd(path, directory_check=policy.check)
+            try:
+                if _identity(os.fstat(alias)) != ancestry[-1][1]:
+                    return frozenset()
+            finally:
+                os.close(alias)
+        return frozenset(identity for _, identity in ancestry)
+    except (OSError, ValueError, PlanReadError):
+        return frozenset()
 
 
 def _check_plan_leaf(

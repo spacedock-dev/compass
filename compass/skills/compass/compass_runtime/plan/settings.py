@@ -177,7 +177,7 @@ def _briefs(value: object) -> Briefs:
     if len({grammar.folded(label.label) for label in labels.values()}) != len(labels):
         raise SettingsError
     folders = grammar.dictionary(raw.get("lane_folders", {}))
-    if len(folders) > 200 or not all(grammar.is_slug(lane) for lane in folders):
+    if len(folders) > 200 or not all(grammar.is_safe_lane_id(lane) for lane in folders):
         raise SettingsError
     return Briefs(
         sources.absolute_path(raw["folder"]),
@@ -629,7 +629,8 @@ def _repo_ids(repos: tuple[sources.Repository, ...]) -> frozenset[tuple[int, int
 def _make_settings(declared: _Declarations, path: str, *, git_enabled: bool) -> Loaded:
     try:
         ids = io.plan_private_identities(declared.roots)
-    except OSError:
+        prefixes = io.plan_private_prefixes(declared.roots, ids) if git_enabled else {}
+    except (OSError, io.PlanReadError):
         return Loaded(path, reason=PRIVATE_UNREADABLE)
     try:
         io.inspect_plan_directory(
@@ -640,7 +641,11 @@ def _make_settings(declared: _Declarations, path: str, *, git_enabled: bool) -> 
     policy = io.PlanPathPolicy(ids, declared.privacy.marked, declared.privacy.marker_files)
     brief, log = declared.briefs, declared.log
     brief_src, log_src = sources.local_sources(brief.folder, log.path, log.max_bytes, policy)
-    repos = sources.check_repositories(declared.repos, policy) if git_enabled else declared.repos
+    repos = (
+        sources.check_repositories(declared.repos, policy, prefixes)
+        if git_enabled
+        else declared.repos
+    )
     allowed = sources.Sources(
         repos,
         brief_src,

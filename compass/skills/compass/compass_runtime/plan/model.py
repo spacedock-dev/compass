@@ -20,6 +20,11 @@ class Source:
     ref: str | None = None
     commit: str | None = None
     reason: str | None = None
+    draft: bool = False
+
+    @property
+    def display_kind(self) -> str:
+        return f"draft {self.kind}" if self.draft else self.kind
 
 
 @dataclass(frozen=True)

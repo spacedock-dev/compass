@@ -15,10 +15,8 @@ See [DEC-21](docs/design-reading-a-session.md#amended-2026-09-23-claude-code-is-
 from __future__ import annotations
 
 import configparser
-import ipaddress
 import os
 import platform
-import re
 import stat
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
@@ -244,40 +242,6 @@ def _claude_destination(sources: list[Mapping[str, str]]) -> str:
     return _host(merged["ANTHROPIC_BASE_URL"])
 
 
-# A host label as both parsers read it alike. The CLI parses a base URL with
-# the WHATWG parser and this build with `urlsplit`, and the two differ on a
-# backslash (WHATWG reads it as `/`), on tabs and newlines (stripped
-# anywhere), on percent-escapes and non-ASCII (decoded and mapped to another
-# host), and on a numeric last label (read as an IPv4 address). Measured on
-# Claude Code 2.1.287 (consent F1, ui5): `http://127.0.0.1:4597\@127.0.0.1:4598`
-# sent every request to 4597 where `urlsplit` reads 4598. So a URL is named only
-# when nothing in it is read differently, and anything else is unnamed.
-_LABEL = re.compile(r"[a-z0-9_-]+")
-_NUMERIC_LABEL = re.compile(r"[0-9]+|0[xX][0-9a-fA-F]*")
-
-
-def _plain_host(hostname: str, *, bracketed: bool) -> str:
-    """The host as both parsers name it, or refused where they could differ."""
-    if bracketed:
-        try:
-            return f"[{ipaddress.IPv6Address(hostname).compressed}]"
-        except ValueError as exc:
-            raise _UnnamedError from exc
-    labels = hostname.split(".")
-    if not all(_LABEL.fullmatch(label) for label in labels):
-        raise _UnnamedError
-    if _NUMERIC_LABEL.fullmatch(labels[-1]):
-        # WHATWG reads any host ending in a number as an IPv4 address, in
-        # forms `ipaddress` refuses (`127.1`, `0x7f.1`, `010.0.0.1`), so only
-        # the one canonical dotted quad, which alone `ipaddress` takes, is a
-        # name both give.
-        try:
-            ipaddress.IPv4Address(hostname)
-        except ValueError as exc:
-            raise _UnnamedError from exc
-    return hostname
-
-
 def _host(url: str) -> str:
     """Scheme-checked host and port only: never the path, query or userinfo.
 
@@ -298,7 +262,9 @@ def _host(url: str) -> str:
     authority = parts.netloc.rpartition("@")[2]
     if records.redact_secrets(authority) != authority:
         raise _UnnamedError
-    host = _plain_host(parts.hostname, bracketed=authority.startswith("["))
+    host = records.plain_url_host(parts.hostname, bracketed=authority.startswith("["))
+    if host is None:
+        raise _UnnamedError
     return f"{host}:{port}" if port else host
 
 

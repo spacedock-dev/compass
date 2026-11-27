@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import heapq
+import ipaddress
 import itertools
 import json
 import math
@@ -18,7 +20,7 @@ from bisect import bisect_left, bisect_right
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, Protocol
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator
@@ -52,6 +54,40 @@ _UNSAFE_CHARS = re.compile(
 # The line breaks among them, which `safe_text` turns into spaces before redaction rather than
 # after: the PEM body and the cued shapes are tuned to read a space there.
 _UNSAFE_BREAKS = re.compile("[\\t\\n\\x0b\\x0c\\r\\u2028\\u2029]+")
+
+
+# A host label as both parsers read it alike. The CLI parses a base URL with
+# the WHATWG parser and this build with `urlsplit`, and the two differ on a
+# backslash (WHATWG reads it as `/`), on tabs and newlines (stripped
+# anywhere), on percent-escapes and non-ASCII (decoded and mapped to another
+# host), and on a numeric last label (read as an IPv4 address). Measured on
+# Claude Code 2.1.287 (consent F1, ui5): `http://127.0.0.1:4597\@127.0.0.1:4598`
+# sent every request to 4597 where `urlsplit` reads 4598. So a URL is named only
+# when nothing in it is read differently, and anything else is unnamed.
+_HOST_LABEL = re.compile(r"[a-z0-9_-]+")
+_NUMERIC_HOST_LABEL = re.compile(r"[0-9]+|0[xX][0-9a-fA-F]*")
+
+
+def plain_url_host(hostname: str, *, bracketed: bool) -> str | None:
+    """The host as both parsers name it, or refused where they could differ."""
+    if bracketed:
+        try:
+            return f"[{ipaddress.IPv6Address(hostname).compressed}]"
+        except ValueError:
+            return None
+    labels = hostname.split(".")
+    if not all(_HOST_LABEL.fullmatch(label) for label in labels):
+        return None
+    if _NUMERIC_HOST_LABEL.fullmatch(labels[-1]):
+        # WHATWG reads any host ending in a number as an IPv4 address, in
+        # forms `ipaddress` refuses (`127.1`, `0x7f.1`, `010.0.0.1`), so only
+        # the one canonical dotted quad, which alone `ipaddress` takes, is a
+        # name both give.
+        try:
+            ipaddress.IPv4Address(hostname)
+        except ValueError:
+            return None
+    return hostname
 
 
 # ---------------------------------------------------------------------------
@@ -1457,6 +1493,232 @@ def _redaction_spans(
         derived.extend(_curl_secret_matches(view, source_slice=derived_source))
         found.extend(project(derived))
     return found
+
+
+# An ASCII boundary admits links after Markdown emphasis and adjacent non-ASCII
+# prose. Keep any leading dashes outside the authority.
+_URL_START = re.compile(
+    r"""(?ix)
+    (?<!(?-i:[A-Za-z0-9.-]))(?P<dash>-*+)(?:
+        [a-z][a-z0-9+.-]*:[/\\]+|[/\\]{2}|(?:mailto|data|tel|urn|javascript|blob|magnet|slack):
+        |(?P<domain>(?:[a-z0-9-]{1,63}\.){1,127}(?:xn--[a-z0-9-]{1,59}|[a-z]{2,63})
+                       |localhost|(?:[0-9]{1,3}\.){3}[0-9]{1,3}
+                       |[a-z0-9]+[^\W\x00-\x7f][\w.-]*\.[a-z]{2,63})
+            (?::[0-9]{1,5})?(?=[/?#:])
+        |www\.
+    )
+    """
+)
+_LINK_SPACE = re.compile(r"\s")
+_URL_SYNTAX_END = re.compile(r"""[\s<>"'`]""")
+_BARE_BOUNDARY = re.compile(r"""[\s<"'`]""")
+_MARKDOWN_DESTINATION = re.compile(
+    r"\][ \t]*\(\s*|(?P<ref>\[(?:\\[^\r\n]|[^\\\[\]\r\n]){1,4096}\]):[ \t]*(?:\r?\n[ \t]*)?"
+)
+_MARKDOWN_BLANK_LINE = re.compile(r"[ \t\r]*(?:\n|$)")
+_MARKDOWN_REF_TITLE = re.compile(r"""[ \t]*["']""")
+# Preserve the original inline-link span, including a closing parenthesis after a line break.
+_COMPLETE_MARKDOWN_LINK = re.compile(
+    r"""\]\(\s*(?:<(?P<angle>[^<>\r\n]*)>|(?P<bare>[^()\s<>]+))"""
+    r"""(?:[ \t]+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)"""
+)
+_URL_UNNAMED: Final = "[link]"
+
+
+def _userinfo_start(text: str, host: int) -> int:
+    if host == 0 or text[host - 1] != "@":
+        return host
+    start = host - 1
+    # Find the userinfo from a known authority. Searching for a long password
+    # from every colon would rescan the same token even where it has no host.
+    while start:
+        char = text[start - 1]
+        if char.isspace() or char in "/\\@?#<>\"'`()[]{}":
+            break
+        start -= 1
+    return start if start < host - 1 else host
+
+
+def link_host(target: str) -> str | None:
+    """Name a link's host without a scheme, port, userinfo, path, query or fragment."""
+    if stop := _URL_SYNTAX_END.search(target):
+        target = target[: stop.start()]
+    target = target.rstrip(".,;)}")
+    if target.endswith("]"):
+        excess = max(0, target.count("]") - target.count("["))
+        target = target[: max(len(target.rstrip("]")), len(target) - excess)]
+    if "\\" in target:
+        return None
+    start = _URL_START.match(target)
+    if (
+        start is None
+        and (candidate := _URL_START.search(target)) is not None
+        and candidate["domain"]
+        and _userinfo_start(target, candidate.start()) == 0
+    ):
+        start = candidate
+    if start is not None and (domain := start["domain"]):
+        return _validated_link_host("//" + domain)
+    return _validated_link_host(target[start.end("dash") :] if start is not None else target)
+
+
+def _validated_link_host(target: str) -> str | None:
+    if "\\" in target:
+        return None
+    if target.lower().startswith("www."):
+        target = "//" + target
+    try:
+        parts = urlsplit(target)
+        authority = parts.netloc.rpartition("@")[2]
+        hostname = parts.hostname
+    except ValueError:
+        return None
+    if (
+        not hostname
+        or hostname.startswith("-")
+        or len(hostname) > 253
+        or redact_secrets(authority) != authority
+    ):
+        return None
+    return plain_url_host(hostname.removesuffix("."), bracketed=authority.startswith("["))
+
+
+class _LinkSpan(NamedTuple):
+    start: int
+    end: int
+    replacement: str
+    host: str | None
+
+
+def _token_end(text: str, start: int) -> int:
+    stop = _LINK_SPACE.search(text, start)
+    return len(text) if stop is None else stop.start()
+
+
+def _complete_markdown_links(text: str) -> Iterator[_LinkSpan]:
+    # Read complete links independently. An ambiguous outer link may otherwise
+    # consume an inner link's opener before reaching its destination line.
+    for match in _COMPLETE_MARKDOWN_LINK.finditer(text):
+        host = _validated_link_host(match["angle"] or match["bare"] or "")
+        yield _LinkSpan(
+            match.start(), _token_end(text, match.end()), f"] ({host})" if host else "]", host
+        )
+
+
+def _markdown_links(text: str) -> Iterator[_LinkSpan]:
+    previous = 0
+    while (match := _MARKDOWN_DESTINATION.search(text, previous)) is not None:
+        start = match.end()
+        reference = match["ref"] is not None
+        end = _markdown_destination_end(text, start, reference=reference)
+        destination = text[start:end].lstrip()
+        if destination.startswith("<"):
+            target = destination[1:].partition(">")[0]
+        else:
+            target = destination.split(maxsplit=1)[0] if destination else ""
+        host = link_host(target)
+        previous = (
+            _token_end(text, end + 1) if not reference and text[end : end + 1] == ")" else end
+        )
+        # Keep the label in the input so an overlapping URL mask can reach it.
+        span_start = match.end("ref") if reference else match.start()
+        replacement = "" if reference else "]"
+        if host is not None:
+            replacement += f" ({host})"
+        yield _LinkSpan(span_start, previous, replacement, host)
+
+
+def _bare_links(text: str) -> Iterator[_LinkSpan]:
+    previous = 0
+    while (match := _URL_START.search(text, previous)) is not None:
+        start = match.end("dash")
+        end = _bare_destination_end(text, match)
+        host = link_host(text[start:end])
+        if match["domain"] and (userinfo := _userinfo_start(text, match.start())) < match.start():
+            start = max(previous, userinfo)
+        previous = end
+        yield _LinkSpan(start, end, host or _URL_UNNAMED, host)
+
+
+def hosts_only(text: str) -> tuple[str, tuple[str, ...]]:
+    """Replace links in redacted text and return the host names in encounter order."""
+    hosts: dict[str, None] = {}
+    pieces: list[str] = []
+    previous = 0
+    # Scan the original text. A replacement can introduce whitespace and cut
+    # short an overlapping mask. Complete Markdown links keep their authority
+    # rules when both Markdown scans match at the same offset.
+    spans = heapq.merge(
+        _complete_markdown_links(text),
+        _markdown_links(text),
+        _bare_links(text),
+        key=lambda span: span.start,
+    )
+    for span in spans:
+        if span.start >= previous:
+            pieces.extend((text[previous : span.start], span.replacement))
+            if span.host is not None:
+                hosts[span.host] = None
+        previous = max(previous, span.end)
+    pieces.append(text[previous:])
+    return "".join(pieces), tuple(hosts)
+
+
+def _markdown_destination_end(text: str, start: int, *, reference: bool) -> int:
+    line_end = text.find("\n", start)
+    depth = 1
+    quoted = ""
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if char == "\n":
+            if quoted and _MARKDOWN_BLANK_LINE.match(text, index + 1) is None:
+                continue
+            if reference and index == line_end and _MARKDOWN_REF_TITLE.match(text, index + 1):
+                continue
+            return index
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif quoted:
+            if char == quoted:
+                quoted = ""
+        elif char in "\"'`<":
+            quoted = ">" if char == "<" else char
+        elif reference:
+            continue
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+    return len(text)
+
+
+def _bare_destination_end(text: str, match: re.Match[str]) -> int:
+    start = match.end()
+    opener = text[match.start() - 1] if match.start() else ""
+    while (stop := _BARE_BOUNDARY.search(text, start)) is not None:
+        index = stop.start()
+        char = text[index]
+        if char.isspace():
+            return index
+        line_end = text.find("\n", index + 1)
+        if line_end == -1:
+            line_end = len(text)
+        close = text.find(">" if char == "<" else char, index + 1, line_end)
+        # A quoted value can span token boundaries. An ambiguous unfinished
+        # value consumes the rest of the line.
+        if close == -1:
+            if text[index - 1] != "=" and (
+                char == opener or text[index + 1 : index + 2] in (")", "]", "}", ">")
+            ):
+                return _token_end(text, index + 1)
+            return line_end
+        start = close + 1
+    return len(text)
 
 
 def redact_clip(text: str, limit: int) -> str:

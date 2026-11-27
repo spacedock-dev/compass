@@ -56,8 +56,9 @@ import stat
 import subprocess
 import threading
 import time
+import unicodedata
 from array import array
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final
 
 from . import rooted_path
@@ -524,6 +525,8 @@ _TREE_ENTRY = re.compile(rb"^(\d{6}) (\w+) ([0-9a-f]+) +(\d+|-)\t(.+)$", re.DOTA
 _PATH_NAME = re.compile(r"[A-Za-z0-9._-]{1,64}")
 # The least a repository can be asked to name: a regular file (100644 or 100755).
 _REGULAR_MODES: Final = frozenset({"100644", "100755"})
+# Same closed reason as io.PlanRefusal.CHANGED. The Git reader stays independent of io.
+_PLAN_CWD_CHANGED: Final = "file changed before it could be read"
 
 
 @dataclass(frozen=True)
@@ -560,6 +563,19 @@ def _read(
         return None
 
 
+def _require_plan_cwd(cwd: str, directory: int) -> None:
+    try:
+        held = os.fstat(directory)
+        current = os.stat(cwd, follow_symlinks=False)
+    except OSError:
+        raise PlanGitError(_PLAN_CWD_CHANGED) from None
+    if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (
+        held.st_dev,
+        held.st_ino,
+    ):
+        raise PlanGitError(_PLAN_CWD_CHANGED)
+
+
 def _run_read(
     args: tuple[str, ...],
     cwd: str,
@@ -568,19 +584,26 @@ def _run_read(
     *,
     deadline: float,
     runner: Callable[..., Any],
+    directory: int | None = None,
 ) -> bytes | None:
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise subprocess.TimeoutExpired(args, 0)
+    command = (resolved, *_SAFE_READ, *args)
+    env = dict(environ)
+    if directory is not None:
+        _require_plan_cwd(cwd, directory)
     result = runner(
-        (resolved, *_SAFE_READ, *args),
+        command,
         cwd=cwd,
         capture_output=True,
         stdin=subprocess.DEVNULL,
         timeout=remaining,
         check=False,
-        env=dict(environ),
+        env=env,
     )
+    if directory is not None:
+        _require_plan_cwd(cwd, directory)
     if getattr(result, "returncode", 1) != 0:
         return None
     out = getattr(result, "stdout", b"")
@@ -662,10 +685,12 @@ class PlanGitError(Exception):
 
 _PLAN_REF = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]{0,254}")
 _PLAN_TREE_PART = re.compile(r"[A-Za-z0-9._ -]{1,128}")
-_BLAME_LINE = re.compile(rb"([0-9a-f]{40}(?:[0-9a-f]{24})?) +([0-9]{1,9})\) ")
+_BLAME_NUMBER = re.compile(rb"(?<!\S)([0-9]{1,9})\) ")
 _MAX_UTC_TIMESTAMP = 253402300799
 # 64 full SHA-256 IDs fit in Windows' command line even with the fixed flags.
 _PLAN_LOG_BATCH = 64
+_PLAN_MARKER_ENTRIES = 4096
+_PLAN_TREE_METADATA = re.compile(rb"\d{6} (?:blob|tree|commit) [0-9a-f]{40}(?:[0-9a-f]{24})?")
 
 
 @dataclass(frozen=True)
@@ -677,8 +702,17 @@ class PlanTreeReader:
     _environ: Mapping[str, str]
     _resolved: str | None
     _runner: Callable[..., Any]
+    request_deadline: float | None = None
+    directory: int | None = None
+    _marker_names: dict[tuple[str, str], frozenset[str] | str] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     def _run(self, args: tuple[str, ...], deadline: float) -> bytes:
+        if self.request_deadline is not None:
+            deadline = min(deadline, self.request_deadline)
+        if time.monotonic() >= deadline:
+            raise PlanGitError("git timed out")
         if self._resolved is None:
             raise PlanGitError("git unavailable")
         try:
@@ -689,6 +723,7 @@ class PlanTreeReader:
                 self._resolved,
                 deadline=deadline,
                 runner=self._runner,
+                directory=self.directory,
             )
         except subprocess.TimeoutExpired:
             raise PlanGitError("git timed out") from None
@@ -759,6 +794,49 @@ class PlanTreeReader:
             raise PlanGitError("unreadable")
         return data
 
+    def check_markers(self, tip: str, path: str, markers: tuple[str, ...]) -> None:
+        if not markers:
+            return
+        self._check_path(tip, path)
+        folded = {unicodedata.normalize("NFC", marker).casefold() for marker in markers}
+        deadline = time.monotonic() + self.timeout_sec
+        for parent in ("", *(path[: index + 1] for index, char in enumerate(path) if char == "/")):
+            key = (tip, parent)
+            if key not in self._marker_names:
+                try:
+                    self._marker_names[key] = self._tree_names(tip, parent, deadline)
+                except PlanGitError as exc:
+                    self._marker_names[key] = exc.reason
+            names = self._marker_names[key]
+            if isinstance(names, str):
+                raise PlanGitError(names)
+            if not folded.isdisjoint(names):
+                raise PlanGitError("private")
+
+    def _tree_names(self, tip: str, parent: str, deadline: float) -> frozenset[str]:
+        args = ("ls-tree", "-z", tip)
+        listing = self._run((*args, "--", parent) if parent else args, deadline)
+        entries = listing.split(b"\0", _PLAN_MARKER_ENTRIES + 1)
+        if entries[-1] or len(entries) > _PLAN_MARKER_ENTRIES + 1:
+            raise PlanGitError("unreadable")
+        prefix = parent.encode("ascii")
+        names = set()
+        for entry in entries[:-1]:
+            metadata, tab, path = entry.partition(b"\t")
+            name = path.removeprefix(prefix)
+            if (
+                not tab
+                or not path.startswith(prefix)
+                or not name
+                or b"/" in name
+                or _PLAN_TREE_METADATA.fullmatch(metadata) is None
+            ):
+                raise PlanGitError("unreadable")
+            names.add(
+                unicodedata.normalize("NFC", name.decode("utf-8", "surrogateescape")).casefold()
+            )
+        return frozenset(names)
+
     def blame(self, tip: str, path: str, *, line_count: int) -> array[int]:
         """Return committer times in tip line order for an already admitted blob."""
         self._check_path(tip, path)
@@ -769,6 +847,10 @@ class PlanTreeReader:
             (
                 "-c",
                 "blame.ignoreRevsFile=",
+                "-c",
+                "color.ui=never",
+                "-c",
+                "blame.coloring=none",
                 "blame",
                 "-s",
                 "-l",
@@ -788,10 +870,16 @@ class PlanTreeReader:
             raise PlanGitError("unreadable")
         commits = []
         for number, line in enumerate(lines, 1):
-            match = _BLAME_LINE.match(line)
-            if match is None or int(match[2]) != number:
+            oid, separator, rest = line.partition(b" ")
+            # With a rename, Git inserts a padded original filename before the
+            # line number. The filename may contain spaces and is discarded.
+            if (
+                not separator
+                or not _OBJECT_ID.fullmatch(oid.decode("ascii", "replace"))
+                or not any(int(match[1]) == number for match in _BLAME_NUMBER.finditer(rest))
+            ):
                 raise PlanGitError("unreadable")
-            commits.append(match[1].decode("ascii"))
+            commits.append(oid.decode("ascii"))
         times = self.commit_times(commits, deadline=deadline)
         return array("Q", (times[oid] for oid in commits))
 
