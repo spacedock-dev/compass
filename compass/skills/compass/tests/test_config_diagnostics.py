@@ -1107,6 +1107,58 @@ class StoreRootsTest(unittest.TestCase):
 
 
 class DiagnoseTest(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "Plan reads require POSIX directory descriptors")
+    def test_plan_diagnosis_reports_sources_without_private_values(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "plan" / "stand-in.json"
+        doc = json.loads(fixture.read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            home = root / "state"
+            hidden = root / "root-canary"
+            marker = "marker-canary"
+            brief = root / marker
+            for folder in (home, hidden, brief):
+                folder.mkdir()
+            doc["private"] = {
+                "roots": [str(hidden)],
+                "markers": [{"value": marker, "mode": "component"}],
+            }
+            doc["repos"][0]["path"] = str(root / "project")
+            doc["briefs"]["folder"] = str(brief)
+            doc["log"]["path"] = str(root / "missing.log")
+            settings_file = home / "compass-plan.json"
+            settings_file.write_text(json.dumps(doc), encoding="utf-8")
+            env = {"HOME": str(root), "COMPASS_HOME": str(home)}
+            flags = ["--diagnose", "--json", "--no-git", "--no-usage", "--no-spacedock"]
+            output = io.StringIO()
+            with (
+                mock.patch.dict(os.environ, env, clear=True),
+                contextlib.redirect_stdout(output),
+            ):
+                cli.main(flags)
+            report = json.loads(output.getvalue())
+            text = diagnostics.render_diagnosis(report)
+            for rendered in (text, json.dumps(report["plan"])):
+                self.assertIn(str(settings_file), rendered)
+                self.assertIn("lane briefs", rendered)
+                self.assertIn("event log", rendered)
+                self.assertIn("private", rendered)
+                self.assertIn("git reads are off", rendered)
+                self.assertIn("missing", rendered)
+                self.assertNotIn(str(hidden), rendered)
+                self.assertNotIn(marker, rendered)
+            sources = report["plan"]["sources"]
+            self.assertEqual(len(sources), 7)
+            self.assertEqual(report["plan"]["private_roots"], 1)
+            self.assertEqual(report["plan"]["private_markers"], 1)
+            output = io.StringIO()
+            with (
+                mock.patch.dict(os.environ, env, clear=True),
+                contextlib.redirect_stdout(output),
+            ):
+                cli.main([*flags, "--no-plan"])
+            self.assertEqual(json.loads(output.getvalue())["plan"]["reason"], "plan is off")
+
     def test_report_names_every_candidate_and_what_was_found(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             projects = Path(tmp) / "projects"

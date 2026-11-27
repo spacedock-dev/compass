@@ -1334,6 +1334,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.sessions",
         },
         "compass_runtime.diagnostics": {
+            "compass_runtime.plan",
             "compass_runtime.project_context",
             "compass_runtime.project_scripts",
             "compass_runtime.reader_checks",
@@ -2346,6 +2347,14 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # The reader's own list of check commands, keyed by project: it reads one file in the
         # Compass home and resolves a session's directory to its project through `sessions`.
         "compass_runtime.reader_checks": {"compass_runtime.config", "compass_runtime.sessions"},
+        "compass_runtime.plan": set(),
+        "compass_runtime.plan.grammar": set(),
+        "compass_runtime.plan.settings": {
+            "compass_runtime.io",
+            "compass_runtime.plan.grammar",
+            "compass_runtime.plan.sources",
+        },
+        "compass_runtime.plan.sources": {"compass_runtime.io", "compass_runtime.plan.grammar"},
         # The pull request CI read: it reuses the git probe's PATH scrub and binary lookup,
         # the supervised runner for `gh`, and the bounded transcript reader. It imports nothing
         # from `reading`, which imports it, and `config` only for a type.

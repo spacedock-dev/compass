@@ -298,6 +298,21 @@ NON_STATE_READ_GAPS = frozenset(
     }
 )
 
+# These calls admit settings and source bytes only through plan's validated declarations.
+PLAN_FILE_CALLS = {
+    ("compass_runtime/plan/settings.py", "load", "read_plan_settings"): (
+        "Reads the fixed Compass-home settings leaf through the checkout and link guards."
+    ),
+    ("compass_runtime/plan/sources.py", "Sources._read", "read_plan_source"): (
+        "Reads the exact event log or a direct brief admitted by the filename grammar, "
+        "with checked ancestors and a byte cap."
+    ),
+    ("compass_runtime/plan/sources.py", "Sources.brief_names", "list_plan_names"): (
+        "Lists names only inside the declared, guarded brief folder under an entry cap."
+    ),
+}
+PLAN_FILE_PRIMITIVES = {name for _, _, name in PLAN_FILE_CALLS} | {"open_plan_source"}
+
 
 def _name(node: ast.expr, imports: dict[str, str]) -> str:
     if isinstance(node, ast.Name):
@@ -428,6 +443,13 @@ def violations(source: str, module: str) -> list[str]:
         key = module, function
         name = _name(node.func, imports)
         prefix = f"{module}:{node.lineno} {function}: "
+        plan_primitive = name.removeprefix("compass_runtime.io.")
+        if (
+            name.startswith("compass_runtime.io.")
+            and plan_primitive in PLAN_FILE_PRIMITIVES
+            and (*key, plan_primitive) not in PLAN_FILE_CALLS
+        ):
+            found.append(prefix + "unreviewed plan file operation")
         resolved = _name(node, imports)
         if any(
             value.endswith(".<dynamic>") and _sensitive_name(value) for value in (name, resolved)
@@ -479,6 +501,13 @@ def _stale_entries(
 
 
 class SecurityPrimitivesTest(unittest.TestCase):
+    def test_plan_primitive_requires_a_reviewed_caller(self) -> None:
+        found = violations(
+            "from compass_runtime import io; io.read_plan_source('/tmp/value', policy, 7)",
+            "compass_runtime/new.py",
+        )
+        self.assertTrue(any("unreviewed plan file operation" in error for error in found))
+
     def test_a_raw_open_in_any_shipped_top_level_script_requires_review(self) -> None:
         modules = [
             "notify_hook.py",

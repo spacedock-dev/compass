@@ -3010,6 +3010,7 @@ class HandOffRequestContractDocumentationTest(unittest.TestCase):
                 "--no-ci-read",
                 "--no-focus",
                 "--no-history",
+                "--no-plan",
                 "--no-dismiss",
                 "--no-annotations",
                 "--no-ask",
