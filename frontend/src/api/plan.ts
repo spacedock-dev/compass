@@ -39,7 +39,8 @@ export interface ReadyPlan {
   }[];
   readonly asks: readonly {
     readonly id: string;
-    readonly text: string;
+    /** Null when the settings forbid the log verb's text on the board. */
+    readonly text: string | null;
     readonly at: string | null;
     readonly timeLabel: 'from the log' | null;
     readonly source: string;
@@ -95,8 +96,6 @@ function isRecord(value: unknown): value is Fields {
 const text = (value: unknown): value is string => typeof value === 'string';
 const textOrNull = (value: unknown) => value === null || text(value);
 const texts = (value: unknown) => Array.isArray(value) && value.every(text);
-const records = (value: unknown, check: (item: Fields) => boolean) =>
-  Array.isArray(value) && value.every((item) => isRecord(item) && check(item));
 const dateLabels: readonly unknown[] = ['Changed', 'Proposed, not merged', 'from the log'];
 const planDate = (value: unknown) =>
   value === null ||
@@ -104,63 +103,53 @@ const planDate = (value: unknown) =>
 const dated = (item: Fields) =>
   text(item['title']) && text(item['source']) && planDate(item['date']);
 
-/* Every field the page reads, checked to its published type. A reply that fails any check is an
-   unusable read, so a page never renders half a plan or throws on a missing field. */
-function readyShape(body: Fields): boolean {
-  return (
-    records(
-      body['goals'],
-      (goal) =>
-        text(goal['id']) &&
-        text(goal['title']) &&
-        textOrNull(goal['doneWhen']) &&
-        texts(goal['lanes']) &&
-        (goal['proposal'] === null || goal['proposal'] === 'Proposed, not merged'),
-    ) &&
-    records(
-      body['lanes'],
-      (lane) =>
-        text(lane['id']) &&
-        text(lane['title']) &&
-        textOrNull(lane['doneWhen']) &&
-        textOrNull(lane['state']) &&
-        planDate(lane['date']) &&
-        (lane['sessions'] === null || texts(lane['sessions'])),
-    ) &&
-    records(
-      body['asks'],
-      (ask) =>
-        text(ask['id']) &&
-        text(ask['text']) &&
-        text(ask['source']) &&
-        textOrNull(ask['at']) &&
-        (ask['timeLabel'] === null || ask['timeLabel'] === 'from the log') &&
-        (ask['lane'] === null ||
-          (isRecord(ask['lane']) && text(ask['lane']['id']) && text(ask['lane']['title']))),
-    ) &&
-    records(
-      body['design'],
-      (item) => dated(item) && textOrNull(item['summary']) && typeof item['decided'] === 'boolean',
-    ) &&
-    records(body['tracker'], (item) => dated(item) && text(item['group'])) &&
-    records(
-      body['diagrams'],
-      (item) => dated(item) && text(item['caption']) && texts(item['linkHosts']),
-    ) &&
-    records(
-      body['sources'],
-      (source) =>
-        text(source['label']) &&
-        text(source['kind']) &&
-        (source['state'] === 'ok' || source['state'] === 'refused') &&
-        textOrNull(source['reason']),
-    ) &&
-    text(body['limits'])
-  );
-}
+/* Every field the page reads, checked to its published type, one list item at a time. An item
+   that fails is dropped and the rest of the plan still shows; a reply whose lists or limits sentence
+   are missing is an unusable read. Either way the page never throws on a missing field. */
+const ITEM_CHECKS = {
+  goals: (goal: Fields) =>
+    text(goal['id']) &&
+    text(goal['title']) &&
+    textOrNull(goal['doneWhen']) &&
+    texts(goal['lanes']) &&
+    (goal['proposal'] === null || goal['proposal'] === 'Proposed, not merged'),
+  lanes: (lane: Fields) =>
+    text(lane['id']) &&
+    text(lane['title']) &&
+    textOrNull(lane['doneWhen']) &&
+    textOrNull(lane['state']) &&
+    planDate(lane['date']) &&
+    (lane['sessions'] === null || texts(lane['sessions'])),
+  // A log verb the settings declare with its text forbidden publishes an ask with no words.
+  asks: (ask: Fields) =>
+    text(ask['id']) &&
+    textOrNull(ask['text']) &&
+    text(ask['source']) &&
+    textOrNull(ask['at']) &&
+    (ask['timeLabel'] === null || ask['timeLabel'] === 'from the log') &&
+    (ask['lane'] === null ||
+      (isRecord(ask['lane']) && text(ask['lane']['id']) && text(ask['lane']['title']))),
+  design: (item: Fields) =>
+    dated(item) && textOrNull(item['summary']) && typeof item['decided'] === 'boolean',
+  tracker: (item: Fields) => dated(item) && text(item['group']),
+  diagrams: (item: Fields) => dated(item) && text(item['caption']) && texts(item['linkHosts']),
+  sources: (source: Fields) =>
+    text(source['label']) &&
+    text(source['kind']) &&
+    (source['state'] === 'ok' || source['state'] === 'refused') &&
+    textOrNull(source['reason']),
+} as const;
 
-export function configuredPlan(body: unknown): body is ConfiguredPlan {
-  if (!isRecord(body)) return false;
-  if (body['state'] === 'refused') return text(body['reason']);
-  return body['state'] === 'ready' && readyShape(body);
+/** The reply as the page may read it, or null when it is not a usable plan reply. */
+export function usablePlan(body: unknown): ConfiguredPlan | null {
+  if (!isRecord(body)) return null;
+  if (body['state'] === 'refused') return text(body['reason']) ? (body as RefusedPlan) : null;
+  if (body['state'] !== 'ready' || !text(body['limits'])) return null;
+  const lists = Object.entries(ITEM_CHECKS);
+  if (!lists.every(([list]) => Array.isArray(body[list]))) return null;
+  const kept = lists.map(([list, check]) => [
+    list,
+    (body[list] as readonly unknown[]).filter((item) => isRecord(item) && check(item)),
+  ]);
+  return { ...body, ...Object.fromEntries(kept) } as unknown as ReadyPlan;
 }

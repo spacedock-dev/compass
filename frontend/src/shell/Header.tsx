@@ -39,7 +39,12 @@ function PrimaryNavigation({
   readonly open: boolean;
 }) {
   const { controls } = useShell();
-  const hasPlan = useDisplayed((snapshot) => planShown(snapshot.plan));
+  /* Plan is listed while a plan is shown, and on the Plan page itself while its first read has
+     failed, so the reader still sees where they are. */
+  const hasPlan = useDisplayed(
+    (snapshot) =>
+      planShown(snapshot.plan) || (route.view === 'plan' && snapshot.plan.state === 'failed'),
+  );
   const here = currentView(route, hasPlan);
   /* The current item is the focus lane's fallback for a control that stands only while something is
      wrong (Retry now), so removing it hands focus to a place the reader can see. */

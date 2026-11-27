@@ -149,7 +149,15 @@ export function createDisplayGate(options: DisplayGateOptions) {
 
     /* The runtime's `paint` option. Resolves when the result is shown, which a
        reader's own toggle can hold, or at once when an open list defers it. */
-    paint(info: { readonly manual: boolean; readonly accepted: boolean }): Promise<void> {
+    paint(info: {
+      readonly manual: boolean;
+      readonly accepted: boolean;
+      readonly followUp?: boolean;
+    }): Promise<void> {
+      /* A follow-up read (the plan after a poll) rides the poll's paint when an open list still holds
+         it: that paint shows the whole store when it lands, so a second one would only spend the
+         list's deferrals twice as fast. */
+      if (info.followUp && !info.manual && gate.hasPending()) return Promise.resolve();
       return new Promise<void>((resolve) => {
         const done = () => {
           outstanding.delete(done);

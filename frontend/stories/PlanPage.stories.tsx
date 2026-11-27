@@ -971,6 +971,17 @@ export const AskWithGoalsSourceRefused: Story = {
   },
 };
 
+export const AskWithoutText: Story = {
+  args: { model: { ...empty, asks: [{ ...ask, text: null }] } },
+  play: async ({ canvasElement }) => {
+    const asks = openAsks(canvasElement);
+    const words = asks.getByText('An open ask with no text', { exact: true });
+    await expect(words).toBeVisible();
+    await expect(words.closest('[data-authored]')).toBeNull();
+    await expectAskMetadata(asks);
+  },
+};
+
 export const AskWithoutLane: Story = {
   args: { model: { ...empty, asks: [ask], goals: [goal], sources: sourceList } },
   play: async ({ canvasElement }) => {

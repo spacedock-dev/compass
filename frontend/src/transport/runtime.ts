@@ -1,6 +1,6 @@
 import { readBootstrap } from '../api/bootstrap';
 import { createApiClient, type FetchLike } from '../api/client';
-import { configuredPlan, type PlanReading } from '../api/plan';
+import { usablePlan, type PlanReading } from '../api/plan';
 import { exactIdentity } from '../api/identity';
 import type { ApiResult, FocusOutcome, SessionIdentity } from '../api/types';
 import { createBoardStore, type BoardSnapshot } from '../store/board';
@@ -51,9 +51,8 @@ const PLAN_READ_FAILED: PlanReading = Object.freeze({ state: 'failed' });
    use keeps what is shown, and before any reply says the read failed. An identical reply keeps the
    shown object, so nothing repaints. */
 function nextPlan(result: ApiResult<unknown>, current: PlanReading): PlanReading {
-  if (result.kind === 'ok' && configuredPlan(result.body)) {
-    return JSON.stringify(result.body) === JSON.stringify(current) ? current : result.body;
-  }
+  const usable = result.kind === 'ok' ? usablePlan(result.body) : null;
+  if (usable) return JSON.stringify(usable) === JSON.stringify(current) ? current : usable;
   const absent =
     (result.kind === 'ok' &&
       (result.body as { readonly state?: unknown }).state === 'not-configured') ||
@@ -145,7 +144,8 @@ export function createBoardRuntime(options: RuntimeOptions) {
         const next = nextPlan(result, current);
         if (next === current) return;
         store.setPlan(next);
-        await sink.paint({ manual, accepted: true });
+        // A follow-up to the poll's own paint: where that paint is still held, it carries this one.
+        await sink.paint({ manual, accepted: true, followUp: true });
       } finally {
         env.clock.clearTimeout(timeout);
         if (cancelPlan === cancel) cancelPlan = null;

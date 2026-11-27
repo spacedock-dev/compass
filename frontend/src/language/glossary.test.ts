@@ -72,6 +72,7 @@ describe('the first-layer glossary', () => {
         .filter(([key]) => /^plan[A-Z]/.test(key))
         .map(([, { plain }]) => plain),
     ).toEqual([
+      'An open ask with no text',
       'Blocked',
       'Done',
       'Dropped',

@@ -41,7 +41,7 @@ export interface PlanGoal {
 
 export interface PlanAsk {
   readonly id: string;
-  readonly text: string;
+  readonly text: string | null;
   readonly at: string | null;
   readonly timeLabel: 'from the log' | null;
   readonly source: string;

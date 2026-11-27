@@ -181,9 +181,15 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
                           !!sessions?.length && 'sm:mt-2.5',
                         )}
                       >
-                        <p className="m-0 max-w-[var(--measure)] font-semibold" data-authored>
-                          {text}
-                        </p>
+                        {text === null ? (
+                          <p className="m-0 max-w-[var(--measure)] font-semibold">
+                            {PLAN_WORDS.askWithoutText}
+                          </p>
+                        ) : (
+                          <p className="m-0 max-w-[var(--measure)] font-semibold" data-authored>
+                            {text}
+                          </p>
+                        )}
                         <p className="m-0 text-label leading-relaxed text-muted-foreground">
                           {hasDate ? (
                             <>

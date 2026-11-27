@@ -56,6 +56,7 @@ describe('the Plan destination follows the published plan', () => {
     const page = mountPlan(new Response('Boom', { status: 500 }));
     await page.settle();
     expect(screen.getByText(planReadFailed, { exact: true })).toBeVisible();
+    expect(primary().getByRole('link', { name: 'Plan' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('heading', { name: 'All sessions' })).toBeNull();
     page.getResponses['/api/plan'] = readyPlan;
     await act(async () => page.clock.advance(FALLBACK_POLL_MS));
@@ -71,7 +72,7 @@ describe('the Plan destination follows the published plan', () => {
       new Response('Boom', { status: 500 }),
       new Response('not json', { status: 200 }),
       () => Promise.reject(new Error('offline')),
-      { ...readyPlan, asks: [{ id: 'broken' }] },
+      { ...readyPlan, sources: null },
     ]) {
       page.getResponses['/api/plan'] = failure;
       await act(async () => page.clock.advance(FALLBACK_POLL_MS));
@@ -193,6 +194,23 @@ describe('the Plan destination follows the published plan', () => {
     expect(goal.queryByText('parked')).toBeNull();
   });
 
+  it('draws an ask the settings keep wordless as a plain sentence, and drops only a broken ask', async () => {
+    const page = mountPlan({
+      ...readyPlan,
+      asks: [{ id: 'broken' }, { ...readyPlan.asks[0], text: null }, readyPlan.asks[1]],
+    });
+    await page.settle();
+    const asks = within(screen.getByRole('list', { name: 'Open asks' }));
+    const rows = asks.getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    const wordless = within(rows[0] as HTMLElement).getByText('An open ask with no text', {
+      exact: true,
+    });
+    expect(wordless).toBeVisible();
+    expect(wordless.closest('[data-authored]')).toBeNull();
+    expect(asks.getByText('Who can check the entrance signs?')).toBeVisible();
+  });
+
   it('opens a session from Plan and returns to Plan by the crumb and by Escape', async () => {
     const page = mountPlan();
     await page.settle();
@@ -225,6 +243,7 @@ describe('the Plan destination follows the published plan', () => {
     await act(async () => fireEvent.keyDown(document.body, { key: 'Escape' }));
     await page.settle();
     expect(screen.getByRole('heading', { name: 'All sessions', level: 2 })).toBeVisible();
+    expect(page.router.getRoute().view).toBe('sessions');
   });
 
   it('keeps a design note that is not decided out of Product decisions', async () => {

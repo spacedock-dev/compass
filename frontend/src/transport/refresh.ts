@@ -15,7 +15,12 @@ export interface RefreshSink {
   accepted(body: PayloadData, revision: string): void;
   failed(failure: DataFailure): void;
   /** Resolves when the consumer has shown the result, which it may hold back. */
-  paint(info: { readonly manual: boolean; readonly accepted: boolean }): Promise<void>;
+  paint(info: {
+    readonly manual: boolean;
+    readonly accepted: boolean;
+    /** A read that follows the run's own paint, such as the plan read after a poll. */
+    readonly followUp?: boolean;
+  }): Promise<void>;
 }
 
 type RunKind = 'call' | 'poll' | 'wake';

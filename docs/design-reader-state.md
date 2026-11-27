@@ -179,11 +179,15 @@ The fragment holds the requested destination. The runtime reads Plan after the b
 safety polls, and after manual refresh. The store holds one of four answers in memory: not read yet,
 a first read that failed, no plan, or the latest configured reply. Only the server's own answer
 clears a configured reply: not configured, a 404 for `--no-plan`, or a 403 for a reader off the
-Compass computer. A server error, a timeout, a dropped connection or a reply the page cannot use
-keeps what is shown. The board shows Sessions for a Plan bookmark only once the read says there is
+Compass computer. A server error, a timeout, a dropped connection or a reply without its lists or
+its limits sentence keeps what is shown. A single list item the page cannot read (an ask, a goal,
+a lane, a design note, a tracker row, a diagram or a source) is dropped and the rest is shown; an
+ask whose words the settings keep off the board reads "An open ask with no text". The board shows Sessions for a Plan bookmark only once the read says there is
 no plan; before the first answer the Plan destination draws nothing, and a first read that failed
-says so there. A changed reply reaches the screen through the same paint as a poll, so it waits
-behind [an open option list](#an-open-option-list) and a reader's own toggle like the board does.
+says so there, with Plan still current in the page links. A changed reply reaches the screen
+through the same paint as a poll, so it waits behind [an open option list](#an-open-option-list)
+and a reader's own toggle like the board does. While an open list still holds the poll's own
+paint, the plan rides that paint rather than spending a second deferral.
 The Plan view joins session keys to the displayed board. A session opened from Plan carries
 `from=plan` in its fragment, so its tab, crumb and Escape return to Plan while a plan is shown, and
 to Sessions when there is none. Stable goal, lane, ask and session keys preserve surviving links and their focus

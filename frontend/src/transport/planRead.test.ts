@@ -20,7 +20,9 @@ function planRuntime(first: PlanAnswer) {
     if (url === '/api/plan') return state.plan();
     return Promise.resolve(Response.json({ generated: 1, build: 'b1', sessions: [] }));
   };
-  const paint = vi.fn((_info: { manual: boolean; accepted: boolean }) => Promise.resolve());
+  const paint = vi.fn((_info: { manual: boolean; accepted: boolean; followUp?: boolean }) =>
+    Promise.resolve(),
+  );
   const runtime = createBoardRuntime({
     fetch,
     storage: createFakeStorageHub().forTab(),
@@ -52,8 +54,8 @@ describe('the plan read', () => {
     ['a busy server', answer({ error: 'busy' }, 503)],
     ['a body that is not JSON', () => Promise.resolve(new Response('not json', { status: 200 }))],
     ['a network error', () => Promise.reject(new Error('offline'))],
-    ['a ready body missing a nested field', answer({ ...readyPlan, goals: [{ id: 'x' }] })],
     ['a ready body whose lane list is not a list', answer({ ...readyPlan, lanes: {} })],
+    ['a ready body with no limits sentence', answer({ ...readyPlan, limits: null })],
   ] as const)('keeps the configured plan through %s', async (_name, failure) => {
     const { state, runtime, read, plan } = planRuntime(ready);
     runtime.start();
@@ -123,11 +125,43 @@ describe('the plan read', () => {
     runtime.start();
     await flush();
     expect(plan()).toEqual({ state: 'none' });
-    expect(paint).toHaveBeenLastCalledWith({ manual: false, accepted: true });
+    expect(paint).toHaveBeenLastCalledWith({ manual: false, accepted: true, followUp: true });
     state.plan = ready;
     await read();
     expect(plan()).toMatchObject({ state: 'ready' });
-    expect(paint).toHaveBeenLastCalledWith({ manual: true, accepted: true });
+    expect(paint).toHaveBeenLastCalledWith({ manual: true, accepted: true, followUp: true });
     runtime.dispose();
   });
+
+  it('keeps an ask whose words the settings keep off the board', async () => {
+    const { runtime, plan } = planRuntime(
+      answer({ ...readyPlan, asks: [{ ...readyPlan.asks[0], text: null }] }),
+    );
+    runtime.start();
+    await flush();
+    expect(plan()).toMatchObject({ state: 'ready', asks: [{ id: 'hours', text: null }] });
+    runtime.dispose();
+  });
+
+  it.each([
+    ['ask', 'asks', { id: 'broken' }],
+    ['goal', 'goals', { id: 'x' }],
+    ['lane', 'lanes', { id: 'x', title: 7 }],
+    ['design note', 'design', { title: 'x' }],
+    ['tracker row', 'tracker', null],
+    ['diagram', 'diagrams', { title: 'x', caption: 'x' }],
+    ['source', 'sources', { label: 'x', state: 'maybe' }],
+  ] as const)(
+    'drops one malformed %s and keeps the rest of the plan',
+    async (_name, list, broken) => {
+      const items = readyPlan[list] as readonly unknown[];
+      const { runtime, plan } = planRuntime(answer({ ...readyPlan, [list]: [broken, ...items] }));
+      runtime.start();
+      await flush();
+      const shown = plan();
+      expect(shown).toMatchObject({ state: 'ready' });
+      expect((shown as unknown as Record<string, unknown>)[list]).toEqual(items);
+      runtime.dispose();
+    },
+  );
 });

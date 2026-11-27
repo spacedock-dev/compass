@@ -140,6 +140,7 @@ export const ACTIVITY_LOG_FILTER_LABELS = {
 } as const;
 
 export const PLAN_WORDS = {
+  askWithoutText: 'An open ask with no text',
   blocked: 'Blocked',
   done: 'Done',
   dropped: 'Dropped',
@@ -1068,6 +1069,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       null,
     ),
     // Plan board.
+    planAskWithoutText: kept([
+      PLAN_WORDS.askWithoutText,
+      'New label',
+      'A log ask whose words the Plan settings keep off the board',
+      'No open asks',
+      'Open asks on Plan',
+    ]),
     planBlocked: kept([
       PLAN_WORDS.blocked,
       'New label',

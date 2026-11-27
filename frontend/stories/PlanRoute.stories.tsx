@@ -245,6 +245,8 @@ export const PlanReadFailed: Story = {
     ).toBeVisible();
     await expect(canvas.getByRole('heading', { name: 'Plan', level: 1 })).toBeVisible();
     await expect(canvas.queryByRole('heading', { name: 'All sessions' })).toBeNull();
+    const nav = await primary(canvas);
+    await expect(nav.getByRole('link', { name: 'Plan', current: 'page' })).toBeVisible();
   },
 };
 

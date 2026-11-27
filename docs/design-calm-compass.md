@@ -354,6 +354,7 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Read pull request status | Turn off the pull request read | Account-wide GitHub and GitLab check reads | An individual recorded pull request read | The flag and route stay |
 | Show my AI allowance | No dedicated Settings section | Browser-stored usage consent | An account setting | Labelled as kept in this browser |
 | Customize | Always-visible prompt limits | Prompt size controls | Your AI allowance | Opens How much a progress check reads |
+| An open ask with no text | New label | A log ask whose words the Plan settings keep off the board | No open asks | Open asks on Plan |
 | Blocked | New label | A lane with work that cannot continue | A session waiting for a reply | Plan lane and tracker group |
 | Done | New label | A lane whose tracker row is done | Ended, a session state | Plan lane and tracker group; the only group the progress count counts as done |
 | Dropped | New label | A lane set aside and left out of the progress count | Done, a finished lane | Plan lane and tracker group |
