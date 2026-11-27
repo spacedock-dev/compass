@@ -428,6 +428,10 @@ bytes (0.27%). The increase covers the field-by-field check of the plan reply, t
 four states, the plain sentence for each source refusal, the undecided design notes and the new
 glossary words. The bound follows the measured package. The fixture bound stays at 250,000 bytes.
 
+Showing an ask with no words and dropping only an unreadable plan item package at 2,521,071 bytes
+on Node 26.12.1 and pnpm 12.19.0, up 624 bytes. The bound follows the measured package. The fixture
+bound stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.
