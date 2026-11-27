@@ -187,7 +187,7 @@ Inside a Claude Code session, a command without `--session` uses that session. `
 
 | Command | Calls a model |
 |---|---|
-| `--sessions`, `--project`, `--goal`, `--footer`, `--forward-usage`, `--pause-model-calls`, `--summaries off`, `--monitor --off` | Never |
+| `--sessions`, `--project`, `--goal`, `--footer`, `--plan-slice`, `--forward-usage`, `--pause-model-calls`, `--summaries off`, `--monitor --off` | Never |
 | `--drift`, `--summary` | Only when nothing is stored yet |
 | `--summary --update` | Only when the session changed |
 | `--drift again`, `--summary --again` | Every time, unless one is already running |
@@ -354,6 +354,17 @@ For a Spacedock workflow, a technical line explains the workflow roles.
 Run the command in your own terminal to keep the output there. If an agent runs it as a tool
 call inside a session, other sessions' words can reach that session's model provider.
 [What can reach into a session](SECURITY.md#what-can-reach-into-a-session).
+
+## Preview the plan summary
+
+Use `spacedock-compass --plan-slice` from the session's working folder to see the plan text the
+hook would provide using the current settings. To inspect a specific lane, pass its brief slug
+with `--lane hull`. With no flag, `COMPASS_LANE` takes precedence over the folder match.
+
+The preview works with the dashboard down. Empty output means the
+[summary is off](HOW_TO_USE.md#give-a-new-session-its-lane-summary), the plan could not be read,
+or Compass could not select a single lane. Codex can act on hook context without quoting it.
+Use the preview to read the text directly.
 
 ## Ask from inside a Claude Code or Codex session
 

@@ -440,6 +440,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/launch.py",
     "skills/compass/notify_hook.py",
     "skills/compass/event_hook.py",
+    "skills/compass/plan_summary_hook.py",
     "skills/compass/statusline_hook.py",
     "skills/compass/agy_hook.py",
     "skills/compass/opencode_plugin.js",

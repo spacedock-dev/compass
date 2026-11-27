@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import ast
+import json
+import os
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 from unittest import mock
+
+from .test_plan_readers import PlanRepoTestCase
+from .test_project_script_checks import GIT
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -614,6 +621,7 @@ class SecurityPrimitivesTest(unittest.TestCase):
         modules = [
             "notify_hook.py",
             "event_hook.py",
+            "plan_summary_hook.py",
             "mcp_server.py",
             "statusline_hook.py",
             "agy_hook.py",
@@ -783,3 +791,63 @@ class SecurityPrimitivesTest(unittest.TestCase):
         self.assertEqual(
             [], violations("# open('/tmp/x')\nvalue = stream.read()", "compass_runtime/new.py")
         )
+
+
+@unittest.skipIf(GIT is None or os.name == "nt", "Needs Git and POSIX directory descriptors")
+class PlanSummaryPrimitiveTest(PlanRepoTestCase):
+    def test_summary_spawns_nothing_opens_no_socket_and_writes_nothing(self) -> None:
+        self.configure(summary={"enabled": True})
+        (self.briefs / "hull.md").write_text("## Goal\nFloat the model.\n", encoding="utf-8")
+        uv = self.root / "uv"
+        uv.touch()
+        uv.chmod(0o700)
+        guard = """
+import os
+import sys
+
+def watch(event, args):
+    write = event == "open" and args[2] & (os.O_WRONLY | os.O_RDWR | os.O_CREAT)
+    if write or event.startswith("socket.") or event in {
+        "subprocess.Popen", "os.exec", "os.fork", "os.mkdir",
+        "os.posix_spawn", "os.remove", "os.rename", "os.system",
+    }:
+        print(f"Plan summary attempted {event}", file=sys.stderr)
+        raise RuntimeError(event)
+
+sys.pycache_prefix = sys.argv.pop(1)
+sys.argv = sys.argv[1:]
+with open(sys.argv[0], "rb") as launcher:
+    code = compile(launcher.read(), sys.argv[0], "exec")
+sys.addaudithook(watch)
+exec(code, {"__name__": "__main__", "__file__": sys.argv[0]})
+"""
+        for version, delivers in (("3.12", True), ("3.11", False)):
+            with self.subTest(version=version):
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        guard,
+                        str(self.root / "pycache"),
+                        str(ROOT / "launch.py"),
+                        str(ROOT / "plan_summary_hook.py"),
+                    ],
+                    env={
+                        **os.environ,
+                        "COMPASS_LAUNCH_ASSUME_PYTHON": version,
+                        "COMPASS_HOME": str(self.home),
+                        "COMPASS_LANE": "hull",
+                        "PATH": str(self.root),
+                    },
+                    input=json.dumps(
+                        {"hook_event_name": "SessionStart", "cwd": str(self.hull)}
+                    ).encode(),
+                    capture_output=True,
+                    timeout=10,
+                    check=False,
+                )
+                self.assertEqual((result.returncode, result.stderr), (0, b""))
+                if delivers:
+                    self.assertIn(b"Float the model.", result.stdout)
+                else:
+                    self.assertEqual(result.stdout, b"")

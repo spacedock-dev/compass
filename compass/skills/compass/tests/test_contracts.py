@@ -1236,6 +1236,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             # The serving path attaches the status line's file writer; `aggregate` reaches it
             # through a protocol, so the edge runs from the assembly point alone.
             "compass_runtime.footer_lines",
+            # --plan-slice previews the SessionStart context from the board projection.
+            "compass_runtime.plan",
             "compass_runtime.history",
             "compass_runtime.http_api",
             "compass_runtime.interaction_prototype",

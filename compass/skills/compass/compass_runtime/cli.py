@@ -364,6 +364,16 @@ def _add_local_store_options(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--plan-slice",
+        action="store_true",
+        help="preview the enabled SessionStart plan summary without starting the dashboard",
+    )
+    parser.add_argument(
+        "--lane",
+        metavar="NAME",
+        help="lane for --plan-slice, overriding COMPASS_LANE and the current folder",
+    )
+    parser.add_argument(
         "--no-plan",
         action="store_true",
         help="do not read plan settings or sources for this run",
@@ -1287,6 +1297,19 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
     lifecycle.unignore_sigterm()
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.plan_slice:
+        from compass_runtime.plan import publish  # noqa: PLC0415 - only the preview needs it here
+
+        if not args.no_plan and (
+            summary := publish.session_summary(
+                terminal_client.state_home(os.environ),
+                lane=args.lane if args.lane is not None else os.environ.get("COMPASS_LANE"),
+            )
+        ):
+            print(summary)
+        return 0
+    if args.lane is not None:
+        parser.error("--lane requires --plan-slice")
     refuse_login_proxy_without_its_parts(parser, args)
     answered = run_client_operation(args, sys.argv[1:] if argv is None else argv)
     if answered is not None:

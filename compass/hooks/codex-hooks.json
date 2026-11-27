@@ -7,6 +7,11 @@
           {
             "type": "command",
             "command": "python3 \"${PLUGIN_ROOT}/skills/compass/launch.py\" \"${PLUGIN_ROOT}/skills/compass/event_hook.py\" codex"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/skills/compass/launch.py\" \"${PLUGIN_ROOT}/skills/compass/plan_summary_hook.py\"",
+            "timeout": 2
           }
         ]
       }

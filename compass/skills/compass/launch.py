@@ -13,7 +13,9 @@ a system `python3` older than 3.12 exists, runs it there.
 
 At or above the floor the script runs in this process, compiled and executed directly. The
 imports below the floor sit inside the functions that need them, because `subprocess`, `shutil`
-and `json` cost about ten milliseconds per hook that nothing at or above the floor uses. Below it:
+and `json` cost about ten milliseconds per hook that nothing at or above the floor uses.
+The read-only plan summary hook skips the recovery path and exits silently below the floor.
+For the other scripts below the floor:
 
 1. A hook's payload is read from stdin, because the event decides whether anyone is told.
 2. `uv`, if installed on a rooted PATH element, is asked for a Python 3.12 or newer that is
@@ -50,7 +52,14 @@ if TYPE_CHECKING:
 FLOOR = (3, 12)
 SEAM = "COMPASS_LAUNCH_ASSUME_PYTHON"
 UV_TIMEOUT_SECONDS = 2
-HOOK_SCRIPTS = ("event_hook.py", "agy_hook.py", "notify_hook.py", "statusline_hook.py")
+PLAN_SUMMARY_HOOK = "plan_summary_hook.py"
+HOOK_SCRIPTS = (
+    "event_hook.py",
+    "agy_hook.py",
+    "notify_hook.py",
+    "statusline_hook.py",
+    PLAN_SUMMARY_HOOK,
+)
 SESSION_START = "SessionStart"
 AGY_HOOK = "agy_hook.py"
 # What each hook prints when it has nothing to say. Antigravity reads its hook's stdout as JSON,
@@ -310,6 +319,11 @@ def main(argv: "list[str]") -> int:
         return 2
     target, args = argv[1], argv[2:]
     version, version_text = running_version()
+    if os.path.basename(target) == PLAN_SUMMARY_HOOK:
+        # A SessionStart summary must stay read-only and cannot run the uv fallback.
+        if version < FLOOR:
+            return abstain(target)
+        sys.dont_write_bytecode = True
     if version < FLOOR:
         return below_floor(target, args, version_text)
     try:
