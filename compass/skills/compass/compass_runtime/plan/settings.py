@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import unicodedata
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING
@@ -55,15 +56,44 @@ def _ref(value: object) -> str:
     return ref
 
 
+# Slashes and backslashes, and the characters that only look like one.
+_LABEL_SLASHES = frozenset("/\\\u2215\uff0f\u29f8\u2044\uff3c\u2216\u29f5")
+# The names the Plan page gives a file without a label, and its row for a missing draft branch.
+_GENERATED_NAME = re.compile(
+    rf"(?:draft(?: (?:{'|'.join(sources.FILE_KINDS)})(?: [0-9]+)?)?"
+    rf"|(?:{'|'.join(sources.FILE_KINDS)})(?: [0-9]+)?)"
+)
+
+
+def _label_key(text: str) -> str:
+    """What a reader sees: case folded, and runs of spaces drawn as one."""
+    return " ".join(grammar.folded(text).split())
+
+
+def _file_label(value: object) -> str:
+    label = string(value, 40)
+    # A label is published and must read as itself: nothing invisible, no spacing a reader cannot
+    # tell from a space, no slash of any shape, and never a name the page draws for another row.
+    if (
+        any(
+            char in _LABEL_SLASHES
+            or (unicodedata.category(char).startswith("Z") and char != " ")
+            or unicodedata.category(char) == "Cf"
+            for char in label
+        )
+        or not _label_key(label)
+        or _GENERATED_NAME.fullmatch(_label_key(label))
+    ):
+        raise SettingsError
+    return label
+
+
 def _repository_file(value: object) -> tuple[str, str | None]:
     """A tree path, optionally with a short label the Plan page shows instead of the file's kind."""
     if isinstance(value, str):
         return sources.tree_path(value), None
-    raw = keys(value, "path label")
-    label = string(raw["label"], 40)
-    # The label is published; the path never is, so a label may not look like one.
-    if not label.strip() or "/" in label or "\\" in label:
-        raise SettingsError
+    raw = keys(value, "path", optional="label")
+    label = _file_label(raw["label"]) if "label" in raw else None
     return sources.tree_path(raw["path"]), label
 
 
@@ -81,7 +111,12 @@ def _repository(value: object) -> sources.Repository:
     if len(declared) != len(set(declared)) or len(declared) > 32:
         raise SettingsError
     file_labels = tuple(((kind, path), label) for kind, path, label in entries if label is not None)
-    if len({grammar.folded(label) for _, label in file_labels}) != len(file_labels):
+    label_keys = [_label_key(label) for _, label in file_labels]
+    # The page never shows a path, so a label may not repeat one in any case.
+    path_keys = {
+        _label_key(name) for _, path in declared for name in (path, sources.tree_parts(path)[-1])
+    }
+    if len(set(label_keys)) != len(label_keys) or path_keys.intersection(label_keys):
         raise SettingsError
     ref = _ref(raw["ref"])
     draft = _ref(raw["draft_ref"]) if "draft_ref" in raw else None

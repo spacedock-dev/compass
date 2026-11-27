@@ -1147,8 +1147,11 @@ leaves the settings file untouched. The agent summary setting defaults to off.
 
 The settings name each repository, its local branch, an optional draft branch and the exact tree
 paths for each file. A file may also carry a short label of up to 40 characters, which the Plan page
-shows in place of the file's kind. A label holds no slash or backslash, and two files in one
-repository cannot share one, so a path never stands in for a label. They also name one event log and one flat lane-brief folder with a filename
+shows in place of the file's kind. A label holds no slash or backslash, nor a character that looks
+like one, no invisible or format character and no spacing other than a plain space. It cannot
+repeat a declared file's name or path, in any case, or a name the page gives a file without a
+label, such as `inventory 2` or `draft`. Two files in one repository cannot share one, so a path
+never stands in for a label. They also name one event log and one flat lane-brief folder with a filename
 template. An optional map names the working folder for each lane. Compass checks that folder's
 metadata under the same privacy rules and records its normalised path, device and inode. It
 reads no files from the working folder for that lookup.

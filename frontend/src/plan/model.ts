@@ -118,7 +118,7 @@ export type PlanSource = {
 } & (
   | {
       readonly status: 'ok';
-      /** The lane-brief folder's row: how many briefs were read, when any were. */
+      /** The lane-brief folder's row: how many briefs were read, when the folder held any. */
       readonly read?: number;
     }
   | { readonly status: 'refused'; readonly reason: PlanRefusalReason }
@@ -188,7 +188,8 @@ function sourceStatus(source: PublishedSource) {
 
 /* One row per source, with three exceptions that kept a long plan's list unreadable: a draft branch
    that does not exist yet is one row for its repository, the briefs that were read are counted on
-   the lane-brief folder's row (a refused brief keeps its own), and a repository file is named by the
+   the lane-brief folder's row (a refused brief keeps its own, and refused briefs with no lane name
+   share one per reason), and a repository file is named by the
    label its settings give it, or by its kind and its place among that repository's files of the
    kind. A label shown once on the list is enough on its own. */
 function planSources(published: readonly PublishedSource[]): PlanSource[] {
@@ -196,9 +197,16 @@ function planSources(published: readonly PublishedSource[]): PlanSource[] {
   for (const { label } of published) labels.set(label, (labels.get(label) ?? 0) + 1);
   const named = (label: string, ...parts: readonly (string | null)[]) =>
     label && labels.get(label) === 1 ? label : [label, ...parts].filter(Boolean).join(' · ');
-  const briefsRead = published.filter(
-    (source) => source.kind === 'lane brief' && source.state === 'ok',
-  ).length;
+  const briefs = published.filter((source) => source.kind === 'lane brief');
+  const briefsRead = briefs.filter((source) => source.state === 'ok').length;
+  // A brief refused before its lane was named has no name to show, so those count by reason.
+  const unnamedBriefs = new Map<PlanRefusalReason, number>();
+  for (const brief of briefs) {
+    const status = sourceStatus(brief);
+    if (!brief.label && status.status === 'refused') {
+      unnamedBriefs.set(status.reason, (unnamedBriefs.get(status.reason) ?? 0) + 1);
+    }
+  }
   const missingDrafts = new Set<string>();
   const rows: PlanSource[] = [];
   published.forEach((source, index) => {
@@ -207,17 +215,21 @@ function planSources(published: readonly PublishedSource[]): PlanSource[] {
     const draft = kind.startsWith(draftPrefix);
     const fileKind = draft ? kind.slice(draftPrefix.length) : kind;
     if (kind === 'lane brief') {
-      if (source.state === 'refused') {
-        rows.push({
-          id,
-          name: ['Lane brief', label].filter(Boolean).join(' · '),
-          ...sourceStatus(source),
-        });
+      const status = sourceStatus(source);
+      if (status.status === 'ok') return;
+      if (label) {
+        rows.push({ id, name: `Lane brief · ${label}`, ...status });
+        return;
       }
+      const count = unnamedBriefs.get(status.reason);
+      if (count === undefined) return;
+      unnamedBriefs.delete(status.reason);
+      rows.push({ id, name: count === 1 ? 'Lane brief' : `${count} lane briefs`, ...status });
       return;
     }
     if (!repositoryKinds.includes(fileKind)) {
-      const counted = kind === 'lane briefs' && source.state === 'ok' && briefsRead > 0;
+      // Any brief, read or refused, puts a count on the folder's row, so "0 read" is said outright.
+      const counted = kind === 'lane briefs' && source.state === 'ok' && briefs.length > 0;
       rows.push({
         id,
         name: named(label, kind),

@@ -900,9 +900,12 @@ every bound the read keeps, the 60 second deadline over the whole GitLab read am
    synthetic paths (such as `/example/repository`) with your own. Keep the settings file outside
    Git repositories and save it as a regular file you own.
 2. List each repository's local branch and the exact committed files you want Compass to read.
-   To tell two files of one kind apart on the Plan page, write the file as
-   `{"path": "plan/parts.md", "label": "Spare parts"}` instead of the bare path. Without a label,
-   Plan numbers the files of a kind in the order you list them.
+   A file can be a bare path or `{"path": "plan/parts.md"}`. Plan numbers the files of one kind
+   in the order you list them, such as `inventory 2`. To name a file instead, add a label:
+   `{"path": "plan/parts.md", "label": "Spare parts"}`. A label has at most 40 characters and no
+   slash. It cannot repeat a file's name or path, or a number Plan would give (`inventory 2`), and
+   two files in one repository need different labels. Compass refuses settings that break these
+   rules, and `--diagnose` shows the refusal.
    Set the lane-brief folder and log file, then adapt their filename and line templates to your
    formats. To link sessions to a lane, add its brief slug and working folder under
    `briefs.lane_folders`. To show each lane's state, add a column to your tracker table that

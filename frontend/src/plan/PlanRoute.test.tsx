@@ -362,6 +362,94 @@ describe('the Plan destination follows the published plan', () => {
     ]);
   });
 
+  it.each([
+    [
+      'a draft file refused for another reason keeps its own row',
+      [
+        ['Model ship', 'inventory', 1, null],
+        ['Model ship', 'inventory', 2, null],
+        ['Model ship', 'draft inventory', 1, 'private'],
+        ['Model ship', 'draft inventory', 2, 'branch missing'],
+      ],
+      [
+        'Model ship · inventory 1Read',
+        'Model ship · inventory 2Read',
+        'Model ship · draft · inventory 1RefusedMarked private.',
+        'Model ship · draftRefusedThe branch is missing.',
+      ],
+    ],
+    [
+      'a missing primary branch keeps one row per file',
+      [
+        ['Model ship', 'inventory', 1, 'branch missing'],
+        ['Model ship', 'inventory', 2, 'branch missing'],
+      ],
+      [
+        'Model ship · inventory 1RefusedThe branch is missing.',
+        'Model ship · inventory 2RefusedThe branch is missing.',
+      ],
+    ],
+    [
+      'two repositories with a missing draft branch get a folded row each',
+      [
+        ['Model ship', 'goals', null, null],
+        ['Model ship', 'draft goals', null, 'branch missing'],
+        ['Lamp', 'goals', null, null],
+        ['Lamp', 'draft goals', null, 'branch missing'],
+        ['Lamp', 'draft tracker', null, 'branch missing'],
+      ],
+      [
+        'Model ship · goalsRead',
+        'Model ship · draftRefusedThe branch is missing.',
+        'Lamp · goalsRead',
+        'Lamp · draftRefusedThe branch is missing.',
+      ],
+    ],
+    [
+      'a refused brief shows when no brief was read',
+      [
+        ['Lane briefs', 'lane briefs', null, null],
+        ['mast', 'lane brief', null, 'malformed'],
+      ],
+      ['Lane briefs0 read', 'Lane brief · mastRefusedThe source did not have the expected format.'],
+    ],
+    [
+      'refused briefs without a lane name are counted by reason',
+      [
+        ['Lane briefs', 'lane briefs', null, null],
+        ['deck', 'lane brief', null, null],
+        ['', 'lane brief', null, 'unsafe lane identifier'],
+        ['', 'lane brief', null, 'malformed'],
+        ['', 'lane brief', null, 'malformed'],
+      ],
+      [
+        'Lane briefs1 read',
+        'Lane briefRefusedThe lane name has characters Compass does not accept.',
+        '2 lane briefsRefusedThe source did not have the expected format.',
+      ],
+    ],
+  ] as const)(
+    'groups sources only where they say one thing: %s',
+    async (_case, published, rows) => {
+      const page = mountPlan({
+        ...readyPlan,
+        sources: published.map(([label, kind, position, reason]) => ({
+          label,
+          kind,
+          fileLabel: null,
+          position,
+          state: reason === null ? 'ok' : 'refused',
+          reason,
+        })),
+      });
+      await page.settle();
+      const items = within(screen.getByRole('region', { name: 'Sources' })).getAllByRole(
+        'listitem',
+      );
+      expect(items.map((row) => row.textContent)).toEqual(rows);
+    },
+  );
+
   it('draws two goals that share an id, each once, without a duplicate key', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
