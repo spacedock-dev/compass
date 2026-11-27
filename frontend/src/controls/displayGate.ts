@@ -2,13 +2,14 @@ import type { BoardSnapshot, BoardStore } from '../store/board';
 import { createCommitGate, createMotionHold } from '../store/commit-gate';
 import type { Clock } from '../transport/ports';
 
-/* The fields a poll replaces. They reach a reader only through `paint`, so the
-   two holds below can keep the old board on screen while the store has already
-   accepted the new one. Everything else in a snapshot is the reader's own
+/* The fields a poll replaces, the plan read that follows it included. They reach a reader only
+   through `paint`, so the two holds below can keep the old board on screen while the store has
+   already accepted the new one. Everything else in a snapshot is the reader's own
    action state or a project-context read and is not held by an open list. */
 type BoardLayer = Pick<
   BoardSnapshot,
   | 'data'
+  | 'plan'
   | 'revision'
   | 'acceptedCount'
   | 'failures'
@@ -20,6 +21,7 @@ type BoardLayer = Pick<
 function boardLayer(snapshot: BoardSnapshot): BoardLayer {
   return {
     data: snapshot.data,
+    plan: snapshot.plan,
     revision: snapshot.revision,
     acceptedCount: snapshot.acceptedCount,
     failures: snapshot.failures,
@@ -116,7 +118,6 @@ export function createDisplayGate(options: DisplayGateOptions) {
         const contextsChanged = current.contexts !== last.contexts;
         const othersChanged =
           contextsChanged ||
-          current.plan !== last.plan ||
           current.manualRefreshing !== last.manualRefreshing ||
           current.observer !== last.observer ||
           current.pending !== last.pending ||

@@ -167,6 +167,27 @@ describe("the display gate: acceptance is immediate, paint is the reader's to ho
     expect(gate.getSnapshot().lastFailure).toEqual({ kind: 'network-error' });
   });
 
+  it('holds a plan change behind an open list and a toggle, as it holds a poll', async () => {
+    const { clock, held, store, gate } = setup();
+    const unread = gate.getSnapshot().plan;
+    held.choice = true;
+    store.setPlan({ state: 'none' });
+    expect(gate.getSnapshot().plan).toBe(unread);
+    await gate.paint({ manual: false, accepted: true });
+    expect(gate.getSnapshot().plan).toBe(unread);
+    held.choice = false;
+    gate.releaseChoice();
+    expect(gate.getSnapshot().plan).toEqual({ state: 'none' });
+
+    gate.noteToggle();
+    store.setPlan({ state: 'refused', reason: 'malformed settings' });
+    const painted = gate.paint({ manual: false, accepted: true });
+    expect(gate.getSnapshot().plan).toEqual({ state: 'none' });
+    clock.advance(MOTION_HOLD_MS);
+    await painted;
+    expect(gate.getSnapshot().plan).toEqual({ state: 'refused', reason: 'malformed settings' });
+  });
+
   it('resolves the awaited paint of a held run on dispose and clears its timer', async () => {
     const { clock, arrive, gate, detach } = setup();
     gate.noteToggle();

@@ -1,4 +1,4 @@
-import type { ConfiguredPlan } from '../api/plan';
+import type { PlanReading } from '../api/plan';
 import type {
   ModelNoticeRecord,
   PayloadData,
@@ -51,7 +51,7 @@ export interface BoardSnapshot {
   readonly data: PayloadData | null;
   /** The `X-Compass-Revision` of that body, or '' when it carried none. */
   readonly revision: string;
-  readonly plan: ConfiguredPlan | null;
+  readonly plan: PlanReading;
   readonly acceptedCount: number;
   /** Failed current reads since the last accepted body. */
   readonly failures: number;
@@ -81,7 +81,7 @@ const LISTENER_ERROR_WINDOW_MS = 60_000;
 const INITIAL: BoardSnapshot = Object.freeze({
   data: null,
   revision: '',
-  plan: null,
+  plan: Object.freeze({ state: 'unread' }),
   acceptedCount: 0,
   failures: 0,
   lastFailure: null,
@@ -176,7 +176,7 @@ export function createBoardStore(deps: {
       });
     },
 
-    setPlan(plan: ConfiguredPlan | null): void {
+    setPlan(plan: PlanReading): void {
       if (snapshot.plan === plan) return;
       publish({ ...snapshot, plan });
     },

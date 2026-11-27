@@ -18,8 +18,20 @@ import { fakeBackend } from '../test/storage_backends';
 import { atPageWidth } from './PageFit';
 import { settledRect } from './settled-layout';
 
-function PlanBoard({ plan }: { readonly plan: PlanPayload | null }) {
+/* How many plan reads this story's board has asked for, so a play can wait for the read it asserts about. */
+const planReads = { count: 0 };
+
+type PlanAnswer = PlanPayload | null | 'pending' | 'server-error';
+
+function planResponse(plan: PlanAnswer): Promise<Response> {
+  if (plan === 'pending') return new Promise<Response>(() => undefined);
+  if (plan === 'server-error') return Promise.resolve(new Response('Boom', { status: 500 }));
+  return Promise.resolve(plan ? Response.json(plan) : new Response(null, { status: 404 }));
+}
+
+function PlanBoard({ plan }: { readonly plan: PlanAnswer }) {
   const [shell] = useState(() => {
+    planReads.count = 0;
     const history = fakeRouterEnvironment('#n=plan');
     return createShell({
       env: createFakeEnvironment({ clock: createFakeClock() }),
@@ -31,7 +43,8 @@ function PlanBoard({ plan }: { readonly plan: PlanPayload | null }) {
       reducedMotion: () => true,
       fetch: async (url) => {
         if (url === '/api/plan') {
-          return plan ? Response.json(plan) : new Response(null, { status: 404 });
+          planReads.count += 1;
+          return planResponse(plan);
         }
         if (url.startsWith('/api/data')) return Response.json(planBoard);
         return new Response(null, { status: 404 });
@@ -135,7 +148,9 @@ async function primary(canvas: ReturnType<typeof within>) {
 
 async function expectNoPlan(canvasElement: HTMLElement) {
   const canvas = within(canvasElement);
+  // A Plan bookmark draws nothing until the plan read answers, so Sessions here is that answer.
   await expect(await canvas.findByRole('heading', { name: 'All sessions' })).toBeVisible();
+  await expect(planReads.count).toBeGreaterThan(0);
   const nav = await primary(canvas);
   await expect(nav.getByRole('link', { name: 'Sessions', current: 'page' })).toBeVisible();
   await expect(nav.queryByRole('link', { name: 'Plan' })).toBeNull();
@@ -151,6 +166,32 @@ export const NotConfigured: Story = {
 export const Disabled: Story = {
   args: { plan: null },
   play: async ({ canvasElement }) => expectNoPlan(canvasElement),
+};
+
+export const PlanReadPending: Story = {
+  args: { plan: 'pending' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await waitFor(() => expect(planReads.count).toBe(1));
+    await expect(await canvas.findByRole('navigation', { name: 'Primary' })).toBeInTheDocument();
+    await expect(canvas.queryByRole('heading', { name: 'All sessions' })).toBeNull();
+    await expect(canvas.queryByRole('heading', { name: 'Plan', level: 1 })).toBeNull();
+  },
+};
+
+export const PlanReadFailed: Story = {
+  args: { plan: 'server-error' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByText(
+        'Compass could not read the plan. It tries again on the next refresh.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(canvas.getByRole('heading', { name: 'Plan', level: 1 })).toBeVisible();
+    await expect(canvas.queryByRole('heading', { name: 'All sessions' })).toBeNull();
+  },
 };
 
 export const RefusedSettings: Story = {

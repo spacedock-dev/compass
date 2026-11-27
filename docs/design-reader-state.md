@@ -175,10 +175,16 @@ A terminal monitor can save the page's drafted goal before its first tick. It ch
 
 ## Plan page and session links
 
-The fragment holds the requested destination. The board shows Sessions while Plan is unavailable.
-The runtime reads Plan after the board at boot, on safety polls, and after manual refresh. The
-store holds the latest configured reply in memory. The Plan view joins session keys to the
-displayed board. Stable goal, lane, ask and session keys preserve surviving links and their focus
+The fragment holds the requested destination. The runtime reads Plan after the board at boot, on
+safety polls, and after manual refresh. The store holds one of four answers in memory: not read yet,
+a first read that failed, no plan, or the latest configured reply. Only the server's own answer
+clears a configured reply: not configured, a 404 for `--no-plan`, or a 403 for a reader off the
+Compass computer. A server error, a timeout, a dropped connection or a reply the page cannot use
+keeps what is shown. The board shows Sessions for a Plan bookmark only once the read says there is
+no plan; before the first answer the Plan destination draws nothing, and a first read that failed
+says so there. A changed reply reaches the screen through the same paint as a poll, so it waits
+behind [an open option list](#an-open-option-list) and a reader's own toggle like the board does.
+The Plan view joins session keys to the displayed board. Stable goal, lane, ask and session keys preserve surviving links and their focus
 through a refresh. Document scroll follows the same rules as the other destinations.
 
 ## Disclosure write precedence

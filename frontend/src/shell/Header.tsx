@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Button, buttonVariants } from '../ui/button';
 import { Icon } from '../ui/icons';
+import { planShown } from '../api/plan';
 import { AttentionAnnouncer } from '../attention';
 import { selectAttentionSelection } from '../attention/select';
 import { useFocusKey } from '../controls/useFocusKey';
@@ -39,7 +40,7 @@ function PrimaryNavigation({
 }) {
   const { controls } = useShell();
   const here = currentView(route);
-  const hasPlan = useDisplayed((snapshot) => snapshot.plan !== null);
+  const hasPlan = useDisplayed((snapshot) => planShown(snapshot.plan));
   /* The current item is the focus lane's fallback for a control that stands only while something is
      wrong (Retry now), so removing it hands focus to a place the reader can see. */
   const currentRef = useFocusKey<HTMLAnchorElement>(controls.focusLane, 'primary-current');

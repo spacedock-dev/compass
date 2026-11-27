@@ -52,6 +52,8 @@ export function mountShell(options: TestShellOptions = {}) {
       Object.hasOwn(options.getResponses ?? {}, url)
     ) {
       const body = options.getResponses?.[url];
+      // A function answers for itself, so a test can hold, reject or time out one read.
+      if (typeof body === 'function') return (body as () => Promise<Response>)();
       return Promise.resolve(body instanceof Response ? body.clone() : Response.json(body));
     }
     if (url === '/api/plan') return Promise.resolve(new Response(null, { status: 404 }));

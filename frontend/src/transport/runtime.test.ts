@@ -772,8 +772,10 @@ describe('a failing subscriber does not corrupt the board', () => {
     await flush();
     expect(api.gets()).toBe(2);
     expect(runtime.store.getSnapshot().failures).toBe(0);
-    expect(reported).toHaveLength(2);
+    // Two accepted bodies and the first plan answer (no plan, from the 404) each reached it.
+    expect(reported).toHaveLength(3);
     expect(reported.map((error) => (error as Error).message)).toEqual([
+      'subscriber bug',
       'subscriber bug',
       'subscriber bug',
     ]);

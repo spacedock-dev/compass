@@ -59,8 +59,10 @@ export function Page() {
 
   const requested = useRoute();
   const snapshot = useDisplayed((current) => current);
+  /* Only the server's answer that there is no plan sends a Plan bookmark to Sessions. Until the first
+     read answers, Plan draws nothing rather than flashing Sessions. */
   const route =
-    requested.view === 'plan' && snapshot.plan === null
+    requested.view === 'plan' && snapshot.plan.state === 'none'
       ? { ...requested, view: 'sessions' as const }
       : requested;
   const model = useDisplayed(selectObserved);

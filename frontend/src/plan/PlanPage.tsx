@@ -465,6 +465,17 @@ export function RefusedPlanPage({ reason }: { readonly reason: string }) {
   );
 }
 
+export function PlanReadFailed() {
+  return (
+    <section className={cn(pageLayout, 'grid gap-3')}>
+      <h1 className="m-0 text-hero leading-tight font-extrabold">{SHOWN.plan}</h1>
+      <p className="m-0 text-muted-foreground">
+        Compass could not read the plan. It tries again on the next refresh.
+      </p>
+    </section>
+  );
+}
+
 export function PlanPage({ model }: { readonly model: PlanModel }) {
   const headingId = useId();
   return (

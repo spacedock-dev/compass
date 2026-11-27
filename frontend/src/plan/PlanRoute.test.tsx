@@ -11,8 +11,10 @@ import {
 import { mountShell } from '../shell/testing';
 import { FALLBACK_POLL_MS } from '../transport/live';
 
+const planReadFailed = 'Compass could not read the plan. It tries again on the next refresh.';
+
 function mountPlan(response: unknown = readyPlan) {
-  const getResponses = { '/api/plan': response };
+  const getResponses: Record<string, unknown> = { '/api/plan': response };
   const page = mountShell({ hash: '#n=plan', data: planBoard, getResponses });
   return { ...page, getResponses };
 }
@@ -34,6 +36,52 @@ describe('the Plan destination follows the published plan', () => {
       expect(document.title).toBe('Compass — Sessions');
     },
   );
+
+  it('shows neither Sessions nor Plan on a plan bookmark until the plan read answers', async () => {
+    let answer: (response: Response) => void = () => undefined;
+    const page = mountPlan(() => new Promise<Response>((resolve) => (answer = resolve)));
+    await page.settle();
+    expect(page.gets('/api/plan')).toBe(1);
+    expect(screen.queryByRole('heading', { name: 'All sessions' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Plan', level: 1 })).toBeNull();
+    expect(primary().queryByRole('link', { name: 'Plan' })).toBeNull();
+    await act(async () => answer(Response.json(readyPlan)));
+    await page.settle();
+    expect(screen.getByRole('heading', { name: 'Plan', level: 1 })).toBeVisible();
+  });
+
+  it('says a first plan read failed on the plan route instead of landing on Sessions', async () => {
+    const page = mountPlan(new Response('Boom', { status: 500 }));
+    await page.settle();
+    expect(screen.getByText(planReadFailed, { exact: true })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'All sessions' })).toBeNull();
+    page.getResponses['/api/plan'] = readyPlan;
+    await act(async () => page.clock.advance(FALLBACK_POLL_MS));
+    expect(screen.getByRole('heading', { name: 'Plan', level: 1 })).toBeVisible();
+    expect(screen.queryByText(planReadFailed, { exact: true })).toBeNull();
+  });
+
+  it('keeps the plan on screen through failed and unusable reads, and hides it only when the server says it is off', async () => {
+    const page = mountPlan();
+    await page.settle();
+    const ask = 'Should the pickup shelf stay open on Sundays?';
+    for (const failure of [
+      new Response('Boom', { status: 500 }),
+      new Response('not json', { status: 200 }),
+      () => Promise.reject(new Error('offline')),
+      { ...readyPlan, asks: [{ id: 'broken' }] },
+    ]) {
+      page.getResponses['/api/plan'] = failure;
+      await act(async () => page.clock.advance(FALLBACK_POLL_MS));
+      expect(primary().getByRole('link', { name: 'Plan' })).toHaveAttribute('aria-current', 'page');
+      expect(screen.getByRole('heading', { name: 'Plan', level: 1 })).toBeVisible();
+      expect(screen.getByText(ask)).toBeVisible();
+    }
+    page.getResponses['/api/plan'] = new Response(null, { status: 404 });
+    await act(async () => page.clock.advance(FALLBACK_POLL_MS));
+    expect(primary().queryByRole('link', { name: 'Plan' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'All sessions', level: 2 })).toBeVisible();
+  });
 
   it('offers Plan when the settings are refused and gives a reason without drawing the plan', async () => {
     const page = mountPlan(refusedPlanSettings);
