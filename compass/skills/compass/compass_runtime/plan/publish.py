@@ -252,7 +252,22 @@ def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
 
 _SUMMARY_BYTES: Final = 1500
 _SUMMARY_ASKS: Final = 3
-_LANE_STATES: Final = frozenset({"done", "in-progress", "blocked", "planned"})
+# The summary's plain words for each published lane state: a closed table, so no published text
+# is echoed as a state. Planned, In progress, Blocked and Done are the Plan page's words; Waiting
+# and Dropped are chosen here because the page has no lane word for them.
+_STATE_WORDS: Final = MappingProxyType(
+    {
+        "not_started": "Planned",
+        "running": "In progress",
+        "waiting": "Waiting",
+        "blocked": "Blocked",
+        "done": "Done",
+        "dropped": "Dropped",
+        markdown.STATUS_UNKNOWN: markdown.STATUS_UNKNOWN,
+    }
+)
+# An unrecognised status is shown but never counted: it measures nothing about progress.
+_MEASURED_STATES: Final = frozenset(settings.BOARD_GROUPS)
 _UNMEASURED: Final = "not measured"
 
 
@@ -262,12 +277,23 @@ def _summary(plan: dict[str, Any], slug: str) -> str:
     if len(matching) != 1:
         return ""
     lane = matching[0]
-    states = [row["state"] for row in lanes]
     progress = _UNMEASURED
-    if all(state in _LANE_STATES for state in states):
-        unit = "lane is" if len(states) == 1 else "lanes are"
-        progress = f"{states.count('done')} of {len(states)} {unit} done"
-    lane_state = lane["state"] if lane["state"] in _LANE_STATES else _UNMEASURED
+    serving = [goal["lanes"] for goal in plan["goals"] if slug in goal["lanes"]]
+    if len(serving) == 1:
+        measured = [
+            row["state"]
+            for row in lanes
+            if row["id"] in serving[0]
+            and isinstance(row["state"], str)
+            and row["state"] in _MEASURED_STATES
+        ]
+        if measured:
+            unit = "lane is" if len(measured) == 1 else "lanes are"
+            progress = f"{measured.count('done')} of {len(measured)} {unit} done"
+    state = lane["state"]
+    lane_state = (
+        _STATE_WORDS[state] if isinstance(state, str) and state in _STATE_WORDS else _UNMEASURED
+    )
     status_lines = [f"Progress: {progress}", f"Lane state: {lane_state}"]
     asks = [ask["text"] for ask in plan["asks"] if ask["lane"] and ask["lane"]["id"] == slug]
     count = len(asks)

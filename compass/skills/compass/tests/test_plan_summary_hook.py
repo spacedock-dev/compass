@@ -22,6 +22,7 @@ from .test_plan_readers import STAND_IN, VARIANT, PlanRepoTestCase
 from .test_project_script_checks import GIT
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
 SKILL = SERVER_PATH.parent
@@ -194,20 +195,74 @@ class PlanSummaryHookTest(PlanRepoTestCase):
             self.assertEqual(plan_summary_hook.main(), 0)
         self.assertEqual((out.getvalue(), err.getvalue()), ("", ""))
 
-    def test_progress_is_derived_only_from_measured_published_lane_states(self) -> None:
-        plan = {
+    def test_lane_state_words_are_a_closed_table(self) -> None:
+        self.assertEqual(set(publish._STATE_WORDS), {*publish.LANE_STATES})
+        self.assertEqual(
+            publish._STATE_WORDS,
+            {
+                "not_started": "Planned",
+                "running": "In progress",
+                "waiting": "Waiting",
+                "blocked": "Blocked",
+                "done": "Done",
+                "dropped": "Dropped",
+                "Status not recognised": "Status not recognised",
+            },
+        )
+        for state, word in publish._STATE_WORDS.items():
+            plan = {
+                "goals": [],
+                "lanes": [{"id": "hull", "title": "Carve", "doneWhen": None, "state": state}],
+                "asks": [],
+            }
+            with self.subTest(state=state):
+                self.assertIn(f"Lane state: {word}\n", publish._summary(plan, "hull") + "\n")
+
+    def test_an_unknown_or_missing_state_is_not_measured(self) -> None:
+        for state in (None, "in-progress", "DONE", 3, ["done"]):
+            plan = {
+                "goals": [{"id": "g", "lanes": ["hull"]}],
+                "lanes": [{"id": "hull", "title": "Carve", "doneWhen": None, "state": state}],
+                "asks": [],
+            }
+            with self.subTest(state=state):
+                self.assertEqual(
+                    publish._summary(plan, "hull").splitlines()[-2:],
+                    ["Progress: not measured", "Lane state: not measured"],
+                )
+
+    def _goal_plan(self, states: Sequence[object]) -> dict[str, Any]:
+        ids = [f"l{n}" for n in range(len(states))]
+        return {
+            "goals": [{"id": "g", "lanes": ids}, {"id": "other", "lanes": ["x"]}],
             "lanes": [
-                {"id": "hull", "title": "Carve", "doneWhen": None, "state": "done"},
-                {"id": "paint", "title": "Paint", "doneWhen": None, "state": "in-progress"},
-            ],
+                {"id": i, "title": "T", "doneWhen": None, "state": s}
+                for i, s in zip(ids, states, strict=True)
+            ]
+            + [{"id": "x", "title": "X", "doneWhen": None, "state": "done"}],
             "asks": [],
         }
-        self.assertIn(
-            "Progress: 1 of 2 lanes are done\nLane state: in-progress",
-            publish._summary(plan, "paint"),
-        )
-        plan["lanes"][0]["state"] = None
-        self.assertIn("Progress: not measured", publish._summary(plan, "paint"))
+
+    def test_progress_counts_done_among_measured_lanes_serving_the_goal(self) -> None:
+        for states, progress in (
+            (["done", "running"], "1 of 2 lanes are done"),
+            (["done"], "1 of 1 lane is done"),
+            (["running", "blocked"], "0 of 2 lanes are done"),
+            (["done", None, "Status not recognised"], "1 of 1 lane is done"),
+            (["done", "dropped", "waiting", "not_started"], "1 of 4 lanes are done"),
+            ([None, None], "not measured"),
+            (["Status not recognised"], "not measured"),
+        ):
+            with self.subTest(states=states):
+                summary = publish._summary(self._goal_plan(states), "l0")
+                self.assertIn(f"Progress: {progress}\n", summary + "\n")
+
+    def test_progress_is_not_measured_without_exactly_one_serving_goal(self) -> None:
+        plan = self._goal_plan(["done"])
+        plan["goals"] = []
+        self.assertIn("Progress: not measured", publish._summary(plan, "l0"))
+        plan["goals"] = [{"id": "a", "lanes": ["l0"]}, {"id": "b", "lanes": ["l0"]}]
+        self.assertIn("Progress: not measured", publish._summary(plan, "l0"))
 
     def test_only_three_open_asks_are_shown_and_the_rest_are_counted(self) -> None:
         self.setup_summary()
@@ -259,7 +314,7 @@ class PlanSummaryHookTest(PlanRepoTestCase):
                         ("Goal", lane["title"]),
                         ("Done when", lane["doneWhen"]),
                         ("Progress", "not measured"),
-                        ("Lane state", lane["state"] or "not measured"),
+                        ("Lane state", publish._STATE_WORDS.get(lane["state"], "not measured")),
                         *(("Ask", text) for text in asks),
                     ]
                     summary = self.preview("--lane", lane["id"])
