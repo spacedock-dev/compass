@@ -14,7 +14,7 @@ import stat
 import sys
 import time
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, BinaryIO, TextIO
 from urllib.parse import quote
@@ -869,21 +869,71 @@ def plan_directory_identities(paths: tuple[str, ...]) -> frozenset[tuple[int, in
     return frozenset(identities)
 
 
+@dataclass(frozen=True)
+class PlanPrivatePrefixes:
+    """Where private roots sit: below folder identities, and in a shared Git repository's tree.
+
+    `commons` maps the common Git directory of the deepest checkout holding a root to the
+    root's path in that checkout, so linked worktrees of the repository share it. An empty
+    path means the root is a whole checkout.
+    """
+
+    folders: dict[tuple[int, int], set[tuple[str, ...]]] = field(default_factory=dict)
+    commons: dict[tuple[int, int], set[tuple[str, ...]]] = field(default_factory=dict)
+
+
+def _lookup_fd(path: str) -> int | None:
+    """A directory held for lookups, or None when this user may not even enter it."""
+    parent, name = os.path.split(path)
+    if not name:
+        return _directory_fd(path, follow_links=False, require_owner=False)
+    held = _directory_fd(parent, follow_links=False, require_owner=False)
+    try:
+        flags = (getattr(os, "O_DIRECTORY", 0) or 0) | os.O_NOFOLLOW | os.O_NONBLOCK
+        for mode in (os.O_RDONLY, _SEARCH_ONLY) if _SEARCH_ONLY else (os.O_RDONLY,):
+            with contextlib.suppress(PermissionError):
+                return os.open(name, mode | flags, dir_fd=held)
+        return None
+    finally:
+        os.close(held)
+
+
+def _checkout_prefix(real: str) -> tuple[tuple[int, int], tuple[str, ...]] | None:
+    """The deepest checkout at or above a folder: its common Git directory and the path in it."""
+    parts = [part for part in real.split("/") if part]
+    for depth in range(len(parts), -1, -1):
+        directory = _lookup_fd("/" + "/".join(parts[:depth]))
+        if directory is None:
+            # A root this user cannot enter cannot be checked for a .git entry.
+            continue
+        try:
+            if _present_at(directory, ".git"):
+                common = inspect_plan_git(directory, PlanPathPolicy(), contents=False).common
+                return common, tuple(parts[depth:])
+        finally:
+            os.close(directory)
+    return None
+
+
 def plan_private_prefixes(
     roots: tuple[str, ...], private_ids: frozenset[tuple[int, int]]
-) -> dict[tuple[int, int], set[tuple[str, ...]]]:
-    """Remember where each private root sits below directory identities, including repo roots."""
-    prefixes: dict[tuple[int, int], set[tuple[str, ...]]] = {}
+) -> PlanPrivatePrefixes:
+    """Remember where each private root sits below directory identities and in Git trees."""
+    prefixes = PlanPrivatePrefixes()
     for root in roots:
         # Identify the root itself by metadata under its held parent, so a root this user may
         # enter but not list (mode 111) still loads.
-        parent, name = os.path.split(os.path.realpath(root, strict=True))
+        real = os.path.realpath(root, strict=True)
+        parent, name = os.path.split(real)
         ancestry = _plan_ancestry(parent, PlanPathPolicy(), require_owner=False, leaf=name)
         if ancestry[-1][1] not in private_ids:
             raise PlanReadError(PlanRefusal.CHANGED)
         names = tuple(name for name, _ in ancestry)
         for index, (_, identity) in enumerate(ancestry[:-1]):
-            prefixes.setdefault(identity, set()).add(names[index + 1 :])
+            prefixes.folders.setdefault(identity, set()).add(names[index + 1 :])
+        checkout = _checkout_prefix(real)
+        if checkout is not None:
+            prefixes.commons.setdefault(checkout[0], set()).add(checkout[1])
     return prefixes
 
 

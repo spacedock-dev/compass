@@ -910,6 +910,9 @@ every bound the read keeps, the 60 second deadline over the whole GitLab read am
    A cell such as `hull, paint` or `hull.` counts against every lane it mentions, so those lanes
    also show as not measured.
    Declare private roots and markers for locations Compass should skip.
+   A private root inside a Git checkout also covers the same path in that repository's linked
+   worktrees (`git worktree add`), but not in a separate clone. Use a marker file to keep a
+   folder private in every clone.
 3. Run the dashboard launcher with `--diagnose` and check the plan settings section for refused
    sources. It reports missing or unreadable draft sources and refused lane folders by kind
    and reason. If you configure private roots or marker files, keep the declared Git file's

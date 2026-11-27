@@ -510,6 +510,55 @@ class PlanReadersTest(PlanRepoTestCase):
         (info / "alternates").symlink_to(moved)
         self.assert_refused_without_git(self.only_goals(), io.PlanRefusal.SYMLINK)
 
+    def linked_worktree(self) -> Path:
+        self.write_sources({"goals": "## Goals\n- G1: CANARY_LINKED_WORKTREE\n"})
+        git(self.repo, "branch", "side")
+        linked = self.root / "linked"
+        git(self.repo, "worktree", "add", "-q", str(linked), "side")
+        return linked
+
+    def test_private_root_maps_across_linked_worktrees_of_one_repository(self) -> None:
+        linked = self.linked_worktree()
+        main = self.repo
+        for name, private, configured in (
+            ("main to linked", main / "plan", linked),
+            ("linked to main", linked / "plan", main),
+        ):
+            with self.subTest(name=name):
+                self.repo = configured
+                config = self.only_goals(private={"roots": [str(private)]})
+                self.assert_private_without_tree_read(config)
+                self.assertNotIn(
+                    "CANARY_LINKED_WORKTREE", json.dumps(asdict(readers.read_plan(config).model))
+                )
+        # A private root at a checkout's root makes the whole shared repository private.
+        self.repo = linked
+        self.assert_private_without_tree_read(self.only_goals(private={"roots": [str(main)]}))
+        self.repo = main
+        config = self.only_goals(private={"roots": [str(linked)]})
+        self.assertEqual(config.sources.repositories[0].reason, "private")
+        self.assert_private_without_tree_read(config)
+
+    def test_a_separate_clone_keeps_its_own_private_roots(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: Clone goal\n"})
+        clone = self.root / "clone"
+        git(self.root, "clone", "-q", "--no-local", str(self.repo), str(clone))
+        private = self.repo / "plan"
+        self.repo = clone
+        config = self.only_goals(private={"roots": [str(private)]})
+        self.assertIsNone(config.sources.declarations()[0].reason)
+        result = readers.read_plan(config).model
+        self.assertEqual([row.title for row in result.goals], ["Clone goal"])
+
+    def test_linked_worktree_of_a_private_main_repository_is_refused(self) -> None:
+        container = self.root / "container"
+        container.mkdir()
+        self.repo.rename(container / "repo")
+        self.repo = container / "repo"
+        linked = self.linked_worktree()
+        self.repo = linked
+        self.assert_private_without_tree_read(self.only_goals(private={"roots": [str(container)]}))
+
     def test_frozen_build_reads_git_sources(self) -> None:
         self.write_sources({"goals": "## Goals\n- G1: Admitted repo\n"})
         config = self.only_goals()

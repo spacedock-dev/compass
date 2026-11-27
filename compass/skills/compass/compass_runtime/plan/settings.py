@@ -639,7 +639,11 @@ def _repo_ids(repos: tuple[sources.Repository, ...]) -> frozenset[tuple[int, int
 def _make_settings(declared: _Declarations, path: str, *, git_enabled: bool) -> Loaded:
     try:
         ids = io.plan_private_identities(declared.roots)
-        prefixes = io.plan_private_prefixes(declared.roots, ids) if git_enabled else {}
+        prefixes = (
+            io.plan_private_prefixes(declared.roots, ids)
+            if git_enabled
+            else io.PlanPrivatePrefixes()
+        )
     except (OSError, io.PlanReadError):
         return Loaded(path, reason=PRIVATE_UNREADABLE)
     try:

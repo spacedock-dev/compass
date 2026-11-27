@@ -1203,6 +1203,17 @@ private root below the repository also covers its relative tree prefix if it lat
 from the checkout. When private roots or marker files are configured, a missing checkout parent
 refuses the read.
 
+Linked worktrees of one repository share its committed files, so a private root covers the same
+tree path in all of them. At settings load Compass finds the deepest Git checkout holding each
+private root and that checkout's common Git directory. A declared repository with the same
+common directory, whether it is the main checkout or another linked worktree, refuses that tree
+path. A private root that is a whole checkout refuses every checkout of the repository. A
+separate clone has its own Git directory and keeps its own private roots, so declare a private
+root in each clone, or use a marker file, which travels with the committed tree. A private root
+Compass cannot enter at all (mode 000, say) is not checked for being a checkout itself, though
+a checkout above it still is. If the Git directories of a checkout holding a private root
+cannot be identified, the settings refuse with `could not identify a private root`.
+
 Git starts in the repository folder by its path, so immediately before and after each Git
 command Compass walks that path again from the filesystem root. Every folder on the way must
 not be a symbolic link and must pass the private root, marker and marker file checks, and the

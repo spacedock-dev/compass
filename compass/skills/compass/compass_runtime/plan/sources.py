@@ -406,10 +406,21 @@ def git_boundary(directory: int, policy: io.PlanPathPolicy) -> tuple[int, int]:
     return files.common
 
 
+def _private_prefixes(
+    prefixes: io.PlanPrivatePrefixes, identity: tuple[int, int], common: tuple[int, int]
+) -> tuple[tuple[str, ...], ...]:
+    # A private root in any checkout of this repository covers the same tree path here:
+    # linked worktrees share one common Git directory. Separate clones do not.
+    private = prefixes.folders.get(identity, set()) | prefixes.commons.get(common, set())
+    if () in private:
+        raise io.PlanReadError(io.PlanRefusal.PRIVATE)
+    return tuple(sorted({tuple(map(folded, prefix)) for prefix in private}))
+
+
 def check_repositories(
     repositories: tuple[Repository, ...],
     policy: io.PlanPathPolicy,
-    prefixes: dict[tuple[int, int], set[tuple[str, ...]]],
+    prefixes: io.PlanPrivatePrefixes,
 ) -> tuple[Repository, ...]:
     checked = []
     for repo in repositories:
@@ -417,13 +428,12 @@ def check_repositories(
             with io.hold_plan_directory(repo.path, policy) as directory:
                 info = os.fstat(directory)
                 identity = (info.st_dev, info.st_ino)
+                common = git_boundary(directory, policy)
                 admitted = replace(
                     repo,
                     identity=identity,
-                    common=git_boundary(directory, policy),
-                    private_prefixes=tuple(
-                        tuple(map(folded, prefix)) for prefix in prefixes.get(identity, ())
-                    ),
+                    common=common,
+                    private_prefixes=_private_prefixes(prefixes, identity, common),
                 )
                 refused = tuple(
                     (path, reason)
